@@ -38,6 +38,10 @@ type SubagentManager struct {
 	// alerter receives the alert raised when a task's status or results file
 	// cannot be written. Never nil.
 	alerter alerter.Alerter
+
+	// taskRunner runs task-model calls (agent_spawn with a kind); nil when
+	// the host offers none.
+	taskRunner TaskModelRunner
 }
 
 // SubagentManagerConfig holds all configuration for constructing a SubagentManager.
@@ -68,6 +72,8 @@ type SubagentManagerConfig struct {
 	// Alerter receives operator alerts for task records that cannot be
 	// written; nil means none.
 	Alerter alerter.Alerter
+	// TaskRunner runs task-model calls (agent_spawn with a kind).
+	TaskRunner TaskModelRunner
 }
 
 func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
@@ -85,6 +91,7 @@ func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
 		candidateResolver: cfg.CandidateResolver,
 		workerModelsSet:   cfg.WorkerModelsSet,
 		runFull:           cfg.RunFull,
+		taskRunner:        cfg.TaskRunner,
 	}
 }
 
@@ -244,12 +251,21 @@ func (sm *SubagentManager) SpawnCallback(
 func (sm *SubagentManager) runRecord(rec *TaskRecord, cb tools.AsyncCallback, resumed bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			sm.finalize(rec, "", 0, fmt.Errorf("panic: %v", r), cb)
+			err := fmt.Errorf("panic: %v", r)
+			if rec.Kind != "" {
+				sm.finishTaskRecord(rec, nil, err, cb)
+				return
+			}
+			sm.finalize(rec, "", 0, err, cb)
 		}
 	}()
 
 	rec.StartedAt = nowRFC()
 	sm.persistStatus(sm.tasksDir(), rec)
+	if rec.Kind != "" {
+		sm.runTaskRecord(rec, cb)
+		return
+	}
 
 	taskText := rec.Task
 	if resumed {

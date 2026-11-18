@@ -61,6 +61,9 @@ type ToolDeps struct {
 	// TempPurpose is what a temporary agent was created for (TempPurposeForum
 	// for a forum participant); empty for every other agent.
 	TempPurpose string
+	// CloneMarker is the short id of a clone (whose tools act as AgentID),
+	// for the audit rows its calls write; "" for every other agent.
+	CloneMarker string
 
 	// Spawn/subagent
 	Provider          providers.LLMProvider
@@ -76,6 +79,9 @@ type ToolDeps struct {
 
 	// Messenger sends this agent's agent_message asks and whispers.
 	Messenger Messenger
+
+	// Files sends files to a chat (msg_send_file).
+	Files FileSender
 
 	// Spawn holds the robust sub-agent launcher (a global.Spawner). The AgentLoop
 	// builds it per agent and sets it here; toGlobalDeps forwards it to

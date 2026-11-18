@@ -11,8 +11,10 @@ import (
 	"github.com/PivotLLM/ctxengine/session"
 
 	"github.com/PivotLLM/ClawEh/agentreg"
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/cogmemhost"
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
 	agentws "github.com/PivotLLM/ClawEh/internal/workspace"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/providers"
@@ -36,13 +38,16 @@ type AgentInstance struct {
 	// Spec is how the registry built the agent: its origin, the source of a
 	// clone, whether its memory is ephemeral, whether it is a fresh temporary
 	// agent (no tools).
-	Spec           agentreg.Spec
-	MaxIterations  int
-	MaxTokens      int
-	Temperature    *float64 // nil: no temperature is sent, the model default applies
-	ThinkingLevel  ThinkingLevel
-	NoTools        bool
-	ContextWindow  int
+	Spec          agentreg.Spec
+	MaxIterations int
+	MaxTokens     int
+	Temperature   *float64 // nil: no temperature is sent, the model default applies
+	ThinkingLevel ThinkingLevel
+	NoTools       bool
+	ContextWindow int
+	// modelLimits are the limits of each model in Candidates, by model_name:
+	// a request runs with those of the model it is sent to (see limitsFor).
+	modelLimits    map[string]runLimits
 	CompressOpts   []ctxengine.Option
 	Provider       providers.LLMProvider
 	Sessions       session.SessionStore
@@ -57,7 +62,7 @@ type AgentInstance struct {
 	WorkerCandidates []providers.FallbackCandidate
 
 	// VisionClients is the ordered vision-describe side-model chain (from
-	// AgentDefaults.VisionModel + VisionModelFallbacks). When the active model is
+	// the Describe images list on the Task models page). When the active model is
 	// text-only and images are encountered, they are dispatched to these clients
 	// (first success wins) for a one-shot text description instead of being
 	// dropped. Empty = feature off. Wired by AgentLoop.agentBuilder.
@@ -121,6 +126,22 @@ func (a *AgentInstance) SessionsDir() string {
 
 // toolless reports whether the agent gets no tools at all: a fresh temporary
 // agent, or a human agent (which runs no model to call them).
+// limitsFor returns the limits a request to model (a model_name) runs with:
+// that model's own, or the agent's for a model it has none recorded for.
+func (a *AgentInstance) limitsFor(model string) runLimits {
+	if l, ok := a.modelLimits[model]; ok {
+		return l
+	}
+	return runLimits{
+		maxIterations: a.MaxIterations,
+		maxTokens:     a.MaxTokens,
+		temperature:   a.Temperature,
+		contextWindow: a.ContextWindow,
+		thinkingLevel: a.ThinkingLevel,
+		noTools:       a.NoTools,
+	}
+}
+
 func (a *AgentInstance) toolless() bool { return a.Spec.Fresh || a.HumanModel != "" }
 
 // IsTemp reports whether the agent is a temporary agent.
@@ -215,6 +236,7 @@ func newAgentInstance(
 
 	candidates := resolveAgentCandidates(cfg, models, agentID)
 	workerCandidates := resolveWorkerCandidates(cfg, subagents, candidates, agentID)
+	modelLimits := resolveModelLimits(defaults, agentCfg, cfg, candidates)
 
 	// Config is never nil after construction: a nil config is equivalent to
 	// an empty allowlist (deny all tools), so callers need not guard on nil.
@@ -243,6 +265,7 @@ func newAgentInstance(
 		ThinkingLevel:    limits.thinkingLevel,
 		NoTools:          limits.noTools,
 		ContextWindow:    limits.contextWindow,
+		modelLimits:      modelLimits,
 		CompressOpts:     compressOpts,
 		Provider:         provider,
 		Sessions:         sessions,
@@ -335,7 +358,7 @@ func prepareWorkspace(spec agentreg.Spec, cfg *config.Config) error {
 		agentws.Populate(spec.Workspace, m.Dir, m.File, cfg.ChannelKindsInUse(), cfg.ChannelKind)
 		return nil
 	}
-	if err := os.MkdirAll(spec.Workspace, m.Dir); err != nil {
+	if err := fileutil.MkdirAllExact(spec.Workspace, m.Dir); err != nil {
 		return fmt.Errorf("create workspace %s: %w", spec.Workspace, err)
 	}
 	return nil
@@ -383,8 +406,8 @@ func newAgentContextBuilder(spec agentreg.Spec, agentCfg *config.AgentConfig, cf
 		contextBuilder = contextBuilder.WithSkillsFilter(agentCfg.Skills)
 	}
 	if agentCfg != nil {
-		if mounts := agentCfg.EffectiveMounts(spec.Workspace); len(mounts) > 0 {
-			contextBuilder = contextBuilder.WithMounts(mounts)
+		if folders := agentCfg.CleanAllowedFolders(); len(folders) > 0 {
+			contextBuilder = contextBuilder.WithAllowedFolders(folders)
 		}
 		contextBuilder = contextBuilder.WithMaestro(agentCfg.MaestroEnabled())
 	}
@@ -405,13 +428,17 @@ type runLimits struct {
 }
 
 // resolveRunLimits resolves the agent's limits: the model's settings over
-// the agent's over the defaults, with built-in fallbacks (20 iterations,
-// 8192 tokens, a 128000-token context window).
+// the agent's (temperature, max_tool_iterations) over the defaults, with
+// built-in fallbacks (20 iterations, 8192 tokens, a 128000-token context
+// window).
 func resolveRunLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConfig, cfg *config.Config, model string) runLimits {
 	l := runLimits{
 		maxIterations: defaults.MaxToolIterations,
 		maxTokens:     defaults.MaxTokens,
 		contextWindow: defaults.ContextWindow,
+	}
+	if agentCfg != nil && agentCfg.MaxToolIterations != nil && *agentCfg.MaxToolIterations > 0 {
+		l.maxIterations = *agentCfg.MaxToolIterations
 	}
 	if l.maxIterations == 0 {
 		l.maxIterations = 20
@@ -444,6 +471,20 @@ func resolveRunLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConf
 	}
 	l.thinkingLevel = parseThinkingLevel(thinkingLevelStr)
 	return l
+}
+
+// resolveModelLimits resolves the limits of each candidate that names a
+// model_list entry, by its model_name, so a request to a fallback model or to
+// the one /model selected runs with that model's max_tokens, context window
+// and thinking level rather than the first model's.
+func resolveModelLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConfig, cfg *config.Config, candidates []providers.FallbackCandidate) map[string]runLimits {
+	limits := make(map[string]runLimits, len(candidates))
+	for _, c := range candidates {
+		if c.Alias != "" {
+			limits[c.Alias] = resolveRunLimits(defaults, agentCfg, cfg, c.Alias)
+		}
+	}
+	return limits
 }
 
 // agentCompressOptions are the context engine options for the agent: the
@@ -559,7 +600,7 @@ func refuseUnmigratedSessions(dir string) error {
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".meta.json") {
 			return fmt.Errorf("sessions directory %s still holds JSONL-layout sessions; "+
-				"stop the service and run \"claw sessions migrate\" first", dir)
+				"stop the service and run \"%s sessions migrate\" first", dir, app.BinaryName())
 		}
 	}
 	return nil

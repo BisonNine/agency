@@ -3,7 +3,13 @@
 Regression coverage for the ClawEh web interface. Every step below has an ID, a
 process, and an expected result, so it can be followed by hand — and every one is
 also automated in `tests/frontend-e2e.mjs`, which prints the same IDs. There are
-154 checks in all; the runner prints the same tally at the end.
+178 checks in all; the runner prints the same tally at the end.
+
+The WebUI holds no product name of its own: it shows the names the server
+fills into the page it serves (title and `product-*` meta tags) and returns
+(`name`, `short_name`, `binary_name` on `GET /api/auth/status` and
+`GET /api/system/version`). Below, *the product name* means `name` from either
+response; the runner reads it once at start and compares against it.
 
 ```
 export CLAW_E2E_USER=<admin>  CLAW_E2E_PASSWORD=<password>
@@ -14,11 +20,11 @@ node tests/frontend-e2e.mjs --base http://host:port
 
 ## Before you start
 
-**Run it against a dev instance, never production.** Groups F, G, N, R and T
-write. All five revert what they change — the agent created in F is deleted, the
-field edited in G and the HTTPS port edited in R are restored to the values read
-beforehand, the memory domain N creates is deleted at the end, and the card and
-agent T creates are removed — but a crash
+**Run it against a dev instance, never production.** Groups F, G, N, R, T and U
+write. All six revert what they change — the agent created in F is deleted, the
+fields edited in G (including a task model's Images settings) and the HTTPS port edited in R are restored to the values read
+beforehand, the memory domain N creates is deleted at the end, the card and
+agent T creates are removed, and the task models block U edits is put back as it was read — but a crash
 mid-run would leave the change behind. I12 adds and removes a disabled temporary model only when no model's request timeout exceeds the turn timeout. N only ever touches the `e2e-probe`
 domain it created, so an agent's real memory is not at risk, but it is still a
 write. R8 regenerates the self-signed certificate (a new self-signed one takes
@@ -79,7 +85,7 @@ until curl -sf http://127.0.0.1:8077/ready >/dev/null; do sleep 1; done
 `/`, `/agents`, `/audit`, `/agent/bindings`, `/agent/skills`, `/agent/cards`,
 `/channels`, `/config`, `/config/raw`, `/devices`, `/logs`, `/mcp`,
 `/mcp/servers`, `/memory`, `/models`, `/network`, `/providers`, `/report`,
-`/system`, `/voice`, `/setup`, `/status`.
+`/system`, `/task-models`, `/setup`, `/status`.
 
 **Expected.** Each renders substantive content (>40 characters of text) and logs
 **no console errors**. A blank page or a red console entry is a failure.
@@ -89,15 +95,16 @@ until curl -sf http://127.0.0.1:8077/ready >/dev/null; do sleep 1; done
 | ID | Process | Expected |
 |---|---|---|
 | C1 | Look at the sidebar | Contains Chat, Agents, Models, Channels, Services. Chat is a direct link (`a[href="/"]`), not a disclosure button |
-| C2 | Look at the sidebar footer | Shows `ClawEh v<version>` |
+| C2 | Look at the sidebar footer | Shows `<product name> v<version>` |
 | C3 | Click the **Models** sidebar entry, then the **Models** link beneath it | The entry is a disclosure control (`aria-expanded`), not a link. It expands, and the link navigates to `/models` without a full page load |
 | C4 | `curl -o /dev/null -w '%{http_code}' $BASE/no-such-route` | `200` — unknown paths fall through to the SPA |
+| C5 | On every route in the suite's list, set the window to 1100×420 and compare each clipping `<main>`'s scroll height with its visible height | No page has content below the frame that cannot be scrolled to: each page scrolls inside its own area |
 
 ## D. i18n integrity
 
 | ID | Process | Expected |
 |---|---|---|
-| D1 | Load all 22 routes; scan the rendered text for anything shaped like a translation key (`pages.…`, `navigation.…`), skipping the log viewer itself (`role="log"`) because log lines legitimately name config keys such as `agents.defaults.models` | None found. i18next renders the key verbatim when a lookup fails, so a leaked key is the only visible symptom of a broken locale |
+| D1 | Load all 22 routes; scan the rendered text and every `aria-label`, `title` and `placeholder` for anything shaped like a translation key (`pages.…`, `navigation.…`), skipping the log viewer itself (`role="log"`) because log lines legitimately name config keys such as `agents.defaults.models` | None found. i18next renders the key verbatim when a lookup fails, so a leaked key is the only visible symptom of a broken locale |
 
 ## E. Chat and WebSocket auth
 
@@ -112,7 +119,7 @@ attaches on its own. No token is fetched or sent by the page.
 
 ## F. Agents — autosave and list realignment
 
-Creates an agent called `e2e-probe` and deletes it at the end; F11 and F12 each create a second one (`e2e-msg`, `e2e-wrk`) through the API and remove it again.
+Creates an agent called `e2e-probe` and deletes it at the end; F11, F12, F14, F15 and F16 each create a second one (`e2e-msg`, `e2e-wrk`, `e2e-cls`, `e2e-tm`, `e2e-note`) through the API and remove it again, and F17–F20 share one (`e2e-code`) that F17 creates and F20 removes whatever the outcome.
 
 | ID | Process | Expected |
 |---|---|---|
@@ -121,7 +128,7 @@ Creates an agent called `e2e-probe` and deletes it at the end; F11 and F12 each 
 | F3 | Under **Internal tools**, toggle the `time_now` checkbox, wait ~2s | `tools` persisted with `time_now` added (or removed, if it was on) **and** `temperature` is still `0.77`. The second save must not clobber the first |
 | F4 | Select `e2e-probe`, note its temperature; select another agent, note its temperature | `e2e-probe` shows `0.77`; the other agent does not. Adding an agent re-sorts the list and shifts every index, so the edit buffers must follow. **Select agents by their displayed name** — the rail shows `name`, falling back to `id` |
 | F5 | Under **Fusion services** on the `e2e-probe` card, tick the first listed service, wait ~2s; tick it again, wait ~2s | `mcp_tools` gains the service name on the first tick and loses it on the second; the earlier edits are untouched. Skipped when the instance defines no Fusion service (`GET /api/agents/tools` has no `fusion_services`) |
-| F6 | With `e2e-probe` selected, turn on the **Allow shell commands** switch under Tools, wait ~2s; turn it off, wait ~2s | `tools` gains `shell_exec` when it is turned on and loses it when turned off; every other `tools` entry and the earlier edits are unchanged. It is the only way to grant `shell_exec`: `"*"` does not include it |
+| F6 | With `e2e-probe` selected, look for a separate shell switch under Tools; find the `shell_exec` box under **Internal tools** and hover its warning icon; tick it, wait ~2s; untick it, wait ~2s | There is no separate shell switch. The `shell_exec` row is unticked for a new agent and its warning icon's hover text is "Full access to this app's account". `tools` gains `shell_exec` when it is ticked and loses it when unticked; every other `tools` entry and the earlier edits are unchanged. Naming it is the only way to grant `shell_exec`: `"*"` does not include it |
 | F7 | Open `/agents`, leave through the **Check Up** sidebar link, come back through the **Agents** sidebar link (no reload) | The rail lists the agents and the page does not say "No agents yet". A return visit mounts the page with its data already cached; it used to seed its list only when a new fetch landed, so the cached list never showed until a browser reload |
 | F8 | Through the API, set `e2e-probe`'s models to a CLI model whose `extra_args` carries the CLI's bypass flag while that provider's "Allow CLI to bypass restrictions" is off (skip with a note when no such model exists); select `e2e-probe` on `/agents` | Under **Models** one line per CLI reads "`<CLI>` is not allowed to bypass its restrictions." followed by an **Allow it** link to the Providers page |
 | F9 | Through the API add twenty temporary enabled models; select an agent, open **Add model…**, scroll the list with the wheel twice; remove the models again | The list shows a scrollbar (Radix hides it by default, which made a long list look cut off), scrolls, does not jump back, and the popup keeps its height throughout. In Radix Select's item-aligned mode the popup grows and the scroll position is rewritten on every scroll event, which on a phone flickers and snaps back to the top on release; every select uses popper mode |
@@ -129,6 +136,13 @@ Creates an agent called `e2e-probe` and deletes it at the end; F11 and F12 each 
 | F11 | Create a throwaway agent `e2e-msg` through the API with `subagents.models` set to an enabled model; select it on `/agents` and under **May message** tick the first other agent (by its displayed name), wait ~2s; remove `e2e-msg` through the API | `subagents.allow_agents` is exactly that agent's id and `subagents.models` is unchanged: the box writes one key of the block and keeps the rest. Skipped when there is no other agent or no enabled model |
 | F12 | Create a throwaway agent `e2e-wrk` through the API with `subagents.allow_agents: ["e2e-wrk"]`; select it on `/agents` and under **Sub-Agent models** pick an enabled model from **Add sub-agent model…**, wait ~2s; then click that entry's **Remove** button, wait ~2s; remove `e2e-wrk` through the API | After the add, `subagents.models` is exactly `[that model]` and `subagents.allow_agents` is unchanged; after the remove, `subagents.models` is absent and `allow_agents` is still unchanged: the box writes one key of the block, drops it when empty, and keeps the rest. Skipped when there is no enabled model |
 | F13 | With `e2e-probe` selected, click the trash button in the card header, then Delete in the confirmation dialog | The agent is gone from `GET /api/config` |
+| F14 | Create a throwaway agent `e2e-cls` through the API with `models` set to one enabled model (not a person's); select it on `/agents` and turn on **Allow classifiers**, wait ~2s; turn it off, wait ~2s; remove `e2e-cls` through the API | After turning it on, `classifiers` is `{enabled: true, model: <the first model in task_models.classify>}` and a **Classifier model** selector is shown; after turning it off, `classifiers` is absent, the selector is gone and `models` is unchanged. Skipped when there is no enabled model or Classification is empty |
+| F15 | Create a throwaway agent `e2e-tm` through the API with `models` set to one enabled model (not a person's); select it on `/agents` and tick **Images** under **Allow task models**, wait ~2s; untick it, wait ~2s; remove `e2e-tm` through the API | After ticking, the box is checked and the agent's `task_models` is `{image: true}`; after unticking, the box is unchecked and `task_models` is absent. Skipped when there is no enabled model |
+| F16 | Create a throwaway agent `e2e-note` through the API with `allowed_folders: [{path: "/tmp"}]`; select it on `/agents`, type `inbound audio notes` into the folder's **Note** box, wait ~2s; reload `/agents` and select it again; remove `e2e-note` through the API | `allowed_folders` is exactly `[{path: "/tmp", note: "inbound audio notes"}]`, and after the reload the **Note** box shows the note |
+| F17 | Create a throwaway agent `e2e-code` through the API with `tools: ["time_now"]`; select it on `/agents` and click **Coding tools** beside **Default tools** under Internal tools, wait ~2s | `tools` is `time_now` plus the eleven coding tools: `file_list`, `file_glob`, `file_read_lines`, `file_search_lines`, `file_edit_lines`, `file_insert_lines`, `file_delete_lines`, `file_edit`, `file_write`, `shell_exec`, `agent_spawn` |
+| F18 | Set `e2e-code`'s `tools` through the API to `["time_now", "web_fetch", "file_*", "agent_spawn"]`; on `/agents` click **Coding tools**, wait ~2s; click it again, wait ~2s | After the first click `tools` is exactly `["time_now", "web_fetch", "file_*", "agent_spawn", "shell_exec"]`: nothing is removed, `file_*` already grants the file tools and only `shell_exec` (granted only by name) is added. The second click changes nothing and no entry is listed twice |
+| F19 | With `e2e-code` selected, untick the `shell_exec` box, wait ~2s; reload `/agents`, select `e2e-code`, tick `shell_exec`, wait ~2s | After unticking, `tools` has no `shell_exec` and the other entries are unchanged; after the reload the box is unticked, and ticking it saves `shell_exec` again |
+| F20 | Set `e2e-code`'s `tools` through the API to `["time_now"]`; on `/agents` click **Default tools**, wait ~2s; remove `e2e-code` through the API | `tools` is the default set, which does not include `shell_exec` |
 
 ## G. System page
 
@@ -143,6 +157,27 @@ else is on **System**. `/config` still works and lands on `/system`;
 | G3 | Restore the original value, wait ~2s | `backup.dest` matches what G2 recorded |
 | G4 | Load `/config/raw` | The configuration document renders |
 | G5 | Load `/config` | The browser lands on `/system` and the System page renders (Backup section present), no console errors |
+| G6 | Note `classifiers.limits.min_every_seconds` (absent = blank), set **Shortest run interval (seconds)** in the Classifiers section to `77`, wait ~2s, then put the original back (blank if it was absent), wait ~2s | The field shows the default `15` as its placeholder; after the edit the config holds `77`; after the revert it matches the original (key absent if it was absent) |
+| G7 | Note `task_models.echo_transcription` (absent = off), open `/task-models`, click **Echo transcription**, wait ~2s, click it again, wait ~2s | After the first click the config holds the opposite value; after the second it matches the original |
+| G8 | Note `task_models.image`; when it is empty, add the first enabled model on `/task-models` with **Add model to Generate images**, wait ~2s (skipped when there is no enabled model); on the first row of **Generate images** note **Images through** (absent = `chat`), set it to the other value, wait ~2s; set it back, wait ~2s; remove the model again if it was added | After the change the config holds the other `image_api` on that image entry (`chat` saved as absent) and no other list changes; afterwards `task_models.image` matches what was noted |
+
+## U. Task models page
+
+Every check edits `task_models`; the group reads the block (`GET /api/task-models`) first and writes it back at the end. The page has six lists, in this order: **Generate text**, **Generate images**, **Text to speech**, **Transcription**, **Describe images**, **Classification**; each control's accessible name ends with its list (*Move <model> up in Generate text*, *Remove <model> from Text to speech*, *Model to add to Generate images*). Model A is an enabled model not in Generate text — a model whose provider serves speech and has an API key when there is one — and model B another enabled model not in Generate images. A model is added to **Transcription** only when it is such a speech model, so no check can raise the "Speech backend not usable" alert.
+
+| ID | Process | Expected |
+|---|---|---|
+| U1 | Open `/task-models`; in **Generate text** pick A in **Model to add to Generate text** and click **Add model to Generate text**, wait ~2s; in **Generate images** add A, wait ~2s, then B, wait ~2s | Each gets a row in its own list and leaves that list's **Model to add**, while A is still offered in the other lists; `task_models.text` is the old list followed by A, `task_models.image` the old list followed by A and B, each saved as `{model}` alone, and the other four lists are unchanged. Skipped when A does not exist |
+| U2 | In **Generate images**, read the order; click **Move <last> up in Generate images**, wait ~2s; then **Move <last> down in Generate images**, wait ~2s | The list's first **Move up** and last **Move down** are disabled; after Move up the last two are swapped on the page and in `task_models.image`, and `task_models.text` is unchanged; after Move down the order is as read |
+| U3 | On A's row in **Generate images**, set **Images through for A** to **Images API**, wait ~2s; set it back to **Chat (image output)**, wait ~2s | **Images through** is shown on every row of Generate images and on no other list; A's image entry is saved with `image_api: images`, while A's entry in `task_models.text` has none; after setting it back the image entry is `{model}` again (`chat` saved as absent) |
+| U4 | In **Text to speech**, add A, wait ~2s; fill **Voice for A** `alloy` and **Format for A** `mp3`, wait ~2s; clear the Format, wait ~2s; click **Remove A from Text to speech**, wait ~2s | Voice and Format are shown only on Text to speech rows; A's tts entry is `{model, tts_defaults: {voice: alloy, format: mp3}}`, then `{voice: alloy}`; after the removal `task_models.tts` is as it was before U4 |
+| U5 | Read the placeholder of **Text in results (characters)**; type `1234`, wait ~2s; type `12a`, wait ~2s; clear it, wait ~2s | Placeholder is `defaults.result_text_chars` (8000); `1234` is saved; `12a` shows *Enter a whole number, or leave it blank.* and saves nothing; blank saves the default (key absent) |
+| U6 | Type `4321` in **Text in results** and at once click the **Models** link, wait ~2s; put the original value back through the API | `result_text_chars` is `4321`: an edit still waiting for its save is saved when the page is left |
+| U7 | Turn **Echo transcription** on; when **Transcription** is empty and A is a speech model, add A to Transcription, wait ~2s, remove it, wait ~2s; put echo back through the API | *No model in Transcription, so nothing is transcribed.* is shown exactly while echo is on and Transcription is empty; the empty Transcription list says *No models. Voice messages are not transcribed.* |
+| U8 | Create a throwaway agent `e2e-tmk` through the API with one enabled model and no tools; select it on `/agents`; read **Allow task models**; tick its four boxes, ~2s apart; when one of the four lists is empty, add A to it through the API, reload `/agents`, select `e2e-tmk` again, then take A off; remove `e2e-tmk` | Each kind whose list is empty has the note *No model in <list>. Add one on Task models.* (Generate text, Generate images, Text to speech, Transcription) linking to `/task-models`, and only those; *Needs the agent_spawn tool.* is shown; the Classification note is shown exactly when Classification is empty; after the ticks `task_models` is `{text, image, tts, stt}` all true; with A in the list that kind's note is gone |
+| U9 | `GET /api/report/assessment`; when **Describe images** is empty, add A to it through the API, read it again, then take A off; load `/report` | **Speech to text** reads *No model in Transcription.* exactly when Transcription is empty and **Vision** reads *No model in Describe images.* exactly when Describe images is empty, whatever the other lists hold; with A in Describe images the Vision row no longer says so, and it does again after A is taken off; the Check Up page shows the rows the API lists, no console errors |
+| U10 | Click **Remove A from Generate text**, **Remove A from Generate images** and **Remove B from Generate images**, ~2s apart | The rows are gone and every list is as it was before U1 |
+| U11 | Open `/task-models` in a window 420 px high; scroll the page's content to the bottom | The **Settings** card comes fully into view (the content has its own scroll area), and the cards start at least 8 px right of the sidebar |
 
 ## R. Network page
 
@@ -218,19 +253,19 @@ The client address shown after a pending request's name (`remote_ip` from
 device asking to pair, so it is not checked here; `devices-page.test.tsx`
 covers it.
 
-## K. Logs, MCP, memory, voice, report
+## K. Logs, MCP, memory, task models, report
 
 | ID | Process | Expected |
 |---|---|---|
 | K1 | Load `/logs` | Shows log lines |
 | K2 | Load `/mcp` and `/mcp/servers` | Both render, no console errors |
-| K3 | Load `/memory` and `/voice` | Both render, no console errors |
-| K4 | Click **Check Up** in the sidebar (below the groups) | `/report` renders with the heading **Check Up**, an identity line starting `ClawEh <version>` and naming the platform (`… on <host>`), a table with the headers **Action / Item / Status** and at least one row, and below it a **Full report** button whose `href` is `/api/report/pdf`; no console errors |
+| K3 | Load `/memory` and `/task-models` | Both render, no console errors |
+| K4 | Click **Check Up** in the sidebar (below the groups) | `/report` renders with the heading **Check Up**, an identity line starting `<product name> <version>` and naming the platform (`… on <host>`), a table with the headers **Action / Item / Status** and at least one row, and below it a **Full report** button whose `href` is `/api/report/pdf`; no console errors |
 | K5 | `GET /api/report/pdf` | 200, `Content-Type: application/pdf`, `Content-Disposition: inline; …`, body starts with `%PDF-` |
 | K6 | `POST /api/mcp/servers/no-such-server/reconnect` | 404 with a JSON `error` (the Reconnect button on `/mcp/servers` calls this for the selected server) |
 | K7 | `GET /api/gateway/alerts` | 200 with a JSON `logs` array (the operator alerts log; the Logs page shows it when its source selector is set to Alerts) |
-| K8 | `GET /api/report/assessment` | 200, `Cache-Control: no-store`; JSON `identity` with `name` (`ClawEh`), `version`, `build`, `platform`, `generated_at`, and a non-empty `assessment` array of `{action: bool, item, status}` — the PDF's security assessment rows in order. No credential-shaped value (`sk-…`, `xoxb-`, `xapp-`) anywhere in the body |
-| K9 | `curl -b jar $BASE/api/voice/stt`, then load `/voice` and read it **before clicking anything** | One backend row per `stt[]` entry, each with its provider selected, and no *No transcription backends configured* line; with none configured, that line and no rows. Enabled backends are tried in order: the first usable one is labelled **Primary**, every later usable one **Fallback**; one whose provider is missing from `providers[]` reads *Not used: provider not configured.*, one whose provider has `ready: false` reads *Not used: provider has no API key.*, one with no model and a provider whose `default_model` is empty reads *Not used: needs a model.*; a disabled one carries no label. The page used to seed its rows from an empty list when the query was already cached, said nothing was configured, and the first **Add backend** then saved that empty list over the real configuration |
+| K8 | `GET /api/report/assessment` | 200, `Cache-Control: no-store`; JSON `identity` with `name` (the product name), `version`, `build`, `platform`, `generated_at`, and a non-empty `assessment` array of `{action: bool, item, status}` — the PDF's security assessment rows in order. No credential-shaped value (`sk-…`, `xoxb-`, `xapp-`) anywhere in the body |
+| K9 | `curl -b jar $BASE/api/task-models`, then load `/task-models` and read it **before clicking anything** | Six sections in order (**Generate text**, **Generate images**, **Text to speech**, **Transcription**, **Describe images**, **Classification**), each with one row per entry of its list (`task_models.text` … `task_models.classify`), in that order, and a *No models.* line exactly when the list is empty. A row is marked *<model>'s provider can't do this.* exactly when that model has `support` `"no"` for that list's use in `models[]`. Nothing may be saved by loading the page |
 | K10 | Open `/agent/bindings`, then click through the sidebar: **Services** → **MCP** → **Servers**, then **Config**, then **Network**, then **System**, reading each page before clicking anything on it | `/mcp/servers` lists every server in `tools.mcp.servers` (from `GET /api/config`) and shows *No external servers configured.* only when there are none; `/mcp/config` shows `mcp_host.listen` in **Listen Address** and `mcp_host.enabled` on **Enabled**; `/system` shows `backup.dest` in the backup destination and `agents.defaults.max_tokens` in **Max tokens**. Reached this way the config query is answered from the browser cache, and the three pages used to keep their empty defaults, which the next edit then saved over the real configuration |
 
 ## L. Setup wizard
@@ -250,7 +285,8 @@ covers it.
 ## N. Memory curation
 
 Creates a domain called `e2e-probe` in the first memory store, works inside it,
-and deletes it at the end. Nothing outside that domain is touched.
+and deletes it at the end; N17 imports a domain called `e2e-keywords` and
+deletes it again. Nothing outside those domains is touched.
 
 | ID | Process | Expected |
 |---|---|---|
@@ -270,6 +306,7 @@ and deletes it at the end. Nothing outside that domain is touched.
 | N14 | **Add memory** on the domain, type some text, **Add** | The memory is in the store with `origin: "user"` |
 | N15 | Retire a row, then click **Show retired** | It disappears from the default view and comes back behind the toggle. Without that it could never be restored |
 | N16 | `DELETE /api/memory/{id}/domains/{domain}` | `204`, and the probe domain is gone even with `include_retired=1` |
+| N17 | Merge-import a domain `e2e-keywords` with `keyword_triggers`, `auto_keywords` and `blocked_keywords` set, open `/memory` on that store, then delete the domain | The card shows three labelled lines, **Keywords**, **Keywords added automatically** and **Blocked keywords**, each with its own list, and no editable field. All three decide whether the domain loads, so the operator must be able to tell them apart |
 
 ## O. Status page
 
@@ -299,9 +336,9 @@ dev instance without stopping it; it is covered by unit tests only
 
 | ID | Process | Expected |
 |---|---|---|
-| P1 | In a fresh browser (no session), load `/agents` | Redirected to `/login?next=%2Fagents`. The card is headed **ClawEh** (the product name, not "Sign in"), shows the **Username** and **Password** fields and a **Sign in** button, and does **not** carry the line *Use the admin account created on the server*; no console errors. The frontend gate remembers where the visitor was going, so a bookmark still works after signing in. (With no admin account the same page instead reads **No admin account** and tells you to run `claw admin` on the server) |
+| P1 | In a fresh browser (no session), load `/agents` | Redirected to `/login?next=%2Fagents`. The card is headed by the product name (not "Sign in"), and the browser tab shows it as the title, shows the **Username** and **Password** fields and a **Sign in** button, and does **not** carry the line *Use the admin account created on the server*; no console errors. The frontend gate remembers where the visitor was going, so a bookmark still works after signing in. (With no admin account the same page instead reads **No admin account** and tells you to run `<binary_name> admin` on the server) |
 | P2 | On `/login`, enter the right username with a wrong password, **Sign in** | The form stays on `/login` and shows **Invalid username or password.** — one message for a bad username and a bad password alike, so the form never confirms which half was right. `GET /api/auth/status` from that browser still says `authenticated: false` |
-| P3 | **anonymous** `curl -i $BASE/api/config` | `401` with a JSON `error` (`authentication required`, or `no admin account` with a `claw admin` hint) and **no configuration in the body** |
+| P3 | **anonymous** `curl -i $BASE/api/config` | `401` with a JSON `error` (`authentication required`, or `no admin account` with a `<binary_name> admin` hint) and **no configuration in the body** |
 | P4 | `curl -b jar $BASE/api/auth/status` | `{"configured":true,"authenticated":true,"username":"<admin>"}` — the username is the one that signed in |
 | P5 | Sign in in a second browser, open `/agents`, click **Sign out** in the sidebar footer | The browser lands on `/login` with the form showing. From that browser `GET /api/auth/status` is `authenticated: false` and `GET /api/config` is `401`: the session ended on the server, not just in the browser |
 | P6 | Sign in in a second browser, open `/agents`, delete the session cookie (DevTools → Application → Cookies, or `context.clearCookies()`), then open the **Models** group in the sidebar and click **Models** | The browser lands on `/login?next=%2Fmodels` with the login form showing; no error state (`data-testid=route-error`) is rendered and the only console entry is the browser's own note about the refused (401) request. Signing in returns to `/models` |

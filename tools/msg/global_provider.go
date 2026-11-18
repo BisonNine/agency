@@ -4,6 +4,7 @@ import (
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/global"
 	"github.com/PivotLLM/ClawEh/tools"
+	"github.com/PivotLLM/ClawEh/tools/files"
 )
 
 // GlobalProvider exposes the msg tools through the transport-neutral global
@@ -44,14 +45,17 @@ func (globalMsgProvider) RegisterTools(deps global.Deps) []global.ToolDefinition
 	// yet wired). Its concrete type is *MessageTool, but it is handed to us as a
 	// tools.Tool, so we delegate through the Tool interface.
 
-	// msg_send_file: construct the real instance only when real config is present.
+	// msg_send_file: construct the real instance only when real config is
+	// present. It reads with the file tools' permissions for this workspace
+	// (a clone's is its source's), only for an agent granted a file-reading
+	// tool, and sends through the agent loop.
 	var sendFile *SendFileTool
 	if c != nil {
 		sendFile = NewSendFileTool(
-			cd.Workspace,
-			c.Agents.Defaults.RestrictToWorkspace,
+			files.NewReader(c, cd.Workspace),
+			CanReadFiles(cd.AgentCfg),
 			c.Agents.Defaults.GetMaxMediaSize(),
-			nil, // MediaStore injected later elsewhere
+			cd.Files,
 		)
 	}
 

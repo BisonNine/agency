@@ -16,9 +16,12 @@ produces a binary. It runs, in order:
 - `gofmt`/`gofumpt` formatting check (`make fmt-check`)
 - `go vet ./...`
 - `golangci-lint` (`make lint`)
-- `govulncheck ./...` (`make govulncheck`; installs a pinned binary into
-  `bin/` when missing, needs network access to the vulnerability database, and
-  fails the gate on a vulnerability reachable from the code)
+- the vulnerability scan (`make govulncheck`): `go.bison9.com/vulncheck` runs
+  the `govulncheck` on the PATH and fails the gate on a vulnerability the code
+  calls. One that has no fix yet can be excused in `b9.yaml` under
+  `govulncheck.ignore`, with its advisory ID, a reason and an optional end
+  date (`until`); after the date it fails again. Needs `govulncheck` installed
+  (`go install golang.org/x/vuln/cmd/govulncheck@latest`) and network access.
 - `./test.sh`, the suite proper (below)
 
 The exit code is 0 only when every stage passes.

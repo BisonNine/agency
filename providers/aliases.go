@@ -52,6 +52,7 @@ type (
 	ToolDefinition         = spawnllm.ToolDefinition
 	ToolFunctionDefinition = spawnllm.ToolFunctionDefinition
 	LLMResponse            = spawnllm.LLMResponse
+	GeneratedImage         = spawnllm.GeneratedImage
 	UsageInfo              = spawnllm.UsageInfo
 	DispatchStatus         = spawnllm.DispatchStatus
 	ContentBlock           = spawnllm.ContentBlock
@@ -69,6 +70,11 @@ const (
 	// TextDeltaOption is the options-map key for a providers.TextDeltaFunc; see
 	// TextDeltaFunc above.
 	TextDeltaOption = spawnllm.TextDeltaOption
+
+	// ToolChoiceOption is the options-map key for the request's tool choice:
+	// ToolChoiceNone keeps the tools declared but forbids calling them.
+	ToolChoiceOption = spawnllm.ToolChoiceOption
+	ToolChoiceNone   = spawnllm.ToolChoiceNone
 
 	FailoverAuth         = spawnllm.FailoverAuth
 	FailoverRateLimit    = spawnllm.FailoverRateLimit

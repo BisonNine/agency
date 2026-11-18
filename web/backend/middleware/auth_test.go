@@ -12,6 +12,7 @@ import (
 
 	"github.com/PivotLLM/ClawEh/internal/admin"
 	"github.com/PivotLLM/ClawEh/internal/audit"
+	"github.com/PivotLLM/ClawEh/internal/testbinary"
 	"github.com/PivotLLM/ClawEh/logger"
 )
 
@@ -24,7 +25,7 @@ const (
 func writeCreds(t *testing.T) string {
 	t.Helper()
 	path := admin.Path(t.TempDir())
-	if err := admin.Write(path, testUser, testPass); err != nil {
+	if err := admin.Write(path, testUser, testPass, admin.DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -64,6 +65,7 @@ func serve(h http.Handler, method, path string, cookie *http.Cookie) *httptest.R
 }
 
 func TestAuthStore_NoFileIsUnconfigured(t *testing.T) {
+	testbinary.Set(t, "alice-claw")
 	s := NewAuthStore(admin.Path(t.TempDir()))
 	if s.Configured() {
 		t.Fatal("Configured() = true with no credentials file")
@@ -76,7 +78,7 @@ func TestAuthStore_NoFileIsUnconfigured(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, `"no admin account"`) || !strings.Contains(body, `"run: claw admin"`) {
+	if body := rec.Body.String(); !strings.Contains(body, `"no admin account"`) || !strings.Contains(body, `"run: alice-claw admin"`) {
 		t.Fatalf("body = %s", body)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
@@ -194,7 +196,7 @@ func TestAuthStore_Username(t *testing.T) {
 	if got := s.Username(); got != "" {
 		t.Fatalf("Username() with no credentials file = %q, want empty", got)
 	}
-	if err := admin.Write(path, "bob", testPass); err != nil {
+	if err := admin.Write(path, "bob", testPass, admin.DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.Username(); got != "bob" {
@@ -214,7 +216,7 @@ func TestAuthStore_ReloadRevokesOnChange(t *testing.T) {
 	}
 
 	// New password: everyone is signed out and only the new password works.
-	if err := admin.Write(path, testUser, "a different fine password"); err != nil {
+	if err := admin.Write(path, testUser, "a different fine password", admin.DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}
 	s.Reload()
@@ -249,7 +251,7 @@ func TestAuthStore_WatchReloadsOnFileChange(t *testing.T) {
 
 	go s.Watch(t.Context(), 5*time.Millisecond)
 
-	if err := admin.Write(path, testUser, "a different fine password"); err != nil {
+	if err := admin.Write(path, testUser, "a different fine password", admin.DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}
 	// mtime resolution can be coarse; make the change unmistakable.
@@ -345,8 +347,8 @@ func TestAuth_SessionCookieAdmitsEitherName(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("forged cookie: status = %d, want 401", rec.Code)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, "authentication required") || strings.Contains(body, "claw admin") {
-		t.Fatalf("configured install must not hint at claw admin: %s", body)
+	if body := rec.Body.String(); !strings.Contains(body, "authentication required") || strings.Contains(body, `"hint"`) {
+		t.Fatalf("configured install must not carry the admin hint: %s", body)
 	}
 }
 

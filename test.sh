@@ -583,6 +583,7 @@ PY
         "fusion": true,
         "forum": true,
         "ccv3": true,
+        "classifiers": { "enabled": true },
         $CLI_LIVE_ALLOW
         "mcp_tools": ["wxca"]
       },
@@ -648,6 +649,7 @@ PY
       "file_delete_bytes",
       "file_append",
       "file_list",
+      "file_glob",
       "file_search_lines",
       "file_search_bytes",
       "file_copy",
@@ -710,6 +712,17 @@ PY
       "forum_cancel",
       "forum_results",
       "forum_delete",
+      "classifier_readme",
+      "classifier_list",
+      "classifier_get",
+      "classifier_create",
+      "classifier_update",
+      "classifier_delete",
+      "classifier_validate",
+      "classifier_status",
+      "classifier_test",
+      "classifier_rerun",
+      "classifier_activity",
       "wxca"
     ]
   }
@@ -830,6 +843,40 @@ EOF
                         echo "${DIM}--- gateway log (tail) ---${NC}"
                         tail -n 40 "$INTEG_LOG" | sed 's/^/    /'
                         integ_fail "probe suite (tests/test_mcpserver.sh) reported failures; see its output above"
+                    fi
+
+                    # Classifiers end to end: its own gateway, a stub model and
+                    # a stub Telegram chat (hermetic), driven over MCP.
+                    echo ""
+                    echo "${BOLD}--- Classifiers end to end ---${NC}"
+                    echo ""
+                    if PROBE_PATH="$PROBE_BIN" bash "$SCRIPT_DIR/tests/test_classifier.sh" "$INTEG_BIN"; then
+                        INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                    else
+                        integ_fail "classifiers end to end (tests/test_classifier.sh) failed; see its output above"
+                    fi
+
+                    # Task models end to end: its own gateway and a stub
+                    # vendor (hermetic), agent_spawn driven over MCP.
+                    echo ""
+                    echo "${BOLD}--- Task models end to end ---${NC}"
+                    echo ""
+                    if PROBE_PATH="$PROBE_BIN" bash "$SCRIPT_DIR/tests/test_task_models.sh" "$INTEG_BIN"; then
+                        INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                    else
+                        integ_fail "task models end to end (tests/test_task_models.sh) failed; see its output above"
+                    fi
+
+                    # The coding harness end to end: its own gateway, a git
+                    # repository in the agent's files/ and a read-only
+                    # allowed folder, the coding tools driven over MCP.
+                    echo ""
+                    echo "${BOLD}--- Coding harness end to end ---${NC}"
+                    echo ""
+                    if PROBE_PATH="$PROBE_BIN" bash "$SCRIPT_DIR/tests/test_coding_harness.sh" "$INTEG_BIN"; then
+                        INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                    else
+                        integ_fail "coding harness end to end (tests/test_coding_harness.sh) failed; see its output above"
                     fi
 
                     # ---- Workspace re-population: delete alice's dir and restart ----

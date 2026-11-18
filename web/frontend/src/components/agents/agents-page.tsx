@@ -4,16 +4,16 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { CARDS_QUERY_KEY, getCards } from "@/api/cards"
 import {
   type AgentToolCatalogResponse,
   HUMAN_AGENTS_QUERY_KEY,
   getAgentTools,
   getAppConfig,
   getHumanAgents,
-  getIgnoredMounts,
+  getIgnoredAllowedFolders,
   patchAppConfig,
 } from "@/api/channels"
-import { CARDS_QUERY_KEY, getCards } from "@/api/cards"
 import { type ModelInfo, getModels } from "@/api/models"
 import { listCLIs } from "@/api/system"
 import { AgentCard } from "@/components/agents/agent-card"
@@ -22,10 +22,13 @@ import {
   type AgentEntry,
   type AgentsConfig,
   type SkillInfo,
+  TASK_GRANT_KINDS,
+  type TaskGrantKind,
   agentsPayload,
   applyMaestroEdits,
   asString,
   bindingViewsForAgent,
+  classifyModels,
   cliBypassWarnings,
   fetchSkills,
   internalToolsSummary,
@@ -33,7 +36,10 @@ import {
   parseAgentBindings,
   parseAgentsConfig,
   sameAgentId,
+  setTaskModelGrant,
   sortAgentList,
+  taskModelsFor,
+  toggleClassifiers,
 } from "@/components/agents/agent-model"
 import { FallbacksSelect } from "@/components/agents/model-selects"
 import { SkillsSelect } from "@/components/agents/skills-select"
@@ -97,6 +103,10 @@ export function AgentsPage() {
         agentsCfg: parseAgentsConfig(appConfig),
         bindings: parseAgentBindings(appConfig),
         rawModels: appConfig.models,
+        classifyModels: classifyModels(appConfig.task_models),
+        taskKindsWithModels: TASK_GRANT_KINDS.filter(
+          (k) => taskModelsFor(appConfig.task_models, k).length > 0,
+        ),
         rawProviders: appConfig.providers,
         clis,
         models: modelsData.models,
@@ -114,10 +124,10 @@ export function AgentsPage() {
     queryKey: HUMAN_AGENTS_QUERY_KEY,
     queryFn: getHumanAgents,
   })
-  // Saved mounts set aside for a reserved name; each is marked in its row.
-  const { data: ignoredMounts } = useQuery({
-    queryKey: ["agents-ignored-mounts"],
-    queryFn: getIgnoredMounts,
+  // Saved allowed folders the file tools skip; each is marked in its row.
+  const { data: ignoredFolders } = useQuery({
+    queryKey: ["agents-ignored-folders"],
+    queryFn: getIgnoredAllowedFolders,
   })
   // The character-card library, for each card's Character card select.
   const { data: cardsData } = useQuery({
@@ -127,7 +137,7 @@ export function AgentsPage() {
   const refreshAgentNotes = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: HUMAN_AGENTS_QUERY_KEY }),
-      queryClient.invalidateQueries({ queryKey: ["agents-ignored-mounts"] }),
+      queryClient.invalidateQueries({ queryKey: ["agents-ignored-folders"] }),
     ])
 
   const fetchError = loadError
@@ -173,6 +183,7 @@ export function AgentsPage() {
             }
           : null,
       temperature: edits.temperature,
+      max_tool_iterations: edits.maxToolIterations,
       event_retention_days: edits.eventRetentionDays,
       retired_retention_days: edits.retiredRetentionDays,
       summarization_models:
@@ -180,7 +191,7 @@ export function AgentsPage() {
           ? edits.summarizationModels
           : undefined,
       share_common: edits.shareCommon,
-      mounts: edits.mounts,
+      allowed_folders: edits.allowedFolders,
       mcp_tools: edits.mcpTools,
       deny_tools: edits.denyTools,
       allow_agents: edits.allowAgents,
@@ -268,6 +279,20 @@ export function AgentsPage() {
         enabled: a.maestro?.enabled !== true,
       },
     }))
+  const handleToggleClassifiers = (index: number) =>
+    toggleFlag(index, "classifiers", (a) =>
+      toggleClassifiers(a, loaded?.classifyModels ?? []),
+    )
+  const handleClassifierModelChange = (index: number, model: string) =>
+    toggleFlag(index, "classifiers", (a) => ({
+      ...a,
+      classifiers: { enabled: true, model },
+    }))
+  const handleTaskModelGrant = (
+    index: number,
+    kind: TaskGrantKind,
+    on: boolean,
+  ) => toggleFlag(index, "taskmodels", (a) => setTaskModelGrant(a, kind, on))
   const handleToggleFusion = (index: number) =>
     toggleFlag(index, "fusion", (a) => ({ ...a, fusion: !a.fusion }))
   const handleToggleForum = (index: number) =>
@@ -510,6 +535,13 @@ export function AgentsPage() {
                         edit(i, { message: { mins, count } })
                       }
                       onTemperatureChange={(tp) => edit(i, { temperature: tp })}
+                      maxToolIterations={e.maxToolIterations}
+                      defaultMaxToolIterations={
+                        agentsCfg.defaults.max_tool_iterations
+                      }
+                      onMaxToolIterationsChange={(v) =>
+                        edit(i, { maxToolIterations: v })
+                      }
                       eventRetentionDays={e.eventRetentionDays}
                       onEventRetentionDaysChange={(v) =>
                         edit(i, { eventRetentionDays: v })
@@ -534,6 +566,19 @@ export function AgentsPage() {
                       onMaestroChange={() => handleToggleMaestro(i)}
                       maestroSettings={e.maestro}
                       onMaestroSettingsChange={(ms) => edit(i, { maestro: ms })}
+                      classifiers={agent.classifiers?.enabled === true}
+                      onClassifiersChange={() => handleToggleClassifiers(i)}
+                      classifierModel={agent.classifiers?.model ?? ""}
+                      classifierModels={loaded?.classifyModels ?? []}
+                      taskModelGrant={agent.task_models ?? {}}
+                      taskKindsWithModels={loaded?.taskKindsWithModels ?? []}
+                      onTaskModelGrantChange={(kind, on) =>
+                        handleTaskModelGrant(i, kind, on)
+                      }
+                      taskModelsSaving={saving === `taskmodels-${i}`}
+                      onClassifierModelChange={(m) =>
+                        handleClassifierModelChange(i, m)
+                      }
                       fusion={agent.fusion === true}
                       onFusionChange={() => handleToggleFusion(i)}
                       forum={agent.forum === true}
@@ -547,20 +592,20 @@ export function AgentsPage() {
                       onCCv3Change={() => handleToggleCCv3(i)}
                       cogmem={agent.cogmem !== false}
                       onCogmemChange={() => handleToggleCogmem(i)}
-                      mounts={e.mounts}
-                      ignoredMounts={(ignoredMounts ?? [])
-                        .filter((m) => sameAgentId(m.agent, agent.id))
-                        .map((m) => m.mount)}
-                      onMountsChange={(ms) => edit(i, { mounts: ms })}
+                      allowedFolders={e.allowedFolders}
+                      ignoredFolders={(ignoredFolders ?? []).filter((f) =>
+                        sameAgentId(f.agent, agent.id),
+                      )}
+                      onAllowedFoldersChange={(fs) =>
+                        edit(i, { allowedFolders: fs })
+                      }
                       mcpTools={e.mcpTools}
                       onMCPToolsChange={(mt) => edit(i, { mcpTools: mt })}
                       denyTools={e.denyTools}
                       onDenyToolsChange={(dt) => edit(i, { denyTools: dt })}
                       allowAgents={e.allowAgents}
                       configuredAgents={agentsCfg.list ?? []}
-                      onAllowAgentsChange={(aa) =>
-                        edit(i, { allowAgents: aa })
-                      }
+                      onAllowAgentsChange={(aa) => edit(i, { allowAgents: aa })}
                       agentBindings={bindingViewsForAgent(bindings, agent.id)}
                       onSetDefaultBinding={(target, deliverTo) =>
                         handleSetDefaultBinding(agent.id, target, deliverTo)

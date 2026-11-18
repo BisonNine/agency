@@ -10,7 +10,7 @@ Most settings have a place in the WebUI, and that is the safer way to change the
 
 ClawEh writes a complete file on first start, with every section present and the known providers and models listed. That file is the reference for what can be set.
 
-The file holds API keys and tokens, so it must be readable only by its owner. ClawEh refuses to start if group or others can read it. The fix is `chmod 600 config.json`.
+The file holds API keys and tokens. ClawEh refuses to start if its mode allows more than `security.permissions.root.file_mode` (`0600` by default). The fix is `chmod 600 config.json`, or the mode the message names.
 
 ## How changes are applied
 
@@ -41,7 +41,7 @@ The reference is written back unchanged when the configuration is saved. A refer
 
 | Section | What it controls | Where to change it |
 |---|---|---|
-| `agents` | The agents (`agents.list`): their ids, names, models, tools, skills, switches and mounts. `agents.defaults` holds values every agent inherits, such as the default model list, timeouts and memory settings. `agents.base_dir` and `agents.common_dir` move the agent folders and the shared folder. | **Agents** page; **System** page, sections **Agent** and **Agent defaults**. See [Agents](../agents/index.md). |
+| `agents` | The agents (`agents.list`): their ids, names, models, tools, skills, switches and allowed folders (`allowed_folders`: `path`, `notify`, `note`). `agents.defaults` holds values every agent inherits, such as the default model list, timeouts and memory settings. `agents.base_dir` and `agents.common_dir` move the agent folders and the shared folder. | **Agents** page; **System** page, sections **Agent** and **Agent defaults**. See [Agents](../agents/index.md). |
 | `bindings` | Which agent answers which channel, chat or account, and each agent's default channel. Unbound messages go to the default agent. | **Bindings** page. See [Channels](../channels/index.md). |
 | `agent_mentions` | `triggers`: the characters that introduce an agent's name in a message (default `@`, `/` and `.`). The names each binding answers to are set on the binding. | `config.json` only; the names per binding on the **Bindings** page. |
 | `session` | `retention_days`: deletes idle conversation archives older than this. An agent's main conversation is never deleted. Absent means keep everything. | `config.json` only. |
@@ -52,13 +52,14 @@ The reference is written back unchanged when the configuration is saved. A refer
 | `gateway` | The WebUI listeners: HTTP host and port, HTTPS port and `tls` mode and certificate, `external_url`, `allowed_cidrs`, `lockout_exempt` and `trusted_proxies`. | **Network** page, or `claw network`. See [Network access](../admin/network.md) and [HTTPS and certificates](../admin/https.md). |
 | `tools` | Install-wide tool settings: web search providers, limits for shell commands, scheduled jobs, skills registries, the MCP servers ClawEh connects to (`tools.mcp.servers`). Which tools each agent gets is set on the agent. | **MCP** › **Servers** for MCP servers, **MCP** › **Config** for tool discovery, `config.json` for the rest. See [Tools and skills](../agents/tools-and-skills.md) and [MCP](../mcp.md). |
 | `devices` | Hardware device events, such as USB plug and unplug. Not the paired devices. | **System** page, **Devices**. |
-| `voice` | Speech-to-text for voice messages. | **Speech** page. |
+| `task_models` | Models for single calls, one ordered list per use (`text`, `image`, `tts`, `stt`, `vision`, `classify`). | **Task models** page. |
 | `logging` | Log level, log files, retention, and whether message content is logged. | **System** page, **Runtime** (retention); `config.json`. See [Logs](../admin/logs.md). |
-| `security` | `message_prefix`: text put in front of messages that arrive through an agent's external message endpoint. `permissions`: the modes of the folders and files ClawEh creates in the data directory (see [Logs](../admin/logs.md#letting-another-user-read-logs-or-agents)). | `config.json` only. |
+| `security` | `message_prefix`: text put in front of messages that arrive through an agent's external message endpoint. `permissions`: the exact modes of the folders and files in the data directory, one pair per area (see [File permissions](../admin/logs.md#file-permissions)). | `config.json` only. |
 | `mcp_host` | ClawEh's own MCP server, which the CLI providers use to call ClawEh's tools. It must listen on a loopback address. | **MCP** › **Config**. See [MCP](../mcp.md). |
 | `cooldown` | How long a failing model is paused ([Cooldowns](../providers/concepts.md#cooldowns)), in minutes, per kind of failure: `billing_auth_minutes` (default 30), `rate_limit_minutes` (10), `client_error_minutes` (10), `server_error_minutes` (10), `bad_request_minutes` (0). | `config.json` only. |
 | `backup` | The nightly backup: `enabled` (default on), `at` (default `03:00`), `retain_days` (default 30) and `dest` (default `backup/` in the data directory). | **System** page, **Backup**. See [Backup and restore](../admin/backup.md). |
 | `forum` | `forum.limits`: the install-wide maximums for forums. | **System** page, **Forums**. See [Forums](../forums/index.md). |
+| `classifiers` | `processed_days` and `limits`: how long classifiers remember handled items, and the install-wide maximums for a classifier definition. Each agent's switch and model are `agents.list[].classifiers`. | `config.json` only; the switch and model on the **Agents** page. See [Classifiers](../agents/classifiers.md#limits). |
 | `operator` | `operator.name`: your name, which the assistant is told for your web chat messages and for devices with no **User** of their own. Empty uses the admin login name. | **System** page, **Operator** (**Your name**). |
 | `default_config` | Marks a configuration that has never been saved. The setup wizard uses it. Leave it alone. | Set by ClawEh. |
 | `config_reload_interval_seconds` | How often ClawEh checks `config.json` for changes (default 5). | `config.json` only. |

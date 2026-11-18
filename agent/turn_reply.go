@@ -40,6 +40,10 @@ func (al *AgentLoop) runTurn(ctx, turnParent context.Context, msg bus.InboundMes
 	defer cancel()
 	var roundSent atomic.Bool
 	msgCtx := tools.WithRoundSentFlag(turnCtx, &roundSent)
+	// Work the turn leaves for after its reply (a deferred compaction) runs
+	// once runTurn has published it, or decided to send nothing.
+	msgCtx, afterReply := withAfterReply(msgCtx)
+	defer afterReply.run()
 
 	// outcome is set by the turn only when it did not end in a plain reply
 	// (an empty one); failure and cancellation are decided from err.
@@ -276,7 +280,9 @@ func decideTurnReply(end turnEnd) (replyAction, string, string) {
 		return replySend, "⚠️ Cancelled by /cancel. Some steps may have completed — ask me to continue if needed.", bus.OutcomeCancelled
 	case err != nil:
 		return replyTurnError, end.response, bus.OutcomeError
-	case end.response == "" || end.outcome == bus.OutcomeEmpty:
+	case (end.response == "" && end.outcome != bus.OutcomeOK) || end.outcome == bus.OutcomeEmpty:
+		// An empty response with outcome ok is a reply of images alone,
+		// already sent.
 		if end.replyRequired {
 			// The fallback advice is for a person; the sender gets the bare outcome.
 			return replySend, "", bus.OutcomeEmpty

@@ -78,6 +78,7 @@
           "window_count": 1
         },
         "temperature": 1.5,
+        "max_tool_iterations": 1,
         "global_cron": true,
         "maestro": {
           "enabled": true,
@@ -89,6 +90,16 @@
         "fusion": true,
         "forum": true,
         "ccv3": true,
+        "classifiers": {
+          "enabled": true,
+          "model": "x"
+        },
+        "task_models": {
+          "text": true,
+          "image": true,
+          "tts": true,
+          "stt": true
+        },
         "character_card": "x",
         "cogmem": true,
         "share_common": true,
@@ -169,6 +180,13 @@
           "notify_user": true,
           "arg_bytes": 1
         },
+        "allowed_folders": [
+          {
+            "path": "x",
+            "notify": true,
+            "note": "x"
+          }
+        ],
         "mounts": [
           {
             "name": "x",
@@ -197,10 +215,6 @@
         "x"
       ],
       "models": [
-        "x"
-      ],
-      "vision_model": "x",
-      "vision_model_fallbacks": [
         "x"
       ],
       "request_timeout": 1,
@@ -648,16 +662,6 @@
     "enabled": true,
     "monitor_usb": true
   },
-  "voice": {
-    "echo_transcription": true,
-    "stt": [
-      {
-        "provider": "x",
-        "enabled": true,
-        "model": "x"
-      }
-    ]
-  },
   "logging": {
     "file": true,
     "console": true,
@@ -672,8 +676,22 @@
   "security": {
     "message_prefix": "x",
     "permissions": {
-      "dir_mode": "x",
-      "file_mode": "x",
+      "root": {
+        "dir_mode": "x",
+        "file_mode": "x"
+      },
+      "secrets": {
+        "dir_mode": "x",
+        "file_mode": "x"
+      },
+      "bin": {
+        "dir_mode": "x",
+        "file_mode": "x"
+      },
+      "default": {
+        "dir_mode": "x",
+        "file_mode": "x"
+      },
       "logs": {
         "dir_mode": "x",
         "file_mode": "x"
@@ -728,6 +746,57 @@
       "call_timeout_seconds": 1,
       "max_parallel_calls": 1
     }
+  },
+  "classifiers": {
+    "processed_days": 1,
+    "limits": {
+      "max_rules": 1,
+      "max_prompt_chars": 1,
+      "max_item_chars": 1,
+      "max_items_per_run": 1,
+      "max_parallel": 1,
+      "max_activity_hours": 1,
+      "min_every_seconds": 1
+    }
+  },
+  "task_models": {
+    "result_text_chars": 1,
+    "echo_transcription": true,
+    "text": [
+      {
+        "model": "x"
+      }
+    ],
+    "image": [
+      {
+        "model": "x",
+        "image_api": "x"
+      }
+    ],
+    "tts": [
+      {
+        "model": "x",
+        "tts_defaults": {
+          "voice": "x",
+          "format": "x"
+        }
+      }
+    ],
+    "stt": [
+      {
+        "model": "x"
+      }
+    ],
+    "vision": [
+      {
+        "model": "x"
+      }
+    ],
+    "classify": [
+      {
+        "model": "x"
+      }
+    ]
   },
   "operator": {
     "name": "x"

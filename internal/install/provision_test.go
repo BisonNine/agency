@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/PivotLLM/ClawEh/internal/admin"
+	"github.com/PivotLLM/ClawEh/internal/testbinary"
 )
 
 // stubInstallSeams replaces the service registration with a recorder and the
@@ -33,6 +34,7 @@ func noTerminal(io.Writer) (*admin.Terminal, error) {
 }
 
 func TestProvisionAndRegister_NoAccountNoTerminalStopsBeforeService(t *testing.T) {
+	testbinary.Set(t, "alice-claw")
 	t.Setenv(admin.EnvUser, "")
 	t.Setenv(admin.EnvPassword, "")
 	calls := stubInstallSeams(t, noTerminal)
@@ -43,7 +45,7 @@ func TestProvisionAndRegister_NoAccountNoTerminalStopsBeforeService(t *testing.T
 	if !errors.Is(err, admin.ErrNoAccountNoTerminal) {
 		t.Fatalf("provisionAndRegister = %v; want ErrNoAccountNoTerminal", err)
 	}
-	for _, want := range []string{"export CLAW_ADMIN_USER and CLAW_ADMIN_PASSWORD", "`claw admin`", "was not registered or started"} {
+	for _, want := range []string{"export CLAW_ADMIN_USER and CLAW_ADMIN_PASSWORD", "`alice-claw admin`", "was not registered or started"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error lacks %q:\n%v", want, err)
 		}
@@ -76,7 +78,7 @@ func TestProvisionAndRegister_EnvAccountThenService(t *testing.T) {
 	if err != nil || fi.Mode().Perm() != 0o700 {
 		t.Fatalf("CLAW_HOME %v, err %v; want a 0700 directory", fi, err)
 	}
-	creds, err := admin.Load(admin.Path(clawHome))
+	creds, err := admin.Load(admin.Path(clawHome), admin.DefaultFileMode)
 	if err != nil || !creds.Verify("jane", "jane's long password") {
 		t.Fatalf("Load/Verify: %v", err)
 	}
@@ -87,7 +89,7 @@ func TestProvisionAndRegister_ExistingAccountKept(t *testing.T) {
 	t.Setenv(admin.EnvPassword, "")
 	calls := stubInstallSeams(t, noTerminal) // must not be needed
 	clawHome := t.TempDir()
-	if err := admin.Write(admin.Path(clawHome), "kim", "kim's long password"); err != nil {
+	if err := admin.Write(admin.Path(clawHome), "kim", "kim's long password", admin.DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}
 

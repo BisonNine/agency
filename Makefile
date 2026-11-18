@@ -1,4 +1,4 @@
-.PHONY: all build claw-auth install uninstall uninstall-all clean help require-golangci-lint require-govulncheck govulncheck test test-race test-coverage test-cover-html test-regression test-maestro-host generate vet fmt fmt-check lint fix deps update-deps check run frontend frontend-deps manual manual-deps manual-check frontend-typecheck frontend-lint frontend-test build-linux-arm build-linux-arm64 build-linux-mipsle build-pi-zero build-all release-checksums release-sign sbom
+.PHONY: all build claw-auth install uninstall uninstall-all clean help require-golangci-lint govulncheck test test-race test-coverage test-cover-html test-regression test-maestro-host generate vet fmt fmt-check lint fix deps update-deps check run frontend frontend-deps manual manual-deps manual-check frontend-typecheck frontend-lint frontend-test build-linux-arm build-linux-arm64 build-linux-mipsle build-pi-zero build-all release-checksums release-sign sbom
 
 # Binary names
 BINARY_NAME=claw
@@ -76,11 +76,12 @@ endef
 GOLANGCI_LINT?=$(shell command -v golangci-lint 2>/dev/null || echo "$$(go env GOPATH)/bin/golangci-lint")
 
 # Pinned Go tools, installed into the repo's own bin/ (gitignored) on first use
-# so every machine and CI run scans with the same version. Override the
-# binary path (GOVULNCHECK=, CYCLONEDX_GOMOD=) to use another copy.
+# so every machine and CI run uses the same version. Override the binary path
+# (CYCLONEDX_GOMOD=) to use another copy.
 TOOLS_BIN=$(CURDIR)/bin
-GOVULNCHECK_VERSION=v1.8.0
-GOVULNCHECK?=$(TOOLS_BIN)/govulncheck
+# vulncheck runs the govulncheck on the PATH and honours govulncheck.ignore in
+# b9.yaml. It is our own module, so it runs at its latest release, unpinned.
+VULNCHECK=go.bison9.com/vulncheck/cmd/vulncheck@latest
 CYCLONEDX_GOMOD_VERSION=v1.12.0
 CYCLONEDX_GOMOD?=$(TOOLS_BIN)/cyclonedx-gomod
 # minisign (https://jedisct1.github.io/minisign/; `brew install minisign` /
@@ -382,16 +383,10 @@ vet: generate
 test: manual-check generate fmt-check vet lint govulncheck
 	@./test.sh
 
-## govulncheck: Fail on a known vulnerability reachable from the code (golang.org/x/vuln, pinned; needs network for the vulnerability database).
-govulncheck: require-govulncheck
+## govulncheck: Fail on a known vulnerability the code calls, unless b9.yaml lists it under govulncheck.ignore with a reason and it is still in date. Needs govulncheck on the PATH (go install golang.org/x/vuln/cmd/govulncheck@latest) and network access.
+govulncheck:
 	@echo "Scanning for known vulnerabilities (govulncheck)..."
-	@$(GOVULNCHECK) ./...
-
-## require-govulncheck: install the pinned govulncheck into bin/ when the configured binary is missing.
-require-govulncheck:
-	@command -v "$(GOVULNCHECK)" >/dev/null 2>&1 || { \
-	  echo "Installing govulncheck $(GOVULNCHECK_VERSION) into $(TOOLS_BIN)..."; \
-	  GOBIN=$(TOOLS_BIN) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION); }
+	@go run $(VULNCHECK) .
 
 ## frontend-typecheck: Typecheck the SPA (tsc)
 frontend-typecheck: $(FRONTEND_NODE_MODULES)

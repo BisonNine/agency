@@ -3,11 +3,9 @@ package files
 import (
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/utils"
@@ -36,7 +34,7 @@ func ReadPolicy(c *config.Config) (restrict bool, allow []*regexp.Regexp) {
 // Reader reads files on an agent's behalf through exactly the fileSystem stack
 // the file tools use: workspace sandbox → allow-list patterns → read-scope
 // subdirs (the configured ones plus the always-readable tasks/, tmp/ and
-// forums/) → external mounts (maestro/, ...).
+// forums/) → allowed folders (and maestro/ with Maestro on).
 // A path a Reader can open is a path file_read would open, and nothing more —
 // the permission check is the same code, not a reimplementation of it.
 //
@@ -55,14 +53,14 @@ func NewReader(c *config.Config, workspace string) *Reader {
 }
 
 // fs builds the layered filesystem for one operation. It is rebuilt per call
-// rather than cached because the read-scope and per-workspace mounts are
+// rather than cached because the read-scope and per-workspace allowed folders are
 // installed when the file tools are registered, which may happen after a Reader
 // is constructed; building late means a Reader always sees current policy.
 func (r *Reader) fs() fileSystem {
 	return buildFs(r.workspace, r.restrict, r.allow)
 }
 
-// ReadFile reads path (workspace-relative, or a mount path like "maestro/x.md"),
+// ReadFile reads path (workspace-relative, or absolute in an allowed folder),
 // returning an access-denied error when the agent is not permitted to read it.
 func (r *Reader) ReadFile(path string) ([]byte, error) { return r.fs().ReadFile(path) }
 
@@ -70,8 +68,38 @@ func (r *Reader) ReadFile(path string) ([]byte, error) { return r.fs().ReadFile(
 // file (and read its mtime) before deciding to read it.
 func (r *Reader) Stat(path string) (os.FileInfo, error) { return r.fs().Stat(path) }
 
-// Open opens path for reading under the same permission rules as ReadFile.
-func (r *Reader) Open(path string) (fs.File, error) { return r.fs().Open(path) }
+// Open opens path for reading through the same file-system stack that
+// checks it, and returns only a regular file (a folder, FIFO or device is
+// refused; the open never waits). What protects the open depends on where
+// path leads:
+//   - the workspace (a confined agent) or an allowed folder: the open is
+//     made inside that place's os.Root, so a link swapped in after an
+//     earlier check (Resolve, Allowed, Stat) cannot lead it outside; a link
+//     inside the root is still followed;
+//   - a host path (an agent not confined to its workspace, an allow-listed
+//     path, the skills directory): the links are resolved first, the target
+//     must be a regular file, and it is opened with O_NOFOLLOW and compared
+//     with what was checked, so a link swapped in at the last moment is
+//     refused.
+//
+// A caller that checked a file itself compares the open file with it
+// (os.SameFile). An absolute path inside the workspace is taken as a
+// workspace path, as Allowed takes it. The caller closes the file.
+func (r *Reader) Open(path string) (*os.File, error) {
+	if filepath.IsAbs(path) {
+		path = r.virtualPath(filepath.Clean(path))
+	}
+	f, err := r.fs().Open(path)
+	if err != nil {
+		return nil, err
+	}
+	file, ok := f.(*os.File)
+	if !ok {
+		utils.CloseQuietly(f)
+		return nil, fmt.Errorf("open %q: not a host file", path)
+	}
+	return file, nil
+}
 
 // ReadFileLimit reads at most limit bytes of path and reports whether the file
 // held more. Unlike ReadFile it never materializes the whole file, so an
@@ -99,21 +127,17 @@ func (r *Reader) ReadFileLimit(path string, limit int) (data []byte, more bool, 
 	return data, false, nil
 }
 
-// Resolve returns the absolute host path of ref (workspace-relative, a mount
-// path like "maestro/x.md", or absolute) when the agent may read it through
-// the file tools, and an error otherwise (or when it does not exist).
+// Resolve returns the absolute host path of ref (workspace-relative, such as
+// "maestro/x.md", or absolute) when the agent may read it through the file
+// tools, and an error otherwise (or when it does not exist).
 func (r *Reader) Resolve(ref string) (string, error) {
-	mount, rel, isMount := r.mountOf(ref)
-	if !isMount && !r.restrict && !filepath.IsAbs(ref) {
+	if !r.restrict && !filepath.IsAbs(ref) {
 		// Unrestricted reads go straight to the host: anchor the path at
 		// the workspace, not the process's working directory.
 		ref = filepath.Join(r.workspace, ref)
 	}
 	if _, err := r.Stat(ref); err != nil {
 		return "", err
-	}
-	if isMount && !filepath.IsAbs(ref) {
-		return filepath.Join(mount.Path, rel), nil
 	}
 	if !filepath.IsAbs(ref) {
 		ref = filepath.Join(r.workspace, ref)
@@ -127,23 +151,18 @@ func (r *Reader) Resolve(ref string) (string, error) {
 
 // Allowed reports whether the agent may read the absolute host path abs
 // through the file tools: nil when it may, the refusal otherwise. A path
-// inside one of the workspace's mounts is checked as that mount's path, and
-// one inside the workspace as a workspace path; either root may be reached
-// through a symbolic link (abs is often a link's resolved target).
+// inside the workspace, which may be reached through a symbolic link (abs is
+// often a link's resolved target), is checked as a workspace path; a path in
+// an allowed folder is checked as it is.
 func (r *Reader) Allowed(abs string) error {
 	_, err := r.Stat(r.virtualPath(filepath.Clean(abs)))
 	return err
 }
 
-// virtualPath maps an absolute path inside a mount or the workspace (by its
-// configured path or its resolved one) to the path the file tools use for
-// it; any other path is returned as it is.
+// virtualPath maps an absolute path inside the workspace (by its configured
+// path or its resolved one) to the path the file tools use for it; any other
+// path is returned as it is.
 func (r *Reader) virtualPath(path string) string {
-	for _, m := range mountsForWorkspace(r.workspace) {
-		if rel, ok := under(m.Path, path); ok {
-			return filepath.ToSlash(filepath.Join(m.Name, rel))
-		}
-	}
 	if r.workspace != "" && r.restrict {
 		if rel, ok := under(r.workspace, path); ok {
 			return rel
@@ -165,16 +184,4 @@ func under(root, path string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// mountOf returns the workspace mount ref names and the path inside it.
-func (r *Reader) mountOf(ref string) (MountSpec, string, bool) {
-	p := strings.TrimPrefix(filepath.ToSlash(ref), "./")
-	name, rest, _ := strings.Cut(p, "/")
-	for _, m := range mountsForWorkspace(r.workspace) {
-		if m.Name == name {
-			return m, filepath.FromSlash(rest), true
-		}
-	}
-	return MountSpec{}, "", false
 }

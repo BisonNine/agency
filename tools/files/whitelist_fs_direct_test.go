@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 )
 
@@ -200,38 +199,16 @@ func TestBuildFs_Unrestricted(t *testing.T) {
 }
 
 func TestBuildFs_RestrictedNoPatterns(t *testing.T) {
-	fs := buildFs(t.TempDir(), true, nil)
+	fs := buildBaseFs(t.TempDir(), true, nil)
 	if _, ok := fs.(*sandboxFs); !ok {
-		t.Errorf("buildFs(restricted, no patterns) = %T, want *sandboxFs", fs)
+		t.Errorf("buildBaseFs(restricted, no patterns) = %T, want *sandboxFs", fs)
 	}
 }
 
 func TestBuildFs_RestrictedWithPatterns(t *testing.T) {
 	pattern := regexp.MustCompile(`/foo`)
-	fs := buildFs(t.TempDir(), true, []*regexp.Regexp{pattern})
+	fs := buildBaseFs(t.TempDir(), true, []*regexp.Regexp{pattern})
 	if _, ok := fs.(*whitelistFs); !ok {
-		t.Errorf("buildFs(restricted, with patterns) = %T, want *whitelistFs", fs)
-	}
-}
-
-func TestValidatePath_RelativeInWorkspace(t *testing.T) {
-	workspace := t.TempDir()
-
-	path, err := validatePath("myfile.txt", workspace, false)
-	if err != nil {
-		t.Fatalf("validatePath() error = %v", err)
-	}
-	if !strings.HasSuffix(path, "myfile.txt") {
-		t.Errorf("path = %q, want to end with 'myfile.txt'", path)
-	}
-}
-
-func TestValidatePath_AbsoluteOutsideWorkspace(t *testing.T) {
-	workspace := t.TempDir()
-	outside := t.TempDir()
-
-	_, err := validatePath(outside, workspace, true)
-	if err == nil {
-		t.Error("validatePath() should error for absolute path outside workspace")
+		t.Errorf("buildBaseFs(restricted, with patterns) = %T, want *whitelistFs", fs)
 	}
 }

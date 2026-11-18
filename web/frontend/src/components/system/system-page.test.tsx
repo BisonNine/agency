@@ -255,6 +255,33 @@ describe("SystemPage forum maximums", () => {
     }
   })
 
+  // 0 means "use the default", as in the config, so the inputs allow it and
+  // it is saved.
+  it("allows 0 (the default) in every field and saves it", async () => {
+    renderPage()
+    await screen.findByTestId("forum-max_calls")
+    for (const key of [
+      "max_calls",
+      "max_duration_seconds",
+      "call_timeout_seconds",
+      "max_parallel_calls",
+    ]) {
+      expect(
+        (screen.getByTestId(`forum-${key}`) as HTMLInputElement).min,
+      ).toBe("0")
+    }
+    fireEvent.change(screen.getByTestId("forum-max_parallel_calls"), {
+      target: { value: "0" },
+    })
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    expect(
+      (lastForumPatch() as { limits: Record<string, unknown> }).limits
+        .max_parallel_calls,
+    ).toBe(0)
+  })
+
   it("refuses a negative value without saving", async () => {
     renderPage()
     const maxCalls = await screen.findByTestId("forum-max_calls")
@@ -262,6 +289,175 @@ describe("SystemPage forum maximums", () => {
     // The label is the field's en.json entry (t returns the key here).
     await screen.findByText(
       "pages.config.forum_max_calls must be >= 0.",
+      undefined,
+      { timeout: 3000 },
+    )
+    expect(patched).not.toHaveBeenCalled()
+  })
+})
+
+/** The `classifiers` block of the most recent PATCH. */
+function lastClassifiersPatch() {
+  const patch = patched.mock.calls.at(-1)?.[0] as
+    { classifiers?: Record<string, unknown> } | undefined
+  return patch?.classifiers
+}
+
+describe("SystemPage classifier settings", () => {
+  // A field left blank shows the default and is saved as null (the key is
+  // removed, so the default applies); a value set in the config is shown
+  // and saved as a number.
+  it("shows set values and defaults, and saves them", async () => {
+    sample.classifiers = { processed_days: 10, limits: { max_rules: 40 } }
+    try {
+      renderPage()
+      const maxRules = (await screen.findByTestId(
+        "classifiers-max_rules",
+      )) as HTMLInputElement
+      expect(maxRules.value).toBe("40")
+      expect(
+        (screen.getByTestId("classifiers-processed_days") as HTMLInputElement)
+          .value,
+      ).toBe("10")
+      const interval = screen.getByTestId(
+        "classifiers-min_every_seconds",
+      ) as HTMLInputElement
+      expect(interval.value).toBe("")
+      expect(interval.placeholder).toBe("15")
+      expect(
+        (screen.getByTestId("classifiers-max_item_chars") as HTMLInputElement)
+          .placeholder,
+      ).toBe("50000")
+
+      fireEvent.change(interval, { target: { value: "60" } })
+      await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+        timeout: 3000,
+      })
+      expect(lastClassifiersPatch()).toEqual({
+        processed_days: 10,
+        limits: {
+          max_rules: 40,
+          max_prompt_chars: null,
+          max_item_chars: null,
+          max_items_per_run: null,
+          max_parallel: null,
+          max_activity_hours: null,
+          min_every_seconds: 60,
+        },
+      })
+    } finally {
+      delete sample.classifiers
+    }
+  })
+
+  it("saves each field under its own key", async () => {
+    renderPage()
+    const values: Record<string, string> = {
+      processed_days: "11",
+      max_rules: "12",
+      max_prompt_chars: "13",
+      max_item_chars: "14",
+      max_items_per_run: "15",
+      max_parallel: "16",
+      max_activity_hours: "17",
+      min_every_seconds: "18",
+    }
+    await screen.findByTestId("classifiers-max_rules")
+    for (const [key, value] of Object.entries(values)) {
+      fireEvent.change(screen.getByTestId(`classifiers-${key}`), {
+        target: { value },
+      })
+    }
+    await waitFor(
+      () =>
+        expect(lastClassifiersPatch()).toEqual({
+          processed_days: 11,
+          limits: {
+            max_rules: 12,
+            max_prompt_chars: 13,
+            max_item_chars: 14,
+            max_items_per_run: 15,
+            max_parallel: 16,
+            max_activity_hours: 17,
+            min_every_seconds: 18,
+          },
+        }),
+      { timeout: 3000 },
+    )
+  })
+
+  it("clearing a value that was set saves null, so the default applies", async () => {
+    sample.classifiers = { processed_days: 10, limits: { max_parallel: 4 } }
+    try {
+      renderPage()
+      const days = (await screen.findByTestId(
+        "classifiers-processed_days",
+      )) as HTMLInputElement
+      expect(days.value).toBe("10")
+      fireEvent.change(days, { target: { value: "" } })
+      await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+        timeout: 3000,
+      })
+      const patch = lastClassifiersPatch() as {
+        processed_days: unknown
+        limits: Record<string, unknown>
+      }
+      expect(patch.processed_days).toBeNull()
+      expect(patch.limits.max_parallel).toBe(4)
+    } finally {
+      delete sample.classifiers
+    }
+  })
+
+  it("refuses a value that is not a whole number without saving", async () => {
+    renderPage()
+    const days = await screen.findByTestId("classifiers-processed_days")
+    fireEvent.change(days, { target: { value: "1.5" } })
+    await screen.findByText(
+      "pages.config.classifiers_processed_days must be an integer.",
+      undefined,
+      { timeout: 3000 },
+    )
+    expect(patched).not.toHaveBeenCalled()
+  })
+
+  // 0 means "use the default", as in the config, so the inputs allow it and
+  // it is saved.
+  it("allows 0 (the default) in every field and saves it", async () => {
+    renderPage()
+    await screen.findByTestId("classifiers-max_rules")
+    for (const key of [
+      "processed_days",
+      "max_rules",
+      "max_prompt_chars",
+      "max_item_chars",
+      "max_items_per_run",
+      "max_parallel",
+      "max_activity_hours",
+      "min_every_seconds",
+    ]) {
+      expect(
+        (screen.getByTestId(`classifiers-${key}`) as HTMLInputElement).min,
+      ).toBe("0")
+    }
+    fireEvent.change(screen.getByTestId("classifiers-max_parallel"), {
+      target: { value: "0" },
+    })
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    expect(
+      (lastClassifiersPatch() as { limits: Record<string, unknown> }).limits
+        .max_parallel,
+    ).toBe(0)
+  })
+
+  it("refuses a negative value without saving", async () => {
+    renderPage()
+    const interval = await screen.findByTestId("classifiers-min_every_seconds")
+    fireEvent.change(interval, { target: { value: "-1" } })
+    await screen.findByText(
+      "pages.config.classifiers_min_every_seconds must be >= 0.",
       undefined,
       { timeout: 3000 },
     )

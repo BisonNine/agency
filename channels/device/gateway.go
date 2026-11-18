@@ -20,8 +20,10 @@ import (
 	"github.com/PivotLLM/ClawEh/bus"
 	"github.com/PivotLLM/ClawEh/channels"
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
 	"github.com/PivotLLM/ClawEh/global"
 	"github.com/PivotLLM/ClawEh/identity"
+	"github.com/PivotLLM/ClawEh/internal/perms"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/media"
 	"github.com/PivotLLM/ClawEh/routing"
@@ -71,7 +73,7 @@ type DeviceChannel struct {
 // and extraHosts (reserved for TLS certificate names).
 func NewDeviceChannel(cfg config.DeviceChannelConfig, dataDir string, logMessages bool, b *bus.MessageBus, gatewayExternalURL string, extraHosts []string) (*DeviceChannel, error) {
 	stateDir := filepath.Join(dataDir, global.InternalDir)
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+	if err := os.MkdirAll(stateDir, perms.SecretModes().Dir); err != nil {
 		return nil, fmt.Errorf("device: create state dir: %w", err)
 	}
 	store, err := OpenStore(context.Background(), filepath.Join(stateDir, "gateway.db"))
@@ -207,7 +209,7 @@ func (c *DeviceChannel) storeInboundAttachments(chatID, messageID string, atts [
 	}
 	mediaDir := utils.MediaTempDir()
 	dirMode, fileMode := utils.MediaModes()
-	if err := os.MkdirAll(mediaDir, dirMode); err != nil {
+	if err := fileutil.MkdirAllExact(mediaDir, dirMode); err != nil {
 		logger.WarnCF("device", "create media dir failed; dropping attachments", map[string]any{"dir": mediaDir, "error": err.Error()})
 		return nil
 	}
@@ -222,7 +224,7 @@ func (c *DeviceChannel) storeInboundAttachments(chatID, messageID string, atts [
 			continue
 		}
 		_, werr := f.Write(data)
-		if werr == nil && fileMode != 0o600 { // CreateTemp makes it 0600
+		if werr == nil { // exactly the media file mode, whatever CreateTemp gave
 			werr = f.Chmod(fileMode)
 		}
 		if closeErr := f.Close(); closeErr != nil && werr == nil {
@@ -312,7 +314,7 @@ func (c *DeviceChannel) AgentQuerier() AgentQuerier { return c.server.querier }
 // errNoCertificate is Start's refusal when channels.device.tls is on but the
 // gateway has no certificate manager to lend (HTTPS was off at start).
 var errNoCertificate = errors.New("device: channels.device.tls is on but there is no TLS certificate " +
-	"(gateway.tls.mode was \"off\" when ClawEh started); restart ClawEh after turning HTTPS on")
+	"(gateway.tls.mode was \"off\" when " + app.ShortName() + " started); restart " + app.ShortName() + " after turning HTTPS on")
 
 // SetTLSConfig hands the channel the gateway certificate manager's TLS
 // configuration (tlscert.Manager.TLSConfig), so the device listener serves

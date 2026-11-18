@@ -69,7 +69,7 @@ func gatewayCmd(debug bool) error {
 	// before anything that can raise one at startup: the dispatcher below
 	// alerts for a CLI provider running without its bypass flag, and an alert
 	// sent before Set reaches the no-op default and is lost.
-	operatorAlerter, alertsPath := newAlerter(baseDir, cfg.PermissionModes(config.AreaLogs).File)
+	operatorAlerter, alertsPath := newAlerter(baseDir, cfg.PermissionModes(config.AreaLogs))
 	alerts.Set(operatorAlerter)
 	refAlerts.report(operatorAlerter, bootDanglingRefs)
 
@@ -90,7 +90,16 @@ func gatewayCmd(debug bool) error {
 			closeForums(forumSvc)
 		}
 	}()
-	agentLoop, err := newGatewayAgentLoop(cfg, msgBus, provider, dispatcher, forumHost, operatorAlerter)
+	// So does the classifier service, closed the same way.
+	classifierHost := agent.NewClassifierHost()
+	classifierSvc := newClassifierService(classifierHost)
+	classifierOwned := true
+	defer func() {
+		if classifierOwned {
+			closeClassifiers(classifierSvc)
+		}
+	}()
+	agentLoop, err := newGatewayAgentLoop(cfg, msgBus, provider, dispatcher, forumHost, classifierHost, operatorAlerter)
 	if err != nil {
 		return err
 	}
@@ -103,7 +112,7 @@ func gatewayCmd(debug bool) error {
 	// still cleans up if startup fails below. Non-fatal: a gateway that cannot
 	// write the file should still serve.
 	if werr := pidfile.Write(cfg.DataDir()); werr != nil {
-		logger.WarnCF("gateway", "could not write the pid file; `claw status` will not see this instance",
+		logger.WarnCF("gateway", "could not write the pid file; `"+app.BinaryName()+" status` will not see this instance",
 			map[string]any{"error": werr.Error()})
 	}
 	defer pidfile.Remove(cfg.DataDir())
@@ -114,9 +123,11 @@ func gatewayCmd(debug bool) error {
 	}
 	services.Forum = forumSvc
 	forumOwned = false
+	services.Classifiers = classifierSvc
+	classifierOwned = false
 	wireGatewayAPI(services, agentLoop, fatal, alertsPath)
 
-	logger.InfoF("claw started", map[string]any{"http": services.HTTPHost.HTTPAddrs(), "https": services.HTTPHost.HTTPSAddrs()})
+	logger.InfoF(app.ShortName()+" started", map[string]any{"http": services.HTTPHost.HTTPAddrs(), "https": services.HTTPHost.HTTPSAddrs()})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -131,33 +142,40 @@ func gatewayCmd(debug bool) error {
 		}
 	}()
 	recoverForums(ctx, forumSvc, forumHost.Scopes, agentLoop.Started(), nil)
+	startClassifiers(ctx, classifierSvc, agentLoop.Started(), nil)
 
 	run, stopWatchers := startGatewayRun(cfg, debug, agentLoop, services, msgBus, provider, store, refAlerts, fatal)
 	defer stopWatchers()
 	return run.loop(ctx)
 }
 
-// openBootConfig refuses a config file other users can read, opens the config
-// store and builds the runtime copy the gateway starts on, then holds the data
-// directory to the permission modes that config sets. The store is the live
-// configuration from here on, shared with the WebUI API so a save through it
-// and the gateway's own reads never disagree. The runtime works on a pruned
-// private copy; the store keeps the full on-disk config so invalid entries can
-// be repaired through the WebUI. References to models that no longer exist
-// are removed from the file.
+// openBootConfig opens the config store, refuses a config file more open than
+// security.permissions.root.file_mode allows (a tighter one is set to it),
+// writes any security.permissions key the file lacks, builds the runtime copy
+// the gateway starts on, then holds the data directory to the permission
+// modes that config sets. The store is the live configuration from here on,
+// shared with the WebUI API so a save through it and the gateway's own reads
+// never disagree. The runtime works on a pruned private copy; the store keeps
+// the full on-disk config so invalid entries can be repaired through the
+// WebUI. References to models that no longer exist are removed from the file.
 func openBootConfig(baseDir, configPath string) (*config.Store, *config.Config, modelRefPrune, error) {
-	if err := perms.CheckConfig(configPath); err != nil {
-		return nil, nil, modelRefPrune{}, fmt.Errorf("startup aborted: %w", err)
-	}
 	store, err := openConfigStore(configPath)
 	if err != nil {
 		return nil, nil, modelRefPrune{}, fmt.Errorf("error loading config: %w", err)
 	}
+	// Before anything writes the file: a save would replace a loose file
+	// with a correct one and hide that something else changed it.
+	if err = perms.CheckConfig(configPath, store.Current().PermissionModes(config.AreaRoot).File, permsLogger()); err != nil {
+		return nil, nil, modelRefPrune{}, fmt.Errorf("startup aborted: %w", err)
+	}
+	savePermissionDefaults(store)
 	cfg, dangling, err := runtimeConfig(store)
 	if err != nil {
 		return nil, nil, modelRefPrune{}, fmt.Errorf("error loading config: %w", err)
 	}
-	if err := enforceDataDirPerms(baseDir, configPath, perms.PolicyFor(cfg)); err != nil {
+	warnOtherAccess(cfg)
+	perms.SetPolicy(perms.PolicyFor(cfg))
+	if err := enforceDataDirPerms(baseDir, perms.PolicyFor(cfg)); err != nil {
 		return nil, nil, modelRefPrune{}, err
 	}
 	return store, cfg, dangling, nil
@@ -210,7 +228,7 @@ func startGatewayRun(
 // format and level are applied once the config is loaded
 // (applyLoggingConfig).
 func startFileLogging(baseDir string) string {
-	logPath := filepath.Join(baseDir, "logs", "claw.log")
+	logPath := filepath.Join(baseDir, "logs", global.LogFileName)
 	logger.SetErrorLogLevel(logger.ParseLevel(global.ErrorLogLevel))
 	if err := logger.EnableFileLogging(logPath, false); err != nil {
 		logger.WarnCF("gateway", "Failed to enable file logging", map[string]any{"path": logPath, "error": err.Error()})
@@ -259,15 +277,16 @@ func bootProvider(cfg *config.Config) providers.LLMProvider {
 	return provider
 }
 
-// newGatewayAgentLoop creates the agent loop, binds the forum host to it and
-// logs what it started with. It refuses a configuration without a default
-// agent.
+// newGatewayAgentLoop creates the agent loop, binds the forum and classifier
+// hosts to it and logs what it started with. It refuses a configuration
+// without a default agent.
 func newGatewayAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
 	dispatcher *providers.ProviderDispatcher,
 	forumHost *agent.ForumHost,
+	classifierHost *agent.ClassifierHost,
 	operatorAlerter alerter.Alerter,
 ) (*agent.AgentLoop, error) {
 	agentLoop, err := agent.NewAgentLoop(cfg, msgBus, provider, dispatcher, agent.OwnsDataDir())
@@ -275,6 +294,7 @@ func newGatewayAgentLoop(
 		return nil, fmt.Errorf("error creating agent loop: %w", err)
 	}
 	forumHost.Bind(agentLoop)
+	classifierHost.Bind(agentLoop)
 	agentLoop.SetAlerter(operatorAlerter)
 	logModes := cfg.PermissionModes(config.AreaLogs)
 	agentLoop.SetDumpsDir(dump.Dir{
@@ -329,7 +349,7 @@ func setReloadTrigger(services *gatewayServices) chan chan error {
 		case forceReload <- done:
 			return <-done
 		case <-time.After(5 * time.Second):
-			return errors.New("claw is busy; reload not accepted")
+			return errors.New(app.ShortName() + " is busy; reload not accepted")
 		}
 	})
 	return forceReload
@@ -405,7 +425,7 @@ func (r *gatewayRun) reload(ctx context.Context, newCfg *config.Config) {
 	logger.Errorf("Config reload failed: %v", err)
 	r.agentLoop.Alerter().Send(alerter.Alert{
 		Title:       "Config reload failed",
-		Description: "the reload was aborted part way; check the claw log, services may not all be running",
+		Description: "the reload was aborted part way; check the " + app.ShortName() + " log, services may not all be running",
 		Details:     err.Error(),
 		EventID:     "config",
 	})

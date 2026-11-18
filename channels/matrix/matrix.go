@@ -289,8 +289,8 @@ func (s healthSyncer) OnFailedSync(res *mautrix.RespSync, err error) (time.Durat
 
 // runSync keeps the Matrix sync running until the channel stops, restarting it
 // with backoff whenever it ends. A revoked access token cannot be fixed by
-// retrying: it alerts at once, and the loop keeps retrying at its slowest rate
-// in case the token is restored.
+// retrying: it alerts at once, then once a day while it stays rejected, and
+// the loop keeps retrying at its slowest rate in case the token is restored.
 func (c *MatrixChannel) runSync() {
 	defer close(c.syncDone)
 	var backoff time.Duration
@@ -307,7 +307,7 @@ func (c *MatrixChannel) runSync() {
 			logger.ErrorCF("matrix", "Matrix rejected the access token", map[string]any{
 				"error": err.Error(),
 			})
-			c.Alert(alerter.Alert{
+			c.AlertLasting(alerter.Alert{
 				Title:       "Channel credentials rejected",
 				Description: c.Name() + ": the homeserver rejected the access token; no messages are received until it is replaced",
 				Details:     err.Error(),
@@ -448,7 +448,7 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 				"ref":   part.Ref,
 				"error": err.Error(),
 			})
-			continue
+			return fmt.Errorf("matrix send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
 		}
 
 		fileInfo, err := os.Stat(localPath)
@@ -457,7 +457,7 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 				"path":  localPath,
 				"error": err.Error(),
 			})
-			continue
+			return fmt.Errorf("matrix send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
 		}
 
 		file, err := os.Open(localPath) //nolint:gosec // path comes from the media store's own ref map (FileMediaStore.Resolve)
@@ -466,7 +466,7 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 				"path":  localPath,
 				"error": err.Error(),
 			})
-			continue
+			return fmt.Errorf("matrix send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
 		}
 
 		filename := strings.TrimSpace(part.Filename)

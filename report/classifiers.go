@@ -1,0 +1,211 @@
+// ClawEh
+// License: MIT
+
+package report
+
+import (
+	"context"
+	"path/filepath"
+	"time"
+
+	"github.com/PivotLLM/ClawEh/classifier"
+	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
+	"github.com/PivotLLM/ClawEh/config"
+)
+
+// maxClassifierErrorChars caps a last-run error in the Classifiers table.
+const maxClassifierErrorChars = 200
+
+// classifierCeilings is the install's classifier maximums (classifiers.limits
+// and classifiers.processed_days, defaults for unset fields), the ones a run
+// checks a definition against.
+func classifierCeilings(cfg *config.Config) classifier.Ceilings {
+	c := cfg.Classifiers.Effective()
+	return classifier.Ceilings{
+		MaxRules:         c.Limits.MaxRules,
+		MaxPromptChars:   c.Limits.MaxPromptChars,
+		MaxItemChars:     c.Limits.MaxItemChars,
+		MaxItemsPerRun:   c.Limits.MaxItemsPerRun,
+		MaxParallel:      c.Limits.MaxParallel,
+		MaxActivityHours: c.Limits.MaxActivityHours,
+		MinEverySeconds:  c.Limits.MinEverySeconds,
+		ProcessedDays:    c.ProcessedDays,
+	}
+}
+
+// classifiersSwitch is the "Allow classifiers" value: on or off, marked when
+// the agent represents a person (its classifiers are set aside).
+func classifiersSwitch(a *config.AgentConfig, human bool) string {
+	if human && a.ClassifiersEnabled() {
+		return "on (ignored: the agent represents a person)"
+	}
+	return onOff(a.ClassifiersEnabled())
+}
+
+// classifierModelState is the "Classifier model" value and whether it is
+// marked: with the switch on, a missing model or one that is not in
+// the Classification list (its classifiers fail every run until it is fixed).
+func classifierModelState(cfg *config.Config, a *config.AgentConfig) (string, bool) {
+	model := a.ClassifierModel()
+	if !a.ClassifiersEnabled() {
+		return orValue(model, none), false
+	}
+	switch {
+	case model == "" && len(cfg.TaskModels.ModelsFor(config.TaskUseClassify)) == 0:
+		return "(none set: " + classifyNote + ")", true
+	case model == "":
+		return "(none set)", true
+	case !cfg.ClassifierModelUsable(model):
+		return model + " (not in Classification)", true
+	}
+	return model, false
+}
+
+// classifiersDir is the agent's classifiers folder.
+func classifiersDir(cfg *config.Config, a *config.AgentConfig) string {
+	return filepath.Join(resolveWorkspace(cfg, a), classifierfs.BaseDirName)
+}
+
+// classifiersTable is one row per definition file in the agent's
+// classifiers folder, or ok=false when the switch is off and the folder has
+// none. Invalid files, files owned by another agent and runs that ended in
+// an error are highlighted, and so is a first row for a state.db that
+// cannot be opened (none of the agent's classifiers runs). "Error notices"
+// says whether failed runs are reported: on, off (report.errors false) or
+// muted until a time.
+func classifiersTable(ctx context.Context, cfg *config.Config, a *config.AgentConfig) (Table, bool) {
+	t := Table{Caption: "Classifiers", Columns: []string{"Classifier", "Enabled", "Dry run", "Model", "Last run", "Last run counts", "Last error", "Error notices"}}
+	dir := classifiersDir(cfg, a)
+	sums, err := classifier.Inspect(ctx, dir, classifierCeilings(cfg))
+	if err != nil {
+		t.Highlight = append(t.Highlight, 0)
+		t.Rows = append(t.Rows, row(none, "", "", "", "", "", "unreadable: "+err.Error(), ""))
+		return t, true
+	}
+	if len(sums) == 0 && !a.ClassifiersEnabled() {
+		return t, false
+	}
+	if problem := classifierStateProblem(ctx, dir); problem != "" {
+		t.Highlight = append(t.Highlight, len(t.Rows))
+		t.Rows = append(t.Rows, row(classifierfs.StateFile, "not run", "", "", "", "", "Cannot be opened: "+problem, ""))
+	}
+	if len(sums) == 0 && len(t.Rows) == 0 {
+		t.Rows = append(t.Rows, row(none, "", "", "", "", "", "", ""))
+		return t, true
+	}
+	model := orValue(a.ClassifierModel(), none)
+	for _, s := range sums {
+		enabled := yesNo(s.Enabled)
+		lastErr := ""
+		marked := false
+		switch {
+		case s.Owner != "" && !config.SameAgentID(s.Owner, a.ID):
+			enabled, lastErr, marked = "not run", "Owned by "+s.Owner+".", true
+		case s.Invalid != "":
+			enabled, lastErr, marked = "not run", "Invalid: "+s.Invalid, true
+		case s.Enabled && !a.ClassifiersEnabled():
+			enabled = "yes (Allow classifiers off)"
+		}
+		last, counts := "never", ""
+		if r := s.LastRun; r != nil {
+			at := r.EndedAt
+			if at.IsZero() {
+				at = r.StartedAt
+			}
+			last = at.Format(timeFormat) + ", " + r.Status
+			if r.DryRun {
+				last += " (dry run)"
+			}
+			counts = "new " + itoa(r.NewItems) + ", acted " + itoa(r.Acted) +
+				", unclassified " + itoa(r.Unclassified) + ", failed " + itoa(r.Failed)
+			if lastErr == "" {
+				lastErr = truncateText(r.Error, maxClassifierErrorChars)
+			}
+			if r.Status == classifier.RunError {
+				marked = true
+			}
+		}
+		if marked {
+			t.Highlight = append(t.Highlight, len(t.Rows))
+		}
+		t.Rows = append(t.Rows, row(s.ID, enabled, yesNo(s.DryRun), model, last, counts, lastErr, errorNotices(s)))
+	}
+	return t, true
+}
+
+// classifierStateProblem is why the classifiers folder dir's state.db
+// cannot be opened, "" when it can: what a static check finds
+// (classifier.CheckState), else the error the running service last met
+// opening it (classifier.LastStateError), with its time.
+func classifierStateProblem(ctx context.Context, dir string) string {
+	if err := classifier.CheckState(ctx, dir); err != nil {
+		return err.Error()
+	}
+	if p, ok := classifier.LastStateError(dir, time.Now()); ok {
+		return p.Error + " (at " + p.At.Format(timeFormat) + ")"
+	}
+	return ""
+}
+
+// errorNotices is the "Error notices" value of a classifier: "" for an
+// invalid file, else on, off or muted until a time.
+func errorNotices(s classifier.Summary) string {
+	switch {
+	case s.ErrorsReported == nil:
+		return ""
+	case !*s.ErrorsReported:
+		return "off"
+	case !s.ErrorsMutedUntil.IsZero():
+		return "muted until " + s.ErrorsMutedUntil.Format(timeFormat)
+	}
+	return "on"
+}
+
+// truncateText cuts s to at most n runes, marking the cut.
+func truncateText(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
+// classifierAssessment is the assessment rows for classifiers: per enabled
+// agent with the switch on (a person's agent excluded), a missing or
+// unusable classifier model (noting when the Classification list is empty at
+// all), a state.db that cannot be opened, and every definition file that
+// is not run because it is invalid.
+func classifierAssessment(ctx context.Context, cfg *config.Config) []assessRow {
+	var rows []assessRow
+	for _, a := range enabledAgents(cfg) {
+		if !a.ClassifiersEnabled() || cfg.IsHumanAgent(a.ID) {
+			continue
+		}
+		name := a.DisplayName()
+		noClassify := len(cfg.TaskModels.ModelsFor(config.TaskUseClassify)) == 0
+		switch model := a.ClassifierModel(); {
+		case model == "" && noClassify:
+			rows = append(rows, assessRow{true, "Classifier model (" + name + ")", classifyNote})
+		case model == "":
+			rows = append(rows, assessRow{true, "Classifier model (" + name + ")", "None set."})
+		case noClassify:
+			rows = append(rows, assessRow{true, "Classifier model (" + name + ")", model + " is not in Classification. " + classifyNote})
+		case !cfg.ClassifierModelUsable(model):
+			rows = append(rows, assessRow{true, "Classifier model (" + name + ")", model + " is not in Classification."})
+		}
+		dir := classifiersDir(cfg, a)
+		if problem := classifierStateProblem(ctx, dir); problem != "" {
+			rows = append(rows, assessRow{true, "Classifier state (" + name + ")", "Cannot be opened, so no classifier of this agent runs: " + problem})
+		}
+		sums, err := classifier.Inspect(ctx, dir, classifierCeilings(cfg))
+		if err != nil {
+			continue
+		}
+		for _, s := range sums {
+			if s.Invalid != "" {
+				rows = append(rows, assessRow{true, "Classifier (" + name + ": " + s.ID + ")", "Invalid, not run: " + s.Invalid})
+			}
+		}
+	}
+	return rows
+}

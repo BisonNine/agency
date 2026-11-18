@@ -7,6 +7,7 @@ package forum
 
 import (
 	"context"
+	"os"
 	"strings"
 	"time"
 )
@@ -263,10 +264,13 @@ func (systemClock) After(d time.Duration) <-chan time.Time { return time.After(d
 // Host bundles the host-provided dependencies the service needs. Cards,
 // OnStuck, Cooldown and Clock may be nil; the others are required.
 type Host struct {
-	Messenger Messenger
-	Agents    Agents
-	Notifier  Notifier
-	Logger    Logger
+	// ProductName is the host's name as the guide calls it in running prose
+	// ("Claw runs for you"). Empty: "the host".
+	ProductName string
+	Messenger   Messenger
+	Agents      Agents
+	Notifier    Notifier
+	Logger      Logger
 	// Cards, when set, renders the character cards participants name. A
 	// configuration naming a card on a host without it fails preflight.
 	Cards Cards
@@ -292,4 +296,9 @@ type Host struct {
 	// Clock, when set, replaces the system clock for the runs' holds, call
 	// timeouts and run deadline (tests).
 	Clock Clock
+	// Modes, when set, gives the exact folder and file modes a forum under
+	// base (a scope's BaseDirectory) creates its folders and files with. It
+	// is read whenever a forum is created or opened, so a host can follow
+	// its current configuration. Unset or zero means 0700/0600.
+	Modes func(base string) (dir, file os.FileMode)
 }

@@ -4,12 +4,14 @@
 package files
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/utils"
 )
 
 // readerConfig builds a config with the workspace restrictions the reader is
@@ -75,44 +77,46 @@ func TestReaderDeniesTraversalAndAbsolutePaths(t *testing.T) {
 	}
 }
 
-// Mounts (e.g. the auto maestro/ tree) are readable through the Reader, so a
-// memory may attach a document that lives outside the workspace but inside a
-// mount the agent already has.
-func TestReaderReadsThroughMount(t *testing.T) {
+// Allowed folders and maestro/ are readable through the Reader, so a memory
+// may attach a document that lives outside the workspace but inside a folder
+// the agent already has.
+func TestReaderReadsAllowedFolders(t *testing.T) {
 	ws := t.TempDir()
-	mountDir := t.TempDir()
-	writeFile(t, filepath.Join(mountDir, "style.md"), "mounted doc")
+	src := t.TempDir()
+	writeFile(t, filepath.Join(src, "style.md"), "folder doc")
+	writeFile(t, filepath.Join(ws, "maestro", "plan.md"), "maestro doc")
 	SetReadScopeSubdirs([]string{"files"})
 	defer SetReadScopeSubdirs(nil)
-	SetMountsForWorkspace(ws, []MountSpec{{Name: "maestro", Path: mountDir}})
-	defer SetMountsForWorkspace(ws, nil)
+	allowFolders(t, ws, src, filepath.Join(ws, "maestro"))
 
-	got, err := NewReader(readerConfig(), ws).ReadFile("maestro/style.md")
-	if err != nil {
-		t.Fatalf("read through mount: %v", err)
+	r := NewReader(readerConfig(), ws)
+	if got, err := r.ReadFile(filepath.Join(src, "style.md")); err != nil || string(got) != "folder doc" {
+		t.Fatalf("read in allowed folder: %q %v", got, err)
 	}
-	if string(got) != "mounted doc" {
-		t.Fatalf("unexpected content: %q", got)
+	if got, err := r.ReadFile("maestro/plan.md"); err != nil || string(got) != "maestro doc" {
+		t.Fatalf("read maestro/: %q %v", got, err)
 	}
 }
 
-// A mount registered after the Reader was constructed must still be visible:
-// the file tools install mounts at registration time, which can happen later.
-func TestReaderPicksUpLateRegisteredMount(t *testing.T) {
+// A folder registered after the Reader was constructed must still be
+// visible: the file tools install folders at registration time, which can
+// happen later.
+func TestReaderPicksUpLateRegisteredFolder(t *testing.T) {
 	ws := t.TempDir()
-	mountDir := t.TempDir()
-	writeFile(t, filepath.Join(mountDir, "late.md"), "late doc")
+	src := t.TempDir()
+	writeFile(t, filepath.Join(src, "late.md"), "late doc")
+	SetReadScopeSubdirs([]string{"files"})
+	defer SetReadScopeSubdirs(nil)
 
 	r := NewReader(readerConfig(), ws)
-	if _, err := r.ReadFile("maestro/late.md"); err == nil {
-		t.Fatal("expected failure before the mount exists")
+	if _, err := r.ReadFile(filepath.Join(src, "late.md")); err == nil {
+		t.Fatal("expected failure before the folder is allowed")
 	}
 
-	SetMountsForWorkspace(ws, []MountSpec{{Name: "maestro", Path: mountDir}})
-	defer SetMountsForWorkspace(ws, nil)
+	allowFolders(t, ws, src)
 
-	if _, err := r.ReadFile("maestro/late.md"); err != nil {
-		t.Fatalf("late mount not honored: %v", err)
+	if _, err := r.ReadFile(filepath.Join(src, "late.md")); err != nil {
+		t.Fatalf("late folder not honored: %v", err)
 	}
 }
 
@@ -157,8 +161,8 @@ func TestReadFileLimitRespectsPermissions(t *testing.T) {
 }
 
 // Resolve gives the host path of what the agent may read (a workspace path or
-// a mount path) and refuses the rest; Allowed checks a host path the same way,
-// inside a mount as that mount's path.
+// one in an allowed folder) and refuses the rest; Allowed checks a host path
+// the same way.
 func TestReaderResolveAndAllowed(t *testing.T) {
 	ws := t.TempDir()
 	mountDir := t.TempDir()
@@ -169,13 +173,13 @@ func TestReaderResolveAndAllowed(t *testing.T) {
 	writeFile(t, outside, "{}")
 	SetReadScopeSubdirs([]string{"files"})
 	defer SetReadScopeSubdirs(nil)
-	SetMountsForWorkspace(ws, []MountSpec{{Name: "library", Path: mountDir}})
-	defer SetMountsForWorkspace(ws, nil)
+	allowFolders(t, ws, mountDir)
 	r := NewReader(readerConfig(), ws)
 
+	brief := filepath.Join(mountDir, "refs", "brief.md")
 	for ref, want := range map[string]string{
-		"files/forum.json":      filepath.Join(ws, "files", "forum.json"),
-		"library/refs/brief.md": filepath.Join(mountDir, "refs", "brief.md"),
+		"files/forum.json": filepath.Join(ws, "files", "forum.json"),
+		brief:              brief,
 	} {
 		got, err := r.Resolve(ref)
 		if err != nil || got != want {
@@ -220,5 +224,83 @@ func TestReaderAllowedThroughSymlinkedWorkspace(t *testing.T) {
 	}
 	if got, err := r.Resolve("files/brief.md"); err != nil || got != filepath.Join(link, "files", "brief.md") {
 		t.Errorf("Resolve = %q, %v", got, err)
+	}
+}
+
+// Open reads what the agent may read (a workspace path, by its relative or
+// absolute name, also through a linked workspace, or a file in an allowed
+// folder) and refuses the rest.
+func TestReaderOpen(t *testing.T) {
+	target := t.TempDir()
+	ws := filepath.Join(t.TempDir(), "ws")
+	if err := os.Symlink(target, ws); err != nil {
+		t.Fatal(err)
+	}
+	folder := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.md")
+	writeFile(t, filepath.Join(target, "files", "brief.md"), "brief")
+	writeFile(t, filepath.Join(target, "secrets", "keys.md"), "nope")
+	writeFile(t, filepath.Join(folder, "doc.md"), "doc")
+	writeFile(t, outside, "host")
+	SetReadScopeSubdirs([]string{"files"})
+	defer SetReadScopeSubdirs(nil)
+	allowFolders(t, ws, folder)
+	r := NewReader(readerConfig(), ws)
+
+	for p, want := range map[string]string{
+		"files/brief.md":                           "brief",
+		filepath.Join(ws, "files", "brief.md"):     "brief",
+		filepath.Join(target, "files", "brief.md"): "brief",
+		filepath.Join(folder, "doc.md"):            "doc",
+	} {
+		f, err := r.Open(p)
+		if err != nil {
+			t.Errorf("Open(%q) = %v", p, err)
+			continue
+		}
+		data, err := io.ReadAll(f)
+		utils.CloseQuietly(f)
+		if err != nil || string(data) != want {
+			t.Errorf("Open(%q) read %q, %v; want %q", p, data, err, want)
+		}
+	}
+	for _, p := range []string{"secrets/keys.md", "../outside.md", outside, filepath.Join(target, "secrets", "keys.md")} {
+		if f, err := r.Open(p); err == nil {
+			utils.CloseQuietly(f)
+			t.Errorf("Open(%q) succeeded, want a refusal", p)
+		}
+	}
+}
+
+// A file checked as readable and then replaced by a link leading out of the
+// workspace or out of an allowed folder cannot be read: the open goes
+// through the same sandbox as the check, not through the host path.
+func TestReaderOpen_LinkSwappedAfterCheck(t *testing.T) {
+	ws := t.TempDir()
+	folder := t.TempDir()
+	secret := filepath.Join(t.TempDir(), "secret.md")
+	writeFile(t, secret, "secret")
+	inWs := filepath.Join(ws, "files", "brief.md")
+	inFolder := filepath.Join(folder, "doc.md")
+	writeFile(t, inWs, "brief")
+	writeFile(t, inFolder, "doc")
+	allowFolders(t, ws, folder)
+	r := NewReader(readerConfig(), ws)
+
+	for _, abs := range []string{inWs, inFolder} {
+		if err := r.Allowed(abs); err != nil {
+			t.Fatalf("Allowed(%q) = %v before the swap", abs, err)
+		}
+		if err := os.Remove(abs); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(secret, abs); err != nil {
+			t.Fatal(err)
+		}
+		if f, err := r.Open(abs); err == nil {
+			data, rerr := io.ReadAll(f)
+			utils.CloseQuietly(f)
+			t.Errorf("Open(%q) after the swap read %q (%v), want a refusal", abs, data, rerr)
+		}
 	}
 }

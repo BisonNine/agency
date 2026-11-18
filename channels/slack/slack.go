@@ -104,8 +104,8 @@ func (c *SlackChannel) Start(ctx context.Context) error {
 // retries a failing connect itself, but RunContext returns when an established
 // connection drops or the token is rejected and leaves retrying that to the
 // caller, so it is re-run here with backoff. A rejected token cannot be fixed
-// by retrying: it alerts at once, and the loop keeps retrying at its slowest
-// rate in case the token is restored.
+// by retrying: it alerts at once, then once a day while it stays rejected, and
+// the loop keeps retrying at its slowest rate in case the token is restored.
 func (c *SlackChannel) runSocket() {
 	var backoff time.Duration
 	for {
@@ -119,7 +119,7 @@ func (c *SlackChannel) runSocket() {
 			logger.ErrorCF("slack", "Slack rejected the app token", map[string]any{
 				"error": err.Error(),
 			})
-			c.Alert(alerter.Alert{
+			c.AlertLasting(alerter.Alert{
 				Title:       "Channel credentials rejected",
 				Description: c.Name() + ": Slack rejected the app token; no messages are received until it is replaced",
 				Details:     err.Error(),
@@ -254,25 +254,99 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		return sendErr
 	}
 
-	ref, _ := c.pendingAcks.LoadAndDelete(msg.OriginalMessageID)
-	if msgRef, ok := ref.(slackMessageRef); ok {
-		go func() {
-			if err := c.api.AddReaction("white_check_mark", slack.ItemRef{
-				Channel:   msgRef.ChannelID,
-				Timestamp: msgRef.Timestamp,
-			}); err != nil {
-				logger.DebugCF("slack", "Failed to add reaction", map[string]any{
-					"channel_id": msgRef.ChannelID, "error": err.Error(),
-				})
-			}
-		}()
-	}
+	c.acknowledge(msg.OriginalMessageID)
 
 	logger.DebugCF("slack", "Message sent", map[string]any{
 		"channel_id": channelID,
 		"thread_ts":  threadTS,
 	})
 
+	return nil
+}
+
+// acknowledge marks the inbound message a reply answered with a check mark,
+// once.
+func (c *SlackChannel) acknowledge(originalMessageID string) {
+	ref, _ := c.pendingAcks.LoadAndDelete(originalMessageID)
+	msgRef, ok := ref.(slackMessageRef)
+	if !ok {
+		return
+	}
+	go func() {
+		if err := c.api.AddReaction("white_check_mark", slack.ItemRef{
+			Channel:   msgRef.ChannelID,
+			Timestamp: msgRef.Timestamp,
+		}); err != nil {
+			logger.DebugCF("slack", "Failed to add reaction", map[string]any{
+				"channel_id": msgRef.ChannelID, "error": err.Error(),
+			})
+		}
+	}()
+}
+
+// defaultPlaceholderText is the placeholder shown when the config sets none.
+const defaultPlaceholderText = "Thinking... 💭"
+
+// SendPlaceholder implements channels.PlaceholderCapable. It posts the
+// placeholder where the reply will go (the thread, when the chat is one), to
+// be edited into progress updates and then the reply.
+func (c *SlackChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	if !c.config.Placeholder.Enabled {
+		return "", nil
+	}
+	text := c.config.Placeholder.Text
+	if text == "" {
+		text = defaultPlaceholderText
+	}
+	channelID, threadTS := parseSlackChatID(chatID)
+	if channelID == "" {
+		return "", fmt.Errorf("invalid slack chat ID: %s", chatID)
+	}
+	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+	if threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(threadTS))
+	}
+	_, ts, err := c.api.PostMessageContext(ctx, channelID, opts...)
+	if err != nil {
+		return "", classifySendErr("slack placeholder", err)
+	}
+	return ts, nil
+}
+
+// EditMessage implements channels.MessageEditor: it replaces the text of a
+// message the app posted (a placeholder) with content.
+func (c *SlackChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	channelID, _ := parseSlackChatID(chatID)
+	if channelID == "" {
+		return fmt.Errorf("invalid slack chat ID: %s", chatID)
+	}
+	text := slack.MsgOptionText(mdhelper.FormatTables(markdownToMrkdwn(content)), false)
+	if _, _, _, err := c.api.UpdateMessageContext(ctx, channelID, messageID, text); err != nil {
+		return classifySendErr("slack edit", err)
+	}
+	return nil
+}
+
+// ReplacePlaceholder implements channels.PlaceholderReplacer: the reply
+// replaces the placeholder and acknowledges the inbound message, as Send does.
+func (c *SlackChannel) ReplacePlaceholder(ctx context.Context, placeholderID string, msg bus.OutboundMessage) error {
+	if err := c.EditMessage(ctx, msg.ChatID, placeholderID, msg.Content); err != nil {
+		return err
+	}
+	c.acknowledge(msg.OriginalMessageID)
+	return nil
+}
+
+// DeleteMessage implements channels.MessageDeleter: it removes a message the
+// app posted (a placeholder whose turn sent no reply).
+func (c *SlackChannel) DeleteMessage(ctx context.Context, chatID, messageID string) error {
+	channelID, _ := parseSlackChatID(chatID)
+	if channelID == "" {
+		return fmt.Errorf("invalid slack chat ID: %s", chatID)
+	}
+	if _, _, err := c.api.DeleteMessageContext(ctx, channelID, messageID); err != nil {
+		return classifySendErr("slack delete", err)
+	}
 	return nil
 }
 
@@ -305,7 +379,8 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 		return channels.ErrNotRunning
 	}
 
-	channelID, _ := parseSlackChatID(msg.ChatID)
+	// Files go where the text reply goes: into the thread, when the chat is one.
+	channelID, threadTS := parseSlackChatID(msg.ChatID)
 	if channelID == "" {
 		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
@@ -316,18 +391,18 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 	}
 
 	for _, part := range msg.Parts {
+		filename := part.Filename
+		if filename == "" {
+			filename = "file"
+		}
+
 		localPath, err := store.Resolve(part.Ref)
 		if err != nil {
 			logger.ErrorCF("slack", "Failed to resolve media ref", map[string]any{
 				"ref":   part.Ref,
 				"error": err.Error(),
 			})
-			continue
-		}
-
-		filename := part.Filename
-		if filename == "" {
-			filename = "file"
+			return fmt.Errorf("slack send media: %w: %s is no longer available", channels.ErrSendFailed, filename)
 		}
 
 		title := part.Caption
@@ -341,7 +416,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 				"filename": filename,
 				"error":    statErr.Error(),
 			})
-			return fmt.Errorf("slack send media: %w: %w", channels.ErrTemporary, statErr)
+			return fmt.Errorf("slack send media: %w: %s is no longer available", channels.ErrSendFailed, filename)
 		}
 		urlResp, uploadErr := c.api.GetUploadURLExternalContext(ctx, slack.GetUploadURLExternalParameters{
 			FileName: filename,
@@ -352,7 +427,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 				"filename": filename,
 				"error":    uploadErr.Error(),
 			})
-			return classifySendErr("slack send media", uploadErr)
+			return classifyMediaErr(uploadErr)
 		}
 		if uploadErr = c.api.UploadToURL(ctx, slack.UploadToURLParameters{
 			UploadURL: urlResp.UploadURL,
@@ -363,21 +438,38 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 				"filename": filename,
 				"error":    uploadErr.Error(),
 			})
-			return classifySendErr("slack send media", uploadErr)
+			return classifyMediaErr(uploadErr)
 		}
 		if _, uploadErr = c.api.CompleteUploadExternalContext(ctx, slack.CompleteUploadExternalParameters{
-			Files:   []slack.FileSummary{{ID: urlResp.FileID, Title: title}},
-			Channel: channelID,
+			Files:           []slack.FileSummary{{ID: urlResp.FileID, Title: title}},
+			Channel:         channelID,
+			ThreadTimestamp: threadTS,
 		}); uploadErr != nil {
 			logger.DebugCF("slack", "Failed to complete media upload", map[string]any{
 				"filename": filename,
 				"error":    uploadErr.Error(),
 			})
-			return classifySendErr("slack send media", uploadErr)
+			return classifyMediaErr(uploadErr)
 		}
 	}
 
 	return nil
+}
+
+// missingFilesScopeErrors are the Slack API errors of a Bot Token that may
+// not upload files: it lacks the files:write scope.
+var missingFilesScopeErrors = map[string]bool{
+	"missing_scope":          true,
+	"not_allowed_token_type": true,
+}
+
+// classifyMediaErr is classifySendErr for a file upload, with a missing
+// files:write scope named, since the operator has to add it.
+func classifyMediaErr(err error) error {
+	if apiErr, ok := errors.AsType[slack.SlackErrorResponse](err); ok && missingFilesScopeErrors[apiErr.Err] {
+		return fmt.Errorf("the Slack bot is missing the files:write permission: %w: %w", channels.ErrSendFailed, err)
+	}
+	return classifySendErr("slack send media", err)
 }
 
 // recipientNotFoundErrors are the Slack API error codes of a conversation the

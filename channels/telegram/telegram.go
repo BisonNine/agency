@@ -262,13 +262,14 @@ const pollAlertMsgLimit = 200
 
 // alertPollFailure raises an alert for a long-poll failure that no retry can
 // fix: Telegram rejecting the bot token (401). The poll loop keeps retrying at
-// its slowest rate in case the token is restored; the alerter de-duplicates
-// the repeats on the channel name (EventID, filled in by Alert).
+// its slowest rate in case the token is restored, so the alert is raised once
+// and then once a day while the token stays rejected (AlertLasting), keyed by
+// the channel name (EventID, filled in by Alert).
 func (c *TelegramChannel) alertPollFailure(msg string) {
 	if r := []rune(msg); len(r) > pollAlertMsgLimit {
 		msg = string(r[:pollAlertMsgLimit]) + "..."
 	}
-	c.Alert(alerter.Alert{
+	c.AlertLasting(alerter.Alert{
 		Title:       "Telegram polling failed",
 		Description: c.Name() + ": " + msg,
 	})
@@ -448,7 +449,8 @@ func pollRetryWait(err error, backoff time.Duration) (wait, next time.Duration) 
 }
 
 // pollFailed records a failed getUpdates. A rejected token (401) cannot be
-// fixed by retrying, so it alerts at once; every other failure feeds the
+// fixed by retrying, so it alerts at once (then once a day while it lasts);
+// every other failure feeds the
 // channel's outage tracker, which alerts only if the outage outlasts
 // channels.ConnDownAlertAfter.
 func (c *TelegramChannel) pollFailed(err error, wait time.Duration) {
@@ -797,7 +799,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				"ref":   part.Ref,
 				"error": err.Error(),
 			})
-			continue
+			return fmt.Errorf("telegram send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
 		}
 
 		file, err := os.Open(localPath) //nolint:gosec // path comes from the media store's own ref map (FileMediaStore.Resolve)
@@ -806,7 +808,12 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				"path":  localPath,
 				"error": err.Error(),
 			})
-			continue
+			return fmt.Errorf("telegram send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
+		}
+		// The chat shows the part's file name, not the staged file's.
+		upload := telego.InputFile{File: file}
+		if part.Filename != "" {
+			upload = telego.InputFile{File: tu.NameReader(file, part.Filename)}
 		}
 
 		switch part.Type {
@@ -814,7 +821,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			params := &telego.SendPhotoParams{
 				ChatID:          tu.ID(chatID),
 				MessageThreadID: threadID,
-				Photo:           telego.InputFile{File: file},
+				Photo:           upload,
 				Caption:         part.Caption,
 			}
 			_, err = c.bot.SendPhoto(ctx, params)
@@ -822,7 +829,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			params := &telego.SendAudioParams{
 				ChatID:          tu.ID(chatID),
 				MessageThreadID: threadID,
-				Audio:           telego.InputFile{File: file},
+				Audio:           upload,
 				Caption:         part.Caption,
 			}
 			_, err = c.bot.SendAudio(ctx, params)
@@ -830,7 +837,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			params := &telego.SendVideoParams{
 				ChatID:          tu.ID(chatID),
 				MessageThreadID: threadID,
-				Video:           telego.InputFile{File: file},
+				Video:           upload,
 				Caption:         part.Caption,
 			}
 			_, err = c.bot.SendVideo(ctx, params)
@@ -838,7 +845,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			params := &telego.SendDocumentParams{
 				ChatID:          tu.ID(chatID),
 				MessageThreadID: threadID,
-				Document:        telego.InputFile{File: file},
+				Document:        upload,
 				Caption:         part.Caption,
 			}
 			_, err = c.bot.SendDocument(ctx, params)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/skills"
 	"github.com/PivotLLM/ClawEh/voice"
@@ -88,27 +89,22 @@ func registryRows(cfg *config.Config) [][]string {
 }
 
 func voiceRows(cfg *config.Config) [][]string {
-	active := "none: no enabled STT backend is usable"
-	if t := voice.DetectTranscriber(cfg); t != nil {
-		active = t.Name()
+	active := "none: no model in Transcription is usable"
+	if st := voice.TranscriptionStatus(cfg); len(st.Usable) > 0 {
+		active = strings.Join(st.Usable, ",")
 	}
-	rows := make([][]string, 0, 2+len(cfg.Voice.STT))
-	rows = append(rows,
+	return [][]string{
 		row("Active transcription chain", active),
-		row("Echo transcription to the sender", onOff(cfg.Voice.EchoTranscription)),
-	)
-	for _, s := range cfg.Voice.STT {
-		rows = append(rows, row("STT backend "+s.Provider, onOff(s.Enabled)+", model "+orValue(s.Model, "default")))
+		row("Echo transcription to the sender", onOff(cfg.TaskModels.EchoTranscription)),
 	}
-	return rows
 }
 
 func collectExternal(_ context.Context, cfg *config.Config, _ Environment) Section {
 	return Section{
 		Title: "External services",
 		Notes: []string{
-			"Programs and network services ClawEh starts or calls on the agents' behalf. Env and header values are " +
-				"never shown, only their names. Upgrades: `claw upgrade` downloads releases from api.github.com when " +
+			"Programs and network services " + app.ShortName() + " starts or calls on the agents' behalf. Env and header values are " +
+				"never shown, only their names. Upgrades: `" + app.BinaryName() + " upgrade` downloads releases from api.github.com when " +
 				"run by the operator; it has no configuration and no schedule.",
 		},
 		Tables: []Table{

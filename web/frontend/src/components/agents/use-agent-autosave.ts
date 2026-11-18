@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react"
 
 import {
   type AgentEntry,
+  type AllowedFolderEntry,
   type MaestroRunnerEdits,
-  type MountEntry,
   maestroEditsFromAgent,
 } from "@/components/agents/agent-model"
 
@@ -25,11 +25,12 @@ export interface AgentEdits {
   tools: string[]
   message: { mins: number; count: number }
   temperature: number | undefined
+  maxToolIterations: number | undefined
   eventRetentionDays: number | undefined
   retiredRetentionDays: number | undefined
   summarizationModels: string[]
   shareCommon: boolean
-  mounts: MountEntry[]
+  allowedFolders: AllowedFolderEntry[]
   mcpTools: string[]
   denyTools: string[]
   /** subagents.allow_agents ("May message"); [] = none. */
@@ -52,11 +53,12 @@ export function editsFromAgent(a: AgentEntry): AgentEdits {
       count: a.message?.window_count ?? 2,
     },
     temperature: a.temperature,
+    maxToolIterations: a.max_tool_iterations,
     eventRetentionDays: a.event_retention_days,
     retiredRetentionDays: a.retired_retention_days,
     summarizationModels: a.summarization_models ?? [],
     shareCommon: a.share_common !== false,
-    mounts: a.mounts ?? [],
+    allowedFolders: a.allowed_folders ?? [],
     mcpTools: a.mcp_tools ?? [],
     denyTools: a.deny_tools ?? [],
     allowAgents: a.allow_agents ?? [],

@@ -1,34 +1,46 @@
 import { IconPlus, IconTrash } from "@tabler/icons-react"
+import { Link } from "@tanstack/react-router"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { type CardSummary } from "@/api/cards"
 import {
   type AgentToolCatalogResponse,
   type HumanAgentProblem,
+  type IgnoredAllowedFolder,
 } from "@/api/channels"
-import { type CardSummary } from "@/api/cards"
 import { type ModelInfo } from "@/api/models"
 import {
   type AgentBindingView,
-  type MaestroRunnerEdits,
-  type MountEntry,
-  type SkillInfo,
-  settingsCardClass,
+  type AllowedFolderEntry,
+  BUILTIN_MAX_TOOL_ITERATIONS,
   type CLIBypassWarning,
-  internalToolsSummary,
+  MAX_FOLDER_NOTE_CHARS,
   MESSAGE_TOOL,
+  type MaestroRunnerEdits,
   SPAWN_TOOL,
+  type SkillInfo,
+  TASK_GRANT_KINDS,
+  type TaskGrantKind,
+  type TaskModelGrant,
+  internalToolsSummary,
+  settingsCardClass,
   toolGranted,
-  shellAllowed,
-  shellDenied,
-  withShellAllowed,
 } from "@/components/agents/agent-model"
 import { DenyToolsEditor } from "@/components/agents/deny-tools-editor"
 import { MaestroSettingsSection } from "@/components/agents/maestro-settings"
 import { MayMessageSelect } from "@/components/agents/may-message-select"
 import { MCPAccessSelect } from "@/components/agents/mcp-access-select"
 import { MessageTokensSection } from "@/components/agents/message-tokens-section"
+import { FallbacksSelect } from "@/components/agents/model-selects"
+import { SkillsSelect } from "@/components/agents/skills-select"
+import { ToolSelect } from "@/components/agents/tool-select"
+import {
+  noteKey,
+  pageLabel,
+  uniqueNotes,
+} from "@/components/human-setting-notes"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,18 +51,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Link } from "@tanstack/react-router"
-
-import { FallbacksSelect } from "@/components/agents/model-selects"
-import { SkillsSelect } from "@/components/agents/skills-select"
-import { ToolSelect } from "@/components/agents/tool-select"
-import {
-  noteKey,
-  pageLabel,
-  uniqueNotes,
-} from "@/components/human-setting-notes"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -75,6 +79,10 @@ export interface AgentCardProps {
   messageWindowMinutes?: number
   messageWindowCount?: number
   temperature?: number
+  /** The agent's own step cap; undefined = the default. */
+  maxToolIterations?: number
+  /** The step cap that applies when the field is blank, shown in the hint. */
+  defaultMaxToolIterations?: number
   eventRetentionDays?: number
   retiredRetentionDays?: number
   summarizationModels?: string[]
@@ -85,6 +93,22 @@ export interface AgentCardProps {
   maestro?: boolean
   maestroSettings?: MaestroRunnerEdits
   onMaestroSettingsChange?: (v: MaestroRunnerEdits) => void
+  /** The classifiers switch ("Allow classifiers"). */
+  classifiers?: boolean
+  onClassifiersChange?: (v: boolean) => void
+  /** The classifier model ("" = none set). */
+  classifierModel?: string
+  /** The models the agent can use: its own, else the default models. */
+  classifierModels?: string[]
+  /** The agent's task-model grant (agent_spawn kinds). */
+  taskModelGrant?: TaskModelGrant
+  /** The kinds whose list on Task models has at least one model. */
+  taskKindsWithModels?: TaskGrantKind[]
+  onTaskModelGrantChange?: (kind: TaskGrantKind, on: boolean) => void
+  /** A grant change is being saved: the boxes wait for it, so a second
+   *  click can't save over the first. */
+  taskModelsSaving?: boolean
+  onClassifierModelChange?: (model: string) => void
   fusion?: boolean
   forum?: boolean
   /** The agent's character_card ("" = none). */
@@ -96,10 +120,10 @@ export interface AgentCardProps {
   ccv3?: boolean
   onCCv3Change?: (v: boolean) => void
   cogmem?: boolean
-  mounts?: MountEntry[]
-  onMountsChange?: (mounts: MountEntry[]) => void
-  /** Saved mount names ignored because they are reserved (GET /api/agents/mounts/ignored). */
-  ignoredMounts?: string[]
+  allowedFolders?: AllowedFolderEntry[]
+  onAllowedFoldersChange?: (folders: AllowedFolderEntry[]) => void
+  /** Saved allowed folders the file tools skip (GET /api/agents/allowed-folders/ignored). */
+  ignoredFolders?: IgnoredAllowedFolder[]
   mcpTools?: string[]
   onMCPToolsChange?: (mcpTools: string[]) => void
   denyTools?: string[]
@@ -125,6 +149,7 @@ export interface AgentCardProps {
   onEventRetentionDaysChange?: (v: number | undefined) => void
   onRetiredRetentionDaysChange?: (v: number | undefined) => void
   onTemperatureChange?: (t: number | undefined) => void
+  onMaxToolIterationsChange?: (v: number | undefined) => void
   onSummarizationModelsChange?: (models: string[]) => void
   onSubagentModelsChange?: (models: string[]) => void
   onShareCommonChange?: (share: boolean) => void
@@ -150,6 +175,8 @@ export function AgentCard({
   messageWindowMinutes = 0,
   messageWindowCount = 2,
   temperature = undefined,
+  maxToolIterations = undefined,
+  defaultMaxToolIterations = BUILTIN_MAX_TOOL_ITERATIONS,
   eventRetentionDays = undefined,
   retiredRetentionDays = undefined,
   summarizationModels = [],
@@ -159,6 +186,15 @@ export function AgentCard({
   maestro = false,
   maestroSettings = undefined,
   onMaestroSettingsChange = undefined,
+  classifiers = false,
+  onClassifiersChange = undefined,
+  classifierModel = "",
+  classifierModels = [],
+  taskModelGrant = {},
+  taskKindsWithModels = [],
+  onTaskModelGrantChange = undefined,
+  taskModelsSaving = false,
+  onClassifierModelChange = undefined,
   fusion = false,
   forum = false,
   characterCard = "",
@@ -167,9 +203,9 @@ export function AgentCard({
   ccv3 = false,
   onCCv3Change = undefined,
   cogmem = true,
-  mounts = [],
-  onMountsChange = undefined,
-  ignoredMounts = [],
+  allowedFolders = [],
+  onAllowedFoldersChange = undefined,
+  ignoredFolders = [],
   mcpTools = [],
   onMCPToolsChange = undefined,
   denyTools = [],
@@ -190,6 +226,7 @@ export function AgentCard({
   onEventRetentionDaysChange = undefined,
   onRetiredRetentionDaysChange = undefined,
   onTemperatureChange = undefined,
+  onMaxToolIterationsChange = undefined,
   onSummarizationModelsChange = undefined,
   onSubagentModelsChange = undefined,
   onShareCommonChange = undefined,
@@ -202,9 +239,7 @@ export function AgentCard({
   status,
 }: AgentCardProps) {
   const { t } = useTranslation()
-  // The shell entry has its own box; the count is of the other tools.
   const toolsSummary = internalToolsSummary(tools)
-  const shellOn = shellAllowed(tools)
   // Local edits for explicit cron chat ids (peerless channels), keyed by the
   // binding's index in the full bindings array.
   const [deliverEdits, setDeliverEdits] = useState<Record<number, string>>({})
@@ -217,6 +252,9 @@ export function AgentCard({
   // operator sees the value where it lives rather than in a log.
   const cardMissing =
     characterCard !== "" && !availableCards.some((c) => c.id === characterCard)
+  // A classifier model that is not in Classification stays selectable, marked.
+  const classifierModelUnusable =
+    classifierModel !== "" && !classifierModels.includes(classifierModel)
 
   return (
     <div className="space-y-4">
@@ -308,7 +346,9 @@ export function AgentCard({
           />
           {/* One line per CLI, however many of the chain's models run on it:
               the state, and the means to change it. */}
-          {[...new Map(bypassWarnings.map((w) => [w.provider, w])).values()].map((w) => (
+          {[
+            ...new Map(bypassWarnings.map((w) => [w.provider, w])).values(),
+          ].map((w) => (
             <p
               key={w.provider}
               className="text-xs text-amber-600 dark:text-amber-400"
@@ -320,9 +360,7 @@ export function AgentCard({
             </p>
           ))}
           {human && (
-            <p className="text-muted-foreground text-xs">
-              {t("agents.human")}
-            </p>
+            <p className="text-muted-foreground text-xs">{t("agents.human")}</p>
           )}
           {uniqueNotes(humanNotes).map((n) => (
             <p
@@ -402,159 +440,149 @@ export function AgentCard({
           onDenyToolsChange !== undefined ||
           onAllowAgentsChange !== undefined ||
           availableTools.tools.length > 0) && (
-        <div className={settingsCardClass}>
-          <p className="text-foreground text-sm font-semibold">Tools</p>
+          <div className={settingsCardClass}>
+            <p className="text-foreground text-sm font-semibold">Tools</p>
 
-          {onMCPToolsChange !== undefined && (
-            <MCPAccessSelect
-              serverNames={mcpServers.map((s) => s.name)}
-              fusionServices={availableTools.fusion_services ?? []}
-              value={mcpTools}
-              onChange={onMCPToolsChange}
-            />
-          )}
-
-          {availableTools.tools.length > 0 && (
-            <div className="space-y-1.5">
-              <p
-                className={`text-xs font-semibold ${toolsSummary.none ? "text-amber-400" : "text-foreground"}`}
-              >
-                Internal tools: {toolsSummary.text}
-              </p>
-              <p className="text-muted-foreground text-xs">
-                Native tools that stay in this agent&apos;s context on every
-                request. Suites (cogmem, maestro, fusion, forum) and MCP access are
-                controlled by their own toggles.
-              </p>
-              <ToolSelect
-                selected={tools}
-                catalog={availableTools}
-                onChange={onToolsChange}
+            {onMCPToolsChange !== undefined && (
+              <MCPAccessSelect
+                serverNames={mcpServers.map((s) => s.name)}
+                fusionServices={availableTools.fusion_services ?? []}
+                value={mcpTools}
+                onChange={onMCPToolsChange}
               />
-            </div>
-          )}
+            )}
 
-          {onAllowAgentsChange !== undefined && (
-            <MayMessageSelect
-              agentName={name || label}
-              agentId={label}
-              agents={configuredAgents}
-              value={allowAgents}
-              messageGranted={toolGranted(tools, denyTools, MESSAGE_TOOL)}
-              // The list also decides whom agent_spawn may start and whom a
-              // forum may ask, so it has an effect with either of those.
-              listUsed={
-                toolGranted(tools, denyTools, MESSAGE_TOOL) ||
-                toolGranted(tools, denyTools, SPAWN_TOOL) ||
-                forum
-              }
-              onChange={onAllowAgentsChange}
-            />
-          )}
+            {availableTools.tools.length > 0 && (
+              <div className="space-y-1.5">
+                <p
+                  className={`text-xs font-semibold ${toolsSummary.none ? "text-amber-400" : "text-foreground"}`}
+                >
+                  Internal tools: {toolsSummary.text}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Native tools that stay in this agent&apos;s context on every
+                  request. Suites (cogmem, maestro, fusion, forum) and MCP
+                  access are controlled by their own toggles.
+                </p>
+                <ToolSelect
+                  selected={tools}
+                  catalog={availableTools}
+                  onChange={onToolsChange}
+                  denyTools={denyTools}
+                />
+              </div>
+            )}
 
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-foreground text-xs font-semibold">
-                {t("agents.allowShell")}
-              </p>
-              <Switch
-                checked={shellOn}
-                onCheckedChange={(v) =>
-                  onToolsChange(withShellAllowed(tools, v))
+            {onAllowAgentsChange !== undefined && (
+              <MayMessageSelect
+                agentName={name || label}
+                agentId={label}
+                agents={configuredAgents}
+                value={allowAgents}
+                messageGranted={toolGranted(tools, denyTools, MESSAGE_TOOL)}
+                // The list also decides whom agent_spawn may start and whom a
+                // forum may ask, so it has an effect with either of those.
+                listUsed={
+                  toolGranted(tools, denyTools, MESSAGE_TOOL) ||
+                  toolGranted(tools, denyTools, SPAWN_TOOL) ||
+                  forum
                 }
-                aria-label={t("agents.allowShell")}
+                onChange={onAllowAgentsChange}
               />
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {t("agents.allowShellHint")}
-            </p>
-            {shellOn && shellDenied(denyTools) && (
-              <p className="text-xs font-medium text-amber-400">
-                {t("agents.allowShellDenied")}
-              </p>
+            )}
+
+            {onDenyToolsChange !== undefined && (
+              <div className="space-y-1.5">
+                <p className="text-foreground text-xs font-semibold">
+                  {t("agents.denyTools")}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {t("agents.denyToolsHint")}
+                </p>
+                <DenyToolsEditor
+                  value={denyTools}
+                  onChange={onDenyToolsChange}
+                />
+              </div>
             )}
           </div>
+        )}
 
-          {onDenyToolsChange !== undefined && (
-            <div className="space-y-1.5">
-              <p className="text-foreground text-xs font-semibold">
-                {t("agents.denyTools")}
-              </p>
-              <p className="text-muted-foreground text-xs">
-                {t("agents.denyToolsHint")}
-              </p>
-              <DenyToolsEditor value={denyTools} onChange={onDenyToolsChange} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {!human && onMountsChange !== undefined && (
+      {!human && onAllowedFoldersChange !== undefined && (
         <div className={settingsCardClass}>
           <div className="space-y-1.5">
             <p className="text-foreground text-sm font-semibold">
-              Mounts (external folders, beside files/)
+              {t("agents.allowedFolders")}
             </p>
             <p className="text-muted-foreground text-xs">
-              Read-only unless <span className="font-medium">write</span> is
-              enabled. Turn on <span className="font-medium">notify</span> to
-              alert the agent when a new file appears.
+              {t("agents.allowedFoldersHint")}
             </p>
-            {mounts.map((m, mi) => {
-              const set = (patch: Partial<MountEntry>) =>
-                onMountsChange(
-                  mounts.map((x, j) => (j === mi ? { ...x, ...patch } : x)),
+            {allowedFolders.map((f, fi) => {
+              const set = (patch: Partial<AllowedFolderEntry>) =>
+                onAllowedFoldersChange(
+                  allowedFolders.map((x, j) =>
+                    j === fi ? { ...x, ...patch } : x,
+                  ),
                 )
               return (
-                <div key={mi} className="space-y-0.5">
+                <div key={fi} className="space-y-0.5">
                   <div className="flex items-center gap-1.5">
                     <Input
-                      value={m.name}
-                      onChange={(e) => set({ name: e.target.value })}
-                      placeholder="name (e.g. notes)"
-                      className="h-7 w-32 font-mono text-xs"
-                    />
-                    <Input
-                      value={m.path}
+                      value={f.path}
                       onChange={(e) => set({ path: e.target.value })}
-                      placeholder="/absolute/path"
+                      placeholder="/srv/src"
+                      aria-label={t("agents.allowedFolderPath")}
                       className="h-7 flex-1 font-mono text-xs"
                     />
                     <label className="text-muted-foreground flex items-center gap-1 text-xs select-none">
-                      <Switch
-                        checked={m.writable === true}
-                        onCheckedChange={(c) => set({ writable: c })}
+                      <Checkbox
+                        checked={f.notify === true}
+                        onCheckedChange={(c) => set({ notify: c === true })}
                       />
-                      write
-                    </label>
-                    <label className="text-muted-foreground flex items-center gap-1 text-xs select-none">
-                      <Switch
-                        checked={m.notify === true}
-                        onCheckedChange={(c) => set({ notify: c })}
-                      />
-                      notify
+                      {t("agents.allowedFolderNotify")}
                     </label>
                     <Button
                       type="button"
                       variant="outline"
                       size="icon"
                       className="h-7 w-7"
-                      aria-label="remove mount"
+                      aria-label={t("agents.allowedFolderRemove")}
                       onClick={() =>
-                        onMountsChange(mounts.filter((_, j) => j !== mi))
+                        onAllowedFoldersChange(
+                          allowedFolders.filter((_, j) => j !== fi),
+                        )
                       }
                     >
                       <IconTrash className="size-3.5" />
                     </Button>
                   </div>
-                  {ignoredMounts.includes(m.name) && (
-                    <p
-                      data-testid="ignored-mount"
-                      className="text-xs text-amber-600 dark:text-amber-400"
-                    >
-                      {t("agents.mountReserved", { name: m.name })}
-                    </p>
-                  )}
+                  <Input
+                    value={f.note ?? ""}
+                    onChange={(e) => set({ note: e.target.value })}
+                    maxLength={MAX_FOLDER_NOTE_CHARS}
+                    placeholder={t("agents.allowedFolderNote")}
+                    aria-label={t("agents.allowedFolderNote")}
+                    className="h-7 text-xs"
+                  />
+                  {(() => {
+                    const ignored = ignoredFolders.find(
+                      (g) => g.path === f.path,
+                    )
+                    return ignored ? (
+                      <p
+                        data-testid="ignored-folder"
+                        className="text-xs text-amber-600 dark:text-amber-400"
+                      >
+                        {t(
+                          ignored.reason === "not_absolute"
+                            ? "agents.allowedFolderNotAbsolute"
+                            : ignored.reason === "line_break"
+                              ? "agents.allowedFolderLineBreak"
+                              : "agents.allowedFolderNotFound",
+                        )}
+                      </p>
+                    ) : null
+                  })()}
                 </div>
               )
             })}
@@ -564,14 +592,14 @@ export function AgentCard({
               size="sm"
               className="h-6 px-2 text-xs"
               onClick={() =>
-                onMountsChange([
-                  ...mounts,
-                  { name: "", path: "", notify: false, writable: false },
+                onAllowedFoldersChange([
+                  ...allowedFolders,
+                  { path: "", notify: false },
                 ])
               }
             >
               <IconPlus className="size-3.5" />
-              Add mount
+              {t("agents.allowedFolderAdd")}
             </Button>
           </div>
         </div>
@@ -663,7 +691,36 @@ export function AgentCard({
                 placeholder="default"
               />
               <span className="text-muted-foreground text-xs">
-                (0–2; blank uses the default temperature, else the model's own; not sent to Anthropic models)
+                (0–2; blank uses the default temperature, else the model's own;
+                not sent to Anthropic models)
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!human && onMaxToolIterationsChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.maxToolIterations")}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={maxToolIterations ?? ""}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  onMaxToolIterationsChange(v > 0 ? v : undefined)
+                }}
+                className="h-7 w-20 text-xs"
+                placeholder={String(defaultMaxToolIterations)}
+                aria-label={t("agents.maxToolIterations")}
+              />
+              <span className="text-muted-foreground text-xs">
+                {t("agents.maxToolIterationsHint", {
+                  steps: defaultMaxToolIterations,
+                })}
               </span>
             </div>
           </div>
@@ -787,6 +844,132 @@ export function AgentCard({
                 onChange={onMaestroSettingsChange}
               />
             )}
+          </div>
+        )}
+
+        {!human && onClassifiersChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.classifiers")}
+              </p>
+              <Switch
+                checked={classifiers}
+                onCheckedChange={onClassifiersChange}
+                aria-label={t("agents.classifiers")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.classifiersHint")}
+            </p>
+            {classifierModels.length === 0 && (
+              <p
+                data-testid="classifier-no-classify-models"
+                className="text-xs text-amber-600 dark:text-amber-400"
+              >
+                {t("agents.classifierNoClassifyModels")}{" "}
+                <Link to="/task-models" className="underline">
+                  {t("navigation.task_models")}
+                </Link>
+                .
+              </p>
+            )}
+            {classifiers && onClassifierModelChange && (
+              <div className="space-y-1.5">
+                <p className="text-foreground text-sm font-semibold">
+                  {t("agents.classifierModel")}
+                </p>
+                <Select
+                  value={classifierModel}
+                  onValueChange={onClassifierModelChange}
+                >
+                  <SelectTrigger
+                    className="w-full"
+                    aria-label={t("agents.classifierModel")}
+                  >
+                    <SelectValue
+                      placeholder={t("agents.classifierModelNone")}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classifierModels.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                    {classifierModelUnusable && (
+                      <SelectItem value={classifierModel}>
+                        {t("agents.classifierModelUnusableOption", {
+                          model: classifierModel,
+                        })}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {classifierModelUnusable && (
+                  <p
+                    data-testid="classifier-model-unusable"
+                    className="text-xs text-amber-600 dark:text-amber-400"
+                  >
+                    {t("agents.classifierModelUnusable")}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!human && onTaskModelGrantChange !== undefined && (
+          <div className="space-y-1.5" data-testid="task-model-grants">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.taskModels")}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.taskModelsHint")}
+            </p>
+            {!toolGranted(tools, denyTools, SPAWN_TOOL) && (
+              <p
+                data-testid="task-models-no-spawn"
+                className="text-xs text-amber-600 dark:text-amber-400"
+              >
+                {t("agents.taskModelsNoSpawn")}
+              </p>
+            )}
+            {TASK_GRANT_KINDS.map((kind) => {
+              const id = `task-grant-${kind}`
+              return (
+                <div key={kind} className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={id}
+                      checked={taskModelGrant[kind] === true}
+                      disabled={taskModelsSaving}
+                      onCheckedChange={(v) =>
+                        onTaskModelGrantChange(kind, v === true)
+                      }
+                      aria-label={`${t("agents.taskModels")}: ${t(`agents.taskKind.${kind}`)}`}
+                    />
+                    <Label htmlFor={id} className="text-sm font-normal">
+                      {t(`agents.taskKind.${kind}`)}
+                    </Label>
+                  </div>
+                  {!taskKindsWithModels.includes(kind) && (
+                    <p
+                      data-testid={`task-grant-no-model-${kind}`}
+                      className="pl-6 text-xs text-amber-600 dark:text-amber-400"
+                    >
+                      {t("agents.taskKindNoModel", {
+                        list: t(`agents.taskList.${kind}`),
+                      })}{" "}
+                      <Link to="/task-models" className="underline">
+                        {t("navigation.task_models")}
+                      </Link>
+                      .
+                    </p>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
 

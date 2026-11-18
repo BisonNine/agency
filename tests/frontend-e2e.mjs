@@ -269,7 +269,7 @@ const ROUTES = [
   "/providers",
   "/report",
   "/system",
-  "/voice",
+  "/task-models",
   "/setup",
   "/status",
 ]
@@ -282,7 +282,16 @@ const I18N_KEY =
 
 browser = await chromium.launch({ executablePath: CHROME })
 ctx = await browser.newContext()
-console.log(`ClawEh WebUI regression suite — ${BASE}`)
+// The product's names come from the server (GET /api/auth/status, answered
+// before login); checks compare against them rather than a hard-coded name.
+const PRODUCT = (await apiAnonymous("/api/auth/status")).json ?? {}
+if (!PRODUCT.name) {
+  console.error(`${BASE}/api/auth/status carries no product name; is this build older than the suite?`)
+  process.exit(2)
+}
+// escapeRegExp makes a literal string safe to embed in a RegExp.
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+console.log(`${PRODUCT.name} WebUI regression suite — ${BASE}`)
 await signIn()
 console.log(`   signed in as ${USER}`)
 
@@ -333,8 +342,11 @@ if (useGroup("P", "Authentication")) {
     const submit = await page.getByRole("button", { name: "Sign in" }).count()
     const heading = (await page.locator("h1").first().innerText()).trim()
     const body = await page.locator("body").innerText()
+    const title = await page.title()
     await close()
     assert(problems.length === 0, `console: ${problems[0]}`)
+    // The server fills the title into index.html as it serves it.
+    assert(title === PRODUCT.name, `tab title reads ${JSON.stringify(title)}, want ${PRODUCT.name}`)
     // The frontend gate sends the visitor to /login and remembers where they
     // were going, so a bookmark still works after signing in.
     assert(url.pathname === "/login", `landed on ${url.pathname}, want /login`)
@@ -342,7 +354,7 @@ if (useGroup("P", "Authentication")) {
     assert(fields === 2, `${fields} of 2 credential fields rendered`)
     assert(submit === 1, "no Sign in button")
     // The card is headed by the product name; the button still says Sign in.
-    assert(heading === "ClawEh", `heading reads ${JSON.stringify(heading)}, want ClawEh`)
+    assert(heading === PRODUCT.name, `heading reads ${JSON.stringify(heading)}, want ${PRODUCT.name}`)
     assert(
       !/Use the admin account created on the server/.test(body),
       "the removed 'Use the admin account…' line is back",
@@ -525,7 +537,7 @@ if (useGroup("C", "Shell and navigation")) {
     const { close, text } = await open("/agents")
     const body = await text()
     await close()
-    assert(/ClawEh v\d+\.\d+\.\d+/.test(body), "version not shown in sidebar")
+    assert(new RegExp(`${escapeRegExp(PRODUCT.name)} v\\d+\\.\\d+\\.\\d+`).test(body), "version not shown in sidebar")
   })
   await check(3, "sidebar groups expand and their links navigate client-side", async () => {
     // The top-level sidebar entries are collapsible GROUPS (aria-expanded),
@@ -552,6 +564,30 @@ if (useGroup("C", "Shell and navigation")) {
     const r = await api("/no-such-route")
     assert(r.status === 200, `expected SPA fallback 200, got ${r.status}`)
   })
+  // Playwright scrolls an element into view before it acts on it, so no other
+  // check notices content a person cannot scroll to. The layout's <main> clips
+  // (overflow hidden): every page must fit it and scroll inside its own area.
+  await check(5, "every page: in a short window nothing is cut off below the frame", async () => {
+    const bad = []
+    for (const route of ROUTES) {
+      const { close, page } = await open(route)
+      try {
+        await page.setViewportSize({ width: 1100, height: 420 })
+        await page.waitForTimeout(300)
+        const cut = await page.evaluate(() =>
+          [...document.querySelectorAll("main")]
+            .filter((m) => ["hidden", "clip"].includes(getComputedStyle(m).overflowY))
+            .map((m) => m.scrollHeight - m.clientHeight)
+            .filter((d) => d > 2),
+        )
+        if (cut.length) bad.push(`${route} (${Math.max(...cut)}px cut off)`)
+      } finally {
+        await close()
+      }
+    }
+    assert(bad.length === 0, `content that cannot be scrolled to: ${bad.join(", ")}`)
+    return `${ROUTES.length} pages`
+  })
 }
 
 // D. i18n integrity
@@ -566,7 +602,11 @@ if (useGroup("D", "i18n integrity")) {
       const body = await page.evaluate(() => {
         const clone = document.body.cloneNode(true)
         for (const el of clone.querySelectorAll('[role="log"]')) el.remove()
-        return clone.innerText ?? clone.textContent ?? ""
+        // Accessible names and hover text are text too: a leaked key there is
+        // what a screen reader announces.
+        const attrs = [...clone.querySelectorAll("[aria-label],[title],[placeholder]")]
+          .map((el) => [el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("placeholder")].filter(Boolean).join(" "))
+        return (clone.innerText ?? clone.textContent ?? "") + "\n" + attrs.join("\n")
       })
       await close()
       const hits = [...new Set(body.match(I18N_KEY) || [])]
@@ -734,16 +774,19 @@ if (useGroup("F", "Agents — autosave and list realignment")) {
     assert(a?.temperature === 0.77, "the earlier edit was clobbered by the Fusion toggle")
   })
 
-  await check(6, "Allow shell commands adds and removes the explicit shell_exec entry", async () => {
+  await check(6, "the shell_exec box adds and removes only its own entry, with its warning", async () => {
     if (!created) return "skipped, never created"
     const before = (await config()).agents.list.find((x) => x.id === PROBE)
     const others = (before?.tools ?? []).filter((t) => t !== "shell_exec")
     const { close, page } = await open("/agents")
     await page.getByRole("button", { name: PROBE, exact: true }).click()
     await page.waitForTimeout(400)
-    const box = page.getByRole("switch", { name: "Allow shell commands", exact: true }).first()
-    assert((await box.count()) > 0, 'no "Allow shell commands" switch on the card')
-    assert(!(await box.isChecked()), '"Allow shell commands" already on for a new agent')
+    assert((await page.getByRole("switch", { name: /shell/i }).count()) === 0, "a separate shell switch is still on the card")
+    const box = page.getByRole("checkbox", { name: "shell_exec", exact: true }).first()
+    assert((await box.count()) > 0, "no shell_exec box under Internal tools")
+    assert(!(await box.isChecked()), "shell_exec already ticked on a new agent")
+    const warning = page.getByTestId("shell-warning").first()
+    assert((await warning.getAttribute("title")) === "Full access to this app's account", "the shell_exec row has no warning hover text")
     await box.click()
     await page.waitForTimeout(2000)
     let a = (await config()).agents.list.find((x) => x.id === PROBE)
@@ -758,7 +801,7 @@ if (useGroup("F", "Agents — autosave and list realignment")) {
     a = (await config()).agents.list.find((x) => x.id === PROBE)
     assert(!(a?.tools ?? []).includes("shell_exec"), `tools = ${JSON.stringify(a?.tools)}; shell_exec should be gone`)
     assert(JSON.stringify(a?.tools ?? []) === JSON.stringify(others), `tools = ${JSON.stringify(a?.tools)}; expected ${JSON.stringify(others)}`)
-    assert(a?.temperature === 0.77, "the earlier edit was clobbered by the shell toggle")
+    assert(a?.temperature === 0.77, "the earlier edit was clobbered by the shell box")
   })
 
   await check(7, "returning to the Agents page through the sidebar shows the agents", async () => {
@@ -1016,10 +1059,236 @@ if (useGroup("F", "Agents — autosave and list realignment")) {
       throw new Error("UI delete did not remove the agent (cleaned up via API)")
     }
   })
+
+  await check(14, "Allow classifiers writes the first model in Classification, turning it off drops the block", async () => {
+    const ID = "e2e-cls"
+    const before = await config()
+    // A person's model would hide the switch: pick a model on any other protocol.
+    const human = new Set((before.providers ?? []).filter((p) => p.protocol === "human").map((p) => p.name))
+    const model = (before.models ?? []).find((m) => m.enabled && !human.has(m.provider))?.model_name
+    if (!model) return "skipped, no enabled model for the agent"
+    const classify = (before.task_models?.classify ?? [])[0]?.model
+    if (!classify) return "skipped, Classification is empty on the Task models page"
+    const list = [...(before.agents.list ?? []), { id: ID, name: ID, models: [model], tools: [] }]
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `creating ${ID} = ${r.status}`)
+    const toggle = async () => {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.getByRole("switch", { name: "Allow classifiers", exact: true }).click()
+      await page.waitForTimeout(2000)
+      const selector = await page.getByRole("combobox", { name: "Classifier model", exact: true }).count()
+      await close()
+      return selector
+    }
+    try {
+      const shownOn = await toggle()
+      let a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(a?.classifiers?.enabled === true, `classifiers = ${JSON.stringify(a?.classifiers)} after turning it on`)
+      assert(a.classifiers.model === classify, `classifiers.model = ${JSON.stringify(a.classifiers.model)}; expected the first Classify model ${classify}`)
+      assert(shownOn > 0, "no Classifier model selector with the switch on")
+      const shownOff = await toggle()
+      a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(a && a.classifiers === undefined, `classifiers = ${JSON.stringify(a?.classifiers)} after turning it off, want absent`)
+      assert(shownOff === 0, "the Classifier model selector is still shown with the switch off")
+      assert(JSON.stringify(a.models) === JSON.stringify([model]), "models changed with the toggle")
+      return `${ID}: classifiers on with model ${classify}, then removed`
+    } finally {
+      const c = await config()
+      c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== ID)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: c.agents.list } }),
+      })
+    }
+  })
+
+  await check(15, "Allow task models: a kind's box writes the grant, unticking it drops the block", async () => {
+    const ID = "e2e-tm"
+    const before = await config()
+    const human = new Set((before.providers ?? []).filter((p) => p.protocol === "human").map((p) => p.name))
+    const model = (before.models ?? []).find((m) => m.enabled && !human.has(m.provider))?.model_name
+    if (!model) return "skipped, no enabled model for the agent"
+    const list = [...(before.agents.list ?? []), { id: ID, name: ID, models: [model], tools: [] }]
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `creating ${ID} = ${r.status}`)
+    const click = async () => {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      const box = page.getByRole("checkbox", { name: "Allow task models: Images", exact: true })
+      await box.click()
+      await page.waitForTimeout(2000)
+      const state = await box.getAttribute("data-state")
+      await close()
+      return state
+    }
+    try {
+      const on = await click()
+      let a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(on === "checked", `box state after ticking = ${on}`)
+      assert(JSON.stringify(a?.task_models) === JSON.stringify({ image: true }), `task_models = ${JSON.stringify(a?.task_models)} after ticking Images`)
+      const off = await click()
+      a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(off === "unchecked", `box state after unticking = ${off}`)
+      assert(a && a.task_models === undefined, `task_models = ${JSON.stringify(a?.task_models)} after unticking, want absent`)
+      return `${ID}: images granted, then the block removed`
+    } finally {
+      const c = await config()
+      c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== ID)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: c.agents.list } }),
+      })
+    }
+  })
+
+  // removeAgent drops a throwaway agent through the API.
+  const removeAgent = async (id) => {
+    const c = await config()
+    c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== id)
+    await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list: c.agents.list } }),
+    })
+  }
+  // addAgent creates a throwaway agent through the API.
+  const addAgent = async (agent) => {
+    const before = await config()
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list: [...(before.agents.list ?? []), agent] } }),
+    })
+    assert(r.status === 200, `creating ${agent.id} = ${r.status}`)
+  }
+
+  await check(16, "an allowed folder's note is saved and shown after a reload", async () => {
+    const ID = "e2e-note"
+    const NOTE = "inbound audio notes"
+    await addAgent({ id: ID, name: ID, tools: [], allowed_folders: [{ path: "/tmp" }] })
+    try {
+      let { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.getByRole("textbox", { name: "Note", exact: true }).first().fill(NOTE)
+      await page.waitForTimeout(2000)
+      await close()
+      const a = (await config()).agents.list.find((x) => x.id === ID)
+      const folders = a?.allowed_folders ?? []
+      assert(
+        folders.length === 1 && folders[0].path === "/tmp" && folders[0].note === NOTE && !folders[0].notify,
+        `allowed_folders = ${JSON.stringify(a?.allowed_folders)}`,
+      )
+      ;({ close, page } = await open("/agents"))
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      const shown = await page.getByRole("textbox", { name: "Note", exact: true }).first().inputValue()
+      await close()
+      assert(shown === NOTE, `note after reload = ${JSON.stringify(shown)}`)
+      return `${ID}: note saved and shown`
+    } finally {
+      await removeAgent(ID)
+    }
+  })
+
+  // F17-F20 share one throwaway agent, e2e-code, removed after F20 whatever
+  // the outcome.
+  const CODE = "e2e-code"
+  const CODING = [
+    "file_list", "file_glob", "file_read_lines", "file_search_lines", "file_edit_lines",
+    "file_insert_lines", "file_delete_lines", "file_edit", "file_write", "shell_exec", "agent_spawn",
+  ]
+  let codeCreated = false
+  // codeTools is e2e-code's saved tools list.
+  const codeTools = async () => (await config()).agents.list.find((x) => x.id === CODE)?.tools ?? []
+  // setCodeTools writes e2e-code's tools list through the API.
+  const setCodeTools = async (tools) => {
+    const c = await config()
+    const list = (c.agents.list ?? []).map((a) => (a.id === CODE ? { ...a, tools } : a))
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `setting ${CODE}'s tools = ${r.status}`)
+  }
+  // onCodeCard opens /agents with e2e-code selected, runs act, waits for the
+  // save and returns the saved tools list.
+  const onCodeCard = async (act) => {
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: CODE, exact: true }).click()
+    await page.waitForTimeout(400)
+    await act(page)
+    await page.waitForTimeout(2000)
+    await close()
+    return codeTools()
+  }
+  const clickButton = (name) => (page) => page.getByRole("button", { name, exact: true }).first().click()
+  const counts = (tools) => tools.reduce((m, t) => m.set(t, (m.get(t) ?? 0) + 1), new Map())
+
+  await check(17, "Coding tools grants the eleven tools and saves them", async () => {
+    await addAgent({ id: CODE, name: CODE, tools: ["time_now"] })
+    codeCreated = true
+    const tools = await onCodeCard(clickButton("Coding tools"))
+    for (const t of CODING) assert(tools.includes(t), `tools = ${JSON.stringify(tools)}; ${t} missing`)
+    assert(tools.includes("time_now"), `tools = ${JSON.stringify(tools)}; time_now was dropped`)
+    assert(tools.length === CODING.length + 1, `tools = ${JSON.stringify(tools)}; expected time_now and the eleven`)
+    return `${CODE}: ${tools.length} tools`
+  })
+
+  await check(18, "Coding tools only adds: nothing set is removed or repeated", async () => {
+    if (!codeCreated) return "skipped, never created"
+    await setCodeTools(["time_now", "web_fetch", "file_*", "agent_spawn"])
+    const tools = await onCodeCard(clickButton("Coding tools"))
+    const want = ["time_now", "web_fetch", "file_*", "agent_spawn", "shell_exec"]
+    assert(JSON.stringify(tools) === JSON.stringify(want), `tools = ${JSON.stringify(tools)}, want ${JSON.stringify(want)}`)
+    const again = await onCodeCard(clickButton("Coding tools"))
+    assert(JSON.stringify(again) === JSON.stringify(want), `a second click changed tools to ${JSON.stringify(again)}`)
+    for (const [t, n] of counts(again)) assert(n === 1, `${t} is listed ${n} times`)
+  })
+
+  await check(19, "the shell_exec box can be unticked and ticked like any tool and persists", async () => {
+    if (!codeCreated) return "skipped, never created"
+    let tools = await onCodeCard((page) => page.getByRole("checkbox", { name: "shell_exec", exact: true }).first().click())
+    assert(!tools.includes("shell_exec"), `tools = ${JSON.stringify(tools)}; shell_exec should be gone`)
+    assert(tools.includes("file_*") && tools.includes("web_fetch"), `tools = ${JSON.stringify(tools)}; other entries changed`)
+    // After a reload the box shows the saved state, and ticking it saves it.
+    tools = await onCodeCard(async (page) => {
+      const box = page.getByRole("checkbox", { name: "shell_exec", exact: true }).first()
+      assert(!(await box.isChecked()), "shell_exec box ticked after it was saved off")
+      await box.click()
+    })
+    assert(tools.includes("shell_exec"), `tools = ${JSON.stringify(tools)}; shell_exec missing after ticking`)
+  })
+
+  await check(20, "Default tools does not add shell_exec", async () => {
+    try {
+      if (!codeCreated) return "skipped, never created"
+      await setCodeTools(["time_now"])
+      const tools = await onCodeCard(clickButton("Default tools"))
+      assert(tools.length > 0, "Default tools saved an empty list")
+      assert(!tools.includes("shell_exec"), `tools = ${JSON.stringify(tools)}; Default tools added shell_exec`)
+    } finally {
+      if (codeCreated) await removeAgent(CODE)
+    }
+  })
 }
 
 // G. System page (the old Config page minus the listeners, which are group R)
-if (useGroup("G", "System page — load, edit, persist, restore, redirect")) {
+if (useGroup("G", "System page — load, edit, persist, restore, redirect, classifiers, task models")) {
   let original
   await check(1, "system page renders the moved sections", async () => {
     const { close, text, problems } = await open("/system")
@@ -1076,6 +1345,483 @@ if (useGroup("G", "System page — load, edit, persist, restore, redirect")) {
     assert(problems.length === 0, `console errors: ${problems[0]}`)
     assert(body.includes("Backup"), "the System page did not render after the redirect")
   })
+  await check(6, "a classifier setting saves and reverts", async () => {
+    const before = (await config())?.classifiers?.limits?.min_every_seconds
+    const original = before ? String(before) : ""
+    const { close, page } = await open("/system")
+    try {
+      const field = page.locator("[data-testid=classifiers-min_every_seconds]")
+      const placeholder = await field.getAttribute("placeholder")
+      assert(placeholder === "15", `placeholder = ${placeholder}, expected 15`)
+      await field.fill("77")
+      await page.waitForTimeout(2000)
+      const saved = (await config())?.classifiers?.limits?.min_every_seconds
+      assert(saved === 77, `min_every_seconds = ${saved}, expected 77`)
+      await field.fill(original)
+      await page.waitForTimeout(2000)
+    } finally {
+      await close()
+    }
+    const after = (await config())?.classifiers?.limits?.min_every_seconds
+    assert(
+      (after ? String(after) : "") === original,
+      `min_every_seconds = ${after}, expected ${original || "absent"}`,
+    )
+    return `restored to ${original || "absent"}`
+  })
+  await check(7, "Echo transcription on the Task models page saves and reverts", async () => {
+    const original = (await config())?.task_models?.echo_transcription === true
+    const { close, page } = await open("/task-models")
+    try {
+      const echo = page.getByRole("switch", { name: "Echo transcription", exact: true })
+      await echo.waitFor({ timeout: 10000 })
+      await echo.click()
+      await page.waitForTimeout(2000)
+      const saved = (await config())?.task_models?.echo_transcription === true
+      assert(saved === !original, `echo_transcription = ${saved}, expected ${!original}`)
+      await echo.click()
+      await page.waitForTimeout(2000)
+    } finally {
+      await close()
+    }
+    const after = (await config())?.task_models?.echo_transcription === true
+    assert(after === original, `echo_transcription = ${after}, expected ${original}`)
+    return `restored to ${original ? "on" : "off"}`
+  })
+
+  await check(8, "Images through on a Generate images row saves on that entry and reverts", async () => {
+    const tmBlock = async () => (await api("/api/task-models")).json?.task_models ?? {}
+    const put = (block) => api("/api/task-models", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(block) })
+    const before = await tmBlock()
+    const original = before.image ?? []
+    let name = original[0]?.model
+    let addedHere = false
+    const { close, page } = await open("/task-models")
+    try {
+      if (!name) {
+        const add = page.getByRole("combobox", { name: "Model to add to Generate images", exact: true })
+        if ((await add.count()) === 0) return "skipped, no enabled model to add"
+        name = await add.inputValue()
+        await page.getByRole("button", { name: "Add model to Generate images", exact: true }).click()
+        await page.waitForTimeout(2000)
+        addedHere = true
+      }
+      const entry = async () => ((await tmBlock()).image ?? []).find((m) => m.model === name) ?? {}
+      const apiBefore = (await entry()).image_api === "images" ? "images" : "chat"
+      const other = apiBefore === "images" ? "chat" : "images"
+      const select = page.getByLabel(`Images through for ${name}`, { exact: true })
+      await select.waitFor({ timeout: 10000 })
+      await select.selectOption(other)
+      await page.waitForTimeout(2000)
+      const got = (await entry()).image_api ?? "chat"
+      assert(got === other, `image_api = ${got}, expected ${other}`)
+      const now = await tmBlock()
+      for (const k of ["text", "tts", "stt", "vision", "classify"]) {
+        assert(JSON.stringify(now[k] ?? []) === JSON.stringify(before[k] ?? []), `task_models.${k} changed`)
+      }
+      await select.selectOption(apiBefore)
+      await page.waitForTimeout(2000)
+      if (addedHere) {
+        await page.getByRole("button", { name: `Remove ${name} from Generate images`, exact: true }).click()
+        await page.waitForTimeout(2000)
+      }
+      const after = (await tmBlock()).image ?? []
+      if (JSON.stringify(after) !== JSON.stringify(original)) {
+        await put({ ...(await tmBlock()), image: original })
+      }
+      assert(JSON.stringify(after) === JSON.stringify(original), `task_models.image = ${JSON.stringify(after)}, expected ${JSON.stringify(original)}`)
+      return `${name}: ${other}, restored to ${apiBefore}${addedHere ? " and removed" : ""}`
+    } finally {
+      await close()
+    }
+  })
+}
+
+// U. Task models page. Writes: every check edits task_models (and U8 creates
+// a throwaway agent); the group reads the block first and puts it back at the
+// end, then waits for the reload. A model is only ever added to Transcription
+// when its provider serves speech and has an API key, so no check can raise
+// the "Speech backend not usable" alert.
+if (useGroup("U", "Task models page — six lists: add, reorder, list settings, limit, leave, remove, Agents and Check Up")) {
+  const JSON_HDR = { "Content-Type": "application/json" }
+  const TITLES = {
+    text: "Generate text",
+    image: "Generate images",
+    tts: "Text to speech",
+    stt: "Transcription",
+    vision: "Describe images",
+    classify: "Classification",
+  }
+  const USES = Object.keys(TITLES)
+  const tmGet = async () => (await api("/api/task-models")).json
+  const tmPut = (block) => api("/api/task-models", { method: "PUT", headers: JSON_HDR, body: JSON.stringify(block) })
+  const saved = async () => (await tmGet())?.task_models ?? {}
+  const namesIn = (block, use) => (block[use] ?? []).map((m) => m.model)
+  const entryOf = async (use, name) => ((await saved())[use] ?? []).find((m) => m.model === name)
+  const settle = (page) => page.waitForTimeout(1800)
+  // addTo adds name to a list on the open page.
+  const addTo = async (page, use, name) => {
+    await page.getByRole("combobox", { name: `Model to add to ${TITLES[use]}`, exact: true }).selectOption(name)
+    await page.getByRole("button", { name: `Add model to ${TITLES[use]}`, exact: true }).click()
+    await settle(page)
+  }
+  const offered = (page, use) =>
+    page.getByRole("combobox", { name: `Model to add to ${TITLES[use]}`, exact: true }).locator("option").allTextContents().catch(() => [])
+  const shownRows = (page, use) =>
+    page.getByTestId(`task-list-${use}`).locator(`[data-testid^="task-model-${use}-"]`).evaluateAll((els, u) => els.map((e) => e.dataset.testid.slice(`task-model-${u}-`.length)), use)
+
+  const initial = await tmGet()
+  const snapshot = initial?.task_models ?? {}
+  const cfg0 = await config()
+  const keyed = new Set((cfg0.providers ?? []).filter((p) => p.api_key).map((p) => p.name))
+  const providerOf = Object.fromEntries((cfg0.models ?? []).map((m) => [m.model_name, m.provider]))
+  const enabled = (initial?.models ?? []).filter((o) => o.enabled)
+  const notIn = (use) => enabled.filter((o) => !namesIn(snapshot, use).includes(o.name))
+  // A: a model not in Generate text, one that can do speech when there is one
+  // (so it may be added to Transcription safely). B: another model not in
+  // Generate images.
+  const isSpeech = (o) => o?.support?.stt === "yes" && keyed.has(providerOf[o.name])
+  const A = (notIn("text").find(isSpeech) ?? notIn("text")[0])?.name
+  const B = notIn("image").find((o) => o.name !== A)?.name
+  const added = {} // use -> names added by the page, removed again in U10
+
+  try {
+    await check(1, "Add model appends to its own list only, in order", async () => {
+      if (!A) return "skipped, every enabled model is already in Generate text"
+      const { close, page, problems } = await open("/task-models")
+      try {
+        await addTo(page, "text", A)
+        added.text = [A]
+        assert(!(await offered(page, "text")).includes(A), `${A} is still offered in Generate text`)
+        assert((await offered(page, "image")).includes(A) || namesIn(snapshot, "image").includes(A), `${A} is not offered in Generate images`)
+        added.image = []
+        for (const name of [A, B].filter((n) => n && !namesIn(snapshot, "image").includes(n))) {
+          await addTo(page, "image", name)
+          added.image.push(name)
+          assert(!(await offered(page, "image")).includes(name), `${name} is still offered in Generate images`)
+        }
+        assert(JSON.stringify(await shownRows(page, "text")) === JSON.stringify([...namesIn(snapshot, "text"), A]), "Generate text rows on the page")
+      } finally {
+        await close()
+      }
+      assert(problems.length === 0, `console errors: ${problems[0]}`)
+      const s = await saved()
+      assert(JSON.stringify(namesIn(s, "text")) === JSON.stringify([...namesIn(snapshot, "text"), A]), `text ${JSON.stringify(namesIn(s, "text"))}`)
+      assert(JSON.stringify(namesIn(s, "image")) === JSON.stringify([...namesIn(snapshot, "image"), ...added.image]), `image ${JSON.stringify(namesIn(s, "image"))}`)
+      assert(JSON.stringify(await entryOf("text", A)) === JSON.stringify({ model: A }), `${A} saved in text as ${JSON.stringify(await entryOf("text", A))}`)
+      for (const name of added.image) {
+        assert(JSON.stringify(await entryOf("image", name)) === JSON.stringify({ model: name }), `${name} saved in image as ${JSON.stringify(await entryOf("image", name))}`)
+      }
+      for (const u of ["tts", "stt", "vision", "classify"]) {
+        assert(JSON.stringify(s[u] ?? []) === JSON.stringify(snapshot[u] ?? []), `task_models.${u} changed`)
+      }
+      return `text +${A}; image +${added.image.join(", +") || "nothing"}`
+    })
+
+    await check(2, "Move up and down reorder one list and its saved order; the ends are disabled", async () => {
+      const names = namesIn(await saved(), "image")
+      if (names.length < 2) return "skipped, fewer than two models in Generate images"
+      const textBefore = namesIn(await saved(), "text")
+      const last = names[names.length - 1]
+      const t = TITLES.image
+      const { close, page } = await open("/task-models")
+      try {
+        assert(await page.getByRole("button", { name: `Move ${names[0]} up in ${t}`, exact: true }).isDisabled(), "the first row's Move up is enabled")
+        assert(await page.getByRole("button", { name: `Move ${last} down in ${t}`, exact: true }).isDisabled(), "the last row's Move down is enabled")
+        await page.getByRole("button", { name: `Move ${last} up in ${t}`, exact: true }).click()
+        await settle(page)
+        const want = [...names.slice(0, -2), last, names[names.length - 2]]
+        const s = await saved()
+        assert(JSON.stringify(namesIn(s, "image")) === JSON.stringify(want), `after Move up: ${JSON.stringify(namesIn(s, "image"))}`)
+        assert(JSON.stringify(namesIn(s, "text")) === JSON.stringify(textBefore), "Generate text changed with Generate images")
+        assert(JSON.stringify(await shownRows(page, "image")) === JSON.stringify(want), "page order after Move up")
+        await page.getByRole("button", { name: `Move ${last} down in ${t}`, exact: true }).click()
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const back = namesIn(await saved(), "image")
+      assert(JSON.stringify(back) === JSON.stringify(names), `after Move down: ${JSON.stringify(back)}`)
+      return `${last} up and back`
+    })
+
+    await check(3, "Images through is on Generate images rows only and saves on the image entry", async () => {
+      if (!added.image?.includes(A)) return "skipped, A was not added to Generate images"
+      const { close, page } = await open("/task-models")
+      try {
+        const rows = (await saved()).image ?? []
+        assert((await page.getByLabel(/^Images through for /).count()) === rows.length, "Images through is not on every Generate images row alone")
+        const select = page.getByLabel(`Images through for ${A}`, { exact: true })
+        await select.selectOption("images")
+        await settle(page)
+        let e = await entryOf("image", A)
+        assert(JSON.stringify(e) === JSON.stringify({ model: A, image_api: "images" }), `image entry ${JSON.stringify(e)}`)
+        assert(JSON.stringify(await entryOf("text", A)) === JSON.stringify({ model: A }), "the text entry took image_api")
+        await select.selectOption("chat")
+        await settle(page)
+        e = await entryOf("image", A)
+        assert(JSON.stringify(e) === JSON.stringify({ model: A }), `after chat: ${JSON.stringify(e)}`)
+      } finally {
+        await close()
+      }
+      return `${A}: images, then chat`
+    })
+
+    await check(4, "Voice and Format on Text to speech save as that entry's tts_defaults", async () => {
+      if (!A) return "skipped, no model A"
+      const ttsBefore = (await saved()).tts ?? []
+      if (namesIn({ tts: ttsBefore }, "tts").includes(A)) return `skipped, ${A} is already in Text to speech`
+      const { close, page } = await open("/task-models")
+      try {
+        await addTo(page, "tts", A)
+        assert((await page.getByLabel(`Voice for ${A}`, { exact: true }).count()) === 1, "Voice is not on A's Text to speech row alone")
+        assert((await page.getByLabel(/^Voice for /).count()) === ttsBefore.length + 1, "Voice is shown outside Text to speech")
+        await page.getByLabel(`Voice for ${A}`, { exact: true }).fill("alloy")
+        await page.getByLabel(`Format for ${A}`, { exact: true }).fill("mp3")
+        await settle(page)
+        let e = await entryOf("tts", A)
+        assert(JSON.stringify(e?.tts_defaults) === JSON.stringify({ voice: "alloy", format: "mp3" }), `saved ${JSON.stringify(e)}`)
+        await page.getByLabel(`Format for ${A}`, { exact: true }).fill("")
+        await settle(page)
+        e = await entryOf("tts", A)
+        assert(JSON.stringify(e?.tts_defaults) === JSON.stringify({ voice: "alloy" }), `a blank Format saved ${JSON.stringify(e?.tts_defaults)}`)
+        await page.getByRole("button", { name: `Remove ${A} from ${TITLES.tts}`, exact: true }).click()
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const after = (await saved()).tts ?? []
+      assert(JSON.stringify(after) === JSON.stringify(ttsBefore), `task_models.tts = ${JSON.stringify(after)} after the removal`)
+      return `${A}: voice alloy, format mp3, then removed`
+    })
+
+    await check(5, "Text in results: the default as placeholder, a bad value refused, a number saved, blank saves the default", async () => {
+      const def = initial?.defaults?.result_text_chars
+      const { close, page } = await open("/task-models")
+      try {
+        const field = page.getByLabel("Text in results (characters)", { exact: true })
+        assert((await field.getAttribute("placeholder")) === String(def), `placeholder ${await field.getAttribute("placeholder")}, default ${def}`)
+        await field.fill("1234")
+        await settle(page)
+        assert((await saved()).result_text_chars === 1234, `after 1234: ${(await saved()).result_text_chars}`)
+        await field.fill("12a")
+        await settle(page)
+        assert((await page.getByText("Enter a whole number, or leave it blank.", { exact: true }).count()) === 1, "no message for 12a")
+        assert((await saved()).result_text_chars === 1234, `12a was saved as ${(await saved()).result_text_chars}`)
+        await field.fill("")
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const after = (await saved()).result_text_chars
+      assert(after === undefined || after === 0, `blank saved as ${after}`)
+      return `default ${def}`
+    })
+
+    await check(6, "an edit made just before leaving the page is saved", async () => {
+      const { close, page } = await open("/task-models")
+      try {
+        await page.getByLabel("Text in results (characters)", { exact: true }).fill("4321")
+        await page.getByRole("link", { name: "Models", exact: true }).first().click()
+        await page.waitForURL(/\/models$/, { timeout: 10000 })
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const got = (await saved()).result_text_chars
+      assert(got === 4321, `result_text_chars = ${got}, expected 4321`)
+      const r = await tmPut({ ...(await saved()), result_text_chars: snapshot.result_text_chars ?? 0 })
+      assert(r.status === 200, `restoring the limit = ${r.status}`)
+      return "4321 saved on leaving"
+    })
+
+    await check(7, "Echo transcription warns while Transcription is empty", async () => {
+      const speechA = isSpeech(enabled.find((o) => o.name === A)) ? A : null
+      const empty = async () => ((await saved()).stt ?? []).length === 0
+      const warn = "No model in Transcription, so nothing is transcribed."
+      const { close, page } = await open("/task-models")
+      try {
+        const echo = page.getByRole("switch", { name: "Echo transcription", exact: true })
+        if ((await echo.getAttribute("aria-checked")) !== "true") {
+          await echo.click()
+          await settle(page)
+        }
+        const shown = await page.getByText(warn, { exact: true }).count()
+        assert(shown === ((await empty()) ? 1 : 0), `warning shown ${shown} times with Transcription empty ${await empty()}`)
+        const emptyLine = await page.getByTestId("task-list-empty-stt").count()
+        assert(emptyLine === ((await empty()) ? 1 : 0), `empty Transcription line shown ${emptyLine} times`)
+        if (speechA && (await empty())) {
+          assert((await page.getByTestId("task-list-empty-stt").textContent()) === "No models. Voice messages are not transcribed.", "empty Transcription line text")
+          await addTo(page, "stt", speechA)
+          assert((await page.getByText(warn, { exact: true }).count()) === 0, "warning still shown with a model in Transcription")
+          await page.getByRole("button", { name: `Remove ${speechA} from ${TITLES.stt}`, exact: true }).click()
+          await settle(page)
+          assert((await page.getByText(warn, { exact: true }).count()) === 1, "warning not back after emptying Transcription")
+        }
+      } finally {
+        await close()
+      }
+      const r = await tmPut({ ...(await saved()), echo_transcription: snapshot.echo_transcription === true })
+      assert(r.status === 200, `restoring echo = ${r.status}`)
+      return speechA && (await empty()) ? `added and removed ${speechA} in Transcription` : "Transcription not empty or A is no speech model; warning state checked"
+    })
+
+    await check(8, "Agents page: Allow task models names each empty list and a missing agent_spawn; all four boxes save", async () => {
+      const ID = "e2e-tmk"
+      const human = new Set((cfg0.providers ?? []).filter((p) => p.protocol === "human").map((p) => p.name))
+      const model = (cfg0.models ?? []).find((m) => m.enabled && !human.has(m.provider))?.model_name
+      if (!model) return "skipped, no enabled model for the agent"
+      const c = await config()
+      let r = await api("/api/config", { method: "PATCH", headers: JSON_HDR, body: JSON.stringify({ agents: { list: [...(c.agents.list ?? []), { id: ID, name: ID, models: [model], tools: [] }] } }) })
+      assert(r.status === 200, `creating ${ID} = ${r.status}`)
+      const grants = ["text", "image", "tts", "stt"]
+      const boxes = { text: "Text", image: "Images", tts: "Speech (TTS)", stt: "Transcription (STT)" }
+      const notes = async (page) => {
+        const out = {}
+        for (const k of grants) {
+          const note = page.getByTestId(`task-grant-no-model-${k}`)
+          out[k] = (await note.count()) === 1 ? await note.textContent() : null
+        }
+        return out
+      }
+      const select = async (page) => {
+        await page.getByRole("button", { name: ID, exact: true }).click()
+        await page.waitForTimeout(500)
+      }
+      try {
+        let { close, page } = await open("/agents")
+        await select(page)
+        const s = await saved()
+        const want = Object.fromEntries(grants.map((k) => [k, (s[k] ?? []).length === 0 ? `No model in ${TITLES[k]}. Add one on Task models.` : null]))
+        const got = await notes(page)
+        const noSpawn = await page.getByTestId("task-models-no-spawn").count()
+        const noClassify = await page.getByTestId("classifier-no-classify-models").count()
+        const links = await page.getByTestId("task-model-grants").getByRole("link", { name: "Task models" }).evaluateAll((els) => els.map((e) => e.getAttribute("href")))
+        for (const k of grants) {
+          await page.getByRole("checkbox", { name: `Allow task models: ${boxes[k]}`, exact: true }).click()
+          await page.waitForTimeout(1500)
+        }
+        await close()
+        assert(JSON.stringify(got) === JSON.stringify(want), `no-model notes ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`)
+        assert(links.every((h) => h === "/task-models"), `note links ${JSON.stringify(links)}`)
+        assert(noSpawn === 1, "no 'Needs the agent_spawn tool.' note for an agent without it")
+        assert(noClassify === ((s.classify ?? []).length > 0 ? 0 : 1), `Classification note shown ${noClassify} times`)
+        const a = (await config()).agents.list.find((x) => x.id === ID)
+        const tm = a?.task_models ?? {}
+        assert(Object.keys(tm).length === 4 && grants.every((k) => tm[k] === true), `task_models = ${JSON.stringify(a?.task_models)}`)
+
+        // Adding a model to an empty list clears that kind's note. Transcription
+        // only takes a speech model.
+        const kind = grants.find((k) => want[k] && A && (k !== "stt" || isSpeech(enabled.find((o) => o.name === A))))
+        if (kind) {
+          r = await tmPut({ ...s, [kind]: [{ model: A }] })
+          assert(r.status === 200, `adding ${A} to ${kind} = ${r.status}`)
+          ;({ close, page } = await open("/agents"))
+          await select(page)
+          const after = await notes(page)
+          await close()
+          r = await tmPut(s)
+          assert(r.status === 200, `taking ${A} off ${kind} = ${r.status}`)
+          assert(after[kind] === null, `the ${TITLES[kind]} note is still shown with a model in it`)
+        }
+      } finally {
+        const c2 = await config()
+        await api("/api/config", { method: "PATCH", headers: JSON_HDR, body: JSON.stringify({ agents: { list: (c2.agents.list ?? []).filter((a) => a.id !== ID) } }) })
+      }
+      return `${ID}: all four granted`
+    })
+
+    await check(9, "Check Up names the empty Transcription and Describe images lists, each from its own list", async () => {
+      const rowsFor = async () => {
+        const j = (await api("/api/report/assessment")).json
+        return (j?.assessment ?? []).filter((r) => r.item === "Speech to text" || r.item === "Vision")
+      }
+      const status = { "Speech to text": "No model in Transcription.", Vision: "No model in Describe images." }
+      const says = (rows, item) => rows.some((r) => r.item === item && r.status === status[item])
+      const s = await saved()
+      const rows = await rowsFor()
+      for (const [item, use] of [["Speech to text", "stt"], ["Vision", "vision"]]) {
+        const none = (s[use] ?? []).length === 0
+        assert(says(rows, item) === none, `${item}: "${status[item]}" ${says(rows, item)}, list empty ${none}`)
+      }
+      if (A && (s.vision ?? []).length === 0) {
+        let r = await tmPut({ ...s, vision: [{ model: A }] })
+        assert(r.status === 200, `adding ${A} to Describe images = ${r.status}`)
+        const withVision = await rowsFor()
+        r = await tmPut(s)
+        assert(r.status === 200, `taking ${A} off Describe images = ${r.status}`)
+        assert(!says(withVision, "Vision"), "Vision still names the empty list with a model in it")
+        assert(says(withVision, "Speech to text") === ((s.stt ?? []).length === 0), "Speech to text followed Describe images")
+        assert(says(await rowsFor(), "Vision"), "Vision does not name the empty list again")
+      }
+      const { close, text, problems } = await open("/report")
+      const body = await text()
+      await close()
+      assert(problems.length === 0, `console errors: ${problems[0]}`)
+      for (const r of rows) assert(body.includes(r.item), `Check Up page lacks the ${r.item} row`)
+      return rows.map((r) => `${r.item}: ${r.status}`).join("; ") || "both lists have a usable model"
+    })
+
+    await check(10, "Remove drops each added row from its own list", async () => {
+      const pairs = Object.entries(added).flatMap(([use, names]) => names.map((n) => [use, n]))
+      if (!pairs.length) return "skipped, nothing added"
+      const { close, page } = await open("/task-models")
+      try {
+        for (const [use, name] of pairs) {
+          await page.getByRole("button", { name: `Remove ${name} from ${TITLES[use]}`, exact: true }).click()
+          await settle(page)
+          assert((await page.getByTestId(`task-model-${use}-${name}`).count()) === 0, `${name} still shown in ${TITLES[use]}`)
+          added[use].splice(added[use].indexOf(name), 1)
+        }
+      } finally {
+        await close()
+      }
+      const s = await saved()
+      for (const u of USES) {
+        assert(JSON.stringify(namesIn(s, u)) === JSON.stringify(namesIn(snapshot, u)), `${u}: ${JSON.stringify(namesIn(s, u))}`)
+      }
+      return pairs.map(([u, n]) => `${n} from ${TITLES[u]}`).join(", ")
+    })
+
+    await check(11, "the page scrolls in a short window and its cards keep clear of the sidebar", async () => {
+      const { close, page } = await open("/task-models")
+      try {
+        await page.setViewportSize({ width: 1100, height: 420 })
+        await page.waitForTimeout(300)
+        const r = await page.evaluate(() => {
+          const title = [...document.querySelectorAll("*")].find(
+            (el) => el.children.length === 0 && el.textContent?.trim() === "Settings",
+          )
+          if (!title) return { error: "no Settings card" }
+          let scroller = title.parentElement
+          while (scroller && !(["auto", "scroll"].includes(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) {
+            scroller = scroller.parentElement
+          }
+          if (!scroller) return { error: "no scrollable area holds the cards" }
+          scroller.scrollTop = scroller.scrollHeight
+          const t = title.getBoundingClientRect()
+          const sidebar = document.querySelector('[data-sidebar="sidebar"]')
+          const card = title.closest('[data-slot="card"]') ?? title.parentElement
+          return {
+            visible: t.top >= 0 && t.bottom <= window.innerHeight,
+            gap: sidebar ? Math.round(card.getBoundingClientRect().left - sidebar.getBoundingClientRect().right) : null,
+          }
+        })
+        assert(!r.error, r.error)
+        assert(r.visible, "the Settings card cannot be scrolled into view")
+        assert(r.gap === null || r.gap >= 8, `cards are ${r.gap}px from the sidebar`)
+        return r.gap === null ? "scrolls" : `scrolls; cards ${r.gap}px from the sidebar`
+      } finally {
+        await close()
+      }
+    })
+  } finally {
+    const r = await tmPut(snapshot)
+    if (r.status !== 200) console.log(`   WARN could not restore task_models: ${r.status} ${r.text.slice(0, 200)}`)
+    const now = await saved()
+    if (JSON.stringify(now) !== JSON.stringify(snapshot)) console.log(`   WARN task_models differs from before: ${JSON.stringify(now)}`)
+    await settleAfterConfigWrites()
+  }
 }
 
 // R. Network page — listeners, HTTPS and the certificate. Writes: R10 changes
@@ -1858,7 +2604,7 @@ if (useGroup("J", "Devices")) {
 }
 
 // K. Remaining pages with live data
-if (useGroup("K", "Logs, MCP, memory, voice, report")) {
+if (useGroup("K", "Logs, MCP, memory, task models, report")) {
   await check(1, "logs page shows log lines", async () => {
     const { close, text } = await open("/logs")
     const body = await text()
@@ -1874,8 +2620,8 @@ if (useGroup("K", "Logs, MCP, memory, voice, report")) {
       assert(problems.length === 0, `${p} console: ${problems[0]}`)
     }
   })
-  await check(3, "memory and voice pages render", async () => {
-    for (const p of ["/memory", "/voice"]) {
+  await check(3, "memory and task models pages render", async () => {
+    for (const p of ["/memory", "/task-models"]) {
       const { close, text, problems } = await open(p)
       const body = await text()
       await close()
@@ -1901,7 +2647,7 @@ if (useGroup("K", "Logs, MCP, memory, voice, report")) {
     await close()
     assert(navLabel === "Check Up", `sidebar label = ${JSON.stringify(navLabel)}`)
     assert(heading === "Check Up", `page heading = ${JSON.stringify(heading)}`)
-    assert(/^ClawEh \d+\.\d+\.\d+/.test(identity), `identity line = ${JSON.stringify(identity)}`)
+    assert(new RegExp(`^${escapeRegExp(PRODUCT.name)} \\d+\\.\\d+\\.\\d+`).test(identity), `identity line = ${JSON.stringify(identity)}`)
     assert(identity.includes(" on "), `identity line names no platform: ${identity}`)
     assert(headers.join("|") === "Action|Item|Status", `table headers = ${headers.join("|")}`)
     assert(rows > 0, "the assessment table has no rows")
@@ -1942,7 +2688,7 @@ if (useGroup("K", "Logs, MCP, memory, voice, report")) {
     for (const k of ["name", "version", "build", "platform", "generated_at"]) {
       assert(k in id, `identity.${k} missing: ${JSON.stringify(id)}`)
     }
-    assert(id.name === "ClawEh", `identity.name = ${id.name}`)
+    assert(id.name === PRODUCT.name, `identity.name = ${id.name}, want ${PRODUCT.name}`)
     assert(Array.isArray(json.assessment) && json.assessment.length > 0, "no assessment rows")
     for (const row of json.assessment) {
       assert(typeof row.action === "boolean", `row.action = ${JSON.stringify(row)}`)
@@ -1954,56 +2700,36 @@ if (useGroup("K", "Logs, MCP, memory, voice, report")) {
     return `${json.assessment.length} rows`
   })
 
-  await check(9, "the Speech page lists the configured backends on first load", async () => {
-    // Before any click. The page used to seed its rows from an empty list when
-    // the query was already cached, said nothing was configured, and the first
-    // "Add backend" then saved that empty list over the real configuration.
-    const voice = (await api("/api/voice/stt")).json ?? {}
-    const stt = voice.stt ?? []
-    const { close, page, problems } = await open("/voice")
-    await page.getByText("Transcription backends").waitFor({ timeout: 10000 })
-    const selects = page.locator("select[id^=stt-provider-]")
-    if (stt.length > 0) {
-      await selects.first().waitFor({ state: "visible", timeout: 10000 })
+  await check(9, "the Task models page shows each configured list on first load", async () => {
+    // Before any click: the rows must come from the saved block, never an
+    // empty list that the first edit would save over the configuration.
+    const data = (await api("/api/task-models")).json ?? {}
+    const tm = data.task_models ?? {}
+    const options = data.models ?? []
+    const uses = ["text", "image", "tts", "stt", "vision", "classify"]
+    const titles = ["Generate text", "Generate images", "Text to speech", "Transcription", "Describe images", "Classification"]
+    const { close, page, problems } = await open("/task-models")
+    await page.getByText("Text in results (characters)").waitFor({ timeout: 10000 })
+    const shownTitles = await page.locator('[data-testid^="task-list-"]:not([data-testid^="task-list-empty-"])').evaluateAll((els) =>
+      els.map((e) => e.querySelector('[data-slot="card-title"]')?.textContent),
+    )
+    const mismatches = []
+    for (const use of uses) {
+      const want = (tm[use] ?? []).map((m) => m.model)
+      const section = page.getByTestId(`task-list-${use}`)
+      const rows = await section.locator(`[data-testid^="task-model-${use}-"]`).evaluateAll((els, u) => els.map((e) => e.dataset.testid.slice(`task-model-${u}-`.length)), use)
+      if (JSON.stringify(rows) !== JSON.stringify(want)) mismatches.push(`${use}: rows ${JSON.stringify(rows)}, config ${JSON.stringify(want)}`)
+      const empty = await page.getByTestId(`task-list-empty-${use}`).count()
+      if (empty !== (want.length === 0 ? 1 : 0)) mismatches.push(`${use}: empty line shown ${empty} times with ${want.length} configured`)
+      const marked = await section.locator(`[data-testid^="task-model-unsupported-${use}-"]`).evaluateAll((els, u) => els.map((e) => e.dataset.testid.slice(`task-model-unsupported-${u}-`.length)), use)
+      const wantMarked = want.filter((m) => options.find((o) => o.name === m)?.support?.[use] === "no")
+      if (JSON.stringify(marked) !== JSON.stringify(wantMarked)) mismatches.push(`${use}: marked ${JSON.stringify(marked)}, expected ${JSON.stringify(wantMarked)}`)
     }
-    const rows = await selects.count()
-    const providers = rows ? await selects.evaluateAll((els) => els.map((e) => e.value)) : []
-    // The label each row carries: Primary, Fallback, Not used, or none.
-    const labels = rows
-      ? await selects.evaluateAll((els) =>
-          els.map((e) => {
-            const text = e.closest("div.rounded-md.border")?.textContent ?? ""
-            return /Not used/.test(text) ? "Not used" : /Primary/.test(text) ? "Primary" : /Fallback/.test(text) ? "Fallback" : ""
-          }),
-        )
-      : []
-    const empty = await page.getByText(/No transcription backends configured/).count()
     await close()
     assert(problems.length === 0, `console errors: ${problems[0]}`)
-    assert(rows === stt.length, `${rows} backend rows for ${stt.length} configured`)
-    assert(empty === (stt.length === 0 ? 1 : 0), `empty-state shown ${empty} times with ${stt.length} configured`)
-    for (let i = 0; i < stt.length; i++) {
-      assert(providers[i] === stt[i].provider, `row ${i} shows ${providers[i]}, config ${stt[i].provider}`)
-    }
-    // Enabled backends are tried in order: the first usable one is Primary,
-    // the others Fallback; one whose provider is not listed, has no API key
-    // or has no model (its own or a default) is Not used; a disabled one
-    // carries no label.
-    const options = voice.providers ?? []
-    let primarySeen = false
-    for (let i = 0; i < stt.length; i++) {
-      const b = stt[i]
-      const option = options.find((p) => p.name === b.provider)
-      const usable = Boolean(option && option.ready && (b.model?.trim() || option.default_model))
-      let want = ""
-      if (b.enabled && !usable) want = "Not used"
-      else if (b.enabled) {
-        want = primarySeen ? "Fallback" : "Primary"
-        primarySeen = true
-      }
-      assert(labels[i] === want, `row ${i} (${b.provider}) is labelled "${labels[i]}", expected "${want}"`)
-    }
-    return rows ? stt.map((b, i) => `${providers[i]} ${labels[i] || "disabled"}`).join(", ") : "none configured — empty state shown"
+    assert(JSON.stringify(shownTitles) === JSON.stringify(titles), `sections ${JSON.stringify(shownTitles)}`)
+    assert(mismatches.length === 0, mismatches.join("; "))
+    return uses.map((u) => `${u} ${(tm[u] ?? []).length}`).join(", ")
   })
 
   await check(10, "the MCP Servers, MCP Config and System pages show the configuration when reached from another page", async () => {
@@ -2577,6 +3303,73 @@ if (useGroup("N", "Memory curation")) {
       !(after.json.domains ?? []).some((d) => d.id === probeDomain),
       "the probe domain survived cleanup",
     )
+  })
+
+  await check(17, "keyword lists are shown apart and read-only", async () => {
+    assert(store, "no store")
+    // A domain carrying all three lists can only be written by import (the
+    // automatic list is consolidation's), so merge one in and remove it after.
+    const name = "e2e-keywords"
+    const doc = [
+      "format_version: 1",
+      "domains:",
+      `  - name: ${name}`,
+      "    status: active",
+      "    keyword_triggers: e2e agent phrase",
+      "    auto_keywords: e2e automatic phrase",
+      "    blocked_keywords: e2e blocked phrase",
+      "    memories:",
+      "      - type: fact",
+      "        status: active",
+      "        confidence: 1",
+      "        origin: user",
+      "        text: e2e keyword probe",
+      "",
+    ].join("\n")
+    const imp = await api(`/api/memory/${store}/import?mode=merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/yaml" },
+      body: doc,
+    })
+    assert(imp.status === 200, `import: ${imp.status} ${imp.text}`)
+    const domainId = ((await api(`/api/memory/${store}`)).json.domains ?? [])
+      .find((d) => d.name === name)?.id
+    assert(domainId, "the imported domain is not in the store")
+
+    let lines, inputs, problems
+    try {
+      const o = await open("/memory")
+      problems = o.problems
+      await o.page.locator(`[data-store-id="${store}"]`).click()
+      const card = o.page.locator(
+        `[data-testid=memory-domain][data-domain-name="${name}"]`,
+      )
+      await card.waitFor({ state: "visible", timeout: 10000 })
+      const text = async (id) =>
+        (await card.locator(`[data-testid=${id}]`).innerText()).trim()
+      lines = {
+        agent: await text("domain-keywords"),
+        auto: await text("domain-auto-keywords"),
+        blocked: await text("domain-blocked-keywords"),
+      }
+      inputs = await card.locator("input[type=text], textarea").count()
+      await o.close()
+    } finally {
+      await api(`/api/memory/${store}/domains/${domainId}`, { method: "DELETE" })
+    }
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(lines.agent === "Keywords: e2e agent phrase", `agent line: ${lines.agent}`)
+    assert(
+      lines.auto === "Keywords added automatically: e2e automatic phrase",
+      `automatic line: ${lines.auto}`,
+    )
+    assert(
+      lines.blocked === "Blocked keywords: e2e blocked phrase",
+      `blocked line: ${lines.blocked}`,
+    )
+    assert(inputs === 0, `${inputs} editable fields on the domain card`)
+    return "3 labelled lines, no fields"
   })
 }
 

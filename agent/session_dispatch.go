@@ -323,12 +323,22 @@ func (al *AgentLoop) drainSession(ctx context.Context, ss *sessionState, singleS
 	}
 }
 
+// chatHolder marks a turn running in a chat (channels.Manager.HoldChat).
+type chatHolder interface {
+	HoldChat(channel, chatID string) (release func())
+}
+
 // runQueuedTurn runs one batch as a turn holding a concurrent-turn slot.
 // An asked turn takes no slot: its asker lent its own while it waits, so with
 // every slot held by askers it could never run. Asks are bounded by
 // max_subagent_depth instead. Any other turn's slot travels with it, so a
 // wait inside it (an Ask, a request to a person) can lend it out (turnSlot).
+// While it waits and runs, the chat's typing indicator, reaction and
+// placeholder are held (channels.Manager.HoldChat), so a long turn keeps them.
 func (al *AgentLoop) runQueuedTurn(ctx, turnCtx context.Context, batch bus.InboundMessage) {
+	if al.chatHolder != nil && batch.ChatID != "" {
+		defer al.chatHolder.HoldChat(batch.Channel, batch.ChatID)()
+	}
 	if batch.Channel == constants.AgentMessageChannel {
 		al.runTurn(ctx, turnCtx, batch)
 		return

@@ -53,11 +53,9 @@ func (al *AgentLoop) agentBuilder(
 		al.registerAgentTools(inst, provider, dispatcher, fallbackChain, cfg)
 		if inst.IsTemp() {
 			// A config agent gets these after the registry is built (the gateway
-			// registers its tools, the media store is set at start); an agent
-			// created later gets them now. Its MCP tools come once it is
-			// registered (agentInserted).
+			// registers its tools); an agent created later gets them now. Its
+			// MCP tools come once it is registered (agentInserted).
 			al.registerExtraTools(inst)
-			al.applyMediaStore(inst)
 		}
 		return inst, nil
 	}
@@ -105,6 +103,7 @@ func (al *AgentLoop) registerAgentTools(
 		EphemeralMemory:   currentAgent.Spec.Ephemeral,
 		TempAgent:         currentAgent.IsTemp(),
 		TempPurpose:       currentAgent.Spec.Purpose,
+		CloneMarker:       cloneMarker(currentAgent),
 		Provider:          provider,
 		Dispatcher:        dispatcher,
 		Fallback:          fallbackChain,
@@ -112,6 +111,7 @@ func (al *AgentLoop) registerAgentTools(
 		SpawnAllowlist:    spawnAllowlist,
 		Agents:            newAgentServices(al, currentAgentID),
 		Messenger:         al,
+		Files:             al,
 		CandidateResolver: candidateResolver,
 		Spawn:             spawner,
 		CompactFn:         al.compactFn(currentAgent),
@@ -144,24 +144,17 @@ func (al *AgentLoop) newMessageTool() tools.Tool {
 	mt.SetSendCallback(func(ctx context.Context, channel, chatID, content string) error {
 		pubCtx, pubCancel := context.WithTimeout(ctx, publishTimeout)
 		defer pubCancel()
-		msg := bus.OutboundMessage{Channel: channel, ChatID: chatID, Content: content}
-		// Internal channels never reach the channel manager, which
-		// reports deliveries.
-		internal := constants.IsInternalChannel(channel)
+		// The tool sends only to a chat (never an internal channel), whose
+		// channel reports the delivery.
 		delivered := make(chan error, 1)
-		if !internal {
-			msg.OnDelivery = func(err error) {
-				select {
-				case delivered <- err:
-				default:
-				}
+		msg := bus.OutboundMessage{Channel: channel, ChatID: chatID, Content: content, OnDelivery: func(err error) {
+			select {
+			case delivered <- err:
+			default:
 			}
-		}
+		}}
 		if err := al.bus.PublishOutbound(pubCtx, msg); err != nil {
 			return err
-		}
-		if internal {
-			return toolsmsg.ErrQueued
 		}
 		select {
 		case err := <-delivered:
@@ -213,6 +206,7 @@ func (al *AgentLoop) newSpawner(
 		WorkerModelsSet:   al.hasWorkerModels,
 		RunFull:           al.runSubagentTask,
 		Alerter:           al.Alerter(),
+		TaskRunner:        &taskModelHost{al: al, clone: cloneMarker(currentAgent)},
 	})
 	currentAgent.spawnMgr = spawnMgr
 	spawner := toolsagents.NewSpawner(spawnMgr)

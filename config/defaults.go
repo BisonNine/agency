@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/global"
 	"github.com/PivotLLM/ClawEh/logger"
 )
@@ -63,8 +64,8 @@ func DefaultConfig() *Config {
 			},
 			List: []AgentConfig{
 				{
-					ID:      "claw",
-					Name:    "Claw",
+					ID:      global.DefaultAgentID,
+					Name:    app.ShortName(),
 					Default: true,
 					// Tools omitted: an agent has only the tools its list
 					// names, so the seeded agent starts with none.
@@ -104,6 +105,10 @@ func DefaultConfig() *Config {
 				BotToken:  "",
 				AppToken:  "",
 				AllowFrom: FlexibleStringSlice{},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
 			},
 			Matrix: MatrixConfig{
 				Enabled:      false,
@@ -324,9 +329,6 @@ func DefaultConfig() *Config {
 			Enabled:    false,
 			MonitorUSB: true,
 		},
-		Voice: VoiceConfig{
-			EchoTranscription: false,
-		},
 		Logging: LoggingConfig{
 			File:          global.DefaultLogFile,
 			Console:       global.DefaultLogConsole,
@@ -350,6 +352,7 @@ func DefaultConfig() *Config {
 			ExternalTools: nil,
 		},
 		ConfigReloadIntervalSeconds: global.DefaultConfigReloadIntervalSeconds,
+		Security:                    SecurityConfig{Permissions: DefaultPermissions()},
 	}
 	cfg.dataDir = homePath
 	return cfg

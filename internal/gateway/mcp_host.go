@@ -7,6 +7,7 @@ import (
 	"github.com/tenebris-tech/alerter"
 
 	"github.com/PivotLLM/ClawEh/agent"
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/bus"
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/logger"
@@ -57,6 +58,9 @@ func startMCPServer(cfg *config.Config, agentLoop *agent.AgentLoop, msgBus *bus.
 		mcpserver.WithExternalAllowlist(mcpVisibilityList(cfg.MCPHost.ExternalTools)),
 		mcpserver.WithMessageBus(msgBus),
 		mcpserver.WithToolActivityNotifier(agentLoop.ToolActivityLine),
+		// A tool's own output reaches the chat only with stream_tool_activity,
+		// as in the agent loop.
+		mcpserver.WithToolOutput(func() bool { return agentLoop.GetConfig().Agents.Defaults.StreamToolActivity }),
 		mcpserver.WithAlerter(agentLoop.Alerter()),
 		mcpserver.WithOnServeError(services.fatal.handlerFor("mcpserver")),
 	)
@@ -174,7 +178,7 @@ func syncServiceTokensFromDisk(cfg *config.Config, agentLoop *agent.AgentLoop, s
 			map[string]any{"path": path, "error": err.Error()})
 		agentLoop.Alerter().Send(alerter.Alert{
 			Title:       "Service tokens not loaded",
-			Description: path + ": external MCP clients using `claw token` credentials are rejected (or keep the previously loaded set) until the file is fixed",
+			Description: path + ": external MCP clients using `" + app.BinaryName() + " token` credentials are rejected (or keep the previously loaded set) until the file is fixed",
 			Details:     err.Error(),
 			EventID:     "service-tokens",
 		})

@@ -48,8 +48,8 @@ func (al *AgentLoop) processSystemMessage(
 
 	// A background result of an asked turn: the asker has its reply already,
 	// so the result goes to the agent's own main conversation only. The turn
-	// runs on the ask channel (no chat id): nothing is sent to any chat, no
-	// chat becomes the session's source, and no recovery record is kept.
+	// runs on the ask channel (no chat id): nothing is sent to any chat, the
+	// turn has no chat for MCP output, and no recovery record is kept.
 	askOrigin := originChannel == constants.AgentMessageChannel
 	if askOrigin {
 		originChatID = ""
@@ -74,7 +74,7 @@ func (al *AgentLoop) processSystemMessage(
 		return "", errors.New("no agent available for system message")
 	}
 
-	result := capAsyncResult(agent, msg)
+	result := capAsyncResult(agent, msg, al.sessionLimits(agent, sessionKey).contextWindow)
 	response, err := al.runMeteredTurn(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
 		Channel:         originChannel,
@@ -103,11 +103,11 @@ func subagentResult(content string) string {
 	return content
 }
 
-// capAsyncResult caps an async result for agent's context. It is a tool
-// result that arrives late: capped as the synchronous path does, or an
-// oversized one fails the turn it lands in.
-func capAsyncResult(agent *AgentInstance, msg bus.InboundMessage) string {
-	result := capToolResult(msg.Content, false, agent.ContextWindow)
+// capAsyncResult caps an async result for agent's context, whose window is
+// contextWindow tokens. It is a tool result that arrives late: capped as the
+// synchronous path does, or an oversized one fails the turn it lands in.
+func capAsyncResult(agent *AgentInstance, msg bus.InboundMessage, contextWindow int) string {
+	result := capToolResult(msg.Content, false, contextWindow)
 	if len(result) != len(msg.Content) {
 		logger.WarnCF("agent", "Async task result truncated for context", map[string]any{
 			"agent_id":     agent.ID,

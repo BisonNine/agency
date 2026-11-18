@@ -14,6 +14,7 @@ import (
 
 	"github.com/PivotLLM/ClawEh/internal/admin"
 	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"github.com/PivotLLM/ClawEh/internal/testbinary"
 	"github.com/PivotLLM/ClawEh/web/backend/middleware"
 )
 
@@ -37,7 +38,7 @@ func newAuthEnv(t *testing.T, withCreds bool) *authEnv {
 	t.Helper()
 	path := admin.Path(t.TempDir())
 	if withCreds {
-		if err := admin.Write(path, authTestUser, authTestPass); err != nil {
+		if err := admin.Write(path, authTestUser, authTestPass, admin.DefaultFileMode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -83,13 +84,14 @@ func (e *authEnv) status(cookie *http.Cookie) map[string]any {
 }
 
 func TestAuthStatus_NoAdminAccount(t *testing.T) {
+	testbinary.Set(t, "alice-claw")
 	env := newAuthEnv(t, false)
 	st := env.status(nil)
 	if st["configured"] != false || st["authenticated"] != false {
 		t.Fatalf("status = %v", st)
 	}
 	rec := env.login(authTestUser, authTestPass, "127.0.0.1")
-	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "run: claw admin") {
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "run: alice-claw admin") {
 		t.Fatalf("login with no account: %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -338,7 +340,7 @@ func TestAuthLogin_CredentialsChangeClearsAllLocks(t *testing.T) {
 	assertLocked(t, env.login("other", "x", "192.0.2.1"), "600")
 
 	const newPass = "the operator's brand new password"
-	if err := admin.Write(env.store.Path(), authTestUser, newPass); err != nil {
+	if err := admin.Write(env.store.Path(), authTestUser, newPass, admin.DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chtimes(env.store.Path(), time.Now(), time.Now().Add(2*time.Second)); err != nil {

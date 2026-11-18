@@ -36,12 +36,13 @@ Behind a proxy, plain HTTP on these listeners is not marked, because the proxy d
 | **Reverse proxy** | Requests seem to arrive through a proxy on this machine that is not in **Trusted proxies**, so the allowed networks and the lockout don't apply. It shows once a request from localhost carried forwarding headers since ClawEh started. | Click the item to open **Trusted proxies** on the **Network** page and add the proxy's address, usually `127.0.0.1`. See [Remote access](./remote-access.md#what-to-set-in-claweh). |
 | **Encrypted Matrix rooms** | The Matrix channel has seen encrypted rooms since ClawEh started; it can't read them. | Use a room with encryption off. Click the item to open [Matrix encryption](../channels/matrix.md#encryption). |
 | **TLS certificate expiry** | Your own certificate expires within 14 days, or has expired. | Renew the certificate files. See [HTTPS and certificates](./https.md#renewals). |
-| **Data directory permissions** | Files under the data directory are more open than the configured modes (`700` folders and `600` secrets unless `security.permissions` sets others). Unmarked, it lists the modes in force. | Restart ClawEh, which tightens them, or `chmod` each to the mode the row names. See [Logs](./logs.md#startup-permission-checks). |
+| **Data directory permissions** | Folders or files under the data directory are more open than their configured modes (`security.permissions`). Unmarked, it lists every area's modes. | Restart ClawEh, which sets them, or `chmod` each to the mode the row names. See [File permissions](./logs.md#file-permissions). |
+| **Access for other users** | A mode in `security.permissions` gives other users of the machine access. The row names each setting and its mode. | Set the last digit of each named mode to `0`, unless you mean it. See [File permissions](./logs.md#file-permissions). |
 | **WebUI chat token** | The WebUI channel is on without a token. | Set a token for the WebUI channel (`channels.webui.token`). It is for non-browser clients only. |
 | **Device auto-approve** | New devices are paired without approval. | Turn off **Auto-approve pairings** on the **Network** page. See [Devices](../channels/devices.md). |
-| **File confinement** | Agents may read (or read and write) outside their workspace. | On the **System** page, under **Agent**, turn on **Restrict to workspace**, unless you mean it. See [Files and mounts](../agents/files-and-mounts.md#install-wide-file-settings). |
-| **Shell access** | Some agent may run shell commands and the deny patterns are off. | Check that each listed agent should have **Allow shell commands**. See [Tools and skills](../agents/tools-and-skills.md#shell-commands). |
-| **Mount (name)** | A mount uses a reserved folder name and is ignored. | Rename the mount on the **Agents** page. See [Files and mounts](../agents/files-and-mounts.md#reserved-names). |
+| **File confinement** | Agents may read (or read and write) outside their workspace. | On the **System** page, under **Agent**, turn on **Restrict to workspace**, unless you mean it. See [Files and allowed folders](../agents/allowed-folders.md#install-wide-file-settings). |
+| **Allowed folder** (agent) | A saved allowed folder is ignored: its path is not absolute, or the folder does not exist. | On the **Agents** page, fix the path or remove the folder, or create the folder. See [Allowed folders](../agents/allowed-folders.md#allowed-folders). |
+| **Shell access** | Some agent may run shell commands and the deny patterns are off. | Check that each listed agent should have `shell_exec` ticked. See [Tools and skills](../agents/tools-and-skills.md#shell-commands). |
 | **Fusion on with no service (agent)** | Fusion is on for an agent but no service is ticked, so it has no Fusion tools. | Tick its services under **Fusion services** on the **Agents** page. See [MCPFusion](../mcpfusion.md#give-an-agent-access). |
 | **Person's chat (name)** | A person's chat is on a channel that is not set up. | Set up that channel, or bind the person to a channel that is. See [Human agents](../agents/human-agents.md). |
 | **Channels accepting any sender** | A messaging channel allows anyone (`*`) to message it. | Limit its allowed senders (**Allow From**) on that channel's page. See [Channels](../channels/index.md). |
@@ -55,6 +56,8 @@ These rows are information only:
 - **File confinement vs shell (agent)**: the agent's file tools are confined, but it can run shell commands, which are not.
 - **Allow CLI to bypass restrictions (provider)** and **CLI bypass not allowed (provider)**: whether each CLI provider may skip its own permission prompts. See [CLI providers](../providers/cli-providers.md#allow-cli-to-bypass-restrictions).
 - **No tools (agent)**: the agent has no tools. See [Tools and skills](../agents/tools-and-skills.md).
+- **Speech to text** and **Vision**: "No model in Transcription." or "No model in Describe images." while that list is empty on the [Task models](../providers/task-models.md) page (marked "No usable model: …", naming each model and why, when the list has models but none can be used), so voice messages are not transcribed, or images are not described for models that can't see them. The row links to the page.
+- **Classifier model (agent)** and **Classifier (agent: id)**: the agent's classifier model is not set or not in the Classification list on the [Task models](../providers/task-models.md) page (the row says so when that list is empty), or a classifier definition is invalid and not run. See [Classifiers](../agents/classifiers.md#check-up).
 - **MCP servers running local programs**: [MCP servers](../mcp.md#external-mcp-servers) started as programs on this machine.
 - **Sub-agent spawning**: how deep [sub-agents](../agents/subagents.md) may nest.
 
@@ -74,10 +77,10 @@ The PDF has these sections, in order:
 | Providers and models | API and CLI providers, enabled models, and which model does what. |
 | Credentials and tokens | Each credential as set or not set. |
 | Channels | Enabled channels, who may message them, and which agents answer. |
-| Agents | Per agent: its settings (models, memory, sub-agents, suites, **Forum**, **Character card** with a missing or ignored card marked, **Character card tools**), tools (with `forum_launch` listed when **Allow forum** is on), folder access, MCP access. |
+| Agents | Per agent: its settings (models, memory, sub-agents, suites, **Forum**, **Character card** with a missing or ignored card marked, **Character card tools**, **Allow classifiers**, **Classifier model** with an unusable model marked), tools (with `forum_launch` listed when **Allow forum** is on), folder access, MCP access, and its [classifiers](../agents/classifiers.md#check-up) with invalid ones marked. |
 | External services | MCP servers and skills. |
 | Devices | Paired devices and pending pairings. |
-| Data | Where the config, logs, conversations, memory, character cards and other data are stored. |
+| Data | Where the config, logs, conversations, memory, character cards, classifiers and other data are stored. |
 | Scheduled activity | Scheduled jobs, task orchestration, and background tasks. |
 
 A part that cannot be read shows as "unavailable" with the reason; the rest of the report is still produced.

@@ -47,7 +47,9 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	warnUnknownKeys(doc)
-	refs, err := resolveSecretRefs(doc)
+	// A "file:" reference may grant no more than the secrets file mode, read
+	// from the same document before anything else is decoded.
+	refs, err := resolveSecretRefs(doc, permissionsFromJSON(data).Modes(AreaSecrets).File)
 	if err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -84,15 +86,22 @@ func LoadConfig(path string) (*Config, error) {
 	if len(tmp.Providers) > 0 {
 		cfg.Providers = nil
 	}
+	// security.permissions is completed from the file's own keys, so a key
+	// the file lacks is known to be missing (and saved at start) rather than
+	// silently inherited from the defaults.
+	cfg.Security.Permissions = PermissionsConfig{}
 
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
 	cfg.secretRefs = refs
+	cfg.permsAdded = completePermissions(&cfg.Security.Permissions)
+	cfg.permsDropped = unknownPermissionKeys(doc)
+	warnPermissionFloor(cfg.Security.Permissions, nil)
 
 	warnLegacyCompressModel(data)
 	warnLegacyMaestroBool(cfg)
-	warnReservedMounts(cfg)
+	cfg.migrateLegacyMounts()
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
@@ -127,12 +136,13 @@ func LoadConfig(path string) (*Config, error) {
 // refuses on save too. Listener settings: the gateway must not start on a
 // half-configured certificate or an off-box MCP host, and the config watcher
 // turns a refusal into a "Config file invalid" alert on a live gateway. The
-// forum limits, the permission modes and operator.name. Agent ids, which are never
+// forum limits, the classifiers section, the permission modes and
+// operator.name. Agent ids, which are never
 // rewritten: an invalid one stops the start (and a live reload keeps the
 // running config) until the operator fixes it.
 func (c *Config) loadProblems() []error {
 	var errs []error
-	for _, err := range []error{c.validateListeners(), c.Forum.Limits.Validate(), c.Security.Permissions.Validate(), c.Operator.Validate()} {
+	for _, err := range []error{c.validateListeners(), c.Forum.Limits.Validate(), c.Classifiers.Validate(), c.TaskModels.Validate(), c.Security.Permissions.Validate(), c.Operator.Validate()} {
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -288,6 +298,9 @@ func (c *Config) migrateChannelConfigs() {
 	if c.Channels.Discord.MentionOnly && !c.Channels.Discord.GroupTrigger.MentionOnly {
 		c.Channels.Discord.GroupTrigger.MentionOnly = true
 	}
+	// Cleared once moved, so nothing reads or writes the retired form again
+	// (and GET /api/config never shows it).
+	c.Channels.Discord.MentionOnly = false
 }
 
 // SaveConfig persists cfg. Any save through this path marks the config as
@@ -306,6 +319,10 @@ func SeedDefaultConfig(path string, cfg *Config) error {
 }
 
 func writeConfig(path string, cfg *Config) error {
+	// Every save comes through here: a field the provider's protocol does not
+	// use (a CLI's base_url, an HTTP provider's command) is not written. A
+	// load leaves the file's providers as they are.
+	cfg.dropOtherProtocolFields()
 	// Secret references go back in place of the values they resolved to, so a
 	// save never copies an env var or key file into config.json.
 	compact, err := MarshalWithSecretRefs(cfg)
@@ -317,8 +334,9 @@ func writeConfig(path string, cfg *Config) error {
 		return err
 	}
 
-	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	return fileutil.WriteFileAtomic(path, data.Bytes(), 0o600)
+	// Atomic write with explicit sync for flash storage reliability; the file
+	// takes exactly the root area's file mode, whatever the umask.
+	return fileutil.WriteFileAtomic(path, data.Bytes(), cfg.PermissionModes(AreaRoot).File)
 }
 
 // fileExists reports whether path names an existing file.

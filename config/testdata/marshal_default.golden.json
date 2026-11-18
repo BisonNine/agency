@@ -511,7 +511,9 @@
         "id": "default",
         "enabled": false,
         "token": "",
-        "group_trigger": {},
+        "group_trigger": {
+          "mention_only": false
+        },
         "typing": {
           "enabled": true
         },
@@ -530,10 +532,15 @@
       "token": "",
       "proxy": "",
       "allow_from": [],
-      "mention_only": false,
-      "group_trigger": {},
-      "typing": {},
-      "placeholder": {},
+      "group_trigger": {
+        "mention_only": false
+      },
+      "typing": {
+        "enabled": false
+      },
+      "placeholder": {
+        "enabled": false
+      },
       "reasoning_channel_id": ""
     },
     "slack": {
@@ -541,9 +548,16 @@
       "bot_token": "",
       "app_token": "",
       "allow_from": [],
-      "group_trigger": {},
-      "typing": {},
-      "placeholder": {},
+      "group_trigger": {
+        "mention_only": false
+      },
+      "typing": {
+        "enabled": false
+      },
+      "placeholder": {
+        "enabled": true,
+        "text": "Thinking... 💭"
+      },
       "reasoning_channel_id": ""
     },
     "matrix": {
@@ -570,7 +584,9 @@
       "write_timeout": 10,
       "max_connections": 100,
       "allow_from": [],
-      "placeholder": {}
+      "placeholder": {
+        "enabled": false
+      }
     },
     "device": {
       "enabled": false,
@@ -682,9 +698,6 @@
     "enabled": false,
     "monitor_usb": true
   },
-  "voice": {
-    "echo_transcription": false
-  },
   "logging": {
     "file": true,
     "console": true,
@@ -696,7 +709,46 @@
     "dump_all": false,
     "dump_failed_compressions": false
   },
-  "security": {},
+  "security": {
+    "permissions": {
+      "root": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      },
+      "secrets": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      },
+      "bin": {
+        "dir_mode": "0700",
+        "file_mode": "0700"
+      },
+      "default": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      },
+      "logs": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      },
+      "agents": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      },
+      "media": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      },
+      "common": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      },
+      "backup": {
+        "dir_mode": "0700",
+        "file_mode": "0600"
+      }
+    }
+  },
   "mcp_host": {
     "enabled": false,
     "auto_enable": true,

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/internal/perms"
 )
@@ -26,7 +27,7 @@ func TestAssessment_BypassCLIRestrictions(t *testing.T) {
 		t.Errorf("mark = %q, want blank: awareness, not an action", r[0])
 	}
 	contains(t, r[2], "Allow CLI to bypass restrictions is on for Claude CLI", "row status")
-	contains(t, r[2], "outside ClawEh's workspace and shell controls", "row status")
+	contains(t, r[2], "outside "+app.ShortName()+"'s workspace and shell controls", "row status")
 	// A CLI with bypass off gets its own awareness row: its tool calls depend
 	// on the CLI's permission settings.
 	off := assessmentRow(t, s, "CLI bypass not allowed (Codex CLI)")
@@ -208,24 +209,30 @@ func TestAssessment_Marks(t *testing.T) {
 	}
 }
 
-// TestAssessment_DataDirPermissions: owner-only CLAW_HOME is unmarked; a
-// secret-bearing file others can read marks the row, counts, and names the
-// first offender with its mode.
+// TestAssessment_DataDirPermissions: a CLAW_HOME at its configured modes is
+// unmarked and the row lists every area's modes; a path more open than its
+// mode marks the row, counts, and names the first one with its mode and the
+// configured one; a path tighter than its mode is not reported.
 func TestAssessment_DataDirPermissions(t *testing.T) {
 	cfg, env := fixtureConfig(t)
-	// t.TempDir and the fixture's folders follow the umask; the gateway would
-	// have made every directory under CLAW_HOME, and CLAW_HOME itself, 0700.
+	// t.TempDir and the fixture's files follow the umask; the gateway would
+	// have set every folder 0700 and every file 0600.
 	if err := filepath.WalkDir(env.DataDir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
+		if err != nil || d.Type()&fs.ModeSymlink != 0 {
 			return err
 		}
-		return os.Chmod(p, 0o700)
+		if d.IsDir() {
+			return os.Chmod(p, 0o700)
+		}
+		return os.Chmod(p, 0o600)
 	}); err != nil {
 		t.Fatal(err)
 	}
+	all := "root 0700/0600; secrets 0700/0600; bin 0700/0700; default 0700/0600; logs 0700/0600; " +
+		"agents 0700/0600; media 0700/0600; common 0700/0600; backup 0700/0600"
 	s := collectAssessment(t.Context(), cfg, env)
-	if r := assessmentRow(t, s, "Data directory permissions"); r[0] != "" || r[2] != "Within the configured modes (folders 0700, secrets 0600)." {
-		t.Errorf("tight permissions row = %v", r)
+	if r := assessmentRow(t, s, "Data directory permissions"); r[0] != "" || r[2] != "Matches the configured modes ("+all+")." {
+		t.Errorf("matching permissions row = %v", r)
 	}
 
 	loosePath := filepath.Join(env.DataDir, "internal", "tokens.json")
@@ -235,50 +242,71 @@ func TestAssessment_DataDirPermissions(t *testing.T) {
 	if err := os.WriteFile(loosePath, []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(loosePath, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	s = collectAssessment(t.Context(), cfg, env)
 	r := assessmentRow(t, s, "Data directory permissions")
 	if r[0] != "*" {
 		t.Errorf("loose permissions mark = %q, want *", r[0])
 	}
-	contains(t, r[2], "1 file under CLAW_HOME is more open than the configured modes (first: "+loosePath+" 0644)", "loose status")
-	contains(t, r[2], "ClawEh tightens them at start — run it, or chmod it to 0600.", "loose fix")
+	contains(t, r[2], "1 path under CLAW_HOME is more open than the configured modes (first: "+loosePath+" 0644, configured 0600)", "loose status")
 
-	// A loose data directory itself counts too and comes first.
+	// A loose data directory counts too, and comes first.
 	if err := os.Chmod(env.DataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	s = collectAssessment(t.Context(), cfg, env)
 	r = assessmentRow(t, s, "Data directory permissions")
-	contains(t, r[2], "2 files under CLAW_HOME are more open than the configured modes (first: "+env.DataDir+" 0755)", "loose dir status")
+	contains(t, r[2], "2 paths under CLAW_HOME are more open than the configured modes (first: "+env.DataDir+" 0755, configured 0700)", "loose dir status")
 
-	// With the data directory allowed 0750, a 0750 one is fine and only the
-	// secret is reported, against its fixed 0600; the summary names the modes.
-	if err := os.Chmod(env.DataDir, 0o750); err != nil {
+	// Tighter than configured is not reported.
+	if err := os.Chmod(env.DataDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(loosePath, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Security.Permissions = config.PermissionsConfig{
-		DirMode: "0750",
-		Agents:  config.AreaPermissions{DirMode: "0750", FileMode: "0640"},
-	}
+	cfg.Security.Permissions.Root.DirMode = "0750"
 	s = collectAssessment(t.Context(), cfg, env)
-	r = assessmentRow(t, s, "Data directory permissions")
-	if r[0] != "" || r[2] != "Within the configured modes (folders 0750, secrets 0600; agents 0750/0640)." {
-		t.Errorf("configured modes row = %v", r)
+	if r = assessmentRow(t, s, "Data directory permissions"); r[0] != "" {
+		t.Errorf("tighter data dir marked: %v", r)
+	}
+}
+
+// TestAssessment_OtherAccess: no row while every mode keeps other users out;
+// a marked row naming each key and mode once one lets them in. Group access
+// alone is not marked.
+func TestAssessment_OtherAccess(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Security.Permissions.Logs = config.AreaPermissions{DirMode: "0750", FileMode: "0640"}
+	s := collectAssessment(t.Context(), cfg, env)
+	for _, row := range s.Tables[0].Rows {
+		if row[1] == "Access for other users" {
+			t.Fatalf("other-access row with group-only modes: %v", row)
+		}
+	}
+	cfg.Security.Permissions.Logs = config.AreaPermissions{DirMode: "0755", FileMode: "0644"}
+	s = collectAssessment(t.Context(), cfg, env)
+	r := assessmentRow(t, s, "Access for other users")
+	if r[0] != "*" {
+		t.Errorf("other-access mark = %q, want *", r[0])
+	}
+	want := "Other users of this machine get access: security.permissions.logs.dir_mode is 0755, security.permissions.logs.file_mode is 0644."
+	if r[2] != want {
+		t.Errorf("other-access status = %q, want %q", r[2], want)
 	}
 }
 
 // TestPermsStatus_TruncatedAndError: a truncated walk keeps its findings and
 // says it stopped; any other error is reported as such.
 func TestPermsStatus_TruncatedAndError(t *testing.T) {
-	got := permsStatus(nil, perms.ErrTruncated, "folders 0700, secrets 0600")
-	contains(t, got, "Within the configured modes (folders 0700, secrets 0600).", "truncated, no findings")
+	got := permsStatus(nil, perms.ErrTruncated, "root 0700/0600")
+	contains(t, got, "Matches the configured modes (root 0700/0600).", "truncated, no findings")
 	contains(t, got, "The check was truncated at the entry cap", "truncated note")
 
 	got = permsStatus([]perms.Finding{{Path: "/x/tokens.json", Mode: 0o644, Want: 0o600}}, perms.ErrTruncated, "")
-	contains(t, got, "1 file under CLAW_HOME is more open than the configured modes (first: /x/tokens.json 0644)", "truncated with findings")
+	contains(t, got, "1 path under CLAW_HOME is more open than the configured modes (first: /x/tokens.json 0644, configured 0600)", "truncated with findings")
 	contains(t, got, "truncated at the entry cap", "truncated note with findings")
 
 	got = permsStatus(nil, errors.New("boom"), "")
@@ -327,7 +355,7 @@ func TestAssessment_FileConfinementVsShell(t *testing.T) {
 		if r[0] != "" {
 			t.Errorf("%s mark = %q, want blank: awareness, not an action", id, r[0])
 		}
-		if r[2] != "File tools are confined to the workspace for "+id+", but shell_exec is available and is not confined." {
+		if r[2] != "File tools are confined to the workspace and allowed folders for "+id+", but shell_exec is available and is not confined." {
 			t.Errorf("%s status = %q", id, r[2])
 		}
 	}
@@ -421,7 +449,7 @@ func TestAssessment_AuditLog(t *testing.T) {
 	if r[0] != "*" {
 		t.Errorf("missing audit mark = %q, want *", r[0])
 	}
-	if r[2] != "Audit log not initialised: "+auditPath+" is missing; ClawEh creates it at start." {
+	if r[2] != "Audit log not initialised: "+auditPath+" is missing; "+app.ShortName()+" creates it at start." {
 		t.Errorf("missing audit status = %q", r[2])
 	}
 
@@ -446,7 +474,7 @@ func TestAssessment_ShellDelegation(t *testing.T) {
 	cfg, env := fixtureConfig(t)
 	cfg.Agents.List[0].Tools = []string{"file_read"} // Alice has no shell_exec
 	r := assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Shell access")
-	if !strings.Contains(r[2], "Allow shell commands: Bob;") || strings.Contains(r[2], "allow_agents") {
+	if !strings.Contains(r[2], "Shell commands allowed: Bob;") || strings.Contains(r[2], "allow_agents") {
 		t.Errorf("no delegation: shell row = %v", r)
 	}
 	if !strings.Contains(r[2], "Allow CLI to bypass restrictions") {
@@ -471,25 +499,25 @@ func TestAssessment_ShellDelegation(t *testing.T) {
 }
 
 // TestAssessment_ShellExplicitOnly: the Shell access row lists only the agents
-// whose tools name shell_exec ("Allow shell commands"); a "*" list does not
+// whose tools name shell_exec (its shell_exec box); a "*" list does not
 // count, and deny_tools removes an agent.
 func TestAssessment_ShellExplicitOnly(t *testing.T) {
 	cfg, env := fixtureConfig(t)
 	// alice has no tools key (the "*" default), bob names shell_exec.
 	r := assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Shell access")
-	if !strings.Contains(r[2], "Allow shell commands: Bob;") {
+	if !strings.Contains(r[2], "Shell commands allowed: Bob;") {
 		t.Errorf("default: shell row = %v", r)
 	}
 
 	cfg.Agents.List[0].Tools = []string{"*"}
 	r = assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Shell access")
-	if !strings.Contains(r[2], "Allow shell commands: Bob;") {
+	if !strings.Contains(r[2], "Shell commands allowed: Bob;") {
 		t.Errorf(`alice with "*": shell row = %v`, r)
 	}
 
 	cfg.Agents.List[0].Tools = []string{"*", "shell_exec"}
 	r = assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Shell access")
-	if !strings.Contains(r[2], "Allow shell commands: Alice, Bob;") {
+	if !strings.Contains(r[2], "Shell commands allowed: Alice, Bob;") {
 		t.Errorf("alice names shell_exec: shell row = %v", r)
 	}
 
@@ -502,20 +530,25 @@ func TestAssessment_ShellExplicitOnly(t *testing.T) {
 	}
 }
 
-// TestAssessment_IgnoredMount: a mount named after a workspace folder gets an
-// action row naming the agent and the mount; a normal mount gets none.
-func TestAssessment_IgnoredMount(t *testing.T) {
+// TestAssessment_IgnoredAllowedFolder: an allowed folder the file tools skip
+// gets an action row naming the agent and the folder; a usable one gets none.
+func TestAssessment_IgnoredAllowedFolder(t *testing.T) {
 	cfg, env := fixtureConfig(t)
-	cfg.Agents.List[0].Mounts = []config.MountConfig{{Name: "notes", Path: t.TempDir()}}
+	cfg.Agents.List[0].AllowedFolders = []config.AllowedFolderConfig{{Path: t.TempDir()}}
 	for _, row := range collectAssessment(t.Context(), cfg, env).Tables[0].Rows {
-		if strings.HasPrefix(row[1], "Mount (") {
-			t.Errorf("row present for a normal mount: %v", row)
+		if strings.HasPrefix(row[1], "Allowed folder (") {
+			t.Errorf("row present for a usable folder: %v", row)
 		}
 	}
-	cfg.Agents.List[0].Mounts = append(cfg.Agents.List[0].Mounts, config.MountConfig{Name: "Files", Path: t.TempDir()})
-	// The row names the agent by its display name.
-	r := assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Mount (Alice)")
-	if r[0] == "" || r[2] != `Ignored: "Files" is a reserved name.` {
+	missing := filepath.Join(t.TempDir(), "missing")
+	cfg.Agents.List[0].AllowedFolders = append(cfg.Agents.List[0].AllowedFolders, config.AllowedFolderConfig{Path: missing})
+	r := assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Allowed folder (Alice)")
+	if r[0] == "" || r[2] != `Ignored: folder "`+missing+`" not found.` {
+		t.Errorf("row = %v", r)
+	}
+	cfg.Agents.List[0].AllowedFolders = []config.AllowedFolderConfig{{Path: "notes"}}
+	r = assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Allowed folder (Alice)")
+	if r[0] == "" || r[2] != `Ignored: "notes" is not an absolute path.` {
 		t.Errorf("row = %v", r)
 	}
 }
@@ -730,7 +763,7 @@ func TestAssessment_EncryptedMatrixRooms(t *testing.T) {
 
 	env.EncryptedMatrixRooms = []string{`"Alice's room" (!alice:example.org)`, "!bob:example.org"}
 	r := assessmentRow(t, collectAssessment(t.Context(), cfg, env), itemEncryptedMatrix)
-	if r[0] != "*" || r[2] != `ClawEh can't read these encrypted rooms: "Alice's room" (!alice:example.org), !bob:example.org.` {
+	if r[0] != "*" || r[2] != app.ShortName()+` can't read these encrypted rooms: "Alice's room" (!alice:example.org), !bob:example.org.` {
 		t.Errorf("row = %v", r)
 	}
 	var link string

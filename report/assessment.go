@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/internal/audit"
 	"github.com/PivotLLM/ClawEh/internal/perms"
@@ -35,6 +37,10 @@ const (
 	itemDeviceHTTPS = "Device HTTPS"
 	itemMCPHost     = "MCP host (local tools)"
 )
+
+// itemOtherAccess is the marked row listing every security.permissions mode
+// that gives other users of the machine access.
+const itemOtherAccess = "Access for other users"
 
 // itemProxy is the neutral row naming the proxies the install is behind.
 const itemProxy = "Proxy"
@@ -183,7 +189,7 @@ func mark(action bool) string {
 // collectAssessment is the table a reviewer reads first: the items that most
 // often need attention, each with the fact and, where action is recommended,
 // a mark. It opens with one row per listener (see listenerRows).
-func collectAssessment(_ context.Context, cfg *config.Config, env Environment) Section {
+func collectAssessment(ctx context.Context, cfg *config.Config, env Environment) Section {
 	t := Table{Columns: []string{"Action", "Item", "Status"}}
 	add := func(action bool, item, status string) {
 		t.Rows = append(t.Rows, row(mark(action), item, status))
@@ -204,12 +210,15 @@ func collectAssessment(_ context.Context, cfg *config.Config, env Environment) S
 		add(true, itemUntrustedProxy, untrustedProxyStatus(env))
 	}
 	if cfg.Channels.Matrix.Enabled && len(env.EncryptedMatrixRooms) > 0 {
-		add(true, itemEncryptedMatrix, "ClawEh can't read these encrypted rooms: "+strings.Join(env.EncryptedMatrixRooms, ", ")+".")
+		add(true, itemEncryptedMatrix, app.ShortName()+" can't read these encrypted rooms: "+strings.Join(env.EncryptedMatrixRooms, ", ")+".")
 	}
 	dd := dataDir(cfg, env)
 
 	findings, permErr := perms.Check(dd, env.ConfigPath, perms.PolicyFor(cfg))
 	add(len(findings) > 0, "Data directory permissions", permsStatus(findings, permErr, cfg.Security.Permissions.Summary()))
+	if other := cfg.Security.Permissions.OtherAccess(); len(other) > 0 {
+		add(true, itemOtherAccess, "Other users of this machine get access: "+strings.Join(other, ", ")+".")
+	}
 
 	wu := cfg.Channels.WebUI
 	add(wu.Enabled && wu.Token == "", "WebUI chat token",
@@ -229,9 +238,9 @@ func collectAssessment(_ context.Context, cfg *config.Config, env Environment) S
 	case !d.RestrictToWorkspace:
 		add(true, "File confinement", "restrict_to_workspace is off: "+ids+" can read and write anything user "+user+" can access.")
 	case d.AllowReadOutsideWorkspace:
-		add(true, "File confinement", "allow_read_outside_workspace is on: "+ids+" can read anything user "+user+" can read; writes stay in the workspace and mounts.")
+		add(true, "File confinement", "allow_read_outside_workspace is on: "+ids+" can read anything user "+user+" can read; writes stay in the workspace and allowed folders.")
 	default:
-		add(false, "File confinement", "Agents are confined to their workspace, mounts and the allow-listed patterns ("+ids+").")
+		add(false, "File confinement", "Agents are confined to their workspace, allowed folders and the allow-listed patterns ("+ids+").")
 	}
 
 	var shell []string
@@ -252,9 +261,29 @@ func collectAssessment(_ context.Context, cfg *config.Config, env Environment) S
 		shellText += "; CLI models with Allow CLI to bypass restrictions have their own shell"
 	}
 	add(len(shell) > 0 && !ex.EnableDenyPatterns, "Shell access", shellText+".")
-	// A mount named after a workspace folder is set aside at load.
-	for _, m := range cfg.IgnoredMounts() {
-		add(true, "Mount ("+agentNames(cfg, []string{m.Agent})[0]+")", "Ignored: \""+m.Mount+"\" is a reserved name.")
+
+	// An allowed folder the file tools skip.
+	for _, f := range cfg.IgnoredAllowedFolders() {
+		status := "Ignored: " + strconv.Quote(f.Path) + " is not an absolute path."
+		switch f.Reason {
+		case config.FolderNotFound:
+			status = "Ignored: folder " + strconv.Quote(f.Path) + " not found."
+		case config.FolderLineBreak:
+			status = "Ignored: " + strconv.Quote(f.Path) + " contains a line break."
+		}
+		add(true, "Allowed folder ("+agentNames(cfg, []string{f.Agent})[0]+")", status)
+	}
+
+	// A built-in use with no task model: voice is not transcribed, images are
+	// not described for text-only models.
+	for _, r := range taskModelAssessment(cfg) {
+		add(r.action, r.item, r.status)
+	}
+
+	// A classifier model the agent cannot use, or a definition file that is
+	// not run: its classifiers do nothing until the operator fixes it.
+	for _, r := range classifierAssessment(ctx, cfg) {
+		add(r.action, r.item, r.status)
 	}
 
 	// Awareness only: the file tools honour restrict_to_workspace, the shell
@@ -262,7 +291,7 @@ func collectAssessment(_ context.Context, cfg *config.Config, env Environment) S
 	if d.RestrictToWorkspace {
 		for _, id := range shell {
 			add(false, "File confinement vs shell ("+id+")",
-				"File tools are confined to the workspace for "+id+", but shell_exec is available and is not confined.")
+				"File tools are confined to the workspace and allowed folders for "+id+", but shell_exec is available and is not confined.")
 		}
 	}
 
@@ -276,7 +305,7 @@ func collectAssessment(_ context.Context, cfg *config.Config, env Environment) S
 		if p.BypassRestrictions {
 			add(false, "Allow CLI to bypass restrictions ("+p.Name+")",
 				"Allow CLI to bypass restrictions is on for "+p.Name+": it can run commands and modify files anywhere the service user can, "+
-					"outside ClawEh's workspace and shell controls.")
+					"outside "+app.ShortName()+"'s workspace and shell controls.")
 			continue
 		}
 		add(false, "CLI bypass not allowed ("+p.Name+")",
@@ -347,7 +376,7 @@ func collectAssessment(_ context.Context, cfg *config.Config, env Environment) S
 	_, auditErr := os.Stat(auditPath)
 	add(auditErr != nil, "Audit log",
 		ifStr(auditErr == nil, "Audit log at "+auditPath+" ("+itoa(audit.RetentionDays)+"-day retention).",
-			"Audit log not initialised: "+auditPath+" is missing; ClawEh creates it at start."))
+			"Audit log not initialised: "+auditPath+" is missing; "+app.ShortName()+" creates it at start."))
 
 	var stdio []string
 	for _, name := range sortedKeys(cfg.Tools.MCP.Servers) {
@@ -408,15 +437,15 @@ func permsStatus(findings []perms.Finding, err error, summary string) string {
 	}
 	var s string
 	if len(findings) == 0 {
-		s = "Within the configured modes (" + summary + ")."
+		s = "Matches the configured modes (" + summary + ")."
 	} else {
 		f := findings[0]
-		noun := "files under CLAW_HOME are"
+		noun := "paths under CLAW_HOME are"
 		if len(findings) == 1 {
-			noun = "file under CLAW_HOME is"
+			noun = "path under CLAW_HOME is"
 		}
-		s = fmt.Sprintf("%d %s more open than the configured modes (first: %s %04o); "+
-			"ClawEh tightens them at start — run it, or chmod it to %04o.", len(findings), noun, f.Path, f.Mode, f.Want)
+		s = fmt.Sprintf("%d %s more open than the configured modes (first: %s %04o, configured %04o); "+app.ShortName()+" sets them at start.",
+			len(findings), noun, f.Path, f.Mode, f.Want)
 	}
 	if errors.Is(err, perms.ErrTruncated) {
 		s += " The check was truncated at the entry cap, so files beyond it were not examined."

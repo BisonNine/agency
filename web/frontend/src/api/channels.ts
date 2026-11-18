@@ -101,16 +101,20 @@ export async function getHumanAgents(): Promise<HumanAgentsInfo> {
   return { problems: res.problems ?? [], human_agents: res.human_agents ?? [] }
 }
 
-// IgnoredMount is a saved mount that is not used because its name is
-// reserved for a workspace folder.
-export interface IgnoredMount {
+// IgnoredAllowedFolder is a saved allowed folder the file tools skip: its
+// path is not absolute, holds a line break, or
+// the folder does not exist.
+export interface IgnoredAllowedFolder {
   agent: string
-  mount: string
+  path: string
+  reason: "not_absolute" | "not_found" | "line_break"
 }
 
-export async function getIgnoredMounts(): Promise<IgnoredMount[]> {
-  const res = await request<{ ignored?: IgnoredMount[] }>(
-    "/api/agents/mounts/ignored",
+export async function getIgnoredAllowedFolders(): Promise<
+  IgnoredAllowedFolder[]
+> {
+  const res = await request<{ ignored?: IgnoredAllowedFolder[] }>(
+    "/api/agents/allowed-folders/ignored",
   )
   return res.ignored ?? []
 }

@@ -1,8 +1,8 @@
 # Forums
 
-A forum is a structured discussion that you set up and ClawEh runs for you.
+A forum is a structured discussion that you set up and {{HOST}} runs for you.
 You choose the participants, write a brief and the material they work from,
-and lay the discussion out in ordered layers. ClawEh sends every turn itself,
+and lay the discussion out in ordered layers; {{HOST}} sends every turn itself,
 keeps everything on disk under `forums/<id>/` in your workspace (each run in
 `forums/<id>/runs/<n>/`), and tells you when a run ends.
 
@@ -116,8 +116,9 @@ again. That is a new run; earlier runs stay readable with `run`.
 characters); replies and notices then name the forum "<name> (<id>)"
 instead of the ID alone.
 
-A source `file` is read as your file tools read that path (your
-workspace, or a mount such as `maestro/`).
+A source `file` is read as your file tools read that path (relative to
+your workspace, such as `maestro/...`, or absolute in one of your allowed
+folders).
 
 A source has either `inline` or `file`: to turn an inline source into a
 file, remove `inline` in the same patch, as in

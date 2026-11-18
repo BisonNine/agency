@@ -17,8 +17,8 @@ func TestEffectiveReadSubdirs_AddsAlwaysReadable(t *testing.T) {
 		configured []string
 		want       []string
 	}{
-		{name: "default scope", configured: []string{"files", "skills"}, want: []string{"files", "skills", "tasks", "tmp", "forums"}},
-		{name: "already listed", configured: []string{"files", "forums"}, want: []string{"files", "forums", "tasks", "tmp"}},
+		{name: "default scope", configured: []string{"files", "skills"}, want: []string{"files", "skills", "tasks", "tmp", "forums", "classifiers"}},
+		{name: "already listed", configured: []string{"files", "forums"}, want: []string{"files", "forums", "tasks", "tmp", "classifiers"}},
 		{name: "workspace-wide", configured: nil, want: nil},
 	}
 	for _, tt := range tests {
@@ -34,7 +34,7 @@ func TestEffectiveReadSubdirs_AddsAlwaysReadable(t *testing.T) {
 // TestForumsFolder_ReadOnlyForOwnAgent covers the launching agent's access to
 // its own forums/ folder: its file tools may read the results there, may not
 // write there, and cannot reach another agent's forums by a relative path, an
-// absolute path or a mount.
+// absolute path or an allowed folder.
 func TestForumsFolder_ReadOnlyForOwnAgent(t *testing.T) {
 	base := t.TempDir()
 	alice := filepath.Join(base, "alice")
@@ -46,8 +46,7 @@ func TestForumsFolder_ReadOnlyForOwnAgent(t *testing.T) {
 
 	SetReadScopeSubdirs(effectiveReadSubdirs([]string{"files", "skills"}))
 	defer SetReadScopeSubdirs(nil)
-	SetMountsForWorkspace(alice, []MountSpec{{Name: "notes", Path: notes}})
-	defer SetMountsForWorkspace(alice, nil)
+	allowFolders(t, alice, notes)
 
 	ctx := context.Background()
 	read := NewReadFileTool(alice, true, MaxReadFileSize)
@@ -75,7 +74,7 @@ func TestForumsFolder_ReadOnlyForOwnAgent(t *testing.T) {
 		"../bob/forums/f2/transcript.md",
 		filepath.Join(bob, "forums", "f2", "transcript.md"),
 		"forums/../../bob/forums/f2/transcript.md",
-		"notes/../bob/forums/f2/transcript.md",
+		notes + "/../bob/forums/f2/transcript.md",
 	} {
 		if r := read.Execute(ctx, map[string]any{"path": p}); !r.IsError {
 			t.Errorf("another agent's forum must not be readable via %q", p)

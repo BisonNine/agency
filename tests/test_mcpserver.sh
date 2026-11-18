@@ -67,7 +67,7 @@ BEARER_URL="${SERVER_URL}${BEARER_ENDPOINT}"
 # model required). agent_spawn/agent_status/agent_list/agent_message (subagent capability) are
 # also exposed but only probed when actually present in the catalogue, so this
 # script stays portable.
-EXPECTED_TOOLS="file_read_bytes file_read_lines file_count file_view_image file_write file_edit file_edit_lines file_edit_bytes file_insert_lines file_insert_bytes file_delete_lines file_delete_bytes file_append file_list file_search_lines file_search_bytes file_copy file_delete file_move file_mkdir file_rmdir web_fetch web_search msg_send msg_send_file session_messages session_search session_compact session_info session_summary_list session_summary_get session_clear shell_exec skill_find skill_install cron_schedule cogmem_domain_get cogmem_memory_search cogmem_domain_list cogmem_explain cogmem_memory_create cogmem_memory_attach cogmem_domain_update cogmem_memory_retire cogmem_domain_create cogmem_domain_archive cogmem_domain_migrate cogmem_memory_forget cogmem_consolidate cogmem_status cogmem_export common_list common_get common_put common_delete time_now"
+EXPECTED_TOOLS="file_read_bytes file_read_lines file_count file_view_image file_write file_edit file_edit_lines file_edit_bytes file_insert_lines file_insert_bytes file_delete_lines file_delete_bytes file_append file_list file_glob file_search_lines file_search_bytes file_copy file_delete file_move file_mkdir file_rmdir web_fetch web_search msg_send msg_send_file session_messages session_search session_compact session_info session_summary_list session_summary_get session_clear shell_exec skill_find skill_install cron_schedule cogmem_domain_get cogmem_memory_search cogmem_domain_list cogmem_explain cogmem_memory_create cogmem_memory_attach cogmem_domain_update cogmem_memory_retire cogmem_domain_create cogmem_domain_archive cogmem_domain_migrate cogmem_memory_forget cogmem_consolidate cogmem_status cogmem_export common_list common_get common_put common_delete time_now"
 EXPECTED_TOOL_COUNT=38
 
 # Namespace prefixes that must have at least one tool in the catalogue.
@@ -471,6 +471,7 @@ check_tool "1.3e" "file_delete_lines"
 check_tool "1.3f" "file_delete_bytes"
 check_tool "1.4"  "file_append"
 check_tool "1.5"  "file_list"
+check_tool "1.5a" "file_glob"
 check_tool "1.5b" "file_search_lines"
 check_tool "1.5c" "file_search_bytes"
 check_tool "1.6"  "web_fetch"
@@ -562,6 +563,31 @@ else
 
     run_test_ok_auth "3.5d file_search_bytes reports a byte offset for the content" \
         "file_search_bytes" "{\"query\":\"$APPENDED\",\"path\":\"files\"}" "bytes "
+
+    run_test_ok_auth "3.5e file_glob finds the scratch file by name pattern" \
+        "file_glob" "{\"pattern\":\"**/claw_mcp_test_$$.txt\",\"path\":\"files\"}" "$SCRATCH_REL"
+
+    run_test_ok_auth "3.5f file_search_lines output=files with include lists the file" \
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\",\"include\":\"claw_mcp_test_$$.txt\",\"output\":\"files\"}" "$SCRATCH_REL"
+
+    run_test_ok_auth "3.5g file_search_lines output=count counts the matching lines" \
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\",\"output\":\"count\"}" "$SCRATCH_REL: 1"
+
+    run_test_ok_auth "3.5h file_search_lines context shows the line before the match" \
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"$SCRATCH_REL\",\"context\":1}" "$SCRATCH_REL-1- $PAYLOAD"
+
+    IGN_REL="files/claw_mcp_ign_$$"
+    run_test_ok_auth "3.5i file_write seeds a .gitignore" \
+        "file_write" "{\"path\":\"$IGN_REL/.gitignore\",\"content\":\"*.log\"}"
+
+    run_test_ok_auth "3.5j file_write seeds an ignored file" \
+        "file_write" "{\"path\":\"$IGN_REL/skip.log\",\"content\":\"ignored-$$\"}"
+
+    run_test_ok_auth "3.5k file_search_lines skips what .gitignore ignores" \
+        "file_search_lines" "{\"query\":\"ignored-$$\",\"path\":\"$IGN_REL\"}" "No matches"
+
+    run_test_ok_auth "3.5l file_rmdir removes the .gitignore folder" \
+        "file_rmdir" "{\"path\":\"$IGN_REL\",\"sure\":true,\"recursive\":true}"
 
     run_test_ok_auth "3.6 file_edit replaces a substring" \
         "file_edit" "{\"path\":\"$SCRATCH_REL\",\"old_text\":\"$PAYLOAD\",\"new_text\":\"replaced-$$\"}"
@@ -709,10 +735,25 @@ else
         "web_fetch" '{"url":"https://example.com"}'
 
     run_test_not_auth_err "4b.4 msg_send_file — token accepted" \
-        "msg_send_file" '{"path":"no-such-file"}'
+        "msg_send_file" '{"files":[{"path":"no-such-file"}]}'
+
+    run_test_err_msg_auth "4b.4a msg_send_file — the old \"path\" argument is refused" \
+        "msg_send_file" '{"path":"no-such-file"}' 'is no longer accepted'
+
+    run_test_err_msg_auth "4b.4c msg_send_file — more than 10 files refused" \
+        "msg_send_file" '{"files":[{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"}]}' \
+        'At most 10 files can be sent at once.'
+
+    # The test token belongs to no turn, so there is no chat to send to.
+    run_test_err_msg_auth "4b.4d msg_send_file — no chat for a token without a turn" \
+        "msg_send_file" '{"files":[{"path":"no-such-file"}]}' 'There is no chat to send files to.'
 
     run_test_not_auth_err "4b.4b msg_send — token accepted (no longer hard-excluded)" \
         "msg_send" '{"content":"probe"}'
+
+    # Like msg_send_file, msg_send goes only to the chat of a running turn.
+    run_test_err_msg_auth "4b.4e msg_send — no chat for a token without a turn" \
+        "msg_send" '{"content":"probe"}' 'There is no chat to send messages to.'
 
     run_test_not_auth_err "4b.5 skill_find — token accepted" \
         "skill_find" '{"query":"github"}'
@@ -743,6 +784,16 @@ else
             "agent_message" '{"agent":"alice","message":"probe","wait_seconds":0}' "You may not message alice"
     else
         echo "  4b.8 agent_message not registered on this host (skipped)"
+    fi
+
+    # agent_spawn with a kind calls a task model; the test agent has no
+    # task-model grant (and no task model is ticked), so the call must be
+    # refused with a tool error naming the kind.
+    if echo "$LIST_OUT" | grep -qw "agent_spawn"; then
+        run_test_err_msg_auth "4b.9 agent_spawn kind — refused without a task-model grant" \
+            "agent_spawn" '{"kind":"text","task":"probe","mode":"wait"}' "is not allowed to use task models for text"
+    else
+        echo "  4b.9 agent_spawn not registered on this host (skipped)"
     fi
 
     #---------------------------------------------------------------------------
@@ -1091,6 +1142,73 @@ else
     else
         echo "  4h. Character cards"
         echo "    ${RED}FAIL${NC}: ccv3 is not in the catalogue although main has ccv3 on"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    #---------------------------------------------------------------------------
+    # Section 4i: Classifier tools (classifier_*). The test config switches
+    # `classifiers` on for main (no classifier model: the test config has no
+    # models). Every tool is probed hermetically. The classifier's source is
+    # forum_status, which main has and which lists no forums (an empty list),
+    # so creating it makes its one live call and its runs make no model call.
+    # readme, list, create, get, update (and an update over max_rules, refused,
+    # nothing written), validate, status and activity succeed; test and rerun
+    # refuse (no items); get, update and delete refuse an unknown classifier;
+    # create refuses a source tool main does not have and an unknown argument;
+    # delete removes the classifier.
+    #---------------------------------------------------------------------------
+
+    if echo "$LIST_OUT" | grep -qw "classifier_create"; then
+        print_section "4i. Classifier tools (classifiers)"
+        CLS_ID="probe-cls-$(printf '%06d' "$$")"
+        CLS_DEF="{\"id\":\"$CLS_ID\",\"enabled\":true,\"trigger\":{\"every_seconds\":3600},\"source\":{\"tool\":\"forum_status\",\"items\":\"\",\"id\":\"id\"},\"classify\":{\"instructions\":\"Sort the forums.\",\"categories\":[{\"name\":\"keep\"},{\"name\":\"drop\"}]}}"
+        CLS_MANY_RULES=$(for i in $(seq 1 101); do printf '"Rule %d.",' "$i"; done)
+        CLS_MANY_RULES="[${CLS_MANY_RULES%,}]"
+
+        run_test_ok_auth "4i.1 classifier_readme returns the guide" \
+            "classifier_readme" '{}' "## Substitution"
+        run_test_ok_auth "4i.2 classifier_list lists no classifiers" \
+            "classifier_list" '{}' "[]"
+        run_test_ok_auth "4i.3 classifier_create saves a classifier" \
+            "classifier_create" "{\"definition\":$CLS_DEF}" "Classifier $CLS_ID created."
+        run_test_ok_auth "4i.4 classifier_get returns the definition with its owner" \
+            "classifier_get" "{\"id\":\"$CLS_ID\"}" "\"owner\": \"main\""
+        run_test_ok_auth "4i.5 classifier_update applies a merge patch" \
+            "classifier_update" "{\"id\":\"$CLS_ID\",\"changes\":{\"classify\":{\"rules\":[\"Forums about probes are keep.\"]}}}" "Classifier $CLS_ID updated."
+        run_test_err_msg_auth "4i.6 classifier_update refuses more rules than max_rules" \
+            "classifier_update" "{\"id\":\"$CLS_ID\",\"changes\":{\"classify\":{\"rules\":$CLS_MANY_RULES}}}" "classify.rules has 101 rules; this install allows 100."
+        run_test_ok_auth "4i.7 classifier_get shows the rule from the update" \
+            "classifier_get" "{\"id\":\"$CLS_ID\"}" "Forums about probes are keep."
+        run_test_ok_auth "4i.8 classifier_validate checks a definition and calls its source" \
+            "classifier_validate" "{\"definition\":$CLS_DEF}" "The definition is valid."
+        run_test_ok_auth "4i.9 classifier_status reports the classifier" \
+            "classifier_status" "{\"id\":\"$CLS_ID\"}" "\"id\": \"$CLS_ID\""
+        run_test_ok_auth "4i.10 classifier_activity has no entries" \
+            "classifier_activity" "{\"id\":\"$CLS_ID\"}" "[]"
+        run_test_err_msg_auth "4i.11 classifier_test refuses a source with no items" \
+            "classifier_test" "{\"id\":\"$CLS_ID\"}" "The source lists no items."
+        run_test_err_msg_auth "4i.12 classifier_rerun refuses an item while the source lists none" \
+            "classifier_rerun" "{\"id\":\"$CLS_ID\",\"item_id\":\"nosuch\"}" "The source lists no items."
+        run_test_err_msg_auth "4i.13 classifier_create refuses a source tool main does not have" \
+            "classifier_create" "{\"definition\":{\"id\":\"probe-cls-missing\",\"enabled\":true,\"trigger\":{\"every_seconds\":60},\"source\":{\"tool\":\"nosuch_list\",\"items\":\"\",\"id\":\"id\"},\"classify\":{\"instructions\":\"x\",\"categories\":[{\"name\":\"keep\"}]}}}" "tool nosuch_list is not available to agent main"
+        run_test_err_msg_auth "4i.19 classifier_create refuses a classifier tool as its source" \
+            "classifier_create" "{\"definition\":{\"id\":\"probe-cls-self\",\"enabled\":true,\"trigger\":{\"every_seconds\":60},\"source\":{\"tool\":\"classifier_list\",\"items\":\"\",\"id\":\"id\"},\"classify\":{\"instructions\":\"x\",\"categories\":[{\"name\":\"keep\"}]}}}" "classifier_list can't be used by a classifier (source)."
+        run_test_err_msg_auth "4i.14 classifier_list refuses an unknown argument" \
+            "classifier_list" '{"nosuch":1}' "Unknown argument nosuch"
+        run_test_ok_auth "4i.15 classifier_delete removes the classifier" \
+            "classifier_delete" "{\"id\":\"$CLS_ID\"}" "Classifier $CLS_ID deleted."
+        run_test_err_msg_auth "4i.16 classifier_get refuses an unknown classifier" \
+            "classifier_get" "{\"id\":\"$CLS_ID\"}" "does not exist"
+        run_test_err_msg_auth "4i.17 classifier_update refuses an unknown classifier" \
+            "classifier_update" "{\"id\":\"$CLS_ID\",\"changes\":{\"enabled\":false}}" "does not exist"
+        run_test_err_msg_auth "4i.18 classifier_delete refuses an unknown classifier" \
+            "classifier_delete" "{\"id\":\"$CLS_ID\"}" "does not exist"
+    else
+        # The test config switches classifiers on for main: missing tools are
+        # a regression, not an optional host feature.
+        echo "  4i. Classifier tools"
+        echo "    ${RED}FAIL${NC}: classifier_create is not in the catalogue although main has classifiers on"
         TIER2_FAIL=$((TIER2_FAIL + 1))
         FAIL_COUNT=$((FAIL_COUNT + 1))
     fi

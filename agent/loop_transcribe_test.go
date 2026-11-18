@@ -32,7 +32,7 @@ type stubTranscriber struct {
 
 func (s stubTranscriber) Name() string { return "stub" }
 
-func (s stubTranscriber) Transcribe(context.Context, string) (*voice.TranscriptionResponse, error) {
+func (s stubTranscriber) Transcribe(context.Context, voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -118,7 +118,7 @@ func TestPrepareInbound_AlertsWhenVoiceNotTranscribed(t *testing.T) {
 		t.Fatalf("want one alert, got %+v", rec.alerts)
 	}
 	a := rec.alerts[0]
-	if a.Priority != alerter.Urgent || a.Title != "Voice message not transcribed" ||
+	if a.Priority != alerter.Normal || a.Title != "Voice message not transcribed" ||
 		a.EventID != "voice:failed:test" || a.Details != "upstream 503" ||
 		a.Description != "test: every speech backend failed; the agent received the audio untranscribed" {
 		t.Fatalf("unexpected alert %+v", a)
@@ -231,7 +231,7 @@ func withEchoChannel(t *testing.T, al *AgentLoop, msgBus *bus.MessageBus) *echoC
 	return ch
 }
 
-// TestPrepareInbound_EchoTranscription: with voice.echo_transcription on, the
+// TestPrepareInbound_EchoTranscription: with task_models.echo_transcription on, the
 // sender is told what was heard, and a voice message that could not be
 // understood is answered with a sentence naming the agent, as a reply to it;
 // with it off, nothing is sent.
@@ -242,7 +242,7 @@ func TestPrepareInbound_EchoTranscription(t *testing.T) {
 			defer restore()
 			cfg := ownerTestConfig(t)
 			cfg.Agents.List = []config.AgentConfig{{ID: "alice", Name: "Alice", Default: true}}
-			cfg.Voice.EchoTranscription = echo
+			cfg.TaskModels.EchoTranscription = echo
 			msgBus := bus.NewMessageBus()
 			al := mustNewAgentLoop(t, cfg, msgBus, &recordingProvider{}, nil, OwnsDataDir())
 			store := media.NewFileMediaStore()
@@ -277,7 +277,7 @@ type failTranscriber struct{ t *testing.T }
 
 func (failTranscriber) Name() string { return "fail" }
 
-func (f failTranscriber) Transcribe(context.Context, string) (*voice.TranscriptionResponse, error) {
+func (f failTranscriber) Transcribe(context.Context, voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	f.t.Error("a voice message to a human agent was transcribed")
 	return &voice.TranscriptionResponse{Text: "heard"}, nil
 }
@@ -289,7 +289,7 @@ func TestPrepareInbound_HumanAgentNeverTranscribed(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
 	cfg := humanLoopConfig(t, 60)
-	cfg.Voice.EchoTranscription = true
+	cfg.TaskModels.EchoTranscription = true
 	al, _, model := newHumanLoopWith(t, cfg)
 	store := media.NewFileMediaStore()
 	al.SetMediaStore(store)
@@ -317,5 +317,45 @@ func TestPrepareInbound_HumanAgentNeverTranscribed(t *testing.T) {
 	}
 	if n := model.count(); n != 0 {
 		t.Fatalf("a model was called %d times", n)
+	}
+}
+
+// recordingTranscriber records the audio files it is given.
+type recordingTranscriber struct {
+	got *[]voice.AudioFile
+}
+
+func (r recordingTranscriber) Name() string { return "recording" }
+
+func (r recordingTranscriber) Transcribe(_ context.Context, a voice.AudioFile) (*voice.TranscriptionResponse, error) {
+	*r.got = append(*r.got, a)
+	return &voice.TranscriptionResponse{Text: "ok"}, nil
+}
+
+// A voice note is handed to the transcriber with the name and type it came
+// with, not only its stored path (a Telegram .oga note may be stored under a
+// name without that extension).
+func TestPrepareInbound_VoicePassesNameAndType(t *testing.T) {
+	restore := logger.RedirectForTest(&safeBufLoop{})
+	defer restore()
+	al, _, _ := freshLoop(t)
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	var got []voice.AudioFile
+	al.SetTranscriber(recordingTranscriber{got: &got})
+
+	src := filepath.Join(t.TempDir(), "file_3")
+	if err := os.WriteFile(src, []byte("OggS"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := store.Store(src, media.MediaMeta{Filename: "file_3.oga", ContentType: "audio/ogg", Source: "telegram"}, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := toAgent("main", "m1", "[voice]")
+	msg.Media = []string{ref}
+	al.prepareInbound(context.Background(), msg)
+	if len(got) != 1 || got[0].Path != src || got[0].Filename != "file_3.oga" || got[0].ContentType != "audio/ogg" {
+		t.Fatalf("transcriber got %+v", got)
 	}
 }

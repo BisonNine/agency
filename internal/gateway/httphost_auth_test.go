@@ -8,6 +8,7 @@ import (
 
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/internal/admin"
+	"github.com/PivotLLM/ClawEh/internal/testbinary"
 	"github.com/PivotLLM/ClawEh/web/backend/middleware"
 )
 
@@ -22,7 +23,7 @@ const (
 func loginCookie(t *testing.T, h *httpHost) *http.Cookie {
 	t.Helper()
 	path := admin.Path(t.TempDir())
-	if err := admin.Write(path, testAdminUser, testAdminPass); err != nil {
+	if err := admin.Write(path, testAdminUser, testAdminPass, admin.DefaultFileMode); err != nil {
 		t.Fatalf("admin.Write: %v", err)
 	}
 	store := middleware.NewAuthStore(path)
@@ -80,9 +81,10 @@ func TestHTTPHostAuth_APINeedsSession(t *testing.T) {
 // TestHTTPHostAuth_NoStoreFailsClosed: before SetAuth every protected request
 // is refused with the `claw admin` hint.
 func TestHTTPHostAuth_NoStoreFailsClosed(t *testing.T) {
+	testbinary.Set(t, "alice-claw")
 	h := newPolicyHost(t, config.GatewayConfig{Host: "127.0.0.1", Port: 18790})
 	rec := authGet(h, "/api/config", nil)
-	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "claw admin") {
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "run: alice-claw admin") {
 		t.Fatalf("status = %d, body = %q", rec.Code, rec.Body.String())
 	}
 }

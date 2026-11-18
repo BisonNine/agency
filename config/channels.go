@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -17,19 +18,25 @@ type ChannelsConfig struct {
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
+// MentionOnly is always written: Matrix defaults it on, so an omitted false
+// would be read back as on.
 type GroupTriggerConfig struct {
-	MentionOnly bool     `json:"mention_only,omitempty"`
+	MentionOnly bool     `json:"mention_only"`
 	Prefixes    []string `json:"prefixes,omitempty"`
 }
 
 // TypingConfig controls typing indicator behavior (Phase 10).
+// Enabled is always written: a Telegram bot defaults it on, so an omitted
+// false would be read back as on.
 type TypingConfig struct {
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled"`
 }
 
 // PlaceholderConfig controls placeholder message behavior (Phase 10).
+// Enabled is always written: several channels default it on, so an omitted
+// false would be read back as on.
 type PlaceholderConfig struct {
-	Enabled bool   `json:"enabled,omitempty"`
+	Enabled bool   `json:"enabled"`
 	Text    string `json:"text,omitempty"`
 }
 
@@ -119,6 +126,23 @@ type TelegramBotConfig struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id,omitempty"`
 }
 
+// UnmarshalJSON decodes one bot onto a fresh value carrying the per-bot
+// defaults (typing indicator and placeholder on), so every bot in the list
+// gets them, not only the one at the index the default config seeds, and an
+// explicit false is kept.
+func (b *TelegramBotConfig) UnmarshalJSON(data []byte) error {
+	type plain TelegramBotConfig
+	p := plain{
+		Typing:      TypingConfig{Enabled: true},
+		Placeholder: PlaceholderConfig{Enabled: true},
+	}
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*b = TelegramBotConfig(p)
+	return nil
+}
+
 // ChannelName returns the channel identifier for this bot.
 // Bots with an empty or "default" ID use "telegram".
 // All other IDs produce "telegram-<id>".
@@ -197,15 +221,17 @@ func (a SecMsgAccountConfig) ChannelName(daemon SecMsgConfig) string {
 }
 
 type DiscordConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"CLAW_CHANNELS_DISCORD_ENABLED"`
-	Token              string              `json:"token"                   env:"CLAW_CHANNELS_DISCORD_TOKEN"`
-	Proxy              string              `json:"proxy"                   env:"CLAW_CHANNELS_DISCORD_PROXY"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"CLAW_CHANNELS_DISCORD_ALLOW_FROM"`
-	MentionOnly        bool                `json:"mention_only"            env:"CLAW_CHANNELS_DISCORD_MENTION_ONLY"`
-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
-	Typing             TypingConfig        `json:"typing,omitempty"`
-	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"CLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
+	Enabled   bool                `json:"enabled"                 env:"CLAW_CHANNELS_DISCORD_ENABLED"`
+	Token     string              `json:"token"                   env:"CLAW_CHANNELS_DISCORD_TOKEN"`
+	Proxy     string              `json:"proxy"                   env:"CLAW_CHANNELS_DISCORD_PROXY"`
+	AllowFrom FlexibleStringSlice `json:"allow_from"              env:"CLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	// MentionOnly is the retired flat form of GroupTrigger.MentionOnly, read
+	// only so a load can migrate it (migrateChannelConfigs clears it).
+	MentionOnly        bool               `json:"mention_only,omitempty"  env:"CLAW_CHANNELS_DISCORD_MENTION_ONLY" removed:"true"`
+	GroupTrigger       GroupTriggerConfig `json:"group_trigger,omitempty"`
+	Typing             TypingConfig       `json:"typing,omitempty"`
+	Placeholder        PlaceholderConfig  `json:"placeholder,omitempty"`
+	ReasoningChannelID string             `json:"reasoning_channel_id"    env:"CLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
 }
 
 type SlackConfig struct {
@@ -283,24 +309,6 @@ type DeviceChannelConfig struct {
 	TLS          bool                `json:"tls"`
 	AllowOrigins []string            `json:"allow_origins,omitempty"`
 	AllowFrom    FlexibleStringSlice `json:"allow_from"             env:"CLAW_CHANNELS_DEVICE_ALLOW_FROM"`
-}
-
-type VoiceConfig struct {
-	EchoTranscription bool `json:"echo_transcription" env:"CLAW_VOICE_ECHO_TRANSCRIPTION"`
-	// STT is an ordered list of speech-to-text backends. Every enabled, usable
-	// entry joins a fallback chain tried in listed order. An empty list (or no
-	// usable entry) turns transcription off.
-	STT []STTProvider `json:"stt,omitempty"`
-}
-
-// STTProvider selects a configured provider as a Whisper-style transcription
-// backend. The endpoint and API key are the provider's; the entry carries only
-// the model. It is used only when the provider has an HTTP protocol, a base_url
-// and an api_key.
-type STTProvider struct {
-	Provider string `json:"provider"` // name of a configured provider (Provider.Name)
-	Enabled  bool   `json:"enabled"`
-	Model    string `json:"model,omitempty"` // blank: the default for the provider's host, when known
 }
 
 // ValidateExposure refuses an enabled device listener on a network address

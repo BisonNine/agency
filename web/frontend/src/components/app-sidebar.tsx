@@ -5,6 +5,7 @@ import {
   IconAtom,
   IconBook,
   IconBrain,
+  IconChecklist,
   IconCpu,
   IconDeviceMobile,
   IconExternalLink,
@@ -14,7 +15,6 @@ import {
   IconMasksTheater,
   IconMessageCircle,
   IconMessages,
-  IconMicrophone,
   IconNetwork,
   IconPlugConnected,
   IconReport,
@@ -50,6 +50,7 @@ import {
 import { useSidebarChannels } from "@/hooks/use-sidebar-channels"
 import { LOGIN_PATH } from "@/lib/auth-redirect"
 import { teardownChatStore } from "@/lib/claw-chat-controller"
+import { useProductNames } from "@/store/product"
 
 interface NavSubItem {
   title: string
@@ -99,12 +100,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const currentPath = routerState.location.pathname
   const { channelItems } = useSidebarChannels({ t })
 
-  // ClawEh build version, shown in the sidebar footer. Static for the process
-  // lifetime, so fetch once; failures leave the label as just "ClawEh".
+  // Product name and build version, shown in the sidebar footer. Static for
+  // the process lifetime, so fetch once; failures leave the name the auth
+  // status already supplied.
+  const { name } = useProductNames()
   const [version, setVersion] = React.useState("")
   React.useEffect(() => {
     getVersion()
-      .then(setVersion)
+      .then((v) => setVersion(v.version))
       .catch(() => {})
   }, [])
 
@@ -173,6 +176,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             icon: IconAtom,
             translateTitle: true,
           },
+          {
+            title: "navigation.task_models",
+            url: "/task-models",
+            icon: IconChecklist,
+            translateTitle: true,
+          },
         ],
       },
       {
@@ -195,12 +204,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             title: "Devices",
             url: "/devices",
             icon: IconDeviceMobile,
-            translateTitle: false,
-          },
-          {
-            title: "Speech",
-            url: "/voice",
-            icon: IconMicrophone,
             translateTitle: false,
           },
           {
@@ -457,7 +460,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenuItem>
         </SidebarMenu>
         <div className="text-muted-foreground flex items-center justify-between px-3 pb-2 text-xs">
-          <span>ClawEh{version ? ` v${version}` : ""}</span>
+          <span data-testid="nav-product">
+            {name}
+            {version ? ` v${version}` : ""}
+          </span>
           <button
             type="button"
             onClick={() => void handleLogout()}

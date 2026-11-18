@@ -7,11 +7,12 @@ import (
 	"syscall"
 
 	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/internal/perms"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/utils"
 )
 
-const lockFileName = "claw.lock"
+const lockFileName = global.LockFileName
 
 // acquireLock creates and exclusively locks a PID file in the base directory's internal/.
 // It returns the open file handle so the caller can defer releaseLock.
@@ -22,11 +23,11 @@ func acquireLock(baseDir string) (*os.File, error) {
 	lockPath := filepath.Join(lockDir, lockFileName)
 
 	// Ensure the directory exists before attempting to create the lock file.
-	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+	if err := os.MkdirAll(lockDir, perms.SecretModes().Dir); err != nil {
 		return nil, fmt.Errorf("cannot create directory %q: %w", lockDir, err)
 	}
 
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // lock file under the configured data directory
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, perms.SecretModes().File) //nolint:gosec // lock file under the configured data directory
 	if err != nil {
 		return nil, fmt.Errorf("cannot open lock file %q: %w", lockPath, err)
 	}

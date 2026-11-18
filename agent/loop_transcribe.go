@@ -15,8 +15,10 @@ import (
 	"github.com/tenebris-tech/alerter"
 
 	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/fileutil"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/utils"
+	"github.com/PivotLLM/ClawEh/voice"
 )
 
 var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
@@ -47,7 +49,8 @@ func (v voiceTranscript) annotation() string {
 // the agent in the echoed feedback. Returns the (possibly modified) message
 // and true if the message carried audio.
 func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage, target *AgentInstance) (bus.InboundMessage, bool) {
-	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
+	transcriber := al.currentTranscriber()
+	if transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
 		return msg, false
 	}
 
@@ -69,7 +72,7 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 			kept = append(kept, ref)
 			continue
 		}
-		result, err := al.transcriber.Transcribe(ctx, path)
+		result, err := transcriber.Transcribe(ctx, voice.AudioFile{Path: path, Filename: meta.Filename, ContentType: meta.ContentType})
 		if err != nil {
 			logger.WarnCF("voice", "Transcription failed", map[string]any{
 				"ref": ref, "channel": msg.Channel, "chat_id": msg.ChatID, "error": err.Error(),
@@ -77,6 +80,9 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 			al.alertUntranscribed(msg.Channel, err)
 			transcriptions = append(transcriptions, voiceTranscript{failed: true})
 			continue
+		}
+		if result.CostUSD != nil {
+			al.recordSpend(*result.CostUSD)
 		}
 		transcriptions = append(transcriptions, voiceTranscript{text: result.Text})
 	}
@@ -110,7 +116,7 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	return msg, true
 }
 
-// alertUntranscribed raises an urgent alert, keyed by channel, for a voice
+// alertUntranscribed raises an alert, keyed by channel, for a voice
 // message that every speech backend failed to transcribe.
 func (al *AgentLoop) alertUntranscribed(channel string, err error) {
 	details := []rune(strings.TrimSpace(err.Error()))
@@ -118,7 +124,7 @@ func (al *AgentLoop) alertUntranscribed(channel string, err error) {
 		details = details[:200]
 	}
 	al.Alerter().Send(alerter.Alert{
-		Priority:    alerter.Urgent,
+		Priority:    alerter.Normal,
 		Title:       "Voice message not transcribed",
 		Description: channel + ": every speech backend failed; the agent received the audio untranscribed",
 		Details:     string(details),
@@ -140,7 +146,7 @@ func (al *AgentLoop) materializeInboundMedia(msg bus.InboundMessage, agent *Agen
 	}
 	tmpDir := filepath.Join(agent.Workspace, "tmp")
 	modes := agentModes(al.GetConfig(), tmpDir)
-	if err := os.MkdirAll(tmpDir, modes.Dir); err != nil {
+	if err := fileutil.MkdirAllExact(tmpDir, modes.Dir); err != nil {
 		logger.WarnCF("agent", "received media: create tmp dir failed", map[string]any{"error": err.Error()})
 		return ""
 	}
@@ -225,6 +231,10 @@ func copyFileContents(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
+	if err := out.Chmod(mode); err != nil { // exactly mode, whatever the umask
+		utils.CloseQuietly(out)
+		return err
+	}
 	if _, err := io.Copy(out, in); err != nil {
 		utils.CloseQuietly(out)
 		return err
@@ -272,7 +282,7 @@ func (al *AgentLoop) sendTranscriptionFeedback(
 	channel, chatID, messageID string,
 	feedbackMsg string,
 ) {
-	if cfg := al.GetConfig(); cfg == nil || !cfg.Voice.EchoTranscription {
+	if cfg := al.GetConfig(); cfg == nil || !cfg.TaskModels.EchoTranscription {
 		return
 	}
 	if al.channelManager == nil {

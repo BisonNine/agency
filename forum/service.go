@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -60,6 +61,9 @@ type LaunchOptions struct {
 	// ReadAllowed reports whether the launching agent may read an absolute
 	// path (source files). nil allows nothing.
 	ReadAllowed func(absPath string) error
+	// OpenFile opens an absolute path through the launching agent's file
+	// sandbox (preflightEnv.OpenFile). nil opens nothing.
+	OpenFile func(absPath string) (*os.File, error)
 }
 
 // controller is what the service uses of a *forumController. openForum returns the
@@ -202,6 +206,18 @@ func (s *Service) Close(ctx context.Context) error {
 	}
 }
 
+// permsFor is the modes forums under base create with (Host.Modes).
+func (s *Service) permsFor(base string) filePerms {
+	if s.host.Modes == nil {
+		return defaultPerms
+	}
+	dir, file := s.host.Modes(base)
+	if dir == 0 || file == 0 {
+		return defaultPerms
+	}
+	return filePerms{dir: dir.Perm(), file: file.Perm()}
+}
+
 func (s *Service) isClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,6 +234,7 @@ func (s *Service) open(scope Scope, id string) (*forumStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	store.withPerms(s.permsFor(scope.BaseDirectory))
 	store.owner = scope.AgentID
 	if err := checkForumOwner(store); err != nil {
 		return nil, err

@@ -11,11 +11,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/PivotLLM/ctxengine"
 
 	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
 	"github.com/PivotLLM/ClawEh/global"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/providers"
@@ -27,7 +29,7 @@ type ContextBuilder struct {
 	skillsLoader        *skills.SkillsLoader
 	skillsFilter        []string
 	memory              *MemoryStore
-	mounts              []config.MountConfig
+	allowedFolders      []config.AllowedFolderConfig
 	toolDiscoveryActive bool
 	// maestroEnabled adds the Maestro identity rule (global.MaestroPromptRule).
 	maestroEnabled bool
@@ -129,35 +131,58 @@ func (cb *ContextBuilder) WithMemoryGuidance(text string) *ContextBuilder {
 	return cb
 }
 
-// WithMounts records the agent's external folder mounts so the system prompt can
-// tell the agent which top-level folders it can reach.
-func (cb *ContextBuilder) WithMounts(mounts []config.MountConfig) *ContextBuilder {
-	cb.mounts = mounts
+// WithAllowedFolders records the agent's allowed folders (absolute paths, with
+// their notes) so the system prompt can tell the agent which folders its file
+// tools can reach.
+func (cb *ContextBuilder) WithAllowedFolders(folders []config.AllowedFolderConfig) *ContextBuilder {
+	cb.allowedFolders = folders
 	return cb
 }
 
-// accessibleFolders is the short list of top-level folders the file tools can
-// reach: files/ and skills/ always, plus each configured (or auto Maestro) mount.
-func (cb *ContextBuilder) accessibleFolders() string {
-	parts := []string{"files/ (read/write)", "skills/ (read-only)"}
-	for _, m := range cb.mounts {
-		name := strings.TrimSpace(m.Name)
-		if name == "" {
-			continue
-		}
-		access := "read-only"
-		if m.Writable {
-			access = "read/write"
-		}
-		// Maestro's tree lives inside the agent workspace; other mounts are
-		// typically external host paths.
-		if strings.EqualFold(name, config.MaestroMountName) {
-			parts = append(parts, fmt.Sprintf("%s/ (%s)", name, access))
-		} else {
-			parts = append(parts, fmt.Sprintf("%s/ (external, %s)", name, access))
-		}
+// accessibleFolders lists, one "- " line each, every folder the file tools can
+// reach by absolute path: <workspace>/files and <workspace>/skills always,
+// <workspace>/maestro with Maestro on, then each allowed folder by its real
+// path, marked read-only when the app's account cannot write it (checked as
+// the prompt is built) and followed by its note.
+func (cb *ContextBuilder) accessibleFolders(workspacePath string) string {
+	lines := []string{
+		filepath.Join(workspacePath, "files") + " (read/write)",
+		filepath.Join(workspacePath, "skills") + " (read-only)",
 	}
-	return strings.Join(parts, ", ")
+	if cb.maestroEnabled {
+		lines = append(lines, config.MaestroDataDir(workspacePath)+" (read/write)")
+	}
+	for _, f := range cb.allowedFolders {
+		if info, err := os.Stat(f.Path); err != nil || !info.IsDir() {
+			continue // the file tools skip it too
+		}
+		line := f.Path
+		if !fileutil.Writable(f.Path) {
+			line += " (read-only)"
+		}
+		if note := promptNote(f.Note); note != "" {
+			line += ": " + note
+		}
+		lines = append(lines, line)
+	}
+	return "- " + strings.Join(lines, "\n- ")
+}
+
+// promptNote is a folder note as the prompt shows it: newlines and other
+// control characters become spaces, and it is cut to
+// config.MaxAllowedFolderNoteChars characters, so a hand-edited note cannot
+// break the folder list.
+func promptNote(note string) string {
+	note = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, note)
+	if r := []rune(note); len(r) > config.MaxAllowedFolderNoteChars {
+		note = string(r[:config.MaxAllowedFolderNoteChars])
+	}
+	return strings.TrimSpace(note)
 }
 
 // WithCharacterCard gives the agent the character card at path, rendered by
@@ -297,18 +322,19 @@ func (cb *ContextBuilder) getIdentity() string {
 		identity = "You are the character described below."
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, `# claw (%s)
+	fmt.Fprintf(&b, `# %s (%s)
 
 %s
 
 ## Workspace
-Your working area is %s/files — write drafts and outputs there. Your configuration
-and memory are already included in this prompt; you do not need to read workspace files.
-Folders your file tools can reach: %s.
+Your workspace is %s. Relative paths start there; write your work under files/.
+Your configuration and memory are already included in this prompt; you do not need to read workspace files.
+Folders your file tools can reach by absolute path:
+%s
 
 ## Important Rules
 
-`, version, identity, workspacePath, cb.accessibleFolders())
+`, app.ShortName(), version, identity, workspacePath, cb.accessibleFolders(workspacePath))
 	for i, r := range rules {
 		if i > 0 {
 			b.WriteString("\n\n")
@@ -784,7 +810,7 @@ func sessionTokenLayer(token string) ctxengine.Layer {
 	}
 	l.Text = fmt.Sprintf(
 		"# Session Token\n\nThe following token is confidential — never echo it to users or write it to files. "+
-			"ALL `mcp__claw__*` tool calls MUST include "+
+			"ALL `"+global.HostMCPToolPrefix+"*` tool calls MUST include "+
 			"the literal string below as the `session_token` parameter.\n\nsession_token: %s",
 		token)
 	return l

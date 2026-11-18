@@ -1,14 +1,857 @@
 # Changelog
 
-All notable changes to ClawEh are recorded here.
+## [0.6.4]
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
-version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Security
 
-Entries describe what changed for someone **running or integrating with** ClawEh
-— config keys, tool names, API shapes, protocol behaviour, defaults — not the
-internal refactors behind them. A change nobody outside the repository can
-observe does not need an entry.
+- **A mode in `security.permissions` that gives other users access is
+  reported.** Any configured mode with a non-zero last digit is marked on the
+  Check Up page (**Access for other users**, naming each setting and its mode)
+  and in the PDF report, and logged as a warning at every start. The
+  **Data directory permissions** row reports only paths more open than
+  their configured mode.
+- **Files read for an agent are opened inside its workspace or allowed
+  folder.** A forum source file was checked and then opened by its host
+  path, so a folder on that path replaced by a link in between could lead
+  the open outside what the agent may read. Forum sources,
+  `msg_send_file` and task-model files now open the file through the same
+  sandbox that checked it, and refuse it when it is not the file checked.
+  A host path (an agent not confined to its workspace, a path in
+  `tools.allow_read_paths`, the skills directory) is opened by its resolved
+  target without following a link, so a link swapped in at the last moment
+  is refused.
+
+### Added
+
+- **`GET /api/system/version` and `GET /api/auth/status` return the product's
+  names.** Both now carry `name` (the product name), `short_name` (the name
+  used in sentences) and `binary_name` (the name the program was started as);
+  `/api/system/version` still returns `version`. The WebUI takes the page
+  title, footer, chat speaker label, login page and every sentence naming the
+  product from them instead of holding the name itself.
+
+- **The Memory page shows a domain's automatic and blocked keywords.**
+  Beside **Keywords** (the agent's own), a domain shows **Keywords added
+  automatically** and, when there are any, **Blocked keywords**, read-only.
+  `GET /api/memory/{id}` returns them per domain as `auto_keywords` and
+  `blocked_keywords`.
+
+- **A classifier can keep its rules in Markdown files.** Two optional keys
+  in a definition's `classify`: `instructions_file`, one `.md` file, and
+  `instructions_dir`, a folder whose `.md` files (not sub-folders, not
+  hidden ones) are each added under their name, in alphabetical order of
+  the names. Both are paths in the agent's `files/` folder, read on every
+  run with the agent's own file permission, so the agent changes a rule by
+  editing a file and the change applies on the next run. `instructions` may
+  be empty when either is set. The text counts toward
+  `classifiers.limits.max_prompt_chars`; a missing or unreadable file, or
+  text over the limit, ends the run in error naming the
+  path, with nothing classified. `classifier_test` now also returns the
+  system prompt (`system_prompt`) with the files loaded.
+- **A classifier's model names the rules that decided each item.** Every
+  source of rules starts with a `=== Rules from <label> ===` line in the
+  prompt (`instructions`, the instructions file by its workspace path, each
+  rules-folder file by name; inline rules are `rule N`), and the model is
+  asked for a `Rules:` line after its reason, `Rules: none` when no rule
+  applied; answers without one are still accepted. Every decision with a
+  category keeps `rules`: the labels it cited, `["none"]` (written in any
+  case), or an empty list when the model cited nothing or only names that
+  are not rules (counted as `unknown_rules`). `classifier_activity` takes
+  `rule` to list what one rule decided; `classifier_status` shows
+  `rule_usage` (items per rule, each by its latest answer, rules never
+  cited, and the items that cited a rule, `none` or nothing:
+  `with_rules`, `none`, `no_citation`); `classifier_test` takes
+  `exclude_rules` to classify an item again without those rules and say
+  whether the category changed (two model calls).
+- **`file_glob` finds files by name pattern.** A new file tool: `pattern`
+  (`*` within one folder, `**` across folders, `?`, `{a,b}`) and an optional
+  `path`, the folder to search under (relative to the workspace or
+  absolute). Without `path` it searches every workspace folder the agent
+  may read (`files/`, `skills/`, `maestro/` when Maestro is on, and the
+  always-readable folders such as `tasks/`), not the allowed folders, and
+  matches the pattern from the workspace (`files/**/*.md`). It returns the matching file paths
+  newest first, at most 200 with a note when there are more, skips folders
+  whose name starts with a dot (`.git`), and reaches only what the other
+  file-reading tools reach (the workspace read scope and the allowed
+  folders). It is not in **Default tools**; grant it per agent, or with
+  the **Coding tools** button. A pattern longer than 512 characters or with more
+  than 10 `{…}` groups is refused.
+- **`file_search_lines` takes `include`, `context` and `output`, and skips
+  what `.gitignore` ignores.** `include` is a glob on file paths (one
+  without `/` matches the file name in any folder, so `*.go` finds Go files
+  everywhere); `context` shows that many lines before and after each match
+  (0 to 10; a result then shows at most 2,000 lines, with a note when cut);
+  `output` is `lines` (the default, as before), `files` (only the paths of
+  the files that match) or `count` (matching lines per file). `include`
+  follows `file_glob`'s pattern limits. Without `path` it searches the same
+  folders as `file_glob` does, and an `include` with `/` matches from the
+  workspace. The `.gitignore` files in the searched folder and below are
+  applied as git applies them (nested files, `!` patterns), and so are those
+  of its parent folders up to the repository root (the nearest folder above
+  holding `.git`), as far up as the agent may read; with no `.git` found,
+  parent folders are not read. A folder the agent names is searched even when
+  a parent `.gitignore` ignores it. A `.gitignore` that is a link or not a
+  regular file, or over 64 KiB, is not read. `file_search_bytes` is
+  unchanged.
+- **A note per allowed folder.** `agents.list[].allowed_folders[].note`, at
+  most 100 characters (a save with a longer one is refused, naming the agent
+  and the folder), is shown to the agent after the folder in its prompt:
+  `/opt/audio/in (read-only): inbound audio notes`, on one line (line breaks
+  and other control characters become spaces) and cut to 100 characters. On
+  the Agents page it is the **Note** box on each folder's row.
+- **A Coding tools button on the Agents page.** Beside **Default tools**
+  under Internal tools, **Coding tools** adds `file_list`, `file_glob`,
+  `file_read_lines`, `file_search_lines`, `file_edit_lines`,
+  `file_insert_lines`, `file_delete_lines`, `file_edit`, `file_write`,
+  `shell_exec` and `agent_spawn` to the agent's `tools` list. It only adds:
+  nothing is removed or unticked, and a tool already granted (also through
+  `"*"` or an entry such as `file_*`) is not added twice. A ticked tool that
+  **Denied tools** blocks says "Ignored: blocked by Denied tools." on its
+  row.
+- **Slack shows a "Thinking..." message and progress updates on long
+  turns, on by default.** The app posts the message where the reply will go,
+  edits it with progress on long turns, replaces it with the reply and
+  deletes it when a turn sends no reply, as Telegram does. It needs no new
+  Slack scope. To turn it off, set `channels.slack.placeholder.enabled` to
+  `false`; `placeholder.text` changes the message.
+- **Classifiers.** An agent can sort the items one of its tools lists
+  (email, files, tickets) with one model call per item: a classifier lists
+  the items, skips those already handled, reads each new one, asks the
+  agent's classifier model for one of a fixed set of categories, and runs
+  that category's action with the agent's own tools. The classifying model
+  never has tools. Turn it on per agent with **Allow classifiers** on the
+  Agents page (`agents.list[].classifiers.enabled`, off by default) and pick
+  the **Classifier model** (`agents.list[].classifiers.model`, one of the
+  models in the **Classification** list on the Task models page; turning the
+  switch on with no model sets the first model in that list, with an empty
+  list it is refused, a model not in the list is refused (one already in the
+  file is marked on
+  Check Up and its classifiers do not run), and a person's agent cannot run
+  classifiers). The
+  agent manages its classifiers with eleven tools: `classifier_readme`,
+  `classifier_list`, `classifier_get`, `classifier_create`,
+  `classifier_update`, `classifier_delete`, `classifier_validate`,
+  `classifier_status`, `classifier_test`, `classifier_rerun` and
+  `classifier_activity`. Definitions are JSON files in the agent's
+  `classifiers/` folder, readable and editable by hand, and the folder is
+  in the nightly backup. Install-wide limits are on the System page
+  (**Classifiers**) and in the `classifiers` section of `config.json`
+  (`processed_days`, default 30, and `limits`:
+  `max_rules` 100, `max_prompt_chars` 20000, `max_item_chars` 50000,
+  `max_items_per_run` 500, `max_parallel` 8, `max_activity_hours` 720, and
+  `min_every_seconds` 15, the shortest interval a classifier may run at; 0
+  or absent uses the default, a negative value is refused). Changes and
+  handled items are recorded in the audit log (**Classifier change**,
+  **Classification**). Check Up marks a missing or unusable classifier
+  model and an invalid definition, and the full report lists each agent's
+  classifiers. See the manual's Classifiers page.
+- **Images a model generates are saved and sent.** When a model returns an
+  image with its reply (OpenRouter image models, OpenAI image generation),
+  the image is saved in the agent's workspace under
+  `files/generated/<date>/` and sent to the chat the agent is answering. A
+  reply to another agent, a chat that can't receive files (the WebUI chat,
+  devices, `claw agent`) or an image larger than
+  `agents.defaults.max_media_size` gets the saved path in the reply instead;
+  a reply to another agent names whose workspace it is in ("Image saved in
+  Alice's workspace as …"), and a temporary agent made from scratch, whose
+  workspace is deleted with it, keeps no image when it answers another agent
+  or has no chat, and says so. An image the
+  model gives as a link is shown as "Image: <link>" (at most 500 characters)
+  and never downloaded. The agent is told where each image was saved, so it
+  can send it again with `msg_send_file`. A reply of images alone is a
+  complete reply; an empty, cut-off or failed final reply is still reported
+  as one even when an earlier step made an image.
+- **`security.permissions` areas `root`, `secrets`, `bin` and `default`.**
+  `root` sets the data directory itself and the files directly in it
+  (`config.json`); `secrets` sets `internal/`, `tls/`, `tokens/` and every
+  secret file (credentials, TLS files, token stores, files named for a token
+  or secret, `file:` secret references); `bin` is a new `<data dir>/bin`
+  folder, created at start, for your scripts and programs, whose files
+  default to `0700` and keep their execute bits; `default` is everything no
+  other area covers (`cli/`, `skills/`, `cards/`, …). Every folder defaults
+  to `0700` and every file to `0600`. See the manual's File permissions
+  section.
+- **Every `security.permissions` key is written to `config.json`.** New
+  installs get the full block. The first start after the upgrade adds the
+  block to `config.json`: any missing area or key is added with its default,
+  with one INFO log line listing the keys added. Only that block is written;
+  the rest of the file is left as it is. Deleting the block and restarting
+  writes the defaults back.
+
+- **Task models page.** A new page in the Models group, **Task models**
+  (`task_models` in `config.json`), lists the models ClawEh uses for single
+  calls without tools in six ordered lists, one per use: **Generate text**
+  (`task_models.text`), **Generate images** (`image`), **Text to speech**
+  (`tts`), **Transcription** (`stt`), **Describe images** (`vision`) and
+  **Classification** (`classify`). Each entry is `{"model": ...}`, a
+  `model_name` from the Models page; image entries may add `image_api`
+  (below) and speech entries `tts_defaults` with `voice` and `format`. A
+  list's order is that use's fallback order; a model may be in several
+  lists, at most once in each. Each list has its own **Model to add**
+  (enabled models not already in it, sorted by name) and **Move up** /
+  **Move down** / **Remove** per row. Incoming voice messages are transcribed with
+  the Transcription list, images are described for text-only models with
+  the Describe images list, and classifier models are chosen from the
+  Classification list; agents use Generate text, Generate images, Text to
+  speech and Transcription through `agent_spawn` (below). Check Up says when
+  a list has models but none can be used, naming each and why. The page
+  also holds **Text in results (characters)**
+  (`task_models.result_text_chars`, default 8000; 0 or absent uses the
+  default, negative is refused) and **Echo transcription**
+  (`task_models.echo_transcription`, environment variable
+  `CLAW_TASK_MODELS_ECHO_TRANSCRIPTION`). A model whose provider cannot
+  serve a list's use, judged from its protocol, is marked in that list.
+  Renaming a model follows it into every list, and a model in a list cannot
+  be deleted until it is taken off (the refusal names the list, such as
+  `task_models.tts[<model>]`). Check Up shows **Speech to text: No model in
+  Transcription.** and **Vision: No model in Describe images.** while those
+  lists are empty, marks a classifier model when Classification is empty,
+  and the full report has a Task models table with each list's models in
+  order. API: `GET /api/task-models`, `PUT /api/task-models`.
+- **Agents can use task models through `agent_spawn`.** A new `kind`
+  argument (`text`, `image`, `tts`, `stt`) makes the call one request to a
+  task model instead of a sub-agent: no tools, no agent, no depth level
+  (still refused at the maximum depth). `task` is the prompt, the text to
+  speak, or an optional transcription hint; `model` may name one task model
+  in that kind's list, otherwise the kind's list on the Task models page is
+  tried in order, skipping any in cooldown; `files` (new, up to 10
+  workspace paths, each checked like `msg_send_file`) and `media` are the
+  inputs; `voice` and `format` (new) set a speech call's voice and format,
+  else the model's `tts_defaults`. `agent_id` and `character_card` are refused
+  with `kind`. Output is saved in the agent's workspace (a clone's: its
+  source's) under `files/generated/<date>/`: text and transcripts as `.md`,
+  returned inline up to `task_models.result_text_chars` and cut after it with
+  the file named; images and audio are returned as paths, to send with
+  `msg_send_file`; words an image model writes beside its images are kept
+  like text. `wait` and `callback` modes, `agent_status` and `agent_list`
+  work as for sub-agents. Raw PCM speech (Gemini, ElevenLabs `pcm_*`, OpenAI
+  `pcm`) is saved as a WAV file, µ-law (`ulaw_*`) as a raw `.ulaw` file. A
+  transcription input must be an audio file (by its name or type); any file
+  that reads as text can be a text input. A model that fails because of the
+  request (a 400 or 404) is skipped for this call only; a rate limit, an
+  outage, a timeout or a key problem puts it in cooldown, as for chat. A reported cost counts toward
+  `agents.defaults.daily_spend_alert_usd`, every attempt is logged, and each
+  call is recorded in the audit log as **Task model** (`task_model`).
+- **Per-agent task-model grants.** `agents.list[].task_models` (`text`,
+  `image`, `tts`, `stt`; absent = all off) says which kinds an agent may use
+  through `agent_spawn`; any other is refused with a sentence naming the
+  agent and the kind ("Alice is not allowed to use task models for
+  images."). On the Agents page it is **Allow task models**, one box per
+  kind (**Text**, **Images**, **Speech (TTS)**, **Transcription (STT)**),
+  each noting when that kind's list on Task models is empty, and the card
+  says "Needs the agent_spawn tool." for an agent without it; Check Up lists
+  each agent's allowed kinds, marked "(ignored: no agent_spawn)" then.
+- **Images API for task models.** `task_models.image[].image_api` chooses
+  how a model in Generate images is called: `chat` (the default: image
+  output of a chat call) or `images` (OpenAI-style `/images/generations` and
+  `/images/edits`; OpenRouter's `/images`, which has no edits). On the Task
+  models page it is **Images through**, on each row of Generate images.
+- **Gemini and ElevenLabs speech.** Two provider protocols, `gemini` and
+  `elevenlabs`, reach Google's Gemini API and ElevenLabs for speech: a model
+  on one serves the Transcription and Text to speech lists on the Task
+  models page and nothing else (an agent can't chat with it). The base URL is optional
+  (the vendor's own) and the API key is required. Voice messages can now be
+  transcribed by Gemini and ElevenLabs Scribe as well as by OpenAI-style
+  endpoints (OpenAI, Groq, OpenRouter, local Whisper servers); the calls go
+  through spawnllm, and a transcription's reported cost counts toward
+  `agents.defaults.daily_spend_alert_usd`. A model in the Transcription
+  list that is disabled on the Models page raises no alert. Gemini's
+  answer to a bad key (a
+  400 with `API_KEY_INVALID`) raises **Voice transcription rejected** like a
+  401 does.
+
+- **A chat is told when a compaction makes its reply wait.** When the
+  conversation has to be summarised before the agent can answer a person,
+  the chat gets one message first, naming the agent: "Alice is summarising
+  the conversation so far; the reply may take a moment." The chat then shows
+  the agent is still working (typing indicator, placeholder) until the
+  reply. The message is sent at most once per reply, and never for
+  scheduled jobs, webhooks, questions from other agents, sub-agents,
+  background results or `/compact`.
+- **Per-agent step limit.** An agent can set its own
+  `max_tool_iterations` (`agents.list[].max_tool_iterations`), the number
+  of model and tool steps one turn may take; unset or 0 uses
+  `agents.defaults.max_tool_iterations`. On the Agents page it is
+  **Maximum tool steps per turn**.
+- **An agent is told when its turn is about to run out of steps.** On the
+  last four steps of a turn, each request to the model carries a short
+  note giving the tool steps left (one fewer than actually remain, so a
+  step is always spare) and asking it to reply with its findings and next
+  steps; on the last step it is told not to call tools, and the request
+  forbids tool calls so the model has to reply in text. Before, an agent
+  busy with tools could use every step and leave the user with the generic
+  "no response" message. The note is sent only with that request: it is
+  not stored in the conversation. Command-line models and requests without
+  tools do not get it.
+- **A "Model working again" alert.** When a model that was reported by
+  "Model authentication or billing failure" or "Model parked after repeated
+  failures" answers a request again, one alert (id `<provider>/<model>-up`)
+  names the model and since when it had been failing, so you know nothing is
+  left to do. A model nothing uses any more raises nothing: only a request
+  shows that it works.
+
+### Changed
+
+- **Messages call the program "Claw" consistently.** Log lines, alerts,
+  errors, CLI help, Check Up and report texts, the WebUI and the agents'
+  system prompt used "ClawEh", "claw" and "Claw" interchangeably; prose now
+  says "Claw" ("Claw is shutting down so the service manager can restart
+  it", "Claw started"), while version lines, titles and headers keep
+  "ClawEh". Alert titles and event IDs are unchanged.
+- **Commands the program tells you to type use the name it was started
+  as.** `run: claw admin`, `` `sudo claw install` ``, `claw devices approve`
+  and the other hints name the binary as it was run, so they stay right when
+  it is started through the `openclaw` link or renamed.
+- **The system prompt header reads `# Claw (<version>)`** instead of
+  `# claw (<version>)`.
+- **The forum and classifier guides name the host as "Claw"**
+  (`forum_readme`, `classifier_readme`).
+
+- **Memory domains load by keywords, not by word matches** (cogmem
+  v0.0.11). A topic domain no longer loads because a word of the message
+  appears in its memories, name or summary. It loads when a tool the agent
+  just used matches its tool triggers, when one of its keywords is in the
+  incoming message or in one of the three before it, or by recency. Each
+  domain now has the agent's keywords and keywords consolidation adds
+  automatically; a keyword the agent removes from the automatic list is
+  blocked and never added back, and common words or phrases already used by
+  three other domains are refused. After the upgrade, existing domains have no
+  automatic keywords until consolidation next runs for that agent, so until
+  then they load only by the triggers the agent already set or by recency.
+  Generic keywords already stored keep working until that domain's list is
+  next set. A consolidation run that left out proposed keywords says so in
+  its note on the **Memory** page (`keywords not added: …`), naming each
+  domain, and in the log line "consolidation run finished"
+  (`dropped_keywords`, `dropped_keyword_list`). Each agent's
+  memory database is upgraded on first open, after a one-time copy beside it
+  (`cogmem.db.pre-v8.db`). A memory export file now starts with the comment
+  `# cogmem export.`; files exported earlier still import.
+
+- **An alert about a problem that lasts is sent once, then at most once a
+  day.** A model out of credit was reported again every time its cooldown
+  ended and something tried it (every 30 minutes by default), a rejected
+  Telegram, Slack or Matrix token every ten minutes, an MCP server that
+  stayed down every hour. These are now reported when the problem starts and
+  then at most once every 24 hours while it lasts; the reminder ends with
+  since when and how many were held back ("ongoing since Nov 14 09:02, 47
+  more since the last alert"). When the problem is gone, the next one is new
+  and is reported at once (the same alert is still never sent twice within
+  ten minutes). It applies to: "Model authentication or billing
+  failure" and "Model parked after repeated failures" (per model, ended when
+  the model answers; `/cooldowns clear` and `/retry` let the next failure be
+  reported without waiting for the day to pass), "Telegram polling failed" and "Channel credentials
+  rejected" (per channel, ended by a working connection), "MCP `<name>`
+  down" (its "still down" reminder now carries the date), "Channel send
+  failed" (per channel, ended by a delivered message), "Scheduled job
+  failed" (per job, ended by a run that succeeds), "Voice transcription
+  rejected" (per model, ended by a transcription that works) and the three
+  session-store alerts (per agent, ended by a write that is stored). Every
+  occurrence is still in the ClawEh log; `alerts.log` and the configured
+  alert channels get only what is sent. The count starts with ClawEh, so a
+  problem still there after a restart is reported again. If you counted on
+  the repeats (a webhook that re-opens a ticket on every alert), expect one
+  alert a day for a problem that stays.
+
+- **A classifier run that fails is logged and reported in the chat and to
+  the agent, twice, then muted for 24 hours.** When a run fails outright
+  (its instructions files can't be read or are over the limit, the source
+  tool fails, the model can't be used), it is written to the activity log as
+  `run_failed` with its error (the same error in a row is one entry with a
+  count and the first and latest time), and `report.summary: on_problems`
+  now posts it to the agent's default chat, as `always` did: "Classifier
+  inbox: the run failed: <reason>." The agent also gets the same text in its
+  conversation, whatever `report.summary` says, with a request to fix the
+  classifier and check it with `classifier_test`; its answer goes to its
+  default chat. The second failed run in a row is reported too, saying that
+  further errors won't be reported for 24 hours and telling the agent to
+  call `classifier_update` with `{"report": {"errors": true}}` to report them
+  again; after that, failures are only logged until the 24 hours are over.
+  Any `classifier_update` of the classifier lifts the mute, a run that
+  succeeds starts the count again, and both survive a restart. The new
+  `report.errors: false` only logs failed runs. `classifier_activity` takes
+  an `outcome` filter and its search matches errors; `classifier_status`
+  shows `errors_reported`, `failed_runs` and `errors_muted_until`; Check Up's
+  Classifiers table has an **Error notices** column (on, off, or muted until
+  a time). A model in cooldown is not a failed run.
+- **A classifier's failure notice says what to do about its cause, in
+  ClawEh's own words.** The chat line is one sentence naming the cause
+  ("Classifier inbox: the run failed (source mail_list: the tool
+  failed)."). The agent gets the same sentence and advice that fits the
+  cause: fix the definition, check the tool or model itself (credentials or
+  an outage) before changing the classifier, a tool it names is no longer
+  available (naming its role: source, fetch, or the action for a category),
+  or only the operator can fix it (no usable model, state that can't be
+  opened) and to tell the user. What the tool, provider or item said
+  follows marked as external data, never as part of the notice; the same
+  marking covers what `classifier_activity`, `classifier_status`,
+  `classifier_list`, `classifier_test` and `classifier_rerun` return.
+  Errors name the tool once and no longer repeat the classifier's name.
+- **A classifier run stopped by `stop_after_failures` is a failed run.** It
+  names the cause the failed items share ("stopped after 5 consecutive item
+  failures: fetch mail_read: the tool failed"), so repeated runs fold into
+  one `run_failed` entry; the last item's error is the entry's `detail`. It
+  is logged and reported like any failed run, so an item failure that never
+  goes away reaches the agent. Failed runs are logged as warnings. A run
+  that was stopped (by you or by a shutdown) no longer resets the count of
+  failed runs.
+- **A classifier's activity shows what went wrong with an item.** An
+  `unclassified` item keeps the model's two replies (`replies`); entries
+  name fetch fields not in the fetch result (`missing_fields`) or cut to
+  `fetch.max_chars` (`shortened_fields`); a failed action keeps the
+  arguments it was called with (`action_args`); a failed fetch keeps the
+  listed item's own fields. A fetch field that is there but holds nothing
+  (an empty list along its path, such as a mail with no CC, `null` or an
+  empty string) is empty, not missing: the model sees it marked empty and
+  the entry shows it as `""`. `classifier_test` shows the same, with the
+  item's fields. An item all of whose fetch fields are missing now fails
+  instead of being classified blind.
+- **`classifier_status` shows a dry-run classifier's decisions.**
+  `dry_run_counts` gives the dry-run decisions by category (`unclassified`
+  for items the model could not place); `counts` stays live items only.
+- **A hand-edited classifier definition that is no longer valid is
+  reported to its agent** ("Classifier inbox is not run (...)") once per
+  broken version of the file, also across restarts, counted and muted like
+  a failed run.
+- **A classifier whose `state.db` can't be opened is reported.** Once a day
+  per agent while it lasts, it is logged as an error, raises the new alert
+  "Classifier state unavailable" and tells the agent and its chat; Check Up
+  marks it, also when the folder can't take a new one or when only the
+  running service met the error.
+- **The voice alerts are now Normal priority, like every other alert.**
+  "Voice message not transcribed" and "Speech backend not usable" (when no
+  speech model was usable) were sent as Urgent.
+
+- **An `/opt/claw` install puts the binary and the `openclaw` alias in
+  `/opt/claw/bin`.** `claw install` on a machine whose data directory is
+  `/opt/claw` now installs `/opt/claw/bin/claw` and the alias
+  `/opt/claw/bin/openclaw`, and the service starts `/opt/claw/bin/claw`,
+  also when an earlier install put them directly in `/opt/claw`. Re-run
+  `sudo claw install` to move an existing install. The old
+  `/opt/claw/claw` and `/opt/claw/openclaw` are left in place; the
+  installer names each one and says it can be removed.
+- **BREAKING: a link in the global skills folder or an `allow_read_paths`
+  folder that leads elsewhere on the host is no longer followed.** A skill
+  installed as a link to another folder (for example a git checkout) is
+  refused. To keep it, add the link's target folder to
+  `tools.allow_read_paths`.
+- **BREAKING: `msg_send_file` takes a list of files.** Its arguments are now
+  `files`, a list of 1 to 10 `{"path", "filename"}` entries sent in order;
+  the old `path` and `filename` arguments are refused. A file can be sent
+  only when the agent may read it with the file tools (workspace, allowed
+  folders, common and always-readable folders, `restrict_to_workspace`), and only by
+  an agent granted `file_read_lines` or `file_read_bytes`: add one of them to
+  `agents.list[].tools` for an agent that sends files. The tool's own path
+  rule is gone. Files go to the chat the turn's reply goes to, never
+  to another agent, and the agent is told, per file, whether each was sent or
+  why not. A chat that cannot receive files (WebUI, devices, SecMsg) is
+  refused with "This chat can't receive files."
+- **BREAKING: mounts are replaced by allowed folders.**
+  `agents.list[].mounts` is now `agents.list[].allowed_folders`, a list of
+  `{"path": "/srv/src", "notify": true}`: an absolute folder path (a save
+  with any other path is refused) and the optional new-file notice. The
+  agent uses a folder by its real path (`/srv/src/notes.md`), no longer as
+  `<name>/...`; tell agents whose prompts or skills name the old paths.
+  There is no name and no write switch: write access follows the folder's
+  file permissions for the account ClawEh runs as, and a write the account
+  cannot make returns "permission denied: <path> is read-only for this
+  app". The agent's prompt lists each folder by its path, marked read-only
+  when the account cannot write it. Old `mounts` entries are migrated when
+  the configuration loads (path and notify kept, name and write switch
+  dropped, one warning per entry naming the agent and the path), and the
+  next save writes only `allowed_folders`; make a folder read-only with
+  `chmod` where the old entry was not writable. The same rule applies to
+  every file the app reads for an agent: `msg_send_file`, memory
+  attachments, task-model files and forum sources, which may now be an
+  absolute path in an allowed folder. Maestro no longer gets an automatic
+  mount: with Maestro on, `maestro/` is part of the workspace the file tools
+  read and write, and Maestro's reference library lists the allowed folders
+  by name (see below). The
+  new-file notice now names the agent and the folder; the first scan after
+  the upgrade only records what each folder holds. The reserved folder names
+  for mounts are gone, and with them `GET /api/agents/mounts/ignored`, the
+  Agents page marking and the Check Up row. On the Agents page the editor is
+  **Allowed folders** (a path and **Notify on new files** per folder); a
+  saved folder that is not an absolute path or does not exist is marked
+  "Ignored" on its row and listed on Check Up (**Allowed folder**), and the
+  migration log warns for each formerly read-only mount the agent can now
+  write.
+- **The agent's prompt describes its workspace plainly.** "Your working
+  area is <workspace>/files" is replaced by: the workspace is the agent's
+  folder, relative paths start there, and work is written under `files/`.
+  The prompt lists every folder the file tools can reach, by absolute path:
+  `<workspace>/files` (read/write), `<workspace>/skills` (read-only),
+  `<workspace>/maestro` with Maestro on, and each allowed folder, marked
+  read-only when the account cannot write it and followed by its note. What
+  the tools can reach is unchanged.
+- **Maestro's reference library lists the allowed folders.** Each allowed
+  folder that exists is in the library under its last path component as one
+  word (letters, digits, `_` and `-`; any other run of characters becomes
+  `-`), with `-2`, `-3`, … added in config order when two folders share a
+  name: `/srv/src` is `src/…`, `/opt/audio/in` is `in/…`. The names of
+  Maestro's own reference entries count as taken, so a folder never hides
+  Maestro's guide (`/srv/templates` is `templates-2/…`). Maestro reads them
+  only.
+- **Maestro is updated to 0.5.9.** A link inside an allowed folder that
+  leads outside it is no longer listed, searched or read through Maestro's
+  reference library, matching what the file tools allow.
+- **BREAKING: an agent whose `tools` list has `"*"` also gets the new
+  `file_glob`.** To keep it from such an agent, add `file_glob` to its
+  `deny_tools`.
+- **The file tools and `shell_exec` say when to use them.** The
+  descriptions of `file_list`, `file_read_lines`, `file_search_lines`,
+  `file_edit_lines`, `file_insert_lines`, `file_delete_lines`, `file_edit`,
+  `file_write` and `shell_exec` now open with what each is for (find files
+  by name, find text, read the lines found, change text; `shell_exec` for
+  any command-line program, including grep, sed, awk and jq pipelines, with
+  the file tools named as usually better for finding, reading and editing),
+  so smaller models pick the right one. Names, arguments and behaviour are
+  unchanged.
+- **BREAKING: `shell_exec` no longer refuses commands by path.** The checks
+  for `..`, for absolute paths outside the working folder and for a
+  `working_dir` outside the workspace are gone: a command runs with the full
+  access of the account ClawEh runs as, as it always could by other means.
+  `working_dir` may be any folder (a relative one starts at the workspace,
+  the default). The deny patterns, allow patterns, custom allow patterns,
+  timeouts and output handling are unchanged, and
+  `agents.defaults.restrict_to_workspace` now applies to the file tools only.
+  On the Agents page `shell_exec` is an ordinary box under Internal tools,
+  off by default, with a warning icon whose hover text is "Full access to
+  this app's account"; the separate shell switch is gone, **Default tools**
+  never adds it, and Check Up's Shell access row reads "Shell commands
+  allowed: <agents>". To keep an agent away from files, do not give it
+  `shell_exec`.
+- **BREAKING: the data directory is set to exactly the configured modes at
+  every start.** Before, the startup check only removed group and other
+  access and only touched folders and secret files. Now every folder and
+  every regular file is set to its area's mode, which also adds access where
+  the mode allows more, and `logs/` and `media/` are walked too. A data
+  directory that is a symbolic link is now walked at its target; a file with
+  more than one hard link is left alone with a warning. Files
+  outside `bin/` lose execute bits their mode does not have: move scripts and
+  programs you keep in the data directory into `<data dir>/bin` before
+  upgrading (the running `claw` program is never changed, and a warning names
+  it when it is in the data directory outside `bin/`). Symbolic links are
+  never followed or changed. Each change is logged at INFO.
+- **BREAKING** The top-level `security.permissions.dir_mode` and `file_mode`
+  are no longer used and are ignored. Any permission setting not present in
+  `config.json` is set to its default at startup. If you customized
+  permissions, update them in the config file after upgrading.
+- **BREAKING: `config.json`, the credentials file and `file:` secret
+  references follow the configured modes instead of a fixed `0600`.**
+  `config.json` may allow no more than `root.file_mode` (ClawEh refuses to
+  start otherwise, naming the `chmod`), and one that allows less is set to
+  it; config saves write it with exactly that mode. The credentials file and
+  every `file:` reference may allow no more than `secrets.file_mode`. With the
+  defaults nothing changes. After a config reload these checks use the new
+  `secrets.file_mode` at once.
+- **BREAKING for API callers: `PATCH /api/config` refuses unknown keys.** A
+  body naming any key the configuration does not have, anywhere in the
+  document, now gets HTTP 400 with `Unknown config key: <path>` (or
+  `Unknown config keys: <path>, <path>` for several), and nothing is applied.
+  Before, such keys were dropped silently and the request succeeded. This
+  includes the removed `security.permissions.dir_mode` and `file_mode`, the
+  flat `compress_*` keys (in `agents.defaults` and on an agent; use the
+  `compression` block) and `channels.discord.mention_only` (use
+  `channels.discord.group_trigger.mention_only`). A `config.json` that still
+  holds those older keys loads and is migrated as before.
+  Free-form maps (an MCP server's `env` and `headers`, for example) still
+  take any key. Remove the named keys from the request.
+- **Mode validation is format plus an owner floor.** A mode must still be 3
+  or 4 octal digits with a leading `0` when there are four. Other-user write
+  is no longer refused; a mode that gives other users access is reported
+  instead (see Security). A mode without owner access is no longer refused
+  either: a folder mode lacking owner `rwx` (`r-x` for `bin`) or a file mode
+  lacking owner `rw` (`r` for `bin`) is used with those bits added, with a
+  warning naming the key and both values at each load; `config.json` keeps
+  what you wrote.
+- **Files and folders ClawEh creates take their area's mode at once,
+  exactly, whatever the umask**, instead of `0600`/`0700` until the next
+  start: agent files written by the file tools, workspaces and their prompt
+  files, task, state, forum and cron stores, installed and imported skills,
+  character cards, the common folder, log files (also when the logs roll),
+  the alerts log, dumps, downloaded media, backup archives, the folders
+  created at start, the self-signed TLS certificate and key (both now take
+  `secrets.file_mode`; the certificate was `0644`), and the token stores,
+  databases and other files in `internal/`. After a config reload, new files
+  take the new modes, except logs, dumps, downloaded media and an agent's
+  restart-recovery state, which keep the modes from start. Maestro's files
+  in an agent's `maestro/` folder (the agents area) and a model's
+  `response_log_file` (the area it lies in, `logs` under `logs/`) are now
+  created with their area's mode too, instead of fixed modes (Maestro's
+  were `0755`/`0644`).
+- Updated dependencies
+
+- **A compaction asked for only by its age runs after the reply.** When the
+  oldest message in view passes **Age compaction trigger (days)**
+  (`compression.trigger.days`), the conversation used to be
+  summarised before the agent answered, so the person waited for the memory
+  model too. Now the agent replies first and the summary is written right
+  after, in the background. A compaction for any other reason (the context
+  threshold, the message count, an emergency) still runs before the reply.
+
+### Removed
+
+- **BREAKING: `voice.stt` and `voice.echo_transcription` are removed, with
+  the Speech page.** Incoming voice messages are transcribed only with the
+  models in the **Transcription** list on the Task models page, and are not
+  transcribed while it is empty (Check Up: **Speech to text: No model in
+  Transcription.**). The old
+  keys are reported as unknown at start and ignored, and the first save of
+  any page rewrites `config.json` without them: **before saving anything
+  after the upgrade, copy the old `voice` block** (each `voice.stt` entry's
+  provider and model, in order, and `echo_transcription`). There is no
+  automatic migration. Then, for each old entry in order, add its model on
+  the Models page on that entry's provider (the provider gives the endpoint
+  and key, as before) and add it to **Transcription** on the Task models
+  page (`task_models.stt`), in the old order. An entry with a blank model used the provider host's
+  default, which is now written out: `api.openai.com` → `whisper-1`,
+  `api.groq.com` → `whisper-large-v3`, `openrouter.ai` →
+  `openai/whisper-large-v3`. Set **Echo transcription** there
+  (`task_models.echo_transcription`) in place of
+  `voice.echo_transcription`. The environment variable
+  `CLAW_VOICE_ECHO_TRANSCRIPTION` is now
+  `CLAW_TASK_MODELS_ECHO_TRANSCRIPTION`. `GET` and `PUT /api/voice/stt` are
+  removed.
+- **BREAKING: `agents.defaults.vision_model` and
+  `agents.defaults.vision_model_fallbacks` are removed.** Images are
+  described for text-only models only with the models in the **Describe
+  images** list on the Task models page, and are not described while it is
+  empty (Check Up: **Vision: No model in Describe images.**). The old keys
+  are reported as unknown at start and ignored, the vision fields are gone
+  from the System page, and the first save of any page rewrites
+  `config.json` without them: **before saving anything after the upgrade,
+  copy the values of `vision_model` and `vision_model_fallbacks`**. There is
+  no automatic migration. Then add the old `vision_model` and then each of
+  its fallbacks, in that order, to **Describe images** on the Task models
+  page (`task_models.vision`). The environment variable
+  `CLAW_AGENTS_DEFAULTS_VISION_MODEL` is removed.
+
+### Fixed
+
+- **On macOS, a `claw` binary in the system temporary folder is not taken
+  for an existing install.** `install`, `uninstall` and `upgrade` ignore a
+  binary in a build or temporary location when they look for an install, but
+  recognised a temporary location only by a `tmp` or `temp` folder name, which
+  the macOS temporary folder does not have. They now also ignore anything
+  inside the system temporary folder.
+
+- **`uninstall` names the system-wide data folder for the account that owns
+  it.** With no service detected, it said the data in `/opt/claw` was kept
+  only for root or one particular account name; any other account was told
+  `~/.claw`. It now names `/opt/claw` when the uninstall runs as root or for
+  the account that owns that folder.
+
+- **`status` and the sessions commands see a gateway started under another
+  name.** A running gateway was recognised by its process name, so one
+  started through the `openclaw` link or from a renamed binary was reported
+  as not running (and `sessions` would not refuse to touch its files). It is
+  now recognised by its executable on Linux.
+- **Upstream MCP servers are told the real client version.** The client
+  introduced itself as `claw` version `1.0.0`; it now sends `ClawEh` and the
+  release number (for example `0.6.4`).
+
+- **After `/model`, or on a fallback model, requests use that model's
+  `max_tokens` and `context_window`.** Both were taken from the agent's first
+  model for every request, so a switched-to model with a smaller limit was
+  sent the first model's `max_tokens` and its history was not trimmed to its
+  own context window (a local model loaded with a 32k context refused the
+  request). Each request now carries the `max_tokens` and `thinking_level` of
+  the model it is sent to, from its `model_list` entry, else
+  `agents.defaults` (a model that is not in `model_list` keeps the agent's
+  first model's values). The conversation, and tool results added to it, are
+  trimmed and compacted to the context window of the model `/model` selected,
+  from the next turn, and that model's `no_tools` decides whether tools are
+  sent: an agent whose first model has `no_tools` now sends tools after
+  `/model` to a model that takes them, and the reverse. Within one turn,
+  history is prepared for the selected model, so a fallback model with a
+  smaller context window may still need the context-window retry, and a
+  fallback model gets the selected model's tools.
+
+- **The device channel no longer warns that nobody can connect.** With
+  `channels.device.allow_from` empty, any paired device may talk to the
+  agents (devices are let in by token and pairing approval), so the start-up
+  warning "empty allow_from — nobody will be able to connect" was wrong for
+  it. Other channels still warn.
+
+- **The Task models page scrolls.** Its content had no scroll area of its
+  own, so anything below the window could not be reached, and the cards sat
+  against the sidebar.
+
+- **A model added on the Models page is enabled.** It used to be saved
+  disabled, so it had to be found and switched on before any page could use
+  it.
+
+- **An allowed folder whose path holds a line break is refused.** Such a
+  path never matched its list of seen files, so its new-file notices were
+  silently never sent. Saving one is refused ("Alice's allowed folder
+  "/srv/a\nb" contains a line break."); one
+  already in `config.json` is ignored by the file tools and marked on the
+  Agents page ("Ignored: path contains a line break") and on Check Up.
+  Other characters, such as a tab, are still allowed in a path.
+
+- **File tools no longer hang on a FIFO or read a device.** Reading,
+  editing, viewing, counting or attaching a path that is a FIFO (named
+  pipe), device or socket could wait forever for a writer. Every file read
+  now opens without waiting and refuses anything but a regular file:
+  "access denied: <path> is not a regular file". Searches skip such files
+  as before.
+
+- **A link in the workspace no longer reads what the agent may not
+  read.** With the workspace read folders set (the default: `files/`,
+  `skills/` and the always-readable folders), a link such as
+  `files/x -> ../sessions/...` or `files/a -> ../AGENTS.md` let every
+  reading file tool (read, list, search, glob, count, view image, copy)
+  read its target. The target is now checked too, and such a read is
+  refused: "access denied: <path> resolves outside the folders the agent
+  can read". A link to a folder the agent may read, such as `skills/`,
+  still works. Writes already followed this rule; agents allowed to read
+  the whole workspace are unaffected. Likewise, a link inside a folder
+  listed in `tools.allow_read_paths` (or the global skills folder) is
+  followed only to another allowed place; one leading anywhere else on the
+  host is refused the same way.
+
+- **The Providers page's add and edit forms start with a protocol the
+  server accepts.** They started with `openai`, which is not a protocol,
+  so saving without picking one was refused as an unknown protocol. They
+  now start with `openai-chat`.
+
+- **Emptying a provider's Base URL or proxy on the Providers page clears
+  it.** The edit form left an emptied field out of the save, and the
+  stored value was kept. It now saves the empty value. A protocol that
+  needs a base URL still refuses the save; an empty API key still keeps the
+  stored key.
+
+- **A provider switched away from a CLI no longer keeps its CLI
+  settings.** `command` and `bypass_restrictions` are read only for CLI
+  providers, but stayed in the configuration after a provider's protocol
+  was changed to an HTTP one. A save now removes them from any provider
+  that is not a CLI, and the Providers page clears the command when the
+  protocol is switched.
+
+- **A CLI provider no longer keeps a stray `base_url`.** CLI providers
+  (`claude-cli`, `codex-cli`, `antigravity-cli`, `cursor-cli`) never use
+  `base_url`, but a value could stay behind, for example after switching a
+  provider's protocol to a CLI on the Providers page, and showed up in
+  `/status` and `claw status`. Any save of the configuration now removes it
+  from CLI providers; nothing else changes.
+
+- **New-file notices work for read-only folders and for every agent
+  watching a folder.** The list of files already seen is now kept per agent
+  in the agent's workspace (`state/folderwatch/`), not in a `.claw` file
+  inside the watched folder. Before, two agents with **Notify on new files**
+  on the same folder shared one list, so only one of them was told about
+  each new file, and a folder ClawEh could not write was re-read every 10
+  seconds without notices while the alert "Allowed folder marker not
+  written" kept repeating. The first check after the upgrade records what
+  each folder holds and announces nothing. Old `.claw` files are left in
+  the folders and are no longer used; delete them if you like. The alert
+  is now "Allowed folder file list not saved" and is raised only when the
+  agent's workspace cannot hold the list; it names the agent and the
+  folder, and says whether notices for the folder are not sent at all (no
+  list could ever be saved) or the same files may be reported again (a
+  later save failed). A folder that is removed and added again, or whose
+  notices are turned off and on, starts with a new list instead of
+  announcing everything added meanwhile.
+
+- **A classifier run cut short by a shutdown says so.** Its last run was
+  sometimes recorded as "the classifier was stopped", as if the classifier
+  had been changed or deleted; it is now always "the service stopped".
+  A shutdown is never a failed run: a source call or state read cancelled
+  by it was reported to the agent as a failure ("the classifier's state
+  could not be read", "context canceled"), and an item it interrupted was
+  recorded as failed; neither is recorded or reported now, and the item is
+  taken again at the next start. A `classifier_rerun` cut short says so
+  instead of returning an empty decision.
+
+- **`classifier_test` and `classifier_rerun` show why the source failed.**
+  They answered "The operation failed because of an internal error." when
+  the source tool failed or did not return a list; they now give the
+  reason, as a failure notice does.
+
+- **Tools of external MCP servers and the web tools work as a classifier's
+  source and fetch.** Their results are marked as external content for the
+  model, so they never parsed as JSON and every run failed with "did not
+  return JSON". The classifier now reads the content inside the mark. That
+  error, when a tool really returns something else, now gives the parse
+  error and the first 200 characters of what came back.
+
+- **Classifier errors no longer carry secrets.** An API key or credential
+  in a model's or tool's error text is redacted before the error is stored,
+  logged, sent in a notice or returned by a classifier tool.
+
+- **A link out of the workspace is refused in plain words.** Reading,
+  listing, searching or globbing through a link in an agent's workspace that
+  leads outside it answered with the raw "openat files/x: path escapes from
+  parent" and was logged at ERROR as "Tool execution failed". It is now the
+  refusal "access denied: <path> resolves outside the workspace", logged at
+  WARN as "Tool call refused", like the same link inside an allowed folder.
+
+- **A write in a read-only allowed folder names the file.** `file_edit_lines`
+  and `file_delete_lines` (backup on by default), and `file_edit`,
+  `file_insert_lines`, `file_write` and `file_append` with `backup: true`,
+  answered with the backup's failure ("backup: failed to write
+  <file>.0001: … is read-only for this app"). Every write tool now refuses
+  before any backup with "permission denied: <file> is read-only for this
+  app", decided by whether the app's account can write the folder that would
+  change.
+
+- **Logging no longer races with a change to the logger.** A line logged
+  while the log files were being set up at start or rotated could read the
+  logger's settings mid-change; each line now reads them under the logger's
+  lock.
+
+- **The Models page's enable switch is named.** Screen readers announced
+  it as `models.action.enable`; it is now "Enable model" or "Disable model".
+
+- **A CLI agent's tool output no longer floods the chat.** Agents on a CLI
+  model (Claude CLI, Codex CLI, …) had every tool's own output, such as the
+  full output of each `shell_exec` command, posted to the chat as a separate
+  message. It now follows `agents.defaults.stream_tool_activity`, as it
+  already did for other models: off by default, so only the agent's reply is
+  sent. Set it to `true` to see tool output again.
+- **Every Telegram bot gets the typing indicator and placeholder by default.**
+  Only the first bot in `channels.telegram` had `typing.enabled` and
+  `placeholder.enabled` on when its config left them out; the others had them
+  off. An explicit `false` on any bot is kept.
+- **The System page accepts 0 in the Classifiers and Forums fields.** 0 means
+  "use the default", as in the config, but the inputs would not allow it.
+- **`claw install` no longer mistakes a folder next to `/opt/claw` for it.**
+  A binary or service in a folder such as `/opt/claw-old` or `/opt/clawdev`,
+  or a unit whose `PATH` lists one, was taken for an `/opt/claw` install, so
+  the installer chose `/opt/claw` as the data directory. Only `/opt/claw`
+  itself and what is inside it count now.
+- **Messages and notices from an agent on a CLI model go to the chat it is
+  answering.** `msg_send`, tool notices, `/tools on` progress lines and
+  background results from an agent on a Claude, Codex, Antigravity or Cursor
+  model went to the chat its conversation last heard from, so they could land
+  in the wrong chat while the agent answered another agent, ran from
+  `claw agent`, or handled a tool result. They now go where that turn's reply
+  goes, as for other models. When the agent is answering more than one
+  conversation at once, `msg_send` is refused ("Messages can't be sent now:
+  this agent is answering more than one conversation."), as are
+  `session_clear` and a background `agent_spawn`, and notices are not sent.
+  `msg_send` in a turn with no chat (`claw agent`, a service token) is now
+  refused instead of reporting the message queued.
+- **`msg_send_file` works.** It always answered "media store not
+  configured" and sent nothing; agents on CLI models (Claude, Codex,
+  Antigravity, Cursor) had their files dropped too. Both now send.
+- **Files sent to a Slack thread arrive in that thread**, where the reply
+  goes, not in the channel. Sending files needs the `files:write` scope; when
+  it is missing, the agent is told "the Slack bot is missing the files:write
+  permission".
+- **A file that could not be read for sending fails the send** on Telegram,
+  Slack, Discord and Matrix instead of being skipped silently, and Telegram
+  shows the file's own name.
+- **Progress updates, the typing indicator and the reaction no longer
+  disappear after 5–10 minutes on a long turn.** They stay until the turn
+  ends, on every channel, so a long turn no longer looks dead and its
+  "Thinking..." message keeps receiving progress updates.
+- **A placeholder switched off stays off.** `placeholder.enabled: false` on
+  a channel whose default is on (Matrix, Slack, a Telegram bot) was dropped
+  when the config was saved and read back as on at the next start. It is now
+  always written to `config.json`. The same applied to a Telegram bot's
+  `typing.enabled: false` and Matrix's `group_trigger.mention_only: false`,
+  which are now always written too.
 
 ## [0.6.3]
 

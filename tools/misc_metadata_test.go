@@ -69,7 +69,7 @@ func TestToolDetailsTool_Metadata(t *testing.T) {
 }
 
 func TestSendFileTool_Metadata(t *testing.T) {
-	tool := toolsmsg.NewSendFileTool(t.TempDir(), false, 0, nil)
+	tool := toolsmsg.NewSendFileTool(nil, false, 0, nil)
 	if tool.Name() != "msg_send_file" {
 		t.Errorf("Name() = %q, want msg_send_file", tool.Name())
 	}
@@ -84,7 +84,7 @@ func TestSendFileTool_Metadata(t *testing.T) {
 
 func TestExecTool_Metadata(t *testing.T) {
 	cfg := config.DefaultConfig()
-	tool, err := toolsshell.NewExecToolWithConfig(t.TempDir(), true, cfg)
+	tool, err := toolsshell.NewExecToolWithConfig(t.TempDir(), cfg)
 	if err != nil {
 		t.Fatalf("NewExecToolWithConfig() error = %v", err)
 	}

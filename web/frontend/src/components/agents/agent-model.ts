@@ -22,6 +22,8 @@ export interface AgentEntry {
   tools?: string[]
   message?: MessageConfig | null
   temperature?: number
+  /** Model/tool steps one turn may take; undefined = agents.defaults. */
+  max_tool_iterations?: number
   /** Days an `event` memory is kept. undefined = agents.defaults; 0 = the
    *  built-in default; negative = keep forever. */
   event_retention_days?: number
@@ -31,6 +33,12 @@ export interface AgentEntry {
   share_common?: boolean
   global_cron?: boolean
   maestro?: MaestroSettings
+  /** The per-agent `classifiers` block: the switch and the one model every
+   *  classifier the agent owns uses. Absent = off. */
+  classifiers?: ClassifiersSettings
+  /** The per-agent `task_models` grant: the kinds of task model it may use
+   *  through agent_spawn. Absent = all off. */
+  task_models?: TaskModelGrant
   fusion?: boolean
   forum?: boolean
   /** The character card (cards/<id>.json) rendered into the system prompt;
@@ -39,7 +47,8 @@ export interface AgentEntry {
   /** The ccv3 suite: the card-library tool. */
   ccv3?: boolean
   cogmem?: boolean
-  mounts?: MountEntry[]
+  /** allowed_folders: real folders the file tools may use. */
+  allowed_folders?: AllowedFolderEntry[]
   mcp_tools?: string[]
   /** Tools the agent may never call, even when tools / mcp_tools admit them. */
   deny_tools?: string[]
@@ -55,17 +64,25 @@ export interface AgentEntry {
   raw?: Record<string, unknown>
 }
 
-export interface MountEntry {
-  name: string
+export interface AllowedFolderEntry {
   path: string
   notify?: boolean
-  writable?: boolean
+  /** Shown to the agent after the folder in its prompt; at most
+   *  MAX_FOLDER_NOTE_CHARS characters. */
+  note?: string
 }
+
+// MAX_FOLDER_NOTE_CHARS is config.MaxAllowedFolderNoteChars: the longest note
+// an allowed folder may carry.
+export const MAX_FOLDER_NOTE_CHARS = 100
 
 export interface AgentsConfig {
   defaults: {
     models?: string[]
     temperature?: number
+    /** The step cap an agent without its own gets: the configured default,
+     *  else BUILTIN_MAX_TOOL_ITERATIONS. */
+    max_tool_iterations?: number
   }
   list?: AgentEntry[]
 }
@@ -93,6 +110,18 @@ export function asString(value: unknown): string {
 
 export function asNumber(value: unknown, defaultVal = 0): number {
   return typeof value === "number" ? value : defaultVal
+}
+
+// BUILTIN_MAX_TOOL_ITERATIONS is the step cap the server falls back to when
+// agents.defaults.max_tool_iterations is 0 or missing (resolveRunLimits in
+// agent/instance.go).
+export const BUILTIN_MAX_TOOL_ITERATIONS = 20
+
+// positiveInt is value when it is a whole number above zero, else undefined.
+export function positiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : undefined
 }
 
 // splitCsv parses a comma-separated MCP-allow string into trimmed, non-empty entries.
@@ -239,8 +268,8 @@ export function toggleAccessEntry(entries: string[], name: string): string[] {
 }
 
 // SHELL_TOOL is the one tool granted only by name: an agent runs shell
-// commands only when its tools list names shell_exec ("Allow shell commands");
-// a "*" or prefix entry never includes it.
+// commands only when its tools list names shell_exec (its box in the tool
+// list); a "*" or prefix entry never includes it.
 export const SHELL_TOOL = "shell_exec"
 
 const isShellEntry = (e: string) => norm(e) === SHELL_TOOL
@@ -250,14 +279,14 @@ export function shellAllowed(tools: string[]): boolean {
   return tools.some(isShellEntry)
 }
 
-// shellDenied reports whether deny_tools blocks shell_exec, under the backend's
-// rule: an exact entry (case-insensitive) or a prefix entry ending in "*".
-export function shellDenied(denyTools: string[]): boolean {
+// toolDenied reports whether deny_tools blocks the tool name, under the
+// backend's rule: an exact entry (case-insensitive) or a prefix entry ending
+// in "*".
+export function toolDenied(denyTools: string[], name: string): boolean {
+  const n = name.toLowerCase()
   return denyTools.some((raw) => {
     const d = norm(raw)
-    return d.endsWith("*")
-      ? SHELL_TOOL.startsWith(d.slice(0, -1))
-      : d === SHELL_TOOL
+    return d.endsWith("*") ? n.startsWith(d.slice(0, -1)) : d === n
   })
 }
 
@@ -266,6 +295,38 @@ export function shellDenied(denyTools: string[]): boolean {
 export function withShellAllowed(tools: string[], allowed: boolean): string[] {
   const rest = tools.filter((e) => !isShellEntry(e))
   return allowed ? [...rest, SHELL_TOOL] : rest
+}
+
+// CODING_TOOLS are the tools the "Coding tools" button adds to an agent's
+// tools list.
+export const CODING_TOOLS = [
+  "file_list",
+  "file_glob",
+  "file_read_lines",
+  "file_search_lines",
+  "file_edit_lines",
+  "file_insert_lines",
+  "file_delete_lines",
+  "file_edit",
+  "file_write",
+  SHELL_TOOL,
+  "agent_spawn",
+]
+
+// codingToolInList reports whether the tools list grants name: shell_exec only
+// by its own entry, any other tool by its entry, "*" or a prefix entry such as
+// "file_*" (toolPatternMatches).
+function codingToolInList(tools: string[], name: string): boolean {
+  if (name === SHELL_TOOL) return shellAllowed(tools)
+  return tools.some((e) => toolPatternMatches(e.trim(), name))
+}
+
+// withCodingTools adds every coding tool the list does not already grant
+// (by name, "*" or a prefix entry; shell_exec only by name) and never removes
+// anything.
+export function withCodingTools(tools: string[]): string[] {
+  const missing = CODING_TOOLS.filter((name) => !codingToolInList(tools, name))
+  return [...tools, ...missing]
 }
 
 // MESSAGE_TOOL is the tool an agent messages other agents with; whom it may
@@ -298,13 +359,8 @@ export function toolGranted(
   denyTools: string[],
   name: string,
 ): boolean {
-  const n = name.toLowerCase()
-  const denied = denyTools.some((raw) => {
-    const d = norm(raw)
-    return d.endsWith("*") ? n.startsWith(d.slice(0, -1)) : d === n
-  })
-  if (denied) return false
-  if (n === SHELL_TOOL) return shellAllowed(tools)
+  if (toolDenied(denyTools, name)) return false
+  if (name.toLowerCase() === SHELL_TOOL) return shellAllowed(tools)
   return tools.some((e) => toolPatternMatches(e, name))
 }
 
@@ -359,14 +415,12 @@ export function withAllAgents(allow: string[], on: boolean): string[] {
   return on ? [ALL_AGENTS] : allow.filter((e) => e !== ALL_AGENTS)
 }
 
-// internalToolsSummary is the label of an agent's internal tools, leaving out
-// shell_exec, which has its own switch. An agent has only the tools its list
-// names, so an empty list is "No tools".
-export function internalToolsSummary(tools: string[]): {
+// internalToolsSummary is the label of an agent's internal tools. An agent
+// has only the tools its list names, so an empty list is "No tools".
+export function internalToolsSummary(list: string[]): {
   text: string
   none: boolean
 } {
-  const list = withShellAllowed(tools, false)
   if (list.length === 0) return { text: "No tools", none: true }
   return {
     text: `${list.includes("*") ? "all" : list.length} granted`,
@@ -424,6 +478,7 @@ export function parseAgent(value: unknown): AgentEntry {
           }
         : null,
     temperature: typeof r.temperature === "number" ? r.temperature : undefined,
+    max_tool_iterations: positiveInt(r.max_tool_iterations),
     event_retention_days:
       typeof r.event_retention_days === "number"
         ? r.event_retention_days
@@ -438,18 +493,19 @@ export function parseAgent(value: unknown): AgentEntry {
     share_common: r.share_common === false ? false : true,
     global_cron: r.global_cron === true,
     maestro: maestroFromRaw(r.maestro),
+    classifiers: classifiersFromRaw(r.classifiers),
+    task_models: taskModelGrantFromRaw(r.task_models),
     fusion: r.fusion === true,
     forum: r.forum === true,
     character_card: asString(r.character_card) || undefined,
     ccv3: r.ccv3 === true,
     cogmem: r.cogmem !== false,
-    mounts: asArray(r.mounts).map((m) => {
-      const mr = asRecord(m)
+    allowed_folders: asArray(r.allowed_folders).map((f) => {
+      const fr = asRecord(f)
       return {
-        name: asString(mr.name),
-        path: asString(mr.path),
-        notify: mr.notify === true,
-        writable: mr.writable === true,
+        path: asString(fr.path),
+        notify: fr.notify === true,
+        ...(asString(fr.note) ? { note: asString(fr.note) } : {}),
       }
     }),
   }
@@ -522,6 +578,9 @@ export function parseAgentsConfig(appConfig: unknown): AgentsConfig {
         typeof defaults.temperature === "number"
           ? defaults.temperature
           : undefined,
+      max_tool_iterations:
+        positiveInt(defaults.max_tool_iterations) ??
+        BUILTIN_MAX_TOOL_ITERATIONS,
     },
     list: sortAgentList(asArray(agents.list).map(parseAgent)),
   }
@@ -532,6 +591,96 @@ export async function fetchSkills(): Promise<SkillInfo[]> {
   if (!res.ok) return []
   const data = (await res.json()) as { skills?: SkillInfo[] }
   return data.skills ?? []
+}
+
+/** The per-agent `classifiers` config block. */
+export interface ClassifiersSettings {
+  enabled: boolean
+  /** The classifier model; absent = none set. */
+  model?: string
+}
+
+/** classifiersFromRaw parses the saved block; anything but an object reads
+ *  as absent. */
+export function classifiersFromRaw(
+  v: unknown,
+): ClassifiersSettings | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
+  const r = asRecord(v)
+  return {
+    enabled: r.enabled === true,
+    model: asString(r.model).trim() || undefined,
+  }
+}
+
+/** The kinds of task model an agent can be allowed, in the page's order. */
+export const TASK_GRANT_KINDS = ["text", "image", "tts", "stt"] as const
+export type TaskGrantKind = (typeof TASK_GRANT_KINDS)[number]
+
+/** The per-agent `task_models` grant. */
+export type TaskModelGrant = Partial<Record<TaskGrantKind, boolean>>
+
+/** taskModelGrantFromRaw parses the saved grant: only true kinds are kept;
+ *  anything but an object, or no kind on, reads as absent. */
+export function taskModelGrantFromRaw(v: unknown): TaskModelGrant | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
+  const r = asRecord(v)
+  const out: TaskModelGrant = {}
+  for (const k of TASK_GRANT_KINDS) if (r[k] === true) out[k] = true
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/** setTaskModelGrant turns one kind of the agent's grant on or off; with no
+ *  kind left on the block is dropped. */
+export function setTaskModelGrant(
+  a: AgentEntry,
+  kind: TaskGrantKind,
+  on: boolean,
+): AgentEntry {
+  const next: TaskModelGrant = { ...a.task_models }
+  if (on) next[kind] = true
+  else delete next[kind]
+  return {
+    ...a,
+    task_models: Object.keys(next).length > 0 ? next : undefined,
+  }
+}
+
+/** taskModelsFor lists the models in use's list on the Task models page
+ *  (`task_models.<use>`), in order. Anything malformed is left out. */
+export function taskModelsFor(taskModels: unknown, use: string): string[] {
+  if (!taskModels || typeof taskModels !== "object") return []
+  const list = (taskModels as Record<string, unknown>)[use]
+  if (!Array.isArray(list)) return []
+  return list
+    .filter(
+      (m): m is { model: string } =>
+        !!m &&
+        typeof m === "object" &&
+        typeof (m as { model?: unknown }).model === "string",
+    )
+    .map((m) => m.model.trim())
+    .filter((m) => m !== "")
+}
+
+/** classifyModels lists the models in the Classification list on the Task
+ *  models page (`task_models.classify`), in order: the models a classifier
+ *  model may be. */
+export function classifyModels(taskModels: unknown): string[] {
+  return taskModelsFor(taskModels, "classify")
+}
+
+/** toggleClassifiers turns the agent's classifiers switch over. Turning it
+ *  on with no model set writes the first model in Classification; turning
+ *  it off drops the block. With an empty Classification list the server
+ *  refuses the switch. */
+export function toggleClassifiers(
+  a: AgentEntry,
+  classify: string[],
+): AgentEntry {
+  if (a.classifiers?.enabled) return { ...a, classifiers: undefined }
+  const model = a.classifiers?.model || classify[0] || undefined
+  return { ...a, classifiers: { enabled: true, model } }
 }
 
 /** The per-agent `maestro` config block. Absent means Maestro is off. */
@@ -634,12 +783,15 @@ const AGENT_PAGE_KEYS = [
   "tools",
   "message",
   "temperature",
+  "max_tool_iterations",
   "event_retention_days",
   "retired_retention_days",
   "summarization_models",
   "share_common",
   "global_cron",
   "maestro",
+  "classifiers",
+  "task_models",
   "fusion",
   "forum",
   "character_card",
@@ -647,7 +799,7 @@ const AGENT_PAGE_KEYS = [
   "cogmem",
   "mcp_tools",
   "deny_tools",
-  "mounts",
+  "allowed_folders",
   "subagents",
 ]
 
@@ -692,6 +844,9 @@ export function agentPayload(a: AgentEntry): Record<string, unknown> {
           }
         : null,
     ...(a.temperature !== undefined ? { temperature: a.temperature } : {}),
+    ...(positiveInt(a.max_tool_iterations) !== undefined
+      ? { max_tool_iterations: a.max_tool_iterations }
+      : {}),
     ...(a.event_retention_days !== undefined
       ? { event_retention_days: a.event_retention_days }
       : {}),
@@ -711,27 +866,37 @@ export function agentPayload(a: AgentEntry): Record<string, unknown> {
           },
         }
       : {}),
+    // Only an agent with the switch on keeps the block; turning it off drops
+    // it, model included.
+    ...(a.classifiers?.enabled
+      ? {
+          classifiers: {
+            enabled: true,
+            ...(a.classifiers.model ? { model: a.classifiers.model } : {}),
+          },
+        }
+      : {}),
+    ...(a.task_models ? { task_models: a.task_models } : {}),
     ...(a.fusion ? { fusion: true } : {}),
     ...(a.forum ? { forum: true } : {}),
     ...(a.character_card ? { character_card: a.character_card } : {}),
     ...(a.ccv3 ? { ccv3: true } : {}),
     ...(a.cogmem === false ? { cogmem: false } : {}),
-    // Always sent (like tools/mounts) so clearing the box persists; the
+    // Always sent (like tools/allowed_folders) so clearing the box persists; the
     // backend drops an empty slice on save (omitempty).
     mcp_tools: a.mcp_tools ?? [],
     // Always sent so clearing the list persists; blank rows (an entry being
     // typed) are dropped. The backend drops an empty slice on save.
     deny_tools: (a.deny_tools ?? []).map((d) => d.trim()).filter(Boolean),
     ...subagentsPayload(raw, a.allow_agents, a.subagent_models),
-    // Always sent (like tools) so removing all mounts persists; the backend
-    // drops an empty slice on save (omitempty).
-    mounts: (a.mounts ?? [])
-      .filter((m) => m.name.trim() !== "" && m.path.trim() !== "")
-      .map((m) => ({
-        name: m.name.trim(),
-        path: m.path.trim(),
-        ...(m.notify ? { notify: true } : {}),
-        ...(m.writable ? { writable: true } : {}),
+    // Always sent (like tools) so removing every folder persists; blank rows
+    // are dropped. The backend drops an empty slice on save (omitempty).
+    allowed_folders: (a.allowed_folders ?? [])
+      .filter((f) => f.path.trim() !== "")
+      .map((f) => ({
+        path: f.path.trim(),
+        ...(f.notify ? { notify: true } : {}),
+        ...(f.note?.trim() ? { note: f.note.trim() } : {}),
       })),
   }
 }

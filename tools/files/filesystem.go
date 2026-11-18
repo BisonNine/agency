@@ -20,6 +20,7 @@ import (
 
 	"github.com/PivotLLM/ClawEh/fileutil"
 	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/internal/perms"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/tools"
 	"github.com/PivotLLM/ClawEh/utils"
@@ -30,72 +31,6 @@ const MaxReadFileSize = 32 * 1024 // 32KB (~8K tokens) per-read cap to avoid con
 // defaultReadLineCount is how many lines file_read_lines returns when
 // line_count is unspecified. Output is still capped to the byte ceiling.
 const defaultReadLineCount = 250
-
-// validatePath ensures the given path is within the workspace if restrict is true.
-func validatePath(path, workspace string, restrict bool) (string, error) {
-	if workspace == "" {
-		return path, errors.New("workspace is not defined")
-	}
-
-	absWorkspace, err := filepath.Abs(workspace)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve workspace path: %w", err)
-	}
-
-	var absPath string
-	if filepath.IsAbs(path) {
-		absPath = filepath.Clean(path)
-	} else {
-		absPath, err = filepath.Abs(filepath.Join(absWorkspace, path))
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve file path: %w", err)
-		}
-	}
-
-	if restrict {
-		if !isWithinWorkspace(absPath, absWorkspace) {
-			return "", tools.Refusal(errors.New("access denied: path is outside the workspace"))
-		}
-
-		var resolved string
-		workspaceReal := absWorkspace
-		if resolved, err = filepath.EvalSymlinks(absWorkspace); err == nil {
-			workspaceReal = resolved
-		}
-
-		if resolved, err = filepath.EvalSymlinks(absPath); err == nil {
-			if !isWithinWorkspace(resolved, workspaceReal) {
-				return "", tools.Refusal(errors.New("access denied: symlink resolves outside workspace"))
-			}
-		} else if os.IsNotExist(err) {
-			var parentResolved string
-			if parentResolved, err = resolveExistingAncestor(filepath.Dir(absPath)); err == nil {
-				if !isWithinWorkspace(parentResolved, workspaceReal) {
-					return "", tools.Refusal(errors.New("access denied: symlink resolves outside workspace"))
-				}
-			} else if !os.IsNotExist(err) {
-				return "", fmt.Errorf("failed to resolve path: %w", err)
-			}
-		} else {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
-		}
-	}
-
-	return absPath, nil
-}
-
-func resolveExistingAncestor(path string) (string, error) {
-	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
-		if resolved, err := filepath.EvalSymlinks(current); err == nil {
-			return resolved, nil
-		} else if !os.IsNotExist(err) {
-			return "", err
-		}
-		if filepath.Dir(current) == current {
-			return "", os.ErrNotExist
-		}
-	}
-}
 
 func isWithinWorkspace(candidate, workspace string) bool {
 	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
@@ -161,10 +96,9 @@ func (t *ReadFileTool) Name() string {
 
 func (t *ReadFileTool) Description() string {
 	if t.lineMode {
-		return "Read a file by LINE number. Pass `start_line` (1-based) and optional `line_count` to read a " +
-			"numbered slice; lines are returned with their numbers, and the status block tells you the next " +
-			"`start_line`. Best for text/code and for getting exact text to pass to file_edit. " +
-			"Line numbers from file_search_lines feed directly into this tool. " +
+		return "Read the lines you found: reads a file by line number from `start_line` (1-based; a line number " +
+			"from file_search_lines) for `line_count` lines. Lines come back numbered and the status block gives the " +
+			"next `start_line`. Use it to get the exact text before file_edit. " +
 			"(To page by raw bytes instead, use file_read_bytes.)"
 	}
 	return "Read a file by BYTE offset. Pass `offset` and optional `length` to read a byte range; the status " +
@@ -529,7 +463,8 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file (parent directories created as needed). Refuses to replace an existing file unless overwrite is true."
+	return "Create a file, or replace a whole file: writes content (parent folders created as needed). " +
+		"Refuses to replace an existing file unless overwrite is true. To change part of a file, use file_edit."
 }
 
 func (t *WriteFileTool) Parameters() map[string]any {
@@ -582,6 +517,10 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *tools
 	}
 
 	if getBoolArg(args, "backup", false) {
+		// Refused before backing up, so the answer names the file.
+		if err := checkWrite(t.sysFs, path); err != nil {
+			return errResult(err)
+		}
 		if _, err := backupExistingFile(t.sysFs, path); err != nil {
 			return errResult(err)
 		}
@@ -618,7 +557,8 @@ func (t *ListDirTool) Name() string {
 }
 
 func (t *ListDirTool) Description() string {
-	return "List files and directories in a path. One level by default; set recursive=true to list the whole tree."
+	return "See what is in a folder: lists its files and subfolders, one level by default; recursive=true lists the whole tree. " +
+		"To find files by name, use file_glob."
 }
 
 func (t *ListDirTool) Parameters() map[string]any {
@@ -661,7 +601,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *tools.T
 const maxRecursiveListEntries = 1000
 
 // listRecursive walks the tree under start via the sandboxed fs (scoping and
-// mounts still apply), listing entries with workspace-relative paths. Hidden
+// allowed folders still apply), listing entries with workspace-relative paths. Hidden
 // directories (.git, etc.) and the .claw marker are skipped.
 func (t *ListDirTool) listRecursive(start string) *tools.ToolResult {
 	var b strings.Builder
@@ -680,7 +620,7 @@ func (t *ListDirTool) listRecursive(start string) *tools.ToolResult {
 				return
 			}
 			name := e.Name()
-			if name == global.MountMarkerFile {
+			if name == global.FolderMarkerFile {
 				continue
 			}
 			child := filepath.Join(dir, name)
@@ -710,8 +650,8 @@ func (t *ListDirTool) listRecursive(start string) *tools.ToolResult {
 func formatDirEntries(entries []os.DirEntry) *tools.ToolResult {
 	var result strings.Builder
 	for _, entry := range entries {
-		// Hide the claw-internal mount watermark from agents.
-		if entry.Name() == global.MountMarkerFile {
+		// Hide the claw-internal new-file marker from agents.
+		if entry.Name() == global.FolderMarkerFile {
 			continue
 		}
 		if entry.IsDir() {
@@ -759,7 +699,7 @@ func checkWrite(fsys fileSystem, path string) error {
 
 // rootChecker is implemented by the layers that have a root folder an agent
 // must not remove: the sandbox's workspace, the write folder (e.g. files/) and
-// each mount's root.
+// each allowed folder.
 type rootChecker interface {
 	isRoot(path string) bool
 }
@@ -779,18 +719,84 @@ func errResult(err error) *tools.ToolResult {
 }
 
 // hostFs is an unrestricted fileReadWriter that operates directly on the host filesystem.
-type hostFs struct{}
+type hostFs struct {
+	// beforeOpen, when set (tests only), runs after a read's checks and
+	// just before the open.
+	beforeOpen func(target string)
+}
+
+// notRegular refuses reading path, which is not a regular file (a folder,
+// FIFO, device or socket): reading one could block or never end.
+func notRegular(path string) error {
+	return tools.Refusal(fmt.Errorf("access denied: %s is not a regular file", path))
+}
+
+// regularOpen checks the file just opened for path: it must be a regular
+// file, and when checked is given, the same file. Otherwise it is closed
+// and refused.
+func regularOpen(f *os.File, path string, checked os.FileInfo) (*os.File, error) {
+	info, err := f.Stat()
+	switch {
+	case err != nil:
+		utils.CloseQuietly(f)
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	case !info.Mode().IsRegular():
+		utils.CloseQuietly(f)
+		return nil, notRegular(path)
+	case checked != nil && !os.SameFile(checked, info):
+		utils.CloseQuietly(f)
+		return nil, tools.Refusal(fmt.Errorf("access denied: %s changed while it was being opened", path))
+	}
+	return f, nil
+}
+
+// openErr words a failed open or read of a file.
+func openErr(op string, err error) error {
+	switch {
+	case os.IsNotExist(err):
+		return fmt.Errorf("failed to %s file: file not found: %w", op, err)
+	case os.IsPermission(err) || strings.Contains(err.Error(), "permission denied"):
+		return fmt.Errorf("failed to %s file: access denied: %w", op, err)
+	}
+	return fmt.Errorf("failed to %s file: %w", op, err)
+}
+
+// openRegular opens path for reading: its links are resolved first, the
+// target must be a regular file (nothing else is opened), and it is opened
+// without following a link, without waiting and without becoming a
+// terminal, so a link swapped in at the last moment is refused; the open
+// file must be the file checked.
+func (h *hostFs) openRegular(op, path string) (*os.File, error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	checked, err := os.Lstat(target)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	if !checked.Mode().IsRegular() {
+		return nil, notRegular(path)
+	}
+	if h.beforeOpen != nil {
+		h.beforeOpen(target)
+	}
+	f, err := os.OpenFile(target, hostOpenFlags, 0)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	return regularOpen(f, path, checked)
+}
 
 func (h *hostFs) ReadFile(path string) ([]byte, error) {
-	content, err := os.ReadFile(path) //nolint:gosec // hostFs is the unrestricted backend, selected by buildBaseFs only when restrict is false
+	f, err := h.openRegular("read", path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("failed to read file: file not found: %w", err)
-		}
-		if os.IsPermission(err) {
-			return nil, fmt.Errorf("failed to read file: access denied: %w", err)
-		}
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, err
+	}
+	defer utils.CloseQuietly(f)
+	content, err := io.ReadAll(f)
+	if err != nil {
+		return nil, openErr("read", err)
 	}
 	return content, nil
 }
@@ -800,10 +806,16 @@ func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
 }
 
 func (h *hostFs) WriteFile(path string, data []byte) error {
-	return fileutil.WriteFileAtomic(path, data, 0o600)
+	if err := modePolicy().MkdirAll(filepath.Dir(path)); err != nil {
+		return err
+	}
+	return fileutil.WriteFileAtomic(path, data, modePolicy().ModesFor(path).File)
 }
 
 func (h *hostFs) WriteFileMode(path string, data []byte, mode os.FileMode) error {
+	if err := modePolicy().MkdirAll(filepath.Dir(path)); err != nil {
+		return err
+	}
 	return fileutil.WriteFileAtomic(path, data, mode)
 }
 
@@ -821,11 +833,11 @@ func (h *hostFs) Remove(path string) error {
 }
 
 func (h *hostFs) MkdirAll(path string) error {
-	return os.MkdirAll(path, 0o700)
+	return modePolicy().MkdirAll(path)
 }
 
 func (h *hostFs) WriteFileExclMode(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := modePolicy().MkdirAll(filepath.Dir(path)); err != nil {
 		return err
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) //nolint:gosec // hostFs is the unrestricted backend, selected by buildBaseFs only when restrict is false
@@ -874,15 +886,9 @@ func (h *hostFs) Lstat(path string) (os.FileInfo, error) {
 }
 
 func (h *hostFs) Open(path string) (fs.File, error) {
-	f, err := os.Open(path) //nolint:gosec // hostFs is the unrestricted backend, selected by buildBaseFs only when restrict is false
+	f, err := h.openRegular("open", path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("failed to open file: file not found: %w", err)
-		}
-		if os.IsPermission(err) {
-			return nil, fmt.Errorf("failed to open file: access denied: %w", err)
-		}
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, err
 	}
 	return f, nil
 }
@@ -890,6 +896,9 @@ func (h *hostFs) Open(path string) (fs.File, error) {
 // sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
 type sandboxFs struct {
 	workspace string
+	// outside names what a link leaving the sandbox leaves, in the refusal;
+	// "" is "the workspace".
+	outside string
 }
 
 func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) error) error {
@@ -908,31 +917,92 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 		return err
 	}
 
-	return fn(root, relPath)
+	if err := fn(root, relPath); err != nil {
+		if isRootEscape(err) {
+			// A link that leads out of the sandbox: a refusal in plain words,
+			// not os.Root's "openat …: path escapes from parent".
+			outside := r.outside
+			if outside == "" {
+				outside = "the workspace"
+			}
+			return tools.Refusal(fmt.Errorf("access denied: %s resolves outside %s", r.abs(path), outside))
+		}
+		return err
+	}
+	return nil
+}
+
+// isRootEscape reports whether err is os.Root refusing a path that leaves the
+// root (through a link or ".."). os exports no sentinel for it, so the text
+// is matched.
+func isRootEscape(err error) bool {
+	return strings.Contains(err.Error(), "path escapes from parent")
 }
 
 func (r *sandboxFs) ReadFile(path string) ([]byte, error) {
 	var content []byte
 	err := r.execute(path, func(root *os.Root, relPath string) error {
-		fileContent, err := root.ReadFile(relPath)
+		f, err := r.openRegular(root, "read", path, relPath)
 		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("failed to read file: file not found: %w", err)
-			}
-			if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") ||
-				strings.Contains(err.Error(), "permission denied") {
-				return fmt.Errorf("failed to read file: access denied: %w", err)
-			}
-			return fmt.Errorf("failed to read file: %w", err)
+			return err
 		}
-		content = fileContent
+		defer utils.CloseQuietly(f)
+		if content, err = io.ReadAll(f); err != nil {
+			return openErr("read", err)
+		}
 		return nil
 	})
 	return content, err
 }
 
+// openRegular opens relPath in root for reading without waiting (a FIFO
+// does not block) and without becoming a terminal, and refuses anything but
+// a regular file. os.Root keeps any link it follows inside the workspace.
+func (r *sandboxFs) openRegular(root *os.Root, op, path, relPath string) (*os.File, error) {
+	f, err := root.OpenFile(relPath, readOpenFlags, 0)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	return regularOpen(f, r.abs(path), nil)
+}
+
 func (r *sandboxFs) WriteFile(path string, data []byte) error {
-	return r.WriteFileMode(path, data, 0o600)
+	return r.WriteFileMode(path, data, modePolicy().ModesFor(r.abs(path)).File)
+}
+
+// abs is path as an absolute path under the sandbox's workspace, for the
+// mode policy.
+func (r *sandboxFs) abs(path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(r.workspace, path)
+}
+
+// mkdirAll creates relPath under root and any missing parents, each with
+// exactly the folder mode its area gives it, never leaving the root.
+func (r *sandboxFs) mkdirAll(root *os.Root, relPath string) error {
+	relPath = filepath.Clean(relPath)
+	if relPath == "." || relPath == string(filepath.Separator) {
+		return nil
+	}
+	if fi, err := root.Stat(relPath); err == nil {
+		if fi.IsDir() {
+			return nil
+		}
+		return &os.PathError{Op: "mkdir", Path: relPath, Err: os.ErrExist}
+	}
+	if err := r.mkdirAll(root, filepath.Dir(relPath)); err != nil {
+		return err
+	}
+	mode := modePolicy().ModesFor(filepath.Join(r.workspace, relPath)).Dir
+	if err := root.Mkdir(relPath, mode); err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return err
+	}
+	return root.Chmod(relPath, mode)
 }
 
 // tmpFileSeq makes atomic-write temp filenames unique across concurrent
@@ -944,14 +1014,17 @@ func (r *sandboxFs) WriteFileMode(path string, data []byte, mode os.FileMode) er
 	return r.execute(path, func(root *os.Root, relPath string) error {
 		dir := filepath.Dir(relPath)
 		if dir != "." && dir != "/" {
-			if err := root.MkdirAll(dir, 0o700); err != nil {
+			if err := r.mkdirAll(root, dir); err != nil {
 				return fmt.Errorf("failed to create parent directories: %w", err)
 			}
 		}
 
 		// pid+nano for human/cross-process readability; the atomic counter
 		// guarantees uniqueness across concurrent goroutines within this process.
-		tmpRelPath := fmt.Sprintf(".tmp-%d-%d-%d", os.Getpid(), time.Now().UnixNano(), tmpFileSeq.Add(1))
+		// The temp file sits beside the target, so the write needs only the
+		// target folder's permission (an allowed folder may be writable below
+		// a read-only root).
+		tmpRelPath := filepath.Join(dir, fmt.Sprintf(".tmp-%d-%d-%d", os.Getpid(), time.Now().UnixNano(), tmpFileSeq.Add(1)))
 
 		tmpFile, err := root.OpenFile(tmpRelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 		if err != nil {
@@ -984,7 +1057,7 @@ func (r *sandboxFs) WriteFileMode(path string, data []byte, mode os.FileMode) er
 			return fmt.Errorf("failed to rename temp file over target: %w", err)
 		}
 
-		if dirFile, err := root.Open("."); err == nil {
+		if dirFile, err := root.Open(dir); err == nil {
 			if syncErr := dirFile.Sync(); syncErr != nil {
 				logger.WarnCF("tool", "failed to sync directory after write", map[string]any{"path": relPath, "error": syncErr.Error()})
 			}
@@ -999,7 +1072,7 @@ func (r *sandboxFs) WriteFileExclMode(path string, data []byte, mode os.FileMode
 	return r.execute(path, func(root *os.Root, relPath string) error {
 		dir := filepath.Dir(relPath)
 		if dir != "." && dir != "/" {
-			if err := root.MkdirAll(dir, 0o700); err != nil {
+			if err := r.mkdirAll(root, dir); err != nil {
 				return fmt.Errorf("failed to create parent directories: %w", err)
 			}
 		}
@@ -1072,7 +1145,7 @@ func (r *sandboxFs) Remove(path string) error {
 			if os.IsNotExist(err) {
 				return fmt.Errorf("failed to delete file: file not found: %w", err)
 			}
-			if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") ||
+			if os.IsPermission(err) ||
 				strings.Contains(err.Error(), "permission denied") {
 				return fmt.Errorf("failed to delete file: access denied: %w", err)
 			}
@@ -1084,7 +1157,7 @@ func (r *sandboxFs) Remove(path string) error {
 
 func (r *sandboxFs) MkdirAll(path string) error {
 	return r.execute(path, func(root *os.Root, relPath string) error {
-		return root.MkdirAll(relPath, 0o700)
+		return r.mkdirAll(root, relPath)
 	})
 }
 
@@ -1097,16 +1170,9 @@ func (r *sandboxFs) isRoot(path string) bool {
 func (r *sandboxFs) Open(path string) (fs.File, error) {
 	var f fs.File
 	err := r.execute(path, func(root *os.Root, relPath string) error {
-		file, err := root.Open(relPath)
+		file, err := r.openRegular(root, "open", path, relPath)
 		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("failed to open file: file not found: %w", err)
-			}
-			if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") ||
-				strings.Contains(err.Error(), "permission denied") {
-				return fmt.Errorf("failed to open file: access denied: %w", err)
-			}
-			return fmt.Errorf("failed to open file: %w", err)
+			return err
 		}
 		f = file
 		return nil
@@ -1131,9 +1197,55 @@ func (w *whitelistFs) matches(path string) bool {
 	return false
 }
 
+// hostReadPath is the path a read of the allow-listed path goes to: path
+// with its links resolved. A link may lead only to another allow-listed
+// path or elsewhere inside the allow-listed folder path lies in (its links
+// resolved too, for a system folder such as /tmp that is itself a link);
+// anywhere else is refused, so a link in an allow-read folder cannot reach
+// a file the agent may not read. A path that does not resolve (missing) is
+// returned as it is, for the host to report.
+func (w *whitelistFs) hostReadPath(path string) (string, error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path, nil //nolint:nilerr // the host read reports a missing path itself
+	}
+	if w.matches(target) || w.matches(target+string(filepath.Separator)) {
+		return target, nil
+	}
+	if area := w.matchedArea(path); area != "" {
+		if resolved, rerr := filepath.EvalSymlinks(area); rerr == nil && (target == resolved || isWithinWorkspace(target, resolved)) {
+			return target, nil
+		}
+	}
+	return "", tools.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read", path))
+}
+
+// matchedArea returns the shortest folder prefix of path that an allow-read
+// pattern matches (as a folder, with a trailing separator), or "".
+func (w *whitelistFs) matchedArea(path string) string {
+	var dirs []string // path and its parents, deepest first
+	for d := filepath.Clean(path); ; d = filepath.Dir(d) {
+		dirs = append(dirs, d)
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	sep := string(filepath.Separator)
+	for _, d := range slices.Backward(dirs) {
+		if w.matches(strings.TrimSuffix(d, sep) + sep) {
+			return d
+		}
+	}
+	return ""
+}
+
 func (w *whitelistFs) ReadFile(path string) ([]byte, error) {
 	if w.matches(path) {
-		return w.host.ReadFile(path)
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.ReadFile(target)
 	}
 	return w.sandbox.ReadFile(path)
 }
@@ -1161,7 +1273,11 @@ func (w *whitelistFs) WriteFileExclMode(path string, data []byte, mode os.FileMo
 
 func (w *whitelistFs) Stat(path string) (os.FileInfo, error) {
 	if w.matches(path) {
-		return w.host.Stat(path)
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.Stat(target)
 	}
 	return w.sandbox.Stat(path)
 }
@@ -1175,14 +1291,22 @@ func (w *whitelistFs) Lstat(path string) (os.FileInfo, error) {
 
 func (w *whitelistFs) ReadDir(path string) ([]os.DirEntry, error) {
 	if w.matches(path) {
-		return w.host.ReadDir(path)
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.ReadDir(target)
 	}
 	return w.sandbox.ReadDir(path)
 }
 
 func (w *whitelistFs) Open(path string) (fs.File, error) {
 	if w.matches(path) {
-		return w.host.Open(path)
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.Open(target)
 	}
 	return w.sandbox.Open(path)
 }
@@ -1208,12 +1332,13 @@ func (w *whitelistFs) isRoot(path string) bool {
 // buildFs returns the appropriate fileSystem implementation based on restriction
 // settings and optional path whitelist patterns.
 func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
-	return withMounts(workspace, buildBaseFs(workspace, restrict, patterns))
+	return withAllowedFolders(workspace, restrict, buildBaseFs(workspace, restrict, patterns))
 }
 
-// buildBaseFs is buildFs without the external-mount layer; buildWriteFs uses it
-// so the write-scope sits inside the mount layer (mountFs is always outermost,
-// so mount paths bypass the workspace read/write scopes and use their own sandbox).
+// buildBaseFs is buildFs without the allowed-folders layer; buildWriteFs uses
+// it so the write-scope sits inside that layer (allowedFs is always outermost,
+// so paths in an allowed folder bypass the workspace read/write scopes and use
+// the folder's own sandbox).
 func buildBaseFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
 	if !restrict {
 		return &hostFs{}
@@ -1231,6 +1356,11 @@ func buildBaseFs(workspace string, restrict bool, patterns []*regexp.Regexp) fil
 	}
 	return inner
 }
+
+// modePolicy is the policy new files and folders follow: the process default
+// (perms.CurrentPolicy), which the gateway sets from the config at start and
+// on every reload, before the tools are rebuilt.
+func modePolicy() perms.Policy { return perms.CurrentPolicy() }
 
 // readScopeSubdirs, when non-empty, confines agent file reads to these workspace
 // subdirectories (plus any allow-listed host paths). It is a single process-wide
@@ -1252,6 +1382,9 @@ type readScopedFs struct {
 	readRoots   []string // absolute
 	subdirNames []string // for the error message
 	patterns    []*regexp.Regexp
+	// beforeRead, when set (tests only), runs after the check and just
+	// before the read, with the path inside the read root.
+	beforeRead func(rel string)
 }
 
 func newReadScopedFs(inner fileSystem, workspace string, subdirs []string, patterns []*regexp.Regexp) *readScopedFs {
@@ -1264,10 +1397,19 @@ func newReadScopedFs(inner fileSystem, workspace string, subdirs []string, patte
 	return &readScopedFs{inner: inner, workspace: workspace, readRoots: roots, subdirNames: subdirs, patterns: patterns}
 }
 
-func (r *readScopedFs) readAllowed(path string) error {
+// readAllowed refuses a read of path outside the read roots: the path as
+// given, and then with the links in it resolved, so a link such as
+// files/x -> ../sessions/y does not reach a folder the agent may not read.
+// With parentOnly (Lstat), the last component is not followed. For a path in
+// the workspace it returns the read root the resolved path lies in, as a
+// sandbox, and the path inside it: the read is then made inside that root,
+// so a link swapped in after the check cannot lead it out of the read root.
+// A nil sandbox means the read goes to the layer below with path as given
+// (an allow-read host path, or one the sandbox below refuses).
+func (r *readScopedFs) readAllowed(path string, parentOnly bool) (*sandboxFs, string, error) {
 	for _, p := range r.patterns {
 		if p.MatchString(path) {
-			return nil
+			return nil, "", nil
 		}
 	}
 	var absPath string
@@ -1276,54 +1418,157 @@ func (r *readScopedFs) readAllowed(path string) error {
 	} else {
 		a, err := filepath.Abs(filepath.Join(r.workspace, path))
 		if err != nil {
-			return fmt.Errorf("failed to resolve file path: %w", err)
+			return nil, "", fmt.Errorf("failed to resolve file path: %w", err)
 		}
 		absPath = a
 	}
+	if r.rootOf(absPath) == "" {
+		return nil, "", tools.Refusal(fmt.Errorf("read denied: the agent can only read %s/", strings.Join(r.subdirNames, "/, ")))
+	}
+	return r.resolvedInReadRoot(path, absPath, parentOnly)
+}
+
+// rootOf returns the read root absPath is or lies inside, or "".
+func (r *readScopedFs) rootOf(absPath string) string {
 	for _, root := range r.readRoots {
 		if absPath == root || isWithinWorkspace(absPath, root) {
-			return nil
+			return root
 		}
 	}
-	return tools.Refusal(fmt.Errorf("read denied: the agent can only read %s/", strings.Join(r.subdirNames, "/, ")))
+	return ""
+}
+
+// resolvedInReadRoot refuses a read of path when absPath, with the links in
+// the workspace resolved (all but the last with parentOnly), lands in the
+// workspace outside every read root; otherwise it returns that read root as
+// a sandbox and the resolved path inside it. A link leading out of the
+// workspace is left to the sandbox below, which refuses it; one to a host
+// path matching an allow-read pattern is read there.
+func (r *readScopedFs) resolvedInReadRoot(path, absPath string, parentOnly bool) (*sandboxFs, string, error) {
+	absWorkspace, err := filepath.Abs(r.workspace)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to resolve workspace: %w", err)
+	}
+	rel, err := filepath.Rel(absWorkspace, absPath)
+	if err != nil || !filepath.IsLocal(rel) {
+		return nil, "", nil // not a workspace path: nothing of the workspace to resolve
+	}
+	last := ""
+	if parentOnly {
+		rel, last = filepath.Dir(rel), filepath.Base(rel)
+	}
+	root, err := os.OpenRoot(absWorkspace)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to open workspace: %w", err)
+	}
+	defer utils.CloseQuietly(root)
+	resolved, ok, err := resolveInWorkspace(root, rel)
+	if err != nil {
+		return nil, "", err
+	}
+	if !ok {
+		return nil, "", nil // leaves the workspace: the sandbox refuses it
+	}
+	target := filepath.Join(absWorkspace, resolved, last)
+	scoped := func(base string) (*sandboxFs, string, error) {
+		inside, rerr := filepath.Rel(base, target)
+		if rerr != nil {
+			return nil, "", fmt.Errorf("failed to resolve file path: %w", rerr)
+		}
+		return &sandboxFs{workspace: base, outside: "the folders the agent can read"}, inside, nil
+	}
+	if base := r.rootOf(target); base != "" {
+		return scoped(base)
+	}
+	for _, rr := range r.readRoots {
+		// A read root that is itself a link (files -> elsewhere/files) is
+		// compared by where it leads.
+		if rootRel, rerr := filepath.Rel(absWorkspace, rr); rerr == nil && filepath.IsLocal(rootRel) {
+			if res, rok, rerr := resolveInWorkspace(root, rootRel); rerr == nil && rok {
+				resRoot := filepath.Join(absWorkspace, res)
+				if target == resRoot || isWithinWorkspace(target, resRoot) {
+					return scoped(resRoot)
+				}
+			}
+		}
+	}
+	for _, p := range r.patterns {
+		if p.MatchString(target) {
+			return nil, "", nil
+		}
+	}
+	return nil, "", tools.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read (%s/)",
+		path, strings.Join(r.subdirNames, "/, ")))
 }
 
 // CheckWrite asks the layer below: reads are this layer's only concern.
 func (r *readScopedFs) CheckWrite(path string) error { return checkWrite(r.inner, path) }
 
 func (r *readScopedFs) ReadFile(path string) ([]byte, error) {
-	if err := r.readAllowed(path); err != nil {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
 		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.ReadFile(rel)
 	}
 	return r.inner.ReadFile(path)
 }
 
 func (r *readScopedFs) ReadDir(path string) ([]os.DirEntry, error) {
-	if err := r.readAllowed(path); err != nil {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
 		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.ReadDir(rel)
 	}
 	return r.inner.ReadDir(path)
 }
 
 func (r *readScopedFs) Open(path string) (fs.File, error) {
-	if err := r.readAllowed(path); err != nil {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
 		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.Open(rel)
 	}
 	return r.inner.Open(path)
 }
 
 func (r *readScopedFs) Stat(path string) (os.FileInfo, error) {
-	if err := r.readAllowed(path); err != nil {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
 		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.Stat(rel)
 	}
 	return r.inner.Stat(path)
 }
 
 func (r *readScopedFs) Lstat(path string) (os.FileInfo, error) {
-	if err := r.readAllowed(path); err != nil {
+	sb, rel, err := r.readAllowed(path, true)
+	if err != nil {
 		return nil, err
 	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.Lstat(rel)
+	}
 	return r.inner.Lstat(path)
+}
+
+// hook runs beforeRead (tests only) between the check and the read.
+func (r *readScopedFs) hook(rel string) {
+	if r.beforeRead != nil {
+		r.beforeRead(rel)
+	}
 }
 
 func (r *readScopedFs) WriteFile(path string, data []byte) error {
@@ -1356,17 +1601,18 @@ func (r *readScopedFs) isRoot(path string) bool { return isRoot(r.inner, path) }
 func buildWriteFs(workspace string, restrict bool, writeSubdir string, patterns []*regexp.Regexp) fileSystem {
 	base := buildBaseFs(workspace, restrict, patterns)
 	if !restrict || writeSubdir == "" {
-		return withMounts(workspace, base)
+		return withAllowedFolders(workspace, restrict, base)
 	}
-	// mountFs stays outermost so writes to a mount (`<name>/...`) are not rejected
-	// by the workspace write-scope; non-mount writes still confine to writeSubdir.
+	// allowedFs stays outermost so writes into an allowed folder are not
+	// rejected by the workspace write-scope; other writes still confine to
+	// writeSubdir.
 	scoped := &writeScopedFs{
 		inner:     base,
 		workspace: workspace,
 		writeRoot: filepath.Join(workspace, writeSubdir),
 		patterns:  patterns,
 	}
-	return withMounts(workspace, scoped)
+	return withAllowedFolders(workspace, restrict, scoped)
 }
 
 // writeScopedFs wraps an inner fileSystem to allow reads across the whole

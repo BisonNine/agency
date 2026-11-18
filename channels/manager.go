@@ -18,6 +18,7 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"golang.org/x/time/rate"
 
+	"github.com/PivotLLM/ClawEh/alerts"
 	"github.com/PivotLLM/ClawEh/bus"
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/constants"
@@ -57,8 +58,10 @@ type typingEntry struct {
 }
 
 // reactionEntry wraps a reaction undo function with a creation timestamp for TTL eviction.
+// chatKey is the "channel:chatID" of the chat the reacted message is in.
 type reactionEntry struct {
 	undo      func()
+	chatKey   string
 	createdAt time.Time
 }
 
@@ -169,9 +172,18 @@ type Manager struct {
 	placeholders  sync.Map // "channel:chatID" → placeholderEntry
 	typingStops   sync.Map // "channel:chatID" → typingEntry
 	reactionUndos sync.Map // "channel:chatID:messageID" → reactionEntry
+	// turns counts the turns running for each "channel:chatID" and when the
+	// last one ended (see HoldChat); the janitor leaves a chat's typing,
+	// reaction and placeholder alone while it has a turn.
+	turnsMu sync.Mutex
+	turns   map[string]*chatTurns
 	// alerter, when set, hears about channels that give up (start or send).
 	alerterMu sync.RWMutex
 	alerter   alerter.Alerter
+	// sendFaults holds each channel's "Channel send failed" alerts to one when
+	// its sends start failing and one a day while they keep failing; a send
+	// that is delivered ends it (see reportSendFailure, sendDelivered).
+	sendFaults alerts.Incidents
 	// clock times retries and their backoff; nil means clock.Real (tests set
 	// a fake).
 	clock clock.Clock
@@ -197,6 +209,13 @@ func (m *Manager) SetAlerter(a alerter.Alerter) {
 	}
 }
 
+// hasAlerter reports whether an alerter is set.
+func (m *Manager) hasAlerter() bool {
+	m.alerterMu.RLock()
+	defer m.alerterMu.RUnlock()
+	return m.alerter != nil
+}
+
 func (m *Manager) alert(a alerter.Alert) {
 	m.alerterMu.RLock()
 	al := m.alerter
@@ -218,7 +237,7 @@ type asyncTask struct {
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
 	key := channel + ":" + chatID
-	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: time.Now()})
+	m.placeholders.Store(key, placeholderEntry{id: placeholderID, createdAt: m.clk().Now()})
 }
 
 // UpdatePlaceholder edits the active placeholder for channel/chatID in place to
@@ -277,7 +296,7 @@ func (m *Manager) SendPlaceholder(ctx context.Context, channel, chatID string) b
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordTypingStop(channel, chatID string, stop func()) {
 	key := channel + ":" + chatID
-	entry := typingEntry{stop: stop, createdAt: time.Now()}
+	entry := typingEntry{stop: stop, createdAt: m.clk().Now()}
 	if previous, loaded := m.typingStops.Swap(key, entry); loaded {
 		if oldEntry, ok := previous.(typingEntry); ok && oldEntry.stop != nil {
 			oldEntry.stop()
@@ -375,8 +394,8 @@ func (m *Manager) StreamDelta(ctx context.Context, channel, chatID, delta string
 // RecordReactionUndo registers a reaction undo function for later invocation.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordReactionUndo(channel, chatID, messageID string, undo func()) {
-	key := channel + ":" + chatID + ":" + messageID
-	m.reactionUndos.Store(key, reactionEntry{undo: undo, createdAt: time.Now()})
+	chatKey := channel + ":" + chatID
+	m.reactionUndos.Store(chatKey+":"+messageID, reactionEntry{undo: undo, chatKey: chatKey, createdAt: m.clk().Now()})
 }
 
 // preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
@@ -402,12 +421,16 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	// 3. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
-			if editor, ok := ch.(MessageEditor); ok {
+			if replacer, ok := ch.(PlaceholderReplacer); ok {
+				if err := replacer.ReplacePlaceholder(ctx, entry.id, msg); err == nil {
+					return true // replaced successfully, skip Send
+				}
+			} else if editor, ok := ch.(MessageEditor); ok {
 				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
 					return true // edited successfully, skip Send
 				}
-				// edit failed → fall through to normal Send
 			}
+			// edit failed → fall through to normal Send
 		}
 	}
 
@@ -695,11 +718,44 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 	}
 }
 
-// sendSplit sends msg through w, split into chunks when it exceeds the
+// sendSplit sends msg through w (sendChunks) and, once an interim message
+// (StillWorking) is delivered, shows the chat busy again (showWorking).
+func (m *Manager) sendSplit(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) error {
+	if !msg.StillWorking {
+		return m.sendChunks(ctx, name, w, msg)
+	}
+	key := name + ":" + msg.ChatID
+	_, typing := m.typingStops.Load(key)
+	_, placeholder := m.placeholders.Load(key)
+	err := m.sendChunks(ctx, name, w, msg)
+	if err == nil {
+		m.showWorking(ctx, name, msg.ChatID, w.ch, typing, placeholder)
+	}
+	return err
+}
+
+// showWorking shows again what sending an interim message cleared (see
+// bus.OutboundMessage.StillWorking): the typing indicator and the
+// placeholder, each only when the chat had one before. It runs on the
+// channel's worker, so the reply queued after the message finds them.
+func (m *Manager) showWorking(ctx context.Context, name, chatID string, ch Channel, typing, placeholder bool) {
+	if tc, ok := ch.(TypingCapable); ok && typing {
+		if stop, err := tc.StartTyping(ctx, chatID); err == nil {
+			m.RecordTypingStop(name, chatID, stop)
+		}
+	}
+	if pc, ok := ch.(PlaceholderCapable); ok && placeholder {
+		if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
+			m.RecordPlaceholder(name, chatID, phID)
+		}
+	}
+}
+
+// sendChunks sends msg through w, split into chunks when it exceeds the
 // channel's maximum message length, and returns the first non-nil error
 // among the chunks. Every chunk is attempted unless the recipient is offline
 // or can't be reached.
-func (m *Manager) sendSplit(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) error {
+func (m *Manager) sendChunks(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMessage) error {
 	maxLen := 0
 	if mlp, ok := w.ch.(MessageLengthProvider); ok {
 		maxLen = mlp.MaxMessageLength()
@@ -747,6 +803,7 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 
 	// Pre-send: stop typing and try to edit placeholder
 	if m.preSend(ctx, name, msg, w.ch) {
+		m.sendDelivered(name)
 		return nil // placeholder was edited successfully, skip Send
 	}
 
@@ -754,10 +811,19 @@ func (m *Manager) sendWithRetry(ctx context.Context, name string, w *channelWork
 	// further resumes after the parts it already delivered.
 	sendCtx := WithSendProgress(ctx)
 	retries, err := m.retrySend(ctx, func() error { return w.ch.Send(sendCtx, msg) })
-	if err != nil && ctx.Err() == nil {
+	switch {
+	case err == nil:
+		m.sendDelivered(name)
+	case ctx.Err() == nil:
 		m.reportSendFailure(name, msg.ChatID, "message", err, retries)
 	}
 	return err
+}
+
+// sendDelivered records that channel name delivered a message or file: its
+// sends work, so a failure after this is a new fault and alerts at once.
+func (m *Manager) sendDelivered(name string) {
+	m.sendFaults.Resolve(name)
 }
 
 // retrySend calls send until it succeeds or fails for good, and returns the
@@ -796,7 +862,9 @@ func (m *Manager) retrySend(ctx context.Context, send func() error) (int, error)
 
 // reportSendFailure logs a send (what: "message" or "file") that failed after
 // retries retries, and alerts when the failure is an outage rather than a
-// state of the recipient or the configuration.
+// state of the recipient or the configuration. A channel whose sends keep
+// failing alerts once, then once a day with the count of the failures held
+// back, until one is delivered (sendDelivered); every failure is logged.
 func (m *Manager) reportSendFailure(name, chatID, what string, err error, retries int) {
 	// Receive-only rejection is an expected operator choice, not a fault — log it
 	// at INFO so it doesn't read as an error.
@@ -830,6 +898,13 @@ func (m *Manager) reportSendFailure(name, chatID, what string, err error, retrie
 		"error":   err.Error(),
 		"retries": retries,
 	})
+	if !m.hasAlerter() {
+		return
+	}
+	o := m.sendFaults.Report(name, m.clk().Now())
+	if !o.Alert {
+		return
+	}
 	description := name + ": a " + what + " could not be delivered"
 	switch {
 	case retries > 0:
@@ -839,7 +914,7 @@ func (m *Manager) reportSendFailure(name, chatID, what string, err error, retrie
 	}
 	m.alert(alerter.Alert{
 		Title:       "Channel send failed",
-		Description: description,
+		Description: description + o.Note(),
 		Details:     err.Error(),
 		EventID:     name,
 	})
@@ -888,8 +963,10 @@ func dispatchLoop[M any](
 
 		channel := getChannel(msg)
 
-		// Silently skip internal channels
+		// Internal channels have no channel to send to: a sender waiting
+		// for a report learns so.
 		if constants.IsInternalChannel(channel) {
+			drop(msg, fmt.Errorf("%w: %s is internal", ErrUnknownChannel, channel))
 			continue
 		}
 
@@ -991,7 +1068,7 @@ func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 		func(w *channelWorker) chan bus.OutboundMediaMessage { return w.mediaQueue },
 		func(w *channelWorker) <-chan struct{} { return w.mediaDone },
 		holdMedia,
-		func(bus.OutboundMediaMessage, error) {},
+		reportMediaDelivery,
 		"Outbound media dispatcher started",
 		"Outbound media dispatcher stopped",
 		"Unknown channel for outbound media message",
@@ -1005,10 +1082,11 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 	backlog := w.mediaBacklog
 	w.mediaBacklog = nil
 	for _, msg := range backlog {
-		if ctx.Err() != nil {
-			break
+		if err := ctx.Err(); err != nil {
+			reportMediaDelivery(msg, err)
+			continue
 		}
-		m.sendMediaWithRetry(ctx, name, w, msg)
+		reportMediaDelivery(msg, m.sendMediaWithRetry(ctx, name, w, msg))
 	}
 	for {
 		select {
@@ -1016,79 +1094,184 @@ func (m *Manager) runMediaWorker(ctx context.Context, name string, w *channelWor
 			if !ok {
 				return
 			}
-			m.sendMediaWithRetry(ctx, name, w, msg)
+			reportMediaDelivery(msg, m.sendMediaWithRetry(ctx, name, w, msg))
 		case <-ctx.Done():
-			return
+			// Files still queued are not sent: tell their senders.
+			for {
+				select {
+				case msg, ok := <-w.mediaQueue:
+					if !ok {
+						return
+					}
+					reportMediaDelivery(msg, ctx.Err())
+				default:
+					return
+				}
+			}
 		}
 	}
 }
 
+// reportMediaDelivery tells msg's sender, when it asked (OnDelivery), how the
+// delivery ended.
+func reportMediaDelivery(msg bus.OutboundMediaMessage, err error) {
+	if msg.OnDelivery != nil {
+		msg.OnDelivery(err)
+	}
+}
+
+// SupportsMedia reports whether the channel named channel exists and can
+// send files (implements MediaSender).
+func (m *Manager) SupportsMedia(channel string) bool {
+	m.mu.RLock()
+	ch, ok := m.channels[channel]
+	m.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	_, ok = ch.(MediaSender)
+	return ok
+}
+
 // sendMediaWithRetry sends a media message through the channel with rate
 // limiting and the same retry and failure reporting as text
-// (sendWithRetry). If the channel does not implement MediaSender, it
-// silently skips.
-func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMediaMessage) {
+// (sendWithRetry), and returns how it ended. A channel that does not
+// implement MediaSender sends nothing (ErrNoFileSupport).
+func (m *Manager) sendMediaWithRetry(ctx context.Context, name string, w *channelWorker, msg bus.OutboundMediaMessage) error {
 	ms, ok := w.ch.(MediaSender)
 	if !ok {
 		logger.DebugCF("channels", "Channel does not support MediaSender, skipping media", map[string]any{
 			"channel": name,
 		})
-		return
+		return fmt.Errorf("%w: %s", ErrNoFileSupport, name)
 	}
 
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
-		return
+		return err
 	}
 
 	retries, err := m.retrySend(ctx, func() error { return ms.SendMedia(ctx, msg) })
-	if err != nil && ctx.Err() == nil {
+	switch {
+	case err == nil:
+		m.sendDelivered(name)
+	case ctx.Err() == nil:
 		m.reportSendFailure(name, msg.ChatID, "file", err, retries)
 	}
+	return err
 }
 
-// runTTLJanitor periodically scans the typingStops and placeholders maps
-// and evicts entries that have exceeded their TTL. This prevents memory
-// accumulation when outbound paths fail to trigger preSend (e.g. LLM errors).
+// runTTLJanitor periodically evicts typing, reaction and placeholder entries
+// that outlived their TTL (sweepExpired). This prevents memory accumulation
+// when outbound paths fail to trigger preSend (e.g. LLM errors).
 func (m *Manager) runTTLJanitor(ctx context.Context) {
-	ticker := time.NewTicker(janitorInterval)
+	ticker := m.clk().NewTicker(janitorInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case now := <-ticker.C:
-			m.typingStops.Range(func(key, value any) bool {
-				if entry, ok := value.(typingEntry); ok {
-					if now.Sub(entry.createdAt) > typingStopTTL {
-						if _, loaded := m.typingStops.LoadAndDelete(key); loaded {
-							entry.stop() // idempotent, safe
-						}
-					}
-				}
-				return true
-			})
-			m.reactionUndos.Range(func(key, value any) bool {
-				if entry, ok := value.(reactionEntry); ok {
-					if now.Sub(entry.createdAt) > typingStopTTL {
-						if _, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
-							entry.undo() // idempotent, safe
-						}
-					}
-				}
-				return true
-			})
-			m.placeholders.Range(func(key, value any) bool {
-				if entry, ok := value.(placeholderEntry); ok {
-					if now.Sub(entry.createdAt) > placeholderTTL {
-						m.placeholders.Delete(key)
-					}
-				}
-				return true
-			})
+		case now := <-ticker.C():
+			m.sweepExpired(now)
 		}
 	}
+}
+
+// chatTurns is what HoldChat keeps for one chat: the turns running in it and
+// when the last of them ended.
+type chatTurns struct {
+	running int
+	endedAt time.Time
+}
+
+// HoldChat marks a turn running in channel/chatID until the returned release
+// is called (once; later calls do nothing). While a chat has a turn, the
+// janitor leaves its typing indicator, reaction and placeholder alone however
+// long the turn takes, so progress edits keep landing and the turn never looks
+// dead. A chat's entries age from when its last turn ended, so the reply
+// published at the end still finds them. Entries nothing consumes are evicted
+// a full TTL after that.
+func (m *Manager) HoldChat(channel, chatID string) (release func()) {
+	key := channel + ":" + chatID
+	m.turnsMu.Lock()
+	if m.turns == nil {
+		m.turns = make(map[string]*chatTurns)
+	}
+	t := m.turns[key]
+	if t == nil {
+		t = &chatTurns{}
+		m.turns[key] = t
+	}
+	t.running++
+	m.turnsMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.turnsMu.Lock()
+			t.running--
+			t.endedAt = m.clk().Now()
+			m.turnsMu.Unlock()
+		})
+	}
+}
+
+// sweepExpired evicts the entries older than their TTL at now. An entry of a
+// chat with a running turn is kept; one of a chat whose turns have ended ages
+// from the later of its creation and the end of the last turn.
+func (m *Manager) sweepExpired(now time.Time) {
+	m.turnsMu.Lock()
+	running := make(map[string]bool, len(m.turns))
+	ended := make(map[string]time.Time, len(m.turns))
+	for key, t := range m.turns {
+		switch {
+		case t.running > 0:
+			running[key] = true
+		case now.Sub(t.endedAt) > placeholderTTL:
+			// Longer than any TTL: no entry can still age from it.
+			delete(m.turns, key)
+		default:
+			ended[key] = t.endedAt
+		}
+	}
+	m.turnsMu.Unlock()
+
+	expired := func(chatKey string, createdAt time.Time, ttl time.Duration) bool {
+		if running[chatKey] {
+			return false
+		}
+		since := createdAt
+		if e, ok := ended[chatKey]; ok && e.After(since) {
+			since = e
+		}
+		return now.Sub(since) > ttl
+	}
+
+	m.typingStops.Range(func(key, value any) bool {
+		chatKey, isKey := key.(string)
+		if entry, ok := value.(typingEntry); ok && isKey && expired(chatKey, entry.createdAt, typingStopTTL) {
+			if _, loaded := m.typingStops.LoadAndDelete(key); loaded {
+				entry.stop() // idempotent, safe
+			}
+		}
+		return true
+	})
+	m.reactionUndos.Range(func(key, value any) bool {
+		if entry, ok := value.(reactionEntry); ok && expired(entry.chatKey, entry.createdAt, typingStopTTL) {
+			if _, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
+				entry.undo() // idempotent, safe
+			}
+		}
+		return true
+	})
+	m.placeholders.Range(func(key, value any) bool {
+		chatKey, isKey := key.(string)
+		if entry, ok := value.(placeholderEntry); ok && isKey && expired(chatKey, entry.createdAt, placeholderTTL) {
+			m.placeholders.Delete(key)
+		}
+		return true
+	})
 }
 
 func (m *Manager) GetChannel(name string) (Channel, bool) {

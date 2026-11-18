@@ -61,6 +61,10 @@ type AgentConfig struct {
 	Message     *MessageConfig   `json:"message,omitempty"`
 	Temperature *float64         `json:"temperature,omitempty"`
 
+	// MaxToolIterations caps the model/tool steps of one turn for this agent,
+	// overriding agents.defaults.max_tool_iterations. nil or <= 0: the default.
+	MaxToolIterations *int `json:"max_tool_iterations,omitempty"`
+
 	// GlobalCron lets this agent create and manage cron jobs for OTHER agents
 	// (by passing their agent id). Off by default: an agent can only schedule for
 	// itself. Typically exactly one orchestrator agent has this.
@@ -69,10 +73,9 @@ type AgentConfig struct {
 	// Maestro configures the Maestro task-orchestration tool suite (projects,
 	// playbooks, tasks) for this agent. Absent or disabled means no Maestro
 	// tools. When enabled, the agent gets the entire Maestro toolset, with
-	// per-agent data under <workspace>/maestro, and that directory is
-	// auto-mounted read/write for native file_* tools as maestro/ (unless the
-	// agent already defines a mount named "maestro"). The runner settings inside
-	// the block are passed to Maestro; unset ones take Maestro's defaults.
+	// per-agent data under <workspace>/maestro, which the native file_* tools
+	// may then read and write as maestro/. The runner settings inside the block
+	// are passed to Maestro; unset ones take Maestro's defaults.
 	Maestro *MaestroConfig `json:"maestro,omitempty"`
 
 	// Fusion switches on the MCPFusion config-driven REST-API tool suite for the
@@ -93,6 +96,16 @@ type AgentConfig struct {
 	// `ccv3` tool (the ccv3 package), gated as a unit. Off by default; the
 	// WebUI checkbox is "Allow character card tools".
 	CCv3 bool `json:"ccv3,omitempty"`
+
+	// Classifiers lets the agent create and run classifiers (the classifier
+	// package): the classifier_* tool suite, gated as a unit, and the one model
+	// its classifiers use. Absent or disabled: no classifier tools and none of
+	// its classifiers run (their definitions are kept). Definitions and state
+	// live under <workspace>/classifiers.
+	Classifiers *AgentClassifiersConfig `json:"classifiers,omitempty"`
+	// TaskModels grants the agent task models of each kind through
+	// agent_spawn's kind argument. Absent = all off.
+	TaskModels *AgentTaskModels `json:"task_models,omitempty"`
 
 	// CharacterCard names a card in the character-card library
 	// (<CLAW_HOME>/cards/<id>.json, Config.CardsPath) that is rendered into
@@ -131,14 +144,14 @@ type AgentConfig struct {
 	// migrateCompressionConfigs, which folds them into Compression at load time
 	// and clears them; nothing else in the codebase reads them. Delete once
 	// deployed configs have been rewritten.
-	CompressMinPercent         *int     `json:"compress_min_percent,omitempty"`
-	CompressNormalPercent      *int     `json:"compress_normal_percent,omitempty"`
-	CompressSafetyPercent      *int     `json:"compress_safety_percent,omitempty"`
-	CompressMessageThreshold   *int     `json:"compress_message_threshold,omitempty"`
-	CompressRetainTokenPercent *int     `json:"compress_retain_token_percent,omitempty"`
-	CompressRetainMinMessages  *int     `json:"compress_retain_min_messages,omitempty"`
-	CompressCharsPerToken      *float64 `json:"compress_chars_per_token,omitempty"`
-	CompressTokenSafetyMargin  *float64 `json:"compress_token_safety_margin,omitempty"`
+	CompressMinPercent         *int     `json:"compress_min_percent,omitempty" removed:"true"`
+	CompressNormalPercent      *int     `json:"compress_normal_percent,omitempty" removed:"true"`
+	CompressSafetyPercent      *int     `json:"compress_safety_percent,omitempty" removed:"true"`
+	CompressMessageThreshold   *int     `json:"compress_message_threshold,omitempty" removed:"true"`
+	CompressRetainTokenPercent *int     `json:"compress_retain_token_percent,omitempty" removed:"true"`
+	CompressRetainMinMessages  *int     `json:"compress_retain_min_messages,omitempty" removed:"true"`
+	CompressCharsPerToken      *float64 `json:"compress_chars_per_token,omitempty" removed:"true"`
+	CompressTokenSafetyMargin  *float64 `json:"compress_token_safety_margin,omitempty" removed:"true"`
 
 	ArchiveMessageCount  *int `json:"archive_message_count,omitempty"`
 	ArchiveDays          *int `json:"archive_days,omitempty"`
@@ -162,9 +175,15 @@ type AgentConfig struct {
 	// built-in defaults.
 	ContextEviction *ContextEvictionConfig `json:"context_eviction,omitempty"`
 
-	// Mounts expose external directory trees as top-level names in this agent's
-	// space (peers of files/ and skills/), accessed as <name>/... Per agent.
-	Mounts []MountConfig `json:"mounts,omitempty"`
+	// AllowedFolders are real host folders this agent's file tools may use by
+	// their absolute path, besides its workspace. Write access follows the
+	// file-system permissions of the account ClawEh runs as.
+	AllowedFolders []AllowedFolderConfig `json:"allowed_folders,omitempty"`
+
+	// LegacyMounts is the retired `mounts` list, retained ONLY as an inlet for
+	// migrateLegacyMounts, which turns each entry into an allowed folder at
+	// load and clears it; nothing else reads it.
+	LegacyMounts []LegacyMountConfig `json:"mounts,omitempty" removed:"true"`
 
 	// MCPTools is the per-agent allow-list for external MCP-client tools and,
 	// when Fusion is on, for Fusion services. It is kept separate from the
@@ -190,42 +209,24 @@ type AgentConfig struct {
 	DenyTools []string `json:"deny_tools,omitempty"`
 }
 
-// MountConfig mounts an external directory tree as a top-level name in an agent's
-// space, beside files/ and skills/. The whole tree under Path is reachable as
-// `<Name>/...`; access is sandboxed to the mount (no `..` escape). Read + write.
-type MountConfig struct {
-	Name string `json:"name"` // single path component, [A-Za-z0-9-] only
-	Path string `json:"path"` // absolute external directory
-	// Notify watches the mount tree for new files and notifies the agent on its
+// AllowedFolderConfig is one folder an agent's file tools may use besides its
+// workspace, by its real absolute path.
+type AllowedFolderConfig struct {
+	Path string `json:"path"` // absolute directory
+	// Notify watches the folder for new files and notifies the agent on its
 	// default channel (cron-style) when one appears.
 	Notify bool `json:"notify,omitempty"`
-	// Writable opens the mount for writing. It defaults to false (read-only), so
-	// an agent can only modify a mounted folder when write access is explicitly
-	// granted; read-only mounts reject every write/delete.
-	Writable bool `json:"writable,omitempty"`
+	// Note is a short description shown to the agent after the folder in its
+	// prompt (at most MaxAllowedFolderNoteChars characters).
+	Note string `json:"note,omitempty"`
 }
 
-var mountNameRe = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
-
-// ValidateMountName checks a mount name: a single path component of letters,
-// digits, and hyphens, not one of ReservedWorkspaceNames (in any case).
-func ValidateMountName(name string) error {
-	if !mountNameRe.MatchString(name) {
-		return fmt.Errorf("mount name %q: use only letters, digits, and '-' (a single directory name)", name)
-	}
-	if IsReservedWorkspaceName(name) {
-		return fmt.Errorf("mount name %q is reserved", name)
-	}
-	return nil
-}
-
-// MaestroMountName is the top-level file-tool path for Maestro data when the
-// suite is enabled (peer of files/ and skills/).
-const MaestroMountName = "maestro"
+// MaestroDirName is the workspace folder that holds an agent's Maestro data.
+const MaestroDirName = "maestro"
 
 // MaestroDataDir is the on-disk Maestro tree for an agent workspace.
 func MaestroDataDir(workspace string) string {
-	return filepath.Join(workspace, MaestroMountName)
+	return filepath.Join(workspace, MaestroDirName)
 }
 
 // MaestroConfig is the per-agent Maestro block. It replaced the earlier boolean
@@ -283,36 +284,6 @@ func (m *MaestroConfig) ParallelAllowed() bool {
 // MaestroEnabled reports whether the Maestro suite is on for this agent.
 func (a *AgentConfig) MaestroEnabled() bool {
 	return a != nil && a.Maestro != nil && a.Maestro.Enabled
-}
-
-// EffectiveMounts returns the agent's configured mounts, less any whose name
-// is reserved (IgnoredMounts: the workspace folder wins), plus an
-// auto-injected read/write mount of <workspace>/maestro when Maestro is
-// enabled. The returned Path for the auto mount is absolute when workspace is
-// non-empty. Does not create the directory — the files provider does that
-// when installing mounts.
-func (a *AgentConfig) EffectiveMounts(workspace string) []MountConfig {
-	if a == nil {
-		return nil
-	}
-	var out []MountConfig
-	for _, m := range a.Mounts {
-		if !IsReservedWorkspaceName(m.Name) {
-			out = append(out, m)
-		}
-	}
-	if !a.MaestroEnabled() || strings.TrimSpace(workspace) == "" {
-		return out
-	}
-	abs := MaestroDataDir(workspace)
-	if a, err := filepath.Abs(abs); err == nil {
-		abs = a
-	}
-	return append(out, MountConfig{
-		Name:     MaestroMountName,
-		Path:     abs,
-		Writable: true,
-	})
 }
 
 // IsEnabled returns true if the agent is enabled (nil means enabled by default).
@@ -653,8 +624,8 @@ func (c *Config) AgentHasFusion(agentID string) bool {
 
 // AgentSuiteEnabled reports whether the named all-or-nothing tool suite is
 // enabled for the agent. Suites are gated as a unit by a per-agent flag rather
-// than the per-tool allowlist. cogmem defaults ON; maestro, fusion and forum
-// default OFF.
+// than the per-tool allowlist. cogmem defaults ON; maestro, fusion, forum,
+// ccv3 and classifiers default OFF.
 func (c *Config) AgentSuiteEnabled(agentID, suite string) bool {
 	for i := range c.Agents.List {
 		if SameAgentID(c.Agents.List[i].ID, agentID) {
@@ -668,6 +639,8 @@ func (c *Config) AgentSuiteEnabled(agentID, suite string) bool {
 				return a.Forum
 			case "ccv3":
 				return a.CCv3
+			case "classifiers":
+				return a.ClassifiersEnabled()
 			case "cogmem":
 				return a.CognitiveMemoryEnabled()
 			default:
@@ -745,6 +718,8 @@ func (c *Config) ValidateBindings() error {
 }
 
 type AgentDefaults struct {
+	// RestrictToWorkspace confines the file tools to the workspace and the
+	// agent's allowed folders. It does not affect shell_exec.
 	RestrictToWorkspace bool `json:"restrict_to_workspace"           env:"CLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	// StreamToolActivity, when true, sends the model's inter-tool narration and
 	// each tool's user-facing output to the channel as it happens. When false
@@ -773,14 +748,6 @@ type AgentDefaults struct {
 	// Models is not omitempty: the defaults template fills it, so an emptied
 	// list must be written out or the next load would bring the template back.
 	Models []string `json:"models"`
-	// VisionModel is the side-model used to describe images for a text-only
-	// primary model (vision off): when the active model can't see images, they
-	// are dispatched to this model for a one-shot text description that is then
-	// injected so the active model still benefits from them. Unset = feature off
-	// (images are dropped from dispatch, with a hidden-attachment note).
-	// VisionModelFallbacks are tried in order when the primary vision model fails.
-	VisionModel          string   `json:"vision_model,omitempty"          env:"CLAW_AGENTS_DEFAULTS_VISION_MODEL"`
-	VisionModelFallbacks []string `json:"vision_model_fallbacks,omitempty"`
 	// RequestTimeout is the global default request timeout (seconds) applied to
 	// any model whose own request_timeout is 0. Default 300; CLI models override
 	// it higher (e.g. 3600). 0 falls back to the built-in 120s HTTP default.
@@ -822,14 +789,14 @@ type AgentDefaults struct {
 	// Legacy flat compress_* keys — see the matching note on AgentConfig. All
 	// pointers so migrateCompressionConfigs can tell "unset" from "set to 0";
 	// the old plain-int form could not express "off".
-	CompressMinPercent         *int     `json:"compress_min_percent,omitempty"`
-	CompressNormalPercent      *int     `json:"compress_normal_percent,omitempty"`
-	CompressSafetyPercent      *int     `json:"compress_safety_percent,omitempty"`
-	CompressMessageThreshold   *int     `json:"compress_message_threshold,omitempty"`
-	CompressRetainTokenPercent *int     `json:"compress_retain_token_percent,omitempty"`
-	CompressRetainMinMessages  *int     `json:"compress_retain_min_messages,omitempty"`
-	CompressCharsPerToken      *float64 `json:"compress_chars_per_token,omitempty"`
-	CompressTokenSafetyMargin  *float64 `json:"compress_token_safety_margin,omitempty"`
+	CompressMinPercent         *int     `json:"compress_min_percent,omitempty" removed:"true"`
+	CompressNormalPercent      *int     `json:"compress_normal_percent,omitempty" removed:"true"`
+	CompressSafetyPercent      *int     `json:"compress_safety_percent,omitempty" removed:"true"`
+	CompressMessageThreshold   *int     `json:"compress_message_threshold,omitempty" removed:"true"`
+	CompressRetainTokenPercent *int     `json:"compress_retain_token_percent,omitempty" removed:"true"`
+	CompressRetainMinMessages  *int     `json:"compress_retain_min_messages,omitempty" removed:"true"`
+	CompressCharsPerToken      *float64 `json:"compress_chars_per_token,omitempty" removed:"true"`
+	CompressTokenSafetyMargin  *float64 `json:"compress_token_safety_margin,omitempty" removed:"true"`
 
 	ArchiveMessageCount    int `json:"archive_message_count,omitempty"         env:"CLAW_AGENTS_DEFAULTS_ARCHIVE_MESSAGE_COUNT"`
 	ArchiveDays            int `json:"archive_days,omitempty"                  env:"CLAW_AGENTS_DEFAULTS_ARCHIVE_DAYS"`

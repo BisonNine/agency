@@ -48,7 +48,7 @@ func (r *scriptedRunner) RunSync(ctx context.Context, task, model string) (*glob
 
 // maestroHarness builds the real Maestro suite through ClawEh's namespaced
 // wrapper — the exact path the agent loop and MCP host use — for one agent
-// with a mount and a scripted sub-agent runner.
+// with an allowed folder and a scripted sub-agent runner.
 type maestroHarness struct {
 	t      *testing.T
 	tools  map[string]tools.Tool
@@ -66,14 +66,17 @@ func newMaestroHarness(t *testing.T) *maestroHarness {
 func newMaestroHarnessWith(t *testing.T, mc *config.MaestroConfig) *maestroHarness {
 	t.Helper()
 	ws := t.TempDir()
-	mount := t.TempDir()
+	mount := filepath.Join(t.TempDir(), "standards")
+	if err := os.Mkdir(mount, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(mount, "standard.md"), []byte("# Standard\nrule one"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	agent := config.AgentConfig{
-		ID:      "alice",
-		Maestro: mc,
-		Mounts:  []config.MountConfig{{Name: "standards", Path: mount}},
+		ID:             "alice",
+		Maestro:        mc,
+		AllowedFolders: []config.AllowedFolderConfig{{Path: mount}},
 	}
 	cfg := &config.Config{Agents: config.AgentsConfig{List: []config.AgentConfig{agent}}}
 	cfg.Agents.Defaults.RestrictToWorkspace = true
@@ -89,6 +92,17 @@ func newMaestroHarnessWith(t *testing.T, mc *config.MaestroConfig) *maestroHarne
 	if len(built) == 0 {
 		t.Fatal("no maestro tools built")
 	}
+	// A run goes on in the background after its tasks are done (it writes the
+	// report), so wait for it before the workspace is removed. Registered after
+	// the TempDir calls above, this runs before their cleanup.
+	t.Cleanup(func() {
+		runners.mu.Lock()
+		e := runners.byAgent["alice"]
+		runners.mu.Unlock()
+		if e != nil {
+			waitIdle(t, e.runner)
+		}
+	})
 	h := &maestroHarness{t: t, tools: map[string]tools.Tool{}, runner: runner, ws: ws, mount: mount}
 	for _, tl := range built {
 		h.tools[tl.Name()] = tl
@@ -216,14 +230,15 @@ func TestIntegration_TaskRunThroughClawEhWrappers(t *testing.T) {
 		t.Errorf("health = %s", hl)
 	}
 
-	// The agent's mount is visible in Maestro's reference domain.
+	// The agent's allowed folder is in Maestro's reference library under its
+	// last path component.
 	ref := h.call("maestro_file_get", map[string]any{"source": "reference", "path": "standards/standard.md"}, false)
 	if !strings.Contains(ref, "rule one") {
-		t.Errorf("mount not mapped into reference domain: %s", ref)
+		t.Errorf("allowed folder not in the reference library: %s", ref)
 	}
-	// Maestro's own data directory is not a reference mount.
+	// Maestro's own data directory is not.
 	if lst := h.call("maestro_file_list", map[string]any{"source": "reference"}, false); strings.Contains(lst, `"maestro/`) {
-		t.Errorf("maestro base directory leaked into the reference domain: %s", lst)
+		t.Errorf("maestro base directory leaked into the reference library: %s", lst)
 	}
 
 	const project = "seam"
@@ -384,7 +399,7 @@ func TestIntegration_ModelHintAndPermanentFailure(t *testing.T) {
 }
 
 // TestIntegration_ImportConfinedToAgentReach: file_import through the wrappers
-// obeys the agent's read reach — a mount is importable, an arbitrary host
+// obeys the agent's read reach — an allowed folder is importable, an arbitrary host
 // path is refused.
 func TestIntegration_ImportConfinedToAgentReach(t *testing.T) {
 	h := newMaestroHarness(t)
@@ -393,7 +408,7 @@ func TestIntegration_ImportConfinedToAgentReach(t *testing.T) {
 
 	ok := h.call("maestro_file_import", map[string]any{"project": project, "source": filepath.Join(h.mount, "standard.md")}, false)
 	if !strings.Contains(ok, `"files_imported":1`) {
-		t.Errorf("import from mount: %s", ok)
+		t.Errorf("import from allowed folder: %s", ok)
 	}
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	if err := os.WriteFile(outside, []byte("s"), 0o644); err != nil {

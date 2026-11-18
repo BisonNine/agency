@@ -17,6 +17,8 @@ A model can only read so much at once. ClawEh keeps the conversation within that
 - **Context eviction**: large, re-readable tool results, such as a file read or a web page fetched, are replaced with a short placeholder once the agent has moved on. The agent can read the content again if it needs it.
 - **Compaction**: when the conversation grows past a threshold, older messages are summarized by a memory model and only the summary and the recent messages stay in view.
 
+A compaction that only the age trigger asks for runs after the agent has replied, so the reply does not wait for it. When a compaction does make a reply wait, the person in the chat is told once, for example: "Alice is summarising the conversation so far; the reply may take a moment." The chat keeps showing that Alice is working until the reply arrives. Nothing is sent for scheduled jobs, questions from other agents or sub-agents.
+
 Nothing is lost by compaction: the full messages and every summary stay in the agent's archive, and an agent granted the session tools (`session_search`, `session_messages`, `session_summary_list` and others) can look them up.
 
 The thresholds are on the **System** page, in **Context management**, and apply to every agent:
@@ -27,7 +29,7 @@ The thresholds are on the **System** page, in **Context management**, and apply 
 | **Emergency compression threshold** | Context use that forces summarization, even mid-turn (default 80%). |
 | **Minimum context threshold** | Below this, the percentage and message-count triggers never fire (default 20%). |
 | **Message count threshold** | Compact after this many new messages (default 100; 0 is off). |
-| **Age compaction trigger (days)** | Compact once the oldest message in view is this old (default 7). |
+| **Age compaction trigger (days)** | Compact once the oldest message in view is this old (default 7), after the agent's next reply. |
 | **Tail age limit (days)**, **Tail token ceiling**, **Tail window size (%)**, **Minimum tail messages** | How much recent conversation is kept as it is after a compaction. |
 | **Context eviction**, **Protected age**, **Expiry age**, **Read byte budget** | When large tool results are replaced by placeholders. |
 
@@ -61,7 +63,12 @@ Every other command is listed in [Chat commands](../reference/chat-commands.md).
 
 With **Cognitive memory** on (the default), the agent keeps durable memories in its `cogmem/` folder and recalls the relevant ones on each turn without being asked.
 
-- Memories are grouped into **domains** by topic. A **sticky** domain is included in every prompt; other domains are recalled when the message, or a tool just used, matches them.
+- Memories are grouped into **domains** by topic. A **sticky** domain is included in every prompt; other domains are loaded only when something points to them, in this order:
+  1. a tool the agent just used matches one of the domain's **tool triggers**;
+  2. one of the domain's **keywords** appears in the incoming message, or in one of the three before it (a domain matching more keywords ranks higher);
+  3. the domain was used recently.
+
+  The words of a message alone do not load a domain: only its keywords do. Each domain has two keyword lists. The agent sets its own; consolidation adds others automatically. A keyword the agent removes from the automatic list is blocked and never added again. Common words, and phrases already used by three other domains, are refused.
 - Each memory has a type: **fact**, **preference**, **rule**, **operational** or **event**. Events (things that happened at a time) are never placed in the prompt; the agent searches them when needed.
 - In the background, **consolidation** reviews recent messages and writes, merges and retires memories: after 50 new messages, after 60 minutes idle, and nightly at 03:20 by default.
 - The agent can manage memory itself with the `cogmem_*` tools, such as `cogmem_memory_search`, `cogmem_memory_create` and `cogmem_export`.
@@ -84,9 +91,12 @@ The **Memory** page shows each agent's memory store. There you can:
 1. Change a memory's type from its row, or select many and use **Change type…**.
 2. **Retire** a memory to stop it being used (it stays in the history), **Restore** it, or delete it permanently. **Show retired** reveals retired memories.
 3. **Add memory** or **Add domain** by hand. What you add is marked as written by you, and the agent is told it outranks its own conclusions.
-4. **Export** the store to a file, and **Import** one in **Merge** mode (add what is missing) or **Replace** mode (erase everything first).
+4. See each domain's **Keywords**, **Keywords added automatically** and **Blocked keywords**. They are shown, not edited here: the agent maintains them.
+5. **Export** the store to a file, and **Import** one in **Merge** mode (add what is missing) or **Replace** mode (erase everything first).
 
 Memory text cannot be edited: retire the memory and add a new one.
+
+Under **Last consolidation**, a note such as `keywords not added: travel "today" (too common)` names each domain and the keywords consolidation proposed for it and left out; nothing failed. The same keywords are in the log line "consolidation run finished".
 
 ### Shape what is remembered
 

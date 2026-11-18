@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/internal/audit"
 	"github.com/PivotLLM/ClawEh/logger"
 )
@@ -113,20 +115,21 @@ func authProtected(r *http.Request) bool {
 }
 
 // WriteUnauthorized writes the 401 the WebUI client understands: a JSON body
-// under /api/ (with the `claw admin` hint when no account exists), plain text
+// under /api/ (with the `<binary> admin` hint when no account exists), plain text
 // elsewhere.
 func WriteUnauthorized(w http.ResponseWriter, r *http.Request, configured bool) {
 	if !strings.HasPrefix(r.URL.Path, "/api/") {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
 	}
-	body := `{"error":"authentication required"}`
+	payload := map[string]string{"error": "authentication required"}
 	if !configured {
-		body = `{"error":"no admin account","hint":"run: claw admin"}`
+		payload = map[string]string{"error": "no admin account", "hint": "run: " + app.BinaryName() + " admin"}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	if _, err := w.Write([]byte(body)); err != nil {
+	// Encoding a map of strings cannot fail; an error here is the write.
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		logger.DebugCF("http", "response write failed", map[string]any{"error": err.Error()})
 	}
 }

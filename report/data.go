@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
 	"github.com/PivotLLM/ClawEh/config"
 )
 
@@ -59,8 +61,10 @@ func collectData(_ context.Context, cfg *config.Config, env Environment) Section
 		row("Shared common directory", cfg.ResolveCommonDir(), "readable and writable by every agent that shares it"),
 		row("Skills", cfg.SkillsPath(), ""),
 		row("Character cards", cfg.CardsPath(), cardCount(cfg)),
+		row("Classifiers", "<workspace>/"+classifierfs.BaseDirName, "definitions and run state per agent; processed items remembered "+
+			days(cfg.Classifiers.Effective().ProcessedDays, "")),
 		row("Cron store", filepath.Join(cfg.CronPath(), "jobs.json"), ""),
-		row("Internal state", cfg.InternalPath(), "claw's own state: service tokens, integration tokens, device pairing database, audit log"),
+		row("Internal state", cfg.InternalPath(), app.ShortName()+"'s own state: service tokens, integration tokens, device pairing database, audit log"),
 		row("Fusion", cfg.FusionPath(), "REST-API tool definitions; OAuth tokens in "+cfg.FusionTokensPath()),
 		row("Media store", "in-process registry of tool-produced files",
 			"cleanup "+onOff(mc.Enabled)+", max age "+itoa(mc.MaxAge)+" min, every "+itoa(mc.Interval)+" min"),
@@ -72,7 +76,7 @@ func collectData(_ context.Context, cfg *config.Config, env Environment) Section
 	return Section{
 		Title: "Data",
 		Notes: []string{
-			"Where ClawEh keeps what it produces, and the retention that applies. Highlighted rows write " +
+			"Where " + app.ShortName() + " keeps what it produces, and the retention that applies. Highlighted rows write " +
 				"conversation content to disk beyond the session archive.",
 		},
 		Tables: []Table{t},

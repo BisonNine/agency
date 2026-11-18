@@ -12,9 +12,12 @@
     "workerModelsAdd": "Add sub-agent model…",
     "workerModelsEmptyHint": "Sub-agents use the models above.",
     "workerModelsHint": "Sub-agents this agent starts run on these models and no others.",
-    "allowShell": "Allow shell commands",
-    "allowShellHint": "Lets this agent run commands on this machine. Off by default.",
-    "allowShellDenied": "Ignored: blocked by Denied tools.",
+    "defaultTools": "Default tools",
+    "codingTools": "Coding tools",
+    "clearTools": "Clear",
+    "noToolsAvailable": "No tools available",
+    "shellWarning": "Full access to this app's account",
+    "toolDenied": "Ignored: blocked by Denied tools.",
     "mayMessage": "May message",
     "mayMessageHint": "Agents it may message, start as sub-agents or invite to forums.",
     "mayMessageAll": "All agents",
@@ -43,6 +46,29 @@
     "maestroAllowParallelHint": "Runs are sequential unless the LLM asks for parallel; turn this off to refuse such requests.",
     "fusion": "Fusion (REST-API tools)",
     "fusionHint": "Lets this agent use the Fusion services ticked under Tools. Off by default.",
+    "classifiers": "Allow classifiers",
+    "classifiersHint": "Lets this agent sort items from its tools into categories with one model call each.",
+    "classifierModel": "Classifier model",
+    "classifierModelNone": "None set",
+    "classifierModelUnusableOption": "{{model}} (not in Classification)",
+    "classifierModelUnusable": "Not in Classification, so its classifiers fail. Pick another.",
+    "classifierNoClassifyModels": "No model in Classification. Add one on",
+    "taskModels": "Allow task models",
+    "taskModelsHint": "Lets this agent call task models through agent_spawn, for the kinds ticked. Input files also need a file-reading tool.",
+    "taskModelsNoSpawn": "Needs the agent_spawn tool.",
+    "taskKind": {
+      "text": "Text",
+      "image": "Images",
+      "tts": "Speech (TTS)",
+      "stt": "Transcription (STT)"
+    },
+    "taskKindNoModel": "No model in {{list}}. Add one on",
+    "taskList": {
+      "text": "Generate text",
+      "image": "Generate images",
+      "tts": "Text to speech",
+      "stt": "Transcription"
+    },
     "forum": "Allow forum",
     "forumHint": "Lets this agent hold forums with the other agents it may message.",
     "characterCard": "Character card",
@@ -64,17 +90,29 @@
     "eventRetention": "Event memory retention (days)",
     "retiredRetention": "Retired memory retention (days)",
     "retentionHint": "(blank = {{days}}, -1 = keep forever)",
+    "maxToolIterations": "Maximum tool steps per turn",
+    "maxToolIterationsHint": "(blank uses the default, {{steps}})",
     "human": "Represents a person: answers are typed by hand.",
     "humanNotRunning": "Not running: {{message}}",
     "humanIgnored": "Ignored: {{message}}",
     "bypassNotAllowed": "{{provider}} is not allowed to bypass its restrictions.",
     "bypassAllow": "Allow it",
-    "mountReserved": "Ignored: \"{{name}}\" is a reserved name."
+    "allowedFolders": "Allowed folders",
+    "allowedFoldersHint": "File tools can use these folders; write access follows file permissions.",
+    "allowedFolderNotAbsolute": "Ignored: not an absolute path",
+    "allowedFolderNotFound": "Ignored: folder not found",
+    "allowedFolderLineBreak": "Ignored: path contains a line break",
+    "allowedFolderPath": "Folder path",
+    "allowedFolderNotify": "Notify on new files",
+    "allowedFolderNote": "Note",
+    "allowedFolderAdd": "Add folder",
+    "allowedFolderRemove": "Remove folder"
   },
   "navigation": {
     "chat": "Chat",
     "model_group": "Models",
     "models": "Models",
+    "task_models": "Task models",
     "providers": "Providers",
     "agent_group": "Agents",
     "agents": "Agents",
@@ -119,6 +157,15 @@
       "apikey": "API Key",
       "oauth": "OAuth",
       "local": "Local"
+    },
+    "summaryPanel": {
+      "title": "Context Summary",
+      "goals": "Goals",
+      "progress": "Progress",
+      "pending": "Pending",
+      "constraints": "Constraints",
+      "keyMoments": "Key Moments",
+      "messageIndex": "Retrievable History"
     }
   },
   "common": {
@@ -153,7 +200,9 @@
     "action": {
       "edit": "Edit model",
       "setDefault": "Set as default",
-      "delete": "Delete model"
+      "delete": "Delete model",
+      "enable": "Enable model",
+      "disable": "Disable model"
     },
     "defaultOnSave": {
       "label": "Default Model",
@@ -217,11 +266,11 @@
       "reasoningEffortHint": "Sets the OpenAI-style reasoning_effort request field on supported models (xAI Grok, OpenAI o-series). Accepted values: none, low, medium, high. \"none\" is sent explicitly (e.g. to disable reasoning); leave unset to omit the field entirely.",
       "reasoningEffortUnset": "(unset)",
       "extraBody": "Extra Request Body",
-      "extraBodyHint": "Free-form JSON merged into the OpenAI-compatible request body for per-provider knobs not modelled natively. Must be a JSON object. Reserved keys claimed by claw are rejected.",
+      "extraBodyHint": "Free-form JSON merged into the OpenAI-compatible request body for per-provider knobs not modelled natively. Must be a JSON object. Reserved keys claimed by {{shortName}} are rejected.",
       "extraBodyPlaceholder": "{\n  \"search_parameters\": { \"mode\": \"on\" }\n}",
       "extraBodyInvalidJSON": "Must be a valid JSON object.",
       "extraBodyNotObject": "Top-level value must be a JSON object.",
-      "extraBodyReservedKey": "Key \"{{key}}\" is claimed by claw and cannot be overridden via extra_body.",
+      "extraBodyReservedKey": "Key \"{{key}}\" is claimed by {{shortName}} and cannot be overridden via extra_body.",
       "dropParams": "Drop Request Fields",
       "dropParamsHint": "Comma-separated request body fields to strip before sending (e.g. temperature). Use for parameters a model or upstream rejects — such as temperature on OpenRouter reasoning models that 404 under require_parameters. Applied after extra_body.",
       "strictAlternation": "Strict Role Alternation",
@@ -290,6 +339,7 @@
       "desc": {
         "secmsgName": "Unique name for this connection, used for routing. Recommended: the service name, e.g. \"signal\".",
         "secmsgAddress": "Host:port of the secure-messaging daemon (e.g. 127.0.0.1:9600).",
+        "secmsgAccounts": "{{shortName}} discovers this daemon's linked accounts automatically — each becomes its own channel. Link devices below.",
         "secmsgAccount": "Account on the daemon to bind. Leave blank to auto-select the sole linked account.",
         "token": "Bot access token used to connect to the platform API.",
         "botToken": "Bot token used to send and receive messages.",
@@ -327,7 +377,8 @@
         "readTimeout": "Read timeout in seconds.",
         "writeTimeout": "Write timeout in seconds.",
         "maxConnections": "Maximum number of concurrent connections.",
-        "genericField": "Used to configure {{field}}."
+        "genericField": "Used to configure {{field}}.",
+        "tls": "Serve the device listener over TLS (wss://) with the WebUI's certificate. Needs HTTPS on."
       }
     },
     "validation": {
@@ -366,12 +417,12 @@
       "restart_required": "Restart required to apply changes.",
       "urls": {
         "title": "Addresses",
-        "desc": "Where ClawEh can be opened right now.",
+        "desc": "Where {{shortName}} can be opened right now.",
         "localhost": "On this host",
         "http": "On the network (plain HTTP)",
         "http_warning": "Plain-text HTTP exposed to network.",
         "https": "On the network (HTTPS)",
-        "none": "HTTPS is off — ClawEh is reachable from this host only.",
+        "none": "HTTPS is off — {{shortName}} is reachable from this host only.",
         "unavailable": "The listener status could not be read: {{message}}"
       },
       "http": {
@@ -388,7 +439,7 @@
       },
       "https": {
         "title": "HTTPS",
-        "desc": "The encrypted listener for reaching ClawEh from other machines.",
+        "desc": "The encrypted listener for reaching {{shortName}} from other machines.",
         "mode": "Listen on",
         "mode_hint": "Which addresses the HTTPS listener binds.",
         "mode_all": "All interfaces (default)",
@@ -396,7 +447,7 @@
         "mode_localhost": "Localhost only",
         "mode_localhost_hint": "HTTPS on this machine only — for a reverse proxy on the same host.",
         "mode_off": "Off",
-        "mode_off_hint": "No HTTPS listener; ClawEh is reachable from this host only.",
+        "mode_off_hint": "No HTTPS listener; {{shortName}} is reachable from this host only.",
         "port": "HTTPS port",
         "port_hint": "Port of the HTTPS listener (default 18443), different from the HTTP port.",
         "external_url": "Hostname / external URL",
@@ -472,14 +523,14 @@
       },
       "mcp": {
         "title": "MCP host",
-        "desc": "The MCP server the CLI providers on this machine call for ClawEh's host-side tools.",
+        "desc": "The MCP server the CLI providers on this machine call for {{shortName}}'s host-side tools.",
         "listen": "Listen address",
         "listen_hint": "Localhost only; change the port on the MCP page.",
         "link": "MCP config"
       },
       "restart_now": "Restart now",
       "restarting": "Restarting…",
-      "restart_timeout": "ClawEh has not come back yet; reload the page to check."
+      "restart_timeout": "{{shortName}} has not come back yet; reload the page to check."
     },
     "system": {
       "title": "System"
@@ -491,7 +542,7 @@
       "common_dir": "Common directory",
       "common_dir_hint": "Folder agents share files through. Blank uses the common folder in the data directory.",
       "restrict_workspace": "Restrict to workspace",
-      "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "restrict_workspace_hint": "Keeps file tools inside the workspace; shell commands are not limited.",
       "stream_tool_activity": "Stream tool activity",
       "stream_tool_activity_hint": "When enabled, the assistant's inter-tool narration and each tool's intermediate output are sent to the chat as it works. When disabled (default), the user receives only the final answer.",
       "max_tokens": "Max tokens",
@@ -515,12 +566,6 @@
       "summarization_models_add": "Add model",
       "summarization_models_remove": "Remove",
       "summarization_models_move_up": "Move up",
-      "vision_models": "Vision models",
-      "vision_models_hint": "Models tried in order to describe images for agents whose own model can't see them (e.g. DeepSeek). When an agent is given an image, it's sent to the first working model here for a text description. Leave empty to drop images for non-vision models (default).",
-      "vision_models_empty": "No vision models configured — images are dropped for models that can't see them.",
-      "vision_models_add": "Add model",
-      "vision_models_remove": "Remove",
-      "vision_models_move_up": "Move up",
       "summarization_debug_capture": "Debug capture",
       "summarization_debug_capture_hint": "Write the verbatim request and response of every summarization call to compact.jsonl in the agent's workspace. Debugging only — leave off in normal use.",
       "compress_normal_percent": "Normal compression threshold",
@@ -577,7 +622,8 @@
         "runtime": "Runtime",
         "devices": "Devices",
         "backup": "Backup",
-        "forum": "Forums"
+        "forum": "Forums",
+        "classifiers": "Classifiers"
       },
       "open_raw": "Raw config",
       "back_to_visual": "System settings",
@@ -615,7 +661,18 @@
       "forum_max_duration_seconds": "Max run time (seconds)",
       "forum_call_timeout_seconds": "Call timeout (seconds)",
       "forum_max_parallel_calls": "Max parallel calls",
-      "forum_default": "Default {{value}}."
+      "forum_default": "Default {{value}}.",
+      "classifiers_desc": "Limits for every classifier on this install. Blank uses the default.",
+      "classifiers_processed_days": "Remember handled items (days)",
+      "classifiers_max_rules": "Max rules per classifier",
+      "classifiers_max_prompt_chars": "Max instructions length (characters)",
+      "classifiers_max_item_chars": "Max item size (characters)",
+      "classifiers_max_items_per_run": "Max items per run",
+      "classifiers_max_parallel": "Max items at once",
+      "classifiers_max_activity_hours": "Max activity history (hours)",
+      "classifiers_min_every_seconds": "Shortest run interval (seconds)",
+      "classifiers_default": "Default {{value}}.",
+      "default_model_models_hint": "Models tried in order; index 0 first."
     },
     "logs": {
       "empty": "Waiting for logs...",
@@ -623,7 +680,7 @@
       "lines": "Show",
       "refresh": "Refresh",
       "source": "Log",
-      "source_log": "ClawEh log",
+      "source_log": "{{shortName}} log",
       "source_alerts": "Alerts"
     },
     "audit": {
@@ -642,7 +699,10 @@
         "auth": "Auth",
         "restart": "Restart",
         "card_import": "Card import",
-        "card_delete": "Card delete"
+        "card_delete": "Card delete",
+        "classifier_write": "Classifier change",
+        "classification": "Classification",
+        "task_model": "Task model"
       },
       "col": {
         "time": "Time",
@@ -667,7 +727,7 @@
         "external_tools": "External MCP tool visibility",
         "client": "External MCP Servers"
       },
-      "enable_desc": "Controls whether claw runs an MCP server so CLI-based providers (claude-cli, codex-cli, antigravity-cli, cursor-cli) can call claw's host-side tools natively.",
+      "enable_desc": "Controls whether {{shortName}} runs an MCP server so CLI-based providers (claude-cli, codex-cli, antigravity-cli, cursor-cli) can call {{shortName}}'s host-side tools natively.",
       "enabled": "Enabled",
       "enabled_hint": "When true, the MCP server always starts at daemon launch.",
       "auto_enable": "Auto-enable",
@@ -678,7 +738,7 @@
       "endpoint_path": "Endpoint Path",
       "endpoint_path_hint": "HTTP path the MCP handler is mounted under. Must start with '/'.",
       "internal_tools_desc": "Advanced option to limit which tools are visible at the MCP layer. Authorization to use the tools is still controlled by the individual agent configurations.",
-      "internal_tools_note": "Governs /internal — the endpoint ClawEh's CLI-based agents use.",
+      "internal_tools_note": "Governs /internal — the endpoint {{shortName}}'s CLI-based agents use.",
       "external_tools_desc": "Advanced option to limit which tools are visible at the MCP layer. Authorization to use the tools is still controlled by the individual agent configurations.",
       "external_tools_note": "Governs the bearer endpoint (/mcp, or whatever endpoint path is set above).",
       "tools_pattern_hint": "One entry per row. Local tools: an exact name or a prefix (file, session_info). Upstream MCP tools: the server or group prefix, no mcp_ needed (fusion, fusion_wxca). '*' exposes all.",
@@ -688,7 +748,9 @@
       "tools_preview_title": "Matches ({{matched}} of {{total}})",
       "tools_always_excluded": "Always excluded: {{tools}}",
       "tools_none_registered": "No tools registered yet.",
-      "client_hint": "Upstream MCP servers claw connects out to. Their tools are offered to your agents (API agents directly, CLI agents via claw). Add as many as you like.",
+      "resilience_desc": "How {{shortName}} recovers when an outbound MCP session to one of the external servers above drops or stops responding.",
+      "liveness_probe_hint": "60 by default; 0 disables. {{shortName}} asks each connected server for its tool list on this interval: a failed probe reconnects the server so the next real call finds a live session, and a changed list refreshes the server's tools.",
+      "client_hint": "Upstream MCP servers {{shortName}} connects out to. Their tools are offered to your agents (API agents directly, CLI agents via {{shortName}}). Add as many as you like.",
       "client_empty": "No external servers configured.",
       "server_add": "Add server",
       "apply_now": "Apply now",
@@ -718,7 +780,11 @@
       "last_run": "Last consolidation",
       "never": "never",
       "triggers": "Tool triggers",
-      "keyword_triggers": "Keyword triggers",
+      "keyword_triggers": "Keywords",
+      "auto_keywords": "Keywords added automatically",
+      "auto_keywords_hint": "Added by memory consolidation; the agent can remove them.",
+      "blocked_keywords": "Blocked keywords",
+      "blocked_keywords_hint": "Removed by the agent and never added again.",
       "last_used": "Last used",
       "sticky": "sticky",
       "no_memories": "No memories in this domain.",
@@ -915,11 +981,11 @@
     },
     "network": {
       "title": "Network access",
-      "body": "Choose how ClawEh can be reached; the defaults are safe and can be changed later in Settings.",
+      "body": "Choose how {{shortName}} can be reached; the defaults are safe and can be changed later in Settings.",
       "accessLabel": "Enable network access",
-      "accessHint": "Off (recommended): ClawEh is reachable only from this machine; turn it on to reach the WebUI from other machines on your network over HTTPS.",
+      "accessHint": "Off (recommended): {{shortName}} is reachable only from this machine; turn it on to reach the WebUI from other machines on your network over HTTPS.",
       "portLabel": "Web port",
-      "portHint": "HTTP port the ClawEh Web server listens on.",
+      "portHint": "HTTP port the {{shortName}} Web server listens on.",
       "externalLabel": "External URL",
       "externalHint": "The URL external tools use to reach this server; defaults to how you are accessing it now.",
       "restartNote": "Restart required to apply changes."
@@ -930,7 +996,7 @@
       "point1": "Connect one AI provider and verify the API key live.",
       "point2": "Pick a model to use by default.",
       "point3": "Create your first agent.",
-      "alreadyConfigured": "ClawEh already has a usable model configured. Continuing will add a new agent and make the model you pick the new default — your existing providers, models, and agents are kept. Cancel to leave your current setup unchanged."
+      "alreadyConfigured": "{{shortName}} already has a usable model configured. Continuing will add a new agent and make the model you pick the new default — your existing providers, models, and agents are kept. Cancel to leave your current setup unchanged."
     },
     "provider": {
       "title": "Connect an AI provider",
@@ -976,21 +1042,21 @@
   },
   "auth": {
     "login": {
-      "title": "ClawEh",
       "checking": "Checking the server...",
-      "unreachable": "The server could not be reached. Is ClawEh running?",
+      "unreachable": "The server could not be reached. Is {{shortName}} running?",
       "username": "Username",
       "password": "Password",
       "submit": "Sign in",
       "submitting": "Signing in...",
       "invalid": "Invalid username or password.",
       "locked": "Too many failed sign-ins. Try again in {{seconds}} seconds.",
-      "failed": "Sign-in failed: {{message}}"
+      "failed": "Sign-in failed: {{message}}",
+      "heading": "Sign in"
     },
     "noAdmin": {
       "title": "No admin account",
       "body": "On the server run:",
-      "hint": "Then check again. ClawEh picks the account up within a minute.",
+      "hint": "Then check again. {{shortName}} picks the account up within a minute.",
       "retry": "Check again"
     },
     "logout": "Sign out"
@@ -1023,5 +1089,13 @@
     "invalidTitle": "Files that are not valid cards",
     "invalidFile": "{{file}}: {{reason}}",
     "loadError": "Failed to load character cards."
+  },
+  "errors": {
+    "boundary": {
+      "title": "This page could not be shown.",
+      "show": "Show details",
+      "hide": "Hide details",
+      "retry": "Try again"
+    }
   }
 }

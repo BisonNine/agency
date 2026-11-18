@@ -2,12 +2,15 @@
 package workspace
 
 import (
+	"bytes"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/templates"
 )
@@ -28,10 +31,11 @@ import (
 // with kindOf resolving a channel name to its kind (config.Config.ChannelKind).
 // A nil kindOf skips that migration.
 //
-// Directories are created with dirMode and files with fileMode (the agents
-// area's modes, security.permissions.agents).
+// Directories are created with exactly dirMode and files with exactly
+// fileMode, whatever the umask (the agents area's modes,
+// security.permissions.agents).
 func Populate(workspace string, dirMode, fileMode os.FileMode, kinds []string, kindOf func(channel string) string) {
-	if err := os.MkdirAll(workspace, dirMode); err != nil {
+	if err := fileutil.MkdirAllExact(workspace, dirMode); err != nil {
 		logger.WarnCF("workspace", "Failed to create workspace directory",
 			map[string]any{"dir": workspace, "error": err.Error()})
 		return
@@ -40,7 +44,7 @@ func Populate(workspace string, dirMode, fileMode os.FileMode, kinds []string, k
 	// The agent's writable area is <workspace>/files (the read-only-workspace
 	// default; see AgentDefaults.WorkspaceWriteSubdir). Ensure it always exists
 	// so the agent has somewhere to write from first run.
-	if err := os.MkdirAll(filepath.Join(workspace, "files"), dirMode); err != nil {
+	if err := fileutil.MkdirAllExact(filepath.Join(workspace, "files"), dirMode); err != nil {
 		logger.WarnCF("workspace", "Failed to create workspace files directory",
 			map[string]any{"dir": filepath.Join(workspace, "files"), "error": err.Error()})
 	}
@@ -66,7 +70,7 @@ func Populate(workspace string, dirMode, fileMode os.FileMode, kinds []string, k
 			if path == channelTemplatesDir {
 				return fs.SkipDir // seeded per kind in use, below
 			}
-			return os.MkdirAll(filepath.Join(workspace, path), dirMode)
+			return fileutil.MkdirAllExact(filepath.Join(workspace, path), dirMode)
 		}
 		if seedOnce[path] && initialized {
 			return nil
@@ -79,10 +83,11 @@ func Populate(workspace string, dirMode, fileMode os.FileMode, kinds []string, k
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), dirMode); err != nil {
+		data = substituteNames(data)
+		if err := fileutil.MkdirAllExact(filepath.Dir(dest), dirMode); err != nil {
 			return err
 		}
-		return os.WriteFile(dest, data, fileMode)
+		return fileutil.WriteFileExact(dest, data, fileMode)
 	})
 	if err != nil {
 		logger.WarnCF("workspace", "Failed to populate workspace templates",
@@ -90,6 +95,15 @@ func Populate(workspace string, dirMode, fileMode os.FileMode, kinds []string, k
 	}
 
 	seedChannelFiles(workspace, fileMode, kinds)
+}
+
+// shortNamePlaceholder in a template is replaced with app.ShortName() when the
+// file is seeded, so no template holds the product name.
+const shortNamePlaceholder = "{{SHORT_NAME}}"
+
+// substituteNames fills the product-name placeholders in a template.
+func substituteNames(data []byte) []byte {
+	return bytes.ReplaceAll(data, []byte(shortNamePlaceholder), []byte(app.ShortName()))
 }
 
 // channelTemplatesDir holds one prompt template per channel kind, named as the
@@ -114,7 +128,7 @@ func seedChannelFiles(workspace string, fileMode os.FileMode, kinds []string) {
 				map[string]any{"dir": workspace, "kind": kind, "error": err.Error()})
 			continue
 		}
-		if err := os.WriteFile(dest, data, fileMode); err != nil {
+		if err := fileutil.WriteFileExact(dest, substituteNames(data), fileMode); err != nil {
 			logger.WarnCF("workspace", "Failed to write channel prompt file",
 				map[string]any{"dir": workspace, "file": name, "error": err.Error()})
 		}

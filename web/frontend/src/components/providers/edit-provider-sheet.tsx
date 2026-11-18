@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 
 import { type ProviderInfo, updateProvider } from "@/api/providers"
 import {
+  DEFAULT_PROTOCOL,
   PROTOCOL_OPTIONS,
   isCliProtocol,
   isHumanProtocol,
@@ -63,7 +64,7 @@ export function EditProviderSheet({
   const { t } = useTranslation()
   const [form, setForm] = useState<EditForm>({
     name: "",
-    protocol: "openai",
+    protocol: DEFAULT_PROTOCOL,
     baseURL: "",
     apiKey: "",
     proxy: "",
@@ -118,11 +119,14 @@ export function EditProviderSheet({
       await updateProvider(provider.index, {
         name: form.name.trim(),
         protocol: form.protocol,
-        base_url: noEndpoint ? undefined : form.baseURL.trim() || undefined,
+        // An emptied field is sent empty, which clears the stored value; an
+        // omitted one would keep it.
+        base_url: noEndpoint ? undefined : form.baseURL.trim(),
         // Empty api_key keeps the stored key (backend semantics).
         api_key: noEndpoint ? undefined : form.apiKey.trim() || undefined,
-        proxy: form.proxy.trim() || undefined,
-        command: cliProto ? form.command.trim() || undefined : undefined,
+        // A masked proxy sent back keeps the stored one (backend semantics).
+        proxy: form.proxy.trim(),
+        command: cliProto ? form.command.trim() : undefined,
         strict_compat: form.strictCompat,
         require_reasoning_content: form.requireReasoningContent,
         no_parallel_tool_calls: form.noParallelToolCalls,
@@ -174,7 +178,15 @@ export function EditProviderSheet({
             >
               <Select
                 value={form.protocol}
-                onValueChange={(v) => setForm((f) => ({ ...f, protocol: v }))}
+                onValueChange={(v) =>
+                  // The command belongs to a CLI only; it is not carried
+                  // over to another protocol.
+                  setForm((f) => ({
+                    ...f,
+                    protocol: v,
+                    command: isCliProtocol(v) ? f.command : "",
+                  }))
+                }
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />

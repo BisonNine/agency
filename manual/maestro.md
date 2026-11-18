@@ -71,7 +71,7 @@ runs the agent without Maestro until the object form is set.
 | **Runner** | Executes the tasks: hands each to a worker, applies the quality check, retries, and stores the result. |
 | **Playbook** | A saved procedure for a type of work, reusable across projects and improved over time. |
 | **Report** | A document built from the stored task results. |
-| **Reference** | Read-only material: Maestro's own guide, plus the agent's mounts. |
+| **Reference** | Read-only material: Maestro's own guide. |
 
 ## How workers run
 
@@ -87,11 +87,19 @@ runs the agent without Maestro until the object form is set.
 
 ## What Maestro can read
 
-- The agent's [mounts](agents/files-and-mounts.md#mounts-external-folders) appear in Maestro's reference material under each
-  mount's name.
+- Maestro's reference library holds its own guide and the agent's
+  [allowed folders](agents/allowed-folders.md#allowed-folders), read-only.
+  Each folder is listed under its last path component as one word (letters,
+  digits, `_` and `-`; any other run of characters becomes `-`): `/srv/src`
+  is `src/…`. When two folders share a name, the later ones in the agent's
+  list get `-2`, `-3`, … (`src-2/…`). A folder named like an entry of
+  Maestro's own guide (`templates`, `phases`, …) gets `-2` too, so it never
+  hides the guide. A folder that does not exist is left out. A link inside a
+  folder that leads outside it is not listed or read.
 - When the agent imports a file into a project, it can import only what its
-  own file tools may read: its workspace, its mounts and any paths allowed
-  for reading. To import from somewhere else, add a mount to the agent.
+  own file tools may read: its workspace, its allowed folders and any paths
+  allowed for reading. To import from somewhere else, add an allowed folder
+  to the agent.
 
 ## Where its data lives
 
@@ -103,8 +111,8 @@ Everything is in the agent's workspace, by default
 | `maestro/projects/` | Projects: their files, task sets, results, reports and logs. |
 | `maestro/playbooks/` | Playbooks. |
 
-The same folder is mounted as `maestro/` for the agent's ordinary file
-tools, so the agent can move inputs and finished reports between
+The folder is part of the workspace, so the agent's ordinary file tools
+reach it as `maestro/` while Maestro is on, so the agent can move inputs and finished reports between
 `maestro/` and `files/`. Project logs and results are never pruned.
 
 The nightly [backup](admin/backup.md) includes the `maestro/` folder, and a

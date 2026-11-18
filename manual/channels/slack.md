@@ -21,6 +21,7 @@ Token** (starts with `xapp-`).
    | `chat:write` | sending messages |
    | `reactions:write` | adding and removing reactions |
    | `files:read` | downloading files people share |
+   | `files:write` | sending files |
    | `channels:history` | reading public channels |
    | `groups:history` | reading private channels |
    | `im:history` | reading direct messages |
@@ -97,6 +98,24 @@ with a keyword, set `group_trigger` in `config.json`:
 
 or `"group_trigger": { "prefixes": ["!ask"] }`.
 
+## "Thinking..." message
+
+As soon as a message arrives the app posts a short message ("Thinking...
+💭"), updates it with progress on long requests, then replaces it with the
+reply. To change the text or turn it off, set `placeholder` in `config.json`:
+
+```json
+{
+  "channels": {
+    "slack": {
+      "placeholder": { "enabled": false }
+    }
+  }
+}
+```
+
+or `"placeholder": { "enabled": true, "text": "Working on it..." }`.
+
 ## Commands in Slack
 
 ClawEh commands such as `/model` can be run these ways:
@@ -133,6 +152,8 @@ an ordinary message.
 - **Shared files cannot be read**, and the log mentions the Slack login page:
   the Bot Token lacks `files:read`. Add the scope, reinstall the app and paste
   the new token.
+- **The agent says the Slack bot is missing the files:write permission**: add
+  the `files:write` scope, reinstall the app and paste the new token.
 
 ## Related pages
 

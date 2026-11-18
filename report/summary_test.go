@@ -6,22 +6,24 @@ package report
 import (
 	"strings"
 	"testing"
+
+	"github.com/PivotLLM/ClawEh/app"
 )
 
 func TestCollectSummary_Confined(t *testing.T) {
 	cfg, env := fixtureConfig(t)
 	s := collectSummary(t.Context(), cfg, env)
-	if s.Notes[0] != "ClawEh runs as user admin, group staff on testbox." {
+	if s.Notes[0] != app.ShortName()+" runs as user admin, group staff on testbox." {
 		t.Errorf("headline = %q", s.Notes[0])
 	}
 	tb := s.Tables[0]
 	_, files := findRow(t, tb, "Files")
-	want := "2 of 2 agents confined to their workspace and mounts (alice, bob); allow-listed host patterns: 1 read, 1 write."
+	want := "2 of 2 agents confined to their workspace and allowed folders (alice, bob); allow-listed host patterns: 1 read, 1 write."
 	if files[1] != want {
 		t.Errorf("Files = %q\nwant %q", files[1], want)
 	}
 	_, shell := findRow(t, tb, "Shell")
-	if shell[1] != "Allow shell commands: Bob; deny patterns on." {
+	if shell[1] != "Shell commands allowed: Bob; deny patterns on." {
 		t.Errorf("Shell = %q", shell[1])
 	}
 	_, out := findRow(t, tb, "Outbound network")

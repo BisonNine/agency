@@ -4,24 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
+	"github.com/PivotLLM/spawnllm/speech"
+
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/logger"
 )
-
-// Ensure whisperTranscriber satisfies the Transcriber interface at compile time.
-var _ Transcriber = (*whisperTranscriber)(nil)
-
-func TestWhisperTranscriberName(t *testing.T) {
-	tr := NewWhisperTranscriber("groq", "sk-test", "", "", nil)
-	if got := tr.Name(); got != "groq" {
-		t.Errorf("Name() = %q, want %q", got, "groq")
-	}
-}
 
 // Providers shared by the detection tests.
 var (
@@ -31,7 +27,29 @@ var (
 	customProvider     = config.Provider{Name: "local-whisper", Protocol: "openai-chat", BaseURL: "https://stt.example.com/v1", APIKey: "sk-local"}
 )
 
+// sttModel is a model_list entry named alias on provider with model id model.
+func sttModel(alias, provider, model string) config.ModelConfig {
+	return config.ModelConfig{ModelName: alias, Provider: provider, Model: model, Enabled: true}
+}
+
+// sttConfig is a config with the providers and models given and the named
+// models in the Transcription list, in that order.
+func sttConfig(providers []config.Provider, models []config.ModelConfig, stt ...string) *config.Config {
+	cfg := &config.Config{Providers: providers, Models: models}
+	for _, name := range stt {
+		cfg.TaskModels.STTModels = append(cfg.TaskModels.STTModels, config.TaskModelRef{Model: name})
+	}
+	return cfg
+}
+
 func TestDetectTranscriber(t *testing.T) {
+	allModels := []config.ModelConfig{
+		sttModel("whisper-openai", "openai", "whisper-1"),
+		sttModel("whisper-or", "my-openrouter", "openai/whisper-large-v3"),
+		sttModel("whisper-groq", "groq", "whisper-large-v3"),
+		sttModel("whisper-local", "local-whisper", "whisper-1"),
+	}
+	allProviders := []config.Provider{openAIProvider, openRouterProvider, groqProvider, customProvider}
 	tests := []struct {
 		name     string
 		cfg      *config.Config
@@ -44,43 +62,49 @@ func TestDetectTranscriber(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			// A model provider alone does not enable STT; only voice.stt does.
-			name:    "provider alone does not enable STT",
-			cfg:     &config.Config{Providers: []config.Provider{groqProvider}},
+			// A model alone does not enable STT; only the Transcription tick does.
+			name:    "a model not in Transcription does not enable STT",
+			cfg:     sttConfig(allProviders, allModels),
 			wantNil: true,
 		},
 		{
-			name: "first enabled entry is used, disabled ones are not",
-			cfg: &config.Config{
-				Providers: []config.Provider{openAIProvider, openRouterProvider, groqProvider},
-				Voice: config.VoiceConfig{STT: []config.STTProvider{
-					{Provider: "openai", Enabled: false},
-					{Provider: "my-openrouter", Enabled: true},
-					{Provider: "groq", Enabled: false},
-				}},
-			},
-			wantName: "my-openrouter (openai/whisper-large-v3)",
+			name: "a model in other lists only is not used",
+			cfg: func() *config.Config {
+				c := sttConfig(allProviders, allModels)
+				c.TaskModels.TextModels = []config.TaskModelRef{{Model: "whisper-groq"}}
+				c.TaskModels.VisionModels = []config.TaskModelRef{{Model: "whisper-groq"}}
+				return c
+			}(),
+			wantNil: true,
 		},
 		{
-			name: "multiple enabled entries form an ordered fallback chain",
-			cfg: &config.Config{
-				Providers: []config.Provider{groqProvider, openRouterProvider},
-				Voice: config.VoiceConfig{STT: []config.STTProvider{
-					{Provider: "my-openrouter", Enabled: true},
-					{Provider: "groq", Enabled: true},
-				}},
-			},
-			// fallbackTranscriber.Name() joins the chain in order; each name
-			// carries its model so repeats of one provider stay distinguishable.
-			wantName: "my-openrouter (openai/whisper-large-v3),groq (whisper-large-v3)",
+			name:     "the one listed model is used",
+			cfg:      sttConfig(allProviders, allModels, "whisper-or"),
+			wantName: "whisper-or",
 		},
 		{
-			name: "an unknown host with a model is used",
-			cfg: &config.Config{
-				Providers: []config.Provider{customProvider},
-				Voice:     config.VoiceConfig{STT: []config.STTProvider{{Provider: "local-whisper", Enabled: true, Model: "whisper-1"}}},
-			},
-			wantName: "local-whisper (whisper-1)",
+			name: "the listed models form a fallback chain in list order",
+			cfg:  sttConfig(allProviders, allModels, "whisper-or", "whisper-groq"),
+			// fallbackTranscriber.Name() joins the chain in order.
+			wantName: "whisper-or,whisper-groq",
+		},
+		{
+			name:     "page order wins over model_list order",
+			cfg:      sttConfig(allProviders, allModels, "whisper-groq", "whisper-openai"),
+			wantName: "whisper-groq,whisper-openai",
+		},
+		{
+			name:     "a model on an unknown host is used",
+			cfg:      sttConfig(allProviders, allModels, "whisper-local"),
+			wantName: "whisper-local",
+		},
+		{
+			name: "every enabled entry of a load-balanced model joins the chain",
+			cfg: sttConfig(allProviders, []config.ModelConfig{
+				sttModel("whisper", "groq", "whisper-large-v3"),
+				sttModel("whisper", "openai", "whisper-1"),
+			}, "whisper"),
+			wantName: "whisper,whisper",
 		},
 	}
 
@@ -103,9 +127,9 @@ func TestDetectTranscriber(t *testing.T) {
 	}
 }
 
-// An entry that cannot be used is skipped, with its reason, and the next
-// usable entry is chosen alone rather than starting a chain with a broken one.
-func TestDetectTranscriber_SkipsUnusableEntries(t *testing.T) {
+// A model that cannot be used is skipped, with its reason, and the next
+// usable model is chosen alone rather than starting a chain with a broken one.
+func TestDetectTranscriber_SkipsUnusableModels(t *testing.T) {
 	providers := []config.Provider{
 		groqProvider,
 		{Name: "no-key", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
@@ -113,88 +137,175 @@ func TestDetectTranscriber_SkipsUnusableEntries(t *testing.T) {
 		{Name: "cli", Protocol: "claude-cli"},
 		{Name: "anthropic-api", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "sk-a"},
 		{Name: "azure-api", Protocol: "azure", BaseURL: "https://example.openai.azure.com", APIKey: "sk-z"},
-		customProvider,
+		{Name: "gemini-nokey", Protocol: config.GeminiProtocol},
 	}
 	for _, tc := range []struct {
 		name     string
-		entry    config.STTProvider
+		provider string
 		wantSkip string
 	}{
-		{"provider not configured", config.STTProvider{Provider: "missing", Enabled: true}, "provider not configured"},
-		{"provider name is case-sensitive", config.STTProvider{Provider: "Groq", Enabled: true}, "provider not configured"},
-		{"provider without a key", config.STTProvider{Provider: "no-key", Enabled: true}, "provider has no API key"},
-		{"provider without a base URL", config.STTProvider{Provider: "no-url", Enabled: true}, "provider has no base URL"},
-		{"CLI provider", config.STTProvider{Provider: "cli", Enabled: true}, "provider protocol is not OpenAI-compatible"},
-		{"anthropic provider", config.STTProvider{Provider: "anthropic-api", Enabled: true}, "provider protocol is not OpenAI-compatible"},
-		{"azure provider", config.STTProvider{Provider: "azure-api", Enabled: true}, "provider protocol is not OpenAI-compatible"},
-		{"unknown host without a model", config.STTProvider{Provider: "local-whisper", Enabled: true}, "no model set and no default for this endpoint"},
+		{"provider not configured", "missing", "provider not configured"},
+		{"provider name is case-sensitive", "Groq", "provider not configured"},
+		{"provider without a key", "no-key", "provider has no API key"},
+		{"provider without a base URL", "no-url", "provider has no base URL"},
+		{"CLI provider", "cli", "provider protocol does not serve speech"},
+		{"anthropic provider", "anthropic-api", "provider protocol does not serve speech"},
+		{"azure provider", "azure-api", "provider protocol does not serve speech"},
+		{"gemini without a key", "gemini-nokey", "provider has no API key"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config.Config{Providers: providers}
-			if _, skip := resolveSTT(cfg, &tc.entry); skip != tc.wantSkip {
-				t.Fatalf("resolveSTT skip = %q, want %q", skip, tc.wantSkip)
+			cfg := sttConfig(providers, []config.ModelConfig{
+				sttModel("bad", tc.provider, "whisper-1"),
+				sttModel("whisper-groq", "groq", "whisper-large-v3"),
+			}, "bad", "whisper-groq")
+			rec := &alertRecorder{}
+			tr := DetectTranscriberWithAlerter(cfg, rec)
+			if tr == nil || tr.Name() != "whisper-groq" {
+				t.Fatalf("DetectTranscriber() = %v, want the groq transcriber alone", tr)
 			}
-
-			cfg.Voice.STT = []config.STTProvider{tc.entry, {Provider: "groq", Enabled: true}}
-			w, ok := DetectTranscriber(cfg).(*whisperTranscriber)
-			if !ok || w.name != "groq (whisper-large-v3)" {
-				t.Fatalf("DetectTranscriber() = %v, want the groq transcriber alone", w)
+			if len(rec.alerts) != 1 || !strings.Contains(rec.alerts[0].Description, "bad: "+tc.wantSkip+";") {
+				t.Fatalf("alerts = %+v, want one naming %q", rec.alerts, tc.wantSkip)
 			}
 		})
 	}
 }
 
-// The endpoint and key come from the named provider; the model is the entry's,
-// or the default for the provider's host.
-func TestDetectTranscriber_UsesTheProvider(t *testing.T) {
+// A listed model that is missing from the model list, or disabled there, is
+// skipped and the next listed model serves.
+func TestDetectTranscriber_SkipsMissingModel(t *testing.T) {
+	disabled := sttModel("off", "groq", "whisper-large-v3")
+	disabled.Enabled = false
+	cfg := sttConfig([]config.Provider{groqProvider},
+		[]config.ModelConfig{disabled, sttModel("whisper-groq", "groq", "whisper-large-v3")},
+		"gone", "off", "whisper-groq")
+	rec := &alertRecorder{}
+	tr := DetectTranscriberWithAlerter(cfg, rec)
+	if tr == nil || tr.Name() != "whisper-groq" {
+		t.Fatalf("DetectTranscriber() = %v, want the groq transcriber alone", tr)
+	}
+	// The missing model alerts; the disabled one is the operator's choice.
+	if len(rec.alerts) != 1 || rec.alerts[0].EventID != "voice:config:gone" ||
+		rec.alerts[0].Description != "gone: not on the Models page; voice messages are not transcribed by this model until it is fixed" {
+		t.Fatalf("alerts = %+v, want one for gone only", rec.alerts)
+	}
+}
+
+// A disabled STT model raises no alert even when it leaves transcription
+// off; the status says why it is not used.
+func TestDetectTranscriber_DisabledModelDoesNotAlert(t *testing.T) {
+	off := sttModel("off", "groq", "whisper-large-v3")
+	off.Enabled = false
+	cfg := sttConfig([]config.Provider{groqProvider}, []config.ModelConfig{off}, "off")
+	rec := &alertRecorder{}
+	if tr := DetectTranscriberWithAlerter(cfg, rec); tr != nil {
+		t.Fatalf("DetectTranscriber() = %v, want none", tr)
+	}
+	if len(rec.alerts) != 0 {
+		t.Fatalf("alerts = %+v, want none", rec.alerts)
+	}
+	st := TranscriptionStatus(cfg)
+	if len(st.Usable) != 0 || len(st.Unusable) != 1 || st.Unusable[0] != (UnusableModel{Model: "off", Reason: "disabled on the Models page"}) {
+		t.Fatalf("status = %+v", st)
+	}
+}
+
+// TranscriptionStatus is the transcriber's view, in page order, without a
+// log line or an alert.
+func TestTranscriptionStatus(t *testing.T) {
+	logs := &logBuf{}
+	restore := logger.RedirectForTest(logs)
+	defer restore()
+	cfg := sttConfig([]config.Provider{groqProvider, {Name: "nokey", Protocol: "openai-chat", BaseURL: "https://x/v1"}},
+		[]config.ModelConfig{sttModel("a", "groq", "w"), sttModel("b", "nokey", "w")}, "b", "gone", "a")
+	st := TranscriptionStatus(cfg)
+	want := []UnusableModel{{"b", "provider has no API key"}, {"gone", "not on the Models page"}}
+	if len(st.Usable) != 1 || st.Usable[0] != "a" || len(st.Unusable) != 2 || st.Unusable[0] != want[0] || st.Unusable[1] != want[1] {
+		t.Fatalf("status = %+v", st)
+	}
+	if strings.Contains(logs.String(), "Speech model skipped") {
+		t.Errorf("TranscriptionStatus logged: %s", logs.String())
+	}
+}
+
+// logBuf collects log output.
+type logBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *logBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// SpeechBackend picks the spawnllm client by protocol.
+func TestSpeechBackend_ByProtocol(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		entry     config.STTProvider
-		wantModel string
+		p    config.Provider
+		want string
 	}{
-		{"blank model takes the host default", config.STTProvider{Provider: "groq", Enabled: true}, "whisper-large-v3"},
-		{"set model wins", config.STTProvider{Provider: "groq", Enabled: true, Model: "whisper-large-v3-turbo"}, "whisper-large-v3-turbo"},
+		{groqProvider, "*speech.OpenAI"},
+		{openRouterProvider, "*speech.OpenAI"},
+		{config.Provider{Protocol: "openai-responses", BaseURL: "https://x/v1", APIKey: "k"}, "*speech.OpenAI"},
+		{config.Provider{Protocol: config.GeminiProtocol, APIKey: "k"}, "*speech.Gemini"},
+		{config.Provider{Protocol: config.ElevenLabsProtocol, APIKey: "k"}, "*speech.ElevenLabs"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config.Config{
-				Providers: []config.Provider{groqProvider},
-				Voice:     config.VoiceConfig{STT: []config.STTProvider{tc.entry}},
-			}
-			w, ok := DetectTranscriber(cfg).(*whisperTranscriber)
-			if !ok {
-				t.Fatalf("DetectTranscriber() = %T, want *whisperTranscriber", DetectTranscriber(cfg))
-			}
-			if w.name != "groq ("+tc.wantModel+")" || w.apiKey != "sk-groq" || w.apiBase != "https://api.groq.com/openai/v1" || w.model != tc.wantModel {
-				t.Fatalf("transcriber = %s %s %s, want groq at the provider endpoint with model %s", w.name, w.apiBase, w.model, tc.wantModel)
-			}
-		})
-	}
-}
-
-// The wire protocol follows the endpoint's host, not the provider's name.
-func TestNewTranscriber_ChoosesProtocolByHost(t *testing.T) {
-	if _, ok := NewTranscriber("my-openrouter", "sk", "https://openrouter.ai/api/v1", "m", nil).(*openRouterTranscriber); !ok {
-		t.Error("openrouter.ai must use the OpenRouter protocol")
-	}
-	if _, ok := NewTranscriber("openrouter", "sk", "https://api.groq.com/openai/v1", "m", nil).(*whisperTranscriber); !ok {
-		t.Error("a provider named openrouter on another host must use the multipart protocol")
-	}
-	if got := NewTranscriber("my-openrouter", "sk", "https://openrouter.ai/api/v1", "m", nil).Name(); got != "my-openrouter" {
-		t.Errorf("Name() = %q, want the configured provider name", got)
-	}
-}
-
-func TestDefaultSTTModel(t *testing.T) {
-	for base, want := range map[string]string{
-		"https://api.groq.com/openai/v1": "whisper-large-v3",
-		"https://api.openai.com/v1":      "whisper-1",
-		"https://OpenRouter.ai/api/v1":   "openai/whisper-large-v3",
-		"https://stt.example.com/v1":     "",
-		"":                               "",
-	} {
-		if got := DefaultSTTModel(base); got != want {
-			t.Errorf("DefaultSTTModel(%q) = %q, want %q", base, got, want)
+		c, problem := SpeechBackend(&tc.p)
+		if problem != "" || fmt.Sprintf("%T", c) != tc.want {
+			t.Errorf("SpeechBackend(%s) = %T, %q; want %s", tc.p.Protocol, c, problem, tc.want)
 		}
+	}
+}
+
+// fakeSTT serves OpenAI-style multipart and OpenRouter-style JSON
+// transcriptions, recording what it was sent.
+func fakeSTT(t *testing.T, text string) (*httptest.Server, *[]string) {
+	t.Helper()
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Path+" "+r.Header.Get("Authorization")+" "+r.Header.Get("Content-Type"))
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{"text": text, "language": "en", "duration": 1.5}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &seen
+}
+
+// The endpoint and key come from the model's provider, the model id from the
+// model_list entry; the file goes up as a multipart upload.
+func TestTranscribe_ThroughSpawnllm(t *testing.T) {
+	srv, seen := fakeSTT(t, "hello world")
+	audioPath := filepath.Join(t.TempDir(), "clip.ogg")
+	if err := os.WriteFile(audioPath, []byte("fake-audio-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prov := config.Provider{Name: "local", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "sk-test"}
+	cfg := sttConfig([]config.Provider{prov}, []config.ModelConfig{sttModel("fast-stt", "local", "whisper-large-v3-turbo")}, "fast-stt")
+	tr := DetectTranscriber(cfg)
+	if tr == nil || tr.Name() != "fast-stt" {
+		t.Fatalf("DetectTranscriber() = %v", tr)
+	}
+	resp, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath})
+	if err != nil {
+		t.Fatalf("Transcribe() error: %v", err)
+	}
+	if resp.Text != "hello world" || resp.Language != "en" {
+		t.Errorf("result = %+v", resp)
+	}
+	if len(*seen) != 1 || !strings.HasPrefix((*seen)[0], "/v1/audio/transcriptions Bearer sk-test multipart/form-data") {
+		t.Errorf("requests = %v", *seen)
+	}
+	if _, err := tr.Transcribe(context.Background(), AudioFile{Path: filepath.Join(t.TempDir(), "nonexistent.ogg")}); err == nil {
+		t.Error("a missing file transcribed")
 	}
 }
 
@@ -206,7 +317,7 @@ type stubTranscriber struct {
 }
 
 func (s stubTranscriber) Name() string { return s.name }
-func (s stubTranscriber) Transcribe(context.Context, string) (*TranscriptionResponse, error) {
+func (s stubTranscriber) Transcribe(context.Context, AudioFile) (*TranscriptionResponse, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -219,7 +330,7 @@ func TestFallbackTranscriber(t *testing.T) {
 			stubTranscriber{name: "a", err: errors.New("boom")},
 			stubTranscriber{name: "b", text: "from b"},
 		}}
-		got, err := f.Transcribe(context.Background(), "x")
+		got, err := f.Transcribe(context.Background(), AudioFile{Path: "x"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -233,7 +344,7 @@ func TestFallbackTranscriber(t *testing.T) {
 			stubTranscriber{name: "a", text: ""}, // silence
 			stubTranscriber{name: "b", text: "should not reach"},
 		}}
-		got, err := f.Transcribe(context.Background(), "x")
+		got, err := f.Transcribe(context.Background(), AudioFile{Path: "x"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -247,75 +358,60 @@ func TestFallbackTranscriber(t *testing.T) {
 			stubTranscriber{name: "a", err: errors.New("first")},
 			stubTranscriber{name: "b", err: errors.New("last")},
 		}}
-		_, err := f.Transcribe(context.Background(), "x")
+		_, err := f.Transcribe(context.Background(), AudioFile{Path: "x"})
 		if err == nil || err.Error() != "last" {
 			t.Errorf("err = %v, want %q", err, "last")
 		}
 	})
 }
 
-func TestTranscribe(t *testing.T) {
-	// Write a minimal fake audio file so the transcriber can open and send it.
-	tmpDir := t.TempDir()
-	audioPath := filepath.Join(tmpDir, "clip.ogg")
-	if err := os.WriteFile(audioPath, []byte("fake-audio-data"), 0o644); err != nil {
-		t.Fatalf("failed to write fake audio file: %v", err)
+// The upload's name and type: the file's own name and type when it has
+// them, else what the path's extension says.
+func TestAudioFileUpload(t *testing.T) {
+	for _, tc := range []struct {
+		in         AudioFile
+		name, kind string
+	}{
+		{AudioFile{Path: "/m/file_3", Filename: "file_3.oga", ContentType: "audio/ogg"}, "file_3.oga", "audio/ogg"},
+		{AudioFile{Path: "/m/file_3", Filename: "voice", ContentType: "Audio/OGG; codecs=opus"}, "voice", "audio/ogg"},
+		{AudioFile{Path: "/m/clip.mp3"}, "clip.mp3", "audio/mpeg"},
+		{AudioFile{Path: "/m/x.oga", Filename: "voice", ContentType: "application/octet-stream"}, "x.oga", "audio/ogg"},
+		{AudioFile{Path: "/m/x", Filename: "note.m4a"}, "note.m4a", "audio/mp4"},
+		{AudioFile{Path: "/m/x"}, "x", ""},
+	} {
+		if name, kind := tc.in.upload(); name != tc.name || kind != tc.kind {
+			t.Errorf("upload(%+v) = %q, %q; want %q, %q", tc.in, name, kind, tc.name, tc.kind)
+		}
 	}
+}
 
-	t.Run("success", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/audio/transcriptions" {
-				t.Errorf("unexpected path: %s", r.URL.Path)
-			}
-			if r.Header.Get("Authorization") != "Bearer sk-test" {
-				t.Errorf("unexpected Authorization header: %s", r.Header.Get("Authorization"))
-			}
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(TranscriptionResponse{
-				Text:     "hello world",
-				Language: "en",
-				Duration: 1.5,
-			}); err != nil {
-				t.Errorf("encode response: %v", err)
-			}
-		}))
-		defer srv.Close()
-
-		tr := NewWhisperTranscriber("groq", "sk-test", "", "", nil)
-		tr.apiBase = srv.URL
-
-		resp, err := tr.Transcribe(context.Background(), audioPath)
-		if err != nil {
-			t.Fatalf("Transcribe() error: %v", err)
+// A Telegram voice note (.oga) stored under a path without an extension
+// reaches OpenRouter as input_audio format "ogg".
+func TestTranscribe_OGAVoiceNoteToOpenRouter(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
-		if resp.Text != "hello world" {
-			t.Errorf("Text = %q, want %q", resp.Text, "hello world")
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"text":"heard"}`)); err != nil {
+			return
 		}
-		if resp.Language != "en" {
-			t.Errorf("Language = %q, want %q", resp.Language, "en")
-		}
-	})
-
-	t.Run("api error", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, `{"error":"invalid_api_key"}`, http.StatusUnauthorized)
-		}))
-		defer srv.Close()
-
-		tr := NewWhisperTranscriber("groq", "sk-bad", "", "", nil)
-		tr.apiBase = srv.URL
-
-		_, err := tr.Transcribe(context.Background(), audioPath)
-		if err == nil {
-			t.Fatal("expected error for non-200 response, got nil")
-		}
-	})
-
-	t.Run("missing file", func(t *testing.T) {
-		tr := NewWhisperTranscriber("groq", "sk-test", "", "", nil)
-		_, err := tr.Transcribe(context.Background(), filepath.Join(tmpDir, "nonexistent.ogg"))
-		if err == nil {
-			t.Fatal("expected error for missing file, got nil")
-		}
-	})
+	}))
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), "file_3")
+	if err := os.WriteFile(path, []byte("OggS"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tr := NewTranscriber("or", "openai/whisper-1",
+		speech.NewOpenAI(srv.URL, "k", speech.WithTranscriptionAPI(speech.TranscriptionInputAudio)), nil)
+	res, err := tr.Transcribe(context.Background(), AudioFile{Path: path, Filename: "file_3.oga", ContentType: "audio/ogg"})
+	if err != nil || res.Text != "heard" {
+		t.Fatalf("Transcribe = %+v, %v", res, err)
+	}
+	audio, ok := body["input_audio"].(map[string]any)
+	if !ok || audio["format"] != "ogg" {
+		t.Errorf("input_audio = %v, want format ogg", body["input_audio"])
+	}
 }

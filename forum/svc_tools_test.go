@@ -41,6 +41,15 @@ func (h *svcToolHost) ReadAllowed(_, abs string) error {
 	return nil
 }
 
+// OpenFile opens a path inside the workspace, standing in for the agent's
+// file sandbox.
+func (h *svcToolHost) OpenFile(agentID, abs string) (*os.File, error) {
+	if err := h.ReadAllowed(agentID, abs); err != nil {
+		return nil, err
+	}
+	return os.Open(abs)
+}
+
 // ResolveFile resolves a reference against the workspace; "denied/..." is
 // refused as the file tools would refuse it.
 func (h *svcToolHost) ResolveFile(_, ref string) (string, error) {
@@ -830,16 +839,16 @@ func TestSvcToolReadme(t *testing.T) {
 // The guide ends with the install's maximums, one line per limit that has
 // one, and leaves the section out when there is none.
 func TestGuideCeilings(t *testing.T) {
-	got := guide(Ceilings{MaxCalls: 200, MaxDurationSeconds: 7200, CallTimeoutSeconds: 1800, MaxParallelCalls: 8})
+	got := guide(Ceilings{MaxCalls: 200, MaxDurationSeconds: 7200, CallTimeoutSeconds: 1800, MaxParallelCalls: 8}, "")
 	want := "\n## This install's maximums\n\n- `max_calls`: 200\n- `max_duration_seconds`: 7200\n" +
 		"- `call_timeout_seconds`: 1800\n- `max_parallel_calls`: 8\n"
 	if !strings.HasSuffix(got, want) {
 		t.Errorf("guide ends %q, want the maximums %q", got[max(0, len(got)-len(want)-40):], want)
 	}
-	if got := guide(Ceilings{MaxCalls: 50}); !strings.HasSuffix(got, "maximums\n\n- `max_calls`: 50\n") {
+	if got := guide(Ceilings{MaxCalls: 50}, ""); !strings.HasSuffix(got, "maximums\n\n- `max_calls`: 50\n") {
 		t.Errorf("guide with one ceiling ends %q", got[max(0, len(got)-80):])
 	}
-	if got := guide(Ceilings{}); strings.Contains(got, "maximums\n") {
+	if got := guide(Ceilings{}, ""); strings.Contains(got, "maximums\n") {
 		t.Error("guide without ceilings lists maximums")
 	}
 }

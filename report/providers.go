@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/config"
 )
 
@@ -153,8 +154,8 @@ func collectProviders(_ context.Context, cfg *config.Config, _ Environment) Sect
 		row("Default model", orValue(d.DefaultModelName(), none)),
 		row("Fallback models", joinLines(tail(d.Models), none)),
 		row("Summarization and memory model chain", chain),
-		row("Vision model (describes images for text-only models)",
-			joinLines(append([]string{orValue(d.VisionModel, none)}, d.VisionModelFallbacks...), none)),
+		row("Vision models (describe images for text-only models)",
+			joinLines(cfg.TaskModels.ModelsFor(config.TaskUseVision), none)),
 	}}
 
 	return Section{
@@ -165,13 +166,19 @@ func collectProviders(_ context.Context, cfg *config.Config, _ Environment) Sect
 			{
 				Title: "CLI providers",
 				Notes: []string{"A CLI provider runs as its own program with its own configuration on this host; " +
-					"ClawEh's file sandbox applies to ClawEh's tools, not to what the CLI does on its own behalf. " +
-					"\"process working directory\" is where the ClawEh service was started, not the agent's workspace. " +
+					app.ShortName() + "'s file sandbox applies to " + app.ShortName() + "'s tools, not to what the CLI does on its own behalf. " +
+					"\"process working directory\" is where the " + app.ShortName() + " service was started, not the agent's workspace. " +
 					"\"Allow CLI to bypass restrictions\" on means the CLI's skip-permissions / sandbox-bypass flag is passed, " +
 					"so it runs commands and edits files without asking."},
 				Tables: []Table{cli},
 			},
 			{Title: "Model roles", Tables: []Table{roles}},
+			{
+				Title: "Task models",
+				Notes: []string{"Models used for single calls without tools, in fallback order within each use. " +
+					"\"Provider cannot serve\" is judged from the provider's protocol."},
+				Tables: []Table{taskModelsTable(cfg)},
+			},
 		},
 	}
 }

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,22 +12,24 @@ import (
 	"github.com/tenebris-tech/alerter"
 
 	"github.com/PivotLLM/ClawEh/agent"
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/bus"
 	"github.com/PivotLLM/ClawEh/channels"
 	"github.com/PivotLLM/ClawEh/channels/webui"
+	"github.com/PivotLLM/ClawEh/classifier"
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/cron"
 	"github.com/PivotLLM/ClawEh/devices"
+	"github.com/PivotLLM/ClawEh/folderwatch"
 	"github.com/PivotLLM/ClawEh/forum"
 	"github.com/PivotLLM/ClawEh/health"
-	"github.com/PivotLLM/ClawEh/internal"
 	"github.com/PivotLLM/ClawEh/internal/admin"
 	"github.com/PivotLLM/ClawEh/internal/audit"
+	"github.com/PivotLLM/ClawEh/internal/perms"
 	"github.com/PivotLLM/ClawEh/internal/tlscert"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/mcpserver"
 	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/mountwatch"
 	"github.com/PivotLLM/ClawEh/providers"
 	"github.com/PivotLLM/ClawEh/tools"
 	toolschedule "github.com/PivotLLM/ClawEh/tools/schedule"
@@ -39,10 +42,13 @@ import (
 
 // gatewayServices holds references to all running services
 type gatewayServices struct {
-	CronService  *cron.CronService
-	CronTool     *toolschedule.CronTool
-	MountWatcher *mountwatch.Watcher
-	MediaStore   media.MediaStore
+	CronService   *cron.CronService
+	CronTool      *toolschedule.CronTool
+	FolderWatcher *folderwatch.Watcher
+	// folderState is shared by every FolderWatcher of the process, so one a
+	// reload builds knows which folders the previous one watched.
+	folderState *folderwatch.State
+	MediaStore  media.MediaStore
 	// mediaCleanup is what MediaStore was started with; a reload replaces
 	// the store only when it changes, since every channel holds the store.
 	mediaCleanup media.MediaCleanerConfig
@@ -74,6 +80,9 @@ type gatewayServices struct {
 	// Forum is the forum service. Like HTTPHost it lives for the whole
 	// process; shutdownGateway closes it before the agent loop stops.
 	Forum *forum.Service
+	// Classifiers is the classifier service. Like Forum it lives for the
+	// whole process; shutdownGateway closes it before the agent loop stops.
+	Classifiers *classifier.Service
 	// AuthStore holds the WebUI login sessions and the admin credentials;
 	// stopAuthWatch ends its credentials-file poller at shutdown.
 	AuthStore     *middleware.AuthStore
@@ -93,7 +102,7 @@ func setupAndStartServices(
 	store *config.Store,
 	fatal *fatalNotifier,
 ) (*gatewayServices, error) {
-	services := &gatewayServices{fatal: fatal, store: store}
+	services := &gatewayServices{fatal: fatal, store: store, folderState: folderwatch.NewState()}
 
 	ensureCommonDir(cfg)
 
@@ -101,16 +110,18 @@ func setupAndStartServices(
 		return nil, err
 	}
 
-	// Watch notify-enabled external mounts for new files (cron-style notices).
-	services.MountWatcher = mountwatch.New(agentLoop.GetConfig, msgBus, 0, agentLoop.Alerter())
-	services.MountWatcher.Start()
-	logger.InfoC("mountwatch", "Mount watcher started")
+	// Watch notify-enabled allowed folders for new files (cron-style notices).
+	services.FolderWatcher = folderwatch.New(agentLoop.GetConfig, msgBus, 0, agentLoop.Alerter(), services.folderState)
+	services.FolderWatcher.Start()
+	logger.InfoC("folderwatch", "Allowed folder watcher started")
 
 	// Stage downloaded media under the instance data dir (e.g. ~/.claw/media,
 	// /opt/claw/media) rather than shared /tmp, so files stay app-owned and two
 	// instances on one host can't collide on a single dir.
 	mediaModes := cfg.PermissionModes(config.AreaMedia)
 	utils.SetMediaStagingDir(filepath.Join(cfg.DataDir(), "media"), mediaModes.Dir, mediaModes.File)
+	// Copies of sent files a stop left behind are no longer referenced.
+	agent.RemoveStagedFileCopies()
 	services.mediaCleanup = mediaCleanerConfig(cfg)
 	services.MediaStore = startMediaStore(services.mediaCleanup)
 	// Stopped here if setup fails before the channel manager takes it over.
@@ -386,7 +397,7 @@ func startHTTPHost(services *gatewayServices, cfg *config.Config, agentLoop *age
 	if err := services.HTTPHost.ApplyPolicy(cfg.Gateway); err != nil {
 		return err
 	}
-	if err := startWebAuth(services, cfg); err != nil {
+	if err := startWebAuth(services, cfg, agentLoop); err != nil {
 		return err
 	}
 	rebuildSharedHTTPServer(services, "127.0.0.1", cfg.Gateway.EffectivePort(), services.ChannelManager, services.HTTPHost, agentLoop)
@@ -409,9 +420,11 @@ func startHTTPHost(services *gatewayServices, cfg *config.Config, agentLoop *age
 // startWebAuth sets up the WebUI login: one session store shared by the Auth
 // middleware on the listener, the login endpoints and the WebUI channel's
 // WebSocket handshake. Created once, like the listener; its poller picks up
-// `claw admin` changes to the credentials file for the life of the process.
-func startWebAuth(services *gatewayServices, cfg *config.Config) error {
-	authStore := middleware.NewAuthStore(admin.Path(cfg.DataDir()))
+// `claw admin` changes to the credentials file for the life of the process,
+// checking the file against the secrets file mode of the current config.
+func startWebAuth(services *gatewayServices, cfg *config.Config, al *agent.AgentLoop) error {
+	authStore := middleware.NewAuthStore(admin.Path(cfg.DataDir()),
+		middleware.WithCredentialsMode(func() fs.FileMode { return secretsFileMode(al) }))
 	services.AuthStore = authStore
 	services.HTTPHost.SetAuth(authStore)
 	services.WebServer.APIHandler().SetAuth(authStore)
@@ -493,8 +506,8 @@ func stopAndCleanupServices(
 		services.DeviceService.Stop()
 		phases.done("device service stopped")
 	}
-	if services.MountWatcher != nil {
-		services.MountWatcher.Stop()
+	if services.FolderWatcher != nil {
+		services.FolderWatcher.Stop()
 	}
 	if services.CronTool != nil {
 		services.CronTool.StopListeners()
@@ -525,6 +538,11 @@ func shutdownGateway(
 	if services.Forum != nil {
 		closeForums(services.Forum)
 		phases.done("forums stopped")
+	}
+	// Classifier runs too: their tool and model calls need the loop.
+	if services.Classifiers != nil {
+		closeClassifiers(services.Classifiers)
+		phases.done("classifiers stopped")
 	}
 	agentLoop.BeginMCPShutdown()
 
@@ -559,7 +577,7 @@ func shutdownGateway(
 		logger.WarnCF("gateway", "audit log close failed", map[string]any{"error": err.Error()})
 	}
 
-	logger.Infof("✓ claw stopped in %.1fs", time.Since(begin).Seconds())
+	logger.Infof("✓ %s stopped in %.1fs", app.ShortName(), time.Since(begin).Seconds())
 	if fullShutdown {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := agentLoop.Alerter().Close(closeCtx); err != nil {
@@ -582,6 +600,8 @@ func handleConfigReload(
 	msgBus *bus.MessageBus,
 ) error {
 	logger.Info("🔄 Config file changed, reloading...")
+	// Secret stores opened from here on keep the reloaded secrets modes.
+	perms.SetPolicy(perms.PolicyFor(newCfg))
 
 	newModel := newCfg.Agents.Defaults.DefaultModelName()
 
@@ -653,12 +673,12 @@ func restartServices(
 		return err
 	}
 
-	// Re-create the mount watcher. stopAndCleanupServices stopped the old one, so
-	// without this a reload would silently end mount notifications for the rest of
+	// Re-create the folder watcher. stopAndCleanupServices stopped the old one, so
+	// without this a reload would silently end new-file notifications for the rest of
 	// the process's life — and every service around it is rebuilt the same way.
-	services.MountWatcher = mountwatch.New(al.GetConfig, msgBus, 0, al.Alerter())
-	services.MountWatcher.Start() //nolint:contextcheck,nolintlint // background poller whose lifetime is Stop(), not the run context
-	logger.InfoC("mountwatch", "Mount watcher restarted")
+	services.FolderWatcher = folderwatch.New(al.GetConfig, msgBus, 0, al.Alerter(), services.folderState)
+	services.FolderWatcher.Start() //nolint:contextcheck,nolintlint // background poller whose lifetime is Stop(), not the run context
+	logger.InfoC("folderwatch", "Allowed folder watcher restarted")
 
 	// The channels keep running through a reload; only those whose settings
 	// changed are rebuilt. The media store is replaced only when its cleanup
@@ -721,6 +741,12 @@ func restartServices(
 	// startup initOnce), so without this a reload silently drops every agent's
 	// mcp_* tools and webui edits to mcp_tools would not take effect.
 	al.ReinitMCP(runCtx)
+
+	// The classifiers follow the reloaded switches, models, maximums and
+	// tools; a run in progress continues on the rebuilt registry.
+	if services.Classifiers != nil {
+		services.Classifiers.Reload()
+	}
 
 	// Restart MCP server — it was shut down as part of stopAndCleanupServices.
 	if err := startMCPServer(cfg, al, msgBus, services); err != nil {
@@ -871,10 +897,10 @@ func logAllowlist(allowedCIDRs []string, host string) {
 	// IPv6 clients, which on a dual-stack host reads as the allowlist being
 	// broken. See middleware.AllowAnyAddress.
 	logger.WarnF("The WebUI/API is bound to a network address but the network allowlist is empty, so only loopback will be served. "+
-		"Run `"+internal.BinaryName+" network` to allow the private LAN ranges, "+
-		"`"+internal.BinaryName+" network <cidr>` for a specific subnet, or "+
-		"`"+internal.BinaryName+" network any` for any address (note 0.0.0.0/0 covers IPv4 only; use \"*\"). "+
-		"A running "+internal.BinaryName+" applies the change on its next config reload, about 15 seconds.",
+		"Run `"+app.BinaryName()+" network` to allow the private LAN ranges, "+
+		"`"+app.BinaryName()+" network <cidr>` for a specific subnet, or "+
+		"`"+app.BinaryName()+" network any` for any address (note 0.0.0.0/0 covers IPv4 only; use \"*\"). "+
+		"A running "+app.ShortName()+" applies the change on its next config reload, about 15 seconds.",
 		map[string]any{"host": host})
 }
 
@@ -924,6 +950,6 @@ func warnListenerConfigChanged(services *gatewayServices, gw config.GatewayConfi
 		return
 	}
 	if gw.Listeners() != services.bootListeners {
-		logger.WarnCF("gateway", "gateway.host, port, tls_port, tls.mode or the certificate files changed; the listeners are bound at start, so restart "+internal.BinaryName+" to apply", nil)
+		logger.WarnCF("gateway", "gateway.host, port, tls_port, tls.mode or the certificate files changed; the listeners are bound at start, so restart "+app.ShortName()+" to apply", nil)
 	}
 }

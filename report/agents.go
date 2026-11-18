@@ -10,9 +10,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/ccv3"
+	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
 	"github.com/PivotLLM/ClawEh/cogmemhost"
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
 	"github.com/PivotLLM/ClawEh/forum/forumfs"
 )
 
@@ -66,9 +69,10 @@ type folderAccess struct {
 
 // alwaysReadableNotes says what each of config.AlwaysReadableWorkspaceDirs holds.
 var alwaysReadableNotes = map[string]string{
-	"tasks":             "sub-agent results",
-	"tmp":               "inbound attachments",
-	forumfs.BaseDirName: "the agent's forums",
+	"tasks":                  "sub-agent results",
+	"tmp":                    "inbound attachments",
+	forumfs.BaseDirName:      "the agent's forums",
+	classifierfs.BaseDirName: "the agent's classifiers",
 }
 
 func (f *folderAccess) add(path string, read, write bool, note string) {
@@ -129,24 +133,30 @@ func agentFolderAccess(cfg *config.Config, env Environment, a *config.AgentConfi
 		}
 	}
 
-	for _, m := range a.EffectiveMounts(ws) {
-		note := "mount " + m.Name
-		if strings.EqualFold(m.Name, config.MaestroMountName) && m.Path == config.MaestroDataDir(ws) {
-			note = "Maestro data (auto mount)"
+	if a.MaestroEnabled() {
+		fa.add(config.MaestroDataDir(ws), true, true, "Maestro data")
+	}
+	notify := map[string]bool{}
+	for _, f := range a.AllowedFolders {
+		if f.Notify {
+			notify[filepath.Clean(strings.TrimSpace(f.Path))] = true
 		}
-		if m.Notify {
+	}
+	for _, p := range a.AllowedFolderPaths() {
+		note := "allowed folder; write access follows file permissions"
+		if notify[p] {
 			note += ", notify"
 		}
-		fa.add(m.Path, !m.Writable, m.Writable, note)
+		fa.add(p, true, fileutil.Writable(p), note)
 	}
 	fa.add(cfg.SkillsPath(), true, false, "global skills")
 	if a.SharesCommon() {
 		fa.add(cfg.ResolveCommonDir(), true, true, "shared common directory (common_* tools)")
 	}
 	if a.CognitiveMemoryEnabled() {
-		fa.add(cogmemhost.Dir(ws), false, true, "cognitive memory store (written by ClawEh, not via file tools)")
+		fa.add(cogmemhost.Dir(ws), false, true, "cognitive memory store (written by "+app.ShortName()+", not via file tools)")
 	}
-	fa.add(filepath.Join(ws, "sessions"), false, true, "session archive (written by ClawEh, not via file tools)")
+	fa.add(filepath.Join(ws, "sessions"), false, true, "session archive (written by "+app.ShortName()+", not via file tools)")
 
 	t := Table{Caption: "Folder access", Columns: []string{"Path", "Access", "Notes"}}
 	if fa.special != nil {
@@ -253,7 +263,7 @@ func agentMCPTable(cfg *config.Config, a *config.AgentConfig) Table {
 	return t
 }
 
-func agentSection(cfg *config.Config, env Environment, a *config.AgentConfig) Section {
+func agentSection(ctx context.Context, cfg *config.Config, env Environment, a *config.AgentConfig) Section {
 	d := cfg.Agents.Defaults
 	models := a.Models
 	modelsNote := ""
@@ -285,6 +295,7 @@ func agentSection(cfg *config.Config, env Environment, a *config.AgentConfig) Se
 			card += " (missing: no such card in the library)"
 		}
 	}
+	classifierModel, classifierModelMarked := classifierModelState(cfg, a)
 	settings := pairs("Settings",
 		row("Enabled", yesNo(a.IsEnabled())),
 		row("Routing default", yesNo(config.SameAgentID(a.ID, defaultAgentID(cfg)))),
@@ -295,21 +306,35 @@ func agentSection(cfg *config.Config, env Environment, a *config.AgentConfig) Se
 		row("Sub-agents", sub),
 		row("Suites", "Maestro "+onOff(a.MaestroEnabled())+", Fusion "+onOff(a.Fusion)),
 		row("Forum (sets up forums with other agents)", onOff(a.Forum)),
+		row("Allow classifiers", classifiersSwitch(a, human)),
+		row("Classifier model", classifierModel),
+		row("Task models (agent_spawn kinds allowed)", taskModelGrant(a)),
 		row("Character card", card),
 		row("Character card tools (edits the card library)", onOff(a.CCv3)),
 		row("Shared common directory", onOff(a.SharesCommon())),
 		row("Global cron (schedules for other agents)", onOff(a.GlobalCron)),
 	)
+	if classifierModelMarked {
+		for i, r := range settings.Rows {
+			if r[0] == "Classifier model" {
+				settings.Highlight = append(settings.Highlight, i)
+			}
+		}
+	}
 	if len(a.DenyTools) > 0 {
 		settings.Rows = append(settings.Rows, row("Denied tools (deny_tools, wins over every grant incl. suites)", joinLines(a.DenyTools, none)))
 	}
+	tables := []Table{settings, agentToolsTable(a), agentMCPTable(cfg, a), agentFolderAccess(cfg, env, a)}
+	if t, ok := classifiersTable(ctx, cfg, a); ok {
+		tables = append(tables, t)
+	}
 	return Section{
 		Title:  title,
-		Tables: []Table{settings, agentToolsTable(a), agentMCPTable(cfg, a), agentFolderAccess(cfg, env, a)},
+		Tables: tables,
 	}
 }
 
-func collectAgents(_ context.Context, cfg *config.Config, env Environment) Section {
+func collectAgents(ctx context.Context, cfg *config.Config, env Environment) Section {
 	d := cfg.Agents.Defaults
 	readSubdirs := append([]string{}, d.WorkspaceReadSubdirs...)
 	if len(readSubdirs) > 0 {
@@ -328,7 +353,7 @@ func collectAgents(_ context.Context, cfg *config.Config, env Environment) Secti
 		Notes: []string{
 			"One subsection per configured agent. Internal tools marked sensitive run programs, change files, " +
 				"send messages, install code or start other agents. Folder access lists every path the agent's " +
-				"file tools can reach, resolved as the filesystem sees it, plus the directories ClawEh writes for the agent.",
+				"file tools can reach, resolved as the filesystem sees it, plus the directories " + app.ShortName() + " writes for the agent.",
 		},
 		Tables: []Table{defaults},
 	}
@@ -338,7 +363,7 @@ func collectAgents(_ context.Context, cfg *config.Config, env Environment) Secti
 	}
 	sort.SliceStable(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })
 	for _, a := range agents {
-		s.Subsections = append(s.Subsections, agentSection(cfg, env, a))
+		s.Subsections = append(s.Subsections, agentSection(ctx, cfg, env, a))
 	}
 	if len(agents) == 0 {
 		s.Notes = append(s.Notes, "No agents are configured.")

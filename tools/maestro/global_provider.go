@@ -4,7 +4,6 @@
 package maestro
 
 import (
-	"os"
 	"path/filepath"
 	"reflect"
 
@@ -16,6 +15,7 @@ import (
 
 	"github.com/PivotLLM/ClawEh/alerts"
 	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
 	"github.com/PivotLLM/ClawEh/global"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/tools"
@@ -82,7 +82,8 @@ func (globalMaestroProvider) RegisterTools(deps global.Deps) []global.ToolDefini
 
 	// Make sure the base dir exists before Maestro touches it (defensive: Prepare
 	// also creates the subdirs, but never hand Maestro a missing base).
-	if err := os.MkdirAll(base, 0o700); err != nil {
+	modes := c.AgentModes(base)
+	if err := fileutil.MkdirAllExact(base, modes.Dir); err != nil {
 		logger.WarnCF("maestro", "failed to create maestro base dir; tools disabled",
 			map[string]any{"agent": deps.AgentID, "base": base, "error": err.Error()})
 		alertMaestroDisabled(deps.AgentID, base, err)
@@ -93,13 +94,15 @@ func (globalMaestroProvider) RegisterTools(deps global.Deps) []global.ToolDefini
 	if agentCfg == nil {
 		agentCfg = c.AgentByID(deps.AgentID)
 	}
-	refDirs := referenceDirsFromMounts(agentCfg, workspace)
+	refDirs := referenceDirsFromAllowedFolders(agentCfg)
 	runCfg := runnerConfig(c.AgentMaestro(deps.AgentID))
 	mcfg := mconfig.New(
 		mconfig.WithBaseDir(base),
 		mconfig.WithEmbeddedFS(mmaestro.EmbeddedReference),
 		mconfig.WithRunner(runCfg),
 		mconfig.WithReferenceDirs(refDirs),
+		// What Maestro creates under base takes the agents area's modes.
+		mconfig.WithFileModes(modes.Dir, modes.File),
 	)
 	if err := mcfg.Prepare(); err != nil {
 		logger.WarnCF("maestro", "failed to prepare maestro config; tools disabled",
@@ -108,10 +111,9 @@ func (globalMaestroProvider) RegisterTools(deps global.Deps) []global.ToolDefini
 		return nil
 	}
 	for _, rd := range refDirs {
-		logger.InfoCF("maestro", "mount available in maestro reference domain",
-			map[string]any{"agent": deps.AgentID, "mount": rd.Mount, "path": rd.Path})
+		logger.InfoCF("maestro", "allowed folder available in maestro reference library",
+			map[string]any{"agent": deps.AgentID, "name": rd.Mount, "path": rd.Path})
 	}
-
 	// Maestro's operational log goes to the central logger (component "maestro",
 	// tagged with the agent) so it shows in the Web UI and rotates with claw.log.
 	// Maestro's per-project logs are audit records and stay in the project.
@@ -136,7 +138,7 @@ func (globalMaestroProvider) RegisterTools(deps global.Deps) []global.ToolDefini
 	if cd.TempAgent {
 		run, swap = sharedRunner(deps.AgentID, disp, mcfg, mlog)
 	} else {
-		run, swap = runnerFor(deps.AgentID, runnerSpec{base: base, runCfg: runCfg, refDirs: refDirs},
+		run, swap = runnerFor(deps.AgentID, runnerSpec{base: base, runCfg: runCfg, refDirs: refDirs, modes: modes},
 			disp, mcfg, mlog)
 	}
 	p := &mmaestro.Provider{}

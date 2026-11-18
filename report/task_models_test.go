@@ -1,0 +1,158 @@
+// ClawEh
+// License: MIT
+
+package report
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/PivotLLM/ClawEh/config"
+)
+
+// taskModelsSection is the "Task models" subsection of the providers section.
+func taskModelsSection(t *testing.T, cfg *config.Config, env Environment) Section {
+	t.Helper()
+	for _, sub := range collectProviders(t.Context(), cfg, env).Subsections {
+		if sub.Title == "Task models" {
+			return sub
+		}
+	}
+	t.Fatal("Task models subsection not found")
+	return Section{}
+}
+
+// One row per list, in page order, with its models in list order; the models
+// whose provider's protocol cannot serve the use are named and the row
+// highlighted.
+func TestCollectProviders_TaskModelsTable(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.TaskModels = config.TaskModelsConfig{
+		TextModels:     []config.TaskModelRef{{Model: "Claude CLI"}},
+		STTModels:      []config.TaskModelRef{{Model: "Claude CLI"}, {Model: "GPT"}},
+		VisionModels:   []config.TaskModelRef{{Model: "GPT"}},
+		ClassifyModels: []config.TaskModelRef{{Model: "Claude CLI"}, {Model: "GPT"}},
+	}
+	tb := findTable(t, taskModelsSection(t, cfg, env), "Task models")
+	want := [][]string{
+		{"Generate text", "Claude CLI", ""},
+		{"Generate images", none, ""},
+		{"Text to speech", none, ""},
+		{"Transcription", "Claude CLI, GPT", "Claude CLI"},
+		{"Describe images", "GPT", ""},
+		{"Classification", "Claude CLI, GPT", ""},
+	}
+	if len(tb.Rows) != len(want) {
+		t.Fatalf("rows = %v, want %v", tb.Rows, want)
+	}
+	for i, w := range want {
+		for j := range w {
+			if tb.Rows[i][j] != w[j] {
+				t.Errorf("row %d = %v, want %v", i, tb.Rows[i], w)
+				break
+			}
+		}
+		if isHighlighted(tb, i) != (w[2] != "") {
+			t.Errorf("row %d highlighted = %v", i, isHighlighted(tb, i))
+		}
+	}
+
+	cfg.TaskModels = config.TaskModelsConfig{}
+	tb = findTable(t, taskModelsSection(t, cfg, env), "Task models")
+	if len(tb.Rows) != len(want) {
+		t.Fatalf("empty lists rows = %v", tb.Rows)
+	}
+	for _, r := range tb.Rows {
+		if r[1] != none || r[2] != "" {
+			t.Errorf("empty list row = %v", r)
+		}
+	}
+}
+
+// "Speech to text" and "Vision" rows appear, unmarked and linked to the Task
+// models page, while their list is empty, and go once it has a model. Each
+// reads its own list: a model in Describe images does not answer for
+// Transcription.
+func TestAssessment_TaskModelRows(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.TaskModels = config.TaskModelsConfig{TextModels: []config.TaskModelRef{{Model: "GPT"}}}
+	s := collectAssessment(t.Context(), cfg, env)
+	for item, want := range map[string]string{itemSTT: "No model in Transcription.", itemVision: "No model in Describe images."} {
+		if r := assessmentRow(t, s, item); r[0] != "" || r[2] != want {
+			t.Errorf("%s row = %v", item, r)
+		}
+	}
+	a := Assess(t.Context(), cfg, env)
+	links := 0
+	for _, r := range a.Assessment {
+		if r.Item == itemSTT || r.Item == itemVision {
+			if r.Link != "/task-models" {
+				t.Errorf("%s link = %q", r.Item, r.Link)
+			}
+			links++
+		}
+	}
+	if links != 2 {
+		t.Errorf("found %d task model rows in Assess, want 2", links)
+	}
+
+	cfg.TaskModels.VisionModels = []config.TaskModelRef{{Model: "GPT"}}
+	s = collectAssessment(t.Context(), cfg, env)
+	if r := assessmentRow(t, s, itemSTT); r[2] != "No model in Transcription." {
+		t.Errorf("stt row with only a vision model = %v", r)
+	}
+	cfg.TaskModels.STTModels = []config.TaskModelRef{{Model: "GPT"}}
+	for _, r := range collectAssessment(t.Context(), cfg, env).Tables[0].Rows {
+		if r[1] == itemSTT || r[1] == itemVision {
+			t.Errorf("row listed with a model in its list: %v", r)
+		}
+	}
+}
+
+// The per-agent row lists the kinds the agent may use, or off.
+func TestCollectAgents_TaskModelGrant(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	settings := func(id string) Table {
+		return findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), id), "Settings")
+	}
+	if _, r := findRow(t, settings("alice"), "Task models"); r[1] != "off" {
+		t.Errorf("no grant = %q", r[1])
+	}
+	cfg.Agents.List[0].TaskModels = &config.AgentTaskModels{Image: true, STT: true}
+	cfg.Agents.List[0].Tools = []string{"file_read_bytes"}
+	if _, r := findRow(t, settings("alice"), "Task models"); r[1] != "Generate images, Transcription (ignored: no agent_spawn)" {
+		t.Errorf("grant without agent_spawn = %q", r[1])
+	}
+	cfg.Agents.List[0].Tools = []string{"agent_spawn"}
+	if _, r := findRow(t, settings("alice"), "Task models"); r[1] != "Generate images, Transcription" {
+		t.Errorf("grant = %q", r[1])
+	}
+	cfg.Agents.List[0].DenyTools = []string{"agent_spawn"}
+	if _, r := findRow(t, settings("alice"), "Task models"); !strings.HasSuffix(r[1], "(ignored: no agent_spawn)") {
+		t.Errorf("grant with agent_spawn denied = %q", r[1])
+	}
+}
+
+// Models listed but none usable: a marked row naming each with why.
+func TestAssessment_NoUsableTaskModel(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "Off", Model: "x", Provider: "OpenAI", Enabled: false})
+	cfg.TaskModels.STTModels = []config.TaskModelRef{{Model: "Claude CLI"}, {Model: "Off"}}
+	cfg.TaskModels.VisionModels = []config.TaskModelRef{{Model: "Off"}}
+	s := collectAssessment(t.Context(), cfg, env)
+	if r := assessmentRow(t, s, itemSTT); r[0] != actionMark ||
+		r[2] != "No usable model: Claude CLI (provider protocol does not serve speech), Off (disabled on the Models page)." {
+		t.Errorf("stt row = %v", r)
+	}
+	if r := assessmentRow(t, s, itemVision); r[0] != actionMark || r[2] != "No usable model: Off (disabled on the Models page)." {
+		t.Errorf("vision row = %v", r)
+	}
+	// One usable model is enough: no row.
+	cfg.TaskModels.STTModels = append(cfg.TaskModels.STTModels, config.TaskModelRef{Model: "GPT"})
+	cfg.TaskModels.VisionModels = append(cfg.TaskModels.VisionModels, config.TaskModelRef{Model: "GPT"})
+	for _, r := range collectAssessment(t.Context(), cfg, env).Tables[0].Rows {
+		if r[1] == itemSTT || r[1] == itemVision {
+			t.Errorf("row listed with a usable model: %v", r)
+		}
+	}
+}

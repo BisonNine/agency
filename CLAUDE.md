@@ -102,18 +102,42 @@ ClawEh is an independent Go project forked from sipeed/picoclaw on 2026-03-20.
   Handlers must not call `config.LoadConfig` themselves. Secret fields may hold
   `env:NAME` / `file:/path` references (`config/secrets.go`), resolved at load and written
   back on save; unknown keys are warned at load (`config/unknown_keys.go`).
-- **Startup guards:** a group/other-readable `config.json` aborts startup before the config
-  is read (`perms.CheckConfig`), with the `chmod 600` to run; then, with the config loaded,
-  `internal/perms.Enforce` holds `CLAW_HOME` to `perms.PolicyFor(cfg)`: every folder to its
-  area's `security.permissions` mode (default 0700; `internal/`, `tls/`, `tokens/` always
-  0700), secrets/DBs 0600 except the agents area's databases, which follow its file mode.
-  It only ever removes group/other bits; ctxengine and cogmem, by contrast, set an agent's
-  databases (with -wal/-shm and snapshots) to exactly the configured mode on every open, so
-  existing ones gain access when the agents mode allows it. What ClawEh creates takes the same modes
-  (`config.PermissionModes(area)`, `cfg.AgentModes(path)` for agent state: the agents
-  area for configured agents, 0700/0600 for temporary ones); ctxengine and cogmem get them
-  through their permission options, and every opener of an agent's cogmem store passes
-  `cogmemhost.StoreOptions`, since opening resets the database files to the given mode.
+- **Startup guards:** `security.permissions` (`config/permissions.go`) holds only areas,
+  each `{dir_mode, file_mode}`: `root` (the data dir itself and the files directly in it,
+  `config.json`), `secrets` (`internal/`, `tls/`, `tokens/`, and every secret file
+  anywhere), `bin` (`<data dir>/bin`, files 0700 so they keep exec), `default`
+  (everything else), `logs`, `agents`, `media`, `common`, `backup`; defaults 0700/0600.
+  Validation is format only (3–4 octal digits, leading 0); `Modes` adds an owner floor (rwx/rw, bin r-x/r--) to every mode, warned per key at load (`BelowFloor`). `LoadConfig` completes a
+  missing key with its default and notes unknown keys in the block, such as the old
+  top-level `dir_mode`/`file_mode`, which are ignored (`completePermissions`,
+  `unknownPermissionKeys`, `Config.PermissionsAdded`); at boot (`openBootConfig`) the
+  config is loaded, then `perms.CheckConfig` refuses a `config.json` granting a bit
+  beyond `root.file_mode` (naming the `chmod`) and sets a tighter one to it, then
+  `Store.SavePermissionDefaults` writes the completed block into the raw file (only that
+  block: env-sourced values, unknown keys and the rest stay as they are; one INFO line), `Store.Update` also completes it on every save, a mode giving other
+  users access is a WARN per key and a Check Up row (`OtherAccess`), `perms.SetPolicy`
+  sets the process default policy and secrets modes (also set by `internal.LoadConfig`,
+  `claw devicegw`, `claw backup` and every config reload), and `internal/perms.Enforce` sets `CLAW_HOME`
+  and every folder and regular file in it (logs/ and media/ included) to EXACTLY its
+  area's mode per `perms.PolicyFor(cfg)` (deepest area wins; secrets by name/location;
+  agent DBs follow the agents file mode; logs/ and media/ files ignore secret names;
+  files outside `bin/` lose exec bits; a symlinked `CLAW_HOME` is walked at its target;
+  the secrets folders and top-level files are walked first, each part with its own cap;
+  each change opens the entry with O_NOFOLLOW and requires it to be the walked file
+  (`chmodSafe`); hard-linked files, symlinks and the running executable are never
+  changed). `perms.Check` (Check Up) reports only paths more open than configured. Config saves write `root.file_mode`;
+  the credentials file and `file:` references may grant nothing beyond
+  `secrets.file_mode`. ctxengine and cogmem set an agent's databases (with -wal/-shm and
+  snapshots) to exactly the configured mode on every open. Everything ClawEh creates takes
+  its area's mode at once, exactly (umask-proof; `fileutil.MkdirAllExact`/`WriteFileExact`):
+  injected where the writer has the config (`config.PermissionModes(area)`,
+  `cfg.AgentModes(path)` — agents area for configured agents, secrets for temporary ones;
+  `perms.ModesFor`/`CardModes`; `forum.Host.Modes`; `ccv3.WithModes`;
+  `state.NewManager` modes), else from the process default (`perms.CurrentPolicy()`
+  `.ModesFor/MkdirAll/WriteFile` for the file tools, task/cron stores, skills, allowed-folder
+  markers; `perms.SecretModes()` / `perms.EnsureSecretFile` for secret stores); ctxengine and cogmem get them through their permission options, and every
+  opener of an agent's cogmem store passes `cogmemhost.StoreOptions`, since opening
+  resets the database files to the given mode.
 - **Audit log:** `internal/audit` (`<CLAW_HOME>/internal/audit.db`) records tool calls, config
   writes and logins; every turn carries a `turn_id` on its log lines. See `manual/admin/audit.md`.
 - **Fail fast:** if the HTTP listener, the MCP host server or the agent loop dies after
@@ -122,7 +146,9 @@ ClawEh is an independent Go project forked from sipeed/picoclaw on 2026-03-20.
 - **Backup:** `internal/backup` writes one `claw-backup-<ts>.tar.gz` nightly (every SQLite
   DB via `VACUUM INTO`, `internal/`, credentials, TLS, `cards/`, every agent's `forums/` without
   `.locks/` and `.tmp-*`, `collectForums`; every agent's `maestro/` without
-  `*.lock`/`*.tmp`, databases there via `VACUUM INTO`, `collectMaestro`; both
+  `*.lock`/`*.tmp`, databases there via `VACUUM INTO`, `collectMaestro`; every
+  agent's `classifiers/` without `.tmp-*` and database sidecars, `state.db` via
+  `VACUUM INTO`, `collectClassifiers`; all
   through `collectAgentFolder`, which never follows a symlink); `claw backup` / `claw restore`. See
   `manual/admin/backup.md`.
 - Data dir constant: `global.DefaultDataDir` = `.claw` (global/defaults.go)
@@ -132,14 +158,17 @@ ClawEh is an independent Go project forked from sipeed/picoclaw on 2026-03-20.
   `claw.pid`, `claw.lock`, and the temporary agents: `internal/temp/<uuid>/` and
   their list `internal/temp_agents.json`, both left out of backups;
   `config.InternalPath()`,
-  `global.InternalDir`), `cli/` is the CLI providers' working dir when a model sets no
+  `global.InternalDir`), `bin/` holds the operator's scripts and binaries
+  (`config.BinPath()`), `cli/` is the CLI providers' working dir when a model sets no
   workspace (`config.CLIPath()`), `skills/` is the only shared skills root, `cards/` the
   character-card library (`config.CardsPath()`), `common/` the
   default common dir (`config.ResolveCommonDir()`); relative MCP `env_file` paths resolve
   against `CLAW_HOME`. There is no `agents/default` pseudo-agent. `internal/layout.Prepare`
   creates these directories at every start; it does not migrate an older layout.
 - Version/name/tagline/copyright: `app/app.go` (all unexported — read them through
-  `app.Version()` / `app.SemVer()` / `app.Name()` / `app.TagLine()` / `app.Copyright()`).
+  `app.Version()` / `app.SemVer()` / `app.Name()` / `app.ShortName()` /
+  `app.BinaryName()` / `app.TagLine()` / `app.Copyright()`; see "Product name" below).
+  The package follows the maintainer's standard `app/` template.
   The two release-signing public keys are `app/keys.go` (`app.ReleasePublicKeys()`).
 
 This is **not** a picoclaw fork for upstream PR purposes — it is an independent project.
@@ -165,13 +194,88 @@ started with an operator surprised by their own configuration.
 - **An ignored value is visible where it lives, not only in a log.** Logs are
   for after the fact; the WebUI is where the mistake is being made.
 
+## Product name — only in `app`
+
+The product will be renamed; a rename must be an edit to `app/app.go` only.
+No other file holds the product name as a string. Three accessors:
+
+- `app.Name()` ("ClawEh") identifies the product: page title, version line,
+  report and Check Up header, About text, User-Agent, copyright lines, the
+  Signal linked-device label, MCP client/server implementation name.
+- `app.ShortName()` ("Claw") in running prose: log lines, alert titles and
+  descriptions, errors and notices, CLI help sentences, WebUI sentences, and
+  model-facing text (system prompt header, guides). Written as the constant
+  gives it ("Claw is shutting down").
+- `app.BinaryName()` is the name the program was started as (base of
+  `os.Args[0]`), for anything telling someone what to type (`<binary> admin`,
+  hints in errors and help, the cobra root `Use`). Under `go test` it is the
+  test binary's name: a test asserting such text sets `os.Args[0]` with
+  `internal/testbinary.Set(t, "alice-claw")` (restored at cleanup; not for
+  parallel tests). There is no test hook in `app`.
+
+What stays fixed (not the product label; renaming would break installs or
+other programs): the module path and repository (`PivotLLM/ClawEh`), `CLAW_*`
+environment variables, the data directories (`.claw`, `/opt/claw`), file names
+(`claw.log`, `claw.pid`, `claw.lock`, `claw-backup-*`, temp prefixes), cookies
+and localStorage keys, the WebSocket subprotocol `claw-token`, the MCP realm
+`claw-mcp`, the `mcp__claw__` tool prefix, `claw-auth`, `openclaw`, ClawHub,
+`clawdbot-gateway`. Bare-word ones — installed binary file name, systemd
+service, launchd label, `/opt/claw`, log and lock file names, the release
+repository, the Maestro host model label `claw`, the folder-watch marker
+header, the shell-rc marker `install` writes, the default agent ID `claw`
+(a directory name and routing key; its display name is the short name), the
+self-signed certificate's fallback CN — are defined once in
+`global/identifiers.go`. Anything written to disk or matched later uses one
+of these, never `ShortName()` or `BinaryName()`.
+
+Templates and embedded guides name the product through placeholders filled at
+use: `{{SHORT_NAME}}` in `templates/` (seeding, `internal/workspace`), and
+`{{HOST}}` in the forum and classifier guides (those packages may not import
+ClawEh, so the gateway passes `Host.ProductName`, which defaults to "the
+host"). The WebUI gets the names from the page itself: `web/backend/embed.go`
+fills `{{PRODUCT_NAME}}`, `{{PRODUCT_SHORT_NAME}}` and `{{PRODUCT_BINARY_NAME}}`
+in `index.html` (the `<title>` and three `<meta name="product-…">` tags) and
+`site.webmanifest` when serving them (HTML- or JSON-escaped, `no-cache`), and
+`web/frontend/src/store/product.ts` reads the meta tags at load. So the names
+are there before any request and when the server cannot be reached.
+`GET /api/auth/status` and `GET /api/system/version` carry them too and may
+refresh them, never blank them. Under the Vite dev server the placeholders
+stay unfilled: the store ignores them and takes the names (and the tab title)
+from the first `/api/auth/status` answer. The store makes the names i18next
+defaults, so any locale string can say `{{name}}`, `{{shortName}}` or
+`{{binaryName}}`, and a change to them re-renders translated components.
+
+Two guards enforce it, both part of `make test`:
+
+- `app/productname_guard_test.go` parses every non-test Go file outside `app/`
+  (and outside `web/frontend`, `manual` and dot-directories) and fails on a
+  string literal holding "ClawEh", "Claw" or "claw" as a word. Comments, struct
+  tags and import paths are not checked. `global/identifiers.go` is skipped.
+  It also checks, line by line, every file those Go files `//go:embed`
+  (guides, templates, their JSON), except the entries in `embedSkip`, each
+  with its reason (the BIP39 word list, the built manual and frontend).
+- `web/frontend/src/product-name-guard.test.ts` does the same for the
+  frontend's non-test sources, the locale JSON, `index.html` and the text
+  files in `public/`.
+
+`web/frontend/src/i18n/keys.test.ts` fails when a literal `t("…")` key in the
+frontend is missing from `en.json` (a missing key renders as the raw key).
+
+To allow a new fixed identifier, add the narrowest pattern that matches only
+it, with a comment saying what it names, to `fixedIdentifiers` (Go) or the
+allow-list in the frontend guard. A bare word ("claw") is never allowed by
+pattern: define it as a constant in `global/identifiers.go`.
+
 ## Build & Install
 ```
 make build       # build the binary (embeds the frontend bundle and the manual)
 make manual      # build only the user manual (VitePress)
 make test        # the full gate: builds the manual, then generate, format
                  # check, vet, golangci-lint,
-                 # govulncheck (pinned, installed into bin/, needs network),
+                 # govulncheck (go.bison9.com/vulncheck: the govulncheck
+                 # on the PATH, failing on any called vulnerability not
+                 # listed under govulncheck.ignore in b9.yaml; needs
+                 # network),
                  # then test.sh: the Go suite with -race and a coverage floor,
                  # the frontend typecheck/lint/unit tests and the MCP server
                  # integration checks. Rewrites nothing and exits non-zero on
@@ -204,11 +308,39 @@ production instance directly; test against a dev instance.
 
 **Release artefacts (cut by the release maintainer with b9):** `b9 release <repo>` builds every target in `b9.yaml`, signs and notarizes the macOS binaries, packages the archives, writes `checksums.txt` and signs it with minisign (`signing.minisign` in `b9.yaml` names the public key; the secret key lives on the release host), verifies that signature against the same public key, then tags and uploads everything. The Makefile's `release-checksums` and `release-sign` targets are the manual fallback for a hand-built release. `claw upgrade` refuses a release without a valid `checksums.txt.minisig`, verified against the two minisign public keys in `app/keys.go` (`app.ReleasePublicKeys()`: a current and a next key, so a key can be rolled; the rotation steps are in that file). Both slots are filled.
 
+**Vulnerability gate and `b9.yaml`:** `make govulncheck` (part of `make test`)
+is `go run go.bison9.com/vulncheck/cmd/vulncheck@latest .` (`VULNCHECK` in
+the Makefile). vulncheck is our public wrapper (repository `BisonNine/vulncheck`,
+module path `go.bison9.com/vulncheck`): it runs the `govulncheck` found on the
+PATH (never a pinned release, never installs it; `go install
+golang.org/x/vuln/cmd/govulncheck@latest`) and fails on every vulnerability
+the code calls, except those listed in `b9.yaml` under `govulncheck.ignore`:
+
+```yaml
+govulncheck:
+  enabled: true
+  ignore:
+    - id: GO-2026-0001        # Go advisory ID, required
+      reason: no fixed release yet   # required
+      until: 20261231         # optional; honoured through that day, then fatal again
+```
+
+To excuse a vulnerability that has no fix, add an entry there with a short
+`until`; remove it as soon as a fixed release is in `go.mod`. Never weaken or
+skip the scan another way. b9 (the release tool) reads the same block through
+the same module, so the gate and a release agree. `b9.yaml` is the release
+description; b9 itself is private and is not needed for `make`, `make test` or
+`make install`, which must always work without it. Keep `b9.yaml` to its
+two-line header comment and the few comments we need ourselves; do not explain
+fields there. vulncheck is a first-party library and runs at `@latest`, never
+a pinned version, so one release of it reaches every project; fix a
+shortcoming in the module, never here.
+
 ## Key Architecture Notes
-- **Shared modules**: the tool contract lives in `github.com/PivotLLM/toolspec`; the LLM-dispatch core (provider clients + the tool loop) lives in `github.com/PivotLLM/spawnllm`. `global` and `providers` are thin alias shims re-exporting them under the historical names, so call sites are unchanged. **Invariant: spawnllm imports only toolspec + stdlib (+ provider SDKs) — never ClawEh.** Tools (incl. the spawn tool) are *injected* as `toolspec.ToolDefinition`s, so the runtime re-entry (spawnllm runs a tool → `agent_spawn` → spawnllm) is not an import cycle; runaway recursion is bounded by `agents.defaults.max_subagent_depth` (default 3, shared by `agent_spawn` and Maestro dispatch — see `tools/agents/depth.go`), which replaced the old blanket `PrimaryOnly` restriction. Guard: `providers/cycle_guard_test.go`. Policy (model selection, fallback, cooldown, config, results handling) stays in ClawEh. spawnllm logs route into ClawEh's logger via `installSpawnllmLogging` (`spawnllm/logger.SetBackend`). Cognitive memory lives in `github.com/PivotLLM/cogmem` (store, composer, consolidation, portable export, toolspec tools, and the `Session` the loop drives with `Observe`/`Recall`). **Same invariant: cogmem imports only toolspec + stdlib (+ SQLite) — never ClawEh.** The host side is `cogmemhost/` (the attachment loader that enforces file-tool permissions, the logging bridge via `cogmem/logger.SetBackend`, and the `config.MemoryConfig` → `cogmem.Settings` mapping); `tools/cogmem` mounts the module's tools under the `cogmem` namespace. Cogmem keeps its own inbox of unconsolidated messages, so it never reads the session archive; the one-time inbox backfill from the archive on upgrade is host code in `agent/memory_wiring.go`. The context engine lives in `github.com/PivotLLM/ctxengine` (transcript, archive, assembly, eviction, compaction, and the `session_*` tools; ClawEh imports its `memory` and `session` packages for the store). **Same invariant: ctxengine imports only spawnllm + toolspec + stdlib (+ SQLite) — never ClawEh.** The host side is in `agent/`: `ContextBuilder.PromptLayers` builds the system prompt layers the engine assembles, `compressModelCaller` (`agent/context_manager.go`) is the one `ModelCaller` that walks the summarization chain for both the engine and cogmem, `agent/llmcontext_logging.go` bridges its logger, and `tools/session` mounts its tools. The engine and cogmem never see each other: the loop observes messages into cogmem after each engine `Add*` and hands cogmem's `Recall` blocks to `Assemble` as injections.
+- **Shared modules**: the tool contract lives in `github.com/PivotLLM/toolspec`; the LLM-dispatch core (provider clients + the tool loop) lives in `github.com/PivotLLM/spawnllm`. `global` and `providers` are thin alias shims re-exporting them under the historical names, so call sites are unchanged. **Invariant: spawnllm imports only toolspec + stdlib (+ provider SDKs) — never ClawEh.** Tools (incl. the spawn tool) are *injected* as `toolspec.ToolDefinition`s, so the runtime re-entry (spawnllm runs a tool → `agent_spawn` → spawnllm) is not an import cycle; runaway recursion is bounded by `agents.defaults.max_subagent_depth` (default 3, shared by `agent_spawn` and Maestro dispatch — see `tools/agents/depth.go`), which replaced the old blanket `PrimaryOnly` restriction. Guard: `providers/cycle_guard_test.go`. Policy (model selection, fallback, cooldown, config, results handling) stays in ClawEh. spawnllm logs route into ClawEh's logger via `installSpawnllmLogging` (`spawnllm/logger.SetBackend`). Cognitive memory lives in `github.com/PivotLLM/cogmem` (store, composer, consolidation, portable export, toolspec tools, and the `Session` the loop drives with `Observe`/`Recall`). Which topic domains load each turn is cogmem's routing: tool triggers, then keywords (the agent's `keyword_triggers` and consolidation's `auto_keywords`; `blocked_keywords` are ones the agent removed and consolidation may not re-add), matched in the incoming message and then the previous three, then recency; there is no word matching on memory text. The Memory page shows the three keyword lists read-only (`auto_keywords`/`blocked_keywords` on `GET /api/memory/{id}`). **Same invariant: cogmem imports only toolspec + stdlib (+ SQLite) — never ClawEh.** The host side is `cogmemhost/` (the attachment loader that enforces file-tool permissions, the logging bridge via `cogmem/logger.SetBackend`, and the `config.MemoryConfig` → `cogmem.Settings` mapping); `tools/cogmem` mounts the module's tools under the `cogmem` namespace. Cogmem keeps its own inbox of unconsolidated messages, so it never reads the session archive; the one-time inbox backfill from the archive on upgrade is host code in `agent/memory_wiring.go`. The context engine lives in `github.com/PivotLLM/ctxengine` (transcript, archive, assembly, eviction, compaction, and the `session_*` tools; ClawEh imports its `memory` and `session` packages for the store). **Same invariant: ctxengine imports only spawnllm + toolspec + stdlib (+ SQLite) — never ClawEh.** The host side is in `agent/`: `ContextBuilder.PromptLayers` builds the system prompt layers the engine assembles, `compressModelCaller` (`agent/context_manager.go`) is the one `ModelCaller` that walks the summarization chain for both the engine and cogmem, `agent/llmcontext_logging.go` bridges its logger, and `tools/session` mounts its tools. An age-only compaction is not run inside the turn's adds: the engine marks it due and the host calls `CompactIfDue` after the reply (`agent/deferred_compaction.go`: `runTurn` puts an after-reply queue on the turn's context, the turn's own `runAgentLoop` claims it and queues the call, a caller without one (`ProcessDirect`, the CLI) starts it at the turn's end; it runs in a goroutine on the loop's run context, never the turn's, at most one per session (`deferredCompactions`), holding a reference on the cached manager and never building one; skipped for temporary agents, whose deletion it would block by holding the session; shutdown cancels it and does not wait). The engine's compaction-start hook (`WithCompactionStartFunc` → `compactionStarted`, `agent/compaction_notice.go`) tells a person once per turn when a pass the turn waits on (`Blocking`) starts: "Alice is summarising the conversation so far; the reply may take a moment.", only for a turn answering a person (`processOptions.FromPerson`) whose chat passes `tools.TurnChat`, never for a fresh temporary agent; `runAgentLoop` sets or clears the notice on its context so a nested turn never borrows the outer chat. The hook runs under the manager's lock, so it only enqueues on the bus. The notice carries `bus.OutboundMessage.StillWorking`: once the channel worker has delivered it, the manager starts the typing indicator and sends a placeholder again (`showWorking`, each only if the chat had one), so the chat looks busy until the reply's `preSend` clears them. The engine and cogmem never see each other: the loop observes messages into cogmem after each engine `Add*` and hands cogmem's `Recall` blocks to `Assemble` as injections.
 - **Providers**: claude-cli, codex-cli, antigravity-cli (binary `agy`; `gemini-cli` is an accepted alias since Google deprecated it), cursor-cli use subprocess execution. Timeout via `request_timeout` per-model config → `WithTimeout` constructors in factory. The client implementations live in spawnllm; ClawEh's `factory_provider.go`/`dispatch.go`/`fallback.go`/`cooldown.go` map config → providers and own the policy. The CLIs' permission-bypass flags (`--dangerously-skip-permissions`, `--yolo`, …) are `BypassArgs` in `config/clis.go` and are passed **only** when the provider's `bypass_restrictions` is true (the WebUI checkbox *Allow CLI to bypass restrictions*, default off); a bypass flag in `extra_args` is stripped when it is off. CLI, `shell_exec` and stdio-MCP child processes start from the `internal/childenv` allowlist, never the full service environment (CLIs additionally get their vendor's `ANTHROPIC_*`/`OPENAI_*`/… variables).
 - **Configuration report**: the `report` package builds a config-derived inventory of what the install can do (a security assessment table, listeners, providers and models, tokens as set/not set, channels, per-agent tools and folder access, external services, devices, data, schedules) and renders it as PDF; `GET /api/report/pdf` serves it. The WebUI Check Up page (`/report`, labelled **Check Up** in the sidebar) shows the product identification line and the security assessment table inline (`GET /api/report/assessment`, JSON from the same collector) with a **Full report** button for the PDF. Neither output ever emits a secret value (guarded by tests). See `manual/admin/checkup.md`.
-- **Operator alerts**: `github.com/tenebris-tech/alerter` (queued, de-duplicated alerts; always logged, delivered on channels configured only by `ALERTER_*` variables or `~/.alerter`). ClawEh builds one in `internal/gateway/alerts.go` (app name, short hostname, `<CLAW_HOME>/logs/alerts.log` unless `ALERTER_LOG` is set) and hands it to the agent loop, which passes it to the cooldown tracker and MCP manager; the channel manager and cron service get it too. Channels get it through `BaseChannel.SetAlerter`/`Alert` (injected by the manager). Code with no owner (package singletons, free functions, per-registry providers) raises through the process default in the `alerts` package (`alerts.Send`), set once by ClawEh; tests capture it with `internal/testalerts.Install`. Prefer explicit injection wherever the constructor site has the alerter in hand. Every alert (title, event id, source) is listed in `ALERTS.md`; **add a row there when you add an alert.** Every alert is `alerter.Normal` priority; `Urgent` and `Emergency` mean "reach a person now, at any hour" and are not used by ClawEh. Never raise an alert above Normal without asking, and if one is agreed mark it `*` (Urgent) or `**` (Emergency) in the Priority column. `GET /api/gateway/alerts` tails the file; the Logs page shows it via its source selector. See `manual/admin/alerts.md`.
+- **Operator alerts**: `github.com/tenebris-tech/alerter` (queued, de-duplicated alerts; always logged, delivered on channels configured only by `ALERTER_*` variables or `~/.alerter`). ClawEh builds one in `internal/gateway/alerts.go` (app name, short hostname, `<CLAW_HOME>/logs/alerts.log` unless `ALERTER_LOG` is set) and hands it to the agent loop, which passes it to the cooldown tracker and MCP manager; the channel manager and cron service get it too. Channels get it through `BaseChannel.SetAlerter`/`Alert` (injected by the manager). Code with no owner (package singletons, free functions, per-registry providers) raises through the process default in the `alerts` package (`alerts.Send`), set once by ClawEh; tests capture it with `internal/testalerts.Install`. Prefer explicit injection wherever the constructor site has the alerter in hand. A condition that lasts and is met again on every retry (a model out of credit, a rejected token, a failing job) goes through `alerts.Incidents` (`alerts/incidents.go`): `Report(key, now)` says whether to alert (the first time, then once every `alerts.RemindEvery`, 24 h, with `Occurrence.Note()` appended to the description), `Resolve` ends it when the owner sees the condition gone, `Rearm` lets the next report alert at once. The alerter's own ten-minute window is not enough for such a condition; do not rely on it. Users: the cooldown tracker (per model, with the "Model working again" alert on `MarkSuccess`), `BaseChannel.AlertLasting` (rejected tokens, ended by `ReportConnected`), the channel manager (send failed), cron (job failed), voice (rejected key) and the loop (session store); the MCP manager keeps its own state with the same interval. Every alert (title, event id, source) is listed in `ALERTS.md`; **add a row there when you add an alert**, and mark it "once, then daily" when it uses `alerts.Incidents`. Every alert is `alerter.Normal` priority; `Urgent` and `Emergency` mean "reach a person now, at any hour" and are not used by ClawEh. Never raise an alert above Normal without asking, and if one is agreed mark it `*` (Urgent) or `**` (Emergency) in the Priority column. `GET /api/gateway/alerts` tails the file; the Logs page shows it via its source selector. See `manual/admin/alerts.md`.
 - **Cron**: mtime-based reload from disk; only saves when jobs are due. Prevents CLI/service race.
 - **Error classifier**: uses `errors.Is(err, context.DeadlineExceeded)` to trigger fallback chain.
 - **Multiple Telegram bots**: each `telegram_bots[].id` → channel `telegram-<id>`.
@@ -228,13 +360,30 @@ production instance directly; test against a dev instance.
   agent's next message.
 - **Turn scope** (`tools/turnscope.go`): the ask chain rides the context and the MCP
   session token (`SetTurnScope`) like the sub-agent depth.
+- **Turn chat** (`tools/turn_chat.go`): everything a tool sends to "the current chat"
+  (`msg_send`, `msg_send_file`, ForUser text, `/tools on` breadcrumbs, background
+  results, a `session_clear` restart, a callback `agent_spawn`'s result) goes to the
+  chat of the turn the call belongs to, `tools.ReplyChat` on the call's context, with
+  one rule for every tool (`tools.TurnChat`: no turn, `Ambiguous`, a turn answering an
+  agent, an internal channel). In the loop `runToolCall` sets it to the turn's own
+  chat; on the MCP host it comes from the turns running on the token's session
+  (`SessionTokenStore.BeginTurn`, recorded per turn by `scopeSessionToken`;
+  `ReplyChat`: one turn → its chat, several → `Ambiguous`, service tokens none), and
+  the host passes the same chat as the tool context and to the ForUser, breadcrumb
+  and async publishers. There is no per-session "source" chat: a call never borrows
+  the chat another turn or an earlier one answered. With several turns running,
+  `msg_send`, `msg_send_file`, `session_clear` and a callback `agent_spawn` refuse,
+  and ForUser/breadcrumbs/background results are dropped with a log line.
+  A tool's immediate ForUser output is sent only with
+  `agents.defaults.stream_tool_activity` on, in the loop and on the MCP host
+  (`mcpserver.WithToolOutput`); background results are not gated.
 - **Tool grants**: an agent has only the native tools its own `tools` list names
   (`AgentConfig.IsToolAllowed`, the one rule for the loop, the MCP host, clones,
   sub-agents and Check Up); an absent or empty list means none, there is no
   implicit default set and no install-wide per-tool switch (no Tools page).
   `tools.DefaultEnabledToolNames()` (each tool's `DefaultAllow`) is only what the Agents
   page's "Default tools" button writes into a list (`GET /api/agents/tools`
-  `default_tools`). Suites (`forum`, `fusion`, `maestro`, `cogmem`, `ccv3`) and
+  `default_tools`). Suites (`forum`, `fusion`, `maestro`, `cogmem`, `ccv3`, `classifiers`) and
   `mcp_tools` have their own switches. Check Up lists each enabled agent with no
   tools. An agent whose registry is empty (no native, suite or MCP tool) gets
   `noToolsNotice` in its dynamic prompt layer (`ContextBuilder.WithToolsGranted`,
@@ -242,16 +391,24 @@ production instance directly; test against a dev instance.
   same rule: only the `skills` list (glob patterns, `"*"` = every skill; the
   Agents page's "All skills" writes `["*"]`), absent or empty = none.
 - **Shell permission**: whether an agent may run `shell_exec` is one per-agent
-  switch, off by default: `shell_exec` named in its own `tools` list (WebUI "Allow
-  shell commands") and not in `deny_tools` (`AgentConfig.IsToolAllowed`,
+  setting, off by default: `shell_exec` named in its own `tools` list (WebUI: its box
+  under Internal tools, with a warning icon, "Full access to this app's account") and
+  not in `deny_tools` (`AgentConfig.IsToolAllowed`,
   `config.ShellExecTool`). A `"*"` or prefix entry never includes it. Clones inherit it. There is no channel rule: it applies on every channel and to
   everything acting as the agent (clones, asks, forum turns, MCP session and service
   tokens, cron watch probes). Fresh temporary and human agents have no tools. It is
   an ordinary tool: an agent without the grant never has it registered, so it is
   never offered to the model and every path (in-loop, MCP host, watch probes) finds
   it missing like any other tool the agent lacks; nothing refuses it by name at call
-  time (`agent/shell_permission_test.go`).
-- **Human agents** (`config/human.go`, `providers/human.go`, `agent/human.go`; `manual/agents/human-agents.md`): an agent whose model (matched by `model_name`) is on a provider with protocol `human` represents a person. It takes work only from asks: turns on `constants.AgentMessageChannel` with `reply_required`; the reply goes back to the asker through `runTurn`'s ask path; `runHumanTurn` drops anything else (a person writing to it is told "Bob only answers questions from agents."; device agent lists leave it out), and cron (`tools/schedule`) and `HandleExternalMessage` (`ErrHumanAgent`) refuse it at the source. An ask posts the latest user message to the agent's one default-binding chat (`CronTarget`) and returns the person's next text there (`askHuman`: one request per agent at a time, the timeout runs from posting and never outlasts the asker's deadline (`askRegistry.wait`), a request whose asker stops waiting is withdrawn in the chat and an answer that reaches no asker is acknowledged (`humanAnswerUnused`), while it waits the asker has lent its slot and the asked turn holds none (`turnSlot`), `/cancel` → `tools.OutcomePersonCancelled`, a request the channel could not post ends at once with `tools.OutcomePersonUnreachable` and a line from the channel's reason (`humanUnreachableError`: "Bob's chat is not set up." / "is unavailable." / "Bob's device is offline." / "Bob's chat can't be reached." / "Couldn't reach Bob's chat."), shutdown → cancelled and withdrawn, never replayed); nothing else of the turn runs, so no model sees the conversation (no tools at all, no cogmem, empty summarization chain, no vision or transcription). The person's chat is handled before any session: `Run` → `dispatchInbound` takes text answers in arrival order (`takeHumanAnswer`, the only place an answer is taken; it clears typing/placeholder via `channels.Manager.DismissInbound` in the background), `processSessionMessage` → `handleHumanChat` does the rest (only `/` is a command there; "Nothing is waiting for your answer.", "That request has already timed out.", "That request was withdrawn.", "Please answer with text.", "Bob is not running." for a set-aside agent, whose chat is known from config). `config.HumanProblems` is the rule set (only that model; exactly one binding, its default, naming one chat no other agent is bound to; never the default agent; a human model never a default/summarization/vision/sub-agent model and its name never another model's): `Store.Update` refuses new violations except a missing chat, `runtimeConfig` and `claw agent` set violators aside (`PruneHumanProblems`), `GET /api/agents/human` feeds the Agents card notes and the System/Models page notes. The default agent (routing and agentreg) skips human agents; agentreg refuses cloning one or a temporary agent on a human model (`agentreg.ErrHuman`).
+  time (`agent/shell_permission_test.go`). The Agents page's **Coding tools** button
+  (beside **Default tools**) only adds the eleven tools of `CODING_TOOLS`
+  (`agent-model.ts`, frontend only: `file_list`, `file_glob`, `file_read_lines`,
+  `file_search_lines`, `file_edit_lines`, `file_insert_lines`, `file_delete_lines`,
+  `file_edit`, `file_write`, `shell_exec`, `agent_spawn`) that the `tools` list does
+  not already grant (`withCodingTools`; `"*"`/prefix entries count, except for
+  `shell_exec`); there is no backend concept. **Default tools** never adds
+  `shell_exec` and leaves its box as it was.
+- **Human agents** (`config/human.go`, `providers/human.go`, `agent/human.go`; `manual/agents/human-agents.md`): an agent whose model (matched by `model_name`) is on a provider with protocol `human` represents a person. It takes work only from asks: turns on `constants.AgentMessageChannel` with `reply_required`; the reply goes back to the asker through `runTurn`'s ask path; `runHumanTurn` drops anything else (a person writing to it is told "Bob only answers questions from agents."; device agent lists leave it out), and cron (`tools/schedule`) and `HandleExternalMessage` (`ErrHumanAgent`) refuse it at the source. An ask posts the latest user message to the agent's one default-binding chat (`CronTarget`) and returns the person's next text there (`askHuman`: one request per agent at a time, the timeout runs from posting and never outlasts the asker's deadline (`askRegistry.wait`), a request whose asker stops waiting is withdrawn in the chat and an answer that reaches no asker is acknowledged (`humanAnswerUnused`), while it waits the asker has lent its slot and the asked turn holds none (`turnSlot`), `/cancel` → `tools.OutcomePersonCancelled`, a request the channel could not post ends at once with `tools.OutcomePersonUnreachable` and a line from the channel's reason (`humanUnreachableError`: "Bob's chat is not set up." / "is unavailable." / "Bob's device is offline." / "Bob's chat can't be reached." / "Couldn't reach Bob's chat."), shutdown → cancelled and withdrawn, never replayed); nothing else of the turn runs, so no model sees the conversation (no tools at all, no cogmem, empty summarization chain, no vision or transcription). The person's chat is handled before any session: `Run` → `dispatchInbound` takes text answers in arrival order (`takeHumanAnswer`, the only place an answer is taken; it clears typing/placeholder via `channels.Manager.DismissInbound` in the background), `processSessionMessage` → `handleHumanChat` does the rest (only `/` is a command there; "Nothing is waiting for your answer.", "That request has already timed out.", "That request was withdrawn.", "Please answer with text.", "Bob is not running." for a set-aside agent, whose chat is known from config). `config.HumanProblems` is the rule set (only that model; exactly one binding, its default, naming one chat no other agent is bound to; never the default agent; a human model never a default/summarization/task/sub-agent model and its name never another model's): `Store.Update` refuses new violations except a missing chat, `runtimeConfig` and `claw agent` set violators aside (`PruneHumanProblems`), `GET /api/agents/human` feeds the Agents card notes and the System/Models page notes. The default agent (routing and agentreg) skips human agents; agentreg refuses cloning one or a temporary agent on a human model (`agentreg.ErrHuman`).
 - **Character cards** (`ccv3/`, design in `private/ccv3.md`; `manual/agents/character-cards.md`):
   Character Card V3 documents in one library, `<CLAW_HOME>/cards/<id>.json`
   (`config.CardsPath()`, created by `internal/layout`, in the backup; ids follow
@@ -384,6 +541,253 @@ production instance directly; test against a dev instance.
   runs keep their launched limits). Preflight refuses a limit or a layer's
   `max_calls` above them ("... is more than this install allows (N)"), and
   `forum_readme` ends with the current maximums.
+- **Classifiers** (`classifier/`, design in `private/classifier-design.md`, plan
+  `private/classifier-impl.md` whose §12 Decisions win; `manual/agents/classifiers.md`):
+  an agent with the per-agent switch `classifiers` (`agents.list[].classifiers`
+  `{enabled, model}`, `AgentSuiteEnabled` case "classifiers", default off, WebUI
+  "Allow classifiers" + "Classifier model" on the Agents page, which lists only
+  the models in the Classification list on Task models) gets the eleven
+  `classifier_*` tools from `tools/classifier` (suite provider, namespace
+  `classifier`; `SetService` installs the one `*classifier.Service`, built by
+  `internal/gateway/classifier.go` BEFORE `NewAgentLoop`, started once the loop
+  has `Started()`, closed in `shutdownGateway` right after the forum, `Reload()`
+  on every config reload). A classifier lists items with a source tool, skips
+  ids already handled, fetches the named fields, asks the agent's ONE classifier
+  model (no fallback; the model never has tools: one `Chat` with no tool
+  definitions, reply parsed strictly, one retry, else `unclassified`) and runs
+  the category's action. Definitions are `<workspace>/classifiers/<id>.json`
+  (owner written by ClawEh, compared with `sameAgent`, the third copy of the
+  agent-id rule, `classifier/agentid.go`); run state (processed ids, dry-run
+  decisions, activity log, last run) is `classifiers/state.db`, agents-area
+  modes. The on-disk names are in the import-free leaf
+  `classifier/classifierfs` (`BaseDirName`, `StateFile`, `DefinitionExt`,
+  `TempPrefix`; config, backup, file tools, Check Up use it); the folder is in
+  `AlwaysReadableWorkspaceDirs` (read, never written, by the file tools). **Invariant: `classifier` imports no ClawEh
+  package but `classifier/classifierfs`, `internal/mergepatch` and
+  `internal/dotpath`** (`classifier/imports_test.go`); `internal/dotpath` is
+  the one path rule shared with watch probes. The host is
+  `agent.ClassifierHost` (`agent/classifier_host.go`): every source, fetch and
+  action tool runs through the owner's own registry with
+  `ToolRegistry.ExecuteUnattended` (session-scoped tools refused, grants
+  re-read every call; a missing/refused tool is `classifier.ToolUnavailable`
+  (`ErrToolUnavailable`), any other failure carries the reason only, the
+  classifier names the tool with its role (`toolError`: "source mail_list:
+  the tool failed", "action for category urgent: tool ... is not
+  available"; the host strips the registry's `tool "x" ...` prefix);
+  an `untrusted.Wrap` result is returned through `untrusted.Unwrap`, so MCP
+  and web tools work as source/fetch), errors redacted by `Host.Redact`
+  (`ClassifierHost.Redact` = `redactSecrets`, wired in the gateway; item ids
+  never) before they are stored, logged, notified or returned. **Untrusted
+  text rule:** every failure is a `cause` (`classifier/cause.go`) with a
+  `summary` in ClawEh's words and a `detail` (a tool's or provider's
+  message, a result excerpt); notices and chat lines use the summary only,
+  the detail reaches the agent only through `Host.WrapUntrusted`
+  (`untrusted.Wrap`, wired in the gateway), and the tool results that hold
+  item data (activity, status, list, test, rerun, a source refusal's detail)
+  are wrapped whole. A CLI model runs through `ProviderDispatcher.GetIsolated` in
+  a per-call empty folder `internal/temp/classifier-<id>-*` (no bypass flags),
+  cooldowns honoured, the summary posted directly to the owner's default chat
+  (`CronTarget`, no model turn; `report.summary` `on_problems`/`always`/
+  `never`), audit kinds `classifier_write` and `classification`. A run in
+  `RunError` (not a model cooldown, which writes nothing and changes no
+  count; `stop_after_failures` reached is `RunError` "stopped after N
+  consecutive item failure(s): <summary of the cause most of the streak
+  shares, ties by roleRank>", the last item's full error in the row's
+  `detail`; a cancelled context, i.e. shutdown, is `RunStopped` "the service
+  stopped", even after a streak, and an item it interrupted is not stored or
+  counted; a test/rerun cut short is `ErrInterrupted`, or `ErrActionPending` when a rerun stopped in its action after storing the classification; an item whose classification cannot be stored fails with the operator cause `errStateWrite`) is a failed run
+  (`trackFailure`, logged at warn), and a definition file that turns
+  invalid is reported through the same path once per content
+  (`reportInvalid`, sha256 in state.db `invalid_reports`, dropped when the
+  file is valid again; "Classifier X is not run (...)"): an activity row with outcome
+  `run_failed`, NULL `item_id`, its error, `count` and `last_at`
+  (`addRunFailure` folds the same error into the open row,
+  `run_failures.open_row`, while only failed items follow it, until a run
+  that succeeds, other activity, a different error or dry-run flag; a
+  stopped run changes nothing; retention by `COALESCE(last_at, at)`;
+  `migrateActivity` rebuilds an older table), and error notices per
+  classifier from `run_failures` (`failures`, `muted_until`): the first
+  failure notifies, the second notifies with the mute text and sets
+  `muted_until` = now + `ErrorMute` (24h, a constant), later ones are silent
+  until a failure finds the mute expired (no timer), which starts a new
+  cycle. A run that succeeds resets `failures` (not the mute); a
+  successful `Create`/`Update` resets both (`clearFailures`);
+  `report.errors` false (`*bool`, default true) never notifies. A notice is
+  the summary "Classifier <id>: the run failed (<cause summary>)." (on_problems and
+  always; never posts nothing) plus, on the second, "Further errors won't be
+  reported for 24 hours.", and, in every summary mode,
+  `Notifier.RunFailed`, a `system` inbound message (sender `classifier`,
+  `Internal`, the owner's main session, `MetaOriginChannel`/`ChatID` its
+  default chat, else the ask channel) with the same text, advice by cause
+  (`classifier/cause.go` `advice`: definition "Check and fix ...;
+  classifier_test shows the result.", tool/model error "This looks like a
+  problem with <tool> itself ...", missing tool, `ErrNoModel` "Only the
+  operator can fix this on the Task models page; tell the user.", state,
+  invalid file), on the second the mute
+  sentence with the exact `classifier_update` call, then the detail wrapped.
+  A state.db that cannot be opened (`ErrStateUnavailable`): per folder (one
+  agent) once per `ErrorMute` — kept in memory (`stateMuted`), so a restart
+  can repeat it once — an ERROR line (debug otherwise),
+  `Notifier.StateFailed` (alert `classifier-state:<agent>`), one notice and
+  one chat line naming no classifier; Check Up marks it
+  (`classifier.CheckState`: the file, or with none whether the folder can
+  take it; else `classifier.LastStateError`, what the service last met,
+  kept per folder until it opens or nothing met it for `ErrorMute`; only a classifier with `report.errors` on reports it and starts the mute). Activity rows also carry
+  `replies` (both model replies of an unclassified item), `missing_fields`,
+  `shortened_fields`, `action_args` of a failed action, and a failed
+  fetch's list-entry fields. Fetch fields are three-state by
+  `dotpath.Lookup` (`Found`/`Empty`/`Absent`; `dotpath.Get`, used by watch
+  probes, substitution and source paths, is unchanged): empty (null, an
+  empty list anywhere along the path, an ending empty string, or a fan-out
+  whose holders are all empty) is `Field.Empty`, shown to the model as
+  `field "x" (empty)` with no value lines and stored as `""` in `fields`;
+  only absent (missing key, scalar where an object is expected, a
+  non-empty list none of whose elements has it) is in `missing_fields`;
+  a fetch where every field is absent fails the item; `{{fetched.x}}` of
+  an empty field (`emptyField` in `fetched`) fails the item before the
+  tool ("... is empty for this item"). `TestResult` has `fields` too.
+  `classifier_test`/`rerun` pass a failing source through as a refusal
+  (`sourceRefusal`). `classifier_activity`
+  takes `outcome` (`ActivityOutcomes`, others refused) and searches the
+  error; `Status` has `errors_reported`, `failed_runs`,
+  `errors_muted_until`; Check Up's Classifiers table an "Error notices"
+  column. A clone acts as its source (`Scope.Clone` in audit details). Markdown instructions
+  (`classifier/instructions.go`): `classify.instructions_file` (one `.md`)
+  and `instructions_dir` (its `*.md`, any case, not recursive, hidden and
+  non-regular skipped, sorted case-insensitively by name, ties by exact
+  name), workspace-relative and inside `files/` (`ValidInstructionsPath`;
+  `instructions` may then be empty), are read on every run, test and rerun
+  through `Host.Instructions` (`InstructionsReader`, implemented by
+  `ClassifierHost.ReadInstructionsFile`/`Dir` in
+  `agent/classifier_instructions.go`: only for an agent with
+  `file_read_lines`/`file_read_bytes`, `files.Reader` Resolve/Allowed/Open
+  plus `os.SameFile`, link target inside `<ws>/files`, 256 KiB per file and
+  1 MiB per folder); prompt order inline, file, folder files (each section
+  starts with `=== Rules from <label> ===`, `sectionMarker`; the files' own
+  headings stay text), numbered rules, categories.
+  **Rule citations** (`classifier/rules.go`, `citations.go`): every source
+  has a label (`promptSections`: `instructions`, the instructions file's
+  cleaned workspace path, each folder file's name, `rule N`);
+  `replyContract` asks for line 2 a reason, line 3 `Rules: <labels>`, and
+  tells the model to write exactly `Rules: none` when no rule applied
+  (never leave it out); both lines stay optional to the parser: `parseCitation` reads a `Rules:` line
+  (plural only; `Rule:` is a reason) in place 2 or 3 only, a malformed one
+  is ignored, never a retry. `resolveLabel`: the exact label wins; loose
+  forms (any case, without `.md`, the instructions file's bare name, `rule
+  #N`/`rules N`/`#N`/`N`) count only when they fit exactly one label;
+  bare `none` (any case) is never a label; `none` beside labels is
+  dropped. Activity and processed columns `rules`
+  (JSON list, `["none"]`, NULL when empty) and `unknown_rules` (INTEGER, `addColumn` takes a
+  type); a reused answer reuses its stored citation. `Decision.Rules`
+  (`omitzero`) is never nil for a decision with a category: labels,
+  `["none"]`, or `[]` for no Rules line / only unknown labels (`resolve`;
+  `storedRules` on reuse and activity reads, so old rows read `[]`). `ActivityQuery.Rule`
+  (`json_each`; resolved against current labels plus every label the log
+  cites, unknown refused), `Status.RuleUsage` over `activity_hours` (each
+  item once, by its latest categorised row; current labels only; gone ones
+  in `no_longer_present`; `with_rules` + `none` + `no_citation` =
+  `decisions`; nil when the Markdown cannot be read), `Status.Counts`
+  (processed by status, live only) and `DryRunCounts` (`dry_run` table by
+  category, `unclassified` included), `TestExcluding` (`classifier_test` `exclude_rules`:
+  `instructions.exclude` drops sections, rules keep their numbers; one
+  fetch, two model calls, `changed` nil unless both answered). A missing/unreadable file or a prompt over
+  `max_prompt_chars` ends the run in `RunError` before the source is called;
+  create/update/validate check only what exists (`checkInstructions`);
+  `Test` returns `TestResult` with `system_prompt`. Decisions: interval trigger
+  only (`trigger.every_seconds`, the core's own timer, nothing in cron);
+  create/update also call the source tool once; `classifier_*` tools are
+  refused as source, fetch or action; per-definition defaults parallel 1,
+  stop_after_failures 5, items_per_run = `max_items_per_run`, `fetch.max_chars`
+  = `max_item_chars`, `activity_hours` 72. Hand edits are re-read on mtime/size
+  change and validated the same way; an invalid file is logged and reported to its agent once per change, never run
+  or deleted. Install-wide `classifiers` (`config.ClassifiersConfig`,
+  `config/classifiers.go`: `processed_days` 30, `limits.max_rules` 100,
+  `max_prompt_chars` 20000, `max_item_chars` 50000, `max_items_per_run` 500,
+  `max_parallel` 8, `max_activity_hours` 720, `min_every_seconds` 15, the
+  minimum `trigger.every_seconds`; 0/absent = default, negative refused; System page **Classifiers**, `classifiers-section.tsx`, defaults
+  shared with the frontend through `config/testdata/classifier_defaults.json`). A classifier
+  model must be in the Classification list on Task models (`Config.ClassifierModelUsable`,
+  also checked by `ClassifierHost.Complete`): `Store.Update` writes the first
+  model in that list when a save turns the switch on with none
+  (`completeClassifierModels`; with an empty list it refuses, naming
+  the agent and the Task models page), refuses a new model not in the list
+  (`newClassifierModelProblems`, so also removing the model in use) and a
+  human agent with the switch on (`HumanClassifiers`); one already in the file
+  is only marked. Check Up (`report/classifiers.go`, reading the folders
+  with `classifier.Inspect(ctx, base, ceilings)`): per-agent "Allow classifiers" and
+  "Classifier model" rows (unusable marked, saying so when the Classification list is
+  empty), a "Classifiers" table per agent
+  (invalid and foreign-owned files marked), assessment rows "Classifier model
+  (<agent>)" and "Classifier (<agent>: <id>)", a Data row.
+- **Task models** (`config/task_models.go`, design `private/task-models.md`
+  whose §2 decisions win; `manual/providers/task-models.md`): `task_models`
+  (`result_text_chars`, 0/absent = `DefaultTaskResultTextChars` 8000, negative
+  refused; `echo_transcription`, env `CLAW_TASK_MODELS_ECHO_TRANSCRIPTION`;
+  six ordered lists, one per use, keys `text`, `image`, `tts`, `stt`,
+  `vision`, `classify` (Go fields `TextModels` … `ClassifyModels`), entries
+  `{model}`, image entries also `image_api` ("chat" default | "images"), tts
+  entries also `tts_defaults{voice, format}`; a setting on another list is an
+  unknown key). `model` is a `model_list[].model_name`, never blank, at most
+  once per list, the same model allowed in several lists
+  (`TaskModelsConfig.Validate`, at load and on save; `Normalized` trims on the
+  WebUI save); a list's order is that use's fallback order. **The only way to
+  read a use's models is `TaskModelsConfig.Entries(use)`** (entries with their
+  settings) or `ModelsFor(use)` / `Entry` / `Has` built on it; code outside
+  `config` never names the per-use fields, enforced by
+  `config/task_models_guard_test.go` (`TestTaskModelLists_OnlyReadThroughEntries`,
+  an AST scan with an explicit, currently empty, exception list). Each entry is
+  a model reference site (`task_models.<use>[<name>]`, role "a task model":
+  rename follows it, delete is refused naming the list, a missing model is
+  pruned and the entry dropped, `dropBlankTaskModels`, as is a human model). All speech and image HTTP calls
+  are spawnllm's (`speech`, `imagegen`; no default timeout, so every call has
+  a context deadline); `voice.SpeechBackend(provider)` picks the client by
+  protocol (openai-chat/-responses → `speech.NewOpenAI`, OpenRouter's JSON
+  body chosen by host; `gemini` → `NewGemini`; `elevenlabs` →
+  `NewElevenLabs`); the usability rules (base_url, api_key) live there only.
+  `gemini` and `elevenlabs` are provider protocols for task models only
+  (`config.TaskOnlyProtocol`: base_url optional, api_key required, no chat
+  client in `factory_provider.go`). Built-in uses read their list in order:
+  incoming voice uses `stt` (`voice.DetectTranscriberWithAlerter`,
+  60 s per attempt, every enabled `model_list` entry of such a name),
+  vision describes use `vision` (`wireVisionClients`), classifier
+  models must be in `classify` (see Classifiers). Agents reach
+  text/image/tts/stt through `agent_spawn`'s `kind` (`tools/agents/taskmodels.go`:
+  `Spawner.spawnTask`, refused with `agent_id`/`character_card`, at the max
+  depth, adds no level; `files` (≤10 workspace paths), `media`, `voice`,
+  `format`; wait/callback through the existing task records, `TaskRecord.Kind`;
+  the result text is `taskResultText`). The host is `agent/task_models.go`
+  (`taskModelHost`, injected as `SubagentManagerConfig.TaskRunner`): grant
+  check (`agents.list[].task_models {text, image, tts, stt}`,
+  `AgentConfig.TaskModelAllowed`, "Alice is not allowed to use task models
+  for images."), candidates (the named one, which must be in the kind's
+  list, else the kind's list in order), cooldown skip and fallback, files read like `msg_send_file`
+  (`toolsmsg.OpenReadable`, needs a file-reading tool), text as one
+  dispatcher Chat with no tools (CLI via `GetIsolated` in
+  `internal/temp/task-<agent>-*`), images by `image_api` (chat
+  `LLMResponse.Images` or `imagegen`), tts/stt through `voice.SpeechBackend`
+  (Gemini PCM → WAV); output `files/generated/<date>/<kind>-<time>-<rand>.<ext>`
+  in the caller's workspace (a clone's: its source's) with agents-area modes,
+  text cut to `result_text_chars` with the file named (`cutText`);
+  `recordSpend`, an INFO line per attempt, audit kind `task_model`.
+  `TaskUseSupportFor(protocol, use)` says yes/no/unknown from the protocol
+  alone (gemini/elevenlabs: stt, tts only; STT/TTS: openai-chat/-responses;
+  vision: HTTP protocols, unknown for CLI; images: openai protocols, else
+  unknown; text/classify: any other but a person). WebUI **Task models** page
+  (`/task-models`, Models group; six sections in list order, Generate text,
+  Generate images, Text to speech, Transcription, Describe images,
+  Classification (`TaskUse.Label`), each with its rows, Move up/down,
+  Remove, its own **Model to add**, "Images through" on image rows and
+  Voice/Format on tts rows; `GET`/`PUT /api/task-models`, the PUT
+  replaces the block through `h.updateConfig` and reloads; the GET returns
+  every list (read through `Entries`) and per-model support), Agents page
+  **Allow task models** (four boxes, each noting a kind whose list is empty),
+  defaults and the list order shared with the frontend through
+  `config/testdata/task_model_defaults.json`.
+  Check Up: "Speech to text" / "Vision" assessment rows ("No model in
+  Transcription." / "No model in Describe images.", linked to the page), a
+  "Task models" table in the providers section (one row per list: its models
+  in order and those whose provider can't serve it), a per-agent "Task
+  models" settings row; the capabilities golden lists each agent's kinds.
 - **Tool schemas**: `tools.ToolToSchema` (models) and the MCP host publish every
   object parameter that lists no members with `"additionalProperties": true`
   (`tools.OpenObjectProperties`); some upstreams otherwise send a blank string.
@@ -403,7 +807,8 @@ production instance directly; test against a dev instance.
   `agent_message` tool, `/ask` and `/whisper` ("Messages to other agents are
   limited to 8,000 characters."); the core Ask/Whisper (and so the forum) are
   not capped.
-- **Delivery reasons** (`channels/errors.go`): a failed send says why with a sentinel callers test with `errors.Is`, and `bus.OutboundMessage.OnDelivery` gets it: `ErrUnknownChannel` (not configured; the manager), `ErrNotRunning` (stopped, or no worker), `ErrRecipientOffline` and `ErrRecipientNotFound` (reported by the device, Telegram, Slack, Discord and WebUI channels: a paired device not connected or closing, a WebUI session with no browser open; an unknown/unpaired device, Telegram "chat not found"/upgraded to supergroup and every 403 (blocked, deactivated, can't initiate, bots, kicked), Slack `channel_not_found`/`not_in_channel`/`is_archived`, Discord unknown channel/user), `ErrReceiveOnly`, else `ErrSendFailed`/`ErrTemporary`/`ErrRateLimit` (Telegram: 429 rate limit, carrying its `retry_after` as a `channels.RetryAfterError`: the manager waits it plus `RetryAfterPadding` (5 s) and gives up at once when it exceeds `MaxSendRetryAfter` (60 s); other 4xx send failed; it retries as plain text only on the "can't parse entities" 400). The channels keep the platform's (redacted) reason in the error, so the log and the alert say why. Only `ErrTemporary`/`ErrRateLimit`/unknown errors are retried; `sendSplit` stops at a chunk whose recipient is unavailable. Text and media share one retry loop and one failure report (`retrySend`, `reportSendFailure`). `sendWithRetry` puts one `channels.SendProgress` on the context across a message's retries, so a channel that splits it further (Telegram, when the HTML outgrows one message) resumes after the parts already delivered. Only the first part of a split message is a reply (`sendSplit`, then Telegram's own split); Telegram sets `allow_sending_without_reply`, so a reply to a deleted message still arrives, without the link. The "Channel send failed" alert fires only for a channel that reports itself not running and a send failing after its retries (incl. `ErrSendFailed`); offline/not found log at WARN, receive-only at INFO. Check Up marks a human agent whose chat is on a channel that is not set up (config-derived only, exact channel names).
+- **Delivery reasons** (`channels/errors.go`): a failed send says why with a sentinel callers test with `errors.Is`, and `OnDelivery` on `bus.OutboundMessage` and `bus.OutboundMediaMessage` gets it: `ErrUnknownChannel` (not configured; the manager), `ErrNotRunning` (stopped, or no worker), `ErrRecipientOffline` and `ErrRecipientNotFound` (reported by the device, Telegram, Slack, Discord and WebUI channels: a paired device not connected or closing, a WebUI session with no browser open; an unknown/unpaired device, Telegram "chat not found"/upgraded to supergroup and every 403 (blocked, deactivated, can't initiate, bots, kicked), Slack `channel_not_found`/`not_in_channel`/`is_archived`, Discord unknown channel/user), `ErrReceiveOnly`, else `ErrSendFailed`/`ErrTemporary`/`ErrRateLimit` (Telegram: 429 rate limit, carrying its `retry_after` as a `channels.RetryAfterError`: the manager waits it plus `RetryAfterPadding` (5 s) and gives up at once when it exceeds `MaxSendRetryAfter` (60 s); other 4xx send failed; it retries as plain text only on the "can't parse entities" 400). The channels keep the platform's (redacted) reason in the error, so the log and the alert say why. Only `ErrTemporary`/`ErrRateLimit`/unknown errors are retried; `sendSplit` stops at a chunk whose recipient is unavailable. Text and media share one retry loop and one failure report (`retrySend`, `reportSendFailure`). `sendWithRetry` puts one `channels.SendProgress` on the context across a message's retries, so a channel that splits it further (Telegram, when the HTML outgrows one message) resumes after the parts already delivered. Only the first part of a split message is a reply (`sendSplit`, then Telegram's own split); Telegram sets `allow_sending_without_reply`, so a reply to a deleted message still arrives, without the link. The "Channel send failed" alert fires only for a channel that reports itself not running and a send failing after its retries (incl. `ErrSendFailed`); offline/not found log at WARN, receive-only at INFO. Check Up marks a human agent whose chat is on a channel that is not set up (config-derived only, exact channel names).
+- **Sending files** (`msg_send_file`, `tools/msg/send_file.go`; `agent/send_files.go`): up to 10 files per call, only for an agent granted a file-reading tool (`toolsmsg.CanReadFiles`), each checked with the agent's file-reading permission (`files.Reader` `Resolve`, then `Allowed` on the symlink-resolved path), then opened once (O_NOFOLLOW|O_NONBLOCK, `os.SameFile` with the checked file, regular, within `max_media_size`) and copied from that descriptor (`io.LimitReader`). Destination: the turn's reply chat (see **Turn chat**). Refused for a turn answering an agent (`constants.RepliesToAgent`: asks and sub-agent tasks), an internal channel (`cli`, `system`, `recovery`), no turn, or a channel without `MediaSender` (`Manager.SupportsMedia`, `tools.ErrNoFileSupport`). Each copy (`send-*` in the media staging folder, swept at start by `agent.RemoveStagedFileCopies`) is published as its own message and waited for up to `sendFilesTimeout` (1 min, on the loop's clock); the per-file result is the channel's delivery report, which every path now sends: the dispatcher reports an internal channel, `bus.Close` reports what was still buffered. A `SendMedia` returns an error for a part it cannot send, never skips it. **Generated images** (`agent/generated_images.go`): every `LLMResponse.Images` of an in-loop turn (tool-call iterations included) is handled as it arrives: data saved to `<workspace>/files/generated/<YYYY-MM-DD>/image-<time>-<rand>.<ext>` (`agentModes`, exact), then sent through `SendFiles` to the turn's chat; a turn answering an agent, an internal channel, a channel without media or an image over `max_media_size` gets "…Image saved as <path>." in the reply (`imageReplies`); a URL image is "Image: <url>", never fetched. The model's notes ride its own stored assistant message (the tool-call message of that iteration, or the final reply for images it sent), and a reply of images alone is not poked and ends `ok` (`finishTurn`, `decideTurnReply`).
 - **Built-in channels**: `channels.RegisterBuiltin(name, factory)` adds a channel the manager builds regardless of config, and rebuilds on every reload; a configured channel of the same name wins. None is registered yet.
 - **Channel manager** (`channels/manager.go`, `plan.go`, `reload.go`): one manager for the whole process. `StartAll` starts each channel in its own goroutine and returns once every one has started or failed its first attempt (a failed one retries in the background); outbound to a channel still starting is held and delivered in order (`releaseHold`), and `/ready` is set after `StartAll` returns. At most `maxHeldPerChannel` (1000) messages are held per channel; more are dropped as `ErrNotRunning`. A held backlog goes to the worker as `backlog` (sent before its queue), so a hold ends in one step. `StartAll`, `StopAll` and `Reload` are serialized by `reloadMu`; `StopAll` first cancels the starts in progress (every `Start` gets a context from `startContext`), so a shutdown never waits for a slow start, and a start cancelled that way registers nothing. Channel `Start`s must honour their context (Telegram's getMe runs off the start path, Discord's `Open` is waited for against it). A config reload does not stop the channels: `restartServices` calls `Manager.Reload`, which keeps a channel whose inputs are unchanged untouched (workers, connections, offsets), stops and rebuilds a changed one, starts added and stops removed ones, and logs which at INFO ("Channels reloaded"). A channel's inputs (`channelSpec.inputs`, a digest) are what its factory reads: Telegram and SecMsg their own entries, the others what they register with `RegisterFactoryInputs` next to `RegisterFactory` (the device channel reads gateway settings and the certificate names too, `channels/device/init.go`). No registered inputs (and every built-in) means always rebuilt; a new media store (changed `tools.media_cleanup`) rebuilds every channel. A channel the config no longer asks for is told after its stop (`RemovalAware.Removed`). When SecMsg discovery fails on a reload, that daemon entry's running accounts are kept (`runningSpecs`); a changed daemon entry still stops them. **When a channel factory starts reading another setting, add it to its inputs**, or a save will not apply it. The gateway injects the device channel's agent querier and certificate through `channels.WithBuildHook` (`channelBuildHook`), so a rebuilt device channel gets them. Matrix keeps the account's first start, sync position and handled event ids across rebuilds (`channels/matrix/syncstate.go`), so a rebuilt channel misses and repeats nothing; turning the channel off (`Removed`) or switching account starts fresh.
 - **Agents**: named agents with separate workspaces; bindings route channels to agents.
@@ -448,13 +853,96 @@ production instance directly; test against a dev instance.
   `Refusal() bool` method, which packages that do not import `tools` use, such as the forum)
   is an expected refusal (`tools.IsExpectedRefusal`) and logs at WARN "Tool call refused",
   not ERROR.
-- **Mounts** (`agents.list[].mounts`, `tools/files/mounts.go`): an external folder reached
-  as `<name>/...` beside the workspace folders. The names ClawEh uses inside a workspace
-  are `config.ReservedWorkspaceNames` (one list; add a folder there when code starts
-  creating one): a mount with such a name (any case) is refused by `Store.Update` when a
-  save introduces it, and one already in the file is set aside by `EffectiveMounts`
-  (WARN at load, `GET /api/agents/mounts/ignored` marks it on the Agents page, a Check Up
-  row). The automatic `maestro` mount is the only mount with a reserved name.
+- **Allowed folders** (`agents.list[].allowed_folders`: `{path, notify, note}`,
+  `config/allowed_folders.go`, `tools/files/allowed.go`): real host folders an agent's
+  file tools use by their absolute path besides the workspace. There is no name and no
+  writable flag: ClawEh attempts reads and writes inside a folder and the folder's file
+  permissions decide (a permission error is the refusal "permission denied: <path> is
+  read-only for this app"). `allowedFs`, the outermost file-system layer, serves a path
+  that resolves (links followed) inside an allowed folder from that folder's `os.Root`
+  sandbox, past the workspace read/write scopes; a path that names an allowed folder but
+  leads out of every one is refused when the agent is confined; relative paths keep
+  resolving from the workspace. The read scope (`readScopedFs`) and the write scope
+  (`writeScopedFs`) check a workspace path both as given and with its links resolved
+  (`resolveInWorkspace`), so files/x -> ../sessions/... is refused ("access denied:
+  <path> resolves outside the folders the agent can read"); a read the scope allows is
+  then made inside the `os.Root` of the read root the resolved path lies in, so a
+  link swapped in after the check cannot leave it. A path matching an allow-read
+  pattern is read through the host only when its resolved target is allow-listed too
+  or inside the same allow-listed folder (`whitelistFs.hostReadPath`). `agentFolders` (tools/files) lists the folders the provider
+  registers per workspace (`SetAllowedFoldersForWorkspace`): each existing absolute
+  allowed folder plus `<workspace>/maestro` when Maestro is on (no mount: `maestro/` is
+  simply part of the workspace then). `files.Reader` uses the same table, so
+  `msg_send_file`, cogmem attachments, forum sources and task-model files follow the same
+  rule. They check with `Resolve`/`Allowed` (named path and link target) and then open
+  with `Reader.Open` and compare the open file with the checked one (`os.SameFile`);
+  the forum gets this as `ToolHost.OpenFile` / `LaunchOptions.OpenFile`. Every
+  file-tool read (`sandboxFs`/`hostFs` `Open` and `ReadFile`) opens non-blocking with
+  O_NOCTTY and refuses anything but a regular file after an fstat ("access denied:
+  <path> is not a regular file"), so a FIFO or device never hangs or is read. In the
+  workspace or an allowed folder the open is made in that `os.Root` (a swapped link
+  cannot leave it); a host path (unrestricted agent, allow-read pattern, skills dir,
+  `hostFs.openRegular`) has its links resolved first, must be a regular file before
+  anything is opened, and is opened with O_NOFOLLOW and compared (`os.SameFile`). `Store.Update` refuses a new non-absolute path ("Alice's allowed folder "x" must
+  be an absolute path.") and a new note over `config.MaxAllowedFolderNoteChars` (100)
+  characters ("Alice's note for "/srv/src" is longer than 100 characters.";
+  `newLongFolderNotes`). The retired `mounts` list is migrated at load and on save
+  (`migrateLegacyMounts`: path and notify kept, one WARN per entry, and a second WARN
+  for a non-writable mount whose folder is writable). A folder the tools skip (not
+  absolute, a line break (`\n`/`\r`, `line_break`, refused on save; a tab is fine),
+  not an existing directory: `Config.IgnoredAllowedFolders`) is marked on its
+  Agents page row (`GET /api/agents/allowed-folders/ignored`) and is a Check Up row
+  "Allowed folder (<agent>)". A path inside the workspace always follows the
+  workspace scopes, even when an allowed folder holds the workspace; only a folder
+  inside the workspace (maestro/) is served by its own sandbox there. The prompt's Workspace
+  section (`ContextBuilder.getIdentity`, `accessibleFolders`) says the workspace is
+  `<ws>`, relative paths start there and work goes under files/, then lists by absolute
+  path `<ws>/files`, `<ws>/skills`, `<ws>/maestro` (Maestro on) and each allowed folder
+  (`AgentConfig.CleanAllowedFolders`), "(read-only)" when `fileutil.Writable` (access(2)
+  W_OK) says no, then ": <note>". With Maestro on, each existing allowed folder is also a
+  Maestro reference directory (`referenceDirsFromAllowedFolders`, tools/maestro/host.go:
+  last path component reduced to `[A-Za-z0-9_-]`, clashes `-2`, `-3`… in config order,
+  names given before missing folders are skipped, Maestro's own top-level reference
+  entries, `reference.BuiltinNames(maestro.EmbeddedReference)`, count as taken; part of
+  `runnerSpec`, so a change rebuilds an idle runner). Maestro (0.5.9+) serves them through
+  `os.Root`, so a link leading out of a folder is not listed or read.
+  New-file notices: `folderwatch` (notify on). The seen-files marker is per agent and
+  folder, in the agent's workspace: `<ws>/state/folderwatch/<hash>.txt` (`markerPath`:
+  sha256 of agent ID + folder; header line, the folder, then relative paths), written
+  with the agents area's modes (`perms.Policy.WriteFile`); not in the backup. No
+  marker (or one for another folder) baselines silently, which covers the upgrade from
+  the old in-folder `.claw` marker; that file is never read, migrated or removed, and
+  the file tools still hide it (`global.FolderMarkerFile`). A failed save is the alert
+  "Allowed folder file list not saved" (`allowed-folder:<agent id>:<path>`), worded
+  for a baseline (no notices at all) or a later save (files may repeat). Each scan
+  deletes the markers in a config agent's workspace that no (agent, folder) pair with
+  notify on wants (`removeStaleMarkers`, one pass per real marker folder, so two
+  spellings of a shared workspace do not delete each other's markers); a `folderwatch.State`, held by
+  `gatewayServices` and shared by the watcher each reload rebuilds, remembers the
+  pairs of the last scan, so a pair that appears while the process runs baselines
+  without reading an old marker, while the process's first scan reads them.
+- **File search tools** (`tools/files/search.go`, `glob.go`): `file_glob` (doublestar
+  patterns relative to `path`, files only, newest first, `maxGlobResults` 200, dot-folders
+  skipped, not a default tool) and `file_search_lines` (line mode only: `include`
+  doublestar glob, a pattern without `/` matching the base name; `context` capped at
+  `maxSearchContextLines` 10, a context result at most `maxSearchOutputLines` 2000 lines;
+  `output` lines/files/count; `.gitignore` files in the searched tree via go-git's
+  `plumbing/format/gitignore`, `walkLines`, only regular files up to 64 KiB,
+  `readGitignore`; above a searched folder, `parentGitignores` reads those of its
+  parents up to the nearest one holding `.git`, anchored there, stopping at the first
+  parent the agent may not read; none without `.git`, and none when they ignore the
+  named folder itself). Without `path` both search `defaultSearchRoots` (the read
+  scope's folders plus allowed folders inside the workspace, maestro/; "." without a
+  read scope; never outside allowed folders), with paths and patterns from the
+  workspace. Patterns and `include` go through `checkGlobPattern` (512
+  characters, 10 `{` groups), and every walk stops on a cancelled context. Both read through
+  `buildFs` like the other reading tools. `file_search_bytes` keeps its own `walk` and
+  has none of these but the cancellation check.
+- **Shell guard** (`tools/shell`): `shell_exec` refuses commands only by the deny
+  patterns, the allow patterns and the custom allow patterns; it does not look at the
+  paths a command names, and `working_dir` may be any directory (relative to the
+  workspace; default the workspace). `restrict_to_workspace` does not affect it: a
+  command runs with the app account's full access.
 - **Agent registry** (`agentreg`): every agent the loop can run, with its origin.
   Config agents are built from config and rebuilt on reload (`Reload` builds the
   whole new set, then swaps it in one step with `al.cfg`; a replaced instance is
@@ -497,7 +985,7 @@ production instance directly; test against a dev instance.
   `BuildFunc` (`AgentLoop.agentBuilder`: instance + tools), a `RetireFunc`
   (`retireAgent`: close the session, revoke tokens) and an `InsertedFunc`
   (`agentInserted`: MCP tools once visible). An agent has a **workspace**
-  (prompt files, `files/`, skills, Maestro, tasks, mounts) and a **state dir**
+  (prompt files, `files/`, skills, Maestro, tasks) and a **state dir**
   (`sessions/` and `cogmem/`): the same directory for a config agent,
   `internal/temp/<uuid>/` for a temporary one. Anything deriving a conversation
   or memory path uses `AgentInstance.StateDir` / `ToolDeps.EffectiveStateDir()`.
@@ -633,7 +1121,7 @@ Hard-won learnings (don't relearn these):
 - A change is not done until its tests are updated AND passing. Run `make test` before calling anything done — it is the whole suite, lint included, and the thing a pipeline would gate on. `go test ./...` is the fast Go-only loop for iterating.
 - **Add tests for new behavior.** New config flags, gating, and branches need a test for both the on and off paths — not just a tweak that makes existing tests compile.
 - **Keep test fixtures in sync with renames/refactors.** When tool names, config keys, or APIs change, grep the whole repo (including `*_test.go`, `test.sh`, `tests/`) and update every reference. A rename that compiles can still break integration tests.
-- **MCP integration tests are part of the suite.** `make test` runs `test.sh`, which runs `tests/test_mcpserver.sh` via the external `probe` binary against an ephemeral ClawEh instance. Every provider tool must be exposed in the test config and probed: success for hermetic tools, graceful-error probes for network/LLM tools (web, skill, agent_spawn). Add a probe case when you add a tool.
+- **MCP integration tests are part of the suite.** `make test` runs `test.sh`, which runs `tests/test_mcpserver.sh` via the external `probe` binary against an ephemeral ClawEh instance. Every provider tool must be exposed in the test config and probed: success for hermetic tools, graceful-error probes for network/LLM tools (web, skill, agent_spawn). Add a probe case when you add a tool. After it, `test.sh` runs `tests/test_classifier.sh`, the classifiers end to end on a gateway of its own: `tests/testdata/classifierllm` is the stub model (a fixed category per marker in the item) and a stub Telegram Bot API for the agent's chat (it also writes the admin account, `-admin-credentials`); the script checks the moved files, `state.db`, the activity log, no reprocessing, a dry run, the problem summary, an invalid hand-edited definition (log and Check Up) and the agents-area modes. Then `tests/test_task_models.sh` runs task models end to end on a gateway of its own: `tests/testdata/taskmodelsllm` is the stub vendor (OpenAI-style chat with text and image output, `/images/generations` and `/images/edits`, `/audio/speech`, `/audio/transcriptions`, and Gemini `generateContent` TTS returning L16 PCM; a model `down-1` answers 503); the script drives `agent_spawn` with `kind` over the MCP host with service tokens for every kind (wait mode, one callback) and checks the result text, the files under `files/generated/<date>/` with the agents-area modes, the WAV header, the fallback past the 503 model, the grant refusal, the `task_model` audit rows and that nothing is written outside the workspaces. Then `tests/test_coding_harness.sh` runs the coding harness end to end on a gateway of its own (needs `git`): one agent whose `tools` are exactly the ten coding tools, a git repository in its `files/` (root and nested `.gitignore`, ignored copies of the function it looks for) and a read-only allowed folder outside the workspace; over the MCP host with the agent's service token it globs, searches with `include`/`context`, reads, edits and counts, writes a file and edits it with the line tools, runs `git diff --stat`/`git status` through `shell_exec`, reads the allowed folder by absolute path and checks that writes there are refused as read-only, that a tool outside the ten is not offered and that a deny pattern still refuses. Its unit-level counterpart is `tools/files/harness_matrix_test.go` (every coding file tool in every place it can be pointed at).
 - **A test gateway must never alert the operator.** Any script that starts a gateway outside production sources `tests/lib/gateway_env.sh` (or exports the same `ALERTER_*` variables empty), so the operator's `~/.alerter` is not used and alerts go only to `<CLAW_HOME>/logs/alerts.log`.
 - After implementing, do a final grep for the old name/symbol to confirm nothing stale remains in code, tests, scripts, or docs.
 
@@ -691,15 +1179,22 @@ The suite logs in first (the WebUI and `/api/*` require the admin account), so
 the dev instance needs one (`claw admin`) and the two variables must be
 exported; it exits 2 with a hint otherwise.
 
-- **The plan is `docs/webui-test-plan.md`** — 155 numbered checks, each with a
+- **The plan is `docs/webui-test-plan.md`** — 178 numbered checks, each with a
   process and an expected result, followable by hand. `tests/frontend-e2e.mjs`
   executes it and prints the same step IDs. Keep the two in step: a step added
   to one belongs in the other.
-- **Dev only.** Groups F, G, N, S and T write (F creates an agent and, in F11, a
-  throwaway agent whose May message it ticks, G edits a config field, N
-  creates a memory domain and curates inside it, S5 creates a throwaway agent
+- **Dev only.** Groups F, G, N, S, T and U write (F creates an agent and, in F11, a
+  throwaway agent whose May message it ticks, in F14 one whose
+  classifiers switch it toggles and in F15 one whose Images task-model
+  grant it toggles, in F16 one whose allowed-folder note it sets and in F17–F20 one
+  (`e2e-code`) whose tools it sets with the Coding tools and Default tools buttons and the `shell_exec` box, G edits three config fields and, in G8, the Images through
+  setting of a Generate images entry on the Task models page, N
+  creates a memory domain and curates inside it and, in N17, imports a domain it shows and deletes, S5 creates a throwaway agent
   and toggles one of its tools, T imports a card and creates a throwaway agent
-  it attaches the card to; I12 adds a temporary model only when no model's
+  it attaches the card to, U adds models to two of the six task-model
+  lists, reorders one, edits Images through and a Text to speech entry's
+  Voice/Format, edits the Task models settings and creates a throwaway agent
+  `e2e-tmk` whose four grants it ticks, then writes the block back; I12 adds a temporary model only when no model's
   request timeout exceeds the turn timeout). All of them revert what they
   change. The runner refuses port 18790 unless `--allow-prod` is given.
   Never point it at production.
@@ -736,7 +1231,8 @@ exported; it exits 2 with a hint otherwise.
   Everything there is unexported: read it through `app.Version()` (display:
   `0.4.69+58d98993` — "+" is SemVer build metadata, ignored when comparing),
   `app.SemVer()` (protocol handshakes: `0.4.69`),
-  `app.Name()`, `app.TagLine()`, `app.Copyright()`. Build tooling greps the
+  `app.Name()`, `app.ShortName()`, `app.BinaryName()`, `app.TagLine()`,
+  `app.Copyright()`. Build tooling greps the
   `version = "..."` line.
 - Always compile after edits before declaring done: `go build ./...` for Go changes, and `cd web/frontend && pnpm run build:backend` for frontend/TypeScript changes. The frontend bundle lands in `web/backend/dist`, which is embedded by `web/backend/embed.go` into the merged claw binary.
 - When investigating a problem, report findings and wait for approval before implementing.

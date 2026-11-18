@@ -21,7 +21,6 @@ export interface CoreConfigForm {
   defaultModels: string[]
   defaultTemperature: string
   summarizationModels: string[]
-  visionModels: string[]
   summarizationDebugCapture: boolean
   compressNormalPercent: string
   compressSafetyPercent: string
@@ -58,6 +57,16 @@ export interface CoreConfigForm {
   forumMaxDurationSeconds: string
   forumCallTimeoutSeconds: string
   forumMaxParallelCalls: string
+  // classifiers.processed_days and classifiers.limits. "" means not set (the
+  // backend default, CLASSIFIER_DEFAULTS, applies).
+  classifierProcessedDays: string
+  classifierMaxRules: string
+  classifierMaxPromptChars: string
+  classifierMaxItemChars: string
+  classifierMaxItemsPerRun: string
+  classifierMaxParallel: string
+  classifierMaxActivityHours: string
+  classifierMinEverySeconds: string
 }
 
 // FORUM_LIMIT_DEFAULTS mirrors config.DefaultForum* in the backend: the value
@@ -68,6 +77,22 @@ export const FORUM_LIMIT_DEFAULTS = {
   max_duration_seconds: 7200,
   call_timeout_seconds: 1800,
   max_parallel_calls: 8,
+} as const
+
+// CLASSIFIER_DEFAULTS mirrors config.DefaultClassifier* in the backend: the
+// value each classifiers field has when it is left out or set to 0. Both are
+// checked against config/testdata/classifier_defaults.json.
+export const CLASSIFIER_DEFAULTS = {
+  processed_days: 30,
+  limits: {
+    max_rules: 100,
+    max_prompt_chars: 20000,
+    max_item_chars: 50000,
+    max_items_per_run: 500,
+    max_parallel: 8,
+    max_activity_hours: 720,
+    min_every_seconds: 15,
+  },
 } as const
 
 export const EMPTY_FORM: CoreConfigForm = {
@@ -85,7 +110,6 @@ export const EMPTY_FORM: CoreConfigForm = {
   defaultModels: [],
   defaultTemperature: "",
   summarizationModels: [],
-  visionModels: [],
   summarizationDebugCapture: false,
   // Compaction fields use "" for "not configured" so the payload can omit them.
   // 0 is a real value here — it disables a trigger — and must be distinguishable
@@ -119,6 +143,14 @@ export const EMPTY_FORM: CoreConfigForm = {
   forumMaxDurationSeconds: "",
   forumCallTimeoutSeconds: "",
   forumMaxParallelCalls: "",
+  classifierProcessedDays: "",
+  classifierMaxRules: "",
+  classifierMaxPromptChars: "",
+  classifierMaxItemChars: "",
+  classifierMaxItemsPerRun: "",
+  classifierMaxParallel: "",
+  classifierMaxActivityHours: "",
+  classifierMinEverySeconds: "",
 }
 
 function asRecord(value: unknown): JsonRecord {
@@ -166,6 +198,8 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
   const devices = asRecord(root.devices)
   const logging = asRecord(root.logging)
   const forumLimits = asRecord(asRecord(root.forum).limits)
+  const classifiers = asRecord(root.classifiers)
+  const classifierLimits = asRecord(classifiers.limits)
 
   const agentList = Array.isArray(agents.list) ? agents.list : []
   const defaultAgentId = asString(
@@ -208,12 +242,6 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
         ? String(defaults.temperature)
         : "",
     summarizationModels: asStringArray(summarization.models),
-    // vision_model + vision_model_fallbacks are one ordered chain in the UI:
-    // index 0 is vision_model, the rest are the fallbacks.
-    visionModels: [
-      asString(defaults.vision_model),
-      ...asStringArray(defaults.vision_model_fallbacks),
-    ].filter(Boolean),
     summarizationDebugCapture: asBool(summarization.debug_capture),
     compressNormalPercent: asNumberString(
       compressionTrigger.normal_percent,
@@ -302,10 +330,23 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
     forumMaxDurationSeconds: asLimitString(forumLimits.max_duration_seconds),
     forumCallTimeoutSeconds: asLimitString(forumLimits.call_timeout_seconds),
     forumMaxParallelCalls: asLimitString(forumLimits.max_parallel_calls),
+    classifierProcessedDays: asLimitString(classifiers.processed_days),
+    classifierMaxRules: asLimitString(classifierLimits.max_rules),
+    classifierMaxPromptChars: asLimitString(classifierLimits.max_prompt_chars),
+    classifierMaxItemChars: asLimitString(classifierLimits.max_item_chars),
+    classifierMaxItemsPerRun: asLimitString(classifierLimits.max_items_per_run),
+    classifierMaxParallel: asLimitString(classifierLimits.max_parallel),
+    classifierMaxActivityHours: asLimitString(
+      classifierLimits.max_activity_hours,
+    ),
+    classifierMinEverySeconds: asLimitString(
+      classifierLimits.min_every_seconds,
+    ),
   }
 }
 
-// asLimitString shows a forum limit that is set; 0 or absent is "" (default).
+// asLimitString shows a forum or classifier limit that is set; 0 or absent is
+// "" (default).
 function asLimitString(value: unknown): string {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? String(value)

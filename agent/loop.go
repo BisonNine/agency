@@ -41,13 +41,19 @@ type AgentLoop struct {
 	started         chan struct{}
 	startedOnce     sync.Once
 	contextManagers sync.Map
-	fallback        *providers.FallbackChain
-	channelManager  *channels.Manager
-	mediaStore      media.MediaStore
-	transcriber     voice.Transcriber
-	cmdRegistry     *commands.Registry
-	mcp             mcpRuntime
-	mu              sync.RWMutex
+	// deferredCompactions holds the agentID:sessionKey of each deferred age
+	// compaction running in the background (runDeferredCompaction), so a
+	// session never has two.
+	deferredCompactions sync.Map
+	fallback            *providers.FallbackChain
+	channelManager      *channels.Manager
+	mediaStore          media.MediaStore
+	// transcriber is swapped by the gateway on every reload while turns
+	// read it: always read it once, through currentTranscriber.
+	transcriber atomic.Pointer[transcriberSlot]
+	cmdRegistry *commands.Registry
+	mcp         mcpRuntime
+	mu          sync.RWMutex
 	// activeRequests counts the turns and model calls in flight, for WaitTurns.
 	activeRequests sync.WaitGroup
 	// modelCalls counts the model calls in flight per provider, for
@@ -178,6 +184,17 @@ type AgentLoop struct {
 	// no reply of its own: the channel manager (SetChannelManager); tests
 	// substitute a fake.
 	dismisser inboundDismisser
+	// chatHolder holds a chat's typing, reaction and placeholder for a
+	// turn's whole life: the channel manager (SetChannelManager); tests
+	// substitute a fake.
+	chatHolder chatHolder
+	// fileChannels says which channels can send files: the channel manager
+	// (SetChannelManager); tests substitute a fake.
+	fileChannels fileChannels
+	// storeFaults holds the session-store alerts to one when a store starts
+	// refusing writes and one a day while it keeps refusing them (see
+	// alertStoreFault).
+	storeFaults alerts.Incidents
 }
 
 // clk is the clock the loop's timing runs on (AgentLoop.clock).
@@ -236,11 +253,6 @@ type SessionTokenIssuer interface {
 	Revoke(sessionKey string)
 	// RevokeAgent removes all tokens for a given agent.
 	RevokeAgent(agentID string)
-	// SetSource records the most recent inbound user-message source (channel +
-	// chatID) on the session record so MCP-routed tool dispatch can publish a
-	// tool's ForUser payload back to the originating user. No-op when the
-	// sessionKey is unknown.
-	SetSource(sessionKey, channel, chatID string)
 	// SetDepth records the sub-agent depth of the turn starting on sessionKey,
 	// so MCP tool calls made with the session's token (CLI providers) run at
 	// it. No-op when the sessionKey is unknown.
@@ -249,9 +261,12 @@ type SessionTokenIssuer interface {
 	// (see tools.AskChain), so MCP tool calls made with the session's token
 	// carry it. No-op when the sessionKey is unknown.
 	SetTurnScope(sessionKey string, askChain []string)
-	// Source returns the source SetSource last recorded for sessionKey (empty
-	// when none or unknown).
-	Source(sessionKey string) (channel, chatID string)
+	// BeginTurn records a turn of sessionKey whose final reply goes to chatID
+	// on channel until the returned end is called, so MCP tool calls made
+	// with the session's token (CLI providers) send their output for "the
+	// current chat" (msg_send, msg_send_file, ForUser text, background
+	// results) to that chat, as in-process tool calls do.
+	BeginTurn(sessionKey, channel, chatID string) (end func())
 }
 
 // publishTimeout bounds handing one message to the bus, so a full queue
@@ -574,6 +589,12 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 	if cm != nil {
 		al.dismisser = cm
+		al.chatHolder = cm
+		al.fileChannels = cm
+	} else {
+		al.dismisser = nil
+		al.chatHolder = nil
+		al.fileChannels = nil
 	}
 }
 
@@ -776,47 +797,28 @@ func (al *AgentLoop) GetConfig() *config.Config {
 	return al.cfg
 }
 
-// SetMediaStore injects a MediaStore for media lifecycle management.
+// SetMediaStore injects a MediaStore for media lifecycle management. Tools
+// that send files reach it through the loop (SendFiles) when they run.
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
-
-	// Propagate store to send_file / msg_send_file tools in all agents.
-	registry := al.GetRegistry()
-	for _, toolName := range mediaStoreTools {
-		forEachTool(registry, toolName, func(t tools.Tool) {
-			if sf, ok := t.(mediaStoreSetter); ok {
-				sf.SetMediaStore(s)
-			}
-		})
-	}
 }
 
-// mediaStoreSetter is a tool that sends files and needs the media store.
-type mediaStoreSetter interface {
-	SetMediaStore(store media.MediaStore)
-}
+// transcriberSlot holds the current transcriber (nil: transcription off).
+type transcriberSlot struct{ t voice.Transcriber }
 
-// mediaStoreTools are the tools SetMediaStore wires.
-var mediaStoreTools = []string{"send_file", "msg_send_file"}
-
-// applyMediaStore gives one agent's file-sending tools the media store, for an
-// agent built after SetMediaStore ran. No-op before it runs.
-func (al *AgentLoop) applyMediaStore(agent *AgentInstance) {
-	if al.mediaStore == nil {
-		return
-	}
-	for _, toolName := range mediaStoreTools {
-		if t, ok := agent.Tools.Get(toolName); ok {
-			if sf, ok := t.(mediaStoreSetter); ok {
-				sf.SetMediaStore(al.mediaStore)
-			}
-		}
-	}
-}
-
-// SetTranscriber injects a voice transcriber for agent-level audio transcription.
+// SetTranscriber injects a voice transcriber for agent-level audio
+// transcription; nil turns it off. Safe while turns are transcribing: a
+// turn keeps the transcriber it read.
 func (al *AgentLoop) SetTranscriber(t voice.Transcriber) {
-	al.transcriber = t
+	al.transcriber.Store(&transcriberSlot{t: t})
+}
+
+// currentTranscriber is the transcriber now set, or nil.
+func (al *AgentLoop) currentTranscriber() voice.Transcriber {
+	if s := al.transcriber.Load(); s != nil {
+		return s.t
+	}
+	return nil
 }
 
 // SetDumpsDir configures the directory where diagnostic dump files are written.

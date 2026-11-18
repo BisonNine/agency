@@ -8,11 +8,12 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/config"
 )
 
 // filesSummary states, from the same inputs the Agents section uses, whether
-// agents are confined to their workspace and mounts.
+// agents are confined to their workspace and allowed folders.
 func filesSummary(cfg *config.Config, env Environment) string {
 	agents := enabledAgents(cfg)
 	ids := agentIDs(agents)
@@ -33,10 +34,10 @@ func filesSummary(cfg *config.Config, env Environment) string {
 		for _, id := range ids {
 			parts = append(parts, "agent "+id+" can read anything user "+user+" can read")
 		}
-		return strings.Join(parts, "; ") + "; writes confined to the workspace write area and mounts " +
+		return strings.Join(parts, "; ") + "; writes confined to the workspace write area and allowed folders " +
 			"(allow_read_outside_workspace is on)."
 	default:
-		return n + " of " + n + " agents confined to their workspace and mounts (" + strings.Join(ids, ", ") +
+		return n + " of " + n + " agents confined to their workspace and allowed folders (" + strings.Join(ids, ", ") +
 			"); allow-listed host patterns: " + itoa(len(cfg.Tools.AllowReadPaths)) + " read, " +
 			itoa(len(cfg.Tools.AllowWritePaths)) + " write."
 	}
@@ -66,7 +67,7 @@ func shellAccess(cfg *config.Config) (string, bool) {
 	if len(with) == 0 {
 		return "No enabled agent is allowed shell commands", false
 	}
-	return "Allow shell commands: " + strings.Join(with, ", "), true
+	return "Shell commands allowed: " + strings.Join(with, ", "), true
 }
 
 func hostOf(raw string) string {
@@ -202,7 +203,7 @@ func collectSummary(ctx context.Context, cfg *config.Config, env Environment) Se
 	return Section{
 		Title: "Summary",
 		Notes: []string{
-			"ClawEh runs as user " + orValue(env.User, unknown) + ", group " + orValue(env.Group, unknown) +
+			app.ShortName() + " runs as user " + orValue(env.User, unknown) + ", group " + orValue(env.Group, unknown) +
 				" on " + orValue(env.Hostname, unknown) + ".",
 		},
 		Tables: []Table{{

@@ -51,14 +51,18 @@ type OutboundMessage struct {
 	// manager, and then receives the Outcome on every chunk.
 	Outcome string `json:"outcome,omitempty"`
 	// OnDelivery, when set, is called once the channel manager has delivered
-	// the message (nil) or given up on it (the error: send failed, unknown
-	// channel, no worker, or shutdown while it was queued for its channel). A
-	// long message split into chunks reports once, with the first non-nil
-	// error among them. It is not called for messages to internal channels,
-	// which never reach the manager, nor for one still in the bus's buffer
-	// when the service stops (its sender's context ends then too). It must
-	// not block.
+	// the message (nil) or given up on it (the error: send failed, unknown or
+	// internal channel, no worker, shutdown while it was queued for its
+	// channel, or the bus closed while it was in its buffer). A long message
+	// split into chunks reports once, with the first non-nil error among
+	// them. It must not block.
 	OnDelivery func(error) `json:"-"`
+	// StillWorking marks an interim message sent while the turn goes on (a
+	// notice that the reply will take a while). Sending it clears the chat's
+	// typing indicator and placeholder like any message; once it is
+	// delivered, the channel manager shows them again, so the chat still
+	// looks busy until the reply.
+	StillWorking bool `json:"-"`
 }
 
 // Outcomes of a turn, carried on its final reply (OutboundMessage.Outcome).
@@ -119,4 +123,8 @@ type OutboundMediaMessage struct {
 	Channel string      `json:"channel"`
 	ChatID  string      `json:"chat_id"`
 	Parts   []MediaPart `json:"parts"`
+	// OnDelivery, when set, is called once the channel manager has delivered
+	// the files (nil) or given up on them (the error), as
+	// OutboundMessage.OnDelivery is. It must not block.
+	OnDelivery func(error) `json:"-"`
 }

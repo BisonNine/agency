@@ -161,8 +161,9 @@ func GetLogMessageContent() bool {
 	return logMessageContent
 }
 
-// SetFileModes sets the modes the log directory and log files are created
-// with from now on (default 0700 and 0600). Existing files keep their mode.
+// SetFileModes sets the exact modes the log directory and log files are
+// created with from now on (default 0700 and 0600). Existing files keep
+// their mode.
 // A zero mode keeps the current one.
 func SetFileModes(dirMode, fileMode os.FileMode) {
 	mu.Lock()
@@ -184,11 +185,18 @@ func EnableFileLogging(filePath string, jsonFormat bool) error {
 // enableFileLoggingLocked opens (or reopens) claw.log and its companion
 // error.log. Callers must hold mu.
 func enableFileLoggingLocked(filePath string, jsonFormat bool) error {
-	if err := os.MkdirAll(filepath.Dir(filePath), logDirMode); err != nil {
-		return fmt.Errorf("failed to create log directory: %w", err)
+	logDir := filepath.Dir(filePath)
+	if _, statErr := os.Stat(logDir); os.IsNotExist(statErr) {
+		if err := os.MkdirAll(logDir, logDirMode); err != nil {
+			return fmt.Errorf("failed to create log directory: %w", err)
+		}
+		// Exactly logDirMode, whatever the umask.
+		if err := os.Chmod(logDir, logDirMode); err != nil {
+			return fmt.Errorf("failed to set log directory mode: %w", err)
+		}
 	}
 
-	newFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFileMode) //nolint:gosec // log path from config
+	newFile, err := openLogFile(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
@@ -202,7 +210,7 @@ func enableFileLoggingLocked(filePath string, jsonFormat bool) error {
 
 	// error.log lives beside claw.log and captures errorLogLevel and above.
 	errorPath := filepath.Join(filepath.Dir(filePath), errorLogName)
-	ef, err := os.OpenFile(errorPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFileMode) //nolint:gosec // error.log beside the configured log file
+	ef, err := openLogFile(errorPath)
 	if err != nil {
 		return fmt.Errorf("failed to open error log file: %w", err)
 	}
@@ -213,6 +221,24 @@ func enableFileLoggingLocked(filePath string, jsonFormat bool) error {
 	errorLogPath = errorPath
 	errorLogger = buildFileLogger(errorFile, jsonFormat)
 	return nil
+}
+
+// openLogFile opens path for appending, creating it when missing. A file it
+// creates takes exactly logFileMode, whatever the umask; an existing one keeps
+// its mode (the gateway sets it at start). Callers must hold mu.
+func openLogFile(path string) (*os.File, error) {
+	_, statErr := os.Stat(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFileMode) //nolint:gosec // log path from config, or error.log beside it
+	if err != nil {
+		return nil, err
+	}
+	if os.IsNotExist(statErr) {
+		if chErr := f.Chmod(logFileMode); chErr != nil {
+			closeLogFile(f)
+			return nil, chErr
+		}
+	}
+	return f, nil
 }
 
 func buildFileLogger(w io.Writer, jsonFormat bool) zerolog.Logger {
@@ -440,13 +466,20 @@ func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
 }
 
 func logMessage(level LogLevel, component string, message string, fields map[string]any) {
-	if level < currentLevel {
+	// The writers (SetLevel, the file setup, RedirectForTest) change these
+	// under mu; read them under it too, so a goroutine logging while the
+	// logger is reconfigured does not race.
+	mu.RLock()
+	minLevel, out, fileOut, errOut, errLevel := currentLevel, logger, fileLogger, errorLogger, errorLogLevel
+	mu.RUnlock()
+
+	if level < minLevel {
 		return
 	}
 
 	callerFile, callerLine, callerFunc := getCallerInfo()
 
-	event := getEvent(logger, level)
+	event := getEvent(out, level)
 
 	// Build combined field with component and caller
 	if component != "" {
@@ -459,8 +492,8 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	event.Msg(message)
 
 	// Also log to file if enabled
-	if fileLogger.GetLevel() != zerolog.NoLevel {
-		fileEvent := getEvent(fileLogger, level)
+	if fileOut.GetLevel() != zerolog.NoLevel {
+		fileEvent := getEvent(fileOut, level)
 
 		if component != "" {
 			fileEvent.Str("component", component)
@@ -471,8 +504,8 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	}
 
 	// Mirror problems (errorLogLevel and above) to error.log for quick scanning.
-	if level >= errorLogLevel && errorLogger.GetLevel() != zerolog.NoLevel {
-		errEvent := getEvent(errorLogger, level)
+	if level >= errLevel && errOut.GetLevel() != zerolog.NoLevel {
+		errEvent := getEvent(errOut, level)
 
 		if component != "" {
 			errEvent.Str("component", component)

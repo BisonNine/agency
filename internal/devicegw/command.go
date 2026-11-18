@@ -15,10 +15,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/PivotLLM/ClawEh/app"
 	"github.com/PivotLLM/ClawEh/channels/device"
 	"github.com/PivotLLM/ClawEh/config"
 	"github.com/PivotLLM/ClawEh/global"
 	"github.com/PivotLLM/ClawEh/internal"
+	"github.com/PivotLLM/ClawEh/internal/perms"
 	"github.com/PivotLLM/ClawEh/utils"
 )
 
@@ -43,8 +45,10 @@ func openStore() (*device.Store, *config.Config, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	// The pairing database is a secret store: it keeps the configured mode.
+	perms.SetPolicy(perms.PolicyFor(cfg))
 	stateDir := filepath.Join(cfg.DataDir(), global.InternalDir)
-	if mkErr := os.MkdirAll(stateDir, 0o700); mkErr != nil {
+	if mkErr := os.MkdirAll(stateDir, perms.SecretModes().Dir); mkErr != nil {
 		return nil, nil, mkErr
 	}
 	store, err := device.OpenStore(context.Background(), filepath.Join(stateDir, "gateway.db"))
@@ -96,7 +100,7 @@ func pair() error {
 		fmt.Printf("  %s://%s:%d\n", payload.Protocol, host, payload.Port)
 	}
 	if changed {
-		fmt.Println("(generated a shared token and enabled the device listener; a running claw will pick this up within a few seconds)")
+		fmt.Printf("(generated a shared token and enabled the device listener; a running %s will pick this up within a few seconds)\n", app.ShortName())
 	}
 	host := dev.Host
 	if host == "" {
@@ -108,7 +112,7 @@ func pair() error {
 	if dev.ExternalURL == "" && len(payload.IPs) == 0 {
 		fmt.Println("WARNING: no routable LAN IPv4 address detected; set channels.device.external_url.")
 	}
-	fmt.Println("\nAfter the device connects, approve it with: claw devices approve <request-id>")
+	fmt.Printf("\nAfter the device connects, approve it with: %s devices approve <request-id>\n", app.BinaryName())
 	return nil
 }
 

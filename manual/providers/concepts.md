@@ -9,8 +9,8 @@ A **provider** is a named endpoint. It holds what is shared by everything reache
 | Field | Config key | Meaning |
 |---|---|---|
 | Name | `name` | A unique name. Models refer to the provider by it. |
-| Protocol | `protocol` | The wire protocol: `openai-chat`, `openai-responses`, `azure`, `anthropic` (same as `anthropic-messages`), one of the CLI protocols (`claude-cli`, `codex-cli`, `antigravity-cli`, `cursor-cli`), or `human` (see [Human agents](../agents/human-agents.md)). |
-| Base URL | `base_url` | Required for the HTTP protocols. Not used by CLI providers. |
+| Protocol | `protocol` | The wire protocol: `openai-chat`, `openai-responses`, `azure`, `anthropic` (same as `anthropic-messages`), one of the CLI protocols (`claude-cli`, `codex-cli`, `antigravity-cli`, `cursor-cli`), `human` (see [Human agents](../agents/human-agents.md)), or `gemini` or `elevenlabs` for speech [task models](./task-models.md#gemini-and-elevenlabs) only. |
+| Base URL | `base_url` | Required for the HTTP protocols; optional for `gemini` and `elevenlabs` (the vendor's own). Not used by CLI providers, and removed from them when the configuration is saved. |
 | API Key | `api_key` | The key for a cloud service. CLI providers sign in on their own and need none. |
 | HTTP Proxy | `proxy` | Optional outbound proxy. |
 
@@ -95,7 +95,7 @@ In each key, 0 means the default and a negative number turns cooldown off for th
 ### What you see
 
 - In the chat: `⚠️ Claude Sonnet 5.5 unavailable — rate limited (retry in 7m). Using OpenAI GPT 5.5.` Several skipped models are summed up on one line.
-- Operator [alerts](../admin/alerts.md): one when a model is parked for a key or billing failure (raised on the first such failure), and one when a model is parked after repeated failures of another kind, once the 1, 3 and 5 minute steps are used up.
+- Operator [alerts](../admin/alerts.md): one when a model is parked for a key or billing failure (raised on the first such failure), and one when a model is parked after repeated failures of another kind, once the 1, 3 and 5 minute steps are used up. A model that stays broken is parked again each time its cooldown ends, but the alert is sent once and then at most once a day; when the model answers again, one "Model working again" alert says so.
 - Chat commands: `/cooldowns list` shows parked models; `/cooldowns clear` clears all of them, and `/cooldowns clear <provider>/<model>` clears one. `/retry` clears all cooldowns and resends your last message.
 
 ## Context window and output length
@@ -123,7 +123,7 @@ Every turn is also bounded by **Turn timeout (s)** on the System page (`agents.d
 
 ## Models used on the side
 
-Besides the agent's own models, two chains are set on the **System** page.
+Besides the agent's own models, the memory chain is set on the **System** page and the vision chain on the [Task models](./task-models.md) page.
 
 ### Memory models
 
@@ -142,7 +142,7 @@ A model can see images only when its **Vision (tool-result images)** setting (`v
 - **User message** (`user_message`): images are added as a follow-up message. Works on chat-completion models.
 - **Tool response** (`tool_response`): images are attached to the tool result itself. The OpenAI Responses API (`openai-responses`) and xAI accept this; plain OpenAI chat does not, so use **User message** there.
 
-When an agent's model is set to **Off** and it receives an image, ClawEh sends the image to the **Vision models** chain (`agents.defaults.vision_model`, then `agents.defaults.vision_model_fallbacks`) for a text description and gives the agent that description. With no vision model set, images are dropped for such models.
+When an agent's model is set to **Off** and it receives an image, ClawEh sends the image to the models in **Describe images** on the [Task models](./task-models.md) page, in order, for a text description and gives the agent that description. While that list is empty, images are dropped for such models.
 
 ## Other model settings
 

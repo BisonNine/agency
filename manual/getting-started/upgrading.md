@@ -1,6 +1,6 @@
 # Upgrading
 
-This page explains how to upgrade ClawEh and what to check after upgrading to 0.6.0.
+This page explains how to upgrade ClawEh and what to check after upgrading to 0.6.0 and 0.6.4.
 
 ## Upgrade with `claw upgrade`
 
@@ -71,7 +71,7 @@ See [Tools and skills](../agents/tools-and-skills.md).
 
 ### Shell commands are a per-agent switch
 
-`tools.exec.allow_remote` and the install-wide shell setting are gone. Turn on **Allow shell commands** on the card of each agent that should run shell commands. It is off by default. See [Tools and skills](../agents/tools-and-skills.md#shell-commands).
+`tools.exec.allow_remote` and the install-wide shell setting are gone. Tick `shell_exec` under **Internal tools** on the card of each agent that should run shell commands. It is off by default. See [Tools and skills](../agents/tools-and-skills.md#shell-commands).
 
 ### CLI providers no longer bypass their permission prompts
 
@@ -96,6 +96,44 @@ ClawEh's own files moved into `internal/`, shared skills into `skills/`, and the
 ### The device listener needs a secret
 
 An enabled device listener on a network address now needs a token and approval of each device. Use **Pair a device** on the **Devices** page to set a token. See [Devices](../channels/devices.md).
+
+## Upgrading to 0.6.4
+
+### Mounts are now allowed folders
+
+An agent's mounts become [allowed folders](../agents/allowed-folders.md) at load, with the same path and notify setting. The agent now uses the folder's real path, such as `/srv/src/notes.md`, instead of `notes/...`; tell it so in its instructions if they name the old path. Write access now follows file permissions: where a mount was read-only, make the folder read-only for the account ClawEh runs as.
+
+### Agents granted every tool get file_glob
+
+An agent whose tools list is `"*"` also gets the new `file_glob` tool, which finds files by name. To keep it from such an agent, add `file_glob` to its **Denied tools**.
+
+### Transcription and image descriptions are set on Task models
+
+The Speech page (`voice.stt`, `voice.echo_transcription`) and the vision
+model settings (`agents.defaults.vision_model`, `vision_model_fallbacks`) are
+gone, and their values are not carried over. Until you set them again,
+voice messages are not transcribed and images are not described for models
+that can't see them. Check Up shows **Speech to text** with "No model in
+Transcription." and **Vision** with "No model in Describe images."
+
+1. Before saving anything after the upgrade, note the old values in
+   `config.json`: each `voice.stt` entry's provider and model, in order,
+   `voice.echo_transcription`, and the vision model and its fallbacks. The
+   first save rewrites the file without them.
+2. For each `voice.stt` entry, add a model on the **Models** page with that
+   provider and model. An entry with a blank model used its service's
+   default: `whisper-1` on OpenAI, `whisper-large-v3` on Groq,
+   `openai/whisper-large-v3` on OpenRouter.
+3. On **Task models**, add those models to **Transcription** in the old
+   order; add the vision model, then each fallback, to **Describe images**.
+   Turn on **Echo transcription** if it was on.
+
+See [Task models](../providers/task-models.md#transcription-and-speech) for
+which provider and model ID to use.
+
+### Shell commands are not limited by path
+
+`shell_exec` no longer refuses a command for the paths in it or for its working folder. It runs with the full access of the account ClawEh runs as; the deny patterns still apply. Check that each agent with `shell_exec` ticked should have it.
 
 ## After any upgrade
 

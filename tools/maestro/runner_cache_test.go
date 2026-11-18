@@ -6,6 +6,8 @@ package maestro
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -369,20 +371,24 @@ func TestRunnerCache_ConcurrentRegistrationsShareOneRunner(t *testing.T) {
 	}
 }
 
-// TestRunnerCache_ReferenceDirChangeRebuildsIdleRunner: a new mount (a new
-// reference directory) on an idle runner builds a new runner.
+// TestRunnerCache_ReferenceDirChangeRebuildsIdleRunner: a new allowed folder (a
+// new reference directory) on an idle runner builds a new runner.
 func TestRunnerCache_ReferenceDirChangeRebuildsIdleRunner(t *testing.T) {
-	reg := newRegistration(t, "alice-reload-mount")
+	reg := newRegistration(t, "alice-reload-folder")
 	reg.register(t, newGatedRunner())
 	before := cachedRunnerFor(reg.agentID())
 
-	reg.cfg.Agents.List[0].Mounts = []config.MountConfig{{Name: "standards", Path: t.TempDir()}}
+	dir := filepath.Join(t.TempDir(), "standards")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	reg.cfg.Agents.List[0].AllowedFolders = []config.AllowedFolderConfig{{Path: dir}}
 	reg.register(t, newGatedRunner())
 	after := cachedEntry(reg.agentID())
 	if after == nil || after.runner == before {
-		t.Fatal("an idle runner was kept although the agent's mounts changed")
+		t.Fatal("an idle runner was kept although the agent's allowed folders changed")
 	}
 	if len(after.spec.refDirs) != 1 || after.spec.refDirs[0].Mount != "standards" {
-		t.Errorf("new runner's reference dirs = %+v, want the standards mount", after.spec.refDirs)
+		t.Errorf("new runner's reference dirs = %+v, want the standards folder", after.spec.refDirs)
 	}
 }

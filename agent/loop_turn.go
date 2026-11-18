@@ -18,7 +18,6 @@ import (
 	"github.com/tenebris-tech/alerter"
 
 	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/constants"
 	"github.com/PivotLLM/ClawEh/global"
 	"github.com/PivotLLM/ClawEh/logger"
 	"github.com/PivotLLM/ClawEh/providers"
@@ -53,10 +52,26 @@ type processOptions struct {
 	// still owes the sender its reply.
 	MessageID     string
 	ReplyRequired bool
+	// FromPerson marks a turn answering a message someone wrote in a chat
+	// (fromPerson), the only kind told when a compaction makes it wait.
+	FromPerson bool
 	// OnReplyDelivery, when set with SendResponse, is told how the delivery
 	// of the reply ended (bus.OutboundMessage.OnDelivery), with the reply.
 	// It must not block.
 	OnReplyDelivery func(reply string, err error)
+	// turnModel is the turn's model choice, made by runAgentLoop when the
+	// turn starts; nil when the model loop is entered without one, which
+	// then makes it.
+	turnModel *turnModel
+}
+
+// turnLimits are the limits of the turn's model: the choice made when the
+// turn started, else the session's active model.
+func (al *AgentLoop) turnLimits(agent *AgentInstance, opts processOptions) runLimits {
+	if opts.turnModel != nil {
+		return opts.turnModel.limits
+	}
+	return al.sessionLimits(agent, opts.SessionKey)
 }
 
 // setOutcome records how the turn ended in opts.OutcomeOut, when requested.
@@ -103,9 +118,24 @@ func (al *AgentLoop) runAgentLoop(
 	cm, mem, releaseCtxMgr := al.getSessionContext(agent, opts.SessionKey) //nolint:contextcheck // compaction reporter: ctxengine's callback has no context, so it publishes on its own
 	defer releaseCtxMgr()
 
+	// The turn's model is chosen once, and the session's history is trimmed
+	// and compacted to its context window: /model may have changed it since
+	// the manager was built (a no-op when it has not).
+	opts.turnModel = al.selectTurnModel(agent, opts.SessionKey)
+	if werr := cm.SetContextWindow(opts.turnModel.limits.contextWindow); werr != nil {
+		logger.WarnCF("agent", "Context window not set for the turn's model",
+			map[string]any{"agent_id": agent.ID, "model": opts.turnModel.model, "error": werr.Error()})
+	}
+
+	// An age-only compaction the engine deferred runs once the reply is out,
+	// however the turn ends.
+	afterReply := claimAfterReply(ctx)
+	defer al.compactAfterReply(afterReply, agent, opts.SessionKey) //nolint:contextcheck // it outlives the turn, so it runs on the loop's run context, not the turn's
+
 	// After the session context, so the session's token exists.
-	ctx, restoreSource := al.scopeSessionToken(ctx, agent, opts)
-	defer restoreSource()
+	ctx, endTokenTurn := al.scopeSessionToken(ctx, agent, opts)
+	defer endTokenTurn()
+	ctx = withCompactionNotice(ctx, agent, opts)
 
 	if err = al.prepareSession(ctx, agent, cm, &opts); err != nil {
 		return "", err
@@ -130,8 +160,7 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}()
 
-	var reply modelReply
-	reply.content, reply.normal, reply.degenerate, reply.finishReason, reply.iterations, err = al.runLLMIteration(ctx, agent, messages, opts, cm, mem)
+	reply, err := al.runLLMIteration(ctx, agent, messages, opts, cm, mem)
 	if err != nil {
 		interrupted = shuttingDown(ctx)
 		return "", err
@@ -172,8 +201,8 @@ func (al *AgentLoop) beginAgentTurn(agent *AgentInstance, sessionKey string) (*A
 // turn's sub-agent depth (every turn, so a later ordinary turn resets it),
 // the agents waiting on the turn (none of which may be asked from it; see
 // Ask), and the chat to send user-facing output to. It returns ctx with the
-// running agent added to the ask chain, and the function that puts the
-// token's source back after an asked turn.
+// running agent added to the ask chain, and the function that ends the
+// turn on the token.
 func (al *AgentLoop) scopeSessionToken(ctx context.Context, agent *AgentInstance, opts processOptions) (context.Context, func()) {
 	al.mu.RLock()
 	sti := al.sessionTokenIssuer
@@ -186,23 +215,10 @@ func (al *AgentLoop) scopeSessionToken(ctx context.Context, agent *AgentInstance
 		return ctx, func() {}
 	}
 	sti.SetTurnScope(opts.SessionKey, tools.AskChain(ctx))
-
-	// The source follows the user across channels. Internal channels have no
-	// channel handler, so they are not recorded: the MCP ForUser publish path
-	// drops on the empty channel/chat guard instead.
-	if !constants.IsInternalChannel(opts.Channel) {
-		sti.SetSource(opts.SessionKey, opts.Channel, opts.ChatID)
-	}
-	if opts.Channel != constants.AgentMessageChannel {
-		return ctx, func() {}
-	}
-	// An asked turn's MCP output (ForUser, breadcrumbs, msg_send with no
-	// target, background results) belongs to the ask, never to the chat the
-	// session last heard from: the source points at the ask for the turn and
-	// is put back after it.
-	prevChannel, prevChatID := sti.Source(opts.SessionKey)
-	sti.SetSource(opts.SessionKey, opts.Channel, opts.ChatID)
-	return ctx, func() { sti.SetSource(opts.SessionKey, prevChannel, prevChatID) }
+	// The turn's MCP output (msg_send, msg_send_file, ForUser, breadcrumbs,
+	// background results) goes to the chat this turn replies to, recorded
+	// per turn, never to the chat the session last heard from.
+	return ctx, sti.BeginTurn(opts.SessionKey, opts.Channel, opts.ChatID)
 }
 
 // prepareSession readies the session for the turn's message, adjusting opts:
@@ -346,6 +362,17 @@ type modelReply struct {
 	degenerate   bool // the reply stayed empty after every poke
 	finishReason string
 	iterations   int
+	// images counts the images the model generated in the turn.
+	images int
+	// lastImages counts the images of the last response.
+	lastImages int
+	// imageReplies are the lines the reply carries about them (saved paths,
+	// URLs, why one was not sent), from every response of the turn.
+	imageReplies []string
+	// imageNotes tell the model, in its stored reply, of the images of its
+	// last response; those of earlier responses are already noted in the
+	// tool-call message that carried them.
+	imageNotes []string
 }
 
 // finishTurn turns the model's reply into the turn's: intentional silence
@@ -370,22 +397,48 @@ func (al *AgentLoop) finishTurn(
 		return "", nil
 	}
 
-	content := reply.content
+	// The chat is shown every image of the turn that did not reach it; the
+	// stored reply notes only the last response's images, since earlier
+	// ones are noted in the tool-call message that carried them.
+	content := withImageNotes(reply.content, reply.imageReplies)
+	stored := withImageNotes(reply.content, reply.imageNotes)
+	// A last response of images alone that ended normally is a complete
+	// reply; an empty, degenerate or cut-off one is not, whatever images
+	// earlier responses of the turn produced.
+	imagesOnly := reply.content == "" && reply.lastImages > 0 && reply.normal && !reply.degenerate
 	isSystemError := false
-	if content == "" {
-		var outcome string
-		content, outcome = al.emptyReply(agent, opts, reply)
+	if reply.content == "" && !imagesOnly {
+		fallback, outcome := al.emptyReply(agent, opts, reply)
 		opts.setOutcome(outcome)
-		if content == "" {
+		if fallback == "" {
 			al.stopTyping(opts.Channel, opts.ChatID)
 			return "", nil
 		}
+		content = withImageNotes(fallback, reply.imageReplies)
 		isSystemError = true
 	}
+	if content == "" {
+		// Images alone, all sent to the chat: a complete reply with no text
+		// to send.
+		opts.setOutcome(bus.OutcomeOK)
+		al.stopTyping(opts.Channel, opts.ChatID)
+		if stored != "" {
+			if err := al.saveAssistantReply(ctx, agent, opts.SessionKey, cm, mem, stored); err != nil {
+				return "", err
+			}
+		}
+		logger.InfoCF("agent", "Response",
+			map[string]any{"agent_id": agent.ID, "session_key": opts.SessionKey, "iterations": reply.iterations, "images": reply.images})
+		if opts.IterationsOut != nil {
+			*opts.IterationsOut = reply.iterations
+		}
+		return "", nil
+	}
 
-	// A system error string is not the model's reply, so it is not saved.
-	if !isSystemError {
-		if err := al.saveAssistantReply(ctx, agent, opts.SessionKey, cm, mem, content); err != nil {
+	// A system error string is not the model's reply, so it is not saved;
+	// the notes on the last response's images still are.
+	if stored != "" {
+		if err := al.saveAssistantReply(ctx, agent, opts.SessionKey, cm, mem, stored); err != nil {
 			return "", err
 		}
 	}
@@ -460,14 +513,67 @@ func (al *AgentLoop) saveAssistantReply(
 	if err := agent.Sessions.Save(sessionKey); err != nil {
 		logger.WarnCF("agent", "Failed to save session",
 			map[string]any{"error": err.Error(), "session": sessionKey})
-		al.Alerter().Send(alerter.Alert{
-			Title:       "Session not saved",
+		al.alertStoreFault(agent, alerter.Alert{
+			Title:       alertSessionNotSaved,
 			Description: "conversation history is being lost (disk full or unwritable?)",
 			Details:     err.Error(),
-			EventID:     "session-store",
+			EventID:     sessionStoreAlertID,
 		})
+	} else {
+		// The turn's messages were recorded and saved: the store takes writes.
+		al.storeFaultOver(agent, alertSessionNotSaved, alertSessionWriteFailed)
 	}
 	return nil
+}
+
+// Titles and the shared id of the session-store alerts. One id for every
+// session and all three, so a full disk is one alert in the alerter's window.
+const (
+	alertSessionNotSaved       = "Session not saved"
+	alertSessionWriteFailed    = "Session store write failed"
+	alertSessionStateNotStored = "Session state not persisted"
+	sessionStoreAlertID        = "session-store"
+)
+
+// alertStoreFault raises a, an alert about agent's session store. A store
+// that refuses one write refuses the next, on every turn, so the alert is
+// raised when that starts and then once a day while it lasts
+// (al.storeFaults), with a note of since when and how many were held back;
+// storeFaultOver ends it. Every failure is logged by the caller.
+func (al *AgentLoop) alertStoreFault(agent *AgentInstance, a alerter.Alert) {
+	out := al.Alerter()
+	if _, none := out.(alerter.Nop); none {
+		return // nobody to tell: the first failure with an alerter is the first alert
+	}
+	o := al.storeFaults.Report(storeFaultKey(agent, a.Title), al.clk().Now())
+	if !o.Alert {
+		return
+	}
+	a.Description += o.Note()
+	out.Send(a)
+}
+
+// storeFaultOver records that agent's session store took the writes the
+// alerts with these titles are about, so the next refusal alerts at once.
+func (al *AgentLoop) storeFaultOver(agent *AgentInstance, titles ...string) {
+	for _, title := range titles {
+		al.storeFaults.Resolve(storeFaultKey(agent, title))
+	}
+}
+
+// storeFaultKey names one alert about one session store. A configured agent
+// has its own; a clone counts as its source and every other temporary agent
+// as one, because they come and go by the dozen (one per sub-agent, one per
+// forum participant) and a full disk must not alert once for each.
+func storeFaultKey(agent *AgentInstance, title string) string {
+	owner := agent.ID
+	switch {
+	case agent.Spec.IsClone():
+		owner = agent.Spec.SourceID
+	case agent.IsTemp():
+		owner = "temporary agents"
+	}
+	return title + "\x00" + owner
 }
 
 // publishTurnReply sends the reply to the turn's chat, reporting its
@@ -587,7 +693,7 @@ func (al *AgentLoop) evictionNotifyUser(agent *AgentInstance) bool {
 // may be nil.
 func (al *AgentLoop) assembleRequest(ctx context.Context, agent *AgentInstance, mem *cogmem.Session, opts processOptions) ctxengine.AssembleRequest {
 	defs := agent.Tools.ToProviderDefs()
-	if agent.NoTools {
+	if al.turnLimits(agent, opts).noTools {
 		defs = nil
 	}
 	// The turn's request is not built yet: the stored history is what it
@@ -667,11 +773,11 @@ func (al *AgentLoop) sessionStoreWriteFailed(agent *AgentInstance, sessionKey, w
 		"message":     what,
 		"error":       err.Error(),
 	})
-	al.Alerter().Send(alerter.Alert{
-		Title:       "Session store write failed",
+	al.alertStoreFault(agent, alerter.Alert{
+		Title:       alertSessionWriteFailed,
 		Description: "a " + what + " could not be written to the session store and the turn was abandoned (disk full or unwritable?)",
 		Details:     err.Error(),
-		EventID:     "session-store",
+		EventID:     sessionStoreAlertID,
 	})
 	return fmt.Errorf("session store rejected the %s, so the turn was abandoned: %w", what, err)
 }

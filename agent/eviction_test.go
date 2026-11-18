@@ -41,7 +41,9 @@ func (m *trackingContextManager) Assemble(_ context.Context, _ ctxengine.Assembl
 	return ctxengine.Assembly{}, nil
 }
 func (m *trackingContextManager) ObserveUsage(_, _ int)                             {}
+func (m *trackingContextManager) SetContextWindow(int) error                        { return nil }
 func (m *trackingContextManager) Compact(_ context.Context) error                   { return nil }
+func (m *trackingContextManager) CompactIfDue(_ context.Context) (bool, error)      { return false, nil }
 func (m *trackingContextManager) LastCompactionReport() *ctxengine.CompactionReport { return nil }
 func (m *trackingContextManager) RenderedSummary() string                           { return "" }
 func (m *trackingContextManager) ForceCompress(_ context.Context) error             { return nil }

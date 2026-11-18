@@ -13,45 +13,51 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/PivotLLM/spawnllm/speech"
 	"github.com/tenebris-tech/alerter"
 
 	"github.com/PivotLLM/ClawEh/config"
 )
 
-// TestDetectTranscriber_AlertsOnUnusableBackend: an enabled entry that cannot
-// be used raises one alert keyed by its provider, urgent when it leaves no
-// usable backend and normal when another one serves; a disabled entry raises
-// none.
+// TestDetectTranscriber_AlertsOnUnusableBackend: a Transcription model that
+// cannot be used raises one alert keyed by its name, urgent when it leaves no
+// usable model and normal when another one serves; a model not in that
+// list raises none.
 func TestDetectTranscriber_AlertsOnUnusableBackend(t *testing.T) {
+	models := []config.ModelConfig{
+		{ModelName: "alice-stt", Provider: "missing", Model: "whisper-1", Enabled: true},
+		{ModelName: "whisper-groq", Provider: "groq", Model: "whisper-large-v3", Enabled: true},
+	}
 	tests := []struct {
 		name         string
-		stt          []config.STTProvider
+		task         config.TaskModelsConfig
 		wantAlert    bool
 		wantPriority int
 	}{
 		{
-			name:         "only entry unusable",
-			stt:          []config.STTProvider{{Provider: "alice-stt", Enabled: true}},
-			wantAlert:    true,
-			wantPriority: alerter.Urgent,
-		},
-		{
-			name:         "another entry usable",
-			stt:          []config.STTProvider{{Provider: "alice-stt", Enabled: true}, {Provider: "groq", Enabled: true}},
+			name:         "only model unusable",
+			task:         config.TaskModelsConfig{STTModels: []config.TaskModelRef{{Model: "alice-stt"}}},
 			wantAlert:    true,
 			wantPriority: alerter.Normal,
 		},
 		{
-			name: "disabled entry",
-			stt:  []config.STTProvider{{Provider: "alice-stt"}, {Provider: "groq", Enabled: true}},
+			name:         "another model usable",
+			task:         config.TaskModelsConfig{STTModels: []config.TaskModelRef{{Model: "alice-stt"}, {Model: "whisper-groq"}}},
+			wantAlert:    true,
+			wantPriority: alerter.Normal,
+		},
+		{
+			name: "model not in Transcription",
+			task: config.TaskModelsConfig{TextModels: []config.TaskModelRef{{Model: "alice-stt"}}, STTModels: []config.TaskModelRef{{Model: "whisper-groq"}}},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &alertRecorder{}
 			cfg := &config.Config{
-				Providers: []config.Provider{groqProvider},
-				Voice:     config.VoiceConfig{STT: tt.stt},
+				Providers:  []config.Provider{groqProvider},
+				Models:     models,
+				TaskModels: tt.task,
 			}
 			DetectTranscriberWithAlerter(cfg, rec)
 			if !tt.wantAlert {
@@ -67,7 +73,7 @@ func TestDetectTranscriber_AlertsOnUnusableBackend(t *testing.T) {
 			want := alerter.Alert{
 				Priority:    tt.wantPriority,
 				Title:       "Speech backend not usable",
-				Description: "alice-stt: provider not configured; voice messages are not transcribed by this backend until it is fixed",
+				Description: "alice-stt: provider not configured; voice messages are not transcribed by this model until it is fixed",
 				EventID:     "voice:config:alice-stt",
 			}
 			if a != want {
@@ -102,6 +108,14 @@ func statusServer(t *testing.T, status int, body string) *httptest.Server {
 	return srv
 }
 
+// freshRejections starts a test, or a case of one, with no model's refusal
+// already alerted: that state is process-wide (rejections).
+func freshRejections(t *testing.T) {
+	t.Helper()
+	rejections.ResolveAll()
+	t.Cleanup(func() { rejections.ResolveAll() })
+}
+
 // TestTranscribe_AlertsOnRejection: a 401/402/403 from the API raises one high
 // alert keyed by the provider (credentials or credit, so every later request
 // fails the same way); a 500 is a per-request failure and raises none. Both
@@ -113,16 +127,15 @@ func TestTranscribe_AlertsOnRejection(t *testing.T) {
 	}
 	longBody := strings.Repeat("é", 300)
 
+	// One model on an OpenAI-style host and one on OpenRouter (whose JSON
+	// body spawnllm picks by host): both alert the same way.
 	build := map[string]func(base string, a alerter.Alerter) Transcriber{
 		"groq": func(base string, a alerter.Alerter) Transcriber {
-			tr := NewWhisperTranscriber("groq", "sk-bad", "", "", a)
-			tr.apiBase = base
-			return tr
+			return NewTranscriber("groq", "whisper-1", speech.NewOpenAI(base, "sk-bad"), a)
 		},
 		"openrouter": func(base string, a alerter.Alerter) Transcriber {
-			tr := NewOpenRouterTranscriber("openrouter", "sk-bad", "", "", a)
-			tr.apiBase = base
-			return tr
+			return NewTranscriber("openrouter", "openai/whisper-1",
+				speech.NewOpenAI(base, "sk-bad", speech.WithTranscriptionAPI(speech.TranscriptionInputAudio)), a)
 		},
 	}
 
@@ -131,7 +144,7 @@ func TestTranscribe_AlertsOnRejection(t *testing.T) {
 			rec := &alertRecorder{}
 			for _, status := range []int{http.StatusInternalServerError, http.StatusTooManyRequests} {
 				tr := newTranscriber(statusServer(t, status, "later").URL, rec)
-				if _, err := tr.Transcribe(context.Background(), audioPath); err == nil {
+				if _, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
 					t.Fatalf("status %d must fail", status)
 				}
 			}
@@ -140,9 +153,10 @@ func TestTranscribe_AlertsOnRejection(t *testing.T) {
 			}
 
 			for _, status := range []int{http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden} {
+				freshRejections(t)
 				rec := &alertRecorder{}
 				tr := newTranscriber(statusServer(t, status, longBody).URL, rec)
-				if _, err := tr.Transcribe(context.Background(), audioPath); err == nil {
+				if _, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
 					t.Fatalf("status %d must fail", status)
 				}
 				if len(rec.alerts) != 1 {
@@ -160,5 +174,112 @@ func TestTranscribe_AlertsOnRejection(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTranscribe_RejectionAlertsOncePerOutage: every voice message meets the
+// same refused key, but only the first alerts, also across the rebuild a
+// config reload does; a transcription that works ends that, so a later
+// refusal alerts again; another model's refusal is its own.
+func TestTranscribe_RejectionAlertsOncePerOutage(t *testing.T) {
+	freshRejections(t)
+	audioPath := filepath.Join(t.TempDir(), "clip.ogg")
+	if err := os.WriteFile(audioPath, []byte("fake-audio-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec := &alertRecorder{}
+	refused := statusServer(t, http.StatusUnauthorized, "bad key")
+	working := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte(`{"text":"hello"}`)); err != nil {
+			t.Errorf("write the transcription: %v", err)
+		}
+	}))
+	t.Cleanup(working.Close)
+	transcribe := func(model, base string) error {
+		t.Helper()
+		// A new transcriber each time, as after a config reload.
+		tr := NewTranscriber(model, "whisper-1", speech.NewOpenAI(base, "sk"), rec)
+		_, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath})
+		return err
+	}
+
+	for range 5 {
+		if err := transcribe("groq", refused.URL); err == nil {
+			t.Fatal("a 401 transcribed")
+		}
+	}
+	if len(rec.alerts) != 1 || rec.alerts[0].EventID != "voice:groq" {
+		t.Fatalf("five refused messages must raise one alert, got %+v", rec.alerts)
+	}
+
+	if err := transcribe("other", refused.URL); err == nil {
+		t.Fatal("a 401 transcribed")
+	}
+	if len(rec.alerts) != 2 || rec.alerts[1].EventID != "voice:other" {
+		t.Fatalf("another model's refusal is its own alert, got %+v", rec.alerts)
+	}
+
+	if err := transcribe("groq", working.URL); err != nil {
+		t.Fatalf("working server: %v", err)
+	}
+	if err := transcribe("groq", refused.URL); err == nil {
+		t.Fatal("a 401 transcribed")
+	}
+	if len(rec.alerts) != 3 || rec.alerts[2].EventID != "voice:groq" || strings.Contains(rec.alerts[2].Description, "ongoing") {
+		t.Fatalf("a refusal after a transcription that worked must alert as new, got %+v", rec.alerts)
+	}
+}
+
+// TestTranscribe_NoAlerterDoesNotCount: a refusal nobody could hear is not
+// the first alert.
+func TestTranscribe_NoAlerterDoesNotCount(t *testing.T) {
+	freshRejections(t)
+	audioPath := filepath.Join(t.TempDir(), "clip.ogg")
+	if err := os.WriteFile(audioPath, []byte("fake-audio-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refused := statusServer(t, http.StatusUnauthorized, "bad key")
+	quiet := NewTranscriber("groq", "whisper-1", speech.NewOpenAI(refused.URL, "sk"), nil)
+	if _, err := quiet.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+		t.Fatal("a 401 transcribed")
+	}
+
+	rec := &alertRecorder{}
+	heard := NewTranscriber("groq", "whisper-1", speech.NewOpenAI(refused.URL, "sk"), rec)
+	if _, err := heard.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+		t.Fatal("a 401 transcribed")
+	}
+	if len(rec.alerts) != 1 {
+		t.Fatalf("the first refusal with an alerter must alert, got %+v", rec.alerts)
+	}
+}
+
+// Gemini answers a bad key with 400 and API_KEY_INVALID: that alerts like
+// a 401; any other 400 does not.
+func TestTranscribe_AlertsOnGeminiKeyInvalid(t *testing.T) {
+	audioPath := filepath.Join(t.TempDir(), "clip.ogg")
+	if err := os.WriteFile(audioPath, []byte("fake-audio-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		body  string
+		alert bool
+	}{
+		{`{"error":{"code":400,"message":"API key not valid.","status":"INVALID_ARGUMENT","details":[{"reason":"API_KEY_INVALID"}]}}`, true},
+		{`{"error":{"code":400,"message":"Invalid audio."}}`, false},
+	} {
+		freshRejections(t)
+		rec := &alertRecorder{}
+		srv := statusServer(t, http.StatusBadRequest, tc.body)
+		tr := NewTranscriber("gemini-stt", "gemini-2.5-flash", speech.NewGemini(srv.URL, "bad"), rec)
+		if _, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+			t.Fatal("a 400 transcribed")
+		}
+		if got := len(rec.alerts) == 1; got != tc.alert {
+			t.Errorf("body %s: alerts = %+v, want alert %v", tc.body, rec.alerts, tc.alert)
+		}
+		if tc.alert && rec.alerts[0].EventID != "voice:gemini-stt" {
+			t.Errorf("alert = %+v", rec.alerts[0])
+		}
 	}
 }

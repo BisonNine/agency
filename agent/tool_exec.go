@@ -105,6 +105,8 @@ func (t *llmTurn) runToolCall(ctx context.Context, slot *toolCallResult, toolTim
 	// tool allowlist again (defense in depth).
 	execCtx := tools.WithToolAllowChecker(ctx, t.agent.Config)
 	execCtx = tools.WithSessionKey(execCtx, t.opts.SessionKey)
+	// Files a tool sends go where this turn's reply goes.
+	execCtx = tools.WithReplyChat(execCtx, tools.ReplyChat{Channel: t.opts.Channel, ChatID: t.opts.ChatID})
 	if toolTimeout > 0 {
 		var toolCancel context.CancelFunc
 		execCtx, toolCancel = context.WithTimeout(execCtx, toolTimeout)
@@ -148,7 +150,7 @@ func (al *AgentLoop) asyncToolCallback(ctx context.Context, agent *AgentInstance
 		if content == "" {
 			return
 		}
-		content = capToolResult(content, result.IsError, agent.ContextWindow)
+		content = capToolResult(content, result.IsError, al.sessionLimits(agent, opts.SessionKey).contextWindow)
 
 		logger.InfoCF("agent", "Async tool completed, publishing result",
 			map[string]any{
@@ -318,7 +320,7 @@ func (t *llmTurn) toolResultMessage(r toolCallResult) providers.Message {
 	if contentForLLM == "" && r.result.Err != nil {
 		contentForLLM = r.result.Err.Error()
 	}
-	if capped := capToolResult(contentForLLM, r.result.IsError, t.agent.ContextWindow); len(capped) != len(contentForLLM) {
+	if capped := capToolResult(contentForLLM, r.result.IsError, t.limits.contextWindow); len(capped) != len(contentForLLM) {
 		logger.WarnCF("agent", "Tool result truncated for context", map[string]any{
 			"agent_id":     t.agent.ID,
 			"tool":         r.tc.Name,
