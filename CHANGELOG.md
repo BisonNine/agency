@@ -1,5 +1,124 @@
 # Changelog
 
+## [0.6.5]
+
+### Added
+
+- **A classifier can list a source that returns its items in pages.** Until
+  now a classifier called its source tool once per run and never saw what
+  that call left out. With a tool that returns 50 or 100 items at a time,
+  everything past the first page was invisible, and once that page was full
+  of items that stay in the source (ones a rule leaves in place,
+  unclassified or failed ones, and in a dry run every item) nothing new was
+  handled, with no error. A definition can now set `source.paging`:
+  `{"mode": "offset", "offset_arg": "<argument>"}` for a tool that takes the
+  number of items to skip, or `{"mode": "cursor", "cursor_arg":
+  "<argument>", "next": "<path>"}` for a tool whose result names the next
+  page. Every page is listed before any item is handled, the listing stops
+  once the run has found `limits.items_per_run` items to handle, and
+  `classifier_status` shows the last run's `pages`, `listing` (`complete`,
+  `items_per_run` or `max_pages`) and `more_items`; Check Up's
+  **Classifiers** table shows the items and pages listed. Existing definitions are
+  unchanged: without `source.paging` the tool is still called once, so a
+  classifier whose source returns pages needs the block added (ask its agent
+  to update it). This is also what lets a classifier work through a backlog:
+  widen what the source lists and each run takes the next `items_per_run`
+  items.
+- **`classifiers.limits.max_source_pages`** (default 100; System page,
+  **Classifiers**, *Max pages listed per run*) is the most pages of a paged
+  source one run lists, and the maximum for a definition's
+  `source.paging.max_pages`. A run that reaches it with pages left handles
+  what it listed and then fails, saying that the rest were not seen; it is
+  reported like any failed run and marked on Check Up.
+- **`limits.max_attempts`** (default 5) in a classifier definition is how
+  often a failing item is tried; see Changed.
+- **A classifier keeps the rule names the model cited that are not rules.**
+  Only their number was stored (`unknown_rules`), so there was no way to see
+  what the model had written. Each decision in `classifier_activity`,
+  `classifier_test` and `classifier_status` now has `unknown_labels`, the
+  names as written (at most 10 per item, 120 characters each), and
+  `classifier_activity`'s `search` finds them. `rule_usage` in
+  `classifier_status` adds `unknown_labels` (the 20 most cited, with the
+  number of items) and `only_unknown` (the items that cited an unknown label
+  and no rule; `unknown` minus `only_unknown` cited a rule as well).
+  Decisions stored before this version have the count only.
+
+### Changed
+
+- **A Fusion tool result over 1 MB is shortened, not refused** (MCPFusion
+  0.4.11). A JSON result larger than the limit used to come back as the
+  text `Response too large (...)`, so one long value, such as the HTML body
+  of an e-mail, made the whole record unreadable to an agent or a classifier.
+  The longest text values are now cut, longest first, until the result fits.
+  The result is still valid JSON with every key, number, list element and
+  object intact; each cut value ends with ` ... [truncated: first N of M
+  characters]`, and an object result has a `_truncated` member naming the cut
+  values. No record is ever dropped: a result that is too large because it
+  lists too many records is still refused with `Response too large`.
+- **A classifier recognises a rule the model cites in a slightly different
+  shape.** A cited label was unknown unless it was the rule's label itself
+  (in any case, or without `.md`). It is now also accepted with a path
+  before it (`rules/050-domain-example.md`), with a note in parentheses
+  after it (`050-domain-example.md (client domain)`), and with its section
+  marker around it (`=== Rules from 050-domain-example.md ===`, `Rules from
+  …`), whenever that names exactly one rule. A number that is no numbered
+  rule (`rule 11`, `#11`, `11`) names the one rule file whose name starts
+  with it (`11-jira.md`). The model is also now asked to copy a rule's label
+  exactly as shown, and is told about `rule N` only when the classifier has
+  numbered `rules`; it was told about it always, so it sometimes cited a
+  rule file by number. The same replies therefore
+  count as fewer unknown citations in `classifier_status` `rule_usage` and
+  more per rule; where an item is filed never depended on the citation and
+  is unchanged.
+- **A classifier's tool arguments are checked when it is saved.**
+  `classifier_create`, `classifier_update` and `classifier_validate` now
+  check the arguments of the source, fetch and action tools against each
+  tool's own argument list, and refuse an argument the tool does not have, a
+  required one that is missing, a value of the wrong type or outside the
+  tool's listed values, and a `source.paging` argument the tool does not
+  have. Tools usually ignore an unknown argument silently, so a misspelt
+  filter or sort looked accepted and did nothing. The refusal names the
+  argument and lists the tool's arguments. A classifier saved earlier keeps
+  running unchanged; its next `classifier_update` is refused until the
+  arguments are corrected (remove or rename the one named). A tool that
+  publishes no argument list is not checked.
+- **A classifier stops retrying an item that keeps failing.** A failed item
+  was tried again on every run, for ever. It is now tried
+  `limits.max_attempts` times (5 by default) and then left alone;
+  `classifier_status` counts such items as `gave_up` (`dry_run_gave_up` for
+  a dry run). An attempt counts only in a run where at least one other item
+  was handled without failing, so an outage of a tool or the model uses up
+  no attempts. Any `classifier_update` of the classifier tries those items
+  again, and `classifier_rerun` tries one. Attempts counted before this
+  version are set to 0 on upgrade. To keep an item retried for longer, set
+  `limits.max_attempts` higher in the definition.
+- **A classifier run takes new items before failed ones.** A run handled its
+  items in the source's order, so with `stop_after_failures` items that keep
+  failing listed first, every run stopped before it reached anything new. A
+  run now takes the items whose action is still pending, then new items in
+  the source's order, then failed ones.
+- **A failed item of a dry run is recorded.** It still has no dry-run
+  decision and is tried again, but its attempts are counted like a live
+  item's.
+
+- **`/ready` answers 200 only once the MCP host is up.** It turned ready as
+  soon as the channels had started, before the MCP host was listening, at
+  start and after every configuration reload. Anything that waits for
+  `/ready` now waits a little longer; with external MCP servers configured,
+  that includes the time taken to connect to them.
+  When the MCP host cannot be restarted after a reload (for example
+  `mcp_host.listen` now names a port in use), `/ready` stays at 503 and the
+  "Config reload failed" alert is raised; it answers 200 again after a reload
+  that brings the host back. With the MCP host not enabled, `/ready` does not
+  wait for it.
+
+### Fixed
+
+- **A valid service token is no longer refused just after a start or a
+  configuration reload.** The MCP host opened its port before it had loaded
+  the tokens issued with the `token` command, so a client calling in that
+  moment got `401 invalid bearer token`. The tokens are now loaded first.
+
 ## [0.6.4]
 
 ### Security
@@ -3862,6 +3981,8 @@ on, and breaking one is a deliberate decision rather than a free move.
   entered, and the entry had to be worked around rather than typed. Affects the
   Telegram, Slack and generic channel forms.
 
+[0.6.5]: https://github.com/PivotLLM/ClawEh/compare/0.6.4...0.6.5
+[0.6.4]: https://github.com/PivotLLM/ClawEh/compare/0.6.3...0.6.4
 [0.6.3]: https://github.com/PivotLLM/ClawEh/compare/0.6.2...0.6.3
 [0.6.2]: https://github.com/PivotLLM/ClawEh/compare/0.6.1...0.6.2
 [0.6.1]: https://github.com/PivotLLM/ClawEh/compare/0.6.0...0.6.1

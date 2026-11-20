@@ -27,7 +27,7 @@ import (
 const (
 	StatusClassified   = "classified" // the model answered; the action has not run yet
 	StatusActed        = "acted"      // done: the action succeeded, or the category has none
-	StatusFailed       = "failed"     // fetch, model or action failed; taken again next run
+	StatusFailed       = "failed"     // fetch, model or action failed; taken again next run, up to limits.max_attempts counted attempts
 	StatusUnclassified = "unclassified"
 )
 
@@ -71,6 +71,11 @@ type Decision struct {
 	// cited labels that matched no rule loaded for the request.
 	Rules        []string `json:"rules,omitzero"`
 	UnknownRules int      `json:"unknown_rules,omitempty"`
+	// UnknownLabels are those cited labels as the model wrote them (each
+	// once; rules.go says how many and how long), so the agent can see what
+	// the model takes its rules to be called. Decisions stored before they
+	// were kept have a count and no labels.
+	UnknownLabels []string `json:"unknown_labels,omitempty"`
 	// MissingFields are the fetch fields whose path is not in the fetch
 	// result (dotpath.Absent; a field that is there but empty is in the
 	// fields as "", not here); ShortenedFields are the fields cut to fit the
@@ -112,6 +117,14 @@ type RunRecord struct {
 	Unclassified int       `json:"unclassified"`
 	Failed       int       `json:"failed"`
 	DryRun       bool      `json:"dry_run,omitempty"`
+	// Pages is the calls of the source tool that listed items; Listing how
+	// the listing ended (ListComplete, ListEnough or ListMaxPages), "" for a
+	// source without paging. MoreItems: items to handle were left for the
+	// next run (more than items_per_run were found, or the listing stopped
+	// once it had that many).
+	Pages     int    `json:"pages,omitempty"`
+	Listing   string `json:"listing,omitempty"`
+	MoreItems bool   `json:"more_items,omitempty"`
 	// cause is what a failed run is down to (not stored): the advice of
 	// the agent's notice.
 	cause cause
@@ -123,14 +136,14 @@ type RunRecord struct {
 // Run statuses.
 const (
 	RunOK      = "ok"
-	RunError   = "error"   // the run could not list its items, its model could not be used, or stop_after_failures items failed in a row
+	RunError   = "error"   // the run could not list its items, its listing ended at the page maximum, its model could not be used, or stop_after_failures items failed in a row
 	RunStopped = "stopped" // the classifier was stopped, or the service stopped, mid-run
 )
 
 // ActivityQuery selects activity entries: newest first, Limit (default
 // DefaultActivityLimit, at most MaxActivityLimit) after Offset, optionally
 // only those with Outcome (one of ActivityOutcomes) and those whose fields,
-// item id, category, reason, action arguments or error contain Search
+// item id, category, reason, action arguments, error or unknown cited labels contain Search
 // (case-insensitive).
 type ActivityQuery struct {
 	Limit   int
@@ -160,10 +173,14 @@ CREATE TABLE IF NOT EXISTS processed (
   category TEXT, reason TEXT, model TEXT,
   classified_at INTEGER, acted_at INTEGER, attempts INTEGER NOT NULL DEFAULT 0,
   error TEXT, updated_at INTEGER NOT NULL, last_seen INTEGER NOT NULL, rules TEXT, unknown_rules INTEGER,
+  unknown_labels TEXT,
   PRIMARY KEY (classifier, item_id));
 CREATE TABLE IF NOT EXISTS dry_run (
   classifier TEXT NOT NULL, item_id TEXT NOT NULL, category TEXT, reason TEXT, model TEXT,
   decided_at INTEGER NOT NULL, last_seen INTEGER NOT NULL, PRIMARY KEY (classifier, item_id));
+CREATE TABLE IF NOT EXISTS dry_failed (
+  classifier TEXT NOT NULL, item_id TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT,
+  updated_at INTEGER NOT NULL, last_seen INTEGER NOT NULL, PRIMARY KEY (classifier, item_id));
 ` + activityTable + `;
 CREATE INDEX IF NOT EXISTS activity_by_time ON activity (classifier, at DESC);
 CREATE TABLE IF NOT EXISTS runs (
@@ -185,7 +202,8 @@ const activityTable = `CREATE TABLE IF NOT EXISTS activity (
   fields TEXT NOT NULL,
   category TEXT, reason TEXT, model TEXT, action TEXT, outcome TEXT NOT NULL, error TEXT,
   dry_run INTEGER NOT NULL, rerun INTEGER NOT NULL, action_args TEXT, count INTEGER, last_at INTEGER,
-  replies TEXT, missing_fields TEXT, shortened_fields TEXT, detail TEXT, rules TEXT, unknown_rules INTEGER)`
+  replies TEXT, missing_fields TEXT, shortened_fields TEXT, detail TEXT, rules TEXT, unknown_rules INTEGER,
+  unknown_labels TEXT)`
 
 // addedActivityColumns are the activity columns added after the table
 // first shipped, with their types, added to a state.db written before they
@@ -198,12 +216,17 @@ var addedActivityColumns = []struct{ name, typ string }{
 	{"detail", "TEXT"},
 	{"rules", "TEXT"},
 	{"unknown_rules", "INTEGER"},
+	{"unknown_labels", "TEXT"},
 }
 
 // addedProcessedColumns are the processed columns added after the table
 // first shipped: the citation of the stored answer (rules as a JSON list),
 // reused with it.
-var addedProcessedColumns = []struct{ name, typ string }{{"rules", "TEXT"}, {"unknown_rules", "INTEGER"}}
+var addedProcessedColumns = []struct{ name, typ string }{{"rules", "TEXT"}, {"unknown_rules", "INTEGER"}, {"unknown_labels", "TEXT"}}
+
+// addedRunColumns are the runs columns added after the table first shipped:
+// how the run's listing went (RunRecord.Pages, Listing, MoreItems).
+var addedRunColumns = []struct{ name, typ string }{{"pages", "INTEGER"}, {"listing", "TEXT"}, {"more_items", "INTEGER"}}
 
 // stateDB is one folder's state.db.
 type stateDB struct {
@@ -258,6 +281,14 @@ func openState(ctx context.Context, base string, dirMode, fileMode os.FileMode) 
 			return nil, errors.Join(fmt.Errorf("schema %s: %w", path, err), db.Close())
 		}
 	}
+	if err := migrateAttempts(ctx, db); err != nil {
+		return nil, errors.Join(fmt.Errorf("schema %s: %w", path, err), db.Close())
+	}
+	for _, column := range addedRunColumns {
+		if err := addColumn(ctx, db, "runs", column.name, column.typ); err != nil {
+			return nil, errors.Join(fmt.Errorf("schema %s: %w", path, err), db.Close())
+		}
+	}
 	if err := migrateActivity(ctx, db); err != nil {
 		return nil, errors.Join(fmt.Errorf("schema %s: %w", path, err), db.Close())
 	}
@@ -281,6 +312,22 @@ func addColumn(ctx context.Context, db *sql.DB, table, column, typ string) error
 		return nil
 	}
 	_, err := db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` `+typ) // #nosec G202 -- fixed names
+	return err
+}
+
+// migrateAttempts sets every processed item's attempts to 0 in a state.db
+// written before attempts were limited (its runs table has no pages column
+// yet): until then every failure was counted, outages included, and nothing
+// read the count. It runs before that column is added, so once.
+func migrateAttempts(ctx context.Context, db *sql.DB) error {
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('runs') WHERE name = 'pages'`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `UPDATE processed SET attempts = 0 WHERE attempts <> 0`)
 	return err
 }
 
@@ -342,13 +389,15 @@ type processedRow struct {
 	// (Decision.Rules, UnknownRules), reused with it.
 	rules        []string
 	unknownRules int
+	// unknownLabels are the unknown labels as cited (Decision.UnknownLabels).
+	unknownLabels []string
 }
 
 // processed returns every processed row of classifier cls by item id.
 func (s *stateDB) processed(ctx context.Context, cls string) (_ map[string]processedRow, err error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT item_id, status, COALESCE(category,''), COALESCE(reason,''), COALESCE(model,''), attempts,
-  COALESCE(rules,''), COALESCE(unknown_rules,0) FROM processed WHERE classifier = ?`, cls)
+  COALESCE(rules,''), COALESCE(unknown_rules,0), COALESCE(unknown_labels,'') FROM processed WHERE classifier = ?`, cls)
 	if err != nil {
 		return nil, err
 	}
@@ -357,11 +406,11 @@ func (s *stateDB) processed(ctx context.Context, cls string) (_ map[string]proce
 	for rows.Next() {
 		var id string
 		var r processedRow
-		var rules string
-		if err := rows.Scan(&id, &r.status, &r.category, &r.reason, &r.model, &r.attempts, &rules, &r.unknownRules); err != nil {
+		var rules, unknown string
+		if err := rows.Scan(&id, &r.status, &r.category, &r.reason, &r.model, &r.attempts, &rules, &r.unknownRules, &unknown); err != nil {
 			return nil, err
 		}
-		r.rules = fromJSONList(rules)
+		r.rules, r.unknownLabels = fromJSONList(rules), fromJSONList(unknown)
 		out[id] = r
 	}
 	return out, rows.Err()
@@ -372,12 +421,14 @@ func (s *stateDB) processed(ctx context.Context, cls string) (_ map[string]proce
 func (s *stateDB) setClassified(ctx context.Context, cls, item string, d Decision, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO processed (classifier, item_id, status, category, reason, model, classified_at, acted_at, attempts, error, updated_at, last_seen,
-  rules, unknown_rules)
-VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, ?, ?, ?, ?)
+  rules, unknown_rules, unknown_labels)
+VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, ?, ?, ?, ?, ?)
 ON CONFLICT (classifier, item_id) DO UPDATE SET status = excluded.status, category = excluded.category,
   reason = excluded.reason, model = excluded.model, classified_at = excluded.classified_at,
-  acted_at = NULL, error = NULL, updated_at = excluded.updated_at, rules = excluded.rules, unknown_rules = excluded.unknown_rules`,
-		cls, item, StatusClassified, d.Category, d.Reason, d.Model, ms(now), ms(now), ms(now), jsonList(d.Rules), nullableInt(d.UnknownRules))
+  acted_at = NULL, error = NULL, updated_at = excluded.updated_at, rules = excluded.rules, unknown_rules = excluded.unknown_rules,
+  unknown_labels = excluded.unknown_labels`,
+		cls, item, StatusClassified, d.Category, d.Reason, d.Model, ms(now), ms(now), ms(now), jsonList(d.Rules), nullableInt(d.UnknownRules),
+		jsonList(d.UnknownLabels))
 	return err
 }
 
@@ -400,15 +451,86 @@ func (s *stateDB) setActed(ctx context.Context, cls, item string, now time.Time)
 	return nil
 }
 
-// setFailed records a failure for an item, keeping any category it has, and
-// counts the attempt.
+// setFailed records a failure for an item, keeping any category it has. The
+// attempt is counted apart (addAttempts), once the run knows whether the
+// failure is the item's own.
 func (s *stateDB) setFailed(ctx context.Context, cls, item, errText string, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO processed (classifier, item_id, status, attempts, error, updated_at, last_seen) VALUES (?, ?, ?, 1, ?, ?, ?)
-ON CONFLICT (classifier, item_id) DO UPDATE SET status = excluded.status, attempts = processed.attempts + 1,
+INSERT INTO processed (classifier, item_id, status, attempts, error, updated_at, last_seen) VALUES (?, ?, ?, 0, ?, ?, ?)
+ON CONFLICT (classifier, item_id) DO UPDATE SET status = excluded.status,
   error = excluded.error, updated_at = excluded.updated_at`,
 		cls, item, StatusFailed, errText, ms(now), ms(now))
 	return err
+}
+
+// setDryFailed records a dry-run failure for an item (dry_failed: the item
+// has no dry-run decision, so the next dry run tries it again).
+func (s *stateDB) setDryFailed(ctx context.Context, cls, item, errText string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO dry_failed (classifier, item_id, attempts, error, updated_at, last_seen) VALUES (?, ?, 0, ?, ?, ?)
+ON CONFLICT (classifier, item_id) DO UPDATE SET error = excluded.error, updated_at = excluded.updated_at`,
+		cls, item, errText, ms(now), ms(now))
+	return err
+}
+
+// dryFailed returns the counted attempts of cls's items whose dry run
+// failed, by item id.
+func (s *stateDB) dryFailed(ctx context.Context, cls string) (_ map[string]int, err error) {
+	return s.countBy(ctx, `SELECT item_id, attempts FROM dry_failed WHERE classifier = ?`, cls)
+}
+
+// attemptTables are the tables that count a failing item's attempts: live
+// items and dry-run ones.
+const (
+	tableProcessed = "processed"
+	tableDryRun    = "dry_run"
+	tableDryFailed = "dry_failed"
+)
+
+// addAttempts counts one attempt for each of cls's failed items ids, in
+// table processed (rows still failed) or dry_failed.
+func (s *stateDB) addAttempts(ctx context.Context, table, cls string, ids []string) error {
+	var where string
+	switch table {
+	case tableProcessed:
+		where = ` AND status = '` + StatusFailed + `'`
+	case tableDryFailed:
+	default:
+		return fmt.Errorf("unknown table %s", table)
+	}
+	return s.inChunks(ids, func(placeholders string, chunk []any) error {
+		_, err := s.db.ExecContext(ctx, `UPDATE `+table+` SET attempts = attempts + 1 WHERE classifier = ?`+where+
+			` AND item_id IN (`+placeholders+`)`, append([]any{cls}, chunk...)...) // #nosec G202 -- a fixed table name and placeholders
+		return err
+	})
+}
+
+// resetAttempts gives every failed item of cls its attempts back, live and
+// dry run: the agent changed the definition, so items given up on are tried
+// again.
+func (s *stateDB) resetAttempts(ctx context.Context, cls string) error {
+	for _, q := range []string{
+		`UPDATE processed SET attempts = 0 WHERE classifier = ? AND status = '` + StatusFailed + `'`,
+		`UPDATE dry_failed SET attempts = 0 WHERE classifier = ?`,
+	} {
+		if _, err := s.db.ExecContext(ctx, q, cls); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// gaveUp is the number of cls's failed items with maxAttempts counted
+// attempts or more, which runs no longer take: live and dry run.
+func (s *stateDB) gaveUp(ctx context.Context, cls string, maxAttempts int) (live, dry int, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed WHERE classifier = ? AND status = ? AND attempts >= ?`,
+		cls, StatusFailed, maxAttempts).Scan(&live)
+	if err != nil {
+		return 0, 0, err
+	}
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM dry_failed WHERE classifier = ? AND attempts >= ?`,
+		cls, maxAttempts).Scan(&dry)
+	return live, dry, err
 }
 
 // setUnclassified records that the model named no category for an item.
@@ -440,45 +562,55 @@ func (s *stateDB) dryDecided(ctx context.Context, cls string) (_ map[string]bool
 	return out, rows.Err()
 }
 
-// setDry records a dry-run decision.
+// setDry records a dry-run decision, which ends any failure recorded for
+// the item's dry run.
 func (s *stateDB) setDry(ctx context.Context, cls, item, category, reason, model string, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO dry_run (classifier, item_id, category, reason, model, decided_at, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (classifier, item_id) DO UPDATE SET category = excluded.category, reason = excluded.reason,
   model = excluded.model, decided_at = excluded.decided_at`,
 		cls, item, category, reason, model, ms(now), ms(now))
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM dry_failed WHERE classifier = ? AND item_id = ?`, cls, item)
 	return err
 }
 
 // markSeen sets last_seen to now for every id of cls that the source lists
-// now, in table processed or dry_run, in one statement, so an item is kept
-// while it stays listed (design 7.1c: retention runs from when it leaves).
+// now, in table processed, dry_run or dry_failed, so an item is kept while
+// it stays listed (design 7.1c: retention runs from when it leaves).
 func (s *stateDB) markSeen(ctx context.Context, table, cls string, ids []string, now time.Time) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	if table != "processed" && table != "dry_run" {
+	if table != tableProcessed && table != tableDryRun && table != tableDryFailed {
 		return fmt.Errorf("unknown table %s", table)
 	}
+	return s.inChunks(ids, func(placeholders string, chunk []any) error {
+		_, err := s.db.ExecContext(ctx, `UPDATE `+table+` SET last_seen = ? WHERE classifier = ? AND item_id IN (`+placeholders+`)`,
+			append([]any{ms(now), cls}, chunk...)...) // #nosec G202 -- a fixed table name and placeholders
+		return err
+	})
+}
+
+// inChunks calls fn for ids in chunks of at most idChunk, with the chunk's
+// "?,?,..." placeholders and its ids as arguments.
+func (s *stateDB) inChunks(ids []string, fn func(placeholders string, chunk []any) error) error {
 	for len(ids) > 0 {
-		chunk := ids[:min(len(ids), markSeenChunk)]
-		ids = ids[len(chunk):]
-		args := make([]any, 0, len(chunk)+2)
-		args = append(args, ms(now), cls)
-		for _, id := range chunk {
-			args = append(args, id)
+		n := min(len(ids), idChunk)
+		chunk := make([]any, n)
+		for i, id := range ids[:n] {
+			chunk[i] = id
 		}
-		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
-		if _, err := s.db.ExecContext(ctx, `UPDATE `+table+` SET last_seen = ? WHERE classifier = ? AND item_id IN (`+placeholders+`)`, args...); err != nil { // #nosec G202 -- a fixed table name and placeholders
+		ids = ids[n:]
+		if err := fn(strings.TrimSuffix(strings.Repeat("?,", n), ","), chunk); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// markSeenChunk keeps one statement under SQLite's limit on parameters; a
-// list of up to this many ids is marked in one statement.
-const markSeenChunk = 10000
+// idChunk keeps one statement under SQLite's limit on parameters; a list of
+// up to this many ids is handled in one statement.
+const idChunk = 10000
 
 // addActivity appends an activity entry; each field value is cut to
 // ActivityValueMax characters.
@@ -497,11 +629,12 @@ func (s *stateDB) addActivity(ctx context.Context, cls string, e ActivityEntry) 
 	}
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO activity (classifier, at, item_id, fields, category, reason, model, action, action_args, outcome, error, dry_run, rerun,
-  replies, missing_fields, shortened_fields, rules, unknown_rules)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  replies, missing_fields, shortened_fields, rules, unknown_rules, unknown_labels)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cls, ms(e.At), e.ItemID, string(data), nullable(e.Category), nullable(e.Reason), nullable(e.Model),
 		nullable(e.Action), nullable(cutRunes(e.ActionArgs, ActivityValueMax)), e.Outcome, nullable(e.Error), e.DryRun, e.Rerun,
-		jsonList(replies), jsonList(e.MissingFields), jsonList(e.ShortenedFields), jsonList(e.Rules), nullableInt(e.UnknownRules))
+		jsonList(replies), jsonList(e.MissingFields), jsonList(e.ShortenedFields), jsonList(e.Rules), nullableInt(e.UnknownRules),
+		jsonList(e.UnknownLabels))
 	return err
 }
 
@@ -556,7 +689,8 @@ func (s *stateDB) activity(ctx context.Context, cls string, q ActivityQuery) (_ 
 	query := `SELECT at, COALESCE(item_id,''), fields, COALESCE(category,''), COALESCE(reason,''), COALESCE(model,''),
   COALESCE(action,''), COALESCE(action_args,''), outcome, COALESCE(error,''), dry_run, rerun,
   COALESCE(count,0), last_at, COALESCE(replies,''), COALESCE(missing_fields,''), COALESCE(shortened_fields,''),
-  COALESCE(detail,''), COALESCE(rules,''), COALESCE(unknown_rules,0) FROM activity WHERE classifier = ?`
+  COALESCE(detail,''), COALESCE(rules,''), COALESCE(unknown_rules,0), COALESCE(unknown_labels,'')
+  FROM activity WHERE classifier = ?`
 	args := []any{cls}
 	if q.Outcome != "" {
 		query += ` AND outcome = ?`
@@ -574,8 +708,9 @@ func (s *stateDB) activity(ctx context.Context, cls string, q ActivityQuery) (_ 
 		pattern := "%" + likeEscaper.Replace(strings.ToLower(search)) + "%"
 		query += ` AND (LOWER(fields) LIKE ? ESCAPE '\' OR LOWER(COALESCE(item_id,'')) LIKE ? ESCAPE '\'
   OR LOWER(COALESCE(category,'')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(reason,'')) LIKE ? ESCAPE '\'
-  OR LOWER(COALESCE(action_args,'')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(error,'')) LIKE ? ESCAPE '\')`
-		args = append(args, pattern, pattern, pattern, pattern, pattern, pattern)
+  OR LOWER(COALESCE(action_args,'')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(error,'')) LIKE ? ESCAPE '\'
+  OR LOWER(COALESCE(unknown_labels,'')) LIKE ? ESCAPE '\')`
+		args = append(args, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 	query += ` ORDER BY at DESC, id DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -589,12 +724,13 @@ func (s *stateDB) activity(ctx context.Context, cls string, q ActivityQuery) (_ 
 		var e ActivityEntry
 		var at int64
 		var lastAt sql.NullInt64
-		var fields, replies, missing, shortened, rules string
+		var fields, replies, missing, shortened, rules, unknown string
 		if err := rows.Scan(&at, &e.ItemID, &fields, &e.Category, &e.Reason, &e.Model, &e.Action,
 			&e.ActionArgs, &e.Outcome, &e.Error, &e.DryRun, &e.Rerun, &e.Count, &lastAt,
-			&replies, &missing, &shortened, &e.Detail, &rules, &e.UnknownRules); err != nil {
+			&replies, &missing, &shortened, &e.Detail, &rules, &e.UnknownRules, &unknown); err != nil {
 			return nil, err
 		}
+		e.UnknownLabels = fromJSONList(unknown)
 		e.At, e.LastAt = time.UnixMilli(at).UTC(), fromMS(lastAt)
 		e.Replies, e.MissingFields, e.ShortenedFields = fromJSONList(replies), fromJSONList(missing), fromJSONList(shortened)
 		if e.Rules = fromJSONList(rules); e.Category != "" {
@@ -612,13 +748,14 @@ func (s *stateDB) activity(ctx context.Context, cls string, q ActivityQuery) (_ 
 type citedRow struct {
 	rules   []string
 	unknown int
+	labels  []string // the unknown labels as cited; none for a row stored before they were kept
 }
 
 // citations returns, per item of cls given a category at or after since
 // (a zero time: all), the citation of its latest such row in the activity
 // log (live or dry run, a rerun or a reused answer included), by item id.
 func (s *stateDB) citations(ctx context.Context, cls string, since time.Time) (_ map[string]citedRow, err error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT item_id, COALESCE(rules,''), COALESCE(unknown_rules,0) FROM activity
+	rows, err := s.db.QueryContext(ctx, `SELECT item_id, COALESCE(rules,''), COALESCE(unknown_rules,0), COALESCE(unknown_labels,'') FROM activity
 WHERE classifier = ? AND item_id IS NOT NULL AND category IS NOT NULL AND at >= ? ORDER BY at, id`, cls, ms(since))
 	if err != nil {
 		return nil, err
@@ -627,11 +764,11 @@ WHERE classifier = ? AND item_id IS NOT NULL AND category IS NOT NULL AND at >= 
 	out := map[string]citedRow{}
 	for rows.Next() {
 		var r citedRow
-		var id, rules string
-		if err := rows.Scan(&id, &rules, &r.unknown); err != nil {
+		var id, rules, labels string
+		if err := rows.Scan(&id, &rules, &r.unknown, &labels); err != nil {
 			return nil, err
 		}
-		r.rules = fromJSONList(rules)
+		r.rules, r.labels = fromJSONList(rules), fromJSONList(labels)
 		out[id] = r // a later row replaces an earlier one
 	}
 	return out, rows.Err()
@@ -668,6 +805,7 @@ func (s *stateDB) prune(ctx context.Context, cls string, processedBefore, activi
 	}{
 		{`DELETE FROM processed WHERE classifier = ? AND last_seen < ?`, processedBefore},
 		{`DELETE FROM dry_run WHERE classifier = ? AND last_seen < ?`, processedBefore},
+		{`DELETE FROM dry_failed WHERE classifier = ? AND last_seen < ?`, processedBefore},
 		// A run_failed row is kept while the same error goes on.
 		{`DELETE FROM activity WHERE classifier = ? AND COALESCE(last_at, at) < ?`, activityBefore},
 	} {
@@ -683,7 +821,7 @@ func (s *stateDB) prune(ctx context.Context, cls string, processedBefore, activi
 
 // forget removes every row of cls.
 func (s *stateDB) forget(ctx context.Context, cls string) error {
-	for _, table := range []string{"processed", "dry_run", "activity", "runs", "run_failures", "invalid_reports"} {
+	for _, table := range []string{"processed", "dry_run", "dry_failed", "activity", "runs", "run_failures", "invalid_reports"} {
 		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE classifier = ?`, cls); err != nil { // #nosec G202 -- a fixed table name
 			return err
 		}
@@ -694,14 +832,16 @@ func (s *stateDB) forget(ctx context.Context, cls string) error {
 // setRun records cls's last run.
 func (s *stateDB) setRun(ctx context.Context, cls string, r RunRecord) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO runs (classifier, started_at, ended_at, status, error, listed, new_items, classified, acted, unclassified, failed, dry_run)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO runs (classifier, started_at, ended_at, status, error, listed, new_items, classified, acted, unclassified, failed, dry_run,
+  pages, listing, more_items)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (classifier) DO UPDATE SET started_at = excluded.started_at, ended_at = excluded.ended_at,
   status = excluded.status, error = excluded.error, listed = excluded.listed, new_items = excluded.new_items,
   classified = excluded.classified, acted = excluded.acted, unclassified = excluded.unclassified,
-  failed = excluded.failed, dry_run = excluded.dry_run`,
+  failed = excluded.failed, dry_run = excluded.dry_run, pages = excluded.pages, listing = excluded.listing,
+  more_items = excluded.more_items`,
 		cls, ms(r.StartedAt), ms(r.EndedAt), r.Status, nullable(r.Error), r.Listed, r.NewItems, r.Classified,
-		r.Acted, r.Unclassified, r.Failed, r.DryRun)
+		r.Acted, r.Unclassified, r.Failed, r.DryRun, nullableInt(r.Pages), nullable(r.Listing), r.MoreItems)
 	return err
 }
 
@@ -833,14 +973,23 @@ func (s *stateDB) clearRunFailures(ctx context.Context, cls string) error {
 	return err
 }
 
-// lastRunFrom returns cls's last run in db, or nil when it has none.
+// lastRunFrom returns cls's last run in db, or nil when it has none. A
+// state.db whose runs table predates the listing columns (read without the
+// service having opened it, as Inspect does) is read without them.
 func lastRunFrom(ctx context.Context, db *sql.DB, cls string) (*RunRecord, error) {
+	const base = `SELECT started_at, ended_at, status, error, listed, new_items, classified, acted, unclassified, failed, dry_run`
 	var r RunRecord
 	var started, ended sql.NullInt64
 	var errText sql.NullString
-	err := db.QueryRowContext(ctx, `SELECT started_at, ended_at, status, error, listed, new_items, classified, acted,
-  unclassified, failed, dry_run FROM runs WHERE classifier = ?`, cls).Scan(&started, &ended, &r.Status, &errText,
-		&r.Listed, &r.NewItems, &r.Classified, &r.Acted, &r.Unclassified, &r.Failed, &r.DryRun)
+	err := db.QueryRowContext(ctx, base+`, COALESCE(pages, 0), COALESCE(listing, ''), COALESCE(more_items, 0)
+  FROM runs WHERE classifier = ?`, cls).Scan(&started, &ended, &r.Status, &errText,
+		&r.Listed, &r.NewItems, &r.Classified, &r.Acted, &r.Unclassified, &r.Failed, &r.DryRun,
+		&r.Pages, &r.Listing, &r.MoreItems)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r = RunRecord{}
+		err = db.QueryRowContext(ctx, base+` FROM runs WHERE classifier = ?`, cls).Scan(&started, &ended, &r.Status, &errText,
+			&r.Listed, &r.NewItems, &r.Classified, &r.Acted, &r.Unclassified, &r.Failed, &r.DryRun)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

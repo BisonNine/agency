@@ -552,7 +552,8 @@ shortcoming in the module, never here.
   `internal/gateway/classifier.go` BEFORE `NewAgentLoop`, started once the loop
   has `Started()`, closed in `shutdownGateway` right after the forum, `Reload()`
   on every config reload). A classifier lists items with a source tool, skips
-  ids already handled, fetches the named fields, asks the agent's ONE classifier
+  ids already handled (a paged source, `source.paging`, page after page:
+  see below), fetches the named fields, asks the agent's ONE classifier
   model (no fallback; the model never has tools: one `Chat` with no tool
   definitions, reply parsed strictly, one retry, else `unclassified`) and runs
   the category's action. Definitions are `<workspace>/classifiers/<id>.json`
@@ -668,7 +669,9 @@ shortcoming in the module, never here.
   **Rule citations** (`classifier/rules.go`, `citations.go`): every source
   has a label (`promptSections`: `instructions`, the instructions file's
   cleaned workspace path, each folder file's name, `rule N`);
-  `replyContract` asks for line 2 a reason, line 3 `Rules: <labels>`, and
+  `replyContract(numbered)` asks for line 2 a reason, line 3 `Rules: <labels>`
+  copied exactly as the marker line shows them (a file's whole name, never
+  its number), offers `rule N` only when the request has numbered rules, and
   tells the model to write exactly `Rules: none` when no rule applied
   (never leave it out); both lines stay optional to the parser: `parseCitation` reads a `Rules:` line
   (plural only; `Rule:` is a reason) in place 2 or 3 only, a malformed one
@@ -676,7 +679,15 @@ shortcoming in the module, never here.
   forms (any case, without `.md`, the instructions file's bare name, `rule
   #N`/`rules N`/`#N`/`N`) count only when they fit exactly one label;
   bare `none` (any case) is never a label; `none` beside labels is
-  dropped. Activity and processed columns `rules`
+  dropped; a number that is no numbered rule names the one file label whose
+  name starts with it (`numberedFiles`: `rule 11` → `11-jira.md`). A token that names nothing as written is tried again in the
+  shapes of `citedForms` (the `=== Rules from … ===` marker or `Rules from`
+  removed, a note in parentheses after the label removed, a path's last
+  element), each matched by the same rules; `splitCitation` does not split
+  at a comma inside parentheses. Tokens still unknown are kept as written
+  in `Decision.UnknownLabels` (`UnknownLabelsMax` 10, `UnknownLabelChars`
+  120; activity and processed column `unknown_labels`, searched by
+  `ActivityQuery.Search`). Activity and processed columns `rules`
   (JSON list, `["none"]`, NULL when empty) and `unknown_rules` (INTEGER, `addColumn` takes a
   type); a reused answer reuses its stored citation. `Decision.Rules`
   (`omitzero`) is never nil for a decision with a category: labels,
@@ -686,7 +697,9 @@ shortcoming in the module, never here.
   cites, unknown refused), `Status.RuleUsage` over `activity_hours` (each
   item once, by its latest categorised row; current labels only; gone ones
   in `no_longer_present`; `with_rules` + `none` + `no_citation` =
-  `decisions`; nil when the Markdown cannot be read), `Status.Counts`
+  `decisions`; `unknown` counts items citing any unknown label, `only_unknown`
+  those citing nothing else, `unknown_labels` the `UnknownLabelsShown` 20
+  most cited; nil when the Markdown cannot be read), `Status.Counts`
   (processed by status, live only) and `DryRunCounts` (`dry_run` table by
   category, `unclassified` included), `TestExcluding` (`classifier_test` `exclude_rules`:
   `instructions.exclude` drops sections, rules keep their numbers; one
@@ -695,15 +708,48 @@ shortcoming in the module, never here.
   create/update/validate check only what exists (`checkInstructions`);
   `Test` returns `TestResult` with `system_prompt`. Decisions: interval trigger
   only (`trigger.every_seconds`, the core's own timer, nothing in cron);
-  create/update also call the source tool once; `classifier_*` tools are
+  create/update also call the source tool once (its first page); `classifier_*` tools are
   refused as source, fetch or action; per-definition defaults parallel 1,
-  stop_after_failures 5, items_per_run = `max_items_per_run`, `fetch.max_chars`
-  = `max_item_chars`, `activity_hours` 72. Hand edits are re-read on mtime/size
+  stop_after_failures 5, max_attempts 5, items_per_run = `max_items_per_run`,
+  `source.paging.max_pages` = `max_source_pages`, `fetch.max_chars`
+  = `max_item_chars`, `activity_hours` 72.
+  **Argument check** (`classifier/args.go`, `validateArgs`, in
+  `Service.check`, so create/update/validate only, never a run): the
+  arguments of the source, fetch and actions are checked against each
+  tool's JSON Schema from `ToolRunner.Schema` (`ClassifierHost.Schema`: the
+  registry tool's `Parameters()`; nil for an MCP tool that advertised no
+  schema, `MCPTool.HasInputSchema`), refusing an undeclared argument (a
+  schema with `properties` is closed unless `additionalProperties` is true
+  or a schema), a missing required one, a wrong type or enum value (nested
+  objects and list items too), and an undeclared `offset_arg`/`cursor_arg`
+  (the offset must take a number); placeholders and combinator schemas
+  (`anyOf`, `$ref`, ...) are not checked.
+  **Listing** (`classifier/paging.go`, `listSource`): without
+  `source.paging` the source is called once; with it (`mode` `offset`:
+  `offset_arg` grows by the items each page returned, from its value in
+  `source.args`, until an empty page; `cursor`: the result's `next` path is
+  passed back in `cursor_arg` until a result has none) every page is listed
+  before any item is handled, until the source ends (`ListComplete`), the
+  run found `items_per_run` items to take (`ListEnough`, early stop), or
+  the page maximum (`ListMaxPages`: the run handles what it listed, then
+  ends `RunError` with `truncatedError`). A page with only ids already
+  listed, or a cursor given twice, fails the run (the tool ignores the
+  argument). `RunRecord` has `Pages`, `Listing`, `MoreItems` (runs columns
+  added by `addedRunColumns`); `pickItem` (test, rerun) lists only as far
+  as the item. **Order and retries** (`classifier/backlog.go`): a run
+  takes action-pending items, then new ones in source order, then failed
+  ones; a failed item is skipped once `limits.max_attempts` attempts were
+  counted (`Status.GaveUp`/`DryRunGaveUp`), and an attempt is counted only
+  at the end of a run that handled another item without failing
+  (`countAttempts`), never for a model that cannot be used; a dry run's
+  failures are rows of `dry_failed`. `Create`/`Update` reset the attempts
+  (`resetAttempts`, in `clearFailures`); `migrateAttempts` zeroes the
+  counts of a state.db written before the limit, once. Hand edits are re-read on mtime/size
   change and validated the same way; an invalid file is logged and reported to its agent once per change, never run
   or deleted. Install-wide `classifiers` (`config.ClassifiersConfig`,
   `config/classifiers.go`: `processed_days` 30, `limits.max_rules` 100,
   `max_prompt_chars` 20000, `max_item_chars` 50000, `max_items_per_run` 500,
-  `max_parallel` 8, `max_activity_hours` 720, `min_every_seconds` 15, the
+  `max_parallel` 8, `max_activity_hours` 720, `max_source_pages` 100, `min_every_seconds` 15, the
   minimum `trigger.every_seconds`; 0/absent = default, negative refused; System page **Classifiers**, `classifiers-section.tsx`, defaults
   shared with the frontend through `config/testdata/classifier_defaults.json`). A classifier
   model must be in the Classification list on Task models (`Config.ClassifierModelUsable`,
@@ -810,7 +856,7 @@ shortcoming in the module, never here.
 - **Delivery reasons** (`channels/errors.go`): a failed send says why with a sentinel callers test with `errors.Is`, and `OnDelivery` on `bus.OutboundMessage` and `bus.OutboundMediaMessage` gets it: `ErrUnknownChannel` (not configured; the manager), `ErrNotRunning` (stopped, or no worker), `ErrRecipientOffline` and `ErrRecipientNotFound` (reported by the device, Telegram, Slack, Discord and WebUI channels: a paired device not connected or closing, a WebUI session with no browser open; an unknown/unpaired device, Telegram "chat not found"/upgraded to supergroup and every 403 (blocked, deactivated, can't initiate, bots, kicked), Slack `channel_not_found`/`not_in_channel`/`is_archived`, Discord unknown channel/user), `ErrReceiveOnly`, else `ErrSendFailed`/`ErrTemporary`/`ErrRateLimit` (Telegram: 429 rate limit, carrying its `retry_after` as a `channels.RetryAfterError`: the manager waits it plus `RetryAfterPadding` (5 s) and gives up at once when it exceeds `MaxSendRetryAfter` (60 s); other 4xx send failed; it retries as plain text only on the "can't parse entities" 400). The channels keep the platform's (redacted) reason in the error, so the log and the alert say why. Only `ErrTemporary`/`ErrRateLimit`/unknown errors are retried; `sendSplit` stops at a chunk whose recipient is unavailable. Text and media share one retry loop and one failure report (`retrySend`, `reportSendFailure`). `sendWithRetry` puts one `channels.SendProgress` on the context across a message's retries, so a channel that splits it further (Telegram, when the HTML outgrows one message) resumes after the parts already delivered. Only the first part of a split message is a reply (`sendSplit`, then Telegram's own split); Telegram sets `allow_sending_without_reply`, so a reply to a deleted message still arrives, without the link. The "Channel send failed" alert fires only for a channel that reports itself not running and a send failing after its retries (incl. `ErrSendFailed`); offline/not found log at WARN, receive-only at INFO. Check Up marks a human agent whose chat is on a channel that is not set up (config-derived only, exact channel names).
 - **Sending files** (`msg_send_file`, `tools/msg/send_file.go`; `agent/send_files.go`): up to 10 files per call, only for an agent granted a file-reading tool (`toolsmsg.CanReadFiles`), each checked with the agent's file-reading permission (`files.Reader` `Resolve`, then `Allowed` on the symlink-resolved path), then opened once (O_NOFOLLOW|O_NONBLOCK, `os.SameFile` with the checked file, regular, within `max_media_size`) and copied from that descriptor (`io.LimitReader`). Destination: the turn's reply chat (see **Turn chat**). Refused for a turn answering an agent (`constants.RepliesToAgent`: asks and sub-agent tasks), an internal channel (`cli`, `system`, `recovery`), no turn, or a channel without `MediaSender` (`Manager.SupportsMedia`, `tools.ErrNoFileSupport`). Each copy (`send-*` in the media staging folder, swept at start by `agent.RemoveStagedFileCopies`) is published as its own message and waited for up to `sendFilesTimeout` (1 min, on the loop's clock); the per-file result is the channel's delivery report, which every path now sends: the dispatcher reports an internal channel, `bus.Close` reports what was still buffered. A `SendMedia` returns an error for a part it cannot send, never skips it. **Generated images** (`agent/generated_images.go`): every `LLMResponse.Images` of an in-loop turn (tool-call iterations included) is handled as it arrives: data saved to `<workspace>/files/generated/<YYYY-MM-DD>/image-<time>-<rand>.<ext>` (`agentModes`, exact), then sent through `SendFiles` to the turn's chat; a turn answering an agent, an internal channel, a channel without media or an image over `max_media_size` gets "…Image saved as <path>." in the reply (`imageReplies`); a URL image is "Image: <url>", never fetched. The model's notes ride its own stored assistant message (the tool-call message of that iteration, or the final reply for images it sent), and a reply of images alone is not poked and ends `ok` (`finishTurn`, `decideTurnReply`).
 - **Built-in channels**: `channels.RegisterBuiltin(name, factory)` adds a channel the manager builds regardless of config, and rebuilds on every reload; a configured channel of the same name wins. None is registered yet.
-- **Channel manager** (`channels/manager.go`, `plan.go`, `reload.go`): one manager for the whole process. `StartAll` starts each channel in its own goroutine and returns once every one has started or failed its first attempt (a failed one retries in the background); outbound to a channel still starting is held and delivered in order (`releaseHold`), and `/ready` is set after `StartAll` returns. At most `maxHeldPerChannel` (1000) messages are held per channel; more are dropped as `ErrNotRunning`. A held backlog goes to the worker as `backlog` (sent before its queue), so a hold ends in one step. `StartAll`, `StopAll` and `Reload` are serialized by `reloadMu`; `StopAll` first cancels the starts in progress (every `Start` gets a context from `startContext`), so a shutdown never waits for a slow start, and a start cancelled that way registers nothing. Channel `Start`s must honour their context (Telegram's getMe runs off the start path, Discord's `Open` is waited for against it). A config reload does not stop the channels: `restartServices` calls `Manager.Reload`, which keeps a channel whose inputs are unchanged untouched (workers, connections, offsets), stops and rebuilds a changed one, starts added and stops removed ones, and logs which at INFO ("Channels reloaded"). A channel's inputs (`channelSpec.inputs`, a digest) are what its factory reads: Telegram and SecMsg their own entries, the others what they register with `RegisterFactoryInputs` next to `RegisterFactory` (the device channel reads gateway settings and the certificate names too, `channels/device/init.go`). No registered inputs (and every built-in) means always rebuilt; a new media store (changed `tools.media_cleanup`) rebuilds every channel. A channel the config no longer asks for is told after its stop (`RemovalAware.Removed`). When SecMsg discovery fails on a reload, that daemon entry's running accounts are kept (`runningSpecs`); a changed daemon entry still stops them. **When a channel factory starts reading another setting, add it to its inputs**, or a save will not apply it. The gateway injects the device channel's agent querier and certificate through `channels.WithBuildHook` (`channelBuildHook`), so a rebuilt device channel gets them. Matrix keeps the account's first start, sync position and handled event ids across rebuilds (`channels/matrix/syncstate.go`), so a rebuilt channel misses and repeats nothing; turning the channel off (`Removed`) or switching account starts fresh.
+- **Channel manager** (`channels/manager.go`, `plan.go`, `reload.go`): one manager for the whole process. `StartAll` starts each channel in its own goroutine and returns once every one has started or failed its first attempt (a failed one retries in the background); outbound to a channel still starting is held and delivered in order (`releaseHold`), and `/ready` is set once `StartAll` has returned and the MCP host has started (`startAgentServices`; after a reload, at the end of the restart, `restartMCPHost`: a host that fails to restart leaves `/ready` at 503 until a reload brings it back). At most `maxHeldPerChannel` (1000) messages are held per channel; more are dropped as `ErrNotRunning`. A held backlog goes to the worker as `backlog` (sent before its queue), so a hold ends in one step. `StartAll`, `StopAll` and `Reload` are serialized by `reloadMu`; `StopAll` first cancels the starts in progress (every `Start` gets a context from `startContext`), so a shutdown never waits for a slow start, and a start cancelled that way registers nothing. Channel `Start`s must honour their context (Telegram's getMe runs off the start path, Discord's `Open` is waited for against it). A config reload does not stop the channels: `restartServices` calls `Manager.Reload`, which keeps a channel whose inputs are unchanged untouched (workers, connections, offsets), stops and rebuilds a changed one, starts added and stops removed ones, and logs which at INFO ("Channels reloaded"). A channel's inputs (`channelSpec.inputs`, a digest) are what its factory reads: Telegram and SecMsg their own entries, the others what they register with `RegisterFactoryInputs` next to `RegisterFactory` (the device channel reads gateway settings and the certificate names too, `channels/device/init.go`). No registered inputs (and every built-in) means always rebuilt; a new media store (changed `tools.media_cleanup`) rebuilds every channel. A channel the config no longer asks for is told after its stop (`RemovalAware.Removed`). When SecMsg discovery fails on a reload, that daemon entry's running accounts are kept (`runningSpecs`); a changed daemon entry still stops them. **When a channel factory starts reading another setting, add it to its inputs**, or a save will not apply it. The gateway injects the device channel's agent querier and certificate through `channels.WithBuildHook` (`channelBuildHook`), so a rebuilt device channel gets them. Matrix keeps the account's first start, sync position and handled event ids across rebuilds (`channels/matrix/syncstate.go`), so a rebuilt channel misses and repeats nothing; turning the channel off (`Removed`) or switching account starts fresh.
 - **Agents**: named agents with separate workspaces; bindings route channels to agents.
   The agent id rule is defined once in `config/agent_id.go`: 1–64 characters of
   ASCII letters (either case), 0–9, `-` and `_`, starting with a letter or digit
@@ -1121,7 +1167,7 @@ Hard-won learnings (don't relearn these):
 - A change is not done until its tests are updated AND passing. Run `make test` before calling anything done — it is the whole suite, lint included, and the thing a pipeline would gate on. `go test ./...` is the fast Go-only loop for iterating.
 - **Add tests for new behavior.** New config flags, gating, and branches need a test for both the on and off paths — not just a tweak that makes existing tests compile.
 - **Keep test fixtures in sync with renames/refactors.** When tool names, config keys, or APIs change, grep the whole repo (including `*_test.go`, `test.sh`, `tests/`) and update every reference. A rename that compiles can still break integration tests.
-- **MCP integration tests are part of the suite.** `make test` runs `test.sh`, which runs `tests/test_mcpserver.sh` via the external `probe` binary against an ephemeral ClawEh instance. Every provider tool must be exposed in the test config and probed: success for hermetic tools, graceful-error probes for network/LLM tools (web, skill, agent_spawn). Add a probe case when you add a tool. After it, `test.sh` runs `tests/test_classifier.sh`, the classifiers end to end on a gateway of its own: `tests/testdata/classifierllm` is the stub model (a fixed category per marker in the item) and a stub Telegram Bot API for the agent's chat (it also writes the admin account, `-admin-credentials`); the script checks the moved files, `state.db`, the activity log, no reprocessing, a dry run, the problem summary, an invalid hand-edited definition (log and Check Up) and the agents-area modes. Then `tests/test_task_models.sh` runs task models end to end on a gateway of its own: `tests/testdata/taskmodelsllm` is the stub vendor (OpenAI-style chat with text and image output, `/images/generations` and `/images/edits`, `/audio/speech`, `/audio/transcriptions`, and Gemini `generateContent` TTS returning L16 PCM; a model `down-1` answers 503); the script drives `agent_spawn` with `kind` over the MCP host with service tokens for every kind (wait mode, one callback) and checks the result text, the files under `files/generated/<date>/` with the agents-area modes, the WAV header, the fallback past the 503 model, the grant refusal, the `task_model` audit rows and that nothing is written outside the workspaces. Then `tests/test_coding_harness.sh` runs the coding harness end to end on a gateway of its own (needs `git`): one agent whose `tools` are exactly the ten coding tools, a git repository in its `files/` (root and nested `.gitignore`, ignored copies of the function it looks for) and a read-only allowed folder outside the workspace; over the MCP host with the agent's service token it globs, searches with `include`/`context`, reads, edits and counts, writes a file and edits it with the line tools, runs `git diff --stat`/`git status` through `shell_exec`, reads the allowed folder by absolute path and checks that writes there are refused as read-only, that a tool outside the ten is not offered and that a deny pattern still refuses. Its unit-level counterpart is `tools/files/harness_matrix_test.go` (every coding file tool in every place it can be pointed at).
+- **MCP integration tests are part of the suite.** `make test` runs `test.sh`, which runs `tests/test_mcpserver.sh` via the external `probe` binary against an ephemeral ClawEh instance. Every provider tool must be exposed in the test config and probed: success for hermetic tools, graceful-error probes for network/LLM tools (web, skill, agent_spawn). Add a probe case when you add a tool. After it, `test.sh` runs `tests/test_classifier.sh`, the classifiers end to end on a gateway of its own: `tests/testdata/classifierllm` is the stub model (a fixed category per marker in the item) and a stub Telegram Bot API for the agent's chat (it also writes the admin account, `-admin-credentials`); the script checks the moved files, `state.db`, the activity log, no reprocessing, a dry run, the problem summary, an invalid hand-edited definition (log and Check Up), a paged source (the stub's MCP `pages` tool: listed to its end, and one item per run with the early stop), the argument check (undeclared, wrong type, undeclared paging and fetch arguments refused by `classifier_validate`) and the agents-area modes. Then `tests/test_task_models.sh` runs task models end to end on a gateway of its own: `tests/testdata/taskmodelsllm` is the stub vendor (OpenAI-style chat with text and image output, `/images/generations` and `/images/edits`, `/audio/speech`, `/audio/transcriptions`, and Gemini `generateContent` TTS returning L16 PCM; a model `down-1` answers 503); the script drives `agent_spawn` with `kind` over the MCP host with service tokens for every kind (wait mode, one callback) and checks the result text, the files under `files/generated/<date>/` with the agents-area modes, the WAV header, the fallback past the 503 model, the grant refusal, the `task_model` audit rows and that nothing is written outside the workspaces. Then `tests/test_coding_harness.sh` runs the coding harness end to end on a gateway of its own (needs `git`): one agent whose `tools` are exactly the ten coding tools, a git repository in its `files/` (root and nested `.gitignore`, ignored copies of the function it looks for) and a read-only allowed folder outside the workspace; over the MCP host with the agent's service token it globs, searches with `include`/`context`, reads, edits and counts, writes a file and edits it with the line tools, runs `git diff --stat`/`git status` through `shell_exec`, reads the allowed folder by absolute path and checks that writes there are refused as read-only, that a tool outside the ten is not offered and that a deny pattern still refuses. Its unit-level counterpart is `tools/files/harness_matrix_test.go` (every coding file tool in every place it can be pointed at).
 - **A test gateway must never alert the operator.** Any script that starts a gateway outside production sources `tests/lib/gateway_env.sh` (or exports the same `ALERTER_*` variables empty), so the operator's `~/.alerter` is not used and alerts go only to `<CLAW_HOME>/logs/alerts.log`.
 - After implementing, do a final grep for the old name/symbol to confirm nothing stale remains in code, tests, scripts, or docs.
 
@@ -1199,7 +1245,7 @@ exported; it exits 2 with a hint otherwise.
   change. The runner refuses port 18790 unless `--allow-prod` is given.
   Never point it at production.
 - **Wait for `/ready`, not `/health`.** `/health` answers as soon as the port
-  is open; `/ready` waits for the channels. Starting early makes steps fail for
+  is open; `/ready` waits for the channels and the MCP host. Starting early makes steps fail for
   no reason.
 - **When a step fails, decide first whether the PLAN or the PRODUCT is wrong.**
   Both happen. It has caught real defects (`/ready` stuck at 503 forever, an

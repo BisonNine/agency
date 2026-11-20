@@ -176,12 +176,6 @@ func setupAndStartServices(
 		return nil, fmt.Errorf("error starting channels: %w", err)
 	}
 
-	// The listener is up and the channels are running, which is what /ready
-	// means. It has to be set here rather than left to health.Server.Start():
-	// that method marks ready as a side effect of starting the health server's
-	// OWN listener, and the merged binary never uses it — the handlers are
-	// registered onto the shared mux instead.
-	markReady(services, true)
 	logHealthEndpoints(services, cfg)
 
 	services.DeviceService = newDeviceService(cfg, agentLoop, msgBus)
@@ -214,6 +208,14 @@ func startAgentServices(cfg *config.Config, agentLoop *agent.AgentLoop, msgBus *
 	if err := startMCPServer(cfg, agentLoop, msgBus, services); err != nil {
 		return err
 	}
+
+	// The listener is up, the channels are running and the MCP host accepts
+	// its tokens, which is what /ready means. It has to be set here rather
+	// than left to health.Server.Start(): that method marks ready as a side
+	// effect of starting the health server's OWN listener, and the merged
+	// binary never uses it — the handlers are registered onto the shared mux
+	// instead.
+	markReady(services, true)
 
 	// Start cognitive-memory consolidation (inert unless an agent is allowed the
 	// cogmem tools).
@@ -713,10 +715,6 @@ func restartServices(
 	}
 	reapplyListenerPolicy(services, cfg)
 
-	// rebuildSharedHTTPServer creates a fresh health.Server, which starts
-	// not-ready, so readiness is re-asserted after every reload, once the
-	// rebuilt channels have started (Reload returns then).
-	markReady(services, true)
 	logger.InfoCF("channels", "Channels ready after reload", map[string]any{"health": "http://" + services.HTTPHost.LoopbackAddr() + "/health"})
 
 	services.DeviceService = newDeviceService(cfg, al, msgBus)
@@ -749,10 +747,20 @@ func restartServices(
 	}
 
 	// Restart MCP server — it was shut down as part of stopAndCleanupServices.
+	return restartMCPHost(cfg, al, msgBus, services)
+}
+
+// restartMCPHost brings the MCP host back after a reload and then reports
+// ready. rebuildSharedHTTPServer creates a fresh health.Server, which starts
+// not-ready, so readiness is re-asserted after every reload, once the rebuilt
+// channels have started and the MCP host is back (or is not enabled). When
+// the host fails to restart, /ready stays 503 until a reload that brings it
+// back: 200 would say the host is up.
+func restartMCPHost(cfg *config.Config, al *agent.AgentLoop, msgBus *bus.MessageBus, services *gatewayServices) error {
 	if err := startMCPServer(cfg, al, msgBus, services); err != nil {
 		return fmt.Errorf("error restarting MCP server: %w", err)
 	}
-
+	markReady(services, true)
 	return nil
 }
 

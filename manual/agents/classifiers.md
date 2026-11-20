@@ -105,12 +105,51 @@ When `classifiers/state.db` can't be opened, none of the agent's classifiers run
 | `fetch` | Optional: the tool that reads one item. `fields` names what the model sees; everything else is dropped. `html` lists the fields whose HTML is turned into text. The fields are cut to `max_chars` together, longest first, and the model is told which were shortened. Without `fetch`, the model sees the listed item. |
 | `classify` | The instructions, the rules (applied in order) and the categories. `unclassified` is reserved. `instructions_file` and `instructions_dir` add Markdown from the agent's `files/` (see [Rules in Markdown](#rules-in-markdown)); `instructions` may then be empty. |
 | `actions` | The tool run for each category. A category with no action is only recorded. |
-| `limits` | `items_per_run`: items taken per run, the rest wait for the next. `parallel`: items handled at the same time. `stop_after_failures`: consecutive failures that stop a run. |
+| `source.paging` | How the tool is asked for the pages after the first; see [Sources that return pages](#sources-that-return-pages). Without it the tool is called once per run. |
+| `limits` | `items_per_run`: items taken per run, the rest wait for the next. `parallel`: items handled at the same time. `stop_after_failures`: consecutive failures that stop a run. `max_attempts`: how often a failing item is tried (5 by default). |
 | `report.summary` | `on_problems` (default): a summary to the agent's default chat when items failed or were unclassified, or the run failed. `always`: after every run that handled items or failed. `never`. A failed run is posted as [Failed runs](#failed-runs) says. |
 | `report.errors` | `true` (default): failed runs are reported to the agent and your chat. `false`: they are only logged. |
 | `activity_hours` | How long the activity log is kept. |
 
 ClawEh writes `owner`, `created_at` and `updated_at`.
+
+### Arguments are checked against the tool
+
+When a classifier is created, changed or validated, the arguments of its source, fetch and action tools are checked against each tool's own argument list. Most tools ignore an argument they do not have, so a misspelt filter or sort would change nothing and say nothing; the save is refused instead, naming the argument:
+
+- an argument the tool does not have: "source.args.orderby: mail_list_messages has no argument "orderby"; its arguments are folder, skip, top."
+- an argument the tool requires that is left out;
+- a value of the wrong type, or not one of the values the tool lists;
+- a paging argument (`offset_arg`, `cursor_arg`) the tool does not have.
+
+A tool that publishes no argument list (some MCP servers) cannot be checked, and neither can a placeholder's type. A correctly named argument with a value the service rejects is the tool's to refuse; `classifier_test` shows its error. A classifier saved before this check existed keeps running, and is checked the next time the agent changes it.
+
+### Sources that return pages
+
+Most list tools return a page at a time, often 50 or 100 items. A source without `paging` is called once per run, so items past its first page are never seen. Once that page is full of items that stay in the source (ones a rule leaves in place, unclassified or failed ones, and in a dry run every item), nothing new is handled and no error is raised. Ask the agent to set `source.paging` for any tool that pages.
+
+| Mode | For a tool that | Keys |
+|---|---|---|
+| `offset` | takes the number of items to skip | `offset_arg`: that argument. It starts at its value in `source.args` (0 when left out) and grows by the items each page returned; the list ends at an empty page. |
+| `cursor` | names the next page in its result | `next`: the path, in the result, to the next page's cursor. `cursor_arg`: the argument it is passed back in. The list ends at a result without one. |
+
+```json
+"source": {
+  "tool": "mail_list_messages",
+  "args": { "folder": "Inbox", "top": 100, "orderby": "receivedDateTime asc" },
+  "items": "messages",
+  "id": "id",
+  "paging": { "mode": "offset", "offset_arg": "skip" }
+}
+```
+
+- Every page is listed before any item is handled, so an action that moves an item out of the source cannot shift the pages.
+- A run stops asking for pages once it has found `items_per_run` items to handle; the rest are taken by the next runs. `classifier_status` then shows the last run's `listing` as `items_per_run` and `more_items` as true. `complete` means the source was listed to its end.
+- `paging.max_pages` bounds the pages of one run; without it the install's `max_source_pages` applies. A run that reaches the maximum with pages left handles what it listed and then fails ("source mail_list_messages lists more items than the 100 pages one run reads, so the rest were not seen; ..."): narrow what the source lists or raise the maximum. This is reported like any [failed run](#failed-runs) and marked on Check Up.
+- A tool that ignores the paging argument returns the same page again; the run fails and says so.
+- Oldest first is the better order when the tool can sort: a backlog is handled in date order and pages do not shift while they are listed.
+
+To have a classifier work through a backlog (the last few months of mail, for example), ask the agent to widen what the source lists. Nothing else changes: each run takes `items_per_run` items until the backlog is done, items already handled are skipped, and a restart continues where it stopped. Every item costs one model call, and a dry run of the backlog costs the same again when it goes live.
 
 ### Rules in Markdown
 
@@ -144,11 +183,12 @@ files/classifiers/inbox-priority/
 
 The model names the rules that decided each item, so the agent can see where to tune. Each source of rules has a label, shown on the `=== Rules from <label> ===` line its section starts with (headings inside the files are not labels): `instructions` for the inline instructions, the workspace path of the instructions file (such as `files/classifiers/inbox-priority/guide.md`), the file name of each folder file (such as `050-domain-example.md`), and `rule N` for the numbered `rules`. The model answers with the category, a short reason and a line such as `Rules: 050-domain-example.md, rule 2`; it is told to write `Rules: none` when no rule applied. The reason and the Rules line are optional: an answer without them, or with a Rules line that cannot be read, is still classified.
 
-- A cited label is matched to the rules sent with that item. It may also be written in any case, without `.md`, the instructions file by its bare name, and a numbered rule as `rule #3`, `#3` or `3`, but such a form counts only when it fits exactly one label. `none`, in any case, always means no rule; a folder file `none.md` is cited only as `none.md`, and `none` written beside labels is dropped.
-- Every decision with a category keeps `rules`, one of: the known labels cited; `["none"]`, the model said no rule applies (a gap: a rule may be missing); or an empty list, the model gave no citation or cited only names that are not rules (counted in `unknown_rules`). Many empty ones mean the model ignores the request; another classifier model may do better.
+- A cited label is matched to the rules sent with that item. It may also be written in any case, without `.md`, the instructions file by its bare name, and a numbered rule as `rule #3`, `#3` or `3`. A number that is no numbered rule names the rule file whose name starts with it (`rule 11` for `11-jira.md`). It may also come with a path before it (`rules/050-domain-example.md`), a note in parentheses after it (`050-domain-example.md (client domain)`) or its marker around it (`=== Rules from 050-domain-example.md ===`). Any such form counts only when it fits exactly one label. `none`, in any case, always means no rule; a folder file `none.md` is cited only as `none.md`, and `none` written beside labels is dropped.
+- Every decision with a category keeps `rules`, one of: the known labels cited; `["none"]`, the model said no rule applies (a gap: a rule may be missing); or an empty list, the model gave no citation or cited only names that are not rules. Many empty ones mean the model ignores the request; another classifier model may do better.
+- A cited name that is not a rule is kept as the model wrote it in `unknown_labels` (`unknown_rules` is how many), beside any rules it did cite. It never changes where the item goes. What stays unknown is usually a heading from inside a file, a description instead of a file name, or two labels joined by "and"; ask the agent what the unknown labels are ("which rule names did the inbox classifier not recognise?").
 - The citation is the model's own account, not proof. To confirm that a rule decided an item, the agent calls `classifier_test` with `exclude_rules`: it classifies the item twice, with all rules and without the ones named, and says whether the category changed (`changed`). That costs two model calls and stores nothing.
 - `classifier_activity` with `rule` lists the items that cited a rule; `rule: "none"` lists those for which the model said no rule applies.
-- `classifier_status` shows `rule_usage` over `activity_hours`, counting each item once by its latest answer (a rerun, a replay after a failed action or a live run after a dry run replaces the earlier one): the items given a category (`decisions`), split into those that cited a rule (`with_rules`), `none` and no citation (`no_citation`), which add up to `decisions`; how many cited each current rule, the rules never cited, how many cited an unknown label, and cited labels whose file is gone (`no_longer_present`). Rules never cited may be dead; many items citing none may need a new rule.
+- `classifier_status` shows `rule_usage` over `activity_hours`, counting each item once by its latest answer (a rerun, a replay after a failed action or a live run after a dry run replaces the earlier one): the items given a category (`decisions`), split into those that cited a rule (`with_rules`), `none` and no citation (`no_citation`), which add up to `decisions`; how many cited each current rule, the rules never cited, how many cited an unknown label (`unknown`) and how many of those cited nothing else (`only_unknown`), the unknown labels most often cited (`unknown_labels`), and cited labels whose file is gone (`no_longer_present`). Rules never cited may be dead; many items citing none may need a new rule.
 
 ### Paths and placeholders
 
@@ -174,7 +214,10 @@ A placeholder must be the whole value: `"{{item.id}}"`, never `"id={{item.id}}"`
 
 ## Runs
 
-- An item is done once its action succeeds. A failed item is tried again on the next run, with the model's first answer if it already gave one. An answer that is not a category is asked again once, then the item is `unclassified` and left where it is.
+- An item is handled once, by its id: it is done once its action succeeds and is not sent to the model again, however long it stays in the source. Handled ids are remembered for `processed_days` after the source last listed the item. If the service gives an item a new id when it is moved, an item moved back counts as new.
+- A failed item is tried again on later runs, with the model's first answer if it already gave one. An answer that is not a category is asked again once, then the item is `unclassified` and left where it is.
+- A run takes items whose action is still pending first, then new items in the source's order, then failed ones, so items that keep failing never hold up new ones.
+- After `limits.max_attempts` attempts (5 by default) a failing item is left alone. `classifier_status` counts these as `gave_up`. An attempt counts only in a run where at least one other item was handled without failing, so an outage of a tool or the model uses up no attempts. Any change the agent makes with `classifier_update` tries them again.
 - An item all of whose `fetch.fields` are missing from the fetch result (for example, the fetch tool answered with text, not JSON) fails; it is never classified or acted on blind. Empty fields count as there.
 - Results that ClawEh marks as external content for the model (tools of external MCP servers, the web tools) are read as the JSON they carry.
 - Stopping ClawEh in the middle of a run is not a failure: what it interrupted is taken again at the next start.
@@ -184,7 +227,7 @@ A placeholder must be the whole value: `"{{item.id}}"`, never `"id={{item.id}}"`
 
 ### Failed runs
 
-A run fails when it can't start or can't go on: its Markdown files are missing, unreadable or too long, the source tool fails, a tool it names is no longer the agent's, the agent has no usable classifier model, or `stop_after_failures` items failed in a row (the error names the cause they share; the last item's error is kept in the activity log). The items wait for the next run. A definition file that is no longer valid is reported the same way ("Classifier inbox is not run (...)"), once per broken version of the file, even across restarts.
+A run fails when it can't start or can't go on: its Markdown files are missing, unreadable or too long, the source tool fails, a paged source has more pages than one run lists, a tool it names is no longer the agent's, the agent has no usable classifier model, or `stop_after_failures` items failed in a row (the error names the cause they share; the last item's error is kept in the activity log). The items wait for the next run. A definition file that is no longer valid is reported the same way ("Classifier inbox is not run (...)"), once per broken version of the file, even across restarts.
 
 Every failed run is written to the [activity log](#activity-log) and logged as a warning. Errors are cleaned of anything that looks like an API key or password first. Error notices:
 
@@ -212,9 +255,9 @@ Every item handled (live or dry run) is logged with the fields sent to the model
 |---|---|
 | `classifier_readme` | The format, paths, placeholders and the install's limits. |
 | `classifier_list`, `classifier_get` | The agent's classifiers; one definition. |
-| `classifier_create`, `classifier_update`, `classifier_delete` | Save, change (a JSON merge patch) or remove a classifier. A save checks the definition and calls the source tool once. |
+| `classifier_create`, `classifier_update`, `classifier_delete` | Save, change (a JSON merge patch) or remove a classifier. A save checks the definition, checks every tool argument against the tool, and calls the source tool once (its first page). |
 | `classifier_validate` | The same checks, without saving. |
-| `classifier_status` | Last run, live counts (`counts`) and dry-run counts (`dry_run_counts`), recent decisions, the last error, whether error notices are on, off or muted, and how often each rule was cited (`rule_usage`). |
+| `classifier_status` | Last run (with its pages and how the listing ended), live counts (`counts`) and dry-run counts (`dry_run_counts`), recent decisions, the last error, whether error notices are on, off or muted, and how often each rule was cited (`rule_usage`). |
 | `classifier_test` | Classifies one item without acting or storing anything, and shows the item's fields and the system prompt the model got. With `exclude_rules`, also classifies it without those rules and says whether the category changed. |
 | `classifier_rerun` | Classifies one item again and runs its action. |
 | `classifier_activity` | The activity log, newest first, with `limit`, `offset`, `search`, `outcome` and `rule`. |
@@ -233,6 +276,7 @@ Install-wide, set on the System page (**Classifiers**) or in `config.json`:
     "max_items_per_run": 500,
     "max_parallel": 8,
     "max_activity_hours": 720,
+    "max_source_pages": 100,
     "min_every_seconds": 15
   }
 }
@@ -247,11 +291,12 @@ Install-wide, set on the System page (**Classifiers**) or in `config.json`:
 | `max_items_per_run` | 500 | `limits.items_per_run`. |
 | `max_parallel` | 8 | `limits.parallel`. |
 | `max_activity_hours` | 720 | `activity_hours`. |
+| `max_source_pages` | 100 | `source.paging.max_pages`: pages of a paged source one run lists. |
 | `min_every_seconds` | 15 | The shortest `trigger.every_seconds`. |
 
 Absent or 0 uses the default; a negative value is refused. A definition above a limit, or running more often than `min_every_seconds`, is refused, naming the key and the limit. A change applies to the next save and run.
 
-A definition that leaves its own settings out uses: `items_per_run` = `max_items_per_run`, `parallel` 1, `stop_after_failures` 5, `fetch.max_chars` = `max_item_chars`, `activity_hours` 72.
+A definition that leaves its own settings out uses: `items_per_run` = `max_items_per_run`, `parallel` 1, `stop_after_failures` 5, `max_attempts` 5, `source.paging.max_pages` = `max_source_pages`, `fetch.max_chars` = `max_item_chars`, `activity_hours` 72.
 
 ## Check Up
 
