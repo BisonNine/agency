@@ -149,8 +149,12 @@ func (al *AgentLoop) runSubagentTask(ctx context.Context, agentID, task, model, 
 		if ctx.Err() == nil {
 			return nil, release, err
 		}
-		// Cancelled: what the worker had written so far is its partial
-		// output, kept in its results file.
+		// Cancelled (agent_cancel, /cancel all, shutdown): the worker's MCP
+		// session tokens are revoked now, not only when its clone is
+		// deleted, so nothing its stopped CLI started can call tools with
+		// them. What it had written so far is its partial output, kept in its
+		// results file.
+		al.revokeAgentTokens(clone.ID)
 		return &global.SyncResult{Content: partialOutput(clone, sessionKey)}, release, err
 	}
 	res.Content = content
@@ -178,4 +182,14 @@ func partialOutput(clone *AgentInstance, sessionKey string) string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// revokeAgentTokens revokes every MCP session token of agent id.
+func (al *AgentLoop) revokeAgentTokens(id string) {
+	al.mu.RLock()
+	sti := al.sessionTokenIssuer
+	al.mu.RUnlock()
+	if sti != nil {
+		sti.RevokeAgent(id)
+	}
 }

@@ -150,6 +150,9 @@ func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record fun
 		}
 		release()
 		tr.task.finished(hook.TaskCancelled)
+		// The cancel told the observers already; they hear once more that
+		// the worker has unwound.
+		sm.tasks.notify(tr.task.Info())
 		return
 	}
 	tr.ended = true

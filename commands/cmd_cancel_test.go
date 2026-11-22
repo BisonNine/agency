@@ -33,7 +33,12 @@ func TestCancelCommand_Reply(t *testing.T) {
 		{
 			"nothing but tasks", "/cancel",
 			CancelOutcome{Agent: "Alice", StillRunning: 1},
-			"No pending messages to cancel. 1 background task is still running — /cancel all stops it too.",
+			"Alice: nothing to stop. 1 background task is still running — /cancel all stops it too.",
+		},
+		{
+			"nothing but tasks, plural", "/cancel",
+			CancelOutcome{Agent: "Alice", StillRunning: 2},
+			"Alice: nothing to stop. 2 background tasks are still running — /cancel all stops them too.",
 		},
 		{
 			"all", "/cancel all",

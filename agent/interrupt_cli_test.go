@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,9 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/hook"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/mcpserver"
 )
 
 // countingSTI issues numbered tokens and counts them.
@@ -120,5 +124,82 @@ func TestInterrupt_CLIModelKilledAndTokenReplaced(t *testing.T) {
 	}
 	if sti.count() != issuedBefore+1 {
 		t.Fatalf("tokens issued = %d, want one more than %d: the interrupted turn's token was not replaced", sti.count(), issuedBefore)
+	}
+}
+
+// argsCLI is hangingCLI that also records its arguments and standard input.
+func argsCLI(t *testing.T, logDir string) string {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "claude")
+	body := "#!/bin/sh\n" +
+		"for a in \"$@\"; do printf '%s\\n' \"$a\"; done > '" + logDir + "/args'\n" +
+		"cat > '" + logDir + "/stdin'\n" +
+		"echo $$ > '" + logDir + "/pid.tmp' && mv '" + logDir + "/pid.tmp' '" + logDir + "/pid'\n" +
+		"sleep 300 &\n" +
+		"echo $! > '" + logDir + "/child.tmp' && mv '" + logDir + "/child.tmp' '" + logDir + "/child'\n" +
+		"wait\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
+
+// Rules 5.2 items 1-2 for a cancelled task (agent_cancel, /cancel all): a
+// sub-agent on a CLI model is stopped with its process group, and its MCP
+// session token is refused from then on.
+func TestCancelTask_CLIWorkerKilledAndTokenRevoked(t *testing.T) {
+	restore := logger.RedirectForTest(&safeBufLoop{})
+	defer restore()
+
+	logDir := t.TempDir()
+	cfg := ownerTestConfig(t)
+	cfg.Agents.List[0].Tools = []string{"agent_spawn"}
+	cfg.Providers = []config.Provider{{Name: "Claude CLI", Protocol: "claude-cli", Command: argsCLI(t, logDir)}}
+	cfg.Models = []config.ModelConfig{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}}
+	cfg.Agents.Defaults.Models = []string{"cc"}
+	if err := os.MkdirAll(cfg.CLIPath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &recordingProvider{}, realClients{}, OwnsDataDir())
+	store := mcpserver.NewSessionTokenStore()
+	al.SetSessionTokenIssuer(store)
+	main, ok := al.GetRegistry().Get("main")
+	if !ok || main.spawnMgr == nil {
+		t.Fatal("main has no spawn manager")
+	}
+
+	cancelled := make(chan struct{}, 4)
+	al.tasks.Observe(func(info hook.TaskInfo) {
+		if info.State == hook.TaskCancelled {
+			cancelled <- struct{}{}
+		}
+	})
+	id, err := main.spawnMgr.SpawnCallback("do it", "job", "", "cli", "direct", "", "", nil, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := readPID(t, logDir, "pid")
+	child := readPID(t, logDir, "child")
+	var token string
+	for _, f := range []string{"args", "stdin"} {
+		b, _ := os.ReadFile(filepath.Join(logDir, f))
+		if m := regexp.MustCompile(`SST[0-9a-f]{64}`).Find(b); m != nil {
+			token = string(m)
+		}
+	}
+	if _, ok := store.Resolve(token); token == "" || !ok {
+		t.Fatalf("the worker's token %q does not resolve before the cancel", token)
+	}
+
+	if res := main.spawnMgr.CancelTask(id); res.Cancelled != 1 {
+		t.Fatalf("cancel = %+v", res)
+	}
+	if !processGone(pid) || !processGone(child) {
+		t.Fatalf("the worker's CLI is still running (%d, %d)", pid, child)
+	}
+	<-cancelled // the cancel
+	<-cancelled // the worker unwound
+	if _, ok := store.Resolve(token); ok {
+		t.Fatal("the cancelled worker's token is still accepted")
 	}
 }

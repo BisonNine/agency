@@ -41,8 +41,8 @@ type CancelOutcome struct {
 // cancelled or still running.
 func cancelReply(o CancelOutcome) string {
 	if !o.Running && o.Skipped == 0 && o.Cancelled == 0 {
-		if o.StillRunning > 0 {
-			return "No pending messages to cancel. " + stillRunning(o.StillRunning)
+		if !o.All && o.StillRunning > 0 {
+			return o.Agent + ": nothing to stop. " + stillRunning(o.StillRunning)
 		}
 		return "No pending messages to cancel."
 	}

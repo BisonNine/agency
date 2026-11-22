@@ -55,7 +55,7 @@ func TestCancel_ShellJobsCountedAndStopped(t *testing.T) {
 	if n := toolsshell.Host.Running("alice"); n != 1 {
 		t.Fatalf("running jobs = %d, want 1", n)
 	}
-	if got := send("m2", "/cancel"); got != "No pending messages to cancel. 1 background task is still running — /cancel all stops it too." {
+	if got := send("m2", "/cancel"); got != "Alice: nothing to stop. 1 background task is still running — /cancel all stops it too." {
 		t.Fatalf("/cancel reply = %q", got)
 	}
 	if n := toolsshell.Host.Running("alice"); n != 1 {

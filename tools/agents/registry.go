@@ -43,7 +43,8 @@ func NewTaskRegistry() *TaskRegistry {
 }
 
 // Observe registers fn, told of each task as it starts, changes mode and
-// ends (State says how), on the goroutine of the change.
+// ends (State says how) and, for a cancelled task, once more when its worker
+// has unwound and its clone was released, on the goroutine of the change.
 func (r *TaskRegistry) Observe(fn func(hook.TaskInfo)) {
 	r.mu.Lock()
 	r.observers = append(r.observers, fn)

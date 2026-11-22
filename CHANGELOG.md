@@ -78,8 +78,10 @@
   names the agent and says what was stopped, how many queued messages were
   skipped and how many background tasks are still running, for example
   "Alice: stopped. 2 background tasks are still running — /cancel all stops
-  them too." With nothing to stop the reply is unchanged: "No pending messages
-  to cancel." A message from another chat, and an agent waiting on an answer,
+  them too." With nothing running but background tasks it says so: "Alice:
+  nothing to stop. 1 background task is still running — /cancel all stops it
+  too." With nothing at all the reply is unchanged: "No pending messages to
+  cancel." A message from another chat, and an agent waiting on an answer,
   are still told their request was cancelled.
 - **BREAKING: an agent granted `agent_spawn` now also has `agent_cancel`.** It
   comes with `agent_spawn` (also when a `"*"` or prefix entry grants

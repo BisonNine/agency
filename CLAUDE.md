@@ -373,7 +373,8 @@ shortcoming in the module, never here.
   stops its shell jobs (`shell.Host.StopAll`). One reply per cancel, to the chat it was
   typed in, from `commands.CancelOutcome` ("Alice: stopped. 2 background tasks are
   still running — /cancel all stops them too.", "Alice: stopped, and cancelled 2
-  background tasks.", "No pending messages to cancel." when nothing ran); background
+  background tasks.", "Alice: nothing to stop. 1 background task is still running — …"
+  when only tasks run, "No pending messages to cancel." when nothing does); background
   tasks are the registry's tasks plus the shell jobs (`backgroundRunning`). The cause
   (`userCancelError`) names the chat: the stopped and dropped messages of that chat
   get no text of their own (one requiring a reply gets an empty `cancelled` close;
