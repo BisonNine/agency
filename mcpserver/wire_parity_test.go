@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -145,7 +146,7 @@ func wireServer(t *testing.T) http.Handler {
 		WithInternalAllowlist([]string{"*"}),
 		// /mcp leaves nil_tool and open_args unpublished.
 		WithExternalAllowlist([]string{"time_now", "fail_tool", "panic_tool", "leak_tool", "foruser_tool", "session_echo", "ctx_probe", "srv", "bob_only"}),
-		WithACLPolicy(acl.PolicyFunc(func(agent, tool string) bool { return !(agent == "bob" && tool == "time_now") })),
+		WithACLPolicy(acl.PolicyFunc(func(agent, tool string) bool { return agent != "bob" || tool != "time_now" })),
 	)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -179,9 +180,7 @@ func wireCall(tool string, args map[string]any) map[string]any {
 
 func withToken(tok string, args map[string]any) map[string]any {
 	out := map[string]any{"session_token": tok}
-	for k, v := range args {
-		out[k] = v
-	}
+	maps.Copy(out, args)
 	return out
 }
 
@@ -256,8 +255,9 @@ func TestWireParity(t *testing.T) {
 	ts := httptest.NewServer(wireServer(t))
 	defer ts.Close()
 
-	var got []wireExchange
-	for i, c := range wireCases() {
+	cases := wireCases()
+	got := make([]wireExchange, 0, len(cases))
+	for i, c := range cases {
 		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": i + 1, "method": c.method, "params": c.params})
 		if err != nil {
 			t.Fatal(err)
@@ -276,7 +276,9 @@ func TestWireParity(t *testing.T) {
 			t.Fatalf("%s: %v", c.name, err)
 		}
 		raw, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
 		if err != nil {
 			t.Fatalf("%s: read: %v", c.name, err)
 		}
@@ -320,8 +322,11 @@ func TestWireParity(t *testing.T) {
 			case i >= len(got):
 				t.Errorf("missing exchange %q", w[i].Name)
 			default:
-				a, _ := json.Marshal(w[i])
-				b, _ := json.Marshal(got[i])
+				a, aerr := json.Marshal(w[i])
+				b, berr := json.Marshal(got[i])
+				if aerr != nil || berr != nil {
+					t.Fatalf("%s: encode: %v %v", w[i].Name, aerr, berr)
+				}
 				if !bytes.Equal(a, b) {
 					t.Errorf("%s:\nwant %s\n got %s", w[i].Name, a, b)
 				}
