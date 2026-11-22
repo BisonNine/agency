@@ -24,8 +24,16 @@ import (
 // pinRecordingStore is a media store that records the pins its owners set.
 type pinRecordingStore struct {
 	*media.FileMediaStore
-	mu   sync.Mutex
-	pins [][]string
+	mu       sync.Mutex
+	pins     [][]string
+	released []string
+}
+
+func (s *pinRecordingStore) ReleasePins(owner string) {
+	s.mu.Lock()
+	s.released = append(s.released, owner)
+	s.mu.Unlock()
+	s.FileMediaStore.ReleasePins(owner)
 }
 
 func (s *pinRecordingStore) SetPins(owner string, refs []string) {
@@ -119,5 +127,42 @@ func TestFirstRequest_MediaResolvedAfterIterationOneCompaction(t *testing.T) {
 	defer store.mu.Unlock()
 	if len(store.pins) == 0 || !slices.Equal(store.pins[len(store.pins)-1], []string{kept}) {
 		t.Fatalf("pins set = %v, want only %s", store.pins, kept)
+	}
+}
+
+// resetPanics is a context manager whose reset panics.
+type resetPanics struct{ capturingContextManager }
+
+func (*resetPanics) Reset(context.Context) error { panic("Bob's bug") }
+
+// A session_clear turn resets the session before it releases the session's
+// pins and reissues its token: a reset that panics leaves both as they were.
+func TestSessionClear_ResetFirst(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	al := mustNewAgentLoop(t, newTestConfig(t), bus.NewMessageBus(), &mockProvider{}, nil)
+	store := &pinRecordingStore{FileMediaStore: media.NewFileMediaStore()}
+	al.mediaStore = store
+	agent := al.registry.Default()
+	al.SetSessionTokenIssuer(&issuingSTI{})
+	entry := &cmEntry{cm: &resetPanics{}, sessionKey: "s"}
+	entry.touch()
+	entry.setToken("SST-alice")
+	al.contextManagers.Store(agent.ID+":s", entry)
+	token := al.sessionToken(agent, "s")
+	if token == "" {
+		t.Fatal("the session has no token to keep")
+	}
+
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("the reset's panic did not reach the caller")
+			}
+		}()
+		_, err := al.runAgentLoop(context.Background(), agent, processOptions{SessionKey: "s", Channel: "cli", ChatID: "direct", UserMessage: "hi", ResetSession: true})
+		t.Fatalf("runAgentLoop returned %v instead of panicking", err)
+	}()
+	if len(store.released) != 0 || al.sessionToken(agent, "s") != token {
+		t.Fatalf("released %v, token changed %v", store.released, al.sessionToken(agent, "s") != token)
 	}
 }

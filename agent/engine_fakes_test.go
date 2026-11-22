@@ -98,8 +98,14 @@ func (f *fakeContext) CompactIfDue(context.Context) (bool, error)        { retur
 func (f *fakeContext) LastCompactionReport() *ctxengine.CompactionReport { return nil }
 func (f *fakeContext) RenderedSummary() string                           { return "" }
 func (f *fakeContext) Stats() ctxengine.ContextStats                     { return ctxengine.ContextStats{} }
-func (f *fakeContext) Reset(context.Context) error                       { return nil }
-func (f *fakeContext) Close(context.Context) error                       { return nil }
+
+func (f *fakeContext) Reset(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.log = append(f.log, "reset")
+	return nil
+}
+func (f *fakeContext) Close(context.Context) error { return nil }
 
 func (f *fakeContext) ForceCompress(context.Context) error {
 	f.mu.Lock()

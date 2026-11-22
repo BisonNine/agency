@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"sync/atomic"
 
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/ctxengine"
@@ -251,6 +252,10 @@ func toolCallbackFailure(name string, perr *hook.PanicError) *toolkit.Result {
 type turnOnContext struct {
 	hooks *turnHooks
 	clock clock.Clock
+	// finished is set once the turn emitted TurnFinished: a step reported
+	// after it still reaches the callbacks but emits no event, so
+	// TurnFinished stays the last.
+	finished atomic.Bool
 }
 
 type turnOnContextKey struct{}
@@ -287,5 +292,7 @@ func engineCompactionStart(ctx context.Context, info ctxengine.CompactionStart) 
 	ev := hook.Compaction{Phase: hook.CompactionStarted, Reason: string(info.Reason), Blocking: info.Blocking}
 	ev.Scope, ev.At = scope, t.clock.Now()
 	t.hooks.callOnCompaction(ctx, ev)
-	t.hooks.emit(ctx, ev)
+	if !t.finished.Load() {
+		t.hooks.emit(ctx, ev)
+	}
 }

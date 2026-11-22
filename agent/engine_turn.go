@@ -412,6 +412,9 @@ const (
 // finish emits TurnFinished and closes the handle.
 func (e *engineTurn) finish(ctx context.Context, tr hook.TurnResult) {
 	e.hooks.emit(ctx, hook.TurnFinished{EventHeader: e.header(), TurnResult: tr})
+	if t, ok := turnOf(ctx); ok && t.hooks == e.hooks {
+		t.finished.Store(true)
+	}
 	e.handle.result = tr
 	close(e.handle.done)
 }
@@ -425,7 +428,7 @@ func (e *engineTurn) begin(ctx context.Context, turn *hook.Turn) error {
 	}
 	if turn.Options.ResetSession {
 		if err := e.spec.cm.Reset(ctx); err != nil {
-			e.logAt(slog.LevelWarn, "session_clear: Reset failed", map[string]any{
+			e.logAt(slog.LevelWarn, "session reset failed", map[string]any{
 				"session_key": e.spec.scope.Session,
 				"error":       err.Error(),
 			})

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
@@ -693,5 +694,35 @@ func TestEngine_LimitsFromCandidates(t *testing.T) {
 	}
 	if got := p.Calls()[0].Options["max_tokens"]; got != 1234 {
 		t.Fatalf("max_tokens = %v, want the catalogue's default", got)
+	}
+}
+
+// A run that asks for a reset has the session reset before its message is
+// stored.
+func TestEngine_ResetSessionBeforeStoring(t *testing.T) {
+	f := newSpanFixture(t, modelstest.Reply("done"))
+	f.spec.options = hook.RunOptions{ResetSession: true}
+	if _, _, err := f.run(t); err != nil {
+		t.Fatal(err)
+	}
+	if ev := f.cm.events(); len(ev) < 2 || ev[0] != "reset" || ev[1] != "add:user" {
+		t.Fatalf("context = %v, want the reset before the message", ev)
+	}
+}
+
+// A compaction reported on the turn's context after its TurnFinished still
+// reaches OnCompaction but emits no event: TurnFinished stays the last.
+func TestEngine_NoEventAfterTurnFinished(t *testing.T) {
+	f := newSpanFixture(t, modelstest.Reply("done"))
+	var notices int
+	f.spec.hooks.add(hook.Plugin{Name: "notice", OnCompaction: func(context.Context, hook.Compaction) { notices++ }})
+	ctx := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, f.clk)
+	if _, err := newEngineTurn(f.spec, nil).run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	engineCompactionStart(ctx, ctxengine.CompactionStart{SessionKey: "s", Blocking: true})
+	kinds := f.rec.kinds()
+	if kinds[len(kinds)-1] != "TurnFinished" || notices != 1 {
+		t.Fatalf("events = %v, notices = %d", kinds, notices)
 	}
 }

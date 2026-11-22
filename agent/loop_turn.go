@@ -223,8 +223,10 @@ func (al *AgentLoop) scopeSessionToken(ctx context.Context, agent *AgentInstance
 }
 
 // prepareSession readies the session for the turn's message, adjusting
-// *opts and turn.Message: a session_clear handoff releases the session's
-// pins and reissues its token (the engine resets the session), a
+// *opts and turn.Message: a session_clear handoff resets the session, then
+// releases its pins and reissues its token (the host's order, so a reset
+// that panics leaves both as they were; the run asks the engine for no
+// reset), a
 // single-shot turn starts blank, whispers held for the agent open its
 // message, and the inbound media are described and pinned.
 func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, cm ctxengine.ContextManager, opts *processOptions, turn *hook.Turn) error {
@@ -233,6 +235,12 @@ func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, c
 	// turn starts on a clean (archive-preserved) context; the reissued
 	// session token reaches the model in this turn's system prompt.
 	if opts.ResetSession {
+		if err := cm.Reset(ctx); err != nil {
+			logger.WarnCF("agent", "session_clear: Reset failed", map[string]any{
+				"session_key": opts.SessionKey,
+				"error":       err.Error(),
+			})
+		}
 		// The cleared history no longer references any media; let its files age out.
 		al.releaseSessionPins(opts.SessionKey)
 		al.reissueSessionToken(agent, opts.SessionKey)

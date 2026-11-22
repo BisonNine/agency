@@ -413,7 +413,6 @@ func (al *AgentLoop) newHostEngineTurn(
 			// A retried message is already in history, unless a single-shot
 			// turn starts blank and stores it again.
 			AlreadyStored: opts.IsRetry && !agent.Spec.SingleShot(),
-			ResetSession:  opts.ResetSession,
 			Depth:         scope.Depth,
 		},
 		loopPlugins: al.loopPlugins(ctx, agent, opts, st),
