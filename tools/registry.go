@@ -89,7 +89,7 @@ func (r *ToolRegistry) Register(tool Tool) {
 }
 
 // RegisterSuite registers a tool that belongs to an all-or-nothing suite. It is
-// identical to Register but marks the name suite-exempt, so ExecuteWithContext
+// identical to Register but marks the entry suite-exempt, so ExecuteWithContext
 // skips the per-tool allowlist check (the suite flag is the allow decision).
 func (r *ToolRegistry) RegisterSuite(tool Tool) {
 	r.put(toolkit.Entry{Tool: tool}, true, "suite tool")

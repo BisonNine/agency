@@ -366,3 +366,13 @@ func TestWrapper_GateChecksTheToolThatRuns(t *testing.T) {
 		t.Log("the exempt tool never ran; the swap always won the race")
 	}
 }
+
+// ExecuteUnattended matches the internal name only: a tool's ExternalName is
+// not registered under it.
+func TestWrapper_ExecuteUnattendedByExternalName(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockExternalTool{mockRegistryTool: *newMockTool("mcp_srv_find", "find"), external: "srv_find"})
+	if _, err := r.ExecuteUnattended(context.Background(), "srv_find", nil); !errors.Is(err, ErrToolNotRegistered) {
+		t.Errorf("err = %v, want ErrToolNotRegistered", err)
+	}
+}

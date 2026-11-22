@@ -251,7 +251,7 @@ func (t *SearchTool) getOrBuildEngine() *bm25CachedEngine {
 	t.cacheMu.Lock()
 	defer t.cacheMu.Unlock()
 
-	// Snapshot + version are read under a single registry RLock (no TOCTOU).
+	// Docs and version come from one catalogue snapshot (no TOCTOU).
 	snap := t.registry.SnapshotHiddenTools()
 
 	if t.cachedEngine != nil && t.cacheVersion == snap.Version {
