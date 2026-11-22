@@ -64,8 +64,9 @@ func (s *agentServices) AllowedModels() []string {
 	if err != nil {
 		return nil
 	}
-	names := make([]string, 0, len(a.Candidates))
-	for _, c := range a.Candidates {
+	cands := s.al.chatCandidates(a)
+	names := make([]string, 0, len(cands))
+	for _, c := range cands {
 		name := c.Name
 		if name == "" {
 			name = c.Model
@@ -104,7 +105,7 @@ func (s *agentServices) createFresh(model string, o tools.FreshOptions, extra ..
 	if strings.TrimSpace(model) == "" {
 		return "", errors.New("a fresh agent needs a model")
 	}
-	matched, ok := toolsagents.MatchCandidate(a.Candidates, model)
+	matched, ok := toolsagents.MatchCandidate(s.al.chatCandidates(a), model)
 	if !ok {
 		return "", fmt.Errorf("model %q is not one of agent %q's models", model, s.callerID)
 	}

@@ -36,7 +36,7 @@ func humanMessagingConfig(t *testing.T, timeoutSec int) *config.Config {
 // model; Bob's turns go to the person through the provider dispatcher.
 func humanMessagingLoop(t *testing.T, cfg *config.Config, model providers.LLMProvider) (*AgentLoop, *bus.MessageBus) {
 	t.Helper()
-	return messagingLoopWith(t, cfg, model, providers.NewProviderDispatcher(cfg))
+	return messagingLoopWith(t, cfg, model, realClients{})
 }
 
 func publishIn(t *testing.T, msgBus *bus.MessageBus, msg bus.InboundMessage) {

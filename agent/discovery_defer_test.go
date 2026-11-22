@@ -99,7 +99,7 @@ func TestDiscovery_TurnSendsSameToolsAndRunsFoundTool(t *testing.T) {
 		toolCallResponse("tc-read", "mcp_alice_notebook", `{}`),
 		{Content: "Alice's notebook says to buy milk."},
 	}}
-	agent.Provider = provider
+	setTestProvider(agent, provider)
 
 	const key = "agent:main:discovery-defer"
 	opts := processOptions{

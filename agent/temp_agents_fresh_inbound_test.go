@@ -326,7 +326,7 @@ func TestFreshSpec_EmptyPromptIsDefault(t *testing.T) {
 	inst, err := newAgentInstance(agentreg.Spec{
 		ID: "f", Config: &config.AgentConfig{ID: "f"}, Origin: agentreg.OriginTemp, Fresh: true,
 		Mode: agentreg.ModeNoMemory, Workspace: filepath.Join(dir, "workspace"), StateDir: dir,
-	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	}, &cfg.Agents.Defaults, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

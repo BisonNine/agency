@@ -344,7 +344,7 @@ func TestRunLLMIteration_EmitsDispatchAndFinishPerCall(t *testing.T) {
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	agent.Provider = &sequenceProvider{
+	setTestProvider(agent, &sequenceProvider{
 		responses: []*providers.LLMResponse{{
 			Content: "hi from Alice",
 			Status: &providers.DispatchStatus{
@@ -358,7 +358,7 @@ func TestRunLLMIteration_EmitsDispatchAndFinishPerCall(t *testing.T) {
 			},
 		}},
 		errors: []error{nil},
-	}
+	})
 
 	messages := []providers.Message{{Role: "user", Content: "hi"}}
 	opts := processOptions{
@@ -448,14 +448,14 @@ func sideModelLoop(srv *httptest.Server, alias string) *AgentLoop {
 		},
 	}
 	cfg.Summarization.Models = []string{alias}
-	return &AgentLoop{cfg: cfg, dispatcher: providers.NewProviderDispatcher(cfg), catalog: testCatalog(cfg, nil)}
+	return &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
 }
 
 // A compression call (context engine or cognitive memory) leaves one finish
 // line naming the summarization model that answered.
 func TestCompressModelCaller_EmitsFinish(t *testing.T) {
 	al := sideModelLoop(openAIStub(t), "Summarizer")
-	alice := &AgentInstance{ID: "alice", Provider: &mockProvider{}, Model: "Primary"}
+	alice := &AgentInstance{ID: "alice", Model: "Primary"}
 	assignAgentModels(al.catalog, al.cfg, alice)
 	caller, _ := al.newCompressModelCaller(alice, "agent:alice:main", models.Summarize)
 
@@ -518,7 +518,7 @@ func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
 	al := sideModelLoop(openAIStub(t), "Main")
 	al.cfg.Agents.Defaults.Models = []string{"Main"}
 	al.cfg.Summarization.Models = []string{"bob-summarizer"}
-	alice := &AgentInstance{ID: "alice", Provider: &mockProvider{}, Model: "Main"}
+	alice := &AgentInstance{ID: "alice", Model: "Main"}
 	assignAgentModels(al.catalog, al.cfg, alice)
 	caller, _ := al.newCompressModelCaller(alice, "agent:alice:main", models.Summarize)
 
@@ -545,7 +545,7 @@ func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
 // conversation, so its line carries no session_key.
 func TestMemoryModelCaller_FinishHasNoSessionKey(t *testing.T) {
 	al := sideModelLoop(openAIStub(t), "Summarizer")
-	alice := &AgentInstance{ID: "alice", Provider: &mockProvider{}, Model: "Primary"}
+	alice := &AgentInstance{ID: "alice", Model: "Primary"}
 	assignAgentModels(al.catalog, al.cfg, alice)
 	caller := al.NewMemoryModelCaller(alice)
 

@@ -1318,7 +1318,7 @@ func TestRunLLMIteration_ContextCancelDuringBackoff(t *testing.T) {
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	agent.Provider = &errorProvider{err: errors.New("deadline exceeded")}
+	setTestProvider(agent, &errorProvider{err: errors.New("deadline exceeded")})
 
 	messages := []providers.Message{
 		{Role: "user", Content: "trigger backoff"},
@@ -1421,12 +1421,12 @@ func TestRunAgentLoop_EmptyResponse_FirstIteration(t *testing.T) {
 	}
 
 	// Provider returns empty content with an abnormal (non-normal) finish — Normal: false (zero value).
-	agent.Provider = &sequenceProvider{
+	setTestProvider(agent, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{Content: "", FinishReason: "stop", Normal: false, ToolCalls: []providers.ToolCall{}},
 		},
 		errors: []error{nil},
-	}
+	})
 
 	opts := processOptions{
 		SessionKey:      "empty-first",
@@ -1464,7 +1464,7 @@ func TestRunAgentLoop_EmptyResponse_AfterToolCalls(t *testing.T) {
 	agent.Tools.Register(&mockEchoTool{})
 
 	// First call: return a tool call. Second call: return empty content.
-	agent.Provider = &sequenceProvider{
+	setTestProvider(agent, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{
 				Content: "",
@@ -1483,7 +1483,7 @@ func TestRunAgentLoop_EmptyResponse_AfterToolCalls(t *testing.T) {
 			{Content: "", ToolCalls: []providers.ToolCall{}},
 		},
 		errors: []error{nil, nil},
-	}
+	})
 
 	opts := processOptions{
 		SessionKey:      "empty-after-tools",
@@ -1517,7 +1517,7 @@ func TestRunLLMIteration_ToolCalls_ThenFinalResponse(t *testing.T) {
 	agent.Tools.Register(&mockEchoTool{})
 
 	const finalText = "all done"
-	agent.Provider = &sequenceProvider{
+	setTestProvider(agent, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{
 				Content: "",
@@ -1536,7 +1536,7 @@ func TestRunLLMIteration_ToolCalls_ThenFinalResponse(t *testing.T) {
 			{Content: finalText, ToolCalls: []providers.ToolCall{}},
 		},
 		errors: []error{nil, nil},
-	}
+	})
 
 	messages := []providers.Message{{Role: "user", Content: "run echo_tool"}}
 	opts := processOptions{
@@ -1595,7 +1595,7 @@ func TestRunLLMIteration_MaxIterations(t *testing.T) {
 		}
 		errors[i] = nil
 	}
-	agent.Provider = &sequenceProvider{responses: responses, errors: errors}
+	setTestProvider(agent, &sequenceProvider{responses: responses, errors: errors})
 
 	messages := []providers.Message{{Role: "user", Content: "loop forever"}}
 	opts := processOptions{
@@ -1661,8 +1661,8 @@ func TestSelectCandidates_DefaultOrder(t *testing.T) {
 		t.Errorf("expected model %q, got %q", "a0", model)
 	}
 	for i, c := range candidates {
-		if c.Model != agent.Candidates[i].Model {
-			t.Fatalf("candidate %d = %q, want %q (order changed)", i, c.Model, agent.Candidates[i].Model)
+		if want := fourCandidates()[i].Model; c.Model != want {
+			t.Fatalf("candidate %d = %q, want %q (order changed)", i, c.Model, want)
 		}
 	}
 }
@@ -1694,10 +1694,10 @@ func TestSelectCandidates_Reorder(t *testing.T) {
 		t.Errorf("expected model %q, got %q", "a2", model)
 	}
 
-	// agent.Candidates must be untouched.
-	for i := range orig {
-		if agent.Candidates[i].Model != orig[i].Model {
-			t.Errorf("agent.Candidates mutated at %d: %q != %q", i, agent.Candidates[i].Model, orig[i].Model)
+	// The agent's list itself must be untouched.
+	for i, c := range al.chatCandidates(agent) {
+		if c.Model != orig[i].Model {
+			t.Errorf("chat list changed at %d: %q != %q", i, c.Model, orig[i].Model)
 		}
 	}
 }
@@ -1905,7 +1905,7 @@ func TestRunLLMIteration_ContextWindowError_Retry(t *testing.T) {
 	}
 
 	const successContent = "recovered after context error"
-	agent.Provider = &sequenceProvider{
+	setTestProvider(agent, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			nil,
 			{Content: successContent, ToolCalls: []providers.ToolCall{}},
@@ -1914,7 +1914,7 @@ func TestRunLLMIteration_ContextWindowError_Retry(t *testing.T) {
 			errors.New("context_length_exceeded: request too long"),
 			nil,
 		},
-	}
+	})
 
 	messages := []providers.Message{{Role: "user", Content: "trigger"}}
 	opts := processOptions{
@@ -2088,7 +2088,7 @@ func TestProcessDirect_ReturnsResponse(t *testing.T) {
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	agent.Provider = &simpleMockProvider{response: "direct response"}
+	setTestProvider(agent, &simpleMockProvider{response: "direct response"})
 
 	got, err := al.ProcessDirect(context.Background(), "hello", "direct-session")
 	if err != nil {
@@ -2110,21 +2110,9 @@ func TestSetTranscriber_StoresTranscriber(t *testing.T) {
 	}
 }
 
-// TestReloadProviderAndConfig_NilProvider verifies ReloadProviderAndConfig
-// returns an error when provider is nil.
-func TestReloadProviderAndConfig_NilProvider(t *testing.T) {
-	tl := newTestAgentLoop(t)
-	al, cfg := tl.al, tl.cfg
-
-	err := reloadForTest(al, context.Background(), nil, cfg)
-	if err == nil {
-		t.Fatal("expected error for nil provider, got nil")
-	}
-}
-
-// TestReloadProviderAndConfig_NilConfig verifies ReloadProviderAndConfig
+// TestReloadConfig_NilConfig verifies ReloadConfig
 // returns an error when config is nil.
-func TestReloadProviderAndConfig_NilConfig(t *testing.T) {
+func TestReloadConfig_NilConfig(t *testing.T) {
 	tl := newTestAgentLoop(t)
 	al, provider := tl.al, tl.provider
 
@@ -2134,9 +2122,9 @@ func TestReloadProviderAndConfig_NilConfig(t *testing.T) {
 	}
 }
 
-// TestReloadProviderAndConfig_Success verifies that a valid reload swaps the
+// TestReloadConfig_Success verifies that a valid reload swaps the
 // config and registry without error.
-func TestReloadProviderAndConfig_Success(t *testing.T) {
+func TestReloadConfig_Success(t *testing.T) {
 	tl := newTestAgentLoop(t)
 	al, cfg, provider := tl.al, tl.cfg, tl.provider
 

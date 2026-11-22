@@ -40,7 +40,7 @@ func TestLoopProtection_BreaksOnRepeatedToolCall(t *testing.T) {
 	for i := range resps {
 		resps[i] = mkResp()
 	}
-	agentInstance.Provider = &sequenceProvider{responses: resps, errors: errs}
+	setTestProvider(agentInstance, &sequenceProvider{responses: resps, errors: errs})
 
 	opts := processOptions{
 		SessionKey:   "loopguard",
@@ -73,9 +73,9 @@ func TestLoopProtection_BreaksOnRepeatedToolCall(t *testing.T) {
 	}
 	// Before aborting, the model is steered: a later dispatch must carry the
 	// generic "exact same tool call N times" guidance so it can self-correct.
-	sp, ok := agentInstance.Provider.(*sequenceProvider)
+	sp, ok := testProvider(agentInstance).(*sequenceProvider)
 	if !ok {
-		t.Fatalf("provider is %T, want *sequenceProvider", agentInstance.Provider)
+		t.Fatalf("provider is %T, want *sequenceProvider", testProvider(agentInstance))
 	}
 	var steer string
 	for _, m := range sp.lastMessages {

@@ -3,6 +3,8 @@ package agent
 import (
 	"testing"
 
+	"go.bison9.com/agent/models"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -138,15 +140,18 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 
 			provider := &mockProvider{}
 			agent := mustNewAgentInstance(t, nil, &cfg.Agents.Defaults, cfg, provider)
+			cat := testCatalog(cfg, nil)
+			assignAgentModels(cat, cfg, agent)
+			cands := setCandidatesIn(cat, agent.ID, models.Chat)
 
-			if len(agent.Candidates) != 1 {
-				t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
+			if len(cands) != 1 {
+				t.Fatalf("len(Candidates) = %d, want 1", len(cands))
 			}
-			if agent.Candidates[0].Provider != tt.wantProvider {
-				t.Fatalf("candidate provider = %q, want %q", agent.Candidates[0].Provider, tt.wantProvider)
+			if cands[0].Provider != tt.wantProvider {
+				t.Fatalf("candidate provider = %q, want %q", cands[0].Provider, tt.wantProvider)
 			}
-			if agent.Candidates[0].Model != tt.wantModel {
-				t.Fatalf("candidate model = %q, want %q", agent.Candidates[0].Model, tt.wantModel)
+			if cands[0].Model != tt.wantModel {
+				t.Fatalf("candidate model = %q, want %q", cands[0].Model, tt.wantModel)
 			}
 		})
 	}

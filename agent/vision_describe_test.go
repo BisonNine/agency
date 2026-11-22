@@ -182,7 +182,7 @@ func TestFlowA_InjectsDescriptionForNonVisionModel(t *testing.T) {
 		}}},
 		{Content: "There are two cats."},
 	}
-	agent.Provider = &sequenceProvider{responses: resps, errors: []error{nil, nil}}
+	setTestProvider(agent, &sequenceProvider{responses: resps, errors: []error{nil, nil}})
 
 	opts := processOptions{
 		SessionKey:   "flowa",
@@ -201,9 +201,9 @@ func TestFlowA_InjectsDescriptionForNonVisionModel(t *testing.T) {
 		t.Fatalf("vision model did not receive the tool image: %v", stub.gotMedia)
 	}
 	// The 2nd model dispatch must have seen the injected description.
-	sp, ok := agent.Provider.(*sequenceProvider)
+	sp, ok := testProvider(agent).(*sequenceProvider)
 	if !ok {
-		t.Fatalf("provider is %T, want *sequenceProvider", agent.Provider)
+		t.Fatalf("provider is %T, want *sequenceProvider", testProvider(agent))
 	}
 	found := false
 	for _, m := range sp.lastMessages {
@@ -231,7 +231,7 @@ func TestWireVisionClients_TaskModelsInPageOrder(t *testing.T) {
 	cfg.TaskModels.VisionModels = []config.TaskModelRef{{Model: "v2"}, {Model: "gone"}, {Model: "v1"}}
 	cfg.TaskModels.TextModels = []config.TaskModelRef{{Model: "alpha"}}
 	cfg.TaskModels.STTModels = []config.TaskModelRef{{Model: "v1"}, {Model: "v2"}}
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, providers.NewProviderDispatcher(cfg))
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, realClients{})
 	agent := al.registry.Default()
 	if agent == nil {
 		t.Fatal("no default agent")

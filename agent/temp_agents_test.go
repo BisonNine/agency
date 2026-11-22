@@ -354,7 +354,7 @@ func TestSubagentSpawn_ModelNarrowsClone(t *testing.T) {
 			cloneModel = info.Spec.CloneModel
 		}
 		if inst, ok := al.GetRegistry().Get(id); ok {
-			candidates = len(inst.Candidates)
+			candidates = len(al.chatCandidates(inst))
 		}
 	}}
 	_, release, err := al.runSubagentTask(context.Background(), "main", "do it", "two", "", nil)

@@ -45,7 +45,7 @@ func TestCronFire_SurvivesAgeCompactionOnArrival(t *testing.T) {
 	// The summarization chain falls back to the agent's provider; it must be in
 	// place before the context manager is built.
 	summarizer := &scriptedProvider{content: `{"version":2,"state":{"goals":[{"text":"morning email reports","refs":[{"seq_start":1,"seq_end":2}]}]},"covered_seq_start":0,"covered_seq_end":0}`}
-	agent.Provider = summarizer
+	setTestProvider(agent, summarizer)
 
 	// Daily fires of one job with gaps, as in the incident (comments give the
 	// production seqs): the oldest message is past the default 7-day age

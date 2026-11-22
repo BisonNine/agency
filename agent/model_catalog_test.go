@@ -49,7 +49,7 @@ func TestReload_CooldownsKeptUnlessModelsChange(t *testing.T) {
 	}
 
 	// Renaming the agent changes nothing the catalogue is built from.
-	if err := al.ReloadProviderAndConfig(context.Background(), model, catalogReloadConfig(base, "Alice Smith")); err != nil {
+	if err := al.ReloadConfig(context.Background(), catalogReloadConfig(base, "Alice Smith")); err != nil {
 		t.Fatal(err)
 	}
 	if !parked() {
@@ -66,7 +66,7 @@ func TestReload_CooldownsKeptUnlessModelsChange(t *testing.T) {
 	// A changed model setting is a new catalogue: cooldowns are cleared.
 	changed := catalogReloadConfig(base, "Alice Smith")
 	changed.Models[0].RequestTimeout = 90
-	if err := al.ReloadProviderAndConfig(context.Background(), model, changed); err != nil {
+	if err := al.ReloadConfig(context.Background(), changed); err != nil {
 		t.Fatal(err)
 	}
 	if parked() {

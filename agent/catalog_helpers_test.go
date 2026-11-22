@@ -7,6 +7,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -95,12 +96,12 @@ func (c *agentProviderClient) target(id providers.Identity) providers.LLMProvide
 		// The agent whose identity it is (a clone has its own label), then
 		// the agent it is billed to.
 		for _, agentID := range r.All() {
-			if inst, ok := r.Get(agentID); ok && inst.Identity() == id && inst.Provider != nil {
-				return inst.Provider
+			if inst, ok := r.Get(agentID); ok && inst.Identity() == id && testProvider(inst) != nil {
+				return testProvider(inst)
 			}
 		}
-		if inst, ok := r.Get(id.Agent); ok && inst != nil && inst.Provider != nil {
-			return inst.Provider
+		if inst, ok := r.Get(id.Agent); ok && inst != nil && testProvider(inst) != nil {
+			return testProvider(inst)
 		}
 	}
 	return c.fallback
@@ -116,8 +117,8 @@ func (c *agentProviderClient) GetDefaultModel() string { return "" }
 // which carry no identity, are answered from.
 func (c *agentProviderClient) defaultTarget() providers.LLMProvider {
 	if r := c.al.GetRegistry(); r != nil {
-		if inst := r.Default(); inst != nil && inst.Provider != nil {
-			return inst.Provider
+		if inst := r.Default(); inst != nil && testProvider(inst) != nil {
+			return testProvider(inst)
 		}
 	}
 	return c.fallback
@@ -160,13 +161,22 @@ func catalogTurn(t *testing.T, cfg *config.Config, inst *AgentInstance) *llmTurn
 	return &llmTurn{al: al, agent: inst, chain: tm.chain, candidates: tm.candidates, model: tm.model, limits: tm.limits}
 }
 
-// parkFor parks model name in cat for d (a 429 with that Retry-After), as a
-// turn's chain would, then gives the model client back.
+// parkFor parks model name in cat for d (a 429 with that Retry-After, at
+// most 5 minutes), as a turn's chain would, then gives the model client back
+// (its current one when client is nil).
 func parkFor(t *testing.T, cat *models.Catalog, name string, d time.Duration, client providers.LLMProvider) {
 	t.Helper()
 	info, ok := cat.Get(name)
 	if !ok {
 		t.Fatalf("no model %s", name)
+	}
+	if client == nil {
+		cl, release, err := cat.Client(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		release()
+		client = cl
 	}
 	if err := cat.RegisterClient(name, modelstest.New().Script(info.Model.Model, modelstest.Status(429, d))); err != nil {
 		t.Fatal(err)
@@ -198,16 +208,60 @@ func adoptTestCatalog(al *AgentLoop, fallback providers.LLMProvider) {
 	routeAllModels(al, fallback)
 }
 
-// reloadForTest is ReloadProviderAndConfig for a test: the models cfg names
+// reloadForTest is ReloadConfig for a test: the models cfg names
 // but does not define are defined (withTestModels), and afterwards every
 // model is routed to the agents' Provider (routeAllModels), as at start.
 func reloadForTest(al *AgentLoop, ctx context.Context, provider providers.LLMProvider, cfg *config.Config) error {
 	if cfg != nil {
 		withTestModels(cfg)
 	}
-	if err := al.ReloadProviderAndConfig(ctx, provider, cfg); err != nil {
+	if err := al.ReloadConfig(ctx, cfg); err != nil {
 		return err
 	}
 	routeAllModels(al, provider)
 	return nil
+}
+
+// clientRouting says which models of a test loop answer through the agents'
+// Provider (setTestProvider): nil, every model, as when a loop had no
+// dispatcher; realClients{}, only the models the test config names without
+// defining them (withTestModels), the rest with their real clients.
+type clientRouting interface{ realClientsOnly() }
+
+// realClients keeps the configured models' real clients.
+type realClients struct{}
+
+func (realClients) realClientsOnly() {}
+
+// testProviders are the clients tests attach to agents: the model calls made
+// for an agent go to its (agentProviderClient).
+var testProviders sync.Map // *AgentInstance → providers.LLMProvider
+
+// setTestProvider makes p answer the model calls made for inst.
+func setTestProvider(inst *AgentInstance, p providers.LLMProvider) {
+	if p == nil {
+		testProviders.Delete(inst)
+		return
+	}
+	testProviders.Store(inst, p)
+}
+
+// testProvider is the client attached to inst, or nil.
+func testProvider(inst *AgentInstance) providers.LLMProvider {
+	if v, ok := testProviders.Load(inst); ok {
+		p, _ := v.(providers.LLMProvider)
+		return p
+	}
+	return nil
+}
+
+// parkedIn reports whether the catalogue has the model on provider with wire
+// model parked.
+func parkedIn(cat *models.Catalog, provider, wire string) bool {
+	for _, h := range cat.Health() {
+		if h.Provider == provider && h.Model == wire && !h.Available {
+			return true
+		}
+	}
+	return false
 }

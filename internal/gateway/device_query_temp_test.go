@@ -6,7 +6,6 @@ import (
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 )
 
@@ -24,7 +23,7 @@ func TestDeviceQuerierHidesTempAgents(t *testing.T) {
 			List: []config.AgentConfig{{ID: "alice", Name: "Alice", Default: true}},
 		},
 	}
-	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

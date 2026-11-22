@@ -97,7 +97,7 @@ func newForumRig(t *testing.T, cfg *config.Config, model providers.LLMProvider) 
 	}, forum.WithCeilings(host.Ceilings))
 	toolsforum.SetService(svc)
 	msgBus := bus.NewMessageBus()
-	al, err := NewAgentLoop(t.Context(), cfg, msgBus, model, nil, OwnsDataDir())
+	al, err := NewAgentLoop(t.Context(), cfg, msgBus, OwnsDataDir())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -571,10 +571,11 @@ func TestForumHost_Cooldown(t *testing.T) {
 		t.Errorf("Cooldown(bob) = %q, %v before any failure; want none", model, left)
 	}
 	bob, ok := r.al.GetRegistry().Get("bob")
-	if !ok || len(bob.Candidates) != 1 {
-		t.Fatalf("bob's candidates: %+v", bob)
+	cands := r.al.chatCandidates(bob)
+	if !ok || len(cands) != 1 {
+		t.Fatalf("bob's candidates: %+v", cands)
 	}
-	c := bob.Candidates[0]
+	c := cands[0]
 	parkFor(t, r.al.catalog, c.Name, 30*time.Second, &agentProviderClient{al: r.al, fallback: &forumModel{}})
 	if model, left := h.Cooldown("bob"); model != "alpha" || left <= 0 || left > 30*time.Second {
 		t.Errorf("Cooldown(bob) = %q, %v in cooldown; want alpha and up to 30s", model, left)

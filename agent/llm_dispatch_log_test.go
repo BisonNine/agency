@@ -99,7 +99,7 @@ func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.Fallbac
 	al := &AgentLoop{cfg: &config.Config{}, catalog: cat}
 	turn := &llmTurn{
 		al:         al,
-		agent:      &AgentInstance{ID: "alice", Provider: p},
+		agent:      &AgentInstance{ID: "alice"},
 		chain:      chain,
 		candidates: chain.Candidates(),
 		model:      candidates[0].Name,
@@ -355,10 +355,10 @@ func TestRequestModel_ContextWindowRetryOneFinishPerCall(t *testing.T) {
 		addMessage(t, agent.Sessions, sessionKey, "user", "old user msg")
 		addMessage(t, agent.Sessions, sessionKey, "assistant", "old assistant reply")
 	}
-	agent.Provider = &sequenceProvider{
+	setTestProvider(agent, &sequenceProvider{
 		responses: []*providers.LLMResponse{nil, {Content: "recovered"}},
 		errors:    []error{errors.New("context_length_exceeded: request too long"), nil},
-	}
+	})
 	opts := processOptions{SessionKey: sessionKey, Channel: "cli", ChatID: "direct", UserMessage: "trigger"}
 	cm, releaseCM := al.getContextManager(agent, sessionKey)
 	defer releaseCM()

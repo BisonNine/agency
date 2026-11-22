@@ -410,7 +410,7 @@ func TestShell_ReloadTurnsItOff(t *testing.T) {
 	}
 	for _, id := range []string{"alice", cloneID} {
 		inst, _ := al.GetRegistry().Get(id)
-		inst.Provider = model
+		setTestProvider(inst, model)
 	}
 	model.take()
 	checkShell(t, "Alice after the reload", ask("alice"), false)

@@ -300,7 +300,7 @@ func TestSendFiles_InLoopTurnChat(t *testing.T) {
 				responses: []*providers.LLMResponse{{ToolCalls: []providers.ToolCall{call}}, {Content: "done"}},
 				errors:    []error{nil, nil},
 			}
-			l.agent.Provider = provider
+			setTestProvider(l.agent, provider)
 			if _, err := l.al.runAgentLoop(context.Background(), l.agent, processOptions{
 				SessionKey: "agent:alice:main", Channel: tt.channel, ChatID: tt.chatID, UserMessage: "send it",
 			}); err != nil {
@@ -336,7 +336,7 @@ func TestSendFiles_TurnRecordsReplyChat(t *testing.T) {
 			rec := &recordingSTI{}
 			al.SetSessionTokenIssuer(rec)
 			var during []sourceCall
-			agent.Provider = &probeProvider{onChat: func() { during = rec.activeTurns() }}
+			setTestProvider(agent, &probeProvider{onChat: func() { during = rec.activeTurns() }})
 			if _, err := al.runAgentLoop(context.Background(), agent, processOptions{
 				SessionKey: "agent:main:main", Channel: tt.channel, ChatID: tt.chatID, UserMessage: "hi",
 			}); err != nil {

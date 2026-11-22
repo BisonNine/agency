@@ -268,8 +268,9 @@ func (h *ForumHost) Models(_ context.Context, agentID string) ([]forum.ModelInfo
 		return nil, fmt.Errorf("%w: %s", agentreg.ErrNotFound, agentID)
 	}
 	cfg := al.GetConfig()
-	out := make([]forum.ModelInfo, 0, len(a.Candidates))
-	for _, c := range a.Candidates {
+	cands := al.chatCandidates(a)
+	out := make([]forum.ModelInfo, 0, len(cands))
+	for _, c := range cands {
 		out = append(out, modelInfo(cfg, candidateName(c)))
 	}
 	return out, nil
@@ -289,11 +290,15 @@ func (h *ForumHost) Cooldown(agentID string) (string, time.Duration) {
 		return "", 0
 	}
 	a, ok := r.Get(agentID)
-	if !ok || a == nil || len(a.Candidates) == 0 {
+	if !ok || a == nil {
+		return "", 0
+	}
+	cands := al.chatCandidates(a)
+	if len(cands) == 0 {
 		return "", 0
 	}
 	model, soonest := "", time.Duration(0)
-	for _, c := range a.Candidates {
+	for _, c := range cands {
 		left := al.parkedFor(c.Name)
 		if left <= 0 {
 			return "", 0
@@ -344,7 +349,7 @@ func (h *ForumHost) CreateClone(_ context.Context, spec forum.CloneSpec) (string
 		if !ok || src == nil {
 			return "", fmt.Errorf("%w: %s", agentreg.ErrNotFound, spec.Source)
 		}
-		m, ok := toolsagents.MatchCandidate(src.Candidates, spec.Model)
+		m, ok := toolsagents.MatchCandidate(al.chatCandidates(src), spec.Model)
 		if !ok {
 			return "", fmt.Errorf("model %q is not one of agent %q's models", spec.Model, spec.Source)
 		}

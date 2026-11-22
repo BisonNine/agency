@@ -11,27 +11,9 @@ import (
 	"time"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
-
-// cooldownPolicy maps the config cooldown section to a providers.CooldownPolicy
-// (the per-category "settled" durations reached after the 1/3/5-minute
-// escalation). A nil config yields the built-in defaults.
-func cooldownPolicy(cfg *config.Config) providers.CooldownPolicy {
-	if cfg == nil {
-		return providers.DefaultCooldownPolicy()
-	}
-	c := cfg.Cooldown
-	return providers.CooldownPolicy{
-		BillingAuth: c.BillingAuth(),
-		RateLimit:   c.RateLimit(),
-		BadRequest:  c.BadRequest(),
-		ClientError: c.ClientError(),
-		ServerError: c.ServerError(),
-	}
-}
 
 // renderTurnError converts a failed turn into a single user-facing string. Order
 // of precedence:

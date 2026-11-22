@@ -13,7 +13,6 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // fakeClaudeCLI writes a stand-in for the claude binary that records its
@@ -77,7 +76,7 @@ func TestFreshAgent_CLIModelIsolated(t *testing.T) {
 		t.Fatal("fixture: claude-cli has no bypass flags")
 	}
 
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &recordingProvider{}, providers.NewProviderDispatcher(cfg), OwnsDataDir())
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &recordingProvider{}, realClients{}, OwnsDataDir())
 	id, err := al.GetRegistry().CreateFresh(config.AgentConfig{Models: []string{"cc"}})
 	if err != nil {
 		t.Fatalf("Create: %v", err)

@@ -19,16 +19,16 @@ func mustNewAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
-	dispatcher *providers.ProviderDispatcher,
+	clients clientRouting,
 	opts ...LoopOption,
 ) *AgentLoop {
 	t.Helper()
 	added := withTestModels(cfg)
-	al, err := NewAgentLoop(t.Context(), cfg, msgBus, provider, dispatcher, opts...)
+	al, err := NewAgentLoop(t.Context(), cfg, msgBus, opts...)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
-	if dispatcher == nil {
+	if clients == nil {
 		// Without a dispatcher every model call went to the agent's
 		// Provider; it still does.
 		routeAllModels(al, provider)
@@ -46,7 +46,11 @@ func mustNewAgentRegistry(t *testing.T, cfg *config.Config, provider providers.L
 	t.Helper()
 	registry, err := agentreg.New(t.Context(), cfg, agentreg.Hooks[*AgentInstance]{
 		Build: func(_ context.Context, c *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
-			return newAgentInstance(spec, &c.Agents.Defaults, c, provider)
+			inst, err := newAgentInstance(spec, &c.Agents.Defaults, c)
+			if err == nil {
+				setTestProvider(inst, provider)
+			}
+			return inst, err
 		},
 	})
 	if err != nil {
@@ -64,9 +68,10 @@ func mustNewAgentInstance(
 	provider providers.LLMProvider,
 ) *AgentInstance {
 	t.Helper()
-	instance, err := NewAgentInstance(agentCfg, defaults, cfg, provider)
+	instance, err := NewAgentInstance(agentCfg, defaults, cfg)
 	if err != nil {
 		t.Fatalf("NewAgentInstance: %v", err)
 	}
+	setTestProvider(instance, provider)
 	return instance
 }

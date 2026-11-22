@@ -34,22 +34,14 @@ import (
 // reload, al.cfg is still the old one at this point). A fresh temporary agent
 // gets no tools at all.
 //
-// The agent's models are assigned in the running catalogue, or, while a
-// reload that changes models builds its agents, in the one about to be
-// adopted (buildCatalog).
-func (al *AgentLoop) agentBuilder(
-	provider providers.LLMProvider,
-) agentreg.BuildFunc[*AgentInstance] {
+// The agent's models are assigned as assignBuilt says.
+func (al *AgentLoop) agentBuilder() agentreg.BuildFunc[*AgentInstance] {
 	return func(ctx context.Context, cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
-		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg, provider)
+		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg)
 		if err != nil {
 			return nil, err
 		}
-		catalog := al.catalog
-		if next := al.buildCatalog.Load(); next != nil {
-			catalog = next
-		}
-		assignAgentModels(catalog, cfg, inst)
+		al.assignBuilt(cfg, inst)
 		if inst.HumanModel != "" {
 			// A human agent runs no model: no vision side-model, no tools.
 			return inst, nil
@@ -179,7 +171,7 @@ func (al *AgentLoop) spawnCandidates(targetAgentID string) ([]providers.Fallback
 	if !ok {
 		return nil, false
 	}
-	return target.WorkerCandidates, true
+	return al.workerCandidates(target), true
 }
 
 // hasWorkerModels reports whether the agent has configured worker models
@@ -204,7 +196,7 @@ func (al *AgentLoop) newSpawner(
 	spawnMgr := toolsagents.NewSubagentManager(toolsagents.SubagentManagerConfig{
 		Workspace:         currentAgent.Workspace,
 		Live:              al.taskLive,
-		SelfCandidates:    currentAgent.WorkerCandidates,
+		SelfResolver:      func() []providers.FallbackCandidate { return al.workerCandidates(currentAgent) },
 		CallerAgentID:     agentID,
 		CandidateResolver: candidateResolver,
 		WorkerModelsSet:   al.hasWorkerModels,
@@ -577,19 +569,6 @@ func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, s
 		}
 		pubCancel()
 	}
-}
-
-// Helper to extract provider from registry for cleanup
-func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
-	if registry == nil {
-		return nil, false
-	}
-	// Get any agent to access the provider
-	defaultAgent := registry.Default()
-	if defaultAgent == nil {
-		return nil, false
-	}
-	return defaultAgent.Provider, true
 }
 
 // releaseReplacedInstance evicts every cached context manager still built on

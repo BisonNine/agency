@@ -47,7 +47,7 @@ EOFMOCK
 		Providers: []config.Provider{{Name: "claude", Protocol: "claude-cli", Command: script, BypassRestrictions: true}},
 		Models:    []config.ModelConfig{{ModelName: "claude-cli", Model: "claude-cli", Provider: "claude", Workspace: t.TempDir(), Enabled: true}},
 	}
-	client := &providerLLMClient{catalog: testCatalog(cfg, nil), alias: "claude-cli", model: "claude-cli"}
+	caller := compressCaller(testCatalog(cfg, nil), "claude-cli")
 
 	sessionKey := "e2e-compress"
 	store, err := session.NewSQLiteStore(t.TempDir())
@@ -71,7 +71,7 @@ EOFMOCK
 		sessionKey,
 		store,
 		ctxengine.WithContextWindow(1000),
-		ctxengine.WithModelCaller(&compressModelCaller{id: testIdentity, clients: []*providerLLMClient{client}}),
+		ctxengine.WithModelCaller(caller),
 	)
 	if compactErr := cm.Compact(context.Background()); compactErr != nil {
 		t.Fatalf("Compact: %v", compactErr)

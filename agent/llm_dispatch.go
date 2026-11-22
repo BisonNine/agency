@@ -417,17 +417,6 @@ func (t *llmTurn) logPassed(attempts []providers.FallbackAttempt) {
 	}
 }
 
-// dispatchProvider resolves the model alias to a provider for agent through
-// the dispatcher, for the task models' describe-images list. A fresh
-// temporary agent gets an isolated provider: a CLI model runs in its own
-// workspace without bypass flags (GetIsolated).
-func (al *AgentLoop) dispatchProvider(agent *AgentInstance, alias string) (providers.LLMProvider, error) {
-	if agent != nil && agent.Spec.Fresh {
-		return al.dispatcher.GetIsolated(alias, agent.Workspace)
-	}
-	return al.dispatcher.Get(alias)
-}
-
 // turnModel is a turn's model choice, made once when the turn starts so its
 // assembly, tools, context window and requests all follow the same model:
 // the chain pinned for the turn (the active model first), its candidates,

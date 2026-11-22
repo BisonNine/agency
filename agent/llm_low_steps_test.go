@@ -81,13 +81,9 @@ func lowStepsTurn(t *testing.T, fallback, cli, noTools bool) ([]lowStepsRequest,
 	agentInstance.NoTools = noTools
 	// The limits are the agent's own, set above, whatever model serves.
 	agentInstance.modelLimits = nil
-	// No dispatcher: both paths call agentInstance.Provider.
-	al.dispatcher = nil
-	if fallback {
-		agentInstance.Candidates = []providers.FallbackCandidate{{Provider: "mock", Model: "test-model"}}
-	} else {
-		agentInstance.Candidates = nil
-	}
+	// Both cases run on the agent's chain of one model, answered by its
+	// test provider; "fallback" no longer names a separate path.
+	_ = fallback
 
 	var (
 		mu       sync.Mutex
@@ -111,9 +107,9 @@ func lowStepsTurn(t *testing.T, fallback, cli, noTools bool) ([]lowStepsRequest,
 		}}}, nil
 	})
 	if cli {
-		agentInstance.Provider = cliChatFunc{model}
+		setTestProvider(agentInstance, cliChatFunc{model})
 	} else {
-		agentInstance.Provider = model
+		setTestProvider(agentInstance, model)
 	}
 
 	opts := processOptions{

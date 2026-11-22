@@ -57,7 +57,7 @@ func TestRunLLMIteration_ToolForUser_PublishedOnInboundUserMessage(t *testing.T)
 		agentInstance.Config.Tools = []string{"*"}
 	}
 
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{
 				Content: "",
@@ -76,7 +76,7 @@ func TestRunLLMIteration_ToolForUser_PublishedOnInboundUserMessage(t *testing.T)
 			{Content: "all done"},
 		},
 		errors: []error{nil, nil},
-	}
+	})
 
 	// Collect outbound publishes concurrently so the publish path inside
 	// runLLMIteration does not block on the bus buffer.
@@ -156,7 +156,7 @@ func TestRunLLMIteration_ToolForUser_SuppressedWhenStreamingOff(t *testing.T) {
 		agentInstance.Config.Tools = []string{"*"}
 	}
 
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{
 				Content: "let me check that for you", // inter-tool narration
@@ -172,7 +172,7 @@ func TestRunLLMIteration_ToolForUser_SuppressedWhenStreamingOff(t *testing.T) {
 			{Content: "all done"},
 		},
 		errors: []error{nil, nil},
-	}
+	})
 
 	collected := make(chan bus.OutboundMessage, 16)
 	done := make(chan struct{})

@@ -30,7 +30,6 @@ import (
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/mcpserver"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolschedule "go.bison9.com/agency/tools/schedule"
 	"go.bison9.com/agency/utils"
@@ -530,7 +529,6 @@ func stopAndCleanupServices(
 func shutdownGateway(
 	services *gatewayServices,
 	agentLoop *agent.AgentLoop,
-	provider providers.LLMProvider,
 	fullShutdown bool,
 ) {
 	begin := time.Now()
@@ -550,11 +548,6 @@ func shutdownGateway(
 	closeShellJobs()
 	phases.done("shell jobs stopped")
 	agentLoop.BeginMCPShutdown()
-
-	if cp, ok := provider.(providers.StatefulProvider); ok && fullShutdown {
-		cp.Close()
-		phases.done("provider closed")
-	}
 
 	stopAndCleanupServices(services, agentLoop, gracefulShutdownTimeout, phases, false)
 	agentLoop.Stop()
@@ -600,7 +593,6 @@ func handleConfigReload(
 	ctx context.Context,
 	al *agent.AgentLoop,
 	newCfg *config.Config,
-	providerRef *providers.LLMProvider,
 	services *gatewayServices,
 	msgBus *bus.MessageBus,
 ) error {
@@ -616,40 +608,22 @@ func handleConfigReload(
 	logger.Info("  Stopping services (channels keep running)...")
 	stopAndCleanupServices(services, al, serviceShutdownTimeout, nil, true) //nolint:contextcheck // the old services stop on a fresh bounded context so their shutdown completes even if the run context ends mid-reload; shutdownGateway shares the helper with no context
 
-	// Create new provider from updated config first to ensure validity
-	// This will use the correct API key and settings from newCfg.Models
-	newProvider, newModelID, err := providers.CreateProvider(newCfg)
-	if err != nil {
-		logger.WarnCF("gateway", "No model configured after reload, running in unconfigured state", map[string]any{"detail": err.Error()})
-		newProvider = providers.NewUnconfiguredProvider()
-		newModelID = ""
-	}
+	warnNoDefaultModel(newCfg, "No model configured after reload, running in unconfigured state")
 
-	if newModelID != "" {
-		newCfg.Agents.Defaults.SetDefaultModel(newModelID)
-	}
-
-	// Use the atomic reload method on AgentLoop to safely swap provider and config.
+	// Use the atomic reload method on AgentLoop to safely swap the config.
 	// This handles locking internally to prevent races with in-flight LLM calls
 	// and concurrent reads of registry/config while the swap occurs.
 	reloadCtx, reloadCancel := context.WithTimeout(context.WithoutCancel(ctx), providerReloadTimeout)
 	defer reloadCancel()
 
-	if err := al.ReloadProviderAndConfig(reloadCtx, newProvider, newCfg); err != nil {
+	if err := al.ReloadConfig(reloadCtx, newCfg); err != nil {
 		logger.Errorf("  ⚠ Error reloading agent loop: %v", err)
-		// Close the newly created provider since it wasn't adopted
-		if cp, ok := newProvider.(providers.StatefulProvider); ok {
-			cp.Close()
-		}
 		logger.Warn("  Attempting to restart services with old provider and config...")
 		if restartErr := restartServices(ctx, al, services, msgBus); restartErr != nil {
 			logger.Errorf("  ⚠ Failed to restart services: %v", restartErr)
 		}
 		return fmt.Errorf("error reloading agent loop: %w", err)
 	}
-
-	// Update local provider reference only after successful atomic reload
-	*providerRef = newProvider
 
 	// Restart all services with new config
 	logger.Info("  Restarting all services with new configuration...")
@@ -737,7 +711,7 @@ func restartServices(
 	}
 
 	// Reconnect external MCP servers and re-register their tools onto the freshly
-	// rebuilt registry BEFORE the host server re-enumerates. ReloadProviderAndConfig
+	// rebuilt registry BEFORE the host server re-enumerates. ReloadConfig
 	// builds a new registry (which has no MCP tools, and is not covered by the
 	// startup initOnce), so without this a reload silently drops every agent's
 	// mcp_* tools and webui edits to mcp_tools would not take effect.

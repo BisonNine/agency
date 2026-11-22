@@ -19,7 +19,6 @@ import (
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/admin"
 	"go.bison9.com/agency/internal/tlscert"
-	"go.bison9.com/agency/providers"
 )
 
 // restartServices is the reload path. It rebuilds every service from the new
@@ -159,7 +158,7 @@ func TestChannelBuildHook_AppliedToRebuiltDeviceChannel(t *testing.T) {
 
 	mb := bus.NewMessageBus()
 	defer mb.Close()
-	al, err := agent.NewAgentLoop(t.Context(), cfg, mb, providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, mb)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -217,8 +216,8 @@ func TestChannelBuildHook_AppliedToRebuiltDeviceChannel(t *testing.T) {
 	for _, tc := range []struct{ operatorName, want string }{{" Alice ", "Alice"}, {"", "alice"}} {
 		next := changed
 		next.Operator.Name = tc.operatorName
-		if rerr := al.ReloadProviderAndConfig(context.Background(), providers.NewUnconfiguredProvider(), &next); rerr != nil {
-			t.Fatalf("ReloadProviderAndConfig: %v", rerr)
+		if rerr := al.ReloadConfig(context.Background(), &next); rerr != nil {
+			t.Fatalf("ReloadConfig: %v", rerr)
 		}
 		if got := rebuilt.DefaultUser(); got != tc.want {
 			t.Fatalf("default user with operator.name %q = %q, want %q", tc.operatorName, got, tc.want)
@@ -246,7 +245,7 @@ func TestChannelBuildHook_WebUIOperatorName(t *testing.T) {
 	cfg.Operator.Name = "Alice"
 	mb := bus.NewMessageBus()
 	defer mb.Close()
-	al, err := agent.NewAgentLoop(t.Context(), cfg, mb, providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, mb)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -260,8 +259,8 @@ func TestChannelBuildHook_WebUIOperatorName(t *testing.T) {
 	}
 	next := *cfg
 	next.Operator.Name = "Bob"
-	if err := al.ReloadProviderAndConfig(context.Background(), providers.NewUnconfiguredProvider(), &next); err != nil {
-		t.Fatalf("ReloadProviderAndConfig: %v", err)
+	if err := al.ReloadConfig(context.Background(), &next); err != nil {
+		t.Fatalf("ReloadConfig: %v", err)
 	}
 	if got := ch.fn(); got != "Bob" {
 		t.Fatalf("operator name after reload = %q, want Bob", got)

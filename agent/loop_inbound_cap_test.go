@@ -28,7 +28,7 @@ func TestProcessSystemMessage_CapsAsyncResult(t *testing.T) {
 		responses: []*providers.LLMResponse{{Content: "noted", FinishReason: "stop"}},
 		errors:    []error{nil},
 	}
-	agent.Provider = sp
+	setTestProvider(agent, sp)
 
 	big := strings.Repeat("r", 100_000)
 	_, err := al.processSystemMessage(context.Background(), bus.InboundMessage{

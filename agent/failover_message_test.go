@@ -256,9 +256,7 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
 		cat := compressCatalog(map[string]providers.LLMProvider{"model-a": &scriptedProvider{err: providerErrorWithKey()}})
-		c := &compressModelCaller{caller: llmCaller{agentID: "alice"}, id: testIdentity, clients: []*providerLLMClient{
-			compressClient(cat, "model-a"),
-		}}
+		c := compressCaller(cat, "model-a")
 		if _, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u"}); err == nil {
 			t.Fatal("Complete succeeded with a failing model")
 		}

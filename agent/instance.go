@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"go.bison9.com/agent/cogmem"
@@ -20,7 +21,6 @@ import (
 	"go.bison9.com/agency/global"
 	agentws "go.bison9.com/agency/internal/workspace"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
@@ -48,21 +48,22 @@ type AgentInstance struct {
 	ThinkingLevel ThinkingLevel
 	NoTools       bool
 	ContextWindow int
-	// modelLimits are the limits of each model in Candidates, by model_name:
+	// modelLimits are the limits of each model in chatModels, by model_name:
 	// a request runs with those of the model it is sent to (see limitsFor).
 	modelLimits    map[string]runLimits
 	CompressOpts   []ctxengine.Option
-	Provider       providers.LLMProvider
 	Sessions       session.SessionStore
 	ContextBuilder *ContextBuilder
 	Tools          *tools.ToolRegistry
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
-	Candidates     []providers.FallbackCandidate
-	// WorkerCandidates is the chain the agent's workers (spawned sub-agents
-	// and Maestro dispatches) run on: its configured worker models
-	// (subagents.models), else its own Candidates.
-	WorkerCandidates []providers.FallbackCandidate
+	// chatModels are the agent's models resolved to model names, in order
+	// (agents.list[].models, else the defaults'); workerModels its worker
+	// models (subagents.models), none when it has none. They are what its
+	// set in the model catalogue is assigned from (agentModelLists); the
+	// set, not these, is what everything else reads.
+	chatModels   []string
+	workerModels []string
 
 	// VisionClients is the ordered vision-describe side-model chain (from
 	// the Describe images list on the Task models page). When the active model is
@@ -185,7 +186,6 @@ func NewAgentInstance(
 	agentCfg *config.AgentConfig,
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
-	provider providers.LLMProvider,
 ) (*AgentInstance, error) {
 	workspace := agentreg.ConfigWorkspace(agentCfg, cfg.BaseDir())
 	spec := agentreg.Spec{Origin: agentreg.OriginConfig, Workspace: workspace, StateDir: workspace}
@@ -193,7 +193,7 @@ func NewAgentInstance(
 		spec.ID = routing.NormalizeAgentID(agentCfg.ID)
 		spec.Config = agentCfg
 	}
-	return newAgentInstance(spec, defaults, cfg, provider)
+	return newAgentInstance(spec, defaults, cfg)
 }
 
 // newAgentInstance creates the instance a registry spec describes.
@@ -201,7 +201,6 @@ func newAgentInstance(
 	spec agentreg.Spec,
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
-	provider providers.LLMProvider,
 ) (*AgentInstance, error) {
 	agentCfg := spec.Config
 	workspace := spec.Workspace
@@ -247,9 +246,9 @@ func newAgentInstance(
 	contextBuilder := newAgentContextBuilder(spec, agentCfg, cfg)
 	compressOpts := agentCompressOptions(agentCfg, defaults)
 
-	candidates := resolveAgentCandidates(cfg, models, agentID)
-	workerCandidates := resolveWorkerCandidates(cfg, subagents, candidates, agentID)
-	modelLimits := resolveModelLimits(defaults, agentCfg, cfg, candidates)
+	chatModels := resolveAgentModelNames(cfg, models, agentID)
+	workerModels := resolveWorkerModelNames(cfg, subagents, agentID)
+	modelLimits := resolveModelLimits(defaults, agentCfg, cfg, chatModels)
 
 	// Config is never nil after construction: a nil config is equivalent to
 	// an empty allowlist (deny all tools), so callers need not guard on nil.
@@ -265,31 +264,30 @@ func newAgentInstance(
 	// the full runtime deps (session closures, the sub-agent spawner, the
 	// per-agent message tool) are present.
 	inst := &AgentInstance{
-		ID:               agentID,
-		Name:             agentName,
-		Model:            model,
-		Fallbacks:        fallbacks,
-		Workspace:        workspace,
-		StateDir:         stateDir,
-		Spec:             spec,
-		MaxIterations:    limits.maxIterations,
-		MaxTokens:        limits.maxTokens,
-		Temperature:      limits.temperature,
-		ThinkingLevel:    limits.thinkingLevel,
-		NoTools:          limits.noTools,
-		ContextWindow:    limits.contextWindow,
-		modelLimits:      modelLimits,
-		CompressOpts:     compressOpts,
-		Provider:         provider,
-		Sessions:         sessions,
-		ContextBuilder:   contextBuilder,
-		Tools:            tools.NewToolRegistry(),
-		Subagents:        subagents,
-		SkillsFilter:     skillsFilter,
-		Candidates:       candidates,
-		WorkerCandidates: workerCandidates,
-		Config:           agentCfg,
-		HumanModel:       humanModel,
+		ID:             agentID,
+		Name:           agentName,
+		Model:          model,
+		Fallbacks:      fallbacks,
+		Workspace:      workspace,
+		StateDir:       stateDir,
+		Spec:           spec,
+		MaxIterations:  limits.maxIterations,
+		MaxTokens:      limits.maxTokens,
+		Temperature:    limits.temperature,
+		ThinkingLevel:  limits.thinkingLevel,
+		NoTools:        limits.noTools,
+		ContextWindow:  limits.contextWindow,
+		modelLimits:    modelLimits,
+		CompressOpts:   compressOpts,
+		Sessions:       sessions,
+		ContextBuilder: contextBuilder,
+		Tools:          tools.NewToolRegistry(),
+		Subagents:      subagents,
+		SkillsFilter:   skillsFilter,
+		chatModels:     chatModels,
+		workerModels:   workerModels,
+		Config:         agentCfg,
+		HumanModel:     humanModel,
 	}
 	// An agent left with no tools at all is told so. Its registry is read at
 	// every turn: tools are registered after this, and MCP tools may arrive
@@ -316,11 +314,11 @@ func humanAgentConfig(cfg *config.Config, agentCfg *config.AgentConfig) (string,
 	return humanModel, &c
 }
 
-// resolveAgentCandidates resolves the agent's models into its fallback
-// chain; an empty chain is logged as an error.
-func resolveAgentCandidates(cfg *config.Config, models []string, agentID string) []providers.FallbackCandidate {
-	candidates := resolveCandidates(cfg, models)
-	if len(candidates) == 0 {
+// resolveAgentModelNames resolves the agent's models into its chat chain,
+// as model names; an empty chain is logged as an error.
+func resolveAgentModelNames(cfg *config.Config, models []string, agentID string) []string {
+	names := resolveModelNames(cfg, models)
+	if len(names) == 0 {
 		var primary string
 		var fallbacks []string
 		if len(models) > 0 {
@@ -333,54 +331,46 @@ func resolveAgentCandidates(cfg *config.Config, models []string, agentID string)
 				"fallbacks": fallbacks,
 			})
 	}
-	return candidates
+	return names
 }
 
-// resolveWorkerCandidates resolves the chain the agent's workers run on: its
-// worker models (subagents.models) when it has any, else its own candidates.
-// A worker list that resolves to nothing is logged as an error.
-func resolveWorkerCandidates(cfg *config.Config, subagents *config.SubagentsConfig, own []providers.FallbackCandidate, agentID string) []providers.FallbackCandidate {
+// resolveWorkerModelNames resolves the agent's worker models
+// (subagents.models) as model names: none when it has none. A worker list
+// that resolves to nothing is logged as an error.
+func resolveWorkerModelNames(cfg *config.Config, subagents *config.SubagentsConfig, agentID string) []string {
 	if subagents == nil || len(subagents.Models) == 0 {
-		return own
+		return nil
 	}
-	candidates := resolveCandidates(cfg, subagents.Models)
-	if len(candidates) == 0 {
+	names := resolveModelNames(cfg, subagents.Models)
+	if len(names) == 0 {
 		logger.ErrorCF("agent", "agent worker model chain is empty after resolving aliases",
 			map[string]any{"agent_id": agentID, "worker_models": subagents.Models})
 	}
-	return candidates
+	return names
 }
 
-// resolveCandidates resolves a model list into a chain, in order: each
+// resolveModelNames resolves a model list into model names, in order: each
 // entry names a model by model_name or raw model id (modelListLookup). An
 // entry that names no enabled model is dropped and logged, and a model
 // listed twice is kept once.
-func resolveCandidates(cfg *config.Config, names []string) []providers.FallbackCandidate {
+func resolveModelNames(cfg *config.Config, names []string) []string {
 	lookup := modelListLookup(cfg)
-	seen := make(map[string]bool)
-	var out []providers.FallbackCandidate
+	var out []string
 	for _, raw := range names {
 		original := strings.TrimSpace(raw)
 		if original == "" {
 			continue
 		}
-		alias, model, provider, ok := lookup(original)
+		alias, _, _, ok := lookup(original)
 		if !ok {
 			// The alias names no enabled model (deleted or disabled).
 			logger.WarnCF("providers", "fallback alias dropped (not enabled in models)",
 				map[string]any{"alias": original})
 			continue
 		}
-		key := providers.ModelKey(provider, model) + "#" + alias
-		if seen[key] {
-			continue
+		if !slices.Contains(out, alias) {
+			out = append(out, alias)
 		}
-		seen[key] = true
-		c := providers.FallbackCandidate{Name: alias, Provider: provider, Model: model}
-		if p, err := cfg.GetProvider(provider); err == nil && p != nil {
-			c.Protocol = p.Protocol
-		}
-		out = append(out, c)
 	}
 	return out
 }
@@ -516,12 +506,10 @@ func resolveRunLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConf
 // model_list entry, by its model_name, so a request to a fallback model or to
 // the one /model selected runs with that model's max_tokens, context window
 // and thinking level rather than the first model's.
-func resolveModelLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConfig, cfg *config.Config, candidates []providers.FallbackCandidate) map[string]runLimits {
-	limits := make(map[string]runLimits, len(candidates))
-	for _, c := range candidates {
-		if c.Name != "" {
-			limits[c.Name] = resolveRunLimits(defaults, agentCfg, cfg, c.Name)
-		}
+func resolveModelLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConfig, cfg *config.Config, names []string) map[string]runLimits {
+	limits := make(map[string]runLimits, len(names))
+	for _, name := range names {
+		limits[name] = resolveRunLimits(defaults, agentCfg, cfg, name)
 	}
 	return limits
 }

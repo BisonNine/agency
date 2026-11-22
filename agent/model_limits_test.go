@@ -96,8 +96,8 @@ func newLimitsLoop(t *testing.T, p *limitsProvider, models ...string) (*AgentLoo
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	if len(agent.Candidates) != 3 {
-		t.Fatalf("candidates = %d, want 3", len(agent.Candidates))
+	if n := len(al.chatCandidates(agent)); n != 3 {
+		t.Fatalf("candidates = %d, want 3", n)
 	}
 	return al, agent
 }

@@ -45,7 +45,7 @@ func TestRunLLMIteration_AnthropicThinkingReplayed(t *testing.T) {
 		},
 		errors: []error{nil, nil},
 	}
-	agentInstance.Provider = provider
+	setTestProvider(agentInstance, provider)
 
 	opts := processOptions{
 		SessionKey:  "thinking-loop",

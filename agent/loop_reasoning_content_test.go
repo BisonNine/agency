@@ -20,12 +20,12 @@ func runReasoningOnlyTurn(t *testing.T, showAsContent bool) string {
 	if agentInstance == nil {
 		t.Fatal("no default agent")
 	}
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{Content: "", ReasoningContent: "SECRET-THINKING", FinishReason: "stop", Normal: true},
 		},
 		errors: []error{nil},
-	}
+	})
 
 	opts := processOptions{
 		SessionKey:   "reasoning-gate",

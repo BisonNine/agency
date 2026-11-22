@@ -25,7 +25,6 @@ import (
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
@@ -179,7 +178,7 @@ func newTaskHostEnv(t *testing.T) *taskHostEnv {
 		},
 		STTModels: []config.TaskModelRef{{Model: "whisper"}, {Model: "eleven"}},
 	}
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, providers.NewProviderDispatcher(cfg), OwnsDataDir())
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, realClients{}, OwnsDataDir())
 	store := media.NewFileMediaStore()
 	al.SetMediaStore(store)
 	ws := filepath.Join(t.TempDir(), "ws")
@@ -221,6 +220,18 @@ func (e *taskHostEnv) media(t *testing.T, name, contentType string, data []byte)
 
 func (e *taskHostEnv) run(t *testing.T, agentID string, req toolsagents.TaskModelRequest) (*toolsagents.TaskModelResult, error) {
 	t.Helper()
+	// The tests change the models and task-model lists in place; a reload
+	// adopts a new catalogue and states the lists in the agents' sets, which
+	// this does without one.
+	if d := catalogDigest(e.cfg); d != e.al.catalogDigest {
+		e.al.adoptCatalog(e.al.catalogs.Build(e.cfg), d)
+	}
+	r := e.al.GetRegistry()
+	for _, id := range r.All() {
+		if inst, ok := r.Get(id); ok {
+			assignAgentModels(e.al.catalog, e.cfg, inst)
+		}
+	}
 	return e.host.Run(context.Background(), agentID, e.workspace, req)
 }
 
@@ -330,18 +341,18 @@ func TestTaskModelHost_FallbackNamedAndCooldown(t *testing.T) {
 	if err != nil || res.Model != "chat-b" || len(res.Attempts) != 1 || res.Attempts[0].Model != "chat-a" {
 		t.Fatalf("fallback: %+v, %v", res, err)
 	}
-	if e.al.cooldownTracker().IsAvailable("p", "chat-a-wire") {
+	if !parkedIn(e.al.catalog, "p", "chat-a-wire") {
 		t.Error("a model that answered 503 is not in cooldown")
 	}
 
-	e.al.cooldownTracker().MarkSuccess("p", "chat-a-wire")
+	e.al.catalog.ResetHealth("chat-a")
 	res, err = e.run(t, "alice", toolsagents.TaskModelRequest{Kind: "text", Model: "chat-a", Prompt: "hi"})
 	if err == nil || res.Model != "" || len(res.Attempts) != 1 {
 		t.Fatalf("named failing model: %+v, %v; want an error and no other model tried", res, err)
 	}
 
 	delete(e.vendor.fail, "chat-a-wire")
-	e.al.cooldownTracker().MarkFailure("p", "chat-a-wire", providers.FailoverRateLimit, http.StatusTooManyRequests, time.Hour)
+	parkFor(t, e.al.catalog, "chat-a", 5*time.Minute, nil)
 	before := len(e.vendor.calls())
 	res, err = e.run(t, "alice", toolsagents.TaskModelRequest{Kind: "text", Prompt: "hi"})
 	if err != nil || res.Model != "chat-b" || !strings.HasPrefix(res.Attempts[0].Error, "in cooldown") {
@@ -426,7 +437,7 @@ func TestTaskModelHost_CooldownOnlyForModelFailures(t *testing.T) {
 			if err != nil || res.Model != "chat-b" {
 				t.Fatalf("fallback: %+v, %v", res, err)
 			}
-			if got := !e.al.cooldownTracker().IsAvailable("p", "chat-a-wire"); got != tc.cooldown {
+			if got := parkedIn(e.al.catalog, "p", "chat-a-wire"); got != tc.cooldown {
 				t.Fatalf("in cooldown after %d = %v, want %v", tc.status, got, tc.cooldown)
 			}
 			if !tc.cooldown {
@@ -871,7 +882,7 @@ func TestTaskModelHost_NoImagesFallsBack(t *testing.T) {
 	if err != nil || res.Model != "imgapi" || len(res.Attempts) != 1 || res.Attempts[0].Model != "empty" || len(res.Paths) != 1 {
 		t.Fatalf("result = %+v, %v", res, err)
 	}
-	if !e.al.cooldownTracker().IsAvailable("p", "empty-image") {
+	if parkedIn(e.al.catalog, "p", "empty-image") {
 		t.Error("a model that returned no image is in cooldown")
 	}
 }

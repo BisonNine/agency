@@ -84,6 +84,20 @@ func newAlertRig(t *testing.T) *alertRig {
 	return r
 }
 
+// statusFor maps a reason to a representative HTTP status.
+func statusFor(reason FailoverReason) int {
+	switch reason {
+	case FailoverBilling:
+		return 402
+	case FailoverAuth:
+		return 401
+	case FailoverRateLimit:
+		return 429
+	default:
+		return 500
+	}
+}
+
 // call makes one call to the model on provider, answering with the failure
 // reason gives, or with an answer when reason is empty. A model still parked
 // is not called.
@@ -280,23 +294,6 @@ func TestModelAlerts_TransientOnlyWhenSettled(t *testing.T) {
 	got := r.rec.got()
 	if len(got) != 1 || got[0].Priority != alerter.Normal || got[0].EventID != ModelKey("openai", "m") {
 		t.Fatalf("settled cooldown must alert once, got %+v", got)
-	}
-}
-
-// The task models' tracker reports to the same model alerts, so a model has
-// one incident whichever path saw it fail.
-func TestModelAlerts_SharedWithTaskModelTracker(t *testing.T) {
-	r := newAlertRig(t)
-	ct := NewCooldownTracker()
-	ct.SetAlerts(r.alerts)
-	ct.MarkFailure("openrouter", "m", FailoverBilling, 402, 0)
-	r.fail(t, "openrouter", FailoverBilling)
-	if got := r.rec.got(); len(got) != 1 {
-		t.Fatalf("one incident across both paths, got %+v", got)
-	}
-	ct.MarkSuccess("openrouter", "m")
-	if got := r.rec.got(); len(got) != 2 || got[1].Title != alertModelUp {
-		t.Fatalf("a task-model success ends the incident, got %+v", got)
 	}
 }
 

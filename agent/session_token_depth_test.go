@@ -23,10 +23,10 @@ func TestRunAgentLoop_RecordsTurnDepthOnSessionToken(t *testing.T) {
 	}
 	rec := &recordingSTI{}
 	al.SetSessionTokenIssuer(rec)
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{{Content: "one"}, {Content: "two"}},
 		errors:    []error{nil, nil},
-	}
+	})
 
 	opts := processOptions{SessionKey: "agent:main:main", Channel: "slack", ChatID: "C1", UserMessage: "hi"}
 	if _, err := al.runAgentLoop(toolsagents.WithSpawnDepth(context.Background(), 2), agentInstance, opts); err != nil {

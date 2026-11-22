@@ -13,7 +13,6 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/internal/test/stubprovider"
 	"go.bison9.com/agency/internal/testalerts"
-	"go.bison9.com/agency/providers"
 )
 
 const (
@@ -185,12 +184,8 @@ func TestHang_TurnTimeoutFires(t *testing.T) {
 		t.Fatalf("Clone: %v", err)
 	}
 	budgeted.Agents.Defaults.TurnTimeout = int(budget / time.Second)
-	provider, _, err := providers.CreateProviderFromConfig(&budgeted.Models[0], &budgeted.Providers[0])
-	if err != nil {
-		t.Fatalf("CreateProviderFromConfig: %v", err)
-	}
-	if err := l.al.ReloadProviderAndConfig(context.Background(), provider, budgeted); err != nil {
-		t.Fatalf("ReloadProviderAndConfig: %v", err)
+	if err := l.al.ReloadConfig(context.Background(), budgeted); err != nil {
+		t.Fatalf("ReloadConfig: %v", err)
 	}
 	// A completed turn on the reloaded agent first, so the goroutine baseline
 	// includes the loop's steady state (idle HTTP connections, context

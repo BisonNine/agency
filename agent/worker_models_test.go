@@ -68,11 +68,14 @@ func TestWorkerCandidates_Resolve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := workerTestConfig(t)
 			ac := config.AgentConfig{ID: "alice", Name: "Alice", Models: []string{"one"}, Subagents: tt.subagents}
+			withTestModels(cfg)
 			inst := mustNewAgentInstance(t, &ac, &cfg.Agents.Defaults, cfg, &mockProvider{})
-			if got := workerCandidateNames(inst.WorkerCandidates); !slices.Equal(got, tt.want) {
-				t.Errorf("WorkerCandidates = %v, want %v", got, tt.want)
+			al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
+			assignAgentModels(al.catalog, cfg, inst)
+			if got := workerCandidateNames(al.workerCandidates(inst)); !slices.Equal(got, tt.want) {
+				t.Errorf("worker candidates = %v, want %v", got, tt.want)
 			}
-			if got := workerCandidateNames(inst.Candidates); !slices.Equal(got, []string{"one"}) {
+			if got := workerCandidateNames(al.chatCandidates(inst)); !slices.Equal(got, []string{"one"}) {
 				t.Errorf("Candidates = %v, want [one]", got)
 			}
 		})

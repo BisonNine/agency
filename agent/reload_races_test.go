@@ -20,7 +20,7 @@ import (
 func TestCooldownHooks_RaceWithReload(t *testing.T) {
 	cfg := compressTestConfig()
 	builder := providers.NewCatalogBuilder(nil, nil)
-	al := &AgentLoop{catalog: builder.Build(cfg), catalogs: builder, cooldown: providers.NewCooldownTracker()}
+	al := &AgentLoop{catalog: builder.Build(cfg), catalogs: builder}
 	rt := &commands.Runtime{}
 	al.addCooldownHooks(rt)
 	stop := make(chan struct{})

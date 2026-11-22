@@ -19,7 +19,6 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/test/stubprovider"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/state"
 	"go.bison9.com/agency/tools"
 )
@@ -109,18 +108,13 @@ type loop struct {
 	once   sync.Once
 }
 
-// startLoop builds the loop the gateway would: dispatcher from the config, the
-// primary model's provider as the agent default, a channel manager that knows
+// startLoop builds the loop the gateway would: its model catalogue from the
+// config, a channel manager that knows
 // testChannel, and Run in the background. extraTools are registered before
 // Run. The loop is stopped and closed when the test ends.
 func startLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, extraTools ...tools.Tool) *loop {
 	t.Helper()
-	provider, _, err := providers.CreateProviderFromConfig(&cfg.Models[0], &cfg.Providers[0])
-	if err != nil {
-		t.Fatalf("CreateProviderFromConfig: %v", err)
-	}
-	dispatcher := providers.NewProviderDispatcher(cfg)
-	al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus, provider, dispatcher)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

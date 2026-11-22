@@ -80,10 +80,10 @@ func TestRegisterTools_NoDuplicateRegistration(t *testing.T) {
 	}
 }
 
-// TestReloadProviderAndConfig_RegistersRuntimeTools guards that a config reload
+// TestReloadConfig_RegistersRuntimeTools guards that a config reload
 // rebuilds the full tool set on the new registry (it previously never re-ran the
 // runtime registration, leaving reloaded agents with degraded/missing tools).
-func TestReloadProviderAndConfig_RegistersRuntimeTools(t *testing.T) {
+func TestReloadConfig_RegistersRuntimeTools(t *testing.T) {
 	cfg := toolRegTestConfig(t)
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
 	before := agentToolNames(t, al)
@@ -92,7 +92,7 @@ func TestReloadProviderAndConfig_RegistersRuntimeTools(t *testing.T) {
 	}
 
 	if err := reloadForTest(al, context.Background(), &mockProvider{}, toolRegTestConfig(t)); err != nil {
-		t.Fatalf("ReloadProviderAndConfig: %v", err)
+		t.Fatalf("ReloadConfig: %v", err)
 	}
 
 	after := agentToolNames(t, al)

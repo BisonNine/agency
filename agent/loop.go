@@ -65,16 +65,10 @@ type AgentLoop struct {
 	catalog       *models.Catalog
 	catalogs      *providers.CatalogBuilder
 	catalogDigest string
-	// buildCatalog, while a reload that changes models builds its agents, is
-	// the catalogue about to be adopted, which the agents' models are
-	// assigned in; nil otherwise (they go to catalog).
-	buildCatalog atomic.Pointer[models.Catalog]
-	// dispatcher serves the task models and the describe-images models,
-	// which call clients the catalogue does not hand out.
-	dispatcher *providers.ProviderDispatcher
-	// cooldown is the task models' cooldown tracker. It reports to the same
-	// model alerts as the catalogue.
-	cooldown *providers.CooldownTracker
+	// reloading, while a reload builds its agents, collects their model
+	// assignments (reloadAssignments); nil otherwise, when an agent built is
+	// assigned in catalog at once.
+	reloading atomic.Pointer[reloadAssignments]
 	// alerter receives operator alerts (parked models, dead MCP servers, …);
 	// nil until SetAlerter, in which case Alerter() hands out a Nop.
 	alerterMu       sync.RWMutex
@@ -308,19 +302,15 @@ func NewAgentLoop(
 	ctx context.Context,
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
-	provider providers.LLMProvider,
-	dispatcher *providers.ProviderDispatcher,
 	opts ...LoopOption,
 ) (*AgentLoop, error) {
 	var lo loopOptions
 	for _, opt := range opts {
 		opt(&lo)
 	}
-	// The task models' cooldown tracker reports to the model alerts every
+	// The model alerts every catalogue reports to, for the life of the loop.
 	// catalogue reports to.
 	modelAlerts := providers.NewModelAlerts()
-	cooldown := providers.NewCooldownTrackerWithPolicy(cooldownPolicy(cfg))
-	cooldown.SetAlerts(modelAlerts)
 
 	// Load the long-lived named message-API token store from the data dir. An
 	// empty data dir (only happens in tests that build a bare Config) yields an
@@ -352,9 +342,7 @@ func NewAgentLoop(
 	al := &AgentLoop{
 		bus:                   msgBus,
 		cfg:                   cfg,
-		cooldown:              cooldown,
 		cmdRegistry:           commands.NewRegistry(commands.BuiltinDefinitions()),
-		dispatcher:            dispatcher,
 		agentStates:           make(map[string]*state.Manager),
 		namedTokens:           namedTokens,
 		sessions:              make(map[string]*sessionState),
@@ -384,7 +372,7 @@ func NewAgentLoop(
 	// closures, spawn/subagent, msg with shared MessageTool), so it runs once
 	// al exists.
 	registry, err := agentreg.New(ctx, cfg, agentreg.Hooks[*AgentInstance]{
-		Build:    al.agentBuilder(provider),
+		Build:    al.agentBuilder(),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
 		Clock:    registryClock{al},
@@ -607,61 +595,45 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	}
 }
 
-// ReloadProviderAndConfig atomically swaps the provider and config with proper synchronization.
-// It uses a context to allow timeout control from the caller.
-// Returns an error if the reload fails or context is canceled.
-func (al *AgentLoop) ReloadProviderAndConfig(
-	ctx context.Context,
-	provider providers.LLMProvider,
-	cfg *config.Config,
-) error {
-	// Validate inputs
-	if provider == nil {
-		return errors.New("provider cannot be nil")
-	}
+// ReloadConfig rebuilds the agents against cfg and swaps it in, with proper
+// synchronization. It uses a context to allow timeout control from the
+// caller. Returns an error if the reload fails or context is canceled.
+func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error {
 	if cfg == nil {
 		return errors.New("config cannot be nil")
 	}
-
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("context canceled before registry creation: %w", err)
 	}
 
 	registry := al.GetRegistry()
-	oldProvider, hadProvider := extractProvider(registry)
 
-	// The task models' tracker keeps its state (notably out-of-credits
-	// parks) across the reload; only its policy is refreshed.
-	al.cooldown.SetPolicy(cooldownPolicy(cfg))
-
-	// A reload that changes the model settings builds a new catalogue, the
-	// rebuilt agents' models are assigned in it, and it is adopted when the
-	// new agents are swapped in; its models start with no cooldown. Any
-	// other reload keeps the running catalogue, and with it the cooldowns:
-	// most saves do not touch models, and clearing them would make the next
-	// turns call a model that is still out of credit again.
+	// A reload that changes what the catalogue is built from (catalogDigest)
+	// builds a new catalogue, assigns the rebuilt agents' models in it and
+	// adopts it when the new agents are swapped in: its models start with no
+	// cooldown. Any other reload keeps the running catalogue, and with it the
+	// cooldowns; the rebuilt agents' lists replace their old ones only once
+	// the reload commits, so a reload that fails leaves every agent on its
+	// old lists.
 	digest := catalogDigest(cfg)
-	var next *models.Catalog
+	pending := &reloadAssignments{cfg: cfg}
 	if digest != al.catalogDigest {
-		next = al.catalogs.Build(cfg)
-		al.buildCatalog.Store(next)
+		pending.next = al.catalogs.Build(cfg)
 	}
-	err := al.reloadRegistry(ctx, registry, provider, cfg, func() {
-		if next != nil {
-			al.adoptCatalog(next, digest)
-			al.buildCatalog.Store(nil)
-		}
-	})
-	al.buildCatalog.Store(nil)
+	al.reloading.Store(pending)
+	err := al.reloadRegistry(ctx, registry, cfg)
+	al.reloading.Store(nil)
 	if err != nil {
 		return err
 	}
-	// An agent the reload kept (one busy in a turn) has its models stated
-	// in the adopted catalogue too; for the others this changes nothing.
-	for _, id := range registry.All() {
-		if inst, ok := registry.Get(id); ok && inst != nil {
-			assignAgentModels(al.catalog, cfg, inst)
-		}
+	// Made once the registry has swapped the agents in, outside its lock:
+	// the catalogue writes the sessions' model choices through the agents'
+	// session stores (sessionSelections), which it reaches through the
+	// registry.
+	if pending.next != nil {
+		al.adoptCatalog(pending.next, digest)
+	} else {
+		pending.apply(al.catalog)
 	}
 
 	// Whispers held for an agent the new configuration removed are dropped;
@@ -672,22 +644,11 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	})
 	al.replaceMessageManagers(registry, cfg)
 
-	// Flush the dispatcher cache so stale providers are evicted on config reload.
-	if al.dispatcher != nil {
-		al.dispatcher.Flush(cfg)
-	}
-
 	// Have cached ContextManagers rebuilt from the new config, since per-session
 	// config is baked in at creation (notably the summarization model chain).
 	// Idle sessions are evicted now; sessions in use keep their manager and
 	// session token until released, then rebuild on their next access.
 	al.invalidateContextManagers(ctx)
-
-	// The replaced default provider serves no model call (the catalogue
-	// does), so nothing is in flight on it.
-	if stateful, ok := oldProvider.(providers.StatefulProvider); hadProvider && ok {
-		stateful.Close()
-	}
 
 	logger.InfoCF("agent", "Provider and config reloaded successfully",
 		map[string]any{
@@ -701,17 +662,14 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 // (config agents from the config, temporary agents against it too), each
 // with its tools registered the same way as at start. Nothing changes until
 // all are built; then the registry swaps them in one step and, in the same
-// step, the config is swapped here and committed is called (it adopts a new
-// model catalogue), so readers see a consistent pair. A ctx that ends first returns at once: the rebuild is
+// step, the config is swapped here, so readers see a consistent pair. A ctx that ends first returns at once: the rebuild is
 // abandoned (the commit refuses) and closes what it built. Whichever of the
 // commit and the abandonment comes first wins. Panics are recovered and
 // reported as a failed reload.
 func (al *AgentLoop) reloadRegistry(
 	ctx context.Context,
 	registry *AgentRegistry,
-	provider providers.LLMProvider,
 	cfg *config.Config,
-	committed func(),
 ) error {
 	const (
 		reloadPending int32 = iota
@@ -730,14 +688,13 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(provider), func() bool {
+		err = registry.Reload(ctx, cfg, al.agentBuilder(), func() bool {
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}
 			al.mu.Lock()
 			al.cfg = cfg
 			al.mu.Unlock()
-			committed()
 			return true
 		})
 	}()
@@ -772,13 +729,6 @@ func (al *AgentLoop) replaceMessageManagers(registry *AgentRegistry, cfg *config
 	for _, mgr := range oldCallbackManagers {
 		mgr.Stop()
 	}
-}
-
-// cooldownTracker returns the task models' cooldown tracker (thread-safe).
-func (al *AgentLoop) cooldownTracker() *providers.CooldownTracker {
-	al.mu.RLock()
-	defer al.mu.RUnlock()
-	return al.cooldown
 }
 
 // GetRegistry returns the current registry (thread-safe)

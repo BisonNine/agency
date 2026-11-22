@@ -26,7 +26,7 @@ func TestToolActivity_BreadcrumbGating(t *testing.T) {
 		if agentInstance.Config != nil {
 			agentInstance.Config.Tools = []string{"*"}
 		}
-		agentInstance.Provider = &sequenceProvider{
+		setTestProvider(agentInstance, &sequenceProvider{
 			responses: []*providers.LLMResponse{
 				{Content: "", ToolCalls: []providers.ToolCall{{
 					ID: "tc-1", Type: "function", Name: "display_tool",
@@ -35,7 +35,7 @@ func TestToolActivity_BreadcrumbGating(t *testing.T) {
 				{Content: "done"},
 			},
 			errors: []error{nil, nil},
-		}
+		})
 
 		opts := processOptions{
 			SessionKey:   "tools-gate",

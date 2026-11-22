@@ -73,7 +73,7 @@ func (al *AgentLoop) runSubagentTask(ctx context.Context, agentID, task, model, 
 		opts = append(opts, agentreg.WithCardPrompt(text))
 	}
 	if strings.TrimSpace(model) != "" {
-		matched, found := toolsagents.MatchCandidate(target.WorkerCandidates, model)
+		matched, found := toolsagents.MatchCandidate(al.workerCandidates(target), model)
 		if !found {
 			return nil, noop, fmt.Errorf("%w: model %q is not a worker model of agent %q", global.ErrModelNotAvailable, model, agentID)
 		}
@@ -81,11 +81,12 @@ func (al *AgentLoop) runSubagentTask(ctx context.Context, agentID, task, model, 
 	} else if target.Subagents != nil && len(target.Subagents.Models) > 0 {
 		// Never fall back to the agent's own models when its worker models
 		// are all unavailable (the Spawner refuses this before launch).
-		if len(target.WorkerCandidates) == 0 {
+		workers := al.workerCandidates(target)
+		if len(workers) == 0 {
 			return nil, noop, fmt.Errorf("%w: no worker model is available for agent %q; check its worker models", global.ErrModelNotAvailable, agentID)
 		}
-		names := make([]string, 0, len(target.WorkerCandidates))
-		for _, c := range target.WorkerCandidates {
+		names := make([]string, 0, len(workers))
+		for _, c := range workers {
 			names = append(names, candidateName(c))
 		}
 		opts = append(opts, agentreg.CloneModels(names))

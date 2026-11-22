@@ -128,8 +128,8 @@ func TestClone_IsACopyOfItsSource(t *testing.T) {
 		t.Fatalf("clone tools differ from the source's:\nclone  %v\nsource %v", got, want)
 	}
 
-	if !reflect.DeepEqual(clone.Candidates, f.main.Candidates) || !slices.Equal(clone.Config.Models, f.main.Config.Models) {
-		t.Fatalf("clone models %v / %v, source %v / %v", clone.Config.Models, clone.Candidates, f.main.Config.Models, f.main.Candidates)
+	if cc, mc := f.al.chatCandidates(clone), f.al.chatCandidates(f.main); !reflect.DeepEqual(cc, mc) || !slices.Equal(clone.Config.Models, f.main.Config.Models) {
+		t.Fatalf("clone models %v / %v, source %v / %v", clone.Config.Models, cc, f.main.Config.Models, mc)
 	}
 	if got, want := clone.ContextBuilder.BuildSystemPrompt(), f.main.ContextBuilder.BuildSystemPrompt(); got != want {
 		t.Fatalf("clone static prompt differs from the source's:\nclone  %q\nsource %q", got, want)

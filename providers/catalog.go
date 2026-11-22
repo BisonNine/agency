@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +20,7 @@ import (
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/childenv"
+	"go.bison9.com/agency/internal/perms"
 	"go.bison9.com/agency/logger"
 )
 
@@ -225,12 +228,32 @@ func Digest(cfg *config.Config, assignments any) string {
 }
 
 // responseLogFileModes are the modes a model's response_log_file, and any
-// folders created for it, take: those of the security.permissions area it
-// lies in (the logs area for a file under <CLAW_HOME>/logs), from the policy
-// the current config installed.
+// folders created for it, take: those of the security.permissions area it lies
+// in (the logs area for a file under <CLAW_HOME>/logs), from the policy the
+// current config installed. They are read when a client is built, and the
+// digest compares them, so a changed mode rebuilds the client on the next
+// reload.
 func responseLogFileModes(path string) fsmode.Modes {
-	m := responseLogModes(path)
+	m := perms.CurrentPolicy().ModesFor(path)
 	return fsmode.Modes{Dir: m.Dir, File: m.File}
+}
+
+// LogBypassEnabled writes one INFO line per CLI provider running with its
+// permission-bypass flag, so a startup log states what the CLI may do. A CLI
+// running without it is not reported here: it applies its own permission
+// settings, as directed, and a refusal reaches the user through the
+// declined-tools error.
+func LogBypassEnabled(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	for i := range cfg.Providers {
+		p := &cfg.Providers[i]
+		if p.BypassRestrictions && config.IsCLIProtocol(p.Protocol) {
+			logger.InfoCF("provider", "Allow CLI to bypass restrictions is on: the CLI can run commands and edit files anywhere the service user can, without asking",
+				map[string]any{"provider": p.Name, "protocol": p.Protocol})
+		}
+	}
 }
 
 // declinedMessage is the text of the error a CLI running without its
@@ -248,4 +271,28 @@ func declinedMessage(d models.Declined) string {
 // extra_args carry that are not passed.
 func ignoredBypassNotice(n models.IgnoredBypass) {
 	config.WarnIgnoredBypassArgs(n.Protocol, n.Flags)
+}
+
+// DefaultModelProblem says why the agents' default model (the first of
+// agents.defaults.models) cannot be called, or nil when it can: no model
+// configured, the model not among the enabled ones, its provider missing, or
+// its client refused by c.
+func DefaultModelProblem(cfg *config.Config, c *models.Catalog) error {
+	model := cfg.Agents.Defaults.DefaultModelName()
+	if len(cfg.Models) == 0 {
+		return errors.New("no models configured. Please add entries to models in your config")
+	}
+	modelCfg, err := cfg.GetModelConfig(model)
+	if err != nil {
+		return fmt.Errorf("model %q not found in models: %w", model, err)
+	}
+	if _, err := cfg.GetProvider(modelCfg.Provider); err != nil {
+		return fmt.Errorf("model %q: %w", model, err)
+	}
+	_, release, err := c.Client(modelCfg.ModelName)
+	if err != nil {
+		return fmt.Errorf("failed to create provider for model %q: %w", model, err)
+	}
+	release()
+	return nil
 }

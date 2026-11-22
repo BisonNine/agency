@@ -9,7 +9,6 @@ import (
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // humanConfigJSON has an ordinary agent alice and a human agent bob; extra
@@ -83,7 +82,7 @@ func TestDeviceQuerier_HidesHumanAgents(t *testing.T) {
 		Providers: []config.Provider{{Name: "People", Protocol: config.HumanProtocol}},
 		Models:    []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true}},
 	}
-	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

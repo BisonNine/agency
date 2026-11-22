@@ -19,7 +19,7 @@ func driveEmptyResponse(t *testing.T, responses []*providers.LLMResponse) (strin
 		t.Fatal("no default agent")
 	}
 	errs := make([]error, len(responses))
-	agentInstance.Provider = &sequenceProvider{responses: responses, errors: errs}
+	setTestProvider(agentInstance, &sequenceProvider{responses: responses, errors: errs})
 
 	opts := processOptions{
 		SessionKey:   "empty-resp",
@@ -80,7 +80,7 @@ func TestNoResponseSentinel_SilentNoPoke(t *testing.T) {
 		},
 		errors: []error{nil},
 	}
-	agentInstance.Provider = provider
+	setTestProvider(agentInstance, provider)
 
 	resp, err := al.ProcessDirectWithChannel(
 		context.Background(), "hello everyone", "sentinel-test", "test", "test-chat", "channel",
@@ -122,10 +122,10 @@ func driveEmptyViaLoop(t *testing.T, isGroup bool) string {
 	if agentInstance == nil {
 		t.Fatal("no default agent")
 	}
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{{Content: "", FinishReason: "stop", Normal: true}},
 		errors:    []error{nil},
-	}
+	})
 
 	resp, err := al.runAgentLoop(context.Background(), agentInstance, processOptions{
 		SessionKey:   "empty-loop",

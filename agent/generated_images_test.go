@@ -29,7 +29,7 @@ var savedPathRe = regexp.MustCompile(`files/generated/\d{4}-\d{2}-\d{2}/image-\d
 func (l *sendFilesLoop) imageTurn(t *testing.T, agent *AgentInstance, channel, chatID string, responses ...*providers.LLMResponse) (string, string, *sequenceProvider) {
 	t.Helper()
 	provider := &sequenceProvider{responses: responses, errors: make([]error, len(responses))}
-	agent.Provider = provider
+	setTestProvider(agent, provider)
 	var outcome string
 	reply, err := l.al.runAgentLoop(context.Background(), agent, processOptions{
 		SessionKey: "agent:" + agent.ID + ":main", Channel: channel, ChatID: chatID,

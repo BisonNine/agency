@@ -24,7 +24,6 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsclassifier "go.bison9.com/agency/tools/classifier"
 	toolschedule "go.bison9.com/agency/tools/schedule"
@@ -128,7 +127,7 @@ func newClassifierHostLoop(t *testing.T, cfg *config.Config) (*AgentLoop, *Class
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	tools.RegisterProvider(tools.NamespacedProvider(toolsclassifier.Namespace, toolsclassifier.GlobalProvider))
 	msgBus := bus.NewMessageBus()
-	al := mustNewAgentLoop(t, cfg, msgBus, &mockProvider{}, providers.NewProviderDispatcher(cfg), OwnsDataDir())
+	al := mustNewAgentLoop(t, cfg, msgBus, &mockProvider{}, realClients{}, OwnsDataDir())
 	host := NewClassifierHost()
 	host.Bind(al)
 	return al, host, msgBus
@@ -472,7 +471,7 @@ func TestClassifierHost_CloneActsAsOwner(t *testing.T) {
 			t.Errorf("Close: %v", err)
 		}
 	})
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, providers.NewProviderDispatcher(cfg), OwnsDataDir())
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, realClients{}, OwnsDataDir())
 	host.Bind(al)
 	registerOn(t, al, "alice", &classifierTool{name: "inbox_list", out: `[{"id":"m1"}]`})
 

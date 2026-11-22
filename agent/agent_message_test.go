@@ -67,17 +67,17 @@ func messagingLoop(t *testing.T, cfg *config.Config, model providers.LLMProvider
 
 // messagingLoopWith is messagingLoop with a provider dispatcher (a human
 // agent's turn dispatches its person's model through it).
-func messagingLoopWith(t *testing.T, cfg *config.Config, model providers.LLMProvider, dispatcher *providers.ProviderDispatcher) (*AgentLoop, *bus.MessageBus) {
+func messagingLoopWith(t *testing.T, cfg *config.Config, model providers.LLMProvider, clients clientRouting) (*AgentLoop, *bus.MessageBus) {
 	t.Helper()
 	tools.RegisterProvider(tools.NamespacedProvider("agent", toolsagents.GlobalProvider))
 	msgBus := bus.NewMessageBus()
-	al := mustNewAgentLoop(t, cfg, msgBus, model, dispatcher)
+	al := mustNewAgentLoop(t, cfg, msgBus, model, clients)
 	// Asks and requests to people time out only when a test moves the
 	// clock, however slow the machine.
 	fakeClock(al)
 	for _, id := range al.GetRegistry().List() {
 		if a, ok := al.GetRegistry().Get(id); ok {
-			a.Provider = model
+			setTestProvider(a, model)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -148,7 +148,7 @@ func setModel(t *testing.T, al *AgentLoop, id string, model providers.LLMProvide
 	if !ok {
 		t.Fatalf("no agent %s", id)
 	}
-	a.Provider = model
+	setTestProvider(a, model)
 }
 
 // TestAsk_ReturnsReplyAndOutcome: the target gets a normal turn headed with

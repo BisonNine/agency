@@ -151,20 +151,19 @@ func testAll(cfg *config.Config, deadline time.Duration) error {
 func testModel(cfg *config.Config, mc config.ModelConfig, timeout time.Duration) result {
 	r := result{modelName: mc.ModelName}
 
-	prov, err := cfg.GetProvider(mc.Provider)
+	if _, err := cfg.GetProvider(mc.Provider); err != nil {
+		r.err = fmt.Sprintf("provider init: %v", err)
+		return r
+	}
+	// The model's client as the catalogue builds it for the service, with no
+	// health kept: a test call parks nothing.
+	provider, release, err := providers.NewCatalogBuilder(nil, nil).Build(cfg).Client(mc.ModelName)
 	if err != nil {
 		r.err = fmt.Sprintf("provider init: %v", err)
 		return r
 	}
-	provider, modelID, err := providers.CreateProviderFromConfig(&mc, prov)
-	if err != nil {
-		r.err = fmt.Sprintf("provider init: %v", err)
-		return r
-	}
-
-	if sp, ok := provider.(providers.StatefulProvider); ok {
-		defer sp.Close()
-	}
+	defer release()
+	modelID := mc.Model
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

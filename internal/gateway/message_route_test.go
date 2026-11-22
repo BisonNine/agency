@@ -12,7 +12,6 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/health"
-	"go.bison9.com/agency/providers"
 	webserver "go.bison9.com/agency/web/backend"
 )
 
@@ -149,7 +148,7 @@ func TestMessageRoute_RateLimited429(t *testing.T) {
 			List: []config.AgentConfig{{ID: "main", Name: "Main", Default: true}},
 		},
 	}
-	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

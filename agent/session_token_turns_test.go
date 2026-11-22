@@ -103,7 +103,7 @@ func TestRunAgentLoop_EachTurnRecordsItsOwnChat(t *testing.T) {
 	rec := &recordingSTI{}
 	al.SetSessionTokenIssuer(rec)
 	var during [][]sourceCall
-	agentInstance.Provider = &probeProvider{onChat: func() { during = append(during, rec.activeTurns()) }}
+	setTestProvider(agentInstance, &probeProvider{onChat: func() { during = append(during, rec.activeTurns()) }})
 
 	opts := processOptions{SessionKey: "agent:main:main", Channel: "slack", ChatID: "C123", UserMessage: "hello from slack"}
 	if _, err := al.runAgentLoop(context.Background(), agentInstance, opts); err != nil {
@@ -144,7 +144,7 @@ func turnsDuringModelCall(t *testing.T, run func(al *AgentLoop) error) []sourceC
 	rec := &recordingSTI{}
 	al.SetSessionTokenIssuer(rec)
 	var during []sourceCall
-	agentInstance.Provider = &probeProvider{onChat: func() { during = rec.activeTurns() }}
+	setTestProvider(agentInstance, &probeProvider{onChat: func() { during = rec.activeTurns() }})
 	if _, err := al.runAgentLoop(context.Background(), agentInstance, processOptions{
 		SessionKey: "agent:main:main", Channel: "telegram", ChatID: "42", UserMessage: "earlier",
 	}); err != nil {

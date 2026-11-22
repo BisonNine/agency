@@ -25,6 +25,7 @@ type SubagentManager struct {
 	// Worker model candidates: selfCandidates for self-spawns, or the target
 	// agent's (resolved via candidateResolver). Used to validate a spawn.
 	selfCandidates    []providers.FallbackCandidate
+	selfResolver      func() []providers.FallbackCandidate
 	callerAgentID     string
 	candidateResolver func(agentID string) ([]providers.FallbackCandidate, bool)
 	workerModelsSet   func(agentID string) bool
@@ -54,6 +55,9 @@ type SubagentManagerConfig struct {
 	// SelfCandidates are the calling agent's worker model candidates for
 	// self-spawns.
 	SelfCandidates []providers.FallbackCandidate
+	// SelfResolver, when set, returns the calling agent's worker model
+	// candidates at the time of each spawn, in place of SelfCandidates.
+	SelfResolver func() []providers.FallbackCandidate
 	// CallerAgentID is the ID of the agent that owns this manager (for allowlist
 	// and as the task record's owner).
 	CallerAgentID string
@@ -87,6 +91,7 @@ func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
 		ownerAgentID:      cfg.CallerAgentID,
 		live:              cfg.Live,
 		selfCandidates:    cfg.SelfCandidates,
+		selfResolver:      cfg.SelfResolver,
 		callerAgentID:     cfg.CallerAgentID,
 		candidateResolver: cfg.CandidateResolver,
 		workerModelsSet:   cfg.WorkerModelsSet,
@@ -127,6 +132,9 @@ func (sm *SubagentManager) CandidatesFor(agentID string) []providers.FallbackCan
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	candidates := sm.selfCandidates
+	if sm.selfResolver != nil {
+		candidates = sm.selfResolver()
+	}
 	if agentID != "" && sm.candidateResolver != nil {
 		if resolved, ok := sm.candidateResolver(agentID); ok {
 			candidates = resolved

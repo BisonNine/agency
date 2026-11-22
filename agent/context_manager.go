@@ -9,18 +9,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/tenebris-tech/alerter"
-	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/fsmode"
 	"go.bison9.com/agent/models"
-	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -31,52 +28,25 @@ import (
 	"go.bison9.com/agency/providers"
 )
 
-// providerLLMClient is one model of the summarization chain;
-// compressModelCaller walks a list of them. Each call is made on the model's
-// single-model chain in the catalogue (begun anew for every call, so it
-// follows a reload), which skips it while it is parked and records a failure
-// against its health.
-//
-// Every request asks for a JSON-object response; the provider gates that on
-// protocol capability (see openai_compat.Provider), and non-capable
-// providers silently drop it and log DBG.
-type providerLLMClient struct {
-	catalog *models.Catalog
-	// alias is the model's model_name, model its wire model id and
-	// ourProvider its provider name, as the finish line logs them.
-	alias       string
-	model       string
-	ourProvider string
+// compressModelCaller is the host's ctxengine.ModelCaller: an adapter over
+// the agent's set's Caller for summaries (models.Summarize) or memory
+// consolidation (models.Memory). The set's list is the agent's
+// summarization chain (agent summarization_models → global
+// summarization.models → the agent's primary model); the catalogue's walk
+// skips models the engine excluded and models it has parked, moves on after
+// any failure (recording one spawnllm classifies against the model's
+// health, the one every path shares), and returns the first reply with the
+// model that produced it. The host writes the finish line of every call and
+// the skip and failure lines itself, as it always has.
+type compressModelCaller struct {
+	// set is the agent's set; nil when the agent has no summarization chain
+	// (a human agent).
+	set     *models.Set
+	purpose models.Purpose
+	scope   models.Scope
 	// workspace, when set, runs a CLI model isolated in it (a fresh
 	// temporary agent's).
 	workspace string
-}
-
-// Model returns the wire model this client dispatches to, used to label
-// per-invocation entries in the compaction report.
-func (c *providerLLMClient) Model() string { return c.model }
-
-// chain begins the model's chain for one call.
-func (c *providerLLMClient) chain() *models.Chain {
-	ch := providers.ModelSet(c.catalog, c.alias).Begin(models.Chat)
-	if c.workspace != "" {
-		ch = ch.Isolated(c.workspace)
-	}
-	return ch
-}
-
-// compressModelCaller is the host's ctxengine.ModelCaller: it walks the
-// agent's summarization chain in order (agent summarization_models → global
-// summarization.models → the agent's primary model), skipping models the
-// engine excluded and models the catalogue has parked, and returns the first
-// reply together with the model that produced it. A transport error moves on
-// to the next model and is recorded against the model's health, so an
-// out-of-credits summarizer is not hammered on every compaction; the last
-// error is returned when every model fails.
-type compressModelCaller struct {
-	clients []*providerLLMClient
-	// clock times the cooldown a skipped model has left.
-	clock clock.Clock
 	// caller and sessionKey label the log lines.
 	caller     llmCaller
 	sessionKey string
@@ -94,91 +64,69 @@ func (c *compressModelCaller) Complete(ctx context.Context, req ctxengine.ModelR
 	return ctxengine.ModelReply{Content: content, FinishReason: finishReason, Model: model}, err
 }
 
-// complete is the chain walk itself, in plain types so another caller shape
-// (the cognitive-memory consolidation model) can wrap it without an import.
-// It returns the reply and the model that served it; on failure the model is
+// complete makes the call, in plain types so another caller shape (the
+// cognitive-memory consolidation model) can wrap it without an import. It
+// returns the reply and the model that served it; on failure the model is
 // the last one tried (or "" when nothing was), so a report can still name it.
-// When ctx ends the walk stops with ctx's error.
+// When no model could be called the error wraps ctxengine.ErrNoModel; when
+// ctx ends the walk stops with ctx's error.
 func (c *compressModelCaller) complete(ctx context.Context, system, user string, jsonObject bool, exclude []string) (content, finishReason, model string, err error) {
-	messages := []providers.Message{
-		{Role: "system", Content: system},
-		{Role: "user", Content: user},
+	if c.set == nil {
+		return "", "", "", fmt.Errorf("%w: 0 excluded, 0 in cooldown", ctxengine.ErrNoModel)
 	}
-	var opts map[string]any
-	if jsonObject {
-		opts = map[string]any{
-			openai_compat.ResponseFormatJSONObjectOption: true,
-		}
+	chain := c.set.Begin(c.purpose, c.scope)
+	if c.workspace != "" {
+		chain = chain.Isolated(c.workspace)
 	}
-	var lastErr error
-	lastModel := ""
-	excluded, cooling := 0, 0
-	for _, cl := range c.clients {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", "", lastModel, ctxErr
-		}
-		if cl.model != "" && slices.Contains(exclude, cl.model) {
-			excluded++
-			continue
-		}
-		if info, ok := cl.catalog.Get(cl.alias); ok && !info.Health.Available {
-			cooling++
-			logger.InfoCF("llmcontext", "compression model in cooldown; skipping", map[string]any{
-				"agent_id":  c.caller.agentID,
-				"session":   c.sessionKey,
-				"model":     cl.model,
-				"remaining": max(clock.Or(c.clock).Until(info.Health.Until), 0).Round(time.Second).String(),
-			})
-			continue
-		}
-		sessionKey := c.sessionKey
-		if c.noSessionKey {
-			sessionKey = ""
-		}
-		var last finishRecorder
-		res, chatErr := cl.chain().Chat(ctx, c.id, models.Request{Messages: messages, Options: opts},
-			last.option(func(_ models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
-				emitLLMFinishEvent(llmFinish{
-					caller:         c.caller,
-					kind:           llmKindCompression,
-					ourProvider:    cl.ourProvider,
-					ourModel:       cmp.Or(cl.alias, cl.model),
-					requestedModel: cl.model,
-					sessionKey:     sessionKey,
-					turnID:         turnIDFrom(ctx),
-					elapsedMs:      elapsed.Milliseconds(),
-					resp:           resp,
-					err:            err,
+	sessionKey := c.sessionKey
+	if c.noSessionKey {
+		sessionKey = ""
+	}
+	finish := models.WithFinish(func(cand models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+		emitLLMFinishEvent(llmFinish{
+			caller:         c.caller,
+			kind:           llmKindCompression,
+			ourProvider:    cand.Provider,
+			ourModel:       cmp.Or(cand.Name, cand.Model),
+			requestedModel: cand.Model,
+			sessionKey:     sessionKey,
+			turnID:         turnIDFrom(ctx),
+			elapsedMs:      elapsed.Milliseconds(),
+			resp:           resp,
+			err:            err,
+		})
+	})
+	notify := models.WithNotify(func(passed []models.Attempt, _ models.Candidate) {
+		for _, a := range passed {
+			switch {
+			case a.Disabled:
+			case a.Skipped:
+				logger.InfoCF("llmcontext", "compression model in cooldown; skipping", map[string]any{
+					"agent_id":  c.caller.agentID,
+					"session":   c.sessionKey,
+					"model":     a.Model,
+					"remaining": a.Remaining.Round(time.Second).String(),
 				})
-			}))
-		if chatErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return "", "", cl.model, ctxErr
+			default:
+				logger.WarnCF("llmcontext", "compression model call failed; trying next in chain", map[string]any{
+					"agent_id": c.caller.agentID,
+					"session":  c.sessionKey,
+					"model":    a.Model,
+					"error":    redactedError(a.Err),
+				})
 			}
-			if !last.called {
-				if !errors.Is(chatErr, models.ErrNoModelAvailable) {
-					cooling++ // parked between the check above and the call
-				}
-				continue
-			}
-			lastErr, lastModel = last.err, cl.model
-			if lastErr == nil {
-				lastErr = chatErr
-			}
-			logger.WarnCF("llmcontext", "compression model call failed; trying next in chain", map[string]any{
-				"agent_id": c.caller.agentID,
-				"session":  c.sessionKey,
-				"model":    cl.model,
-				"error":    redactedError(lastErr),
-			})
-			continue
 		}
-		return res.Response.Content, res.Response.FinishReason, cl.model, nil
+	})
+	reply, err := chain.Caller(c.id, finish, notify).Complete(ctx, models.CompleteRequest{
+		System: system, User: user, JSONObject: jsonObject, Exclude: exclude,
+	})
+	if err != nil {
+		if nme, ok := errors.AsType[*models.NoModelError](err); ok {
+			return "", "", "", fmt.Errorf("%w: %s", ctxengine.ErrNoModel, nme.Detail)
+		}
+		return "", "", reply.Model, err
 	}
-	if lastErr != nil {
-		return "", "", lastModel, lastErr
-	}
-	return "", "", "", fmt.Errorf("%w: %d excluded, %d in cooldown", ctxengine.ErrNoModel, excluded, cooling)
+	return reply.Content, reply.FinishReason, reply.Model, nil
 }
 
 // resolveCompressModelTarget resolves a configured compress_model reference into
@@ -256,18 +204,17 @@ func resolveCompressModelTarget(cfg *config.Config, raw string) (alias, modelID 
 	return "", "", false
 }
 
-// resolveCompressClient resolves one summarization model to a client for
-// the chain walker, or nil when it names no enabled model.
-func (al *AgentLoop) resolveCompressClient(agent *AgentInstance, compressModelName, sessionKey string) *providerLLMClient {
-	cfg := al.GetConfig()
-	alias, modelID, ok := resolveCompressModelTarget(cfg, compressModelName)
+// logCompressModel logs how one configured summarization model resolves:
+// a name that names no enabled model is left out of the chain, and said so.
+func (al *AgentLoop) logCompressModel(agent *AgentInstance, compressModelName, sessionKey string) {
+	alias, modelID, ok := resolveCompressModelTarget(al.GetConfig(), compressModelName)
 	if !ok {
 		logger.WarnCF("llmcontext", "compression model not found in enabled models; skipping", map[string]any{
 			"agent_id":  agent.ID,
 			"requested": compressModelName,
 			"session":   sessionKey,
 		})
-		return nil
+		return
 	}
 	logger.DebugCF("llmcontext", "compression model resolved", map[string]any{
 		"agent_id":  agent.ID,
@@ -276,17 +223,6 @@ func (al *AgentLoop) resolveCompressClient(agent *AgentInstance, compressModelNa
 		"model":     modelID,
 		"session":   sessionKey,
 	})
-	return al.compressClient(agent, cfg, alias, modelID)
-}
-
-// compressClient is the summarization client of model alias for agent: a
-// fresh temporary agent's CLI model runs isolated in its workspace.
-func (al *AgentLoop) compressClient(agent *AgentInstance, cfg *config.Config, alias, modelID string) *providerLLMClient {
-	cl := &providerLLMClient{catalog: al.catalog, alias: alias, model: modelID, ourProvider: compressProviderName(cfg, alias)}
-	if agent.Spec.Fresh {
-		cl.workspace = agent.Workspace
-	}
-	return cl
 }
 
 // newCompressModelCaller builds the summarization ModelCaller for an agent and
@@ -313,23 +249,11 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 
 	effective := ""
 	chainNames := resolveCompressModelChain(agentModels, globalModels)
-	cfg := al.GetConfig()
 	for _, name := range chainNames {
 		if effective == "" {
 			effective = name
 		}
-		// Logs a name that resolves to no enabled model; the set holds the
-		// ones that do.
-		al.resolveCompressClient(agent, name, sessionKey)
-	}
-	// The chain is the agent's set's list for the purpose (assignAgentModels):
-	// the summarization models in order, then the primary model unless listed.
-	list := al.catalog.Set(agent.ID).List(purpose)
-	clients := make([]*providerLLMClient, 0, len(list))
-	for _, e := range list {
-		if info, ok := al.catalog.Get(e.Name); ok {
-			clients = append(clients, al.compressClient(agent, cfg, e.Name, info.Model.Model))
-		}
+		al.logCompressModel(agent, name, sessionKey)
 	}
 
 	// One clear line (in claw.log) showing the whole compression chain that will
@@ -348,13 +272,20 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 	if effective == "" {
 		effective = strings.TrimSpace(agent.Model)
 	}
-	return &compressModelCaller{
-		clients:    clients,
-		clock:      registryClock{al},
+	// The chain is the agent's set's list for the purpose (assignAgentModels):
+	// the summarization models in order, then the primary model unless listed.
+	c := &compressModelCaller{
+		set:        al.catalog.Set(agent.ID),
+		purpose:    purpose,
+		scope:      models.Scope(sessionKey),
 		caller:     callerOf(agent),
 		sessionKey: sessionKey,
 		id:         agent.Identity(),
-	}, effective
+	}
+	if agent.Spec.Fresh {
+		c.workspace = agent.Workspace
+	}
+	return c, effective
 }
 
 // getContextManager returns the ContextManager for the given agent+session

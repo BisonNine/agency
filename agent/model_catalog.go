@@ -5,9 +5,9 @@ package agent
 
 import (
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"go.bison9.com/agent/models"
@@ -27,33 +27,47 @@ var taskUses = []config.TaskUse{
 // taskPurpose is the purpose a task-model use is assigned under.
 func taskPurpose(use config.TaskUse) models.Purpose { return models.Purpose(use) }
 
-// assignAgentModels states in c which models agent inst uses for which
-// purpose, in priority order (list position):
+// agentModelLists are the lists agent inst's set holds, by purpose, in
+// priority order (list position):
 //   - Chat: its models (agents.list[].models, else the defaults');
 //   - Worker: its worker models (subagents.models), when it has any; with
 //     none the built-in Worker → Chat rule serves its sub-agents;
 //   - Summarize and Memory: its summarization chain (agent list, then the
-//     global one, then its primary model), the same list for both;
+//     global one, then its primary model unless listed), the same for both;
 //   - one host purpose per task-model use, from TaskModelsConfig.Entries,
 //     each entry carried as the assignment's settings.
 //
-// It changes nothing when the set already holds exactly that, so rebuilding
-// an agent against an unchanged configuration leaves the set alone. A human
-// agent gets its chat model only: no model ever sees a person's conversation.
-func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstance) {
-	set := c.Set(inst.ID)
-	ensureAssigned(set, models.Chat, candidateNames(inst.Candidates), nil, inst.ID)
-	var workers []string
-	if inst.Subagents != nil && len(inst.Subagents.Models) > 0 {
-		workers = candidateNames(inst.WorkerCandidates)
+// A human agent has its chat model only: no model ever sees a person's
+// conversation. A model c does not have (disabled, or refused when the
+// catalogue was built) is left out. Every purpose is given, empty or not, so
+// ReplaceAll leaves nothing stale.
+func agentModelLists(c *models.Catalog, cfg *config.Config, inst *AgentInstance) map[models.Purpose][]models.Assignment {
+	have := func(name string) bool { _, ok := c.Get(name); return ok }
+	list := func(names []string, settings []any) []models.Assignment {
+		out := make([]models.Assignment, 0, len(names))
+		for i, n := range names {
+			if !have(n) || slices.ContainsFunc(out, func(a models.Assignment) bool { return a.Name == n }) {
+				continue
+			}
+			a := models.Assignment{Name: n}
+			if settings != nil {
+				a.Options = []models.AssignOption{models.WithSettings(settings[i])}
+			}
+			out = append(out, a)
+		}
+		return out
 	}
-	ensureAssigned(set, models.Worker, workers, nil, inst.ID)
-	var summarize []string
+	lists := map[models.Purpose][]models.Assignment{
+		models.Chat:      list(inst.chatModels, nil),
+		models.Worker:    nil,
+		models.Summarize: nil,
+		models.Memory:    nil,
+	}
 	if inst.HumanModel == "" {
-		summarize = summarizationNames(cfg, inst)
+		lists[models.Worker] = list(inst.workerModels, nil)
+		summarize := list(summarizationNames(cfg, inst), nil)
+		lists[models.Summarize], lists[models.Memory] = summarize, summarize
 	}
-	ensureAssigned(set, models.Summarize, summarize, nil, inst.ID)
-	ensureAssigned(set, models.Memory, summarize, nil, inst.ID)
 	for _, use := range taskUses {
 		var names []string
 		var settings []any
@@ -63,17 +77,63 @@ func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstanc
 				settings = append(settings, e)
 			}
 		}
-		ensureAssigned(set, taskPurpose(use), names, settings, inst.ID)
+		lists[taskPurpose(use)] = list(names, settings)
+	}
+	return lists
+}
+
+// assignAgentModels states agent inst's lists (agentModelLists) in c, all in
+// one step: a turn sees the old lists or the new ones, never a mix, and a
+// session's /model choice is kept while its model is still listed. Lists
+// that did not change are left as they are.
+func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstance) {
+	if _, err := c.Set(inst.ID).ReplaceAll(agentModelLists(c, cfg, inst)); err != nil {
+		// The lists hold only models c has, each once; a spent catalogue is
+		// the only way left to fail.
+		logger.WarnCF("agent", "agent's models not assigned",
+			map[string]any{"agent_id": inst.ID, "error": err.Error()})
 	}
 }
 
-// candidateNames are the model names of a chain.
-func candidateNames(cands []providers.FallbackCandidate) []string {
-	names := make([]string, 0, len(cands))
-	for _, c := range cands {
-		names = append(names, c.Name)
+// reloadAssignments are the model assignments of the agents a reload
+// builds. With next set (the reload changes what the catalogue is built
+// from) they are made in next as each agent is built, and next is adopted at
+// the commit. Otherwise they wait for the commit and are made then in the
+// running catalogue, so a reload that fails changes no agent's lists.
+type reloadAssignments struct {
+	cfg  *config.Config
+	next *models.Catalog
+
+	mu    sync.Mutex
+	built []*AgentInstance
+}
+
+// apply assigns the agents built, in c.
+func (r *reloadAssignments) apply(c *models.Catalog) {
+	r.mu.Lock()
+	built := r.built
+	r.built = nil
+	r.mu.Unlock()
+	for _, inst := range built {
+		assignAgentModels(c, r.cfg, inst)
 	}
-	return names
+}
+
+// assignBuilt states the models of an agent just built: in the catalogue a
+// reload in progress is building, at its commit (reloadAssignments), else in
+// the running catalogue at once.
+func (al *AgentLoop) assignBuilt(cfg *config.Config, inst *AgentInstance) {
+	r := al.reloading.Load()
+	switch {
+	case r == nil:
+		assignAgentModels(al.catalog, cfg, inst)
+	case r.next != nil:
+		assignAgentModels(r.next, cfg, inst)
+	default:
+		r.mu.Lock()
+		r.built = append(r.built, inst)
+		r.mu.Unlock()
+	}
 }
 
 // summarizationNames is the agent's summarization chain as model names: its
@@ -95,36 +155,6 @@ func summarizationNames(cfg *config.Config, inst *AgentInstance) []string {
 		}
 	}
 	return out
-}
-
-// ensureAssigned makes purpose p of s hold exactly names, in that order,
-// each with its settings (settings may be nil, or one per name).
-func ensureAssigned(s *models.Set, p models.Purpose, names []string, settings []any, agentID string) {
-	cur := s.List(p)
-	have := make([]string, 0, len(cur))
-	haveSettings := make([]any, 0, len(cur))
-	for _, e := range cur {
-		have = append(have, e.Name)
-		haveSettings = append(haveSettings, e.Settings)
-	}
-	if slices.Equal(have, names) && (settings == nil || reflect.DeepEqual(haveSettings, settings)) {
-		return
-	}
-	for _, n := range have {
-		s.Unassign(p, n)
-	}
-	for i, n := range names {
-		var opts []models.AssignOption
-		if settings != nil {
-			opts = append(opts, models.WithSettings(settings[i]))
-		}
-		if err := s.Assign(p, n, i, opts...); err != nil {
-			// The catalogue left the model out (and logged why), or the
-			// list names it twice.
-			logger.DebugCF("agent", "model not assigned",
-				map[string]any{"agent_id": agentID, "purpose": string(p), "model": n, "error": err.Error()})
-		}
-	}
 }
 
 // catalogAssignments is the part of a configuration the agents' model
@@ -182,8 +212,7 @@ func (al *AgentLoop) adoptCatalog(next *models.Catalog, digest string) {
 }
 
 // listCooldowns lists the models that are parked now, once per provider and
-// wire model (models that share both share their health), ordered by them:
-// the catalogue's and the task models' tracker's.
+// wire model (models that share both share their health), ordered by them.
 func (al *AgentLoop) listCooldowns() []commands.CooldownEntry {
 	byKey := make(map[string]commands.CooldownEntry)
 	for _, h := range al.catalog.Health() {
@@ -192,17 +221,6 @@ func (al *AgentLoop) listCooldowns() []commands.CooldownEntry {
 		}
 		byKey[h.Key] = commands.CooldownEntry{
 			Provider: h.Provider, Model: h.Model, Reason: string(h.Reason), Since: h.Since, Until: h.Until,
-		}
-	}
-	if tracker := al.cooldownTracker(); tracker != nil {
-		for _, s := range tracker.Snapshot() {
-			key := providers.ModelKey(s.Provider, s.Model)
-			if cur, ok := byKey[key]; ok && !cur.Until.Before(s.Until) {
-				continue
-			}
-			byKey[key] = commands.CooldownEntry{
-				Provider: s.Provider, Model: s.Model, Reason: string(s.Reason), Since: s.Since, Until: s.Until,
-			}
 		}
 	}
 	keys := slices.Sorted(maps.Keys(byKey))
@@ -228,9 +246,6 @@ func (al *AgentLoop) clearCooldown(provider, model string) bool {
 		cleared = al.catalog.ResetHealth(names...) > 0
 	}
 	al.catalogs.Alerts().Rearm(providers.ModelKey(provider, model))
-	if tracker := al.cooldownTracker(); tracker != nil && tracker.Clear(provider, model) {
-		cleared = true
-	}
 	return cleared
 }
 
@@ -239,9 +254,6 @@ func (al *AgentLoop) clearCooldown(provider, model string) bool {
 func (al *AgentLoop) clearCooldowns() {
 	al.catalog.ResetHealth()
 	al.catalogs.Alerts().RearmAll()
-	if tracker := al.cooldownTracker(); tracker != nil {
-		tracker.Reset()
-	}
 }
 
 // parkedFor returns how long the catalogue's model name stays parked: 0 when
@@ -271,4 +283,40 @@ func (r *finishRecorder) option(emit func(c models.Candidate, elapsed time.Durat
 			emit(c, elapsed, resp, err)
 		}
 	})
+}
+
+// setCandidates are the models of agent id's set for purpose p (its own
+// list, not one a fallback rule leads to), in priority order, with their
+// providers and wire models.
+func (al *AgentLoop) setCandidates(id string, p models.Purpose) []providers.FallbackCandidate {
+	return setCandidatesIn(al.catalog, id, p)
+}
+
+// setCandidatesIn is setCandidates in catalogue c.
+func setCandidatesIn(c *models.Catalog, id string, p models.Purpose) []providers.FallbackCandidate {
+	list := c.Set(id).List(p)
+	out := make([]providers.FallbackCandidate, 0, len(list))
+	for _, e := range list {
+		if info, ok := c.Get(e.Name); ok {
+			out = append(out, providers.FallbackCandidate{
+				Name: e.Name, Provider: info.Provider.Name, Protocol: info.Provider.Protocol, Model: info.Model.Model,
+			})
+		}
+	}
+	return out
+}
+
+// chatCandidates are agent a's chat models (setCandidates).
+func (al *AgentLoop) chatCandidates(a *AgentInstance) []providers.FallbackCandidate {
+	return al.setCandidates(a.ID, models.Chat)
+}
+
+// workerCandidates are the models agent a's workers (sub-agents and Maestro
+// dispatches) run on: its worker models when it has any configured (none
+// when none of them is usable), else its chat models.
+func (al *AgentLoop) workerCandidates(a *AgentInstance) []providers.FallbackCandidate {
+	if a.Subagents != nil && len(a.Subagents.Models) > 0 {
+		return al.setCandidates(a.ID, models.Worker)
+	}
+	return al.chatCandidates(a)
 }

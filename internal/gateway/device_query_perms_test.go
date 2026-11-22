@@ -13,7 +13,6 @@ import (
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // A device's chat.history on a session nobody has used yet creates the
@@ -34,7 +33,7 @@ func TestDeviceQuerierHistory_CreatesArchivePrivately(t *testing.T) {
 			List: []config.AgentConfig{{ID: "alice", Name: "Alice", Default: true}},
 		},
 	}
-	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

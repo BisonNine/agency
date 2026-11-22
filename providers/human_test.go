@@ -12,18 +12,29 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-func TestHumanProvider_FromFactory(t *testing.T) {
-	model := &config.ModelConfig{ModelName: "Bob (human)", Model: "bob", RequestTimeout: 90}
-	p, id, err := CreateProviderFromConfig(model, &config.Provider{Name: "People", Protocol: config.HumanProtocol})
+func TestHumanProvider_FromCatalogue(t *testing.T) {
+	cfg := &config.Config{
+		Providers: []config.Provider{{Name: "People", Protocol: config.HumanProtocol}},
+		Models:    []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", RequestTimeout: 90, Enabled: true}},
+	}
+	b := NewCatalogBuilder(nil, nil)
+	c := b.Build(cfg)
+	hp, ok := b.HumanClient("Bob (human)")
+	if !ok || hp.Timeout() != 90*time.Second || hp.GetDefaultModel() != "Bob (human)" {
+		t.Fatalf("human client = %+v, %v", hp, ok)
+	}
+	client, release, err := c.Client("Bob (human)")
 	if err != nil {
-		t.Fatalf("CreateProviderFromConfig: %v", err)
+		t.Fatal(err)
 	}
-	hp, ok := p.(*HumanProvider)
-	if !ok {
-		t.Fatalf("provider is %T, want *HumanProvider", p)
+	defer release()
+	if client != LLMProvider(hp) {
+		t.Errorf("the catalogue's client is %T, want the builder's human client", client)
 	}
-	if id != "bob" || hp.Timeout() != 90*time.Second || hp.GetDefaultModel() != "Bob (human)" {
-		t.Errorf("got id %q, timeout %s, label %q", id, hp.Timeout(), hp.GetDefaultModel())
+	// A second build hands the same client, so Adopt keeps it.
+	b.Build(cfg)
+	if again, _ := b.HumanClient("Bob (human)"); again != hp {
+		t.Error("a rebuild made a new human client")
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm/imagegen"
 	"go.bison9.com/agent/spawnllm/protocoltypes"
 	"go.bison9.com/agent/spawnllm/speech"
@@ -323,80 +324,119 @@ func contentTypeOf(name string, data []byte) string {
 	}
 }
 
-// Run implements TaskModelRunner.
+// Run implements TaskModelRunner: the call runs on the chain of the kind's
+// list in the agent's models (or of the one model named), which skips a
+// model in cooldown, falls back on any failure and records only the
+// failures cooldownWorthy accepts against the model's health, the one
+// health every model call shares.
 func (h *taskModelHost) Run(ctx context.Context, agentID, workspace string, req toolsagents.TaskModelRequest) (*toolsagents.TaskModelResult, error) {
 	res := &toolsagents.TaskModelResult{}
-	candidates, inputs, err := h.prepare(agentID, workspace, req, true)
+	names, inputs, err := h.prepare(agentID, workspace, req, true)
 	if err != nil {
 		return res, err
 	}
 	cfg := h.al.GetConfig()
-	tracker := h.al.cooldownTracker()
 	id := h.id
 	if id.Agent == "" {
 		id = h.al.identityOf(agentID)
 	}
-	for _, alias := range candidates {
-		if ctx.Err() != nil {
-			return res, ctx.Err()
-		}
+	cat := h.al.catalog
+	var chain *models.Chain
+	if req.Model != "" {
+		chain = providers.ModelSet(cat, names[0]).Begin(models.Chat)
+	} else {
+		chain = cat.Set(agentID).Begin(taskPurpose(kindUse(req.Kind)))
+	}
+	// notes are what each model the call passed over says, by model name;
+	// they are reported in the list's order. A model the catalogue does not
+	// have is not in the chain: it is named here as before.
+	notes := make(map[string]string, len(names))
+	for _, alias := range names {
 		mc, err := cfg.GetModelConfig(alias)
-		if err != nil || mc == nil {
-			res.Attempts = append(res.Attempts, toolsagents.TaskAttempt{Model: alias, Error: "not configured or disabled on the Models page"})
-			continue
+		switch {
+		case err != nil || mc == nil:
+			notes[alias] = "not configured or disabled on the Models page"
+		default:
+			if prov, err := cfg.GetProvider(mc.Provider); err != nil || prov == nil {
+				notes[alias] = "its provider is not configured"
+			}
 		}
-		prov, err := cfg.GetProvider(mc.Provider)
-		if err != nil || prov == nil {
-			res.Attempts = append(res.Attempts, toolsagents.TaskAttempt{Model: alias, Error: "its provider is not configured"})
-			continue
-		}
-		if tracker != nil && !tracker.IsAvailable(mc.Provider, mc.Model) {
-			wait := tracker.CooldownRemaining(mc.Provider, mc.Model).Round(time.Second)
-			res.Attempts = append(res.Attempts, toolsagents.TaskAttempt{Model: alias, Error: fmt.Sprintf("in cooldown for %s", wait)})
-			continue
-		}
+	}
+	var out *callOutput
+	answered, attempts, doErr := chain.Do(ctx, func(ctx context.Context, c models.Candidate) error {
+		alias := c.Name
 		start := h.al.clk().Now()
-		out, callErr := h.call(ctx, cfg, agentID, id, alias, mc, prov, req, inputs)
+		o, callErr := h.call(ctx, cfg, chain, agentID, id, alias, &c.Spec, &c.ProviderSpec, req, inputs)
 		elapsed := h.al.clk().Since(start)
-		if out != nil && out.cost != nil {
-			h.al.recordSpend(*out.cost)
-		}
-		fields := map[string]any{
-			"agent_id": agentID, "kind": req.Kind, "model": alias, "duration_ms": elapsed.Milliseconds(),
+		if o != nil && o.cost != nil {
+			h.al.recordSpend(*o.cost)
 		}
 		if callErr != nil {
-			if ctx.Err() == nil && tracker != nil {
-				if fe := providers.ClassifyError(callErr, mc.Provider, mc.Model); fe != nil && cooldownWorthy(fe) {
-					tracker.MarkFailure(mc.Provider, mc.Model, fe.Reason, fe.Status, fe.RetryAfter)
-				}
+			fields := map[string]any{
+				"agent_id": agentID, "kind": req.Kind, "model": alias, "duration_ms": elapsed.Milliseconds(),
+				"outcome": "error", "error": redactedError(callErr),
 			}
-			fields["outcome"], fields["error"] = "error", redactedError(callErr)
 			logger.InfoCF("agent", "Task model call", fields)
 			h.audit(agentID, req.Kind, alias, audit.OutcomeError, redactSecrets(callErr.Error()))
-			res.Attempts = append(res.Attempts, toolsagents.TaskAttempt{Model: alias, Error: redactSecrets(callErr.Error())})
-			continue
+			notes[alias] = redactSecrets(callErr.Error())
+			return callErr
 		}
-		if tracker != nil {
-			tracker.MarkSuccess(mc.Provider, mc.Model)
+		out = o
+		out.elapsed = elapsed
+		return nil
+	}, models.WithClassify(taskVerdict))
+	for _, a := range attempts {
+		if a.Skipped && !a.Disabled {
+			notes[a.Name] = fmt.Sprintf("in cooldown for %s", a.Remaining.Round(time.Second))
 		}
-		saveErr := h.save(cfg, workspace, req.Kind, out, res)
-		fields["outcome"], fields["usage"], fields["paths"] = "ok", usageText(out.usage, out.images), res.Paths
-		if out.cost != nil {
-			fields["cost_usd"] = *out.cost
-		}
-		if saveErr != nil {
-			fields["outcome"], fields["error"] = "not saved", saveErr.Error()
-		}
-		logger.InfoCF("agent", "Task model call", fields)
-		res.Model, res.Usage, res.CostUSD = alias, usageText(out.usage, out.images), out.cost
-		if saveErr != nil {
-			h.audit(agentID, req.Kind, alias, audit.OutcomeError, saveErr.Error())
-			return res, fmt.Errorf("the output could not be saved: %w", saveErr)
-		}
-		h.audit(agentID, req.Kind, alias, audit.OutcomeOK, strings.Join(res.Paths, ", "))
-		return res, nil
 	}
-	return res, errors.New("no task model served this call")
+	for _, alias := range names {
+		if doErr == nil && alias == answered.Name {
+			break
+		}
+		if note, ok := notes[alias]; ok {
+			res.Attempts = append(res.Attempts, toolsagents.TaskAttempt{Model: alias, Error: note})
+		}
+	}
+	if doErr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return res, ctxErr
+		}
+		return res, errors.New("no task model served this call")
+	}
+
+	alias := answered.Name
+	saveErr := h.save(cfg, workspace, req.Kind, out, res)
+	fields := map[string]any{
+		"agent_id": agentID, "kind": req.Kind, "model": alias, "duration_ms": out.elapsed.Milliseconds(),
+	}
+	fields["outcome"], fields["usage"], fields["paths"] = "ok", usageText(out.usage, out.images), res.Paths
+	if out.cost != nil {
+		fields["cost_usd"] = *out.cost
+	}
+	if saveErr != nil {
+		fields["outcome"], fields["error"] = "not saved", saveErr.Error()
+	}
+	logger.InfoCF("agent", "Task model call", fields)
+	res.Model, res.Usage, res.CostUSD = alias, usageText(out.usage, out.images), out.cost
+	if saveErr != nil {
+		h.audit(agentID, req.Kind, alias, audit.OutcomeError, saveErr.Error())
+		return res, fmt.Errorf("the output could not be saved: %w", saveErr)
+	}
+	h.audit(agentID, req.Kind, alias, audit.OutcomeOK, strings.Join(res.Paths, ", "))
+	return res, nil
+}
+
+// taskVerdict is how a task-model failure is judged: every failure moves on
+// to the next model, and only one that says the model can't serve anyone for
+// a while (cooldownWorthy) is recorded against its health. No same-model
+// retry is made.
+func taskVerdict(err error, c models.Candidate) models.Verdict {
+	fe := providers.ClassifyError(err, c.Provider, c.Model)
+	if fe == nil {
+		return models.Verdict{Next: true}
+	}
+	return models.Verdict{Reason: fe.Reason, Status: fe.Status, RetryAfter: fe.RetryAfter, Record: cooldownWorthy(fe), Next: true}
 }
 
 // cooldownWorthy reports whether a failure says the model can't serve
@@ -429,10 +469,12 @@ type callOutput struct {
 	format string
 	usage  *protocoltypes.TaskUsage
 	cost   *float64
+	// elapsed is how long the call took.
+	elapsed time.Duration
 }
 
 // call makes one model call of the kind, billed to id.
-func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, agentID string, id global.Identity, alias string, mc *config.ModelConfig,
+func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, chain *models.Chain, agentID string, id global.Identity, alias string, mc *config.ModelConfig,
 	prov *config.Provider, req toolsagents.TaskModelRequest, inputs []taskInput,
 ) (*callOutput, error) {
 	callCtx, cancel := context.WithTimeout(ctx, attemptTimeout(cfg, mc))
@@ -447,9 +489,9 @@ func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, agentID st
 		if entry.EffectiveImageAPI() == config.ImageAPIImages {
 			return h.imagesAPI(callCtx, id, mc, prov, req, inputs)
 		}
-		return h.chat(callCtx, cfg, agentID, id, alias, mc, prov, req, inputs, true)
+		return h.chat(callCtx, cfg, chain, agentID, id, alias, mc, prov, req, inputs, true)
 	default:
-		return h.chat(callCtx, cfg, agentID, id, alias, mc, prov, req, inputs, false)
+		return h.chat(callCtx, cfg, chain, agentID, id, alias, mc, prov, req, inputs, false)
 	}
 }
 
@@ -467,32 +509,30 @@ func attemptTimeout(cfg *config.Config, mc *config.ModelConfig) time.Duration {
 	}
 }
 
-// chat is one dispatcher Chat with no tool definitions: the prompt, text
-// inputs added as text, images attached. wantImages makes it an image call.
-func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, agentID string, id global.Identity, alias string, mc *config.ModelConfig,
+// chat is one Chat on the model's client from chain, with no tool
+// definitions: the prompt, text inputs added as text, images attached.
+// wantImages makes it an image call. A CLI model runs isolated in a folder of
+// its own.
+func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, chain *models.Chain, agentID string, id global.Identity, alias string, mc *config.ModelConfig,
 	prov *config.Provider, req toolsagents.TaskModelRequest, inputs []taskInput, wantImages bool,
 ) (*callOutput, error) {
 	if config.TaskOnlyProtocol(prov.Protocol) {
 		return nil, fmt.Errorf("provider %s serves speech only", prov.Name)
 	}
-	if h.al.dispatcher == nil {
-		return nil, errors.New("no model dispatcher")
-	}
-	var provider providers.LLMProvider
-	var err error
+	clientChain := chain
 	if config.CLIAgentByProtocol(prov.Protocol) != nil {
 		dir, cleanup, derr := h.isolatedFolder(cfg, agentID)
 		if derr != nil {
 			return nil, derr
 		}
 		defer cleanup()
-		provider, err = h.al.dispatcher.GetIsolated(alias, dir)
-	} else {
-		provider, err = h.al.dispatcher.Get(alias)
+		clientChain = chain.Isolated(dir)
 	}
+	provider, release, err := clientChain.Client(alias)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	var content strings.Builder
 	content.WriteString(req.Prompt)
 	var media []string

@@ -53,20 +53,14 @@ func agentCmd(message, model string, debug bool) error {
 	}
 	pruneHumanProblems(cfg)
 
-	provider, modelID, err := providers.CreateProvider(cfg)
-	if err != nil {
+	if err := providers.DefaultModelProblem(cfg, providers.NewCatalogBuilder(nil, nil).Build(cfg)); err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
 	}
+	providers.LogBypassEnabled(cfg)
 
-	// Use the resolved model ID from provider creation
-	if modelID != "" {
-		cfg.Agents.Defaults.SetDefaultModel(modelID)
-	}
-
-	dispatcher := providers.NewProviderDispatcher(cfg)
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
-	agentLoop, err := agent.NewAgentLoop(context.Background(), cfg, msgBus, provider, dispatcher)
+	agentLoop, err := agent.NewAgentLoop(context.Background(), cfg, msgBus)
 	if err != nil {
 		return fmt.Errorf("error creating agent loop: %w", err)
 	}

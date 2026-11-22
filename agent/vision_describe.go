@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/models"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
@@ -25,14 +27,21 @@ type visionReply struct {
 	Content string
 }
 
-// providerVisionClient dispatches a describe call through a resolved provider.
+// providerVisionClient makes a describe call on one model's chat client
+// from the catalogue. It reads and records no health: a describe call that
+// fails moves on to the next vision model and leaves the model's cooldown as
+// it was.
 type providerVisionClient struct {
-	provider providers.LLMProvider
-	model    string
-	// caller, alias and ourProvider label the finish line: the agent the
-	// chain belongs to, the model's model_name and its provider name.
+	catalog *models.Catalog
+	// alias is the model's model_name, model its wire model id.
+	alias string
+	model string
+	// workspace, when set, runs a CLI model isolated in it (a fresh
+	// temporary agent's).
+	workspace string
+	// caller and ourProvider label the finish line: the agent the chain
+	// belongs to and the model's provider name.
 	caller      llmCaller
-	alias       string
 	ourProvider string
 	// id is who the calls are billed to: the agent the chain belongs to.
 	id global.Identity
@@ -41,11 +50,24 @@ type providerVisionClient struct {
 // Model returns the model name, used to label log lines.
 func (c *providerVisionClient) Model() string { return c.model }
 
+// client is the model's chat client and its release.
+func (c *providerVisionClient) client() (providers.LLMProvider, func(), error) {
+	if c.workspace != "" {
+		return providers.ModelSet(c.catalog, c.alias).Begin(models.Chat).Isolated(c.workspace).Client(c.alias)
+	}
+	return c.catalog.Client(c.alias)
+}
+
 func (c *providerVisionClient) Complete(ctx context.Context, messages []providers.Message) (visionReply, error) {
+	provider, release, err := c.client()
+	if err != nil {
+		return visionReply{}, err
+	}
+	defer release()
 	// No response-format option: a describe call wants free-form prose, not a
 	// JSON object.
 	start := time.Now()
-	resp, err := c.provider.Chat(ctx, c.id, messages, nil, c.model, nil)
+	resp, err := provider.Chat(ctx, c.id, messages, nil, c.model, nil)
 	emitLLMFinishEvent(llmFinish{
 		caller:         c.caller,
 		kind:           llmKindVision,
@@ -64,29 +86,18 @@ func (c *providerVisionClient) Complete(ctx context.Context, messages []provider
 }
 
 // buildVisionLLMClient resolves a configured vision model reference into a
-// visionClient dispatched through the per-model dispatcher, mirroring
-// resolveCompressClient. Unlike compression there is NO agent-primary
-// last-resort fallback: the whole point is that the primary is text-only, so an
-// unresolvable vision model is skipped (returns ok=false) rather than routed
-// through the non-vision provider. cfg is passed explicitly because this runs
-// during agentBuilder, before al.cfg is swapped on reload.
+// visionClient on the model's client in the catalogue. Unlike compression
+// there is NO agent-primary last-resort fallback: the whole point is that
+// the primary is text-only, so an unresolvable vision model is skipped
+// (returns ok=false) rather than routed through the non-vision model. cfg is
+// passed explicitly because this runs during agentBuilder, before al.cfg is
+// swapped on reload.
 func (al *AgentLoop) buildVisionLLMClient(cfg *config.Config, agent *AgentInstance, visionModelName string) (visionClient, bool) {
 	alias, modelID, ok := resolveCompressModelTarget(cfg, visionModelName)
-	if !ok || al.dispatcher == nil {
+	if !ok {
 		logger.WarnCF("agent", "vision model not found in enabled models; skipping", map[string]any{
 			"agent_id":  agent.ID,
 			"requested": visionModelName,
-		})
-		return nil, false
-	}
-	p, err := al.dispatchProvider(agent, alias)
-	if err != nil {
-		logger.WarnCF("agent", "vision model dispatch failed; skipping", map[string]any{
-			"agent_id":  agent.ID,
-			"requested": visionModelName,
-			"alias":     alias,
-			"model":     modelID,
-			"error":     err.Error(),
 		})
 		return nil, false
 	}
@@ -96,14 +107,18 @@ func (al *AgentLoop) buildVisionLLMClient(cfg *config.Config, agent *AgentInstan
 		"alias":     alias,
 		"model":     modelID,
 	})
-	return &providerVisionClient{
-		provider:    p,
+	c := &providerVisionClient{
+		catalog:     al.catalog,
+		alias:       alias,
 		model:       modelID,
 		caller:      callerOf(agent),
-		alias:       alias,
 		ourProvider: compressProviderName(cfg, alias),
 		id:          agent.Identity(),
-	}, true
+	}
+	if agent.Spec.Fresh {
+		c.workspace = agent.Workspace
+	}
+	return c, true
 }
 
 // wireVisionClients builds the agent's vision-describe chain from the Describe

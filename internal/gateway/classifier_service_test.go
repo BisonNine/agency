@@ -15,7 +15,6 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier/classifierfs"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsclassifier "go.bison9.com/agency/tools/classifier"
 	"go.bison9.com/agency/tools/untrusted"
@@ -63,7 +62,7 @@ func TestNewClassifierService(t *testing.T) {
 	svc := newClassifierService(host)
 	t.Cleanup(func() { closeClassifiers(svc) })
 
-	al, loopErr := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, loopErr := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if loopErr != nil {
 		t.Fatalf("NewAgentLoop: %v", loopErr)
 	}

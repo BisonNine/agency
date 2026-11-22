@@ -5,9 +5,12 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"testing"
 
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
@@ -91,45 +94,60 @@ func compressTestConfig() *config.Config {
 	}
 }
 
-// TestBuildCompressLLMClient_ResolvesThroughCatalogue: a summarization model
-// named by its wire id resolves to its models entry and is called on that
-// model's chain in the catalogue, never through the agent's provider.
-func TestBuildCompressLLMClient_ResolvesThroughCatalogue(t *testing.T) {
+// TestCompressCaller_ResolvesThroughCatalogue: a summarization model named by
+// its wire id resolves to its models entry, is in the agent's Summarize list
+// and is called through the catalogue, never anything else.
+func TestCompressCaller_ResolvesThroughCatalogue(t *testing.T) {
 	cfg := compressTestConfig()
+	cfg.Summarization.Models = []string{"test-compress-model"}
 	target := &scriptedProvider{content: "summary"}
 	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, map[string]providers.LLMProvider{"compress-target": target})}
-	agent := &AgentInstance{ID: "compress-test", Provider: &mockProvider{}, Model: "sonnet-4-5"}
+	agent := &AgentInstance{ID: "compress-test", Model: "sonnet-4-5"}
+	assignAgentModels(al.catalog, cfg, agent)
 
-	client := al.resolveCompressClient(agent, "test-compress-model", "sess-1")
-	if client == nil || client.alias != "compress-target" || client.model != "test-compress-model" || client.ourProvider != "openai" {
-		t.Fatalf("client = %+v, want compress-target / test-compress-model on openai", client)
-	}
-	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{client}}
+	c, effective := al.newCompressModelCaller(agent, "sess-1", models.Summarize)
 	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u"})
-	if err != nil || reply.Content != "summary" || target.callCount() != 1 {
+	if err != nil || reply.Content != "summary" || reply.Model != "test-compress-model" || target.callCount() != 1 {
 		t.Fatalf("Complete = %+v, %v (calls %d), want the catalogue's client to answer", reply, err, target.callCount())
 	}
-}
-
-// TestBuildCompressLLMClient_UnknownModelSkipped: a summarization model that
-// names no enabled model is left out of the chain.
-func TestBuildCompressLLMClient_UnknownModelSkipped(t *testing.T) {
-	cfg := &config.Config{}
-	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
-	agent := &AgentInstance{ID: "fallback-test", Provider: &mockProvider{}}
-	if client := al.resolveCompressClient(agent, "unknown-model", "sess-2"); client != nil {
-		t.Fatalf("client = %+v, want none for a model that is not configured", client)
+	if effective != "test-compress-model" {
+		t.Errorf("effective = %q, want the configured name", effective)
 	}
 }
 
-// TestBuildCompressLLMClient_FreshAgentIsolated: a fresh temporary agent's
-// summarization models run isolated in its own workspace.
-func TestBuildCompressLLMClient_FreshAgentIsolated(t *testing.T) {
+// An unresolved summarization model and an unresolved primary are left out
+// of the chain; with nothing left, the call is ErrNoModel.
+func TestCompressCaller_UnresolvedModelsLeftOut(t *testing.T) {
+	cfg := compressTestConfig()
+	cfg.Summarization.Models = []string{"unknown-model"}
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
+	agent := &AgentInstance{ID: "fallback-test", Model: "no-such-model"}
+	assignAgentModels(al.catalog, cfg, agent)
+	if got := al.catalog.Set(agent.ID).List(models.Summarize); len(got) != 0 {
+		t.Fatalf("summarize list = %+v, want none", got)
+	}
+	c, _ := al.newCompressModelCaller(agent, "s", models.Summarize)
+	_, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
+	if !errors.Is(err, ctxengine.ErrNoModel) || err.Error() != "no summarization model available: 0 excluded, 0 in cooldown" {
+		t.Fatalf("err = %v, want ErrNoModel with today's text", err)
+	}
+
+	// With a resolvable primary it is the chain's last resort.
+	agent = &AgentInstance{ID: "primary-test", Model: "some-model"}
+	assignAgentModels(al.catalog, cfg, agent)
+	if got := entryNames(al.catalog.Set(agent.ID).List(models.Summarize)); !slices.Equal(got, []string{"primary-target"}) {
+		t.Fatalf("summarize list = %v, want the primary", got)
+	}
+}
+
+// A fresh temporary agent's summarization models run isolated in its own
+// workspace.
+func TestCompressCaller_FreshAgentIsolated(t *testing.T) {
 	cfg := compressTestConfig()
 	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
 	agent := &AgentInstance{ID: "fresh", Workspace: "/tmp/fresh-ws"}
 	agent.Spec.Fresh = true
-	if client := al.resolveCompressClient(agent, "compress-target", "s"); client == nil || client.workspace != "/tmp/fresh-ws" {
-		t.Fatalf("client = %+v, want it isolated in the agent's workspace", client)
+	if c, _ := al.newCompressModelCaller(agent, "s", models.Summarize); c.workspace != "/tmp/fresh-ws" {
+		t.Fatalf("workspace = %q, want the agent's", c.workspace)
 	}
 }

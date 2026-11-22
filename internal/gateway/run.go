@@ -59,20 +59,19 @@ func gatewayCmd(debug bool) error {
 	// below opens the files it holds.
 	layout.Prepare(cfg)
 	applyLoggingConfig(cfg, logPath, debug)
-	provider := bootProvider(cfg)
+	warnNoDefaultModel(cfg, "No model configured, starting in unconfigured state")
 
 	registerToolProviders()
 
 	// Operator alerts: parked models, unreachable MCP servers, channels that
 	// give up, failed jobs and reloads. Closed in shutdownGateway. Installed
-	// before anything that can raise one at startup: the dispatcher below
-	// alerts for a CLI provider running without its bypass flag, and an alert
-	// sent before Set reaches the no-op default and is lost.
+	// before anything that can raise one at startup: an alert sent before
+	// Set reaches the no-op default and is lost.
 	operatorAlerter, alertsPath := newAlerter(baseDir, cfg.PermissionModes(config.AreaLogs))
 	alerts.Set(operatorAlerter)
 	refAlerts.report(operatorAlerter, bootDanglingRefs)
 
-	dispatcher := providers.NewProviderDispatcher(cfg)
+	providers.LogBypassEnabled(cfg)
 	openAuditLog(baseDir)
 	// A core service that dies after startup takes the process down through
 	// here, so the service manager restarts it; see fatal.go.
@@ -98,7 +97,7 @@ func gatewayCmd(debug bool) error {
 			closeClassifiers(classifierSvc)
 		}
 	}()
-	agentLoop, err := newGatewayAgentLoop(cfg, msgBus, provider, dispatcher, forumHost, classifierHost, operatorAlerter)
+	agentLoop, err := newGatewayAgentLoop(cfg, msgBus, forumHost, classifierHost, operatorAlerter)
 	if err != nil {
 		return err
 	}
@@ -144,7 +143,7 @@ func gatewayCmd(debug bool) error {
 	startClassifiers(ctx, classifierSvc, agentLoop.Started(), nil)
 	bindShellTools(ctx, agentLoop)
 
-	run, stopWatchers := startGatewayRun(cfg, debug, agentLoop, services, msgBus, provider, store, refAlerts, fatal)
+	run, stopWatchers := startGatewayRun(cfg, debug, agentLoop, services, msgBus, store, refAlerts, fatal)
 	defer stopWatchers()
 	return run.loop(ctx)
 }
@@ -190,7 +189,6 @@ func startGatewayRun(
 	agentLoop *agent.AgentLoop,
 	services *gatewayServices,
 	msgBus *bus.MessageBus,
-	provider providers.LLMProvider,
 	store *config.Store,
 	refAlerts *modelRefAlerts,
 	fatal *fatalNotifier,
@@ -199,7 +197,6 @@ func startGatewayRun(
 		agentLoop: agentLoop,
 		services:  services,
 		msgBus:    msgBus,
-		provider:  provider,
 		store:     store,
 		refAlerts: refAlerts,
 		fatal:     fatal,
@@ -259,19 +256,12 @@ func applyLoggingConfig(cfg *config.Config, logPath string, debug bool) {
 	logger.SetLogMessageContent(cfg.Logging.LogMessageContent)
 }
 
-// bootProvider creates the default provider, or the unconfigured one when no
-// model is configured, and records the resolved default model on cfg.
-func bootProvider(cfg *config.Config) providers.LLMProvider {
-	provider, modelID, err := providers.CreateProvider(cfg)
-	if err != nil {
-		logger.WarnCF("gateway", "No model configured, starting in unconfigured state", map[string]any{"detail": err.Error()})
-		provider = providers.NewUnconfiguredProvider()
-		modelID = ""
+// warnNoDefaultModel logs, as a WARN with msg, why the agents' default
+// model cannot be called, when it cannot.
+func warnNoDefaultModel(cfg *config.Config, msg string) {
+	if err := providers.DefaultModelProblem(cfg, providers.NewCatalogBuilder(nil, nil).Build(cfg)); err != nil {
+		logger.WarnCF("gateway", msg, map[string]any{"detail": err.Error()})
 	}
-	if modelID != "" {
-		cfg.Agents.Defaults.SetDefaultModel(modelID)
-	}
-	return provider
 }
 
 // newGatewayAgentLoop creates the agent loop, binds the forum and classifier
@@ -280,13 +270,11 @@ func bootProvider(cfg *config.Config) providers.LLMProvider {
 func newGatewayAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
-	provider providers.LLMProvider,
-	dispatcher *providers.ProviderDispatcher,
 	forumHost *agent.ForumHost,
 	classifierHost *agent.ClassifierHost,
 	operatorAlerter alerter.Alerter,
 ) (*agent.AgentLoop, error) {
-	agentLoop, err := agent.NewAgentLoop(context.Background(), cfg, msgBus, provider, dispatcher, agent.OwnsDataDir())
+	agentLoop, err := agent.NewAgentLoop(context.Background(), cfg, msgBus, agent.OwnsDataDir())
 	if err != nil {
 		return nil, fmt.Errorf("error creating agent loop: %w", err)
 	}
@@ -358,8 +346,6 @@ type gatewayRun struct {
 	agentLoop *agent.AgentLoop
 	services  *gatewayServices
 	msgBus    *bus.MessageBus
-	// provider is the default provider, replaced by each successful reload.
-	provider  providers.LLMProvider
 	store     *config.Store
 	refAlerts *modelRefAlerts
 	fatal     *fatalNotifier
@@ -382,7 +368,7 @@ func (r *gatewayRun) loop(ctx context.Context) error {
 		select {
 		case <-sigChan:
 			logger.Info("Shutting down...")
-			shutdownGateway(r.services, r.agentLoop, r.provider, true) //nolint:contextcheck // shutdown runs on its own bounded contexts, so it completes whatever the run context does
+			shutdownGateway(r.services, r.agentLoop, true) //nolint:contextcheck // shutdown runs on its own bounded contexts, so it completes whatever the run context does
 			return nil
 
 		case failure := <-r.fatal.failed:
@@ -390,14 +376,14 @@ func (r *gatewayRun) loop(ctx context.Context) error {
 			// NewGatewayCommand exits non-zero on it. fatalService has armed a
 			// timer that exits regardless should this hang.
 			logger.Info("Shutting down after a core service stopped...")
-			shutdownGateway(r.services, r.agentLoop, r.provider, true) //nolint:contextcheck // shutdown runs on its own bounded contexts, so it completes whatever the run context does
+			shutdownGateway(r.services, r.agentLoop, true) //nolint:contextcheck // shutdown runs on its own bounded contexts, so it completes whatever the run context does
 			return failure
 
 		case restart := <-r.fatal.restart:
 			// POST /api/system/restart: the same shutdown, and a non-zero exit
 			// so the service manager starts the gateway again.
 			logger.Info("Shutting down to restart...")
-			shutdownGateway(r.services, r.agentLoop, r.provider, true) //nolint:contextcheck // shutdown runs on its own bounded contexts, so it completes whatever the run context does
+			shutdownGateway(r.services, r.agentLoop, true) //nolint:contextcheck // shutdown runs on its own bounded contexts, so it completes whatever the run context does
 			return restart
 
 		case newCfg := <-r.configReloads:
@@ -415,7 +401,7 @@ func (r *gatewayRun) loop(ctx context.Context) error {
 
 // reload applies a config the watcher validated, alerting when that fails.
 func (r *gatewayRun) reload(ctx context.Context, newCfg *config.Config) {
-	err := handleConfigReload(ctx, r.agentLoop, newCfg, &r.provider, r.services, r.msgBus)
+	err := handleConfigReload(ctx, r.agentLoop, newCfg, r.services, r.msgBus)
 	if err == nil {
 		return
 	}
@@ -442,7 +428,7 @@ func (r *gatewayRun) forceReload(ctx context.Context) error {
 		return err
 	}
 	r.refAlerts.report(r.agentLoop.Alerter(), dangling)
-	if err := handleConfigReload(ctx, r.agentLoop, newCfg, &r.provider, r.services, r.msgBus); err != nil {
+	if err := handleConfigReload(ctx, r.agentLoop, newCfg, r.services, r.msgBus); err != nil {
 		return err
 	}
 	// The watcher must not fire a second, disruptive reload for the same

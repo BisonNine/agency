@@ -76,7 +76,7 @@ func runWriteFileToolCallOnce(t *testing.T, secret string) string {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{
 				Content: "",
@@ -95,7 +95,7 @@ func runWriteFileToolCallOnce(t *testing.T, secret string) string {
 			{Content: "done"},
 		},
 		errors: []error{nil, nil},
-	}
+	})
 
 	messages := []providers.Message{{Role: "user", Content: "go"}}
 	opts := processOptions{

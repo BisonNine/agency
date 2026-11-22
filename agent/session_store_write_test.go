@@ -62,7 +62,7 @@ func TestRunAgentLoop_SessionStoreWriteFailureFailsTurn(t *testing.T) {
 			if agent == nil {
 				t.Fatal("no default agent")
 			}
-			agent.Provider = &finalLLMProvider{}
+			setTestProvider(agent, &finalLLMProvider{})
 
 			sessionKey := "store-write-" + strings.ReplaceAll(tc.name, " ", "-")
 			entry := &cmEntry{cm: tc.cm, sessionKey: sessionKey}
@@ -118,7 +118,7 @@ func TestRunAgentLoop_SessionStoreWriteFailureAlertsOncePerOutage(t *testing.T) 
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	agent.Provider = &finalLLMProvider{}
+	setTestProvider(agent, &finalLLMProvider{})
 
 	const sessionKey = "store-write-outage"
 	cm := &storeWriteFailingContextManager{failUser: storeErr}

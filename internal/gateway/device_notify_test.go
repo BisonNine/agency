@@ -9,7 +9,6 @@ import (
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 func notifyTestLoop(t *testing.T, bindings []config.AgentBinding) *agent.AgentLoop {
@@ -29,7 +28,7 @@ func notifyTestLoop(t *testing.T, bindings []config.AgentBinding) *agent.AgentLo
 		},
 		Bindings: bindings,
 	}
-	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

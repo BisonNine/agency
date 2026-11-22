@@ -79,7 +79,7 @@ func newHumanLoopWith(t *testing.T, cfg *config.Config) (*AgentLoop, *bus.Messag
 	t.Helper()
 	msgBus := bus.NewMessageBus()
 	model := &countingProvider{}
-	return mustNewAgentLoop(t, cfg, msgBus, model, providers.NewProviderDispatcher(cfg)), msgBus, model
+	return mustNewAgentLoop(t, cfg, msgBus, model, realClients{}), msgBus, model
 }
 
 func newHumanLoop(t *testing.T, timeoutSec int) (*AgentLoop, *bus.MessageBus, *countingProvider) {
@@ -554,13 +554,13 @@ func TestHumanAgent_NoModelPathsNoTools(t *testing.T) {
 		t.Error("an ordinary agent lost its cognitive memory")
 	}
 	caller, _ := al.newCompressModelCaller(bob, "s", models.Summarize)
-	if len(caller.clients) != 0 {
-		t.Errorf("a human agent has %d summarization clients", len(caller.clients))
+	if caller.set != nil {
+		t.Errorf("a human agent has a summarization chain")
 	}
 	if _, _, _, err := caller.complete(context.Background(), "sys", "user", false, nil); err == nil {
 		t.Error("summarizing a human agent's conversation found a model")
 	}
-	if c, _ := al.newCompressModelCaller(alice, "s", models.Summarize); len(c.clients) == 0 {
+	if c, _ := al.newCompressModelCaller(alice, "s", models.Summarize); len(c.set.List(models.Summarize)) == 0 {
 		t.Error("an ordinary agent lost its summarization chain")
 	}
 	bob.VisionClients = []visionClient{panicVision{}}

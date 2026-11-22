@@ -25,12 +25,12 @@ func runReasoningIterationOnce(t *testing.T, reasoning string) string {
 	if agentInstance == nil {
 		t.Fatal("no default agent")
 	}
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{Content: "the answer", Reasoning: reasoning},
 		},
 		errors: []error{nil},
-	}
+	})
 
 	messages := []providers.Message{{Role: "user", Content: "go"}}
 	opts := processOptions{

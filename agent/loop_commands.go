@@ -367,8 +367,8 @@ func (al *AgentLoop) retriggerLastMessage(ctx context.Context, agent *AgentInsta
 	return nil
 }
 
-// addCooldownHooks lets commands list and clear model cooldowns: the
-// catalogue's, and the task models' tracker's.
+// addCooldownHooks lets commands list and clear the catalogue's model
+// cooldowns.
 func (al *AgentLoop) addCooldownHooks(rt *commands.Runtime) {
 	rt.ResetCooldown = func() { al.clearCooldowns() }
 	rt.ClearCooldown = func(provider, model string) bool { return al.clearCooldown(provider, model) }

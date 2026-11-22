@@ -47,7 +47,7 @@ func TestReload_ClosesReplacedConfigInstanceStore(t *testing.T) {
 	}
 	for range 3 {
 		if err := reloadForTest(al, context.Background(), tl.provider, tl.cfg); err != nil {
-			t.Fatalf("ReloadProviderAndConfig: %v", err)
+			t.Fatalf("ReloadConfig: %v", err)
 		}
 	}
 	deadline := time.Now().Add(5 * time.Second)

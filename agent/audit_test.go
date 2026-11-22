@@ -187,7 +187,7 @@ func TestToolCall_AuditRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal args: %v", err)
 	}
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{ToolCalls: []providers.ToolCall{{
 				ID: "tc-1", Type: "function", Name: "file_write",
@@ -196,7 +196,7 @@ func TestToolCall_AuditRecorded(t *testing.T) {
 			{Content: "done"},
 		},
 		errors: []error{nil, nil},
-	}
+	})
 
 	opts := processOptions{
 		SessionKey: "audit-loop",
@@ -267,7 +267,7 @@ func TestToolCall_AuditOutcomeError(t *testing.T) {
 	if agentInstance.Config != nil {
 		agentInstance.Config.Tools = []string{"*"}
 	}
-	agentInstance.Provider = &sequenceProvider{
+	setTestProvider(agentInstance, &sequenceProvider{
 		responses: []*providers.LLMResponse{
 			{ToolCalls: []providers.ToolCall{{
 				ID: "tc-1", Type: "function", Name: "no_such_tool",
@@ -276,7 +276,7 @@ func TestToolCall_AuditOutcomeError(t *testing.T) {
 			{Content: "done"},
 		},
 		errors: []error{nil, nil},
-	}
+	})
 	opts := processOptions{SessionKey: "audit-err", Channel: "cli", ChatID: "direct"}
 	cm, releaseCM := al.getContextManager(agentInstance, opts.SessionKey)
 	defer releaseCM()

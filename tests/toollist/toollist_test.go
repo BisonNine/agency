@@ -107,7 +107,7 @@ func capture(t *testing.T, v variant) []byte {
 	}
 	v.apply(cfg)
 
-	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), nopProvider{}, nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

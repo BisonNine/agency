@@ -124,7 +124,7 @@ func TestTurn_BillsTheAgent(t *testing.T) {
 	reg := al.GetRegistry()
 	main, _ := reg.Get("main")
 	rec := &identityRecorder{}
-	main.Provider = rec
+	setTestProvider(main, rec)
 	if _, err := al.ProcessDirect(context.Background(), "hello", "direct-session"); err != nil {
 		t.Fatalf("ProcessDirect: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestTurn_BillsTheAgent(t *testing.T) {
 	}
 	clone, _ := reg.Get(cloneID)
 	cloneRec := &identityRecorder{}
-	clone.Provider = cloneRec
+	setTestProvider(clone, cloneRec)
 	key := routing.BuildAgentMainSessionKey(clone.ID)
 	if _, err := al.runAgentLoop(context.Background(), clone, processOptions{
 		SessionKey: key, Channel: "subagent", ChatID: key, UserMessage: "hello from the clone",
@@ -182,7 +182,7 @@ func TestCompressModelCaller_BillsTheAgent(t *testing.T) {
 
 	rec := &identityRecorder{}
 	cat := compressCatalog(map[string]providers.LLMProvider{"m": rec})
-	c := &compressModelCaller{id: main.Identity(), clients: []*providerLLMClient{compressClient(cat, "m")}}
+	c := withID(compressCaller(cat, "m"), main.Identity())
 	if _, _, _, err := c.complete(context.Background(), "sys", "user", false, nil); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
