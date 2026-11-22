@@ -1705,6 +1705,26 @@ next session must know.
       `/cancel all`; device runs kept by id. Maestro dispatch verified and
       left alone (0.8). The SDK `hook` addition for "how a tool registers a
       task" is proposed in the phase report, not made.
+  - Landed at host 70afbfe after two review rounds. Where section 5 was
+    silent: a `wait` task detaches on interrupt, deadline or superseded,
+    and is CANCELLED at shutdown (the turn is replayed at restart); a
+    waited spawn in an ambiguous chat is cancelled, not detached, when
+    its turn stops waiting; the tool grace is `hook.DefaultCancelGrace`
+    (5 s), no setting; the MCP token is replaced only for CLI-model
+    turns. A lock all sub-agent managers share orders cancel against
+    the supervisor (`cancelled` is written before the run marker is
+    cleared). Left open, accepted: the on-disk child cascade looks only
+    in the same tasks folder; the shutdown and recovery give-up replies
+    do not end merged device runs. Proposed `hook` addition for 5c, not
+    yet in the SDK: `TaskRegistrar`/`TaskHandle` (`StartTask`, `Detach`,
+    `Finish`), `WithTaskRegistrar`/`TaskRegistrarFrom`, `TaskID(ctx)`.
+  - Queued host steps before 5c: (1) maintainer's rule on empty model
+    lists: an agent whose chat list resolves to nothing fails with "no
+    model configured" (no run on the default model's client), and a
+    summarization entry that does not resolve is skipped in favour of
+    the agent's primary model; inheriting `agents.defaults.models`
+    stays; both BREAKING. (2) Pick up the SDK session-store fixes
+    (8be4016 message loss, 9cc043a key guard) with a `Fixed` entry.
 - [ ] Phase 5c: engine moved, root package, conformance suite
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
