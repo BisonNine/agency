@@ -42,11 +42,11 @@ type CatalogBuilder struct {
 	quiet bool
 }
 
-// NewQuietCatalogBuilder is a builder whose catalogues log nothing (the
+// newQuietCatalogBuilder is a builder whose catalogues log nothing (the
 // models and providers they leave out, ignored bypass flags, client logs):
 // for checking a configuration without repeating what the running
 // catalogue's build logged.
-func NewQuietCatalogBuilder() *CatalogBuilder {
+func newQuietCatalogBuilder() *CatalogBuilder {
 	b := NewCatalogBuilder(nil, nil)
 	b.quiet = true
 	return b
@@ -283,11 +283,11 @@ func ignoredBypassNotice(n models.IgnoredBypass) {
 	config.WarnIgnoredBypassArgs(n.Protocol, n.Flags)
 }
 
-// DefaultModelProblem says why the agents' default model (the first of
+// defaultModelProblem says why the agents' default model (the first of
 // agents.defaults.models) cannot be called, or nil when it can: no model
 // configured, the model not among the enabled ones, its provider missing, or
 // its client refused by c.
-func DefaultModelProblem(cfg *config.Config, c *models.Catalog) error {
+func defaultModelProblem(cfg *config.Config, c *models.Catalog) error {
 	model := cfg.Agents.Defaults.DefaultModelName()
 	if len(cfg.Models) == 0 {
 		return errors.New("no models configured. Please add entries to models in your config")
@@ -301,20 +301,22 @@ func DefaultModelProblem(cfg *config.Config, c *models.Catalog) error {
 	}
 	_, release, clientErr := c.Client(modelCfg.ModelName)
 	if clientErr != nil {
-		return fmt.Errorf("failed to create provider for model %q: %w", model, clientErr)
+		return fmt.Errorf("failed to create provider for model %q: %w", model, clientProblem(clientErr))
 	}
 	release()
 	return nil
 }
 
-// CheckDefaultModel is DefaultModelProblem on a catalogue built quietly for
+// CheckDefaultModel is defaultModelProblem on a catalogue built quietly for
 // cfg and closed afterwards: for a check made beside (or before) the running
 // catalogue, which logs nothing the running one's build does.
 func CheckDefaultModel(ctx context.Context, cfg *config.Config) error {
-	c := NewQuietCatalogBuilder().Build(cfg)
-	problem := DefaultModelProblem(cfg, c)
-	if err := c.Close(ctx); err != nil && problem == nil {
-		return fmt.Errorf("closing the check's model clients: %w", err)
+	c := newQuietCatalogBuilder().Build(cfg)
+	problem := defaultModelProblem(cfg, c)
+	if err := c.Close(ctx); err != nil {
+		// Not a problem of the model: the check's own clients are left to
+		// close with the process.
+		logger.DebugCF("providers", "default model check: model clients not closed", map[string]any{"error": err.Error()})
 	}
 	return problem
 }
@@ -366,5 +368,35 @@ func alertKey(name, key string) string {
 func (b *CatalogBuilder) warn(msg string, fields map[string]any) {
 	if !b.quiet {
 		logger.WarnCF("providers", msg, fields)
+	}
+}
+
+// DisplayName is how a catalogue model's name is shown to an operator (in
+// logs, /cooldowns, alerts): its model_name, or for a derived summarization
+// model the raw name it stands for. An internal name never reaches them.
+func DisplayName(name string) string {
+	if raw, ok := DerivedRaw(name); ok {
+		return raw
+	}
+	return name
+}
+
+// clientProblem is the text operators have always read for a model whose
+// client cannot be built: the cause, named by its provider, without the
+// catalogue's wording around it.
+func clientProblem(err error) error {
+	ce, ok := errors.AsType[*models.ClientError](err)
+	if !ok {
+		return err
+	}
+	switch {
+	case errors.Is(err, models.ErrNoClient) && config.TaskOnlyProtocol(ce.Protocol):
+		return fmt.Errorf("provider %q: protocol %q serves task models only (speech), not chat", ce.Provider, ce.Protocol)
+	case errors.Is(err, models.ErrNoClient):
+		return fmt.Errorf("provider %q: unknown protocol %q", ce.Provider, ce.Protocol)
+	case ce.Err != nil && ce.Err.Error() == "model is required":
+		return ce.Err
+	default:
+		return fmt.Errorf("provider %q: %w", ce.Provider, ce.Err)
 	}
 }

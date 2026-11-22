@@ -470,11 +470,12 @@ func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *t
 		chain = chain.Isolated(agent.Workspace)
 	}
 	candidates := chain.Candidates()
-	model := agent.Model
-	direct := ""
+	var model, direct string
 	if len(candidates) > 0 {
 		model = candidates[0].Name
 	} else {
+		// The name status and /model show too (activeModelName).
+		model = al.activeModelName(agent, sessionKey)
 		direct = al.defaultModelClient()
 	}
 	return &turnModel{chain: chain, candidates: candidates, model: model, limits: agent.limitsFor(model), direct: direct}

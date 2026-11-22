@@ -64,6 +64,9 @@ type AgentInstance struct {
 	// set, not these, is what everything else reads.
 	chatModels   []string
 	workerModels []string
+	// builtWith is the configuration the agent was built with: what its
+	// lists in the model catalogue are stated from (assignOne).
+	builtWith *config.Config
 
 	// VisionClients is the ordered vision-describe side-model chain (from
 	// the Describe images list on the Task models page). When the active model is
@@ -285,6 +288,7 @@ func newAgentInstance(
 		Subagents:      subagents,
 		SkillsFilter:   skillsFilter,
 		chatModels:     chatModels,
+		builtWith:      cfg,
 		workerModels:   workerModels,
 		Config:         agentCfg,
 		HumanModel:     humanModel,

@@ -423,7 +423,9 @@ func (al *AgentLoop) runHumanTurn(ctx context.Context, agent *AgentInstance, opt
 	if err != nil {
 		return "", fmt.Errorf("model %q is not a person's model", agent.HumanModel)
 	}
-	defer release()
+	// A registered client the host owns: the handle is not held across the
+	// wait for the person, which can last as long as the turn.
+	release()
 	hp, ok := client.(*providers.HumanProvider)
 	if !ok {
 		return "", fmt.Errorf("model %q is not a person's model", agent.HumanModel)

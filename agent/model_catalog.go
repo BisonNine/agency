@@ -7,7 +7,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"go.bison9.com/agent/models"
@@ -95,95 +94,58 @@ func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstanc
 	}
 }
 
-// reloadAssignments ties the agents a reload builds to that reload. While
-// it builds, an agent built is only recorded; once it has committed, the
-// agents it installed get their lists (in the catalogue it adopts, or in the
-// running one); if it is abandoned or fails, nothing it built reaches any
-// catalogue. After a commit the reload's builder is the registry's, and an
-// agent it builds then (created at run time) is assigned at once in the
-// running catalogue.
-type reloadAssignments struct {
-	cfg  *config.Config
-	next *models.Catalog
-
-	mu    sync.Mutex
-	state int // assignBuilding, assignCommitted or assignDropped
-	built []*AgentInstance
+// assignOne states agent inst's lists (its own configuration's) in the
+// running catalogue. Every creation calls it once the agent is in the
+// registry, before anything can start a turn on it; a list that is already
+// what it should be is left as it is, so calling it again changes nothing.
+func (al *AgentLoop) assignOne(inst *AgentInstance) {
+	al.assignMu.Lock()
+	defer al.assignMu.Unlock()
+	assignAgentModels(al.catalog, inst.builtWith, inst)
 }
 
-const (
-	assignBuilding = iota
-	assignCommitted
-	assignDropped
-)
-
-// build handles an agent the reload's builder made: it reports whether the
-// agent is to be assigned in the running catalogue now (the reload has
-// committed: a run-time creation).
-func (r *reloadAssignments) build(inst *AgentInstance) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	switch r.state {
-	case assignBuilding:
-		r.built = append(r.built, inst)
-		return false
-	case assignCommitted:
-		return true
-	default:
-		return false // built by a reload that will never commit
+// reconcileAll is assignOne for every agent the registry holds.
+func (al *AgentLoop) reconcileAll(registry *AgentRegistry) {
+	al.assignMu.Lock()
+	defer al.assignMu.Unlock()
+	for _, inst := range registryInstances(registry) {
+		assignAgentModels(al.catalog, inst.builtWith, inst)
 	}
 }
 
-// end records how the reload ended and returns the agents it built.
-func (r *reloadAssignments) end(committed bool) []*AgentInstance {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.state = assignDropped
-	if committed {
-		r.state = assignCommitted
+// adoptFor builds the catalogue of cfg, states in it the lists of every
+// agent the registry holds (each from its own configuration: rebuilt, kept
+// busy, kept after a failed rebuild or temporary alike) and adopts it, so no
+// agent loses its lists or its sessions' /model choices.
+func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, digest string) {
+	al.assignMu.Lock()
+	defer al.assignMu.Unlock()
+	next := al.catalogs.Build(cfg)
+	for _, inst := range registryInstances(registry) {
+		assignAgentModels(next, inst.builtWith, inst)
 	}
-	built := r.built
-	r.built = nil
-	return built
+	al.adoptCatalog(next, digest)
 }
 
-// assignBuilt states the models of an agent just built: as reload (the
-// reload whose builder made it, nil for the registry's first builder)
-// decides, else at once in the running catalogue.
-func (al *AgentLoop) assignBuilt(reload *reloadAssignments, cfg *config.Config, inst *AgentInstance) {
-	if reload != nil && !reload.build(inst) {
-		return
+// removeSet drops the set of agent id, once the registry no longer has it.
+func (al *AgentLoop) removeSet(registry *AgentRegistry, id string) {
+	al.assignMu.Lock()
+	defer al.assignMu.Unlock()
+	if _, ok := registry.Get(id); !ok {
+		al.catalog.RemoveSet(id)
 	}
-	assignAgentModels(al.catalog, cfg, inst)
 }
 
-// copyLists gives agent id the lists it has in from, in to: for an agent a
-// reload did not rebuild, so adopting to keeps its lists and its sessions'
-// /model choices. A model to does not have is left out.
-func copyLists(from, to *models.Catalog, cfg *config.Config, id string) {
-	src := from.Set(id)
-	lists := make(map[models.Purpose][]models.Assignment)
-	for _, p := range src.Purposes() {
-		var list []models.Assignment
-		for _, e := range src.List(p) {
-			if raw, ok := providers.DerivedRaw(e.Name); ok {
-				ensureDerived(to, cfg, raw)
-			}
-			if _, ok := to.Get(e.Name); !ok {
-				continue
-			}
-			a := models.Assignment{Name: e.Name}
-			if e.Settings != nil {
-				a.Options = []models.AssignOption{models.WithSettings(e.Settings)}
-			}
-			list = append(list, a)
+// registryInstances are the instances the registry holds now.
+func registryInstances(registry *AgentRegistry) []*AgentInstance {
+	ids := registry.All()
+	out := make([]*AgentInstance, 0, len(ids))
+	for _, id := range ids {
+		if inst, ok := registry.Get(id); ok && inst != nil {
+			out = append(out, inst)
 		}
-		lists[p] = list
 	}
-	if _, err := to.Set(id).ReplaceAll(lists); err != nil {
-		logger.WarnCF("agent", "agent's models not kept",
-			map[string]any{"agent_id": id, "error": err.Error()})
-	}
+	return out
 }
 
 // summarizationNames is the agent's summarization chain as model names: its
@@ -237,22 +199,34 @@ func (al *AgentLoop) adoptCatalog(next *models.Catalog, digest string) {
 	// Every cooldown is cleared, as when the operator clears them: a model
 	// alerted as failing alerts again at once if it still fails.
 	al.catalogs.Alerts().RearmAll()
+	shown := func(names []string) []string {
+		out := make([]string, 0, len(names))
+		for _, n := range names {
+			out = append(out, providers.DisplayName(n))
+		}
+		return out
+	}
 	fields := map[string]any{}
 	if len(diff.Added) > 0 {
-		fields["added"] = diff.Added
+		fields["added"] = shown(diff.Added)
 	}
 	if len(diff.Removed) > 0 {
-		fields["removed"] = diff.Removed
+		fields["removed"] = shown(diff.Removed)
 	}
 	if len(diff.Changed) > 0 {
-		fields["changed"] = diff.Changed
+		fields["changed"] = shown(diff.Changed)
 	}
 	if len(diff.Reverted) > 0 {
 		reverted := make([]string, 0, len(diff.Reverted))
 		for _, r := range diff.Reverted {
-			reverted = append(reverted, r.Set+"/"+string(r.Purpose)+": "+r.Model)
+			if strings.HasPrefix(r.Set, "\x00") {
+				continue // a single-model set: no agent's choice
+			}
+			reverted = append(reverted, r.Set+"/"+string(r.Purpose)+": "+providers.DisplayName(r.Model))
 		}
-		fields["selections_reverted"] = reverted
+		if len(reverted) > 0 {
+			fields["selections_reverted"] = reverted
+		}
 	}
 	logger.InfoCF("agent", "Model settings changed; model cooldowns cleared", fields)
 }
@@ -394,45 +368,4 @@ func cooldownIdentity(h models.Health) (provider, model, key string) {
 		return "", raw, providers.ModelKey("", raw)
 	}
 	return h.Provider, h.Model, h.Key
-}
-
-// assignReloaded states the lists after a reload that committed: the agents
-// it installed (built is what it built; one the registry did not take, as
-// it turned busy, keeps its lists) get theirs from cfg. With next set (the
-// reload changed what the catalogue is built from) they are assigned in
-// next, every other agent the registry holds keeps the lists it has, and
-// next is adopted; otherwise they are assigned in the running catalogue.
-// Runs outside the registry's lock: the catalogue writes the sessions' model
-// choices through the agents' stores, which it reaches through the registry.
-func (al *AgentLoop) assignReloaded(registry *AgentRegistry, cfg *config.Config, next *models.Catalog, digest string, built []*AgentInstance) {
-	installed := func(inst *AgentInstance) bool {
-		cur, ok := registry.Get(inst.ID)
-		return ok && cur == inst
-	}
-	if next == nil {
-		for _, inst := range built {
-			if installed(inst) {
-				assignAgentModels(al.catalog, cfg, inst)
-			}
-		}
-		return
-	}
-	for _, inst := range built {
-		if installed(inst) {
-			assignAgentModels(next, cfg, inst)
-		}
-	}
-	for _, id := range registry.All() {
-		if inst, ok := registry.Get(id); ok && inst != nil && !slices.Contains(built, inst) {
-			copyLists(al.catalog, next, cfg, id)
-		}
-	}
-	al.adoptCatalog(next, digest)
-	// An agent created between the copy and the adoption has its lists only
-	// in the catalogue the adoption replaced: give it its own.
-	for _, id := range registry.All() {
-		if inst, ok := registry.Get(id); ok && inst != nil && len(inst.chatModels) > 0 && len(al.catalog.Set(id).List(models.Chat)) == 0 {
-			assignAgentModels(al.catalog, cfg, inst)
-		}
-	}
 }

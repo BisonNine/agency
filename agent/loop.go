@@ -65,6 +65,10 @@ type AgentLoop struct {
 	catalog       *models.Catalog
 	catalogs      *providers.CatalogBuilder
 	catalogDigest string
+	// assignMu serialises what states agents' lists in the catalogue
+	// (assignOne, reconcileAll, adoptFor, removeSet). It is never held
+	// across a model call, and taken only with no registry lock held.
+	assignMu sync.Mutex
 	// alerter receives operator alerts (parked models, dead MCP servers, …);
 	// nil until SetAlerter, in which case Alerter() hands out a Nop.
 	alerterMu       sync.RWMutex
@@ -367,7 +371,7 @@ func NewAgentLoop(
 	// closures, spawn/subagent, msg with shared MessageTool), so it runs once
 	// al exists.
 	registry, err := agentreg.New(ctx, cfg, agentreg.Hooks[*AgentInstance]{
-		Build:    al.agentBuilder(nil),
+		Build:    al.agentBuilder(),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
 		Clock:    registryClock{al},
@@ -377,6 +381,7 @@ func NewAgentLoop(
 		return nil, err
 	}
 	al.registry = registry
+	al.reconcileAll(registry)
 
 	// Per-agent state managers and message-token managers: config agents only.
 	for _, agentID := range registry.List() {
@@ -604,23 +609,26 @@ func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error
 	registry := al.GetRegistry()
 
 	// A reload that changes what the catalogue is built from (catalogDigest)
-	// builds a new catalogue, assigns the rebuilt agents' models in it and
-	// adopts it when the new agents are swapped in: its models start with no
-	// cooldown. Any other reload keeps the running catalogue, and with it the
-	// cooldowns; the rebuilt agents' lists replace their old ones only once
-	// the reload commits, so a reload that fails leaves every agent on its
-	// old lists.
+	// adopts a new catalogue: its models start with no cooldown. Any other
+	// reload keeps the running catalogue, and with it the cooldowns; every
+	// agent's lists are stated anew either way.
 	digest := catalogDigest(cfg)
-	pending := &reloadAssignments{cfg: cfg}
-	if digest != al.catalogDigest {
-		pending.next = al.catalogs.Build(cfg)
+	committed, err := al.reloadRegistry(ctx, registry, cfg)
+	if committed {
+		// Made once the registry has swapped the agents in, even when it
+		// then failed, outside its lock: the catalogue writes the sessions'
+		// model choices through the agents' stores, which it reaches
+		// through the registry. A reload that did not commit changes no
+		// list.
+		if digest != al.catalogDigest {
+			al.adoptFor(registry, cfg, digest)
+		} else {
+			al.reconcileAll(registry)
+		}
 	}
-	committed, err := al.reloadRegistry(ctx, registry, cfg, pending)
-	built := pending.end(committed)
 	if err != nil {
 		return err
 	}
-	al.assignReloaded(registry, cfg, pending.next, digest, built)
 
 	// Whispers held for an agent the new configuration removed are dropped;
 	// rebuilt agents keep theirs.
@@ -646,7 +654,7 @@ func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error
 
 // reloadRegistry rebuilds every agent against the new config (config agents
 // from the config, temporary agents against it too), each with its tools
-// registered the same way as at start, by pending's builder. Nothing changes
+// registered the same way as at start. Nothing changes
 // until all are built; then the registry swaps them in one step and, in the
 // same step, the config is swapped here, so readers see a consistent pair. A
 // ctx that ends first returns at once: the rebuild is abandoned (the commit
@@ -657,7 +665,6 @@ func (al *AgentLoop) reloadRegistry(
 	ctx context.Context,
 	registry *AgentRegistry,
 	cfg *config.Config,
-	pending *reloadAssignments,
 ) (committed bool, err error) {
 	const (
 		reloadPending int32 = iota
@@ -676,7 +683,7 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(pending), func() bool {
+		err = registry.Reload(ctx, cfg, al.agentBuilder(), func() bool {
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}

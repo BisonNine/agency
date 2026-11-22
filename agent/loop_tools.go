@@ -34,15 +34,14 @@ import (
 // reload, al.cfg is still the old one at this point). A fresh temporary agent
 // gets no tools at all.
 //
-// The agent's models are assigned as assignBuilt says; reload is the
-// reload the builder is made for, nil for the registry's first one.
-func (al *AgentLoop) agentBuilder(reload *reloadAssignments) agentreg.BuildFunc[*AgentInstance] {
+// Building touches no model catalogue: an agent's models are stated once it
+// is in the registry (assignOne, reconcileAll, adoptFor).
+func (al *AgentLoop) agentBuilder() agentreg.BuildFunc[*AgentInstance] {
 	return func(ctx context.Context, cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
 		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg)
 		if err != nil {
 			return nil, err
 		}
-		al.assignBuilt(reload, cfg, inst)
 		if inst.HumanModel != "" {
 			// A human agent runs no model: no vision side-model, no tools.
 			return inst, nil
@@ -69,6 +68,7 @@ func (al *AgentLoop) agentBuilder(reload *reloadAssignments) agentreg.BuildFunc[
 // under the MCP refresh lock, so a server that is replaced while the agent is
 // being created is either seen here or re-registered onto it by the refresh.
 func (al *AgentLoop) agentInserted(_ agentreg.Spec, inst *AgentInstance) {
+	al.assignOne(inst)
 	if inst.toolless() {
 		return
 	}
@@ -340,7 +340,7 @@ func (al *AgentLoop) retireAgent(spec agentreg.Spec, inst *AgentInstance) error 
 	// new instance); a deletion drops them.
 	if _, ok := al.GetRegistry().Get(inst.ID); !ok {
 		al.whispers.drop(inst.ID)
-		al.catalog.RemoveSet(inst.ID)
+		al.removeSet(al.GetRegistry(), inst.ID)
 	}
 	return nil
 }

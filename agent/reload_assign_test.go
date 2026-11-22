@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,45 +75,6 @@ func TestReloadAdopt_BusyTemporaryAgentKeepsModels(t *testing.T) {
 	}
 }
 
-// A build is tied to the reload whose builder made it: while that reload
-// builds it reaches no catalogue; once it has committed, a build (a run-time
-// creation) goes to the running catalogue; one made after it failed or was
-// abandoned reaches none.
-func TestAssignBuilt_TiedToItsReload(t *testing.T) {
-	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
-	cfg := abcConfig(t.TempDir(), "a", "b", "c")
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
-	newAgent := func(id string) *AgentInstance {
-		return &AgentInstance{ID: id, chatModels: []string{"b", "a"}, Model: "b", HumanModel: ""}
-	}
-	listOf := func(id string) []string { return entryNames(al.catalog.Set(id).List(models.Chat)) }
-
-	building := &reloadAssignments{cfg: cfg}
-	al.assignBuilt(building, cfg, newAgent("x"))
-	if got := listOf("x"); len(got) != 0 {
-		t.Fatalf("a build of a reload still building reached the catalogue: %v", got)
-	}
-	if built := building.end(true); len(built) != 1 {
-		t.Fatalf("the reload recorded %d builds, want 1", len(built))
-	}
-	al.assignBuilt(building, cfg, newAgent("y"))
-	if got := listOf("y"); !slices.Equal(got, []string{"b", "a"}) {
-		t.Fatalf("a run-time build after the commit = %v, want [b a]", got)
-	}
-
-	failed := &reloadAssignments{cfg: cfg}
-	failed.end(false)
-	al.assignBuilt(failed, cfg, newAgent("z"))
-	if got := listOf("z"); len(got) != 0 {
-		t.Fatalf("a late build of a failed reload reached the catalogue: %v", got)
-	}
-
-	al.assignBuilt(nil, cfg, newAgent("w"))
-	if got := listOf("w"); !slices.Equal(got, []string{"b", "a"}) {
-		t.Fatalf("a build of the first builder = %v, want [b a]", got)
-	}
-}
-
 // The turn starts on the first model the agent's list resolves to, not on
 // the raw name the list begins with.
 func TestActiveModelName_FirstResolvedModel(t *testing.T) {
@@ -128,8 +90,8 @@ func TestActiveModelName_FirstResolvedModel(t *testing.T) {
 	if _, err := al.catalog.Set(agent.ID).Replace(models.Chat); err != nil {
 		t.Fatal(err)
 	}
-	if got := al.activeModelName(agent, "s"); got != "b" {
-		t.Fatalf("active model with no set = %q, want b", got)
+	if got, turn := al.activeModelName(agent, "s"), al.selectTurnModel(agent, "s").model; got != "b" || turn != got {
+		t.Fatalf("active model with no set = %q, the turn's %q; want b for both", got, turn)
 	}
 }
 
@@ -312,4 +274,63 @@ func newCooldownRuntime(al *AgentLoop) *commands.Runtime {
 	rt := &commands.Runtime{}
 	al.addCooldownHooks(rt)
 	return rt
+}
+
+// optsRecorder records the options of each call; cli makes it a CLI client.
+type optsRecorder struct {
+	mu   sync.Mutex
+	opts []map[string]any
+	cli  bool
+}
+
+func (p *optsRecorder) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, _ string, opts map[string]any) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.opts = append(p.opts, opts)
+	return &providers.LLMResponse{Content: "ok"}, nil
+}
+func (p *optsRecorder) GetDefaultModel() string { return "" }
+func (p *optsRecorder) IsCLI() bool             { return p.cli }
+
+// The direct path sends a temperature to an HTTP default model and none to
+// a CLI one, as the default provider's own path did.
+func TestUnresolvedAgent_DefaultModelTemperature(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	temp := 0.3
+	for _, tc := range []struct {
+		name     string
+		protocol string
+		cli      bool
+		want     bool
+	}{
+		{"http", "openai-chat", false, true},
+		{"cli", "claude-cli", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := abcConfig(t.TempDir(), "a")
+			cfg.Providers[0].Protocol = tc.protocol
+			cfg.Agents.Defaults.Temperature = &temp
+			cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Name: "Bob", Models: []string{"nope"}})
+			al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
+			p := &optsRecorder{cli: tc.cli}
+			if err := al.catalog.RegisterClient("a", p); err != nil {
+				t.Fatal(err)
+			}
+			bob, _ := al.GetRegistry().Get("bob")
+			tm := al.selectTurnModel(bob, "s")
+			turn := &llmTurn{
+				al: al, agent: bob, chain: tm.chain, candidates: tm.candidates, model: tm.model, limits: tm.limits, direct: tm.direct,
+				messages: []providers.Message{{Role: "user", Content: "hi"}},
+			}
+			if _, err := turn.callModel(context.Background(), turn.newDispatch(nil, 0)); err != nil {
+				t.Fatal(err)
+			}
+			if len(p.opts) != 1 {
+				t.Fatalf("calls = %d", len(p.opts))
+			}
+			if _, got := p.opts[0]["temperature"]; got != tc.want {
+				t.Fatalf("temperature sent = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }
