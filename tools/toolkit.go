@@ -10,13 +10,12 @@ import (
 // the tool packages have always used, so they need no edits.
 
 type (
-	Tool             = toolkit.Tool
-	AsyncCallback    = toolkit.AsyncCallback
-	AsyncExecutor    = toolkit.AsyncExecutor
-	SessionScoped    = toolkit.SessionScoped
-	ExternalNamer    = toolkit.ExternalNamer
-	DiscoveryGrouped = toolkit.DiscoveryGrouped
-	ToolResult       = toolkit.Result
+	Tool          = toolkit.Tool
+	AsyncCallback = toolkit.AsyncCallback
+	AsyncExecutor = toolkit.AsyncExecutor
+	SessionScoped = toolkit.SessionScoped
+	ExternalNamer = toolkit.ExternalNamer
+	ToolResult    = toolkit.Result
 )
 
 var (

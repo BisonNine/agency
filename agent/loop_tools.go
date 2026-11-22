@@ -310,9 +310,8 @@ func (al *AgentLoop) registerProviderTools(currentAgent *AgentInstance, cfg *con
 				// get_tool_details loads the whole set. A namespace pinned via
 				// always_shown_namespaces skips this and falls through to
 				// RegisterSuite (always visible to the model).
-				for _, e := range sdkdiscovery.HideEntries([]toolkit.Entry{{Tool: t}}) {
-					currentAgent.Tools.RegisterEntries(tools.ToolEntry{Entry: e, SuiteExempt: true})
-				}
+				hidden := sdkdiscovery.HideEntries([]toolkit.Entry{{Tool: t}})[0]
+				currentAgent.Tools.RegisterEntries(tools.ToolEntry{Entry: hidden, SuiteExempt: true})
 			default:
 				// Non-discovery suites, plus discovery-pinned always-shown suites.
 				currentAgent.Tools.RegisterSuite(t)

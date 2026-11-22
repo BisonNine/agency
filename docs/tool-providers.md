@@ -289,7 +289,7 @@ network/LLM tools.
 ### The per-agent registry
 
 The tool core — `Tool` and its optional interfaces (`AsyncExecutor`,
-`SessionScoped`, `ExternalNamer`, `DiscoveryGrouped`), `ToolResult` and its
+`SessionScoped`, `ExternalNamer`; `DiscoveryGrouped`, which only discovery reads, is not re-exported), `ToolResult` and its
 constructors, `Refusal`, the per-call context helpers (`WithToolContext`,
 `ToolChannel`, `ToolChatID`, `WithSessionKey`, `ToolSessionKey`), the toolspec
 bridge and the tool-call tally — is the SDK's `toolkit` package. `tools`
