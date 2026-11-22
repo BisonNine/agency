@@ -90,6 +90,13 @@
 - **Antigravity CLI output token counts are no longer too high.** Thinking
   tokens were counted twice; the output tokens in the log and in a task
   model's usage now match what the CLI reported.
+- **The default agent runs on the model you configured.** When two enabled
+  models share the same underlying model id (for example the same model with
+  two `reasoning_effort` settings), an agent on the default model
+  (`agents.defaults.models`) could run on the one listed first in the model
+  list instead of the one configured. Such installs now run on the
+  configured model, and the logs show the model's name rather than its
+  model id.
 
 ## [0.6.5]
 

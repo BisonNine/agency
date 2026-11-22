@@ -34,14 +34,15 @@ import (
 // reload, al.cfg is still the old one at this point). A fresh temporary agent
 // gets no tools at all.
 //
-// The agent's models are assigned as assignBuilt says.
-func (al *AgentLoop) agentBuilder() agentreg.BuildFunc[*AgentInstance] {
+// The agent's models are assigned as assignBuilt says; reload is the
+// reload the builder is made for, nil for the registry's first one.
+func (al *AgentLoop) agentBuilder(reload *reloadAssignments) agentreg.BuildFunc[*AgentInstance] {
 	return func(ctx context.Context, cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
 		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg)
 		if err != nil {
 			return nil, err
 		}
-		al.assignBuilt(cfg, inst)
+		al.assignBuilt(reload, cfg, inst)
 		if inst.HumanModel != "" {
 			// A human agent runs no model: no vision side-model, no tools.
 			return inst, nil
@@ -77,7 +78,7 @@ func (al *AgentLoop) agentInserted(_ agentreg.Spec, inst *AgentInstance) {
 }
 
 // registerAgentTools builds the full ToolDeps for one agent (session closures,
-// the sub-agent spawner, the message tool, dispatcher/fallback) and registers
+// the sub-agent spawner, the message tool, the agent's models) and registers
 // every allowed provider tool on it. A clone's tools act as its source (see
 // toolIdentity) but are bound to the clone's own state directory and session.
 func (al *AgentLoop) registerAgentTools(
@@ -334,11 +335,12 @@ func (al *AgentLoop) retireAgent(spec agentreg.Spec, inst *AgentInstance) error 
 		sti.RevokeAgent(inst.ID)
 	}
 	al.forgetSessionCaches(inst, sessionKey)
-	// Whispers wait for the agent, not the instance: a reload's rebuild keeps
-	// them (the agent is still registered, on its new instance); a deletion
-	// drops them.
+	// Whispers and the agent's models wait for the agent, not the instance:
+	// a reload's rebuild keeps them (the agent is still registered, on its
+	// new instance); a deletion drops them.
 	if _, ok := al.GetRegistry().Get(inst.ID); !ok {
 		al.whispers.drop(inst.ID)
+		al.catalog.RemoveSet(inst.ID)
 	}
 	return nil
 }

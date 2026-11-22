@@ -634,7 +634,7 @@ func TestClassifierHost_Ceilings(t *testing.T) {
 
 	next := *cfg
 	next.Classifiers = config.ClassifiersConfig{Limits: config.ClassifierLimitsConfig{MaxRules: 9, MaxItemChars: 1000, MinEverySeconds: 60}}
-	if err := reloadForTest(al, context.Background(), &mockProvider{}, &next); err != nil {
+	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, &next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	want = defaults

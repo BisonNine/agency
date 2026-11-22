@@ -571,6 +571,17 @@ func shutdownGateway(
 	agentLoop.Close(drainCtx)
 	drainCancel()
 	phases.done("agent loop closed")
+	// The model clients close once no turn can call them any more: earlier,
+	// a turn still running would end with a closed client's error instead
+	// of being cancelled.
+	if fullShutdown {
+		closeCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
+		if err := agentLoop.CloseModels(closeCtx); err != nil {
+			logger.WarnCF("gateway", "model clients not closed in time", map[string]any{"error": err.Error()})
+		}
+		cancel()
+		phases.done("provider closed")
+	}
 	if err := audit.Close(); err != nil {
 		logger.WarnCF("gateway", "audit log close failed", map[string]any{"error": err.Error()})
 	}
@@ -608,7 +619,7 @@ func handleConfigReload(
 	logger.Info("  Stopping services (channels keep running)...")
 	stopAndCleanupServices(services, al, serviceShutdownTimeout, nil, true) //nolint:contextcheck // the old services stop on a fresh bounded context so their shutdown completes even if the run context ends mid-reload; shutdownGateway shares the helper with no context
 
-	warnNoDefaultModel(newCfg, "No model configured after reload, running in unconfigured state")
+	warnNoDefaultModel(ctx, newCfg, "No model configured after reload, running in unconfigured state")
 
 	// Use the atomic reload method on AgentLoop to safely swap the config.
 	// This handles locking internally to prevent races with in-flight LLM calls

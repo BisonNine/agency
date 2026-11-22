@@ -85,6 +85,7 @@ func cardsConfig(t *testing.T) *config.Config {
 	if _, err := store.Create("watson", json.RawMessage(`{"name":"Watson","description":"A doctor.","personality":"Loyal."}`)); err != nil {
 		t.Fatal(err)
 	}
+	withTestModels(cfg) // the models it names but does not define
 	return cfg
 }
 

@@ -18,7 +18,7 @@ import (
 // toolRegTestConfig builds a single-agent config that allows all tools.
 func toolRegTestConfig(t *testing.T) *config.Config {
 	t.Helper()
-	return &config.Config{
+	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			BaseDir: t.TempDir(),
 			Defaults: config.AgentDefaults{
@@ -31,6 +31,8 @@ func toolRegTestConfig(t *testing.T) *config.Config {
 			},
 		},
 	}
+	withTestModels(cfg) // the models it names but does not define
+	return cfg
 }
 
 func agentToolNames(t *testing.T, al *AgentLoop) []string {
@@ -91,7 +93,7 @@ func TestReloadConfig_RegistersRuntimeTools(t *testing.T) {
 		t.Fatal("no tools registered at construction")
 	}
 
-	if err := reloadForTest(al, context.Background(), &mockProvider{}, toolRegTestConfig(t)); err != nil {
+	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, toolRegTestConfig(t)); err != nil {
 		t.Fatalf("ReloadConfig: %v", err)
 	}
 
@@ -113,6 +115,7 @@ func TestGetModelInfo_ReflectsActiveSelection(t *testing.T) {
 			cfg.Agents.List[i].Models = []string{"m0", "m1", "m2"}
 		}
 	}
+	withTestModels(cfg)
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
 	ag, ok := al.GetRegistry().Get("main")
 	if !ok {

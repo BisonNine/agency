@@ -299,7 +299,7 @@ func TestReload_RebuildsTempAgents(t *testing.T) {
 	}
 	before, _ := reg.Get(cloneID)
 
-	if err := reloadForTest(al, context.Background(), tl.provider, tl.cfg); err != nil {
+	if err := reloadForTest(t, al, context.Background(), tl.provider, tl.cfg); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	after, ok := reg.Get(cloneID)
@@ -343,6 +343,7 @@ func TestSubagentSpawn_ModelNarrowsClone(t *testing.T) {
 		{ModelName: "two", Model: "two-wire", Provider: "p", Enabled: true},
 	}
 	cfg.Agents.List[0].Models = []string{"one", "two"}
+	withTestModels(cfg) // defines provider p
 	provider := &modelRecordingProvider{LLMProvider: &mockProvider{}}
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), provider, nil)
 

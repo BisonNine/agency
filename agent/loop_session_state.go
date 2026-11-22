@@ -63,11 +63,14 @@ func (al *AgentLoop) chatModelNames(agent *AgentInstance) []string {
 }
 
 // activeModelName is the model the session's turns start on: the one /model
-// selected, else the agent's first; the agent's model when it has none in
-// the catalogue.
+// selected, else the agent's first chat model; its first configured name when
+// none of its models resolves.
 func (al *AgentLoop) activeModelName(agent *AgentInstance, sessionKey string) string {
 	if name := al.catalog.Set(agent.ID).Selected(models.Chat, models.Scope(sessionKey)).Name; name != "" {
 		return name
+	}
+	if len(agent.chatModels) > 0 {
+		return agent.chatModels[0]
 	}
 	return agent.Model
 }

@@ -162,7 +162,7 @@ func TestDispatcher_WorkerModels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var runs []string
 			mgr := toolsagents.NewSubagentManager(toolsagents.SubagentManagerConfig{
-				Workspace: t.TempDir(), Live: toolsagents.NewLiveSet(), CallerAgentID: "alice", SelfCandidates: tt.workers,
+				Workspace: t.TempDir(), Live: toolsagents.NewLiveSet(), CallerAgentID: "alice", SelfResolver: func() []providers.FallbackCandidate { return tt.workers },
 				WorkerModelsSet: func(string) bool { return true },
 				RunFull: func(_ context.Context, _, _, model, _ string, _ []string) (*global.SyncResult, func(), error) {
 					runs = append(runs, model)

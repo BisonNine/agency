@@ -22,9 +22,8 @@ type SubagentManager struct {
 	ownerAgentID string
 	live         *LiveSet
 
-	// Worker model candidates: selfCandidates for self-spawns, or the target
+	// Worker model candidates: selfResolver's for self-spawns, or the target
 	// agent's (resolved via candidateResolver). Used to validate a spawn.
-	selfCandidates    []providers.FallbackCandidate
 	selfResolver      func() []providers.FallbackCandidate
 	callerAgentID     string
 	candidateResolver func(agentID string) ([]providers.FallbackCandidate, bool)
@@ -52,11 +51,8 @@ type SubagentManagerConfig struct {
 	// Live is the process-shared running-task set, shared across reloads so the
 	// supervisor never relaunches a task that is still running.
 	Live *LiveSet
-	// SelfCandidates are the calling agent's worker model candidates for
-	// self-spawns.
-	SelfCandidates []providers.FallbackCandidate
-	// SelfResolver, when set, returns the calling agent's worker model
-	// candidates at the time of each spawn, in place of SelfCandidates.
+	// SelfResolver returns the calling agent's worker model candidates for
+	// self-spawns, at the time of each spawn.
 	SelfResolver func() []providers.FallbackCandidate
 	// CallerAgentID is the ID of the agent that owns this manager (for allowlist
 	// and as the task record's owner).
@@ -90,7 +86,6 @@ func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
 		workspace:         cfg.Workspace,
 		ownerAgentID:      cfg.CallerAgentID,
 		live:              cfg.Live,
-		selfCandidates:    cfg.SelfCandidates,
 		selfResolver:      cfg.SelfResolver,
 		callerAgentID:     cfg.CallerAgentID,
 		candidateResolver: cfg.CandidateResolver,
@@ -131,7 +126,7 @@ func errRunnerNotConfigured() error {
 func (sm *SubagentManager) CandidatesFor(agentID string) []providers.FallbackCandidate {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	candidates := sm.selfCandidates
+	var candidates []providers.FallbackCandidate
 	if sm.selfResolver != nil {
 		candidates = sm.selfResolver()
 	}

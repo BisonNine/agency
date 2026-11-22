@@ -101,7 +101,7 @@ func newForumRig(t *testing.T, cfg *config.Config, model providers.LLMProvider) 
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
-	routeAllModels(al, model)
+	routeAllModels(t, al, model)
 	host.Bind(al)
 	ctx, cancel := context.WithCancel(context.Background())
 	al.running.Store(true)
@@ -959,7 +959,7 @@ func TestForumHost_Ceilings(t *testing.T) {
 	next := forumConfig(t, true, false)
 	next.Agents.BaseDir = cfg.Agents.BaseDir
 	next.Forum.Limits.MaxCalls = 10
-	if err := reloadForTest(r.al, context.Background(), model, next); err != nil {
+	if err := reloadForTest(t, r.al, context.Background(), model, next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	if got := r.svc.Ceilings().MaxCalls; got != 10 {

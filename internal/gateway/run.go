@@ -59,7 +59,7 @@ func gatewayCmd(debug bool) error {
 	// below opens the files it holds.
 	layout.Prepare(cfg)
 	applyLoggingConfig(cfg, logPath, debug)
-	warnNoDefaultModel(cfg, "No model configured, starting in unconfigured state")
+	warnNoDefaultModel(context.Background(), cfg, "No model configured, starting in unconfigured state")
 
 	registerToolProviders()
 
@@ -258,8 +258,8 @@ func applyLoggingConfig(cfg *config.Config, logPath string, debug bool) {
 
 // warnNoDefaultModel logs, as a WARN with msg, why the agents' default
 // model cannot be called, when it cannot.
-func warnNoDefaultModel(cfg *config.Config, msg string) {
-	if err := providers.DefaultModelProblem(cfg, providers.NewCatalogBuilder(nil, nil).Build(cfg)); err != nil {
+func warnNoDefaultModel(ctx context.Context, cfg *config.Config, msg string) {
+	if err := providers.CheckDefaultModel(ctx, cfg); err != nil {
 		logger.WarnCF("gateway", msg, map[string]any{"detail": err.Error()})
 	}
 }

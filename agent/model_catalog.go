@@ -65,7 +65,7 @@ func agentModelLists(c *models.Catalog, cfg *config.Config, inst *AgentInstance)
 	}
 	if inst.HumanModel == "" {
 		lists[models.Worker] = list(inst.workerModels, nil)
-		summarize := list(summarizationNames(cfg, inst), nil)
+		summarize := list(summarizationNames(c, cfg, inst), nil)
 		lists[models.Summarize], lists[models.Memory] = summarize, summarize
 	}
 	for _, use := range taskUses {
@@ -95,52 +95,104 @@ func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstanc
 	}
 }
 
-// reloadAssignments are the model assignments of the agents a reload
-// builds. With next set (the reload changes what the catalogue is built
-// from) they are made in next as each agent is built, and next is adopted at
-// the commit. Otherwise they wait for the commit and are made then in the
-// running catalogue, so a reload that fails changes no agent's lists.
+// reloadAssignments ties the agents a reload builds to that reload. While
+// it builds, an agent built is only recorded; once it has committed, the
+// agents it installed get their lists (in the catalogue it adopts, or in the
+// running one); if it is abandoned or fails, nothing it built reaches any
+// catalogue. After a commit the reload's builder is the registry's, and an
+// agent it builds then (created at run time) is assigned at once in the
+// running catalogue.
 type reloadAssignments struct {
 	cfg  *config.Config
 	next *models.Catalog
 
 	mu    sync.Mutex
+	state int // assignBuilding, assignCommitted or assignDropped
 	built []*AgentInstance
 }
 
-// apply assigns the agents built, in c.
-func (r *reloadAssignments) apply(c *models.Catalog) {
+const (
+	assignBuilding = iota
+	assignCommitted
+	assignDropped
+)
+
+// build handles an agent the reload's builder made: it reports whether the
+// agent is to be assigned in the running catalogue now (the reload has
+// committed: a run-time creation).
+func (r *reloadAssignments) build(inst *AgentInstance) bool {
 	r.mu.Lock()
-	built := r.built
-	r.built = nil
-	r.mu.Unlock()
-	for _, inst := range built {
-		assignAgentModels(c, r.cfg, inst)
+	defer r.mu.Unlock()
+	switch r.state {
+	case assignBuilding:
+		r.built = append(r.built, inst)
+		return false
+	case assignCommitted:
+		return true
+	default:
+		return false // built by a reload that will never commit
 	}
 }
 
-// assignBuilt states the models of an agent just built: in the catalogue a
-// reload in progress is building, at its commit (reloadAssignments), else in
-// the running catalogue at once.
-func (al *AgentLoop) assignBuilt(cfg *config.Config, inst *AgentInstance) {
-	r := al.reloading.Load()
-	switch {
-	case r == nil:
-		assignAgentModels(al.catalog, cfg, inst)
-	case r.next != nil:
-		assignAgentModels(r.next, cfg, inst)
-	default:
-		r.mu.Lock()
-		r.built = append(r.built, inst)
-		r.mu.Unlock()
+// end records how the reload ended and returns the agents it built.
+func (r *reloadAssignments) end(committed bool) []*AgentInstance {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.state = assignDropped
+	if committed {
+		r.state = assignCommitted
+	}
+	built := r.built
+	r.built = nil
+	return built
+}
+
+// assignBuilt states the models of an agent just built: as reload (the
+// reload whose builder made it, nil for the registry's first builder)
+// decides, else at once in the running catalogue.
+func (al *AgentLoop) assignBuilt(reload *reloadAssignments, cfg *config.Config, inst *AgentInstance) {
+	if reload != nil && !reload.build(inst) {
+		return
+	}
+	assignAgentModels(al.catalog, cfg, inst)
+}
+
+// copyLists gives agent id the lists it has in from, in to: for an agent a
+// reload did not rebuild, so adopting to keeps its lists and its sessions'
+// /model choices. A model to does not have is left out.
+func copyLists(from, to *models.Catalog, cfg *config.Config, id string) {
+	src := from.Set(id)
+	lists := make(map[models.Purpose][]models.Assignment)
+	for _, p := range src.Purposes() {
+		var list []models.Assignment
+		for _, e := range src.List(p) {
+			if raw, ok := providers.DerivedRaw(e.Name); ok {
+				ensureDerived(to, cfg, raw)
+			}
+			if _, ok := to.Get(e.Name); !ok {
+				continue
+			}
+			a := models.Assignment{Name: e.Name}
+			if e.Settings != nil {
+				a.Options = []models.AssignOption{models.WithSettings(e.Settings)}
+			}
+			list = append(list, a)
+		}
+		lists[p] = list
+	}
+	if _, err := to.Set(id).ReplaceAll(lists); err != nil {
+		logger.WarnCF("agent", "agent's models not kept",
+			map[string]any{"agent_id": id, "error": err.Error()})
 	}
 }
 
 // summarizationNames is the agent's summarization chain as model names: its
 // summarization_models, then the global summarization.models, de-duplicated,
 // then its primary model unless already listed. A name that resolves to no
-// enabled model is left out (the summarization caller logs it).
-func summarizationNames(cfg *config.Config, inst *AgentInstance) []string {
+// enabled model is served as it always was, by the agents' default model
+// with that name as its model id: a derived model (DerivedSummaryModel),
+// added to c on first use. Without a default model it is left out.
+func summarizationNames(c *models.Catalog, cfg *config.Config, inst *AgentInstance) []string {
 	var agentModels, globalModels []string
 	if inst.Config != nil {
 		agentModels = inst.Config.SummarizationModels
@@ -150,8 +202,17 @@ func summarizationNames(cfg *config.Config, inst *AgentInstance) []string {
 	}
 	var out []string
 	for _, raw := range append(resolveCompressModelChain(agentModels, globalModels), strings.TrimSpace(inst.Model)) {
-		if alias, _, ok := resolveCompressModelTarget(cfg, raw); ok && !slices.Contains(out, alias) {
-			out = append(out, alias)
+		var name string
+		switch alias, _, ok := resolveCompressModelTarget(cfg, raw); {
+		case ok:
+			name = alias
+		case raw != "" && ensureDerived(c, cfg, raw):
+			name = providers.DerivedSummaryName(raw)
+		default:
+			continue
+		}
+		if !slices.Contains(out, name) {
+			out = append(out, name)
 		}
 	}
 	return out
@@ -173,6 +234,9 @@ func catalogDigest(cfg *config.Config) string {
 func (al *AgentLoop) adoptCatalog(next *models.Catalog, digest string) {
 	diff := al.catalog.Adopt(next)
 	al.catalogDigest = digest
+	// Every cooldown is cleared, as when the operator clears them: a model
+	// alerted as failing alerts again at once if it still fails.
+	al.catalogs.Alerts().RearmAll()
 	fields := map[string]any{}
 	if len(diff.Added) > 0 {
 		fields["added"] = diff.Added
@@ -201,8 +265,9 @@ func (al *AgentLoop) listCooldowns() []commands.CooldownEntry {
 		if h.Available {
 			continue
 		}
-		byKey[h.Key] = commands.CooldownEntry{
-			Provider: h.Provider, Model: h.Model, Reason: string(h.Reason), Since: h.Since, Until: h.Until,
+		provider, model, key := cooldownIdentity(h)
+		byKey[key] = commands.CooldownEntry{
+			Provider: provider, Model: model, Reason: string(h.Reason), Since: h.Since, Until: h.Until,
 		}
 	}
 	keys := slices.Sorted(maps.Keys(byKey))
@@ -219,7 +284,7 @@ func (al *AgentLoop) listCooldowns() []commands.CooldownEntry {
 func (al *AgentLoop) clearCooldown(provider, model string) bool {
 	var names []string
 	for _, h := range al.catalog.Health() {
-		if h.Provider == provider && h.Model == model {
+		if p, m, _ := cooldownIdentity(h); p == provider && m == model {
 			names = append(names, h.Name)
 		}
 	}
@@ -301,4 +366,73 @@ func (al *AgentLoop) workerCandidates(a *AgentInstance) []providers.FallbackCand
 		return al.setCandidates(a.ID, models.Worker)
 	}
 	return al.chatCandidates(a)
+}
+
+// ensureDerived adds to c, once, the derived summarization model for raw
+// (providers.DerivedSummaryModel), and reports whether c has it.
+func ensureDerived(c *models.Catalog, cfg *config.Config, raw string) bool {
+	name := providers.DerivedSummaryName(raw)
+	if _, ok := c.Get(name); ok {
+		return true
+	}
+	m, ok := providers.DerivedSummaryModel(cfg, raw)
+	if !ok {
+		return false
+	}
+	if err := c.Add(m); err != nil {
+		_, ok := c.Get(name) // added by a concurrent build
+		return ok
+	}
+	return true
+}
+
+// cooldownIdentity is how /cooldowns names a model's health: its provider,
+// wire model and key, or for a derived summarization model no provider and
+// the raw name, as the summarization chain has always keyed it.
+func cooldownIdentity(h models.Health) (provider, model, key string) {
+	if raw, ok := providers.DerivedRaw(h.Name); ok {
+		return "", raw, providers.ModelKey("", raw)
+	}
+	return h.Provider, h.Model, h.Key
+}
+
+// assignReloaded states the lists after a reload that committed: the agents
+// it installed (built is what it built; one the registry did not take, as
+// it turned busy, keeps its lists) get theirs from cfg. With next set (the
+// reload changed what the catalogue is built from) they are assigned in
+// next, every other agent the registry holds keeps the lists it has, and
+// next is adopted; otherwise they are assigned in the running catalogue.
+// Runs outside the registry's lock: the catalogue writes the sessions' model
+// choices through the agents' stores, which it reaches through the registry.
+func (al *AgentLoop) assignReloaded(registry *AgentRegistry, cfg *config.Config, next *models.Catalog, digest string, built []*AgentInstance) {
+	installed := func(inst *AgentInstance) bool {
+		cur, ok := registry.Get(inst.ID)
+		return ok && cur == inst
+	}
+	if next == nil {
+		for _, inst := range built {
+			if installed(inst) {
+				assignAgentModels(al.catalog, cfg, inst)
+			}
+		}
+		return
+	}
+	for _, inst := range built {
+		if installed(inst) {
+			assignAgentModels(next, cfg, inst)
+		}
+	}
+	for _, id := range registry.All() {
+		if inst, ok := registry.Get(id); ok && inst != nil && !slices.Contains(built, inst) {
+			copyLists(al.catalog, next, cfg, id)
+		}
+	}
+	al.adoptCatalog(next, digest)
+	// An agent created between the copy and the adoption has its lists only
+	// in the catalogue the adoption replaced: give it its own.
+	for _, id := range registry.All() {
+		if inst, ok := registry.Get(id); ok && inst != nil && len(inst.chatModels) > 0 && len(al.catalog.Set(id).List(models.Chat)) == 0 {
+			assignAgentModels(al.catalog, cfg, inst)
+		}
+	}
 }

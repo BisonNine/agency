@@ -402,7 +402,7 @@ func TestShell_ReloadTurnsItOff(t *testing.T) {
 	next.Agents.BaseDir = cfg.Agents.BaseDir
 	next.Agents.List[0].Tools = []string{"*"}
 	before, _ := al.GetRegistry().Get(cloneID)
-	if err := reloadForTest(al, ctx, model, next); err != nil {
+	if err := reloadForTest(t, al, ctx, model, next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	if after, ok := al.GetRegistry().Get(cloneID); !ok || after == before {

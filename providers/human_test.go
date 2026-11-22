@@ -18,23 +18,40 @@ func TestHumanProvider_FromCatalogue(t *testing.T) {
 		Models:    []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", RequestTimeout: 90, Enabled: true}},
 	}
 	b := NewCatalogBuilder(nil, nil)
+	human := func(c interface {
+		Client(name string) (LLMProvider, func(), error)
+	},
+	) *HumanProvider {
+		t.Helper()
+		client, release, err := c.Client("Bob (human)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer release()
+		hp, ok := client.(*HumanProvider)
+		if !ok {
+			t.Fatalf("the catalogue's client is %T, want a human client", client)
+		}
+		return hp
+	}
 	c := b.Build(cfg)
-	hp, ok := b.HumanClient("Bob (human)")
-	if !ok || hp.Timeout() != 90*time.Second || hp.GetDefaultModel() != "Bob (human)" {
-		t.Fatalf("human client = %+v, %v", hp, ok)
+	hp := human(c)
+	if hp.Timeout() != 90*time.Second || hp.GetDefaultModel() != "Bob (human)" {
+		t.Fatalf("human client = %+v", hp)
 	}
-	client, release, err := c.Client("Bob (human)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer release()
-	if client != LLMProvider(hp) {
-		t.Errorf("the catalogue's client is %T, want the builder's human client", client)
-	}
-	// A second build hands the same client, so Adopt keeps it.
-	b.Build(cfg)
-	if again, _ := b.HumanClient("Bob (human)"); again != hp {
+	// A second build hands the same client, so Adopt keeps it; a build for
+	// a changed timeout makes a new one and leaves the first catalogue's
+	// as it was.
+	if human(b.Build(cfg)) != hp {
 		t.Error("a rebuild made a new human client")
+	}
+	changed := *cfg
+	changed.Models = []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", RequestTimeout: 30, Enabled: true}}
+	if other := human(b.Build(&changed)); other.Timeout() != 30*time.Second {
+		t.Errorf("changed timeout = %s, want 30s", other.Timeout())
+	}
+	if human(c).Timeout() != 90*time.Second {
+		t.Error("a later build changed the running catalogue's human client")
 	}
 }
 

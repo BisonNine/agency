@@ -87,7 +87,7 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 			caller:         c.caller,
 			kind:           llmKindCompression,
 			ourProvider:    cand.Provider,
-			ourModel:       cmp.Or(cand.Name, cand.Model),
+			ourModel:       summaryModelName(cand),
 			requestedModel: cand.Model,
 			sessionKey:     sessionKey,
 			turnID:         turnIDFrom(ctx),
@@ -129,19 +129,6 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 	return reply.Content, reply.FinishReason, reply.Model, nil
 }
 
-// resolveCompressModelTarget resolves a configured compress_model reference into
-// the (alias, protocol, modelID) triple that can be handed to the provider
-// dispatcher. Bare aliases and shorthand model IDs are looked up against the
-// loaded models, mirroring resolveFromModelList in instance.go.
-//
-// The returned alias is the resolved entry's model_name; the dispatcher uses
-// it as the cache/lookup key so per-entry openai_compat state
-// (response_log_file, reasoning_effort, extra_body, …) is honoured when
-// multiple entries share the same wire model.
-//
-// Returns ("", "", "", false) when the reference cannot be resolved against the
-// configured models — callers should then fall back to the agent's default
-// provider rather than guess a protocol.
 // resolveCompressModelChain returns the ordered, de-duplicated summarization
 // model chain for an agent: its own summarization_models first, then the global
 // summarization.models. Blank entries are skipped; the first occurrence of each
@@ -178,6 +165,10 @@ func compressProviderName(cfg *config.Config, alias string) string {
 	return ""
 }
 
+// resolveCompressModelTarget resolves a configured model reference (a
+// summarization or vision model) into the model_name and wire model id of
+// the enabled models entry it names: by model_name first, then by raw model
+// id. ok is false when it names none.
 func resolveCompressModelTarget(cfg *config.Config, raw string) (alias, modelID string, ok bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || cfg == nil {
@@ -204,12 +195,13 @@ func resolveCompressModelTarget(cfg *config.Config, raw string) (alias, modelID 
 	return "", "", false
 }
 
-// logCompressModel logs how one configured summarization model resolves:
-// a name that names no enabled model is left out of the chain, and said so.
+// logCompressModel logs how one configured summarization model resolves: a
+// name that names no enabled model is served by the agents' default model
+// (summarizationNames), and said so.
 func (al *AgentLoop) logCompressModel(agent *AgentInstance, compressModelName, sessionKey string) {
 	alias, modelID, ok := resolveCompressModelTarget(al.GetConfig(), compressModelName)
 	if !ok {
-		logger.WarnCF("llmcontext", "compression model not found in enabled models; skipping", map[string]any{
+		logger.WarnCF("llmcontext", "compression model not found in enabled models; falling back to agent provider", map[string]any{
 			"agent_id":  agent.ID,
 			"requested": compressModelName,
 			"session":   sessionKey,
@@ -406,7 +398,7 @@ func (al *AgentLoop) buildSessionEntry(bk sessionBuildKey, done chan struct{}, a
 
 	// The summarization model chain. Per-agent models let an agent use
 	// specialised summarizers when the default ones refuse its content; see
-	// resolveCompressClient / resolveDefaultCompressClient for per-entry rules.
+	// summarizationNames for the chain's rules.
 	caller, effectiveCompressModel := al.newCompressModelCaller(agent, sessionKey, models.Summarize)
 
 	// Global debug-capture flag: when on, the manager writes the verbatim
@@ -512,4 +504,13 @@ func (al *AgentLoop) buildSessionEntry(bk sessionBuildKey, done chan struct{}, a
 	// nobody.
 	al.contextManagers.Store(bk.key, newEntry)
 	return newEntry
+}
+
+// summaryModelName is how the finish line names a summarization model: its
+// model_name, or the raw name a derived model stands for.
+func summaryModelName(c models.Candidate) string {
+	if raw, ok := providers.DerivedRaw(c.Name); ok {
+		return raw
+	}
+	return cmp.Or(c.Name, c.Model)
 }

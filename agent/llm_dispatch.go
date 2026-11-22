@@ -56,9 +56,14 @@ func (t *llmTurn) newDispatch(defs []providers.ToolDefinition, promptEstimate in
 		"prompt_cache_key": agent.ID,
 	}
 	provider, isCLI := "", false
-	if len(t.candidates) > 0 {
+	switch {
+	case len(t.candidates) > 0:
 		provider = t.candidates[0].Provider
 		isCLI = config.CLIAgentByProtocol(t.candidates[0].Protocol) != nil
+	case t.direct != "":
+		if info, ok := t.al.catalog.Get(t.direct); ok {
+			isCLI = config.CLIAgentByProtocol(info.Provider.Protocol) != nil
+		}
 	}
 	// CLI providers run a subprocess and take no HTTP request parameters.
 	// With no temperature configured none is sent: the model's default applies.
@@ -255,6 +260,24 @@ func (t *llmTurn) dispatchFailed(ctx context.Context, err error) error {
 	return fmt.Errorf("LLM call failed after retries: %w", err)
 }
 
+// callDefaultModel makes the dispatch's one call for an agent none of whose
+// models resolves: on the default model's client (t.direct), with the
+// agent's first configured name as the model and the agent's own limits,
+// writing one "LLM finish" line. Nothing is recorded against a model's
+// health and there is no fallback.
+func (t *llmTurn) callDefaultModel(ctx context.Context, d *llmDispatch, hasTools bool) (*providers.LLMResponse, error) {
+	client, release, err := t.al.catalog.Client(t.direct)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	start := time.Now()
+	t.sent = t.requestMessages(hasTools, isCLIClient(client))
+	resp, err := client.Chat(ctx, t.agent.Identity(), t.al.messagesForModel(t.sent, t.model, hasTools), d.defs, t.model, t.requestOptions(d, hasTools, client, t.model))
+	t.emitFinish(ctx, d.provider, t.model, t.model, time.Since(start), resp, err)
+	return resp, err
+}
+
 // errNoModelConfigured ends a turn whose agent has no model to call. Its
 // text is the one a configuration without models has always answered with.
 var errNoModelConfigured = errors.New("no model configured — enable a model and add your API key in the configuration")
@@ -270,6 +293,9 @@ func (t *llmTurn) callModel(ctx context.Context, d *llmDispatch) (*providers.LLM
 
 	hasTools := len(d.defs) > 0
 	if t.chain == nil || len(t.candidates) == 0 {
+		if t.direct != "" {
+			return t.callDefaultModel(ctx, d, hasTools)
+		}
 		t.sent = t.messages
 		t.emitFinish(ctx, d.provider, t.model, t.model, 0, nil, errNoModelConfigured)
 		return nil, errNoModelConfigured
@@ -426,6 +452,9 @@ type turnModel struct {
 	candidates []providers.FallbackCandidate
 	model      string
 	limits     runLimits
+	// direct is the model whose client serves an agent none of whose own
+	// models resolves (defaultModelClient); "" otherwise.
+	direct string
 }
 
 // selectTurnModel makes the model choice for a turn of agent on sessionKey:
@@ -442,10 +471,34 @@ func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *t
 	}
 	candidates := chain.Candidates()
 	model := agent.Model
+	direct := ""
 	if len(candidates) > 0 {
 		model = candidates[0].Name
+	} else {
+		direct = al.defaultModelClient()
 	}
-	return &turnModel{chain: chain, candidates: candidates, model: model, limits: agent.limitsFor(model)}
+	return &turnModel{chain: chain, candidates: candidates, model: model, limits: agent.limitsFor(model), direct: direct}
+}
+
+// defaultModelClient is the model an agent none of whose models resolves
+// runs on: the agents' default model (agents.defaults.models[0], by
+// model_name), when the catalogue has it. Its client is called with the
+// agent's first configured name as the model, with no fallback and no
+// health kept, as the agent's own provider always served such an agent.
+// "" when there is none: the turn fails as a configuration without models.
+func (al *AgentLoop) defaultModelClient() string {
+	cfg := al.GetConfig()
+	if cfg == nil {
+		return ""
+	}
+	mc, err := cfg.GetModelConfig(cfg.Agents.Defaults.DefaultModelName())
+	if err != nil || mc == nil {
+		return ""
+	}
+	if _, ok := al.catalog.Get(mc.ModelName); !ok {
+		return ""
+	}
+	return mc.ModelName
 }
 
 // reasoningPlaceholder is what backfillReasoningContent writes into an empty

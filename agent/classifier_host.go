@@ -266,8 +266,7 @@ func (h *ClassifierHost) Call(ctx context.Context, agentID, tool string, args ma
 // be one of the agent's models. There is no fallback: a model in cooldown is
 // refused with a *classifier.CooldownError, and the call runs on the model's
 // single-model chain in the catalogue, which records a failure against its
-// health like any other call (and waits out a Retry-After of up to 3 s once
-// before giving up). A CLI model runs isolated:
+// health like any other call; it is made once (no same-model retry). A CLI model runs isolated:
 // in an empty folder of its own, removed afterwards, and never with the
 // provider's bypass flags. Its cost counts toward the daily spend alert like
 // any other model call.
@@ -317,7 +316,7 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 	_, chatErr := chain.Chat(ctx, a.Identity(), models.Request{Messages: []providers.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
-	}}, last.option(func(c models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+	}}, models.WithClassify(noSameModelRetry), last.option(func(c models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
 		emitLLMFinishEvent(llmFinish{
 			caller:         llmCaller{agentID: a.ID, label: a.DisplayName()},
 			kind:           llmKindClassifier,
@@ -539,4 +538,12 @@ func (h *ClassifierHost) Record(ev classifier.AuditEvent) {
 		Details: string(b),
 		Outcome: outcome,
 	})
+}
+
+// noSameModelRetry is the chain's default verdict without its same-model
+// retry after a short Retry-After: a classifier request is made once.
+func noSameModelRetry(err error, c models.Candidate) models.Verdict {
+	v := models.DefaultVerdict(err, c)
+	v.Wait = 0
+	return v
 }

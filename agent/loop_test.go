@@ -52,6 +52,10 @@ func newTestConfig(t *testing.T) *config.Config {
 				{ID: "main", Name: "Main", Default: true},
 			},
 		},
+		Providers: []config.Provider{{Name: testProviderName, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "test"}},
+		Models: []config.ModelConfig{
+			{ModelName: "test-model", Model: "test-model", Provider: testProviderName, Enabled: true, Vision: config.VisionOff},
+		},
 	}
 }
 
@@ -2116,7 +2120,7 @@ func TestReloadConfig_NilConfig(t *testing.T) {
 	tl := newTestAgentLoop(t)
 	al, provider := tl.al, tl.provider
 
-	err := reloadForTest(al, context.Background(), provider, nil)
+	err := reloadForTest(t, al, context.Background(), provider, nil)
 	if err == nil {
 		t.Fatal("expected error for nil config, got nil")
 	}
@@ -2139,7 +2143,7 @@ func TestReloadConfig_Success(t *testing.T) {
 		},
 	}
 
-	err := reloadForTest(al, context.Background(), provider, newCfg)
+	err := reloadForTest(t, al, context.Background(), provider, newCfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

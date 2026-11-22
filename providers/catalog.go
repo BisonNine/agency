@@ -4,6 +4,7 @@
 package providers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -36,6 +37,19 @@ type CatalogBuilder struct {
 	mu     sync.Mutex
 	humans map[string]*HumanProvider // by model name
 	store  models.SelectionStore
+	// quiet builds catalogues that log nothing: for a check that builds one
+	// beside the running catalogue, whose build has logged it all.
+	quiet bool
+}
+
+// NewQuietCatalogBuilder is a builder whose catalogues log nothing (the
+// models and providers they leave out, ignored bypass flags, client logs):
+// for checking a configuration without repeating what the running
+// catalogue's build logged.
+func NewQuietCatalogBuilder() *CatalogBuilder {
+	b := NewCatalogBuilder(nil, nil)
+	b.quiet = true
+	return b
 }
 
 // SetSelectionStore sets where the catalogues built from now on persist the
@@ -95,6 +109,13 @@ func (b *CatalogBuilder) options(cfg *config.Config) []models.Option {
 	b.mu.Lock()
 	store := b.store
 	b.mu.Unlock()
+	if b.quiet {
+		return []models.Option{
+			models.WithBaseEnv(childenv.CLI),
+			models.WithFileModesFor(responseLogFileModes),
+			models.WithIgnoredBypassNotice(func(models.IgnoredBypass) {}),
+		}
+	}
 	return []models.Option{
 		models.WithSelectionStore(store),
 		models.WithBaseEnv(childenv.CLI),
@@ -120,24 +141,24 @@ func (b *CatalogBuilder) Build(cfg *config.Config) *models.Catalog {
 	for i := range cfg.Providers {
 		p := cfg.Providers[i]
 		if err := c.AddProvider(p); err != nil {
-			logger.WarnCF("providers", "provider left out of the model catalogue",
+			b.warn("provider left out of the model catalogue",
 				map[string]any{"provider": p.Name, "error": err.Error()})
 		}
 	}
 	for _, m := range catalogModels(cfg) {
 		if err := c.Add(m); err != nil {
-			logger.WarnCF("providers", "model left out of the model catalogue",
+			b.warn("model left out of the model catalogue",
 				map[string]any{"model": m.ModelName, "error": err.Error()})
 			continue
 		}
 		if p, err := cfg.GetProvider(m.Provider); err == nil && p.Protocol == config.HumanProtocol {
 			if err := c.RegisterClient(m.ModelName, b.human(m.ModelName, time.Duration(m.RequestTimeout)*time.Second)); err != nil {
-				logger.WarnCF("providers", "human model has no client",
+				b.warn("human model has no client",
 					map[string]any{"model": m.ModelName, "error": err.Error()})
 			}
 		}
 		if err := c.Set(modelSetID(m.ModelName)).Assign(models.Chat, m.ModelName, 0); err != nil {
-			logger.WarnCF("providers", "model has no single-model set",
+			b.warn("model has no single-model set",
 				map[string]any{"model": m.ModelName, "error": err.Error()})
 		}
 	}
@@ -157,15 +178,6 @@ func (b *CatalogBuilder) human(name string, timeout time.Duration) *HumanProvide
 	hp := NewHumanProvider(name, timeout)
 	b.humans[name] = hp
 	return hp
-}
-
-// HumanClient returns the client of the human model name, as the last
-// catalogue built registered it.
-func (b *CatalogBuilder) HumanClient(name string) (*HumanProvider, bool) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	hp, ok := b.humans[name]
-	return hp, ok
 }
 
 // modelSetPrefix marks the single-model sets; no agent id contains a NUL.
@@ -293,4 +305,66 @@ func DefaultModelProblem(cfg *config.Config, c *models.Catalog) error {
 	}
 	release()
 	return nil
+}
+
+// CheckDefaultModel is DefaultModelProblem on a catalogue built quietly for
+// cfg and closed afterwards: for a check made beside (or before) the running
+// catalogue, which logs nothing the running one's build does.
+func CheckDefaultModel(ctx context.Context, cfg *config.Config) error {
+	c := NewQuietCatalogBuilder().Build(cfg)
+	problem := DefaultModelProblem(cfg, c)
+	if err := c.Close(ctx); err != nil && problem == nil {
+		return fmt.Errorf("closing the check's model clients: %w", err)
+	}
+	return problem
+}
+
+// derivedPrefix marks the models a summarization chain derives for a name
+// that is no configured model; no model_name contains a NUL.
+const derivedPrefix = "\x00summary\x00"
+
+// DerivedSummaryName is the catalogue name of the model a summarization
+// chain uses for raw, a name in it that is no configured model.
+func DerivedSummaryName(raw string) string { return derivedPrefix + raw }
+
+// DerivedRaw returns the raw name a derived summarization model stands for,
+// and whether name is one.
+func DerivedRaw(name string) (string, bool) {
+	return strings.CutPrefix(name, derivedPrefix)
+}
+
+// DerivedSummaryModel is the model a summarization chain calls for raw, a
+// name in it (a summarization model or the agent's primary) that is no
+// enabled model: the agents' default model, as the catalogue has it, with
+// raw as its model id, as the agent's own provider has always served such
+// a name. false when there is no default model.
+func DerivedSummaryModel(cfg *config.Config, raw string) (config.ModelConfig, bool) {
+	def, err := cfg.GetModelConfig(cfg.Agents.Defaults.DefaultModelName())
+	if err != nil || def == nil {
+		return config.ModelConfig{}, false
+	}
+	for _, m := range catalogModels(cfg) {
+		if m.ModelName == def.ModelName {
+			m.ModelName, m.Model = DerivedSummaryName(raw), raw
+			return m, true
+		}
+	}
+	return config.ModelConfig{}, false
+}
+
+// alertKey is the key a model's alerts are raised under: its health key, or
+// for a derived summarization model the key the summarization chain has
+// always used for it (no provider, the raw name).
+func alertKey(name, key string) string {
+	if raw, ok := DerivedRaw(name); ok {
+		return ModelKey("", raw)
+	}
+	return key
+}
+
+// warn logs a build problem, unless the builder is quiet.
+func (b *CatalogBuilder) warn(msg string, fields map[string]any) {
+	if !b.quiet {
+		logger.WarnCF("providers", msg, fields)
+	}
 }

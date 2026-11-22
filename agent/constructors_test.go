@@ -23,17 +23,24 @@ func mustNewAgentLoop(
 	opts ...LoopOption,
 ) *AgentLoop {
 	t.Helper()
-	added := withTestModels(cfg)
 	al, err := NewAgentLoop(t.Context(), cfg, msgBus, opts...)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
+	t.Cleanup(testProviders.Clear)
 	if clients == nil {
-		// Without a dispatcher every model call went to the agent's
-		// Provider; it still does.
-		routeAllModels(al, provider)
+		// Every model answers through the agents' test providers.
+		routeAllModels(t, al, provider)
 	} else {
-		routeTestModels(al, provider, added)
+		// Only the models withTestModels defined; the rest keep their
+		// real clients.
+		var names []string
+		for _, n := range al.catalog.Names() {
+			if info, _ := al.catalog.Get(n); info.Provider.Name == testProviderName {
+				names = append(names, n)
+			}
+		}
+		routeTestModels(t, al, provider, names)
 	}
 	// Closing the registry removes a non-owner's private temp root.
 	t.Cleanup(al.GetRegistry().Close)

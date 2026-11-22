@@ -79,7 +79,10 @@ type llmTurn struct {
 	// mid-way.
 	chain      *models.Chain
 	candidates []providers.FallbackCandidate
-	model      string
+	// direct is the default model serving an agent none of whose models
+	// resolves (turnModel.direct).
+	direct string
+	model  string
 	// limits are model's: its tools setting and context window, and the
 	// max_tokens and thinking level of a request sent to it.
 	limits runLimits
@@ -196,7 +199,7 @@ func (al *AgentLoop) newLLMTurn(
 	if tm == nil {
 		tm = al.selectTurnModel(agent, opts.SessionKey)
 	}
-	t.chain, t.candidates, t.model, t.limits = tm.chain, tm.candidates, tm.model, tm.limits
+	t.chain, t.candidates, t.model, t.limits, t.direct = tm.chain, tm.candidates, tm.model, tm.limits, tm.direct
 	t.notifier = al.fallbackNotifier(ctx, opts)
 	// Breadcrumbs go to a user chat, never the internal "system" channel.
 	t.showToolActivity = opts.Channel != "" && opts.Channel != "system" && opts.ChatID != "" &&
@@ -346,6 +349,10 @@ func (t *llmTurn) assemble(ctx context.Context, defs []providers.ToolDefinition)
 func (t *llmTurn) logRequest(d *llmDispatch) {
 	defs := d.defs
 	isCLI := len(t.candidates) > 0 && config.CLIAgentByProtocol(t.candidates[0].Protocol) != nil
+	if t.direct != "" && len(t.candidates) == 0 {
+		info, _ := t.al.catalog.Get(t.direct)
+		isCLI = config.CLIAgentByProtocol(info.Provider.Protocol) != nil
+	}
 	sent := t.requestMessages(len(defs) > 0, isCLI)
 	sessionSummary := t.agent.Sessions.GetSummary(t.opts.SessionKey)
 	logger.InfoCF("agent", "Session status",

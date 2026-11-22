@@ -45,10 +45,10 @@ func TestMatchAndPromoteCandidate(t *testing.T) {
 
 func TestSpawner_InvalidModel_IsError(t *testing.T) {
 	mgr := NewSubagentManager(SubagentManagerConfig{
-		Workspace:      t.TempDir(),
-		Live:           NewLiveSet(),
-		SelfCandidates: candList(),
-		RunFull:        echoRunFull,
+		Workspace:    t.TempDir(),
+		Live:         NewLiveSet(),
+		SelfResolver: candList,
+		RunFull:      echoRunFull,
 	})
 	sp := NewSpawner(mgr)
 
@@ -69,10 +69,10 @@ func TestSpawner_InvalidModel_IsError(t *testing.T) {
 
 func TestSpawner_ValidModel_Runs(t *testing.T) {
 	mgr := NewSubagentManager(SubagentManagerConfig{
-		Workspace:      t.TempDir(),
-		Live:           NewLiveSet(),
-		SelfCandidates: candList(),
-		RunFull:        echoRunFull,
+		Workspace:    t.TempDir(),
+		Live:         NewLiveSet(),
+		SelfResolver: candList,
+		RunFull:      echoRunFull,
 	})
 	sp := NewSpawner(mgr)
 
@@ -117,7 +117,7 @@ func TestSpawner_WorkerModelCheck(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var ran int
 			mgr := NewSubagentManager(SubagentManagerConfig{
-				Workspace: t.TempDir(), Live: NewLiveSet(), CallerAgentID: "alice", SelfCandidates: tt.self,
+				Workspace: t.TempDir(), Live: NewLiveSet(), CallerAgentID: "alice", SelfResolver: func() []providers.FallbackCandidate { return tt.self },
 				CandidateResolver: func(id string) ([]providers.FallbackCandidate, bool) {
 					switch id {
 					case "bob":

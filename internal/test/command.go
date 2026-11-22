@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
@@ -104,7 +105,9 @@ func testOne(cfg *config.Config, name string, deadline time.Duration) error {
 			if !mc.Enabled {
 				return fmt.Errorf("model %q is disabled", name)
 			}
-			printResults([]result{testModel(cfg, mc, deadline)})
+			cat := providers.NewCatalogBuilder(nil, nil).Build(cfg)
+			defer closeCatalog(cat)
+			printResults([]result{testModel(cfg, cat, mc, deadline)})
 			return nil
 		}
 	}
@@ -133,13 +136,16 @@ func testAll(cfg *config.Config, deadline time.Duration) error {
 			len(enabled), int(deadline.Seconds()))
 	}
 
+	// One catalogue serves every test call, as the service's does.
+	cat := providers.NewCatalogBuilder(nil, nil).Build(cfg)
+	defer closeCatalog(cat)
 	results := make([]result, len(enabled))
 	var wg sync.WaitGroup
 	for i, mc := range enabled {
 		wg.Add(1)
 		go func(idx int, mc config.ModelConfig) {
 			defer wg.Done()
-			results[idx] = testModel(cfg, mc, deadline)
+			results[idx] = testModel(cfg, cat, mc, deadline)
 		}(i, mc)
 	}
 	wg.Wait()
@@ -148,7 +154,7 @@ func testAll(cfg *config.Config, deadline time.Duration) error {
 	return nil
 }
 
-func testModel(cfg *config.Config, mc config.ModelConfig, timeout time.Duration) result {
+func testModel(cfg *config.Config, cat *models.Catalog, mc config.ModelConfig, timeout time.Duration) result {
 	r := result{modelName: mc.ModelName}
 
 	if _, err := cfg.GetProvider(mc.Provider); err != nil {
@@ -157,7 +163,7 @@ func testModel(cfg *config.Config, mc config.ModelConfig, timeout time.Duration)
 	}
 	// The model's client as the catalogue builds it for the service, with no
 	// health kept: a test call parks nothing.
-	provider, release, err := providers.NewCatalogBuilder(nil, nil).Build(cfg).Client(mc.ModelName)
+	provider, release, err := cat.Client(mc.ModelName)
 	if err != nil {
 		r.err = fmt.Sprintf("provider init: %v", err)
 		return r
@@ -220,4 +226,13 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// closeCatalog closes cat once the test calls are done: its CLI clients end.
+func closeCatalog(cat *models.Catalog) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := cat.Close(ctx); err != nil {
+		fmt.Printf("Model clients not closed: %v\n", err)
+	}
 }

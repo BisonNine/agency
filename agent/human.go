@@ -417,8 +417,15 @@ func (al *AgentLoop) runHumanTurn(ctx context.Context, agent *AgentInstance, opt
 	if !ok {
 		return "", fmt.Errorf("%s has no chat to reach the person in", agent.DisplayName())
 	}
-	hp, ok := al.catalogs.HumanClient(agent.HumanModel)
-	if _, inCatalog := al.catalog.Get(agent.HumanModel); !ok || !inCatalog {
+	// The client the running catalogue holds for the model: the one the
+	// configuration in force registered (a reload that fails registers none).
+	client, release, err := al.catalog.Client(agent.HumanModel)
+	if err != nil {
+		return "", fmt.Errorf("model %q is not a person's model", agent.HumanModel)
+	}
+	defer release()
+	hp, ok := client.(*providers.HumanProvider)
+	if !ok {
 		return "", fmt.Errorf("model %q is not a person's model", agent.HumanModel)
 	}
 	relay := func(ctx context.Context, request string, timeout time.Duration) (string, error) {

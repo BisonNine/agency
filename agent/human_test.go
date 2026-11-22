@@ -72,6 +72,7 @@ func humanLoopConfig(t *testing.T, timeoutSec int) *config.Config {
 		AgentID: "bob", Default: true,
 		Match: config.BindingMatch{Channel: "test", Peer: &config.PeerMatch{Kind: "direct", ID: bobChat}},
 	}}
+	withTestModels(cfg) // the models it names but does not define
 	return cfg
 }
 

@@ -37,6 +37,7 @@ func workerTestConfig(t *testing.T) *config.Config {
 		},
 		{ID: "bob", Name: "Bob", Models: []string{"one"}, Subagents: &config.SubagentsConfig{Models: []string{"four"}}},
 	}
+	withTestModels(cfg) // the models it names but does not define
 	return cfg
 }
 

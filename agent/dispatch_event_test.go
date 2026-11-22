@@ -512,9 +512,10 @@ func TestVisionClient_EmitsFinish(t *testing.T) {
 	}, "iteration", "session_key")
 }
 
-// A summarization model that resolves to no models entry is left out of the
-// chain: the agent's primary model answers, and the line names it.
-func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
+// A summarization model that resolves to no models entry runs on the agents'
+// default model with the configured string as its model: the line names it
+// by that string and by the default model's provider.
+func TestCompressModelCaller_UnresolvedModelNamesAgentProvider(t *testing.T) {
 	al := sideModelLoop(openAIStub(t), "Main")
 	al.cfg.Agents.Defaults.Models = []string{"Main"}
 	al.cfg.Summarization.Models = []string{"bob-summarizer"}
@@ -536,7 +537,7 @@ func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
 	assertFields(t, records[0], map[string]any{
 		"kind":         "compression",
 		"our_provider": "Bob's API",
-		"our_model":    "Main",
+		"our_model":    "bob-summarizer",
 		"session_key":  "agent:alice:main",
 	})
 }

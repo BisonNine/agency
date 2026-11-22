@@ -236,7 +236,7 @@ func TestClone_FollowsSourceConfigOnReload(t *testing.T) {
 	next.Agents.List = slices.Clone(f.cfg.Agents.List)
 	next.Agents.List[0].Tools = []string{"file_read_lines"}
 	next.Agents.List[0].Maestro = nil
-	if err := reloadForTest(f.al, context.Background(), f.model, &next); err != nil {
+	if err := reloadForTest(t, f.al, context.Background(), f.model, &next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	main, _ := f.al.GetRegistry().Get("main")

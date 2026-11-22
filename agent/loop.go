@@ -65,10 +65,6 @@ type AgentLoop struct {
 	catalog       *models.Catalog
 	catalogs      *providers.CatalogBuilder
 	catalogDigest string
-	// reloading, while a reload builds its agents, collects their model
-	// assignments (reloadAssignments); nil otherwise, when an agent built is
-	// assigned in catalog at once.
-	reloading atomic.Pointer[reloadAssignments]
 	// alerter receives operator alerts (parked models, dead MCP servers, …);
 	// nil until SetAlerter, in which case Alerter() hands out a Nop.
 	alerterMu       sync.RWMutex
@@ -309,7 +305,6 @@ func NewAgentLoop(
 		opt(&lo)
 	}
 	// The model alerts every catalogue reports to, for the life of the loop.
-	// catalogue reports to.
 	modelAlerts := providers.NewModelAlerts()
 
 	// Load the long-lived named message-API token store from the data dir. An
@@ -372,7 +367,7 @@ func NewAgentLoop(
 	// closures, spawn/subagent, msg with shared MessageTool), so it runs once
 	// al exists.
 	registry, err := agentreg.New(ctx, cfg, agentreg.Hooks[*AgentInstance]{
-		Build:    al.agentBuilder(),
+		Build:    al.agentBuilder(nil),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
 		Clock:    registryClock{al},
@@ -620,21 +615,12 @@ func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error
 	if digest != al.catalogDigest {
 		pending.next = al.catalogs.Build(cfg)
 	}
-	al.reloading.Store(pending)
-	err := al.reloadRegistry(ctx, registry, cfg)
-	al.reloading.Store(nil)
+	committed, err := al.reloadRegistry(ctx, registry, cfg, pending)
+	built := pending.end(committed)
 	if err != nil {
 		return err
 	}
-	// Made once the registry has swapped the agents in, outside its lock:
-	// the catalogue writes the sessions' model choices through the agents'
-	// session stores (sessionSelections), which it reaches through the
-	// registry.
-	if pending.next != nil {
-		al.adoptCatalog(pending.next, digest)
-	} else {
-		pending.apply(al.catalog)
-	}
+	al.assignReloaded(registry, cfg, pending.next, digest, built)
 
 	// Whispers held for an agent the new configuration removed are dropped;
 	// rebuilt agents keep theirs.
@@ -658,19 +644,21 @@ func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error
 	return nil
 }
 
-// reloadRegistry rebuilds every agent against the new config and provider
-// (config agents from the config, temporary agents against it too), each
-// with its tools registered the same way as at start. Nothing changes until
-// all are built; then the registry swaps them in one step and, in the same
-// step, the config is swapped here, so readers see a consistent pair. A ctx that ends first returns at once: the rebuild is
-// abandoned (the commit refuses) and closes what it built. Whichever of the
-// commit and the abandonment comes first wins. Panics are recovered and
-// reported as a failed reload.
+// reloadRegistry rebuilds every agent against the new config (config agents
+// from the config, temporary agents against it too), each with its tools
+// registered the same way as at start, by pending's builder. Nothing changes
+// until all are built; then the registry swaps them in one step and, in the
+// same step, the config is swapped here, so readers see a consistent pair. A
+// ctx that ends first returns at once: the rebuild is abandoned (the commit
+// refuses) and closes what it built. Whichever of the commit and the
+// abandonment comes first wins. Panics are recovered and reported as a
+// failed reload. committed says whether the registry swapped the agents in.
 func (al *AgentLoop) reloadRegistry(
 	ctx context.Context,
 	registry *AgentRegistry,
 	cfg *config.Config,
-) error {
+	pending *reloadAssignments,
+) (committed bool, err error) {
 	const (
 		reloadPending int32 = iota
 		reloadCommitted
@@ -688,7 +676,7 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(), func() bool {
+		err = registry.Reload(ctx, cfg, al.agentBuilder(pending), func() bool {
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}
@@ -701,18 +689,18 @@ func (al *AgentLoop) reloadRegistry(
 	select {
 	case err := <-done:
 		if err != nil {
-			return fmt.Errorf("registry creation failed: %w", err)
+			return outcome.Load() == reloadCommitted, fmt.Errorf("registry creation failed: %w", err)
 		}
 	case <-ctx.Done():
 		if outcome.CompareAndSwap(reloadPending, reloadAbandoned) {
-			return fmt.Errorf("context canceled during registry creation: %w", ctx.Err())
+			return false, fmt.Errorf("context canceled during registry creation: %w", ctx.Err())
 		}
 		// The swap already happened: finish the reload.
 		if err := <-done; err != nil {
-			return fmt.Errorf("registry creation failed: %w", err)
+			return true, fmt.Errorf("registry creation failed: %w", err)
 		}
 	}
-	return nil
+	return true, nil
 }
 
 // replaceMessageManagers rebuilds the callback managers against the new
@@ -812,6 +800,13 @@ func (al *AgentLoop) SetAlerter(a alerter.Alerter) {
 	if al.catalogs != nil {
 		al.catalogs.Alerts().SetAlerter(a)
 	}
+}
+
+// CloseModels closes the model catalogue: no model call is made after it,
+// the calls in flight are waited for until ctx ends, and the clients the
+// catalogue built are closed. For a full shutdown.
+func (al *AgentLoop) CloseModels(ctx context.Context) error {
+	return al.catalog.Close(ctx)
 }
 
 // Alerter returns the installed alerter, or a Nop when none was installed, so

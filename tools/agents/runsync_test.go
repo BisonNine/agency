@@ -21,10 +21,12 @@ func newRunSyncSpawner(t *testing.T) (*Spawner, *sync.Mutex, *[]string) {
 	var mu sync.Mutex
 	var models []string
 	mgr := NewSubagentManager(SubagentManagerConfig{
-		Workspace:      t.TempDir(),
-		Live:           NewLiveSet(),
-		CallerAgentID:  "alice",
-		SelfCandidates: []providers.FallbackCandidate{{Name: "Pro", Model: "claude-x", Provider: "anthropic"}},
+		Workspace:     t.TempDir(),
+		Live:          NewLiveSet(),
+		CallerAgentID: "alice",
+		SelfResolver: func() []providers.FallbackCandidate {
+			return []providers.FallbackCandidate{{Name: "Pro", Model: "claude-x", Provider: "anthropic"}}
+		},
 		RunFull: func(_ context.Context, _, _, model, _ string, _ []string) (*global.SyncResult, func(), error) {
 			mu.Lock()
 			models = append(models, model)

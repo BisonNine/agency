@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -24,8 +25,9 @@ const testProviderName = "test"
 
 // withTestModels defines, on a "test" provider, every model cfg's agents,
 // worker lists and summarization lists name that cfg does not define, so the
-// catalogue has them; routeTestModels then points them at the test's mock.
-// It returns their names.
+// catalogue has them: a test opts in by calling it. mustNewAgentLoop routes
+// the models on that provider to the agents' test providers. It returns the
+// names it defined.
 func withTestModels(cfg *config.Config) []string {
 	var names []string
 	add := func(list []string) {
@@ -75,40 +77,60 @@ func withTestModels(cfg *config.Config) []string {
 // routeTestModels registers, for each of names, a client that answers with
 // the Provider of the agent the call is for (agentProviderClient), so a test
 // that sets an agent's Provider drives its model calls.
-func routeTestModels(al *AgentLoop, fallback providers.LLMProvider, names []string) {
+func routeTestModels(tb testing.TB, al *AgentLoop, fallback providers.LLMProvider, names []string) {
+	tb.Helper()
 	for _, n := range names {
-		if err := al.catalog.RegisterClient(n, &agentProviderClient{al: al, fallback: fallback}); err != nil {
-			panic(err)
+		if err := al.catalog.RegisterClient(n, &agentProviderClient{t: tb, al: al, fallback: fallback}); err != nil {
+			tb.Fatalf("route %s: %v", n, err)
 		}
 	}
 }
 
 // agentProviderClient is a model client that forwards each call to the
-// Provider of the agent the call is billed to (a clone's to its source's),
-// or to fallback for an agent the registry does not hold.
+// test provider of the agent the call is for (setTestProvider), or to the
+// loop's (fallback) when that agent has none. A call for no agent the
+// registry holds fails the test.
 type agentProviderClient struct {
+	t        testing.TB
 	al       *AgentLoop
 	fallback providers.LLMProvider
 }
 
+// errNoTestAgent answers a call made for no agent of the test's loop.
+var errNoTestAgent = errors.New("test: the call is for no agent of the loop")
+
 func (c *agentProviderClient) target(id providers.Identity) providers.LLMProvider {
-	if r := c.al.GetRegistry(); r != nil {
+	r := c.al.GetRegistry()
+	var match *AgentInstance
+	if r != nil {
 		// The agent whose identity it is (a clone has its own label), then
 		// the agent it is billed to.
 		for _, agentID := range r.All() {
-			if inst, ok := r.Get(agentID); ok && inst.Identity() == id && testProvider(inst) != nil {
-				return testProvider(inst)
+			if inst, ok := r.Get(agentID); ok && inst.Identity() == id {
+				match = inst
+				break
 			}
 		}
-		if inst, ok := r.Get(id.Agent); ok && inst != nil && testProvider(inst) != nil {
-			return testProvider(inst)
+		if inst, ok := r.Get(id.Agent); match == nil && ok {
+			match = inst
 		}
+	}
+	if match == nil {
+		c.t.Errorf("model call for %+v, which is no agent of the loop", id)
+		return nil
+	}
+	if p := testProvider(match); p != nil {
+		return p
 	}
 	return c.fallback
 }
 
 func (c *agentProviderClient) Chat(ctx context.Context, id providers.Identity, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
-	return c.target(id).Chat(ctx, id, messages, tools, model, opts)
+	p := c.target(id)
+	if p == nil {
+		return nil, errNoTestAgent
+	}
+	return p.Chat(ctx, id, messages, tools, model, opts)
 }
 
 func (c *agentProviderClient) GetDefaultModel() string { return "" }
@@ -196,29 +218,24 @@ func parkFor(t *testing.T, cat *models.Catalog, name string, d time.Duration, cl
 // routeAllModels points every model of the loop's catalogue at the Provider
 // of the agent each call is for: a loop built without a dispatcher, whose
 // tests drive the agents' Provider.
-func routeAllModels(al *AgentLoop, fallback providers.LLMProvider) {
-	routeTestModels(al, fallback, al.catalog.Names())
+func routeAllModels(tb testing.TB, al *AgentLoop, fallback providers.LLMProvider) {
+	tb.Helper()
+	routeTestModels(tb, al, fallback, al.catalog.Names())
 }
 
-// adoptTestCatalog rebuilds the loop's catalogue from its config, which the
-// test changed after building the loop, with every model routed to the
-// agents' Provider (routeAllModels). Agents built before keep no models.
-func adoptTestCatalog(al *AgentLoop, fallback providers.LLMProvider) {
-	al.catalog.Adopt(al.catalogs.Build(al.GetConfig()))
-	routeAllModels(al, fallback)
-}
-
-// reloadForTest is ReloadConfig for a test: the models cfg names
-// but does not define are defined (withTestModels), and afterwards every
-// model is routed to the agents' Provider (routeAllModels), as at start.
-func reloadForTest(al *AgentLoop, ctx context.Context, provider providers.LLMProvider, cfg *config.Config) error {
-	if cfg != nil {
-		withTestModels(cfg)
-	}
+// reloadForTest is ReloadConfig for a test whose loop routes every model to
+// the agents' test providers (mustNewAgentLoop with nil routing): a reload
+// that adopts a new catalogue gets new clients, which are routed again; one
+// that keeps the catalogue keeps its clients.
+func reloadForTest(tb testing.TB, al *AgentLoop, ctx context.Context, provider providers.LLMProvider, cfg *config.Config) error {
+	tb.Helper()
+	before := al.catalogDigest
 	if err := al.ReloadConfig(ctx, cfg); err != nil {
 		return err
 	}
-	routeAllModels(al, provider)
+	if al.catalogDigest != before {
+		routeAllModels(tb, al, provider)
+	}
 	return nil
 }
 

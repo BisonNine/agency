@@ -67,7 +67,7 @@ func (o *ModelAlerts) current() alerter.Alerter {
 
 // Parked implements models.Observer.
 func (o *ModelAlerts) Parked(e models.Parked) {
-	o.parked(e.Key, e.Reason, e.Status, e.Failures, e.Settled, e.Cooldown, e.At)
+	o.parked(alertKey(e.Name, e.Key), e.Reason, e.Status, e.Failures, e.Settled, e.Cooldown, e.At)
 }
 
 // parked raises the alert for one park of the model keyed id, when it is
@@ -99,7 +99,7 @@ func (o *ModelAlerts) parked(id string, reason FailoverReason, status, failures 
 }
 
 // Recovered implements models.Observer.
-func (o *ModelAlerts) Recovered(e models.Recovered) { o.recovered(e.Key) }
+func (o *ModelAlerts) Recovered(e models.Recovered) { o.recovered(alertKey(e.Name, e.Key)) }
 
 // recovered ends the incidents of the model keyed id, which has just
 // answered. When it had been alerted as failing, the operator is told once

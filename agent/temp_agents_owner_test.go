@@ -28,6 +28,7 @@ func ownerTestConfig(t *testing.T) *config.Config {
 	cfg.Agents.Defaults.Models = []string{"test-model"}
 	cfg.Agents.Defaults.MaxToolIterations = 10
 	cfg.Agents.List = []config.AgentConfig{{ID: "main", Name: "Main", Default: true}}
+	withTestModels(cfg) // the models it names but does not define
 	return cfg
 }
 
@@ -100,7 +101,7 @@ func TestRunAgentLoop_StaleTempInstance(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	stale, _ := al.GetRegistry().Get(id)
-	if err = reloadForTest(al, context.Background(), tl.provider, tl.cfg); err != nil {
+	if err = reloadForTest(t, al, context.Background(), tl.provider, tl.cfg); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	key := routing.BuildAgentMainSessionKey(id)
