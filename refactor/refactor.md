@@ -1642,8 +1642,11 @@ next session must know.
 - [ ] Phase 5c: engine moved, root package, conformance suite
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
-- [ ] Background shell (`docs/bash.md`)
-  - SDK half done: `toolbox/shell` and `toolbox/shell/proc` (SDK
-    2d85433). Host mount, config keys, task-list wiring, golden file and
-    removal of the old tool not started.
+- [x] Background shell (`refactor/bash.md`): SDK `toolbox/shell`
+      (2d85433, 34d16bd); host mount f4f9306, old tool removed. The
+      capabilities golden changed once, for `shell_ctrl` (the fixture
+      gave carol `shell_exec`). Not yet done, waiting for phase 5b:
+      jobs are not in the agent task list, so `/cancel` and
+      `/cancel all` do not count or stop them; the host exposes
+      `Running(owner)` and `StopAll(owner)` on the shell mount for that.
 - [ ] Alias cleanup

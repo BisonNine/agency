@@ -1,6 +1,6 @@
 # Background shell: design for a later phase
 
-Status: **design agreed, nothing implemented.** Written with
+Status: **implemented** (SDK `toolbox/shell`; host mount in `tools/shell`), except the task-list integration in rule 4.2, which waits for refactoring phase 5b. Written with
 `refactor.md` in the repository root (its section 4.11 points here). It is self-contained:
 a worker can build from this file without the conversation behind it.
 Verified against ClawEh 0.6.5.
