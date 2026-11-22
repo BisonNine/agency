@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -315,7 +317,7 @@ func TestHandshakeSharedToken(t *testing.T) {
 func TestConversationEcho(t *testing.T) {
 	srv, _, wsURL := newTestServer(t, ServerOptions{ServerVersion: "test-1", AutoApprove: true})
 	srv.SetInbound(func(_, chatID, content, _, _ string, _ []InboundAttachment) {
-		if err := srv.DeliverReply(context.Background(), chatID, "echo: "+content); err != nil {
+		if err := srv.DeliverReply(context.Background(), chatID, "", "echo: "+content); err != nil {
 			t.Errorf("DeliverReply: %v", err)
 		}
 	})
@@ -511,7 +513,7 @@ func TestStreamThenFinal(t *testing.T) {
 		// Stream two partial deltas, then finalize with the full reply.
 		srv.StreamDelta(chatID, "Hello ")
 		srv.StreamDelta(chatID, "world.")
-		if err := srv.DeliverReply(context.Background(), chatID, "Hello world."); err != nil {
+		if err := srv.DeliverReply(context.Background(), chatID, "", "Hello world."); err != nil {
 			t.Errorf("DeliverReply: %v", err)
 		}
 	})
@@ -584,7 +586,7 @@ func TestStreamThenFinal(t *testing.T) {
 func TestNonStreamedRunUnchanged(t *testing.T) {
 	srv, _, wsURL := newTestServer(t, ServerOptions{ServerVersion: "test-1", AutoApprove: true})
 	srv.SetInbound(func(_, chatID, content, _, _ string, _ []InboundAttachment) {
-		if err := srv.DeliverReply(context.Background(), chatID, "echo: "+content); err != nil {
+		if err := srv.DeliverReply(context.Background(), chatID, "", "echo: "+content); err != nil {
 			t.Errorf("DeliverReply: %v", err)
 		}
 	})
@@ -628,5 +630,88 @@ func TestAgentIDFromSessionKey(t *testing.T) {
 		if got := routing.AgentIDFromSessionKey(in); got != want {
 			t.Errorf("AgentIDFromSessionKey(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// runFrame is the identity of an event frame: which run, which family and
+// state or stream.
+type runFrame struct{ run, kind string }
+
+// readRunFrames reads event frames until want of them were read.
+func readRunFrames(t *testing.T, conn *websocket.Conn, want int) []runFrame {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	var out []runFrame
+	for len(out) < want {
+		var f collectedFrame
+		if err := conn.ReadJSON(&f); err != nil {
+			t.Fatalf("read frame: %v (got %v)", err, out)
+		}
+		if f.Type != gatewayproto.FrameEvent {
+			continue
+		}
+		var p struct {
+			RunID  string         `json:"runId"`
+			State  string         `json:"state"`
+			Stream string         `json:"stream"`
+			Data   map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(f.Payload, &p); err != nil {
+			t.Fatalf("decode event: %v", err)
+		}
+		kind := f.Event + ":" + p.State + p.Stream
+		if p.Stream == "lifecycle" {
+			kind += ":" + fmt.Sprint(p.Data["phase"])
+		}
+		out = append(out, runFrame{run: p.RunID, kind: kind})
+	}
+	return out
+}
+
+// A /cancel sent as a second chat.send during a run: the stopped run ends
+// under its own id, with agent lifecycle end and chat state aborted, before
+// the /cancel's reply ends the /cancel's run. A later run is unaffected.
+func TestCancelDuringRunEndsItAsAborted(t *testing.T) {
+	srv, _, wsURL := newTestServer(t, ServerOptions{ServerVersion: "test-1", AutoApprove: true})
+	srv.SetInbound(func(_, chatID, content, runID, _ string, _ []InboundAttachment) {
+		switch content {
+		case "/cancel":
+			// The stopped turn sends nothing of its own; the /cancel's
+			// reply speaks for both.
+			if err := srv.DeliverReply(context.Background(), chatID, runID, "Alice: stopped."); err != nil {
+				t.Errorf("DeliverReply: %v", err)
+			}
+		case "again":
+			if err := srv.DeliverReply(context.Background(), chatID, runID, "fine"); err != nil {
+				t.Errorf("DeliverReply: %v", err)
+			}
+		}
+	})
+	em := newEmulator(t)
+	conn, resp := em.open(t, wsURL, "")
+	defer utils.CloseQuietly(conn)
+	if !resp.OK {
+		t.Fatalf("handshake failed: %+v", resp.Error)
+	}
+	em.writeReq(t, conn, "m1", "chat.send", map[string]any{"message": "long job", "sessionKey": "sess-1", "idempotencyKey": "run-1"})
+	em.writeReq(t, conn, "m2", "chat.send", map[string]any{"message": "/cancel", "sessionKey": "sess-1", "idempotencyKey": "run-2"})
+	got := readRunFrames(t, conn, 5)
+	want := []runFrame{
+		{"run-1", "agent:lifecycle:end"},
+		{"run-1", "chat:aborted"},
+		{"run-2", "agent:assistant"},
+		{"run-2", "agent:lifecycle:end"},
+		{"run-2", "chat:final"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("frames = %v, want %v", got, want)
+	}
+	em.writeReq(t, conn, "m3", "chat.send", map[string]any{"message": "again", "sessionKey": "sess-1", "idempotencyKey": "run-3"})
+	got = readRunFrames(t, conn, 3)
+	want = []runFrame{{"run-3", "agent:assistant"}, {"run-3", "agent:lifecycle:end"}, {"run-3", "chat:final"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("next run frames = %v, want %v", got, want)
 	}
 }

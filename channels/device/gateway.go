@@ -501,7 +501,7 @@ func (c *DeviceChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
 	}
-	err := c.server.DeliverReply(ctx, msg.ChatID, msg.Content)
+	err := c.server.DeliverReply(ctx, msg.ChatID, msg.OriginalMessageID, msg.Content)
 	if err != nil && ctx.Err() != nil {
 		// Shutting down: not a delivery fault, and never an alert.
 		return ctx.Err()

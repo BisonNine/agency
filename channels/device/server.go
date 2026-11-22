@@ -110,20 +110,78 @@ type liveConn struct {
 	mu         sync.Mutex
 	seq        uint64
 	sessionKey string
-	currentRun string
-	// Partial-text streaming state (guarded by mu). streamedRun names the run for
-	// which deltas have been emitted; streamedText accumulates the assistant text
-	// sent so far so each delta event can carry the full running content. Both are
-	// reset when a new chat.send starts a run. emitChatReply consults streamedRun
-	// to avoid re-sending the assistant text a streamed run already delivered.
-	streamedRun  string
-	streamedText strings.Builder
-	// Per-run payload seq counters. The chat and agent event streams are numbered
-	// independently within a run; clients key events by (runId, seq), so these MUST
-	// increment across streamed deltas — reusing a seq makes the client drop the
-	// later events as duplicates. Reset when a new chat.send starts a run.
+	// runs are the runs started on this connection (chat.send) that have
+	// not ended yet, oldest first, at most maxOpenRuns (guarded by mu). A
+	// reply ends the run it answers (by run id), else the latest; the reply
+	// to a /cancel first ends every run started before it as aborted.
+	runs []*deviceRun
+}
+
+// maxOpenRuns bounds the runs a connection keeps open: a run whose turn
+// sends no reply is forgotten once this many newer ones were started.
+const maxOpenRuns = 16
+
+// deviceRun is one run of a connection: the reply to one chat.send.
+type deviceRun struct {
+	id string
+	// cancel: the message was /cancel (or /cancel all).
+	cancel bool
+	// Partial-text streaming state. streamed: deltas were emitted for the
+	// run; text accumulates the assistant text sent so far. emitChatReply
+	// consults streamed to avoid re-sending the assistant text.
+	streamed bool
+	text     strings.Builder
+	// Per-run payload seq counters. The chat and agent event streams are
+	// numbered independently within a run; clients key events by (runId,
+	// seq), so these MUST increment across streamed deltas — reusing a seq
+	// makes the client drop the later events as duplicates.
 	chatSeq  uint64
 	agentSeq uint64
+}
+
+// startRun opens run id; the oldest open run is forgotten past maxOpenRuns.
+func (lc *liveConn) startRun(id string, cancel bool) {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	lc.runs = slices.DeleteFunc(lc.runs, func(r *deviceRun) bool { return r.id == id })
+	lc.runs = append(lc.runs, &deviceRun{id: id, cancel: cancel})
+	if n := len(lc.runs); n > maxOpenRuns {
+		lc.runs = slices.Delete(lc.runs, 0, n-maxOpenRuns)
+	}
+}
+
+// streamingRun is the run partial text belongs to: the latest open run
+// that is not a /cancel. Called with mu held.
+func (lc *liveConn) streamingRun() *deviceRun {
+	for _, r := range slices.Backward(lc.runs) {
+		if !r.cancel {
+			return r
+		}
+	}
+	return nil
+}
+
+// endRun closes the run a reply answers: run id, else the latest open run,
+// else a run of that id never opened. When it is a /cancel, the runs
+// started before it end too: they are returned, to be ended as aborted.
+func (lc *liveConn) endRun(id string) (run *deviceRun, aborted []*deviceRun) {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	i := slices.IndexFunc(lc.runs, func(r *deviceRun) bool { return r.id == id })
+	if i < 0 {
+		i = len(lc.runs) - 1
+	}
+	if i < 0 {
+		return &deviceRun{id: id}, nil
+	}
+	run = lc.runs[i]
+	if run.cancel {
+		aborted = slices.Clone(lc.runs[:i])
+		lc.runs = slices.Delete(lc.runs, 0, i+1)
+		return run, aborted
+	}
+	lc.runs = slices.Delete(lc.runs, i, i+1)
+	return run, nil
 }
 
 // NewServer builds a gateway protocol server backed by the pairing store.
@@ -901,13 +959,8 @@ func (s *Server) handleChatSend(ctx context.Context, lc *liveConn, req gatewaypr
 	if p.SessionKey != "" && !isCmd {
 		lc.sessionKey = p.SessionKey
 	}
-	lc.currentRun = runID
-	// New run: clear any streaming accumulator + per-run seq counters.
-	lc.streamedRun = ""
-	lc.streamedText.Reset()
-	lc.chatSeq = 0
-	lc.agentSeq = 0
 	lc.mu.Unlock()
+	lc.startRun(runID, cmd == "cancel")
 
 	if s.opts.LogMessages {
 		logger.InfoCF("device", "chat.send in", map[string]any{
@@ -1487,19 +1540,19 @@ func (s *Server) StreamDelta(chatID, delta string) bool {
 	}
 
 	lc.mu.Lock()
-	runID := lc.currentRun
-	if runID == "" {
+	run := lc.streamingRun()
+	if run == nil {
 		lc.mu.Unlock()
 		return false
 	}
-	// Adopt the current run for streaming (accumulator was reset on chat.send).
-	lc.streamedRun = runID
-	lc.streamedText.WriteString(delta)
-	accumulated := lc.streamedText.String()
-	lc.chatSeq++
-	chatPayloadSeq := lc.chatSeq
-	lc.agentSeq++
-	agentPayloadSeq := lc.agentSeq
+	runID := run.id
+	run.streamed = true
+	run.text.WriteString(delta)
+	accumulated := run.text.String()
+	run.chatSeq++
+	chatPayloadSeq := run.chatSeq
+	run.agentSeq++
+	agentPayloadSeq := run.agentSeq
 	lc.seq++
 	chatFrameSeq := lc.seq
 	lc.seq++
@@ -1550,22 +1603,23 @@ func (s *Server) StreamDelta(chatID, delta string) bool {
 }
 
 // DeliverReply emits a terminal "chat" final event to the device for the given
-// chatID ("device:<deviceID>"), carrying the in-flight runId. It says why a
-// reply was not delivered: channels.ErrRecipientNotFound when chatID names no
-// paired device, channels.ErrRecipientOffline when the device is paired but
-// not connected or its connection is closing (closed, or closed because it
-// stopped reading), and channels.ErrSendFailed for a fault of the server
-// itself (the pairing store failed).
-func (s *Server) DeliverReply(ctx context.Context, chatID, content string) error {
+// chatID ("device:<deviceID>"), carrying the runId of the run it answers:
+// runID when that run is open, else the latest open run. The reply to a
+// /cancel first ends the runs started before it, each with "chat" state
+// aborted under its own runId. It says why a reply was not delivered:
+// channels.ErrRecipientNotFound when chatID names no paired device,
+// channels.ErrRecipientOffline when the device is paired but not connected or
+// its connection is closing (closed, or closed because it stopped reading),
+// and channels.ErrSendFailed for a fault of the server itself (the pairing
+// store failed).
+func (s *Server) DeliverReply(ctx context.Context, chatID, runID, content string) error {
 	v, _ := s.conns.Load(chatID)
 	lc, ok := v.(*liveConn)
 	if !ok {
 		return s.undeliverable(ctx, chatID)
 	}
 	lc.mu.Lock()
-	runID := lc.currentRun
 	sessionKey := lc.sessionKey
-	lc.currentRun = ""
 	lc.mu.Unlock()
 	if !s.emitChatReply(lc, runID, sessionKey, content) {
 		return fmt.Errorf("%s: the connection is closing: %w", chatID, channels.ErrRecipientOffline)
@@ -1600,30 +1654,35 @@ func (s *Server) undeliverable(ctx context.Context, chatID string) error {
 //
 // Frame-level seq is monotonic per connection; agent/chat payload seq is per-run.
 func (s *Server) emitChatReply(lc *liveConn, runID, sessionKey, content string) bool {
+	run, aborted := lc.endRun(runID)
+	for _, r := range aborted {
+		if !s.emitAborted(lc, r, sessionKey) {
+			return false
+		}
+	}
+	runID = run.id
 	// A run that already streamed delivered its assistant text via StreamDelta's
 	// "agent" assistant events; re-sending the full text here would make voice
 	// clients speak the reply twice. Skip only the agent assistant full-text event
 	// for such runs — the lifecycle end and the authoritative "chat" final still
-	// fire. Reset the per-run streaming state now that the run is finalized.
+	// fire.
 	lc.mu.Lock()
-	streamed := runID != "" && lc.streamedRun == runID
-	lc.streamedRun = ""
-	lc.streamedText.Reset()
+	streamed := run.streamed
 	var agentTextFrameSeq, agentTextPayloadSeq uint64
 	if !streamed {
 		lc.seq++
 		agentTextFrameSeq = lc.seq
-		lc.agentSeq++
-		agentTextPayloadSeq = lc.agentSeq
+		run.agentSeq++
+		agentTextPayloadSeq = run.agentSeq
 	}
 	lc.seq++
 	agentEndFrameSeq := lc.seq
-	lc.agentSeq++
-	agentEndPayloadSeq := lc.agentSeq
+	run.agentSeq++
+	agentEndPayloadSeq := run.agentSeq
 	lc.seq++
 	chatFrameSeq := lc.seq
-	lc.chatSeq++
-	chatPayloadSeq := lc.chatSeq
+	run.chatSeq++
+	chatPayloadSeq := run.chatSeq
 	lc.mu.Unlock()
 
 	if s.opts.LogMessages {
@@ -1682,6 +1741,42 @@ func (s *Server) emitChatReply(lc *liveConn, runID, sessionKey, content string) 
 		"usage":      map[string]any{"input": 0, "output": 0, "totalTokens": 0},
 		"stopReason": "stop",
 	}, chatFrameSeq)
+}
+
+// emitAborted ends a run a /cancel stopped: "agent" lifecycle end, then a
+// "chat" event with state aborted, under the run's own id.
+func (s *Server) emitAborted(lc *liveConn, run *deviceRun, sessionKey string) bool {
+	lc.mu.Lock()
+	lc.seq++
+	agentEndFrameSeq := lc.seq
+	run.agentSeq++
+	agentEndPayloadSeq := run.agentSeq
+	lc.seq++
+	chatFrameSeq := lc.seq
+	run.chatSeq++
+	chatPayloadSeq := run.chatSeq
+	lc.mu.Unlock()
+
+	if s.opts.LogMessages {
+		logger.InfoCF("device", "chat run aborted", map[string]any{
+			"deviceId": lc.deviceID, "runId": run.id, "sessionKey": sessionKey,
+		})
+	}
+	ts := time.Now().UnixMilli()
+	end := agentEndFrameSeq
+	lc.cw.send(gatewayproto.NewEvent("agent", map[string]any{
+		"runId":  run.id,
+		"seq":    agentEndPayloadSeq,
+		"stream": "lifecycle",
+		"ts":     ts,
+		"data":   map[string]any{"phase": "end"},
+	}, &end))
+	return lc.cw.send(gatewayproto.NewEvent("chat", map[string]any{
+		"runId":      run.id,
+		"sessionKey": sessionKey,
+		"state":      "aborted",
+		"seq":        chatPayloadSeq,
+	}, &chatFrameSeq))
 }
 
 func randomToken(n int) string {

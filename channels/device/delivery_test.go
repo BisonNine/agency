@@ -102,7 +102,7 @@ func TestDeliverReply_StoreFaultIsSendFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := NewServer(store, ServerOptions{ServerVersion: "test-1"})
-	if err := srv.DeliverReply(context.Background(), "device:paired-1", "hello"); !errors.Is(err, channels.ErrSendFailed) {
+	if err := srv.DeliverReply(context.Background(), "device:paired-1", "", "hello"); !errors.Is(err, channels.ErrSendFailed) {
 		t.Fatalf("DeliverReply = %v, want ErrSendFailed", err)
 	}
 }

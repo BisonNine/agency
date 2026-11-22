@@ -282,6 +282,29 @@ its speech pipeline) and **complete the turn** on `stream:"lifecycle"` with `dat
 - Node clients like the R1 render this as the displayed conversation while separately speaking
   the `agent` `assistant` text — so both families are emitted every turn (see emission order).
 
+### Several runs on one connection, and `/cancel`
+
+The socket is not blocked while a reply is pending, so a client may send another `chat.send`
+during a run. ClawEh keeps every run of a connection open by its `runId` until its reply: a
+reply goes to the run it answers (its `runId`), else to the latest open run. Partial text
+streams to the latest open run that is not a `/cancel`.
+
+There is no abort request. To stop a reply, a client sends `/cancel` (or `/cancel all`) as a
+second `chat.send`; it reaches the same command as on any text channel. Its reply ends the
+runs started before it on the connection first, each under **its own** `runId`:
+`agent` `stream:"lifecycle"` `data.phase:"end"`, then a `chat` event with `state:"aborted"`
+(no message), and then the `/cancel` run's own reply (`agent:assistant` →
+`agent:lifecycle/end` → `chat:final`, the text saying what was stopped):
+
+```jsonc
+{ "type":"event","event":"agent","payload":{
+    "runId":"req-4","seq":1,"stream":"lifecycle","ts":<ms>,"data":{"phase":"end"} },"seq":<frame> }
+{ "type":"event","event":"chat","payload":{
+    "runId":"req-4","sessionKey":"...","seq":1,"state":"aborted" },"seq":<frame> }
+```
+
+A run whose turn never replies is forgotten once 16 newer runs were started on the connection.
+
 ## Agent selection & session scope
 
 A client picks **which agent** handles a turn; the turn always joins that agent's one
