@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/hook"
 
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -36,7 +36,7 @@ func TestCompressModelCaller_LogLines(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	if _, err := c.Complete(withTurnID(context.Background(), "feed0002"), ctxengine.ModelRequest{System: "s", User: "u"}); err != nil {
+	if _, err := c.Complete(withTurnID(context.Background(), "feed0002"), hook.CompleteRequest{System: "s", User: "u"}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 

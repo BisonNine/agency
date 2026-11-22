@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
@@ -312,7 +312,7 @@ func TestCheckDefaultModel_Quiet(t *testing.T) {
 }
 
 // ctxRequest is a summarization request.
-func ctxRequest() ctxengine.ModelRequest { return ctxengine.ModelRequest{System: "s", User: "u"} }
+func ctxRequest() hook.CompleteRequest { return hook.CompleteRequest{System: "s", User: "u"} }
 
 // newCooldownRuntime is a command runtime with al's cooldown hooks.
 func newCooldownRuntime(al *AgentLoop) *commands.Runtime {

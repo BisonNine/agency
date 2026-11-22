@@ -18,6 +18,7 @@ import (
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/fsmode"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
@@ -29,7 +30,7 @@ import (
 	"go.bison9.com/agency/providers"
 )
 
-// compressModelCaller is the host's ctxengine.ModelCaller: an adapter over
+// compressModelCaller is the host's hook.Caller for compaction: an adapter over
 // the agent's set's Caller for summaries (models.Summarize) or memory
 // consolidation (models.Memory). The set's list is the agent's
 // summarization chain (agent summarization_models → global
@@ -59,21 +60,32 @@ type compressModelCaller struct {
 	noSessionKey bool
 }
 
-// Complete implements ctxengine.ModelCaller.
-func (c *compressModelCaller) Complete(ctx context.Context, req ctxengine.ModelRequest) (ctxengine.ModelReply, error) {
+// Complete implements hook.Caller.
+func (c *compressModelCaller) Complete(ctx context.Context, req hook.CompleteRequest) (hook.CompleteReply, error) {
 	content, finishReason, model, err := c.complete(ctx, req.System, req.User, req.JSONObject, req.Exclude)
-	return ctxengine.ModelReply{Content: content, FinishReason: finishReason, Model: model}, err
+	return hook.CompleteReply{Content: content, FinishReason: finishReason, Model: model}, err
 }
+
+// noSummaryModelError is the error of a summary call no model could serve:
+// it wraps hook.ErrNoModelAvailable and reads as it always has, "no
+// summarization model available: " and the detail.
+type noSummaryModelError struct{ detail string }
+
+func (e *noSummaryModelError) Error() string {
+	return "no summarization model available: " + e.detail
+}
+
+func (e *noSummaryModelError) Unwrap() error { return hook.ErrNoModelAvailable }
 
 // complete makes the call, in plain types so another caller shape (the
 // cognitive-memory consolidation model) can wrap it without an import. It
 // returns the reply and the model that served it; on failure the model is
 // the last one tried (or "" when nothing was), so a report can still name it.
-// When no model could be called the error wraps ctxengine.ErrNoModel; when
+// When no model could be called the error wraps hook.ErrNoModelAvailable; when
 // ctx ends the walk stops with ctx's error.
 func (c *compressModelCaller) complete(ctx context.Context, system, user string, jsonObject bool, exclude []string) (content, finishReason, model string, err error) {
 	if c.set == nil {
-		return "", "", "", fmt.Errorf("%w: 0 excluded, 0 in cooldown", ctxengine.ErrNoModel)
+		return "", "", "", &noSummaryModelError{detail: "0 excluded, 0 in cooldown"}
 	}
 	chain := c.set.Begin(c.purpose, c.scope)
 	if c.workspace != "" {
@@ -123,7 +135,7 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 	})
 	if err != nil {
 		if nme, ok := errors.AsType[*models.NoModelError](err); ok {
-			return "", "", "", fmt.Errorf("%w: %s", ctxengine.ErrNoModel, nme.Detail)
+			return "", "", "", &noSummaryModelError{detail: nme.Detail}
 		}
 		return "", "", reply.Model, err
 	}

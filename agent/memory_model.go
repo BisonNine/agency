@@ -6,7 +6,7 @@ package agent
 import (
 	"context"
 
-	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 )
 
@@ -16,7 +16,7 @@ import (
 type chainCompleter func(ctx context.Context, system, user string, jsonObject bool, exclude []string) (content, finishReason, model string, err error)
 
 // memoryModelCaller adapts the agent's summarization model chain to
-// consolidate.ModelCaller. Consolidation reuses the same chain as context
+// hook.Caller for consolidation. Consolidation reuses the same chain as context
 // compaction — there is no separate memory-model config (see
 // config.MemoryConfig) — and the same host client: one chain walk, honouring
 // Exclude and the catalogue's cooldowns, serving both modules. cogmem
@@ -30,18 +30,18 @@ type memoryModelCaller struct {
 // ModelName returns the human-readable name of the first model in the chain.
 func (c *memoryModelCaller) ModelName() string { return c.modelName }
 
-// Complete implements consolidate.ModelCaller.
-func (c *memoryModelCaller) Complete(ctx context.Context, req consolidate.ModelRequest) (consolidate.ModelReply, error) {
+// Complete implements hook.Caller.
+func (c *memoryModelCaller) Complete(ctx context.Context, req hook.CompleteRequest) (hook.CompleteReply, error) {
 	content, finishReason, model, err := c.complete(ctx, req.System, req.User, req.JSONObject, req.Exclude)
-	return consolidate.ModelReply{Content: content, FinishReason: finishReason, Model: model}, err
+	return hook.CompleteReply{Content: content, FinishReason: finishReason, Model: model}, err
 }
 
-// NewMemoryModelCaller builds a consolidate.ModelCaller for the given agent
+// NewMemoryModelCaller builds a hook.Caller for the given agent
 // over the agent's summarization model chain (agent.summarization_models →
 // global summarization.models → the agent's primary chat model last),
 // on the agent's set for models.Memory, the same list as context compaction.
 // This is the constructor the gateway's WorkerFactory calls per Job.
-func (al *AgentLoop) NewMemoryModelCaller(agent *AgentInstance) consolidate.ModelCaller {
+func (al *AgentLoop) NewMemoryModelCaller(agent *AgentInstance) hook.Caller {
 	caller, effective := al.newCompressModelCaller(agent, "cogmem", models.Memory)
 	// "cogmem" labels the chain's own log lines; it is not a session key.
 	caller.noSessionKey = true

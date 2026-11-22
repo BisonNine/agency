@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/clock"
-	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/hook"
 
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -259,7 +259,7 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		defer restore()
 		cat := compressCatalog(map[string]providers.LLMProvider{"model-a": &scriptedProvider{err: providerErrorWithKey()}})
 		c := compressCaller(cat, "model-a")
-		if _, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u"}); err == nil {
+		if _, err := c.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u"}); err == nil {
 			t.Fatal("Complete succeeded with a failing model")
 		}
 		assertRedacted(t, &buf)

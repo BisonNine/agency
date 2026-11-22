@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
@@ -84,12 +84,12 @@ func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 	cat := compressCatalog(map[string]providers.LLMProvider{"model-a": first, "model-b": second})
 	c := compressCaller(cat, "model-a", "model-b")
 
-	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u", JSONObject: true})
+	reply, err := c.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u", JSONObject: true})
 	if err != nil || reply.Content != "from-first" || reply.Model != "model-a" {
 		t.Fatalf("Complete = %+v, %v; want model-a's reply", reply, err)
 	}
 
-	reply, err = c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u", Exclude: []string{"model-a"}})
+	reply, err = c.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u", Exclude: []string{"model-a"}})
 	if err != nil || reply.Content != "from-second" || reply.Model != "model-b" {
 		t.Fatalf("Complete with model-a excluded = %+v, %v; want model-b's reply", reply, err)
 	}
@@ -97,8 +97,8 @@ func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 		t.Fatalf("excluded model was called: %d calls", first.callCount())
 	}
 
-	_, err = c.Complete(context.Background(), ctxengine.ModelRequest{Exclude: []string{"model-a", "model-b"}})
-	if !errors.Is(err, ctxengine.ErrNoModel) || !strings.Contains(err.Error(), "2 excluded") {
+	_, err = c.Complete(context.Background(), hook.CompleteRequest{Exclude: []string{"model-a", "model-b"}})
+	if !errors.Is(err, hook.ErrNoModelAvailable) || !strings.Contains(err.Error(), "2 excluded") {
 		t.Fatalf("every model excluded should yield ErrNoModel with the count, got %v", err)
 	}
 }
@@ -112,13 +112,13 @@ func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 	good := &scriptedProvider{content: "ok"}
 	cat := compressCatalog(map[string]providers.LLMProvider{"model-a": broken, "model-b": good})
 	c := compressCaller(cat, "model-a", "model-b")
-	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
+	reply, err := c.Complete(context.Background(), hook.CompleteRequest{})
 	if err != nil || reply.Model != "model-b" {
 		t.Fatalf("expected the chain to move past the failing model: %+v, %v", reply, err)
 	}
 
 	onlyBroken := compressCaller(cat, "model-a")
-	reply, err = onlyBroken.Complete(context.Background(), ctxengine.ModelRequest{})
+	reply, err = onlyBroken.Complete(context.Background(), hook.CompleteRequest{})
 	if err == nil || err.Error() != "boom" || reply.Model != "model-a" {
 		t.Fatalf("expected the last error with the model named: %+v, %v", reply, err)
 	}
@@ -130,10 +130,10 @@ func TestCompressModelCaller_JSONObjectForwarded(t *testing.T) {
 	p := &scriptedProvider{content: "{}"}
 	cat := compressCatalog(map[string]providers.LLMProvider{"m": p})
 	c := compressCaller(cat, "m")
-	if _, err := c.Complete(context.Background(), ctxengine.ModelRequest{JSONObject: true}); err != nil {
+	if _, err := c.Complete(context.Background(), hook.CompleteRequest{JSONObject: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Complete(context.Background(), ctxengine.ModelRequest{}); err != nil {
+	if _, err := c.Complete(context.Background(), hook.CompleteRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	if v, ok := p.calls[0].opts[openai_compat.ResponseFormatJSONObjectOption].(bool); !ok || !v {
@@ -172,8 +172,8 @@ func TestCompressModelCaller_SharedCooldownSkipsModel(t *testing.T) {
 	}
 
 	c := compressCaller(cat, "abliterated-model")
-	_, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
-	if !errors.Is(err, ctxengine.ErrNoModel) || !strings.Contains(err.Error(), "1 in cooldown") {
+	_, err := c.Complete(context.Background(), hook.CompleteRequest{})
+	if !errors.Is(err, hook.ErrNoModelAvailable) || !strings.Contains(err.Error(), "1 in cooldown") {
 		t.Fatalf("cooled model should be skipped with ErrNoModel naming the cooldown, got %v", err)
 	}
 	if p.callCount() != 0 {
@@ -189,7 +189,7 @@ func TestCompressModelCaller_BillingFailurePutsModelInCooldown(t *testing.T) {
 	cat := compressCatalog(map[string]providers.LLMProvider{"abliterated-model": p})
 	c := compressCaller(cat, "abliterated-model")
 
-	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
+	reply, err := c.Complete(context.Background(), hook.CompleteRequest{})
 	if err == nil || reply.Model != "abliterated-model" || p.callCount() != 1 {
 		t.Fatalf("first call: reply=%+v err=%v calls=%d", reply, err, p.callCount())
 	}
@@ -197,8 +197,8 @@ func TestCompressModelCaller_BillingFailurePutsModelInCooldown(t *testing.T) {
 		t.Fatal("402 should have parked the model")
 	}
 
-	_, err = c.Complete(context.Background(), ctxengine.ModelRequest{})
-	if !errors.Is(err, ctxengine.ErrNoModel) || p.callCount() != 1 {
+	_, err = c.Complete(context.Background(), hook.CompleteRequest{})
+	if !errors.Is(err, hook.ErrNoModelAvailable) || p.callCount() != 1 {
 		t.Fatalf("second call should skip the cooled model without dispatching: err=%v calls=%d", err, p.callCount())
 	}
 }

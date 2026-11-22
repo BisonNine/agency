@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agent/cogmem/consolidate"
-	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 
@@ -462,7 +460,7 @@ func TestCompressModelCaller_EmitsFinish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
 	defer restore()
-	if _, err := caller.Complete(withTurnID(context.Background(), "feed0001"), ctxengine.ModelRequest{System: "s", User: "u"}); err != nil {
+	if _, err := caller.Complete(withTurnID(context.Background(), "feed0001"), hook.CompleteRequest{System: "s", User: "u"}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 
@@ -525,7 +523,7 @@ func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
 	defer restore()
-	if _, err := caller.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u"}); err != nil {
+	if _, err := caller.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u"}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 
@@ -552,7 +550,7 @@ func TestMemoryModelCaller_FinishHasNoSessionKey(t *testing.T) {
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
 	defer restore()
-	if _, err := caller.Complete(context.Background(), consolidate.ModelRequest{System: "s", User: "u"}); err != nil {
+	if _, err := caller.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u"}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 

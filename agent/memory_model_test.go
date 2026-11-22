@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/hook"
 )
 
 // The adapter must hand the request through unchanged — including Exclude,
@@ -27,7 +27,7 @@ func TestMemoryModelCaller_PassesRequestThroughAndNamesModel(t *testing.T) {
 			return `{"domain_ops":[]}`, "stop", "second-model", nil
 		},
 	}
-	reply, err := c.Complete(context.Background(), consolidate.ModelRequest{
+	reply, err := c.Complete(context.Background(), hook.CompleteRequest{
 		System: "sys", User: "{}", JSONObject: true, Exclude: []string{"first-model"},
 	})
 	if err != nil {
@@ -50,7 +50,7 @@ func TestMemoryModelCaller_HostErrorSurfaces(t *testing.T) {
 	c := &memoryModelCaller{complete: func(context.Context, string, string, bool, []string) (string, string, string, error) {
 		return "", "", "last-tried", errors.New("no model available")
 	}}
-	reply, err := c.Complete(context.Background(), consolidate.ModelRequest{})
+	reply, err := c.Complete(context.Background(), hook.CompleteRequest{})
 	if err == nil || reply.Model != "last-tried" {
 		t.Fatalf("reply=%+v err=%v", reply, err)
 	}

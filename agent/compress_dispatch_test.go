@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/config"
@@ -106,7 +106,7 @@ func TestCompressCaller_ResolvesThroughCatalogue(t *testing.T) {
 	assignAgentModels(al.catalog, cfg, agent)
 
 	c, effective := al.newCompressModelCaller(agent, "sess-1", models.Summarize)
-	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u"})
+	reply, err := c.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u"})
 	if err != nil || reply.Content != "summary" || reply.Model != "test-compress-model" || target.callCount() != 1 {
 		t.Fatalf("Complete = %+v, %v (calls %d), want the catalogue's client to answer", reply, err, target.callCount())
 	}
@@ -127,8 +127,8 @@ func TestCompressCaller_UnresolvedModelsLeftOut(t *testing.T) {
 		t.Fatalf("summarize list = %+v, want none", got)
 	}
 	c, _ := al.newCompressModelCaller(agent, "s", models.Summarize)
-	_, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
-	if !errors.Is(err, ctxengine.ErrNoModel) || err.Error() != "no summarization model available: 0 excluded, 0 in cooldown" {
+	_, err := c.Complete(context.Background(), hook.CompleteRequest{})
+	if !errors.Is(err, hook.ErrNoModelAvailable) || err.Error() != "no summarization model available: 0 excluded, 0 in cooldown" {
 		t.Fatalf("err = %v, want ErrNoModel with today's text", err)
 	}
 
