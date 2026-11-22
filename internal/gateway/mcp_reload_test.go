@@ -222,7 +222,9 @@ func TestRestartMCPHost_ReadyAgainAfterFailedRestart(t *testing.T) {
 	released := false
 	t.Cleanup(func() {
 		if !released {
-			_ = taken.Close()
+			if cerr := taken.Close(); cerr != nil {
+				t.Errorf("close listener: %v", cerr)
+			}
 		}
 	})
 
