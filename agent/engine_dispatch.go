@@ -51,6 +51,8 @@ type llmDispatch struct {
 	sent []spawnllm.Message
 	// answered names the model that answered.
 	answered hook.ModelRef
+	// supplied: a BeforeModel or OnModelError callback answered, not a model.
+	supplied bool
 }
 
 // newDispatch builds the request for this iteration. The model that will
@@ -86,11 +88,27 @@ func (e *engineTurn) newDispatch(ctx context.Context, defs []spawnllm.ToolDefini
 }
 
 // requestModel sends the dispatch, retrying a timeout after a backoff and a
-// context-window overflow after compressing, up to the spec's retries. An
-// error it returns ends the turn.
+// context-window overflow after compressing, up to the spec's retries. Before
+// each attempt BeforeModel may change the working request or answer it; a
+// dispatch that failed for good goes to OnModelError. An error it returns
+// ends the turn; a *hook.PanicError from a callback ends it too.
 func (e *engineTurn) requestModel(ctx context.Context, d *llmDispatch) (*spawnllm.LLMResponse, error) {
 	var err error
 	for retry := 0; retry <= e.spec.retries; retry++ {
+		info := e.modelInfo(d)
+		answer, berr, perr := e.hooks.callBeforeModel(ctx, info)
+		if perr != nil {
+			return nil, perr
+		}
+		e.adoptRequest(d, info)
+		if berr != nil {
+			err = berr
+			break
+		}
+		if answer != nil {
+			d.supplied = true
+			return answer, nil
+		}
 		e.logAt(slog.LevelInfo, "LLM dispatch", map[string]any{
 			"agent_id":     e.spec.agentID,
 			"iteration":    e.iteration,
@@ -122,7 +140,37 @@ func (e *engineTurn) requestModel(ctx context.Context, d *llmDispatch) (*spawnll
 		}
 		break
 	}
+	if ctx.Err() == nil {
+		answer, left, perr := e.hooks.callOnModelError(ctx, e.modelInfo(d), err)
+		if perr != nil {
+			return nil, perr
+		}
+		if answer != nil {
+			d.supplied = true
+			return answer, nil
+		}
+		err = left
+	}
 	return nil, e.dispatchFailed(ctx, err)
+}
+
+// modelInfo is the dispatch as the model callbacks see it: the turn's
+// working request.
+func (e *engineTurn) modelInfo(d *llmDispatch) *hook.ModelInfo {
+	return &hook.ModelInfo{
+		Iteration: e.iteration,
+		Model:     e.turnModelRef(),
+		Request:   hook.ModelRequest{Messages: e.messages, Tools: d.defs, Options: d.llmOpts},
+	}
+}
+
+// adoptRequest takes the working request as BeforeModel left it.
+func (e *engineTurn) adoptRequest(d *llmDispatch, info *hook.ModelInfo) {
+	e.messages = info.Request.Messages
+	d.defs = info.Request.Tools
+	if info.Request.Options != nil {
+		d.llmOpts = info.Request.Options
+	}
 }
 
 // waitToRetry waits out the backoff, on the spec's clock, before retrying a
@@ -197,13 +245,14 @@ func (e *engineTurn) compressForRetry(ctx context.Context, d *llmDispatch, err e
 }
 
 // dispatchFailed is the error a dispatch that failed for good ends the turn
-// with: an interruption by shutdown, a deliberate stop, or a failure.
+// with: an interruption by shutdown (a cause wrapping hook.ErrShutdown), a
+// deliberate stop (hook.ErrInterrupted, hook.ErrSuperseded), or a failure.
 func (e *engineTurn) dispatchFailed(ctx context.Context, err error) error {
-	shutdown, onPurpose := e.spec.env.stopCause(ctx)
-	if shutdown {
+	cause := context.Cause(ctx)
+	if errors.Is(cause, hook.ErrShutdown) {
 		return fmt.Errorf("LLM call interrupted: %w", context.Cause(ctx))
 	}
-	if onPurpose {
+	if errors.Is(cause, hook.ErrInterrupted) || errors.Is(cause, hook.ErrSuperseded) {
 		e.logAt(slog.LevelInfo, "LLM call stopped: the turn was cancelled",
 			map[string]any{
 				"agent_id":  e.spec.agentID,
@@ -223,28 +272,25 @@ func (e *engineTurn) dispatchFailed(ctx context.Context, err error) error {
 	return fmt.Errorf("LLM call failed after retries: %w", err)
 }
 
-// modelCallDone reports one provider call: a ModelCall event, with a
-// snapshot of the request the call was given.
+// modelCallDone reports one provider call: a ModelCall event with the
+// provider's own response and a snapshot of the request the call was given.
+// Once the turn's context has ended the call's error is the context's.
 func (e *engineTurn) modelCallDone(ctx context.Context, d *llmDispatch, model hook.ModelRef, elapsed time.Duration, resp *spawnllm.LLMResponse, err error) {
-	req := &hook.ModelRequest{
-		Messages: slices.Clone(d.sent),
-		Tools:    slices.Clone(d.defs),
-		Options:  maps.Clone(d.llmOpts),
-	}
-	// The response is a copy: AfterModel may change the one the loop acts on.
-	var snapshot *spawnllm.LLMResponse
-	if resp != nil {
-		r := *resp
-		snapshot = &r
+	if err != nil && ctx.Err() != nil {
+		err = ctx.Err()
 	}
 	e.hooks.emit(ctx, hook.ModelCall{
 		EventHeader: e.header(),
 		Iteration:   e.iteration,
 		Model:       model,
-		Request:     req,
-		Response:    snapshot,
-		Err:         err,
-		Elapsed:     elapsed,
+		Request: &hook.ModelRequest{
+			Messages: slices.Clone(d.sent),
+			Tools:    slices.Clone(d.defs),
+			Options:  maps.Clone(d.llmOpts),
+		},
+		Response: resp,
+		Err:      err,
+		Elapsed:  elapsed,
 	})
 }
 
@@ -258,12 +304,16 @@ func (e *engineTurn) callDefaultModel(ctx context.Context, d *llmDispatch, hasTo
 		return nil, err
 	}
 	defer release()
+	c := e.spec.directModel
+	ref := hook.ModelRef{Name: c.Name, Provider: d.provider, Model: c.Name}
+	e.hooks.emit(ctx, hook.ModelCallStarted{EventHeader: e.header(), Iteration: e.iteration, Model: ref})
 	start := time.Now()
-	model := e.spec.model
 	d.sent = e.requestMessages(hasTools, isCLIClient(client))
-	resp, err := client.Chat(ctx, e.spec.scope.Identity(), messagesForModel(d.sent, e.spec.env.modelFacts(model), hasTools), d.defs, model, e.requestOptions(d, hasTools, client, model))
-	d.answered = hook.ModelRef{Name: model, Provider: d.provider, Model: model}
-	e.modelCallDone(ctx, d, d.answered, time.Since(start), resp, err)
+	resp, err := client.Chat(ctx, e.spec.scope.Identity(),
+		messagesForModel(d.sent, c.Limits.Vision, c.ProviderSpec.RequireReasoningContent, hasTools),
+		d.defs, c.Name, e.requestOptions(d, hasTools, client, c))
+	d.answered = ref
+	e.modelCallDone(ctx, d, ref, time.Since(start), resp, err)
 	return resp, err
 }
 
@@ -273,19 +323,16 @@ var errNoModelConfigured = errors.New("no model configured — enable a model an
 
 // callModel makes one call for the dispatch through the turn's pinned chain:
 // each model in turn, skipping parked ones, until one answers. Every provider
-// call it makes is reported as a ModelCall, and each candidate passed over is
-// logged as the chain moves on.
+// call it makes is reported as a ModelCallStarted and a ModelCall, and each
+// candidate passed over is logged as the chain moves on. A turn with no
+// model to call fails without a provider call.
 func (e *engineTurn) callModel(ctx context.Context, d *llmDispatch) (*spawnllm.LLMResponse, error) {
-	defer e.spec.env.trackModelCall()()
-
 	hasTools := len(d.defs) > 0
 	if e.spec.chain == nil || len(e.spec.candidates) == 0 {
 		if e.spec.direct != "" {
 			return e.callDefaultModel(ctx, d, hasTools)
 		}
 		d.sent = e.messages
-		model := e.spec.model
-		e.modelCallDone(ctx, d, hook.ModelRef{Name: model, Provider: d.provider, Model: model}, 0, nil, errNoModelConfigured)
 		return nil, errNoModelConfigured
 	}
 	fbResult, err := e.spec.chain.Chat(ctx, e.spec.scope.Identity(), models.Request{Tools: d.defs},
@@ -293,11 +340,12 @@ func (e *engineTurn) callModel(ctx context.Context, d *llmDispatch) (*spawnllm.L
 		// them: a screenshot in history would otherwise fail every turn on
 		// a non-vision candidate.
 		models.WithPrepare(func(c models.Candidate, client spawnllm.LLMProvider, _ models.Request) models.Request {
+			e.hooks.emit(ctx, hook.ModelCallStarted{EventHeader: e.header(), Iteration: e.iteration, Model: candidateRef(c)})
 			d.sent = e.requestMessages(hasTools, isCLIClient(client))
 			return models.Request{
-				Messages: messagesForModel(d.sent, e.spec.env.modelFacts(c.Name), hasTools),
+				Messages: messagesForModel(d.sent, c.Limits.Vision, c.ProviderSpec.RequireReasoningContent, hasTools),
 				Tools:    d.defs,
-				Options:  e.requestOptions(d, hasTools, client, c.Name),
+				Options:  e.requestOptions(d, hasTools, client, c),
 			}
 		}),
 		models.WithNotify(func(passed []models.Attempt, next models.Candidate) {
@@ -347,26 +395,25 @@ func (e *engineTurn) fellBack(ctx context.Context, passed []models.Attempt, next
 	e.hooks.emit(ctx, ev)
 }
 
-// requestOptions are the options for one provider call to model (a model
-// name), served by provider: the shared options plus that model's max_tokens
+// requestOptions are the options for one provider call to candidate c,
+// served by provider: the shared options plus that model's max_tokens
 // (lowered by any context-window retry) and thinking level. On the turn's
 // last step, where the low-steps notice tells the model not to call tools,
 // the call also forbids tool calls (tool_choice none). The tools stay
 // declared, so earlier tool calls in the history and the prompt cache stay
 // valid. d.llmOpts is shared by every candidate the fallback chain tries, so
 // it is copied rather than changed.
-func (e *engineTurn) requestOptions(d *llmDispatch, hasTools bool, provider spawnllm.LLMProvider, model string) map[string]any {
-	facts := e.spec.env.modelFacts(model)
+func (e *engineTurn) requestOptions(d *llmDispatch, hasTools bool, provider spawnllm.LLMProvider, c models.Candidate) map[string]any {
 	opts := make(map[string]any, len(d.llmOpts)+3)
 	maps.Copy(opts, d.llmOpts)
-	opts["max_tokens"] = d.maxTokens(facts.maxTokens)
+	opts["max_tokens"] = d.maxTokens(c.Limits.MaxTokens)
 	// modelspec.ParseThinkingLevel guarantees ThinkingOff for empty/unknown values.
-	if facts.thinkingLevel != string(modelspec.ThinkingOff) {
+	if level := string(c.Limits.ThinkingLevel); level != string(modelspec.ThinkingOff) {
 		if tc, ok := provider.(spawnllm.ThinkingCapable); ok && tc.SupportsThinking() {
-			opts["thinking_level"] = facts.thinkingLevel
+			opts["thinking_level"] = level
 		} else {
 			e.logAt(slog.LevelWarn, "thinking_level is set but current provider does not support it, ignoring",
-				map[string]any{"agent_id": e.spec.agentID, "model": model, "thinking_level": facts.thinkingLevel})
+				map[string]any{"agent_id": e.spec.agentID, "model": c.Name, "thinking_level": level})
 		}
 	}
 	if !hasTools || e.iteration != e.spec.maxIterations {
@@ -491,7 +538,8 @@ func backfillReasoningContent(messages []spawnllm.Message, required, hasTools bo
 	return out
 }
 
-// messagesForModel returns messages suitable for a model with facts.
+// messagesForModel returns messages suitable for a model whose vision mode
+// is vision and whose provider may require reasoning content.
 // Vision-capable models get the slice unchanged; models with vision off or
 // unset get a shallow copy with image Media removed. Some providers (e.g.
 // deepseek via OpenRouter) reject the ENTIRE request with a 404 when an image
@@ -499,12 +547,12 @@ func backfillReasoningContent(messages []spawnllm.Message, required, hasTools bo
 // replayed to a non-vision model. The persisted originals are never mutated,
 // so a later turn on a vision model still surfaces the image. An unknown
 // model is treated as no-vision, matching the tool-image injection default.
-func messagesForModel(messages []spawnllm.Message, facts engineModelFacts, hasTools bool) []spawnllm.Message {
+func messagesForModel(messages []spawnllm.Message, vision string, requireReasoning, hasTools bool) []spawnllm.Message {
 	// Reasoning backfill runs first and independently of the media rules below:
 	// it is a wire-contract requirement, not a capability downgrade.
-	messages = backfillReasoningContent(messages, facts.requireReasoning, hasTools)
+	messages = backfillReasoningContent(messages, requireReasoning, hasTools)
 
-	if facts.vision == modelspec.VisionUserMessage || facts.vision == modelspec.VisionToolResponse {
+	if vision == modelspec.VisionUserMessage || vision == modelspec.VisionToolResponse {
 		return messages
 	}
 	hasMedia := false

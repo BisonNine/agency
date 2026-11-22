@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"go.bison9.com/agent/hook"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/commands"
 	"go.bison9.com/agency/constants"
@@ -22,7 +24,7 @@ const sessionIdleTTL = time.Hour
 
 // errCancelledByUser is the cause /cancel gives the running turn's context, so
 // the turn's failure renders as a cancellation rather than a timeout.
-var errCancelledByUser = errors.New("cancelled by /cancel")
+var errCancelledByUser error = &turnCause{text: "cancelled by /cancel", kind: hook.ErrInterrupted}
 
 // sessionState is one session's dispatch state. The first message to arrive
 // while the session is idle makes its goroutine the owner: it runs turns until

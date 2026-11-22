@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/bus"
@@ -795,6 +797,22 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 // invisible to the next turn and to a restart replay. what names the message
 // kind for the log, the alert and the error text.
 func (al *AgentLoop) sessionStoreWriteFailed(agent *AgentInstance, sessionKey, what string, err error) error {
+	al.storeWriteFailed(agent, sessionKey, what, err)
+	return storeRefusalError(what, err)
+}
+
+// reportStoreRefusal logs and alerts a turn that ended because the session
+// store refused a write (a *hook.SessionStoreError in err); any other err is
+// not the store's.
+func (al *AgentLoop) reportStoreRefusal(agent *AgentInstance, sessionKey string, err error) {
+	if se, ok := errors.AsType[*hook.SessionStoreError](err); ok {
+		al.storeWriteFailed(agent, sessionKey, se.What, se.Err)
+	}
+}
+
+// storeWriteFailed logs at error level and raises the operator alert for a
+// what the session store refused to record.
+func (al *AgentLoop) storeWriteFailed(agent *AgentInstance, sessionKey, what string, err error) {
 	logger.ErrorCF("agent", "Session store write failed", map[string]any{
 		"agent_id":    agent.ID,
 		"session_key": sessionKey,
@@ -807,5 +825,10 @@ func (al *AgentLoop) sessionStoreWriteFailed(agent *AgentInstance, sessionKey, w
 		Details:     err.Error(),
 		EventID:     sessionStoreAlertID,
 	})
+}
+
+// storeRefusalError is the error a turn the session store refused what for
+// ends with.
+func storeRefusalError(what string, err error) error {
 	return fmt.Errorf("session store rejected the %s, so the turn was abandoned: %w", what, err)
 }

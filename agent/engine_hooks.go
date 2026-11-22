@@ -17,116 +17,93 @@ import (
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 )
 
 // turnHooks are a turn's callbacks and event consumers, each kind in the
-// order it was registered. The host builds one per turn (newTurnHooks) and
-// the engine calls it; the engine never reaches host behaviour any other way
-// than through these and turnEnv.
+// order it was registered, each with the name of the plugin that registered
+// it. The host builds one per turn and the engine calls it; the engine never
+// reaches host behaviour any other way than through these and turnEnv.
 //
-// Panics: a callback (AfterModel, OnFallback, OnCompaction, OnTextDelta, the
-// tool callbacks, the interim steps) changes a step or produces the turn's
-// state, so a panic in one is not recovered: it ends the turn, as a panic in
-// the loop always has. An event consumer only watches, so a panic in one is
-// recovered and logged at error level with the consumer's name and stack,
-// and the turn goes on.
+// Panics follow the hook package's rules ("Panics"): an observer (OnFallback,
+// OnCompaction, OnTextDelta, OnInterrupt, an event consumer) is logged and
+// skipped; a turn or model step (BeforeTurn, BeforeModel, AfterModel,
+// OnModelError, DescribeImages) ends the turn with a *hook.PanicError; an
+// AfterTurn panic makes the result an error that stores nothing; a tool
+// callback fails its call only.
 type turnHooks struct {
-	afterModel   []hook.AfterModelFunc
-	onFallback   []hook.OnFallbackFunc
-	beforeTool   []hook.BeforeToolFunc
-	afterTool    []hook.AfterToolFunc
-	onToolError  []hook.OnToolErrorFunc
-	onCompaction []hook.OnCompactionFunc
-	onTextDelta  []hook.OnTextDeltaFunc
-	onEvent      []namedConsumer
+	beforeTurn     []named[hook.BeforeTurnFunc]
+	afterTurn      []named[hook.AfterTurnFunc]
+	beforeModel    []named[hook.BeforeModelFunc]
+	afterModel     []named[hook.AfterModelFunc]
+	onModelError   []named[hook.OnModelErrorFunc]
+	onFallback     []named[hook.OnFallbackFunc]
+	beforeTool     []named[hook.BeforeToolFunc]
+	afterTool      []named[hook.AfterToolFunc]
+	onToolError    []named[hook.OnToolErrorFunc]
+	onCompaction   []named[hook.OnCompactionFunc]
+	onTextDelta    []named[hook.OnTextDeltaFunc]
+	onInterrupt    []named[hook.OnInterruptFunc]
+	describeImages []named[hook.DescribeImagesFunc]
+	onEvent        []named[hook.OnEventFunc]
 
-	// interim are the steps the hook package has no type for; see
-	// interimHooks.
-	interim []interimHooks
-
-	// log receives the panics recovered from event consumers.
+	// log receives the panics recovered from observers.
 	log *slog.Logger
 }
 
-// namedConsumer is an event consumer with the name of the plugin that
-// registered it, for the log of a recovered panic.
-type namedConsumer struct {
-	name string
-	fn   hook.OnEventFunc
+// named is a callback with the name of the plugin that registered it.
+type named[F any] struct {
+	plugin string
+	fn     F
 }
 
-// interimHooks are host steps the hook package has no callback or event for.
-// Each keeps a behaviour exactly where it happens in the loop; a hook type
-// that carries it replaces it.
-type interimHooks struct {
-	Name string
-	// Narrate is told the text a model sent with its tool calls, once the
-	// batch passed the repeated-batch check and before the tool-call message
-	// is stored.
-	Narrate func(ctx context.Context, iteration int, content string)
-	// ToolsReturned is told that every call of a batch returned, before the
-	// first result is stored.
-	ToolsReturned func(ctx context.Context, calls int)
-	// ToolResult is told each result of a batch in call order, just before
-	// it is stored.
-	ToolResult func(ctx context.Context, call hook.ToolCall, result *toolkit.Result)
-	// DescribeImages describes the images a batch's tools returned for a
-	// model that cannot see them (vision off), once the batch's results are
-	// stored. It returns the user message to store and whether a
-	// description was produced; add false stores nothing.
-	DescribeImages func(ctx context.Context, images, focus []string) (content string, described, add bool)
+// addTo appends fn to list, named for plugin, when it is set.
+func addTo[F any](list []named[F], plugin string, fn F, set bool) []named[F] {
+	if !set {
+		return list
+	}
+	return append(list, named[F]{plugin: plugin, fn: fn})
 }
 
-// add registers p's callbacks, each at the end of its kind. A callback of a
-// kind the engine does not call (BeforeTurn, AfterTurn, BeforeModel,
-// OnModelError, OnInterrupt) is refused with a panic, so none is ever
-// registered and silently ignored.
+// add registers p's callbacks, each at the end of its kind.
 func (h *turnHooks) add(p hook.Plugin) {
-	for _, k := range []struct {
-		kind string
-		set  bool
-	}{
-		{"BeforeTurn", p.BeforeTurn != nil},
-		{"AfterTurn", p.AfterTurn != nil},
-		{"BeforeModel", p.BeforeModel != nil},
-		{"OnModelError", p.OnModelError != nil},
-		{"OnInterrupt", p.OnInterrupt != nil},
-	} {
-		if k.set {
-			panic(fmt.Sprintf("turn engine: plugin %q registers a %s callback, which the engine does not call", p.Name, k.kind))
-		}
-	}
-	if p.AfterModel != nil {
-		h.afterModel = append(h.afterModel, p.AfterModel)
-	}
-	if p.OnFallback != nil {
-		h.onFallback = append(h.onFallback, p.OnFallback)
-	}
-	if p.BeforeTool != nil {
-		h.beforeTool = append(h.beforeTool, p.BeforeTool)
-	}
-	if p.AfterTool != nil {
-		h.afterTool = append(h.afterTool, p.AfterTool)
-	}
-	if p.OnToolError != nil {
-		h.onToolError = append(h.onToolError, p.OnToolError)
-	}
-	if p.OnCompaction != nil {
-		h.onCompaction = append(h.onCompaction, p.OnCompaction)
-	}
-	if p.OnTextDelta != nil {
-		h.onTextDelta = append(h.onTextDelta, p.OnTextDelta)
-	}
-	if p.OnEvent != nil {
-		h.onEvent = append(h.onEvent, namedConsumer{name: p.Name, fn: p.OnEvent})
-	}
+	h.beforeTurn = addTo(h.beforeTurn, p.Name, p.BeforeTurn, p.BeforeTurn != nil)
+	h.afterTurn = addTo(h.afterTurn, p.Name, p.AfterTurn, p.AfterTurn != nil)
+	h.beforeModel = addTo(h.beforeModel, p.Name, p.BeforeModel, p.BeforeModel != nil)
+	h.afterModel = addTo(h.afterModel, p.Name, p.AfterModel, p.AfterModel != nil)
+	h.onModelError = addTo(h.onModelError, p.Name, p.OnModelError, p.OnModelError != nil)
+	h.onFallback = addTo(h.onFallback, p.Name, p.OnFallback, p.OnFallback != nil)
+	h.beforeTool = addTo(h.beforeTool, p.Name, p.BeforeTool, p.BeforeTool != nil)
+	h.afterTool = addTo(h.afterTool, p.Name, p.AfterTool, p.AfterTool != nil)
+	h.onToolError = addTo(h.onToolError, p.Name, p.OnToolError, p.OnToolError != nil)
+	h.onCompaction = addTo(h.onCompaction, p.Name, p.OnCompaction, p.OnCompaction != nil)
+	h.onTextDelta = addTo(h.onTextDelta, p.Name, p.OnTextDelta, p.OnTextDelta != nil)
+	h.onInterrupt = addTo(h.onInterrupt, p.Name, p.OnInterrupt, p.OnInterrupt != nil)
+	h.describeImages = addTo(h.describeImages, p.Name, p.DescribeImages, p.DescribeImages != nil)
+	h.onEvent = addTo(h.onEvent, p.Name, p.OnEvent, p.OnEvent != nil)
 }
 
-// addInterim registers interim host steps (interimHooks), after those
-// already registered.
-func (h *turnHooks) addInterim(i interimHooks) {
-	h.interim = append(h.interim, i)
+// protect runs fn and returns a panic in it as a *hook.PanicError of the
+// callback kind, registered by plugin; nil when fn returned.
+func protect(kind, plugin string, fn func()) (perr *hook.PanicError) {
+	defer func() {
+		if r := recover(); r != nil {
+			perr = &hook.PanicError{Callback: kind, Plugin: plugin, Value: r, Stack: debug.Stack()}
+		}
+	}()
+	fn()
+	return nil
+}
+
+// observe runs an observer: a panic in it is logged and skipped.
+func (h *turnHooks) observe(kind, plugin string, detail string, fn func()) {
+	perr := protect(kind, plugin, fn)
+	if perr == nil || h.log == nil {
+		return
+	}
+	h.log.Error("panic in turn event consumer", "component", "agent", "consumer", plugin,
+		"event", detail, "panic", fmt.Sprintf("%v", perr.Value), "stack", string(perr.Stack))
 }
 
 // emit delivers ev to every OnEvent consumer, in order, synchronously. A
@@ -136,58 +113,137 @@ func (h *turnHooks) emit(ctx context.Context, ev hook.Event) {
 		return
 	}
 	for _, c := range h.onEvent {
-		h.deliver(ctx, c, ev)
+		h.observe("OnEvent", c.plugin, fmt.Sprintf("%T", ev), func() { c.fn(ctx, ev) })
 	}
 }
 
-func (h *turnHooks) deliver(ctx context.Context, c namedConsumer, ev hook.Event) {
-	defer func() {
-		if r := recover(); r != nil && h.log != nil {
-			h.log.Error("panic in turn event consumer", "component", "agent", "consumer", c.name,
-				"event", fmt.Sprintf("%T", ev), "panic", fmt.Sprintf("%v", r), "stack", string(debug.Stack()))
+// callBeforeTurn runs the BeforeTurn callbacks until one answers or refuses
+// the turn. A panic ends the turn: it is returned as the error.
+func (h *turnHooks) callBeforeTurn(ctx context.Context, turn *hook.Turn) (*hook.TurnResult, error) {
+	for _, c := range h.beforeTurn {
+		var res *hook.TurnResult
+		var err error
+		if perr := protect("BeforeTurn", c.plugin, func() { res, err = c.fn(ctx, turn) }); perr != nil {
+			return nil, perr
 		}
-	}()
-	c.fn(ctx, ev)
+		if err != nil || res != nil {
+			return res, err
+		}
+	}
+	return nil, nil
+}
+
+// callAfterTurn runs every AfterTurn callback. A panic makes the result an
+// error that stores nothing; the later callbacks still run.
+func (h *turnHooks) callAfterTurn(ctx context.Context, turn *hook.Turn, result *hook.TurnResult) {
+	for _, c := range h.afterTurn {
+		if perr := protect("AfterTurn", c.plugin, func() { c.fn(ctx, turn, result) }); perr != nil {
+			result.Outcome = hook.OutcomeError
+			result.Err = perr
+			result.Stored = ""
+		}
+	}
+}
+
+// callBeforeModel runs the BeforeModel callbacks until one answers or fails
+// the dispatch. A panic is returned as panicked: it ends the turn.
+func (h *turnHooks) callBeforeModel(ctx context.Context, info *hook.ModelInfo) (resp *spawnllm.LLMResponse, err error, panicked *hook.PanicError) {
+	for _, c := range h.beforeModel {
+		if perr := protect("BeforeModel", c.plugin, func() { resp, err = c.fn(ctx, info) }); perr != nil {
+			return nil, nil, perr
+		}
+		if err != nil || resp != nil {
+			return resp, err, nil
+		}
+	}
+	return nil, nil, nil
 }
 
 // callAfterModel runs the AfterModel callbacks on resp. A callback that sets
-// resp.Response to nil changes nothing: the response it was given stays.
-func (h *turnHooks) callAfterModel(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) {
-	for _, fn := range h.afterModel {
+// resp.Response to nil changes nothing: the response it was given stays. A
+// panic stops the callbacks and is returned: it ends the turn.
+func (h *turnHooks) callAfterModel(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) *hook.PanicError {
+	for _, c := range h.afterModel {
 		given := resp.Response
-		fn(ctx, call, resp)
+		if perr := protect("AfterModel", c.plugin, func() { c.fn(ctx, call, resp) }); perr != nil {
+			return perr
+		}
 		if resp.Response == nil {
 			resp.Response = given
 		}
 	}
+	return nil
 }
 
-// callOnFallback runs the OnFallback taps.
+// callOnModelError runs the OnModelError callbacks on a dispatch that failed
+// for good: a response answers it, an error replaces err. A panic is
+// returned: it ends the turn.
+func (h *turnHooks) callOnModelError(ctx context.Context, info *hook.ModelInfo, err error) (*spawnllm.LLMResponse, error, *hook.PanicError) {
+	for _, c := range h.onModelError {
+		var resp *spawnllm.LLMResponse
+		var replaced error
+		if perr := protect("OnModelError", c.plugin, func() { resp, replaced = c.fn(ctx, info, err) }); perr != nil {
+			return nil, err, perr
+		}
+		if resp != nil {
+			return resp, nil, nil
+		}
+		if replaced != nil {
+			err = replaced
+		}
+	}
+	return nil, err, nil
+}
+
+// callDescribeImages runs the DescribeImages callbacks until one returns ok.
+// A panic is returned: it ends the turn.
+func (h *turnHooks) callDescribeImages(ctx context.Context, images hook.UnseenImages) (text string, ok bool, panicked *hook.PanicError) {
+	for _, c := range h.describeImages {
+		if perr := protect("DescribeImages", c.plugin, func() { text, ok = c.fn(ctx, images) }); perr != nil {
+			return "", false, perr
+		}
+		if ok {
+			return text, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// callOnFallback runs the OnFallback observers.
 func (h *turnHooks) callOnFallback(ctx context.Context, ev hook.Fallback) {
-	for _, fn := range h.onFallback {
-		fn(ctx, ev)
+	for _, c := range h.onFallback {
+		h.observe("OnFallback", c.plugin, fmt.Sprintf("%T", ev), func() { c.fn(ctx, ev) })
 	}
 }
 
-// callOnCompaction runs the OnCompaction taps.
+// callOnCompaction runs the OnCompaction observers.
 func (h *turnHooks) callOnCompaction(ctx context.Context, ev hook.Compaction) {
-	for _, fn := range h.onCompaction {
-		fn(ctx, ev)
+	for _, c := range h.onCompaction {
+		h.observe("OnCompaction", c.plugin, fmt.Sprintf("%T", ev), func() { c.fn(ctx, ev) })
 	}
 }
 
-// callOnTextDelta runs the OnTextDelta taps.
+// callOnTextDelta runs the OnTextDelta observers.
 func (h *turnHooks) callOnTextDelta(ctx context.Context, ev hook.TextDelta) {
-	for _, fn := range h.onTextDelta {
-		fn(ctx, ev)
+	for _, c := range h.onTextDelta {
+		h.observe("OnTextDelta", c.plugin, fmt.Sprintf("%T", ev), func() { c.fn(ctx, ev) })
 	}
 }
 
-// eachInterim runs fn for every registered interim set, in order.
-func (h *turnHooks) eachInterim(fn func(i interimHooks)) {
-	for _, i := range h.interim {
-		fn(i)
+// callOnInterrupt runs the OnInterrupt observers.
+func (h *turnHooks) callOnInterrupt(ctx context.Context, ev hook.Interrupted) {
+	for _, c := range h.onInterrupt {
+		h.observe("OnInterrupt", c.plugin, fmt.Sprintf("%T", ev), func() { c.fn(ctx, ev) })
 	}
+}
+
+// toolStep runs one tool callback of kind; a panic is returned.
+func toolStep(kind, plugin string, fn func()) *hook.PanicError { return protect(kind, plugin, fn) }
+
+// toolCallbackFailure is the result a call whose tool callback panicked
+// ends with.
+func toolCallbackFailure(name string, perr *hook.PanicError) *toolkit.Result {
+	return toolkit.ErrorResult(fmt.Sprintf("Tool %s failed with an internal error.", name)).WithError(perr)
 }
 
 // turnOnContext is what a turn puts on its context: its hooks and clock, so
@@ -244,9 +300,8 @@ func engineCompactionStart(ctx context.Context, info ctxengine.CompactionStart) 
 	}
 	scope, _ := hook.ScopeOf(ctx)
 	scope.Session = info.SessionKey
-	header := hook.EventHeader{Scope: scope, At: t.clock.Now()}
 	ev := hook.Compaction{
-		EventHeader: header,
+		EventHeader: hook.EventHeader{Scope: scope, At: t.clock.Now()},
 		Phase:       hook.CompactionStarted,
 		Reason:      string(info.Reason),
 		Blocking:    info.Blocking,

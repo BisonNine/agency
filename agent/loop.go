@@ -14,6 +14,7 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
@@ -263,7 +264,17 @@ func (c registryClock) WithDeadline(parent context.Context, deadline time.Time) 
 // errShuttingDown is the cause Stop gives the turn context. A turn ended by it
 // is an interrupted turn: no reply is sent and its pending-turn flag is kept,
 // so it is replayed when the gateway starts again.
-var errShuttingDown = errors.New("the service is shutting down")
+var errShuttingDown error = &turnCause{text: "the service is shutting down", kind: hook.ErrShutdown}
+
+// turnCause is one of the host's cancel causes: its own text, and the hook
+// cause it is (errors.Is), which decides how the turn engine ends the turn.
+type turnCause struct {
+	text string
+	kind error
+}
+
+func (c *turnCause) Error() string { return c.text }
+func (c *turnCause) Unwrap() error { return c.kind }
 
 // stoppedOnPurpose reports whether ctx was cancelled on purpose: by /cancel,
 // or because the asker of the turn stopped waiting for it.

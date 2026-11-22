@@ -33,7 +33,7 @@ func msgsWithImage() []providers.Message {
 func TestMessagesForModel_VisionModelKeepsImages(t *testing.T) {
 	al := visionStripLoop()
 	for _, model := range []string{"gpt5", "gpt5-resp"} {
-		out := messagesForModel(msgsWithImage(), al.modelFactsFor(nil, model), false)
+		out := messagesForModelNamed(al, msgsWithImage(), model, false)
 		if len(out[1].Media) != 1 {
 			t.Errorf("%s: expected image kept, got Media=%v", model, out[1].Media)
 		}
@@ -47,7 +47,7 @@ func TestMessagesForModel_NonVisionStripsImagesWithoutMutating(t *testing.T) {
 	al := visionStripLoop()
 	for _, model := range []string{"deepseek", "noflag", "unknown-model"} {
 		msgs := msgsWithImage()
-		out := messagesForModel(msgs, al.modelFactsFor(nil, model), false)
+		out := messagesForModelNamed(al, msgs, model, false)
 
 		if out[1].Media != nil {
 			t.Errorf("%s: expected images stripped, got Media=%v", model, out[1].Media)
@@ -72,8 +72,15 @@ func TestMessagesForModel_NonVisionStripsImagesWithoutMutating(t *testing.T) {
 func TestMessagesForModel_NoImagesReturnsSameSlice(t *testing.T) {
 	al := visionStripLoop()
 	msgs := []providers.Message{{Role: "user", Content: "no images here"}}
-	out := messagesForModel(msgs, al.modelFactsFor(nil, "deepseek"), false)
+	out := messagesForModelNamed(al, msgs, "deepseek", false)
 	if &out[0] != &msgs[0] {
 		t.Error("expected the same backing slice when there are no images to strip")
 	}
+}
+
+// messagesForModelNamed is messagesForModel for the configured model named
+// model, with the facts al's configuration gives it.
+func messagesForModelNamed(al *AgentLoop, messages []providers.Message, model string, hasTools bool) []providers.Message {
+	c := al.modelFacts(nil, model)
+	return messagesForModel(messages, c.Limits.Vision, c.ProviderSpec.RequireReasoningContent, hasTools)
 }

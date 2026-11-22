@@ -72,28 +72,23 @@ type turnMemory interface {
 	RecordToolUse(names ...string)
 }
 
-// engineModelFacts are what the engine needs to know about one model to
-// shape a request for it.
-type engineModelFacts struct {
-	// maxTokens and thinkingLevel are the model's request limits.
-	maxTokens     int
-	thinkingLevel string
-	// vision is the model's vision mode (modelspec.Vision*); VisionOff for a
-	// model the configuration does not have.
-	vision string
-	// requireReasoning: the model's provider requires reasoning content on
-	// every assistant message of a request with tools.
-	requireReasoning bool
-}
-
 // turnEnv is what the engine reaches the host's services through, besides
-// the callbacks: tools, the session's context, models, and the few host
-// decisions the hook package has no type for (marked interim).
+// the callbacks: tools, the session's context, and the few host decisions
+// the hook package has no type for (marked interim).
 type turnEnv interface {
 	turnTools
 	turnSession
-	turnModels
 	turnHost
+}
+
+// directClients serve an agent none of whose models resolves (interim:
+// models.Catalog.Direct names its candidate's provider and takes the
+// catalogue's limits, where such a turn has always run with no provider and
+// the limits of the agent's own configured model).
+type directClients interface {
+	// directClient is the client of the catalogue model name, with its
+	// release.
+	directClient(name string) (spawnllm.LLMProvider, func(), error)
 }
 
 // turnTools are the agent's tools.
@@ -112,35 +107,19 @@ type turnSession interface {
 	// compressionManager is the session's context manager for a forced
 	// compaction, with its release.
 	compressionManager() (ctxengine.ContextManager, func())
-	// storeFailed is the error a store write the session refused ends the
-	// turn with (interim: the host alerts and words it).
-	storeFailed(what string, err error) error
 	// sessionSummary is the session's compacted summary, for the logs.
 	sessionSummary() string
 }
 
-// turnModels are what the engine needs of the models beyond the turn's
-// chain.
-type turnModels interface {
-	// modelFacts describes the model named name.
-	modelFacts(name string) engineModelFacts
-	// trackModelCall counts a model call in flight until the returned
-	// function is called.
-	trackModelCall() func()
-	// directClient is the client of the model that serves an agent none of
-	// whose models resolves, and directProtocol its provider's protocol.
-	directClient(name string) (spawnllm.LLMProvider, func(), error)
-	directProtocol(name string) (string, bool)
-}
-
 // turnHost are host decisions with no hook type (interim).
 type turnHost interface {
-	// stopCause classifies why ctx ended (interim: the host's causes).
-	stopCause(ctx context.Context) (shutdown, onPurpose bool)
-	// responseLogFields are the host's fields of the "LLM response" line.
+	directClients
+	// responseLogFields are the host's fields of the "LLM response" line
+	// (interim: moving them to a line of the host's own would split it).
 	responseLogFields() map[string]any
 	// formatRequest renders a request's messages and tools for the "Full
-	// LLM request" line.
+	// LLM request" line (interim: the host's rendering follows a host-wide
+	// truncation switch).
 	formatRequest(messages []spawnllm.Message, defs []spawnllm.ToolDefinition) (messagesJSON, toolsJSON string)
 }
 
@@ -172,15 +151,18 @@ type engineSpec struct {
 	redact     hook.Redactor
 
 	// The turn's model choice: the pinned chain, its candidates, the first
-	// one's name and the limits of that model; direct is the model serving
-	// an agent none of whose models resolves.
+	// one's name and the limits of that model.
 	chain          *models.Chain
 	candidates     []models.Candidate
 	model          string
 	modelMaxTokens int
 	contextWindow  int
 	noTools        bool
-	direct         string
+	// direct is the catalogue model whose client serves an agent none of
+	// whose models resolves, and directModel the model the turn sends it
+	// (its Name the wire id) with its facts (interim, see directClients).
+	direct      string
+	directModel models.Candidate
 
 	cm    ctxengine.ContextManager
 	mem   turnMemory
@@ -469,11 +451,20 @@ func (e *engineTurn) firstModel() (provider string, isCLI bool) {
 	case len(e.spec.candidates) > 0:
 		return e.spec.candidates[0].Provider, isCLIProtocol(e.spec.candidates[0].Protocol)
 	case e.spec.direct != "":
-		if proto, ok := e.spec.env.directProtocol(e.spec.direct); ok {
-			return "", isCLIProtocol(proto)
-		}
+		return "", isCLIProtocol(e.spec.directModel.Protocol)
 	}
 	return "", false
+}
+
+// turnVision is the vision mode of the turn's model: VisionOff without one.
+func (e *engineTurn) turnVision() string {
+	switch {
+	case len(e.spec.candidates) > 0:
+		return e.spec.candidates[0].Limits.Vision
+	case e.spec.direct != "":
+		return e.spec.directModel.Limits.Vision
+	}
+	return modelspec.VisionOff
 }
 
 // logDispatchTarget logs which model and provider the turn is routed to.
@@ -512,20 +503,31 @@ func (e *engineTurn) iterate(ctx context.Context) (bool, error) {
 	}
 	e.logResponse(response)
 
-	// AfterModel may change the response and adds the notes and reply lines
-	// for what it did with it (generated images).
-	info := &hook.ModelInfo{
-		Iteration: e.iteration,
-		Model:     e.turnModelRef(),
-		Request:   hook.ModelRequest{Messages: e.messages, Tools: defs, Options: d.llmOpts},
+	// AfterModel works on a copy, so the ModelCall event keeps the
+	// provider's response; it may change it and adds the notes and reply
+	// lines for what it did with it (generated images).
+	answered := d.answered
+	if answered.Name == "" {
+		answered = e.turnModelRef()
 	}
-	mr := &hook.ModelResponse{Model: d.answered, Response: response}
-	e.hooks.callAfterModel(ctx, info, mr)
+	mr := &hook.ModelResponse{Model: answered, Response: copyResponse(response)}
+	if perr := e.hooks.callAfterModel(ctx, e.modelInfo(d), mr); perr != nil {
+		return false, perr
+	}
 	response = mr.Response
 	e.lastImages = len(response.Images)
 	e.imageCount += len(response.Images)
 	e.pendingNotes = append(e.pendingNotes, mr.Notes...)
 	e.replyLines = append(e.replyLines, mr.ReplyLines...)
+	e.hooks.emit(ctx, hook.ModelAnswer{
+		EventHeader: e.header(),
+		Iteration:   e.iteration,
+		Model:       answered,
+		Response:    copyResponse(response),
+		Notes:       slices.Clone(mr.Notes),
+		ReplyLines:  slices.Clone(mr.ReplyLines),
+		Supplied:    d.supplied,
+	})
 	for _, img := range response.Images {
 		e.hooks.emit(ctx, hook.Image{EventHeader: e.header(), Iteration: e.iteration, Image: img})
 	}
@@ -534,6 +536,25 @@ func (e *engineTurn) iterate(ctx context.Context) (bool, error) {
 		return e.directAnswer(response), nil
 	}
 	return e.runToolCalls(ctx, response)
+}
+
+// copyResponse is a copy of r that shares nothing a callback may change:
+// its tool calls (with their arguments and function) and its images.
+func copyResponse(r *spawnllm.LLMResponse) *spawnllm.LLMResponse {
+	c := *r
+	if r.ToolCalls != nil {
+		c.ToolCalls = make([]spawnllm.ToolCall, len(r.ToolCalls))
+		for i, tc := range r.ToolCalls {
+			tc.Arguments = maps.Clone(tc.Arguments)
+			if tc.Function != nil {
+				f := *tc.Function
+				tc.Function = &f
+			}
+			c.ToolCalls[i] = tc
+		}
+	}
+	c.Images = slices.Clone(r.Images)
+	return &c
 }
 
 // turnModelRef names the model the turn chose.
@@ -749,11 +770,11 @@ func (e *engineTurn) runToolCalls(ctx context.Context, response *spawnllm.LLMRes
 			"count":     len(calls),
 			"iteration": e.iteration,
 		})
-	e.hooks.eachInterim(func(i interimHooks) {
-		if i.Narrate != nil {
-			i.Narrate(ctx, e.iteration, response.Content)
-		}
-	})
+	batch := make([]hook.ToolCall, 0, len(calls))
+	for _, tc := range calls {
+		batch = append(batch, e.hookCall(tc))
+	}
+	e.hooks.emit(ctx, hook.ToolBatchStarted{EventHeader: e.header(), Iteration: e.iteration, Calls: batch, Content: response.Content})
 
 	// The model is told what became of what AfterModel handled alongside
 	// these calls (generated images), in the message that carried them.
@@ -764,11 +785,6 @@ func (e *engineTurn) runToolCalls(ctx context.Context, response *spawnllm.LLMRes
 		return false, err
 	}
 	results := e.executeToolCalls(ctx, calls)
-	e.hooks.eachInterim(func(i interimHooks) {
-		if i.ToolsReturned != nil {
-			i.ToolsReturned(ctx, len(calls))
-		}
-	})
 	if err := e.addToolResults(ctx, results); err != nil {
 		return false, err
 	}
@@ -829,7 +845,7 @@ func (e *engineTurn) steerFromRepeatedBatch(toolNames []string) {
 
 // keep adds msg to the request and records it through add (one of the
 // context manager's Add methods), observing it into memory. A message the
-// store refuses ends the turn; what names it in the error.
+// store refuses ends the turn with a *hook.SessionStoreError; what names it.
 func (e *engineTurn) keep(
 	ctx context.Context,
 	add func(context.Context, spawnllm.Message) (int64, error),
@@ -839,7 +855,7 @@ func (e *engineTurn) keep(
 	e.messages = append(e.messages, msg)
 	seq, err := add(ctx, msg)
 	if err != nil {
-		return e.spec.env.storeFailed(what, err)
+		return &hook.SessionStoreError{What: what, Err: err}
 	}
 	e.spec.mem.Observe(ctx, seq, msg.Role, msg.Content)
 	return nil

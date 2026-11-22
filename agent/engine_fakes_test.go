@@ -116,7 +116,6 @@ type fakeEnv struct {
 	cm    *fakeContext
 	defs  []spawnllm.ToolDefinition
 	tools map[string]func(ctx context.Context, args map[string]any) *toolkit.Result
-	facts map[string]engineModelFacts
 }
 
 func (e *fakeEnv) toolDefs() []spawnllm.ToolDefinition { return e.defs }
@@ -133,31 +132,19 @@ func (e *fakeEnv) assembleRequest(context.Context, []spawnllm.ToolDefinition, []
 	return ctxengine.AssembleRequest{}
 }
 
-func (e *fakeEnv) modelFacts(name string) engineModelFacts {
-	if f, ok := e.facts[name]; ok {
-		return f
-	}
-	return engineModelFacts{maxTokens: 4096, thinkingLevel: string(modelspec.ThinkingOff), vision: modelspec.VisionOff}
-}
-
 func (e *fakeEnv) compressionManager() (ctxengine.ContextManager, func()) { return e.cm, func() {} }
 
-func (e *fakeEnv) storeFailed(what string, err error) error {
-	return errors.New("store refused the " + what + ": " + err.Error())
+func (e *fakeEnv) sessionSummary() string            { return "" }
+func (e *fakeEnv) responseLogFields() map[string]any { return nil }
+func (e *fakeEnv) directClient(string) (spawnllm.LLMProvider, func(), error) {
+	return nil, nil, errNoDirectModel
 }
-
-func (e *fakeEnv) sessionSummary() string                 { return "" }
-func (e *fakeEnv) stopCause(context.Context) (bool, bool) { return false, false }
-func (e *fakeEnv) trackModelCall() func()                 { return func() {} }
-func (e *fakeEnv) directProtocol(string) (string, bool)   { return "", false }
-func (e *fakeEnv) responseLogFields() map[string]any      { return nil }
 func (e *fakeEnv) formatRequest([]spawnllm.Message, []spawnllm.ToolDefinition) (string, string) {
 	return "", ""
 }
 
-func (e *fakeEnv) directClient(string) (spawnllm.LLMProvider, func(), error) {
-	return nil, nil, errors.New("no direct model")
-}
+// errNoDirectModel: the engine tests serve no agent on a direct model.
+var errNoDirectModel = errors.New("no direct model")
 
 // noMemory is a session without long-term memory.
 type noMemory struct{}
@@ -229,7 +216,7 @@ func testChain(t *testing.T, clk clock.Clock, ms ...engineModel) (*models.Catalo
 		t.Fatal(err)
 	}
 	for i, m := range ms {
-		if err := cat.Add(modelspec.Model{ModelName: m.name, Model: m.wire, Provider: "Alice's API"}, models.For(models.Chat, i+1)); err != nil {
+		if err := cat.Add(modelspec.Model{ModelName: m.name, Model: m.wire, Provider: "Alice's API", MaxTokens: 4096}, models.For(models.Chat, i+1)); err != nil {
 			t.Fatal(err)
 		}
 		if err := cat.RegisterClient(m.name, m.client); err != nil {

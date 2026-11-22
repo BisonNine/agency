@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -235,9 +236,12 @@ func TestRequestOptions_HalvedMaxTokensPerModel(t *testing.T) {
 	}}
 	turn := hostTurn(t, nil, agent, processOptions{}, nil)
 	d := &llmDispatch{llmOpts: map[string]any{"prompt_cache_key": "main"}, maxTokensHalvings: 2}
-	for model, want := range map[string]int{"Alice Model": 8192, "Bob Model": 300, "Other Model": 500} {
-		if got := turn.requestOptions(d, false, &mockProvider{}, model)["max_tokens"]; got != want {
-			t.Errorf("%s: max_tokens = %v, want %d", model, got, want)
+	for model, c := range map[string]struct {
+		own, want int
+	}{"Alice Model": {32768, 8192}, "Bob Model": {600, 300}, "Other Model": {1000, 500}} {
+		cand := models.Candidate{Name: model, Limits: modelspec.Limits{MaxTokens: c.own, ThinkingLevel: modelspec.ThinkingOff}}
+		if got := turn.requestOptions(d, false, &mockProvider{}, cand)["max_tokens"]; got != c.want {
+			t.Errorf("%s: max_tokens = %v, want %d", model, got, c.want)
 		}
 	}
 	if _, ok := d.llmOpts["max_tokens"]; ok {

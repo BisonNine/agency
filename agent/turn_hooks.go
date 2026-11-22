@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
@@ -119,6 +120,16 @@ func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, o
 			al.modelCall(evCtx, ctx, agent, opts, model, c)
 		}
 	}})
+	// Model calls in flight are counted, so a replaced client closes only
+	// after them (WaitTurns).
+	h.add(hook.Plugin{Name: "in-flight", OnEvent: func(_ context.Context, ev hook.Event) {
+		switch ev.(type) {
+		case hook.ModelCallStarted:
+			al.activeRequests.Add(1)
+		case hook.ModelCall:
+			al.activeRequests.Done()
+		}
+	}})
 	if notify := al.fallbackNotifier(ctx, opts); notify != nil {
 		h.add(hook.Plugin{Name: "fallback-notice", OnFallback: func(_ context.Context, ev hook.Fallback) {
 			notify(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
@@ -163,37 +174,33 @@ func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, o
 			al.endTurn(ctx, agent, opts, st)
 		}
 	}})
-	h.addInterim(interimHooks{
-		Name:          "progress",
-		ToolsReturned: func(_ context.Context, n int) { st.completedTools.Add(int64(n)) },
-	})
-	h.addInterim(interimHooks{
-		Name:    "narration",
-		Narrate: func(ctx context.Context, _ int, content string) { al.publishNarration(ctx, opts, content) },
-	})
-	h.addInterim(interimHooks{
-		Name: "tool-output",
-		ToolsReturned: func(context.Context, int) {
+	h.add(hook.Plugin{Name: "batch", OnEvent: func(ctx context.Context, ev hook.Event) {
+		switch e := ev.(type) {
+		case hook.ToolBatchStarted:
+			al.publishNarration(ctx, opts, e.Content)
+		case hook.ToolBatchFinished:
+			st.completedTools.Add(int64(e.Calls))
 			st.streamActivity = al.GetConfig().Agents.Defaults.StreamToolActivity
-		},
-		ToolResult: func(ctx context.Context, call hook.ToolCall, result *toolkit.Result) {
+		case hook.ToolResultStored:
 			// Each tool's own output reaches the user only with
 			// stream_tool_activity; otherwise the user gets just the final
 			// answer.
-			if st.streamActivity && !result.Silent && result.ForUser != "" {
-				al.publishToolForUser(ctx, opts, call.Name, result)
+			if st.streamActivity && !e.Result.Silent && e.Result.ForUser != "" {
+				al.publishToolForUser(ctx, opts, e.Call.Name, e.Result)
 			}
-			if len(result.Media) > 0 {
-				al.publishToolMedia(ctx, opts, call.Name, result)
+			if len(e.Result.Media) > 0 {
+				al.publishToolMedia(ctx, opts, e.Call.Name, e.Result)
 			}
-		},
-	})
-	h.addInterim(interimHooks{
-		Name: "vision-describe",
-		DescribeImages: func(ctx context.Context, images, focus []string) (string, bool, bool) {
-			return al.describeToolImages(ctx, agent, opts, images, focus)
-		},
-	})
+		}
+	}})
+	h.add(hook.Plugin{Name: "vision-describe", DescribeImages: func(ctx context.Context, images hook.UnseenImages) (string, bool) {
+		return al.describeToolImages(ctx, agent, opts, model, images)
+	}})
+	h.add(hook.Plugin{Name: "store-fault", OnEvent: func(_ context.Context, ev hook.Event) {
+		if f, ok := ev.(hook.TurnFinished); ok {
+			al.reportStoreRefusal(agent, opts.SessionKey, f.Err)
+		}
+	}})
 	return h, st
 }
 
@@ -257,6 +264,14 @@ func (al *AgentLoop) runLLMIteration(
 	ctx = providers.WithAgentID(ctx, agent.ID)
 	turn, ctx := al.newHostEngineTurn(ctx, agent, messages, opts, cm, mem)
 	res, err := turn.run(ctx)
+	if perr, ok := errors.AsType[*hook.PanicError](err); ok {
+		// A step-changing callback's panic ends the turn as a panic in the
+		// turn always has.
+		panic(perr.Value)
+	}
+	if se, ok := errors.AsType[*hook.SessionStoreError](err); ok {
+		err = storeRefusalError(se.What, se.Err)
+	}
 	if err != nil {
 		return modelReply{iterations: res.iterations}, err
 	}
@@ -319,6 +334,7 @@ func (al *AgentLoop) newHostEngineTurn(
 		contextWindow:  tm.limits.contextWindow,
 		noTools:        tm.limits.noTools,
 		direct:         tm.direct,
+		directModel:    al.directModel(agent, tm),
 
 		cm:    cm,
 		mem:   mem,
@@ -365,40 +381,16 @@ func (e *llmTurnEnv) assembleRequest(ctx context.Context, defs []spawnllm.ToolDe
 	return e.al.assembleRequestWithDefs(ctx, e.agent, e.mem, e.opts, defs, history)
 }
 
-func (e *llmTurnEnv) modelFacts(name string) engineModelFacts {
-	return e.al.modelFactsFor(e.agent, name)
-}
-
 func (e *llmTurnEnv) compressionManager() (ctxengine.ContextManager, func()) {
 	return e.al.getContextManager(e.agent, e.opts.SessionKey)
-}
-
-func (e *llmTurnEnv) storeFailed(what string, err error) error {
-	return e.al.sessionStoreWriteFailed(e.agent, e.opts.SessionKey, what, err)
 }
 
 func (e *llmTurnEnv) sessionSummary() string {
 	return e.agent.Sessions.GetSummary(e.opts.SessionKey)
 }
 
-func (e *llmTurnEnv) stopCause(ctx context.Context) (bool, bool) {
-	return shuttingDown(ctx), stoppedOnPurpose(ctx)
-}
-
-// trackModelCall counts the call in flight, so a replaced client closes only
-// after it (WaitTurns).
-func (e *llmTurnEnv) trackModelCall() func() {
-	e.al.activeRequests.Add(1)
-	return e.al.activeRequests.Done
-}
-
 func (e *llmTurnEnv) directClient(name string) (spawnllm.LLMProvider, func(), error) {
 	return e.al.catalog.Client(name)
-}
-
-func (e *llmTurnEnv) directProtocol(name string) (string, bool) {
-	info, ok := e.al.catalog.Get(name)
-	return info.Provider.Protocol, ok
 }
 
 func (e *llmTurnEnv) responseLogFields() map[string]any {
@@ -412,28 +404,41 @@ func (e *llmTurnEnv) formatRequest(messages []spawnllm.Message, defs []spawnllm.
 	return formatMessagesForLog(messages), formatToolsForLog(defs)
 }
 
-// modelFactsFor is what the engine needs to know of model (a model_name) for
-// a request of agent: its limits for the agent (agent may be nil), its
-// vision mode (VisionOff for a model the configuration does not have) and
-// whether its provider requires reasoning content.
-func (al *AgentLoop) modelFactsFor(agent *AgentInstance, model string) engineModelFacts {
-	f := engineModelFacts{vision: config.VisionOff}
+// directModel is the model a turn of agent on a direct chain (tm.direct)
+// sends, with its facts; zero for any other turn.
+func (al *AgentLoop) directModel(agent *AgentInstance, tm *turnModel) models.Candidate {
+	if tm.direct == "" {
+		return models.Candidate{}
+	}
+	c := al.modelFacts(agent, tm.model)
+	if info, ok := al.catalog.Get(tm.direct); ok {
+		c.Protocol = info.Provider.Protocol
+	}
+	return c
+}
+
+// modelFacts is model (a model_name) as a request of agent sees it: its
+// limits for the agent (agent may be nil), its vision mode (VisionOff for a
+// model the configuration does not have) and whether its provider requires
+// reasoning content. Name and Model are model.
+func (al *AgentLoop) modelFacts(agent *AgentInstance, model string) models.Candidate {
+	c := models.Candidate{Name: model, Model: model, Limits: modelspec.Limits{Vision: config.VisionOff, ThinkingLevel: modelspec.ThinkingOff}}
 	if agent != nil {
 		l := agent.limitsFor(model)
-		f.maxTokens, f.thinkingLevel = l.maxTokens, string(l.thinkingLevel)
+		c.Limits.MaxTokens, c.Limits.ThinkingLevel = l.maxTokens, l.thinkingLevel
 	}
 	cfg := al.GetConfig()
 	mc, err := cfg.GetModelConfig(model)
 	if err != nil || mc == nil {
-		return f
+		return c
 	}
-	f.vision = mc.Vision
+	c.Limits.Vision = mc.Vision
 	if mc.Provider != "" {
 		if prov, perr := cfg.GetProvider(mc.Provider); perr == nil && prov != nil {
-			f.requireReasoning = prov.RequireReasoningContent
+			c.ProviderSpec.RequireReasoningContent = prov.RequireReasoningContent
 		}
 	}
-	return f
+	return c
 }
 
 // fallbackAttempts are the models a Fallback event passed over, as the
@@ -614,18 +619,20 @@ func recordToolCall(ctx context.Context, agent *AgentInstance, opts processOptio
 // describeToolImages describes, for a model that cannot see them, the images
 // a batch of tools returned, through the agent's vision side-model. Nothing
 // is added without one: the model gets only the hidden-attachment note.
-func (al *AgentLoop) describeToolImages(ctx context.Context, agent *AgentInstance, opts processOptions, images, focus []string) (string, bool, bool) {
+func (al *AgentLoop) describeToolImages(ctx context.Context, agent *AgentInstance, opts processOptions, model string, images hook.UnseenImages) (string, bool) {
 	if len(agent.VisionClients) == 0 {
-		return "", false, false
+		return "", false
 	}
-	focusParts := slices.Clone(focus)
+	focusParts := slices.Clone(images.Focus)
 	if lu := strings.TrimSpace(opts.UserMessage); lu != "" {
 		focusParts = append(focusParts, "User's request: "+lu)
 	}
-	desc, ok := al.describeImages(ctx, agent, images, strings.Join(focusParts, "\n"))
+	desc, ok := al.describeImages(ctx, agent, images.Images, strings.Join(focusParts, "\n"))
 	content := "An image was returned by a tool, but this model cannot view images and no description could be produced."
 	if ok {
 		content = "Image(s) described for you (this model cannot view images):\n" + desc
 	}
-	return content, ok, true
+	logger.InfoCF("agent", "injected vision description for non-vision model",
+		map[string]any{"agent_id": agent.ID, "model": model, "images": len(images.Images), "described": ok})
+	return content, true
 }

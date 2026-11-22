@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"go.bison9.com/agent/hook"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/commands"
@@ -43,7 +45,7 @@ var errHumanCancelled = errors.New("the person cancelled the request")
 // errAskerStopped ends a request to a person whose asker stopped waiting (it
 // gave up, or its deadline passed): no reply is handed back, the asker has
 // its own outcome.
-var errAskerStopped = errors.New("the asker stopped waiting")
+var errAskerStopped error = &turnCause{text: "the asker stopped waiting", kind: hook.ErrSuperseded}
 
 // humanNotAskedError marks a turn routed to a human agent that is not an ask:
 // it is dropped, never posted to the person. Its text is for the sender.

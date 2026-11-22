@@ -602,8 +602,9 @@ func TestEngine_StoreRefusalEndsTurn(t *testing.T) {
 	f.cm.failAdd = errors.New("disk full")
 	f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
 	_, _, err := f.run(t)
-	if err == nil || !strings.Contains(err.Error(), "store refused the tool call message: disk full") {
-		t.Fatalf("err = %v", err)
+	se, ok := errors.AsType[*hook.SessionStoreError](err)
+	if !ok || se.What != "tool call message" || se.Err != f.cm.failAdd || !errors.Is(err, hook.ErrSessionStore) {
+		t.Fatalf("err = %v, want the store's refusal of the tool call message", err)
 	}
 }
 
@@ -653,61 +654,88 @@ func TestEngine_ConsumerPanicIsLogged(t *testing.T) {
 	}
 }
 
-// A panic in a callback or interim step that changes the turn ends it: the
-// panic reaches run's caller, after exactly one TurnFinished with
-// OutcomeError.
-func TestEngine_CallbackPanicEndsTheTurn(t *testing.T) {
+// A panic in a turn or model step ends the turn with a *hook.PanicError
+// naming the callback and its plugin: exactly one TurnFinished with
+// OutcomeError, the later callbacks of the kind not run, nothing of the step
+// stored.
+func TestEngine_StepPanicEndsTheTurn(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func(f *engineFixture)
+		kind  string
+		setup func(f *engineFixture, later *atomic.Bool)
 	}{
-		{"AfterModel", func(f *engineFixture) {
-			f.spec.hooks.add(hook.Plugin{Name: "images", AfterModel: func(context.Context, *hook.ModelInfo, *hook.ModelResponse) { panic("Bob's bug") }})
+		{"BeforeModel", func(f *engineFixture, later *atomic.Bool) {
+			f.spec.hooks.add(hook.Plugin{Name: "bobs", BeforeModel: func(context.Context, *hook.ModelInfo) (*spawnllm.LLMResponse, error) { panic("Bob's bug") }})
+			f.spec.hooks.add(hook.Plugin{Name: "later", BeforeModel: func(context.Context, *hook.ModelInfo) (*spawnllm.LLMResponse, error) {
+				later.Store(true)
+				return nil, nil
+			}})
 		}},
-		{"AfterTool", func(f *engineFixture) {
-			f.spec.hooks.add(hook.Plugin{Name: "redact", AfterTool: func(context.Context, *hook.ToolCall, *toolkit.Result) { panic("Bob's bug") }})
+		{"AfterModel", func(f *engineFixture, later *atomic.Bool) {
+			f.spec.hooks.add(hook.Plugin{Name: "bobs", AfterModel: func(context.Context, *hook.ModelInfo, *hook.ModelResponse) { panic("Bob's bug") }})
+			f.spec.hooks.add(hook.Plugin{Name: "later", AfterModel: func(context.Context, *hook.ModelInfo, *hook.ModelResponse) { later.Store(true) }})
 		}},
-		{"interim ToolResult", func(f *engineFixture) {
-			f.spec.hooks.addInterim(interimHooks{Name: "tool-output", ToolResult: func(context.Context, hook.ToolCall, *toolkit.Result) { panic("Bob's bug") }})
+		{"OnModelError", func(f *engineFixture, later *atomic.Bool) {
+			f.spec.hooks.add(hook.Plugin{Name: "fail", BeforeModel: func(context.Context, *hook.ModelInfo) (*spawnllm.LLMResponse, error) {
+				return nil, errors.New("refused")
+			}})
+			f.spec.hooks.add(hook.Plugin{Name: "bobs", OnModelError: func(context.Context, *hook.ModelInfo, error) (*spawnllm.LLMResponse, error) { panic("Bob's bug") }})
+			f.spec.hooks.add(hook.Plugin{Name: "later", OnModelError: func(context.Context, *hook.ModelInfo, error) (*spawnllm.LLMResponse, error) {
+				later.Store(true)
+				return nil, nil
+			}})
 		}},
-		{"OnToolError", func(f *engineFixture) {
-			f.env.tools["noop"] = func(context.Context, map[string]any) *toolkit.Result { return toolkit.ErrorResult("no") }
-			f.spec.hooks.add(hook.Plugin{Name: "errors", OnToolError: func(context.Context, *hook.ToolCall, *toolkit.Result) *toolkit.Result { panic("Bob's bug") }})
-		}},
-		{"interim Narrate", func(f *engineFixture) {
-			f.spec.hooks.addInterim(interimHooks{Name: "narration", Narrate: func(context.Context, int, string) { panic("Bob's bug") }})
-		}},
-		{"interim ToolsReturned", func(f *engineFixture) {
-			f.spec.hooks.addInterim(interimHooks{Name: "progress", ToolsReturned: func(context.Context, int) { panic("Bob's bug") }})
-		}},
-		{"loop (the tool list panics)", func(f *engineFixture) { f.spec.env = panickyEnv{f.env} }},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.kind, func(t *testing.T) {
 			p := modelstest.New().Script("alice-wire", callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done"))
 			clk := newFake()
 			_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
 			f := newEngineFixture(t, chain, clk)
 			f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
-			tt.setup(f)
-			func() {
-				defer func() {
-					if r := recover(); r == nil {
-						t.Fatal("the panic did not reach the caller")
-					}
-				}()
-				_, _, err := f.run(t)
-				t.Errorf("run returned (%v) instead of panicking", err)
-			}()
-			kinds := f.rec.kinds()
-			if countOf(kinds, "TurnFinished") != 1 || kinds[len(kinds)-1] != "TurnFinished" {
-				t.Fatalf("events = %v", kinds)
+			var later atomic.Bool
+			tt.setup(f, &later)
+			_, _, err := f.run(t)
+			perr, ok := errors.AsType[*hook.PanicError](err)
+			if !ok || perr.Callback != tt.kind || perr.Plugin != "bobs" || perr.Value != "Bob's bug" {
+				t.Fatalf("err = %v, want the %s panic of bobs", err, tt.kind)
 			}
+			if later.Load() {
+				t.Error("a later callback of the kind ran after the panic")
+			}
+			if len(f.cm.stored) != 0 {
+				t.Errorf("stored %v after the panic", f.cm.stored)
+			}
+			kinds := f.rec.kinds()
 			evs := f.rec.all()
-			if fin, ok := evs[len(evs)-1].(hook.TurnFinished); !ok || fin.Outcome != hook.OutcomeError || fin.Err == nil {
-				t.Fatalf("TurnFinished = %+v, want an error", fin.TurnResult)
+			fin, isFin := evs[len(evs)-1].(hook.TurnFinished)
+			if countOf(kinds, "TurnFinished") != 1 || !isFin || fin.Outcome != hook.OutcomeError || fin.Err != perr {
+				t.Fatalf("events = %v, last = %+v", kinds, evs[len(evs)-1])
 			}
 		})
+	}
+}
+
+// A panic in the loop itself, not in a callback, reaches run's caller after
+// exactly one TurnFinished with OutcomeError.
+func TestEngine_LoopPanicReachesTheCaller(t *testing.T) {
+	p := modelstest.New().Script("alice-wire", modelstest.Reply("done"))
+	clk := newFake()
+	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+	f := newEngineFixture(t, chain, clk)
+	f.spec.env = panickyEnv{f.env}
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("the panic did not reach the caller")
+			}
+		}()
+		_, _, err := f.run(t)
+		t.Errorf("run returned (%v) instead of panicking", err)
+	}()
+	kinds := f.rec.kinds()
+	evs := f.rec.all()
+	if fin, ok := evs[len(evs)-1].(hook.TurnFinished); !ok || fin.Outcome != hook.OutcomeError || countOf(kinds, "TurnFinished") != 1 {
+		t.Fatalf("events = %v", kinds)
 	}
 }
 
@@ -716,53 +744,82 @@ type panickyEnv struct{ *fakeEnv }
 
 func (panickyEnv) toolDefs() []spawnllm.ToolDefinition { panic("Bob's bug") }
 
-// A panicking tool is not a callback: its call gets an error result and the
-// turn goes on (TestEngine_EventGuarantees). A tool whose callback panics
-// still gets its ToolCallFinished before the turn ends.
-func TestEngine_ToolCallbackPanicFinishesTheCall(t *testing.T) {
-	p := modelstest.New().Script("alice-wire", callStep(toolCall("c1", "noop", nil)))
-	clk := newFake()
-	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
-	f := newEngineFixture(t, chain, clk)
-	f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
-	f.spec.hooks.add(hook.Plugin{Name: "gate", BeforeTool: func(context.Context, *hook.ToolCall) (*toolkit.Result, error) { panic("Bob's bug") }})
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("the callback's panic did not reach the caller")
-			}
-		}()
-		_, _, err := f.run(t)
-		t.Errorf("run returned (%v) instead of panicking", err)
-	}()
-	if countOf(f.rec.kinds(), "ToolCallStarted") != 1 || countOf(f.rec.kinds(), "ToolCallFinished") != 1 {
-		t.Fatalf("events = %v", f.rec.kinds())
+// A panic in a tool callback fails only its call: the result is the
+// internal-error result with the *hook.PanicError, the call's later callbacks
+// do not run, it still gets its ToolCallFinished, and the turn goes on.
+func TestEngine_ToolCallbackPanicFailsTheCall(t *testing.T) {
+	tests := []struct {
+		kind  string
+		setup func(f *engineFixture, later *atomic.Bool)
+	}{
+		{"BeforeTool", func(f *engineFixture, later *atomic.Bool) {
+			f.spec.hooks.add(hook.Plugin{Name: "bobs", BeforeTool: func(context.Context, *hook.ToolCall) (*toolkit.Result, error) { panic("Bob's bug") }})
+			f.spec.hooks.add(hook.Plugin{Name: "later", AfterTool: func(context.Context, *hook.ToolCall, *toolkit.Result) { later.Store(true) }})
+		}},
+		{"OnToolError", func(f *engineFixture, later *atomic.Bool) {
+			f.env.tools["noop"] = func(context.Context, map[string]any) *toolkit.Result { return toolkit.ErrorResult("no") }
+			f.spec.hooks.add(hook.Plugin{Name: "bobs", OnToolError: func(context.Context, *hook.ToolCall, *toolkit.Result) *toolkit.Result { panic("Bob's bug") }})
+			f.spec.hooks.add(hook.Plugin{Name: "later", AfterTool: func(context.Context, *hook.ToolCall, *toolkit.Result) { later.Store(true) }})
+		}},
+		{"AfterTool", func(f *engineFixture, later *atomic.Bool) {
+			f.spec.hooks.add(hook.Plugin{Name: "bobs", AfterTool: func(_ context.Context, _ *hook.ToolCall, r *toolkit.Result) {
+				r.ForLLM = "half-changed"
+				panic("Bob's bug")
+			}})
+			f.spec.hooks.add(hook.Plugin{Name: "later", AfterTool: func(context.Context, *hook.ToolCall, *toolkit.Result) { later.Store(true) }})
+		}},
 	}
-	evs := f.rec.all()
-	if fin, ok := evs[len(evs)-1].(hook.TurnFinished); !ok || fin.Outcome != hook.OutcomeError {
-		t.Fatalf("last event = %+v, want TurnFinished with an error", evs[len(evs)-1])
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			p := modelstest.New().Script("alice-wire", callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done"))
+			clk := newFake()
+			_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+			f := newEngineFixture(t, chain, clk)
+			f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
+			var later atomic.Bool
+			tt.setup(f, &later)
+			_, res, err := f.run(t)
+			if err != nil || res.content != "done" {
+				t.Fatalf("run = %+v, %v; want the turn to go on", res, err)
+			}
+			if later.Load() {
+				t.Error("a later callback of the call ran after the panic")
+			}
+			var fin hook.ToolCallFinished
+			for _, ev := range f.rec.all() {
+				if e, ok := ev.(hook.ToolCallFinished); ok {
+					fin = e
+				}
+			}
+			perr, ok := errors.AsType[*hook.PanicError](fin.Result.Err)
+			if !ok || perr.Callback != tt.kind || fin.Result.ForLLM != "Tool noop failed with an internal error." || !fin.Result.IsError {
+				t.Fatalf("finished result = %+v", fin.Result)
+			}
+			if got := f.cm.stored[1].Content; got != "Tool noop failed with an internal error." {
+				t.Fatalf("stored result = %q", got)
+			}
+		})
 	}
 }
 
-// A callback of a kind the engine does not call is refused when it is
-// registered.
-func TestEngine_RefusesCallbacksItDoesNotCall(t *testing.T) {
-	plugins := []hook.Plugin{
-		{Name: "a", BeforeTurn: func(context.Context, *hook.Turn) (*hook.TurnResult, error) { return nil, nil }},
-		{Name: "b", AfterTurn: func(context.Context, *hook.Turn, *hook.TurnResult) {}},
-		{Name: "c", BeforeModel: func(context.Context, *hook.ModelInfo) (*spawnllm.LLMResponse, error) { return nil, nil }},
-		{Name: "d", OnModelError: func(context.Context, *hook.ModelInfo, error) (*spawnllm.LLMResponse, error) { return nil, nil }},
-		{Name: "e", OnInterrupt: func(context.Context, hook.Interrupted) {}},
+// An observer that panics is logged and skipped: the turn goes on.
+func TestEngine_ObserverPanicIsSkipped(t *testing.T) {
+	p := modelstest.New().Script("alice-wire", modelstest.Reply("done"))
+	clk := newFake()
+	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+	f := newEngineFixture(t, chain, clk)
+	f.cm.evictOnce = true
+	var buf strings.Builder
+	f.spec.hooks.log = slog.New(slog.NewTextHandler(&buf, nil))
+	f.spec.hooks.add(hook.Plugin{Name: "bobs-notice", OnCompaction: func(context.Context, hook.Compaction) { panic("Bob's bug") }})
+	ctx, _ := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
+	engineCompactionStart(ctx, ctxengine.CompactionStart{SessionKey: "s", Blocking: true})
+	_, res, err := f.run(t)
+	if err != nil || res.content != "done" {
+		t.Fatalf("run = %+v, %v", res, err)
 	}
-	for _, p := range plugins {
-		func() {
-			defer func() {
-				if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), `plugin "`+p.Name+`"`) {
-					t.Errorf("plugin %s: recovered %v, want a refusal naming it", p.Name, r)
-				}
-			}()
-			(&turnHooks{}).add(p)
-		}()
+	if out := buf.String(); !strings.Contains(out, "consumer=bobs-notice") {
+		t.Fatalf("log = %s", out)
 	}
 }
 
