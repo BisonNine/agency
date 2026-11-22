@@ -126,7 +126,7 @@ func TestInterrupt_WaitTaskDuringShutdownIsCancelled(t *testing.T) {
 	if res := <-done; !res.IsError || !strings.Contains(res.ForLLM, "was cancelled") {
 		t.Fatalf("result = %+v, want cancelled", res)
 	}
-	if markers, _ := filepath.Glob(filepath.Join(alice.Workspace, "tasks", "*.run")); len(markers) != 0 {
+	if markers, err := filepath.Glob(filepath.Join(alice.Workspace, "tasks", "*.run")); err != nil || len(markers) != 0 {
 		t.Fatalf("run markers = %v: the task would be relaunched", markers)
 	}
 }

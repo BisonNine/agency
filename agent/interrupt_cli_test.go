@@ -182,7 +182,10 @@ func TestCancelTask_CLIWorkerKilledAndTokenRevoked(t *testing.T) {
 	child := readPID(t, logDir, "child")
 	var token string
 	for _, f := range []string{"args", "stdin"} {
-		b, _ := os.ReadFile(filepath.Join(logDir, f))
+		b, err := os.ReadFile(filepath.Join(logDir, f))
+		if err != nil {
+			t.Fatal(err)
+		}
 		if m := regexp.MustCompile(`SST[0-9a-f]{64}`).Find(b); m != nil {
 			token = string(m)
 		}
