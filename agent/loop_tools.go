@@ -498,7 +498,7 @@ func (al *AgentLoop) superviseTasks(ctx context.Context) {
 		case <-al.superStop:
 			return
 		case <-ticker.C:
-			al.runTaskSupervision()
+			al.runTaskSupervision() //nolint:contextcheck // relaunched callback tasks run detached from the supervisor, like fresh spawns
 		}
 	}
 }
