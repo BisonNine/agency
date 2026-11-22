@@ -9,7 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+
+	"go.bison9.com/agent/hook"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -101,6 +102,12 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 		}
 	})
 	al, msgBus := messagingLoop(t, messagingConfig(t), model)
+	unwound := make(chan struct{}, 4)
+	al.tasks.Observe(func(info hook.TaskInfo) {
+		if info.State == hook.TaskCancelled {
+			unwound <- struct{}{}
+		}
+	})
 	send := func(id, text string) {
 		t.Helper()
 		publishIn(t, msgBus, bus.InboundMessage{Channel: "test", ChatID: "c1", SenderID: "u1", MessageID: id, Content: text})
@@ -123,21 +130,14 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 	al.activeRequests.Wait()
 	noOutbound(t, msgBus)
 
-	// The worker's partial output is kept, marked incomplete.
+	// Once the worker has unwound, its partial output is kept, marked
+	// incomplete.
+	<-unwound // the cancel
+	<-unwound // the worker unwound
 	alice, _ := al.GetRegistry().Get("alice")
-	path := filepath.Join(alice.Workspace, "tasks", taskID+"-results.json")
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		b, err := os.ReadFile(path)
-		if err == nil && strings.Contains(string(b), "first part") {
-			if !strings.Contains(string(b), `"incomplete": true`) || !strings.Contains(string(b), `"status": "cancelled"`) {
-				t.Fatalf("results = %s", b)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("results file %s: %s (%v)", path, b, err)
-		}
-		time.Sleep(10 * time.Millisecond)
+	b, err := os.ReadFile(filepath.Join(alice.Workspace, "tasks", taskID+"-results.json"))
+	if err != nil || !strings.Contains(string(b), "first part") ||
+		!strings.Contains(string(b), `"incomplete": true`) || !strings.Contains(string(b), `"status": "cancelled"`) {
+		t.Fatalf("results = %s (%v)", b, err)
 	}
 }

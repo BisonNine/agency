@@ -106,6 +106,12 @@ func TestInterrupt_WaitTaskDuringShutdownIsCancelled(t *testing.T) {
 		return nil, ctx.Err()
 	})
 	al, _ := messagingLoop(t, messagingConfig(t), model)
+	unwound := make(chan struct{}, 4)
+	al.tasks.Observe(func(info hook.TaskInfo) {
+		if info.State == hook.TaskCancelled {
+			unwound <- struct{}{}
+		}
+	})
 	alice, ok := al.GetRegistry().Get("alice")
 	if !ok || alice.spawnMgr == nil {
 		t.Fatal("alice has no spawn manager")
@@ -126,6 +132,8 @@ func TestInterrupt_WaitTaskDuringShutdownIsCancelled(t *testing.T) {
 	if res := <-done; !res.IsError || !strings.Contains(res.ForLLM, "was cancelled") {
 		t.Fatalf("result = %+v, want cancelled", res)
 	}
+	<-unwound // the cancel
+	<-unwound // the worker unwound: nothing of it outlives the test
 	if markers, err := filepath.Glob(filepath.Join(alice.Workspace, "tasks", "*.run")); err != nil || len(markers) != 0 {
 		t.Fatalf("run markers = %v: the task would be relaunched", markers)
 	}
