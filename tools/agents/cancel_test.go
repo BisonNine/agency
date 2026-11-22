@@ -544,15 +544,15 @@ func TestSupervise_ChildOfCancelledParentIsNotRelaunched(t *testing.T) {
 // snapshot, before that task itself was stopped, is cancelled too.
 func TestTaskRegistry_NothingEscapesACascade(t *testing.T) {
 	reg := NewTaskRegistry()
-	var late context.Context
+	var late *Task
 	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "r", Owner: "alice"}, 0, nil, nil)
 	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "c", Owner: "alice", Parent: "r"}, 0, nil, func(error) bool {
 		// While the child is being cancelled, the root starts another.
-		late, _ = reg.start(context.Background(), hook.TaskInfo{ID: "late", Owner: "alice", Parent: "r"}, 0, nil, nil)
+		_, late = reg.start(context.Background(), hook.TaskInfo{ID: "late", Owner: "alice", Parent: "r"}, 0, nil, nil)
 		return true
 	})
 	reg.Cancel("alice", "r", errCancelledByAgent)
-	if late == nil || late.Err() == nil {
+	if late == nil || late.Info().State != hook.TaskCancelled {
 		t.Fatal("a task started during the cascade escaped it")
 	}
 	if n := len(reg.Running("alice")); n != 0 {
