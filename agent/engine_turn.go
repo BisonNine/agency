@@ -73,22 +73,10 @@ type turnMemory interface {
 }
 
 // turnEnv is what the engine reaches the host's services through, besides
-// the callbacks: tools, the session's context, and the client of an agent
-// none of whose models resolves (interim).
+// the callbacks: tools and the session's context.
 type turnEnv interface {
 	turnTools
 	turnSession
-	directClients
-}
-
-// directClients serve an agent none of whose models resolves (interim:
-// models.Catalog.Direct names its candidate's provider and takes the
-// catalogue's limits, where such a turn has always run with no provider and
-// the limits of the agent's own configured model).
-type directClients interface {
-	// directClient is the client of the catalogue model name, with its
-	// release.
-	directClient(name string) (spawnllm.LLMProvider, func(), error)
 }
 
 // turnTools are the agent's tools.
@@ -133,10 +121,6 @@ type engineSpec struct {
 	// TurnStarted reports them.
 	message hook.Message
 	options hook.RunOptions
-	// loopPlugins, when set, are registered when the model loop starts:
-	// after the message is stored, before the first dispatch (interim: the
-	// host reads some per-chat settings there, see the report of phase 5a).
-	loopPlugins func(ctx context.Context) []hook.Plugin
 
 	maxIterations int
 	// toolTimeout is each tool call's budget, read for each batch; 0 means
@@ -166,11 +150,6 @@ type engineSpec struct {
 	modelMaxTokens int
 	contextWindow  int
 	noTools        bool
-	// direct is the catalogue model whose client serves an agent none of
-	// whose models resolves, and directModel the model the turn sends it
-	// (its Name the wire id) with its facts (interim, see directClients).
-	direct      string
-	directModel models.Candidate
 
 	cm    ctxengine.ContextManager
 	store turnStore
@@ -216,6 +195,9 @@ type engineTurn struct {
 
 	// pending: the pending-turn marker was set.
 	pending bool
+	// textDeltas: the turn's model calls ask for partial text, as the
+	// BeforeLoop callbacks left hook.Loop.TextDeltas.
+	textDeltas bool
 
 	iteration    int
 	finalContent string
@@ -326,9 +308,9 @@ var errEngineIncomplete = errors.New("turn engine: no context manager, session s
 
 // run runs one turn, its whole span: TurnStarted; BeforeTurn; the session
 // reset and the message stored (unless the run says it already is); the
-// pending-turn marker; the model loop; AfterTurn; the reply stored and the
-// session saved; the marker cleared (kept for a turn shutdown stopped);
-// exactly one TurnFinished, last. Its error is the TurnResult's Err; the
+// pending-turn marker; BeforeLoop and LoopStarted; the model loop;
+// AfterTurn; the reply stored and the session saved; the marker cleared
+// (kept for a turn shutdown stopped); exactly one TurnFinished, last. Its error is the TurnResult's Err; the
 // TurnResult is the handle's. A panic in the loop itself (not in a
 // callback) still ends the turn with OutcomeError in its TurnFinished, then
 // goes on to the caller. A spec without host services is refused before the
@@ -379,7 +361,12 @@ func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 		stage = stageStored
 		err = e.begin(ctx, turn)
 		if err == nil {
+			// A BeforeLoop failure ends the turn as a failed loop: the
+			// marker is cleared.
 			stage = stageLoop
+			err = e.startLoop(ctx, turn)
+		}
+		if err == nil {
 			res, err = e.loop(ctx)
 		}
 		e.releaseCompressionManagers()
@@ -418,7 +405,7 @@ func (e *engineTurn) finish(ctx context.Context, tr hook.TurnResult) {
 
 // begin readies the session for the model loop: reset when the run asks,
 // the message stored unless it already is, the first request assembled, the
-// pending-turn marker set; then LoopStarted.
+// pending-turn marker set.
 func (e *engineTurn) begin(ctx context.Context, turn *hook.Turn) error {
 	if e.spec.cm == nil || e.spec.store == nil {
 		return errEngineIncomplete
@@ -450,11 +437,20 @@ func (e *engineTurn) begin(ctx context.Context, turn *hook.Turn) error {
 			map[string]any{"error": err.Error(), "session": e.spec.scope.Session})
 	}
 	e.pending = true
-	if e.spec.loopPlugins != nil {
-		for _, p := range e.spec.loopPlugins(ctx) {
-			e.hooks.add(p)
-		}
+	return nil
+}
+
+// startLoop runs the BeforeLoop callbacks, which decide whether the turn's
+// model calls ask for partial text (by default when an OnTextDelta is
+// registered), then emits LoopStarted. A callback's error or panic (a
+// *hook.PanicError) is returned: it ends the turn before its first model
+// call, with no LoopStarted.
+func (e *engineTurn) startLoop(ctx context.Context, turn *hook.Turn) error {
+	loop := &hook.Loop{Turn: *turn, TextDeltas: len(e.hooks.onTextDelta) > 0}
+	if err := e.hooks.callBeforeLoop(ctx, loop); err != nil {
+		return err
 	}
+	e.textDeltas = loop.TextDeltas
 	e.hooks.emit(ctx, hook.LoopStarted{EventHeader: e.header()})
 	return nil
 }
@@ -606,22 +602,16 @@ func isCLIProtocol(protocol string) bool {
 // firstModel reports the provider and whether the model serving the turn
 // first runs a CLI.
 func (e *engineTurn) firstModel() (provider string, isCLI bool) {
-	switch {
-	case len(e.spec.candidates) > 0:
+	if len(e.spec.candidates) > 0 {
 		return e.spec.candidates[0].Provider, isCLIProtocol(e.spec.candidates[0].Protocol)
-	case e.spec.direct != "":
-		return "", isCLIProtocol(e.spec.directModel.Protocol)
 	}
 	return "", false
 }
 
 // turnVision is the vision mode of the turn's model: VisionOff without one.
 func (e *engineTurn) turnVision() string {
-	switch {
-	case len(e.spec.candidates) > 0:
+	if len(e.spec.candidates) > 0 {
 		return e.spec.candidates[0].Limits.Vision
-	case e.spec.direct != "":
-		return e.spec.directModel.Limits.Vision
 	}
 	return modelspec.VisionOff
 }

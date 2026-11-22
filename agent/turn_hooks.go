@@ -35,13 +35,19 @@ import (
 
 // This file is the host side of the turn engine (engine_*.go): today's turn
 // behaviour expressed as the engine's callbacks and event consumers, all
-// registered in turnHooksFor (and, when the model loop starts,
-// loopPlugins), in the one order the turn relies on.
+// registered in turnHooksFor, in the one order the turn relies on.
 
 // turnState is what a turn's consumers keep between events.
 type turnState struct {
 	// stream forwards partial text to a streaming channel; nil otherwise.
+	// It, notifyFallback and breadcrumbs are set when the model loop starts
+	// (startModelLoop).
 	stream *streamCoalescer
+	// notifyFallback tells the chat the turn moved to another model; nil
+	// for a turn with no chat to tell.
+	notifyFallback providers.FallbackNotify
+	// breadcrumbs: each tool call is announced in the chat (/tools).
+	breadcrumbs bool
 	// completedTools feeds the progress heartbeat; stopProgress ends it.
 	completedTools atomic.Int64
 	stopProgress   func()
@@ -117,10 +123,10 @@ func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
 //   - BeforeModel: the session's pins follow a request built from the
 //     session store (Rebuilt) before its media are resolved.
 //
-// The plugins that read per-chat settings are registered when the model
-// loop starts (loopPlugins). No tool callback is registered: tool calls
-// and results are not changed, and redaction stays on logged and rendered
-// error text.
+// The per-chat settings are read when the model loop starts (BeforeLoop,
+// startModelLoop), which switches on the consumers registered last. No tool
+// callback is registered: tool calls and results are not changed, and
+// redaction stays on logged and rendered error text.
 func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opts *processOptions, model string, cm ctxengine.ContextManager) (*turnHooks, *turnState) {
 	h := &turnHooks{log: logger.SDK()}
 	st := &turnState{}
@@ -219,50 +225,58 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 			al.sendModelReply(ctx, agent, o, st, e.TurnResult)
 		}
 	}})
+
+	// When the model loop starts, the per-chat settings are read and the
+	// consumers below switched on; each does nothing until then.
+	h.add(hook.Plugin{Name: "loop-start", BeforeLoop: func(loopCtx context.Context, loop *hook.Loop) error {
+		al.startModelLoop(loopCtx, agent, o, st, loop)
+		return nil
+	}})
+	h.add(hook.Plugin{Name: "stream", OnTextDelta: func(_ context.Context, ev hook.TextDelta) {
+		if st.stream != nil {
+			st.stream.Add(ev.Text)
+		}
+	}})
+	h.add(hook.Plugin{Name: "fallback-notice", OnFallback: func(_ context.Context, ev hook.Fallback) {
+		if st.notifyFallback != nil {
+			st.notifyFallback(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
+		}
+	}})
+	h.add(hook.Plugin{Name: "breadcrumbs", OnEvent: func(ctx context.Context, ev hook.Event) {
+		if s, ok := ev.(hook.ToolCallStarted); ok && st.breadcrumbs {
+			al.publishBreadcrumb(ctx, o, hookToolCall(s.Call))
+		}
+	}})
 	return h, st
 }
 
-// loopPlugins returns what runs when the model loop of a turn starts, after
-// its message is stored and the turn marked pending: it records the pending
-// turn's source, starts the progress heartbeat and registers the plugins
-// that read per-chat settings there (the streaming of partial text, the
-// fallback notice and the tool breadcrumbs).
-func (al *AgentLoop) loopPlugins(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState) func(context.Context) []hook.Plugin {
-	return func(loopCtx context.Context) []hook.Plugin {
-		// The session store has just marked the turn pending: its source is
-		// recorded with it, so a restart's replay still owes the sender.
-		al.recordPendingTurnSource(loopCtx, agent, opts)
-		st.pendingSource = true
-		var plugins []hook.Plugin
-		// Partial-text streaming: a channel that opts in gets the model's
-		// text as it is generated, coalesced into sentence/length chunks. One
-		// forwarder serves every model call in the turn.
-		if streamToolNarration && al.channelManager != nil && al.channelManager.SupportsStreaming(opts.Channel) {
-			channel, chatID := opts.Channel, opts.ChatID
-			st.stream = newStreamCoalescer(func(batch string) {
-				al.channelManager.StreamDelta(ctx, channel, chatID, batch)
-			})
-			plugins = append(plugins, hook.Plugin{Name: "stream", OnTextDelta: func(_ context.Context, ev hook.TextDelta) { st.stream.Add(ev.Text) }})
-		}
-		if notify := al.fallbackNotifier(ctx, opts); notify != nil {
-			plugins = append(plugins, hook.Plugin{Name: "fallback-notice", OnFallback: func(_ context.Context, ev hook.Fallback) {
-				notify(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
-			}})
-		}
-		// Breadcrumbs go to a user chat, never the internal "system" channel.
-		if opts.Channel != "" && opts.Channel != "system" && opts.ChatID != "" && al.getShowToolActivity(agent, opts.SessionKey) {
-			plugins = append(plugins, hook.Plugin{Name: "breadcrumbs", OnEvent: func(ctx context.Context, ev hook.Event) {
-				if s, ok := ev.(hook.ToolCallStarted); ok {
-					al.publishBreadcrumb(ctx, opts, hookToolCall(s.Call))
-				}
-			}})
-		}
-		// Progress heartbeat: keep a long turn visibly alive by editing its
-		// placeholder every progress_interval with a running tool-call count.
-		st.stopProgress = al.startProgressUpdates(ctx, opts.Channel, opts.ChatID,
-			al.GetConfig().Agents.Defaults.GetProgressInterval(), &st.completedTools)
-		return plugins
+// startModelLoop sets up a turn's model loop when it starts (BeforeLoop),
+// after its message is stored and the turn marked pending, on the turn's
+// context: it records the pending turn's source, reads the per-chat settings
+// (whether the channel streams partial text, the fallback notice, the tool
+// breadcrumbs) and starts the progress heartbeat.
+func (al *AgentLoop) startModelLoop(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState, loop *hook.Loop) {
+	// The session store has just marked the turn pending: its source is
+	// recorded with it, so a restart's replay still owes the sender.
+	al.recordPendingTurnSource(ctx, agent, opts)
+	st.pendingSource = true
+	// Partial-text streaming: a channel that opts in gets the model's text as
+	// it is generated, coalesced into sentence/length chunks. One forwarder
+	// serves every model call in the turn; any other turn asks for none.
+	loop.TextDeltas = streamToolNarration && al.channelManager != nil && al.channelManager.SupportsStreaming(opts.Channel)
+	if loop.TextDeltas {
+		channel, chatID := opts.Channel, opts.ChatID
+		st.stream = newStreamCoalescer(func(batch string) {
+			al.channelManager.StreamDelta(ctx, channel, chatID, batch)
+		})
 	}
+	st.notifyFallback = al.fallbackNotifier(ctx, opts)
+	// Breadcrumbs go to a user chat, never the internal "system" channel.
+	st.breadcrumbs = opts.Channel != "" && opts.Channel != "system" && opts.ChatID != "" && al.getShowToolActivity(agent, opts.SessionKey)
+	// Progress heartbeat: keep a long turn visibly alive by editing its
+	// placeholder every progress_interval with a running tool-call count.
+	st.stopProgress = al.startProgressUpdates(ctx, opts.Channel, opts.ChatID,
+		al.GetConfig().Agents.Defaults.GetProgressInterval(), &st.completedTools)
 }
 
 // turnPlugin readies a turn of agent before anything of it is stored
@@ -442,7 +456,7 @@ func (al *AgentLoop) newHostEngineTurn(
 		tm = al.selectTurnModel(agent, opts.SessionKey)
 	}
 	o := &opts
-	hooks, st := al.turnHooksFor(ctx, agent, o, tm.model, cm)
+	hooks, _ := al.turnHooksFor(ctx, agent, o, tm.model, cm)
 	ctx = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), hooks, al.clk())
 	scope, _ := hook.ScopeOf(ctx)
 	spec := engineSpec{
@@ -455,7 +469,6 @@ func (al *AgentLoop) newHostEngineTurn(
 			AlreadyStored: opts.IsRetry && !agent.Spec.SingleShot(),
 			Depth:         scope.Depth,
 		},
-		loopPlugins: al.loopPlugins(ctx, agent, opts, st),
 
 		maxIterations: agent.MaxIterations,
 		toolTimeout:   func() time.Duration { return al.GetConfig().Agents.Defaults.GetToolTimeout() },
@@ -476,8 +489,6 @@ func (al *AgentLoop) newHostEngineTurn(
 		modelMaxTokens: tm.limits.maxTokens,
 		contextWindow:  tm.limits.contextWindow,
 		noTools:        tm.limits.noTools,
-		direct:         tm.direct,
-		directModel:    al.directModel(agent, tm),
 
 		cm:    cm,
 		mem:   mem,
@@ -557,23 +568,6 @@ func (e *llmTurnEnv) sessionSummary() string {
 		return ""
 	}
 	return e.agent.Sessions.GetSummary(e.opts.SessionKey)
-}
-
-func (e *llmTurnEnv) directClient(name string) (spawnllm.LLMProvider, func(), error) {
-	return e.al.catalog.Client(name)
-}
-
-// directModel is the model a turn of agent on a direct chain (tm.direct)
-// sends, with its facts; zero for any other turn.
-func (al *AgentLoop) directModel(agent *AgentInstance, tm *turnModel) models.Candidate {
-	if tm.direct == "" {
-		return models.Candidate{}
-	}
-	c := al.modelFacts(agent, tm.model)
-	if info, ok := al.catalog.Get(tm.direct); ok {
-		c.Protocol = info.Provider.Protocol
-	}
-	return c
 }
 
 // modelFacts is model (a model_name) as a request of agent sees it: its

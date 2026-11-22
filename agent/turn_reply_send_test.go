@@ -6,7 +6,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -118,10 +117,11 @@ func TestTurnFinished_RaisesStoreFaultAlert(t *testing.T) {
 	}
 }
 
-// The per-chat settings a turn's plugins depend on (/tools breadcrumbs,
-// streaming, the fallback notice) are read when its model loop starts, not
-// when its hooks are built.
-func TestLoopPlugins_ReadPerChatSettingsAtLoopStart(t *testing.T) {
+// The per-chat settings a turn's consumers depend on (/tools breadcrumbs,
+// streaming, the fallback notice) are read when its model loop starts
+// (BeforeLoop), not when its hooks are built: until then the consumers do
+// nothing.
+func TestLoopStart_ReadPerChatSettingsAtLoopStart(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	tl := newTestAgentLoop(t)
 	al := tl.al
@@ -129,25 +129,26 @@ func TestLoopPlugins_ReadPerChatSettingsAtLoopStart(t *testing.T) {
 	opts := processOptions{SessionKey: "s", Channel: "telegram", ChatID: "alice"}
 	al.setShowToolActivity(agent, opts.SessionKey, false)
 	h, st := al.turnHooksFor(context.Background(), agent, &opts, "m", nil)
-	for _, c := range h.onEvent {
-		if c.plugin == "breadcrumbs" {
-			t.Fatal("breadcrumbs registered before the loop starts")
-		}
-	}
-	if len(h.onFallback) != 0 || len(h.onTextDelta) != 0 {
-		t.Fatal("per-chat plugins registered before the loop starts")
+	if st.breadcrumbs || st.notifyFallback != nil || st.stream != nil || st.stopProgress != nil || st.pendingSource {
+		t.Fatal("per-chat settings read before the loop starts")
 	}
 	al.setShowToolActivity(agent, opts.SessionKey, true)
-	plugins := al.loopPlugins(context.Background(), agent, opts, st)(context.Background())
-	names := make([]string, 0, len(plugins))
-	for _, p := range plugins {
-		names = append(names, p.Name)
+	loop := &hook.Loop{TextDeltas: len(h.onTextDelta) > 0}
+	if !loop.TextDeltas {
+		t.Fatal("the stream consumer is not registered when the turn is built")
+	}
+	if err := h.callBeforeLoop(context.Background(), loop); err != nil {
+		t.Fatal(err)
 	}
 	if st.stopProgress != nil {
 		st.stopProgress()
 	}
-	if !slices.Contains(names, "breadcrumbs") || !slices.Contains(names, "fallback-notice") {
-		t.Fatalf("plugins at loop start = %v", names)
+	if !st.breadcrumbs || st.notifyFallback == nil || !st.pendingSource {
+		t.Fatalf("at loop start: breadcrumbs %v, fallback notice %v, pending source %v",
+			st.breadcrumbs, st.notifyFallback != nil, st.pendingSource)
+	}
+	if loop.TextDeltas || st.stream != nil {
+		t.Fatal("a turn on a channel that does not stream asks for partial text")
 	}
 }
 

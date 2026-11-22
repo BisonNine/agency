@@ -512,6 +512,8 @@ func TestEngine_TextDeltas(t *testing.T) {
 	var got []string
 	f.spec.hooks.add(hook.Plugin{Name: "tap", OnTextDelta: func(_ context.Context, ev hook.TextDelta) { got = append(got, ev.Text) }})
 	turn := newEngineTurn(f.spec, nil)
+	// As BeforeLoop leaves it by default with an OnTextDelta (startLoop).
+	turn.textDeltas = true
 	d := turn.newDispatch(context.Background(), nil, 0)
 	deliver, ok := d.llmOpts[spawnllm.TextDeltaOption].(spawnllm.TextDeltaFunc)
 	if !ok {

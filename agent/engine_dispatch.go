@@ -92,9 +92,9 @@ func (e *engineTurn) newDispatch(ctx context.Context, defs []spawnllm.ToolDefini
 	if !isCLI && e.spec.temperature != nil {
 		llmOpts["temperature"] = *e.spec.temperature
 	}
-	// Partial text is asked for only when a callback wants it. Providers that
-	// cannot stream text deltas (CLI, Anthropic) ignore this.
-	if len(e.hooks.onTextDelta) > 0 {
+	// Partial text is asked for only when the turn streams (BeforeLoop).
+	// Providers that cannot stream text deltas (CLI, Anthropic) ignore this.
+	if e.textDeltas {
 		iteration := e.iteration
 		llmOpts[spawnllm.TextDeltaOption] = func(delta string) {
 			ev := hook.TextDelta{EventHeader: e.header(), Iteration: iteration, Text: delta}
@@ -326,30 +326,6 @@ func (e *engineTurn) modelCallDone(ctx context.Context, d *llmDispatch, model ho
 	})
 }
 
-// callDefaultModel makes the dispatch's one call for an agent none of whose
-// models resolves: on the direct model's client, with the agent's first
-// configured name as the model and the agent's own limits. Nothing is
-// recorded against a model's health and there is no fallback.
-func (e *engineTurn) callDefaultModel(ctx context.Context, d *llmDispatch, hasTools bool) (*spawnllm.LLMResponse, error) {
-	client, release, err := e.spec.env.directClient(e.spec.direct)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	c := e.spec.directModel
-	ref := hook.ModelRef{Name: c.Name, Provider: d.provider, Model: c.Name}
-	e.callStarted(ctx, d, ref)
-	defer e.callAbandoned(ctx, d)
-	start := time.Now()
-	d.sent = e.requestMessages(hasTools, isCLIClient(client))
-	resp, err := client.Chat(ctx, e.spec.scope.Identity(),
-		messagesForModel(d.sent, c.Limits.Vision, c.ProviderSpec.RequireReasoningContent, hasTools),
-		d.defs, c.Name, e.requestOptions(d, hasTools, client, c))
-	d.answered = ref
-	e.modelCallDone(ctx, d, ref, time.Since(start), resp, err)
-	return resp, err
-}
-
 // errNoModelConfigured ends a turn whose agent has no model to call. Its
 // text is the one a configuration without models has always answered with.
 var errNoModelConfigured = errors.New("no model configured — enable a model and add your API key in the configuration")
@@ -362,9 +338,6 @@ var errNoModelConfigured = errors.New("no model configured — enable a model an
 func (e *engineTurn) callModel(ctx context.Context, d *llmDispatch) (*spawnllm.LLMResponse, error) {
 	hasTools := len(d.defs) > 0
 	if e.spec.chain == nil || len(e.spec.candidates) == 0 {
-		if e.spec.direct != "" {
-			return e.callDefaultModel(ctx, d, hasTools)
-		}
 		d.sent = e.messages
 		return nil, errNoModelConfigured
 	}

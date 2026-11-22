@@ -132,7 +132,7 @@ func TestReloadAdopt_BusyTemporaryAgentModelsRemoved(t *testing.T) {
 		t.Fatalf("the clone's configured model = %q, want a-wire", now.Model)
 	}
 	tm := al.selectTurnModel(now, "s")
-	if len(tm.candidates) != 0 || tm.direct != "b" || tm.model != now.Model {
+	if len(tm.candidates) != 1 || tm.candidates[0].Name != now.Model || tm.candidates[0].Provider != "" || tm.model != now.Model {
 		t.Fatalf("turn model = %+v, want %q on b's client", tm, now.Model)
 	}
 	if got := al.activeModelName(now, "s"); got != now.Model {
@@ -164,7 +164,7 @@ func TestUnresolvedAgent_RunsOnDefaultModelClient(t *testing.T) {
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
 	tm := al.selectTurnModel(bob, "s")
-	if len(tm.candidates) != 0 || tm.direct != "a" || tm.model != "no-such-model" {
+	if len(tm.candidates) != 1 || tm.candidates[0].Name != "no-such-model" || tm.candidates[0].Provider != "" || tm.model != "no-such-model" {
 		t.Fatalf("turn model = %+v", tm)
 	}
 	if tm.limits.maxTokens != cfg.Agents.Defaults.MaxTokens {

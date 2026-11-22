@@ -9,6 +9,7 @@ import (
 
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/hook"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
@@ -91,12 +92,12 @@ func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opt
 	return h
 }
 
-// buildTurnHooks is newTurnHooks with the consumers' state, with the
-// per-chat plugins of the model loop registered at once (loopPlugins).
+// buildTurnHooks is newTurnHooks with the consumers' state, with the model
+// loop started at once (the BeforeLoop callbacks run).
 func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*turnHooks, *turnState) {
 	h, st := al.turnHooksFor(ctx, agent, &opts, model, nil)
-	for _, p := range al.loopPlugins(ctx, agent, opts, st)(ctx) {
-		h.add(p)
+	if err := h.callBeforeLoop(ctx, &hook.Loop{TextDeltas: len(h.onTextDelta) > 0}); err != nil {
+		panic(err)
 	}
 	return h, st
 }

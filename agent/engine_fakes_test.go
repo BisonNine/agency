@@ -153,13 +153,6 @@ func (e *fakeEnv) firstRequest(context.Context) ctxengine.AssembleRequest {
 	return ctxengine.AssembleRequest{}
 }
 
-func (e *fakeEnv) directClient(string) (spawnllm.LLMProvider, func(), error) {
-	return nil, nil, errNoDirectModel
-}
-
-// errNoDirectModel: the engine tests serve no agent on a direct model.
-var errNoDirectModel = errors.New("no direct model")
-
 // fakeStore is a session store's pending-turn marker and save, recording
 // what the engine does with them.
 type fakeStore struct {

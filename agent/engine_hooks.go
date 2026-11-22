@@ -28,12 +28,13 @@ import (
 //
 // Panics follow the hook package's rules ("Panics"): an observer (OnFallback,
 // OnCompaction, OnTextDelta, OnInterrupt, an event consumer) is logged and
-// skipped; a turn or model step (BeforeTurn, BeforeModel, AfterModel,
-// OnModelError, DescribeImages) ends the turn with a *hook.PanicError; an
-// AfterTurn panic makes the result an error that stores nothing; a tool
-// callback fails its call only.
+// skipped; a turn or model step (BeforeTurn, BeforeLoop, BeforeModel,
+// AfterModel, OnModelError, DescribeImages) ends the turn with a
+// *hook.PanicError; an AfterTurn panic makes the result an error that
+// stores nothing; a tool callback fails its call only.
 type turnHooks struct {
 	beforeTurn     []named[hook.BeforeTurnFunc]
+	beforeLoop     []named[hook.BeforeLoopFunc]
 	afterTurn      []named[hook.AfterTurnFunc]
 	beforeModel    []named[hook.BeforeModelFunc]
 	afterModel     []named[hook.AfterModelFunc]
@@ -69,6 +70,7 @@ func addTo[F any](list []named[F], plugin string, fn F, set bool) []named[F] {
 // add registers p's callbacks, each at the end of its kind.
 func (h *turnHooks) add(p hook.Plugin) {
 	h.beforeTurn = addTo(h.beforeTurn, p.Name, p.BeforeTurn, p.BeforeTurn != nil)
+	h.beforeLoop = addTo(h.beforeLoop, p.Name, p.BeforeLoop, p.BeforeLoop != nil)
 	h.afterTurn = addTo(h.afterTurn, p.Name, p.AfterTurn, p.AfterTurn != nil)
 	h.beforeModel = addTo(h.beforeModel, p.Name, p.BeforeModel, p.BeforeModel != nil)
 	h.afterModel = addTo(h.afterModel, p.Name, p.AfterModel, p.AfterModel != nil)
@@ -131,6 +133,21 @@ func (h *turnHooks) callBeforeTurn(ctx context.Context, turn *hook.Turn) (*hook.
 		}
 	}
 	return nil, nil
+}
+
+// callBeforeLoop runs the BeforeLoop callbacks on loop until one fails. A
+// panic is returned as the error: it ends the turn.
+func (h *turnHooks) callBeforeLoop(ctx context.Context, loop *hook.Loop) error {
+	for _, c := range h.beforeLoop {
+		var err error
+		if perr := protect("BeforeLoop", c.plugin, func() { err = c.fn(ctx, loop) }); perr != nil {
+			return perr
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // callAfterTurn runs every AfterTurn callback. A panic makes the result an
