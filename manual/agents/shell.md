@@ -46,7 +46,7 @@ When a job ends, Alice is told in her conversation with the command, how it ende
 
 A job belongs to the agent that started it. A [sub-agent clone](./subagents.md) of Alice acts as Alice: it sees and stops her jobs. Bob cannot see or stop them.
 
-Jobs are not tied to a turn: `/cancel` and the end of a turn leave them running. They are stopped when the service stops. A job that was running when the service went down (a crash or a restart) is marked `lost` when it starts again, and the agent is told once; it is never started again.
+Jobs are not tied to a turn: `/cancel` and the end of a turn leave them running. They are stopped when the service stops, without a notice. A job that was running when the service went down (a crash or a restart) is marked `lost` when it starts again, and the agent is told once; it is never started again.
 
 [Classifiers](./classifiers.md) and [watch jobs](./scheduling.md) cannot start jobs or use `shell_ctrl`: nothing would collect the result. Their commands run in the foreground and are stopped at the timeout.
 

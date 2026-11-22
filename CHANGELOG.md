@@ -36,8 +36,8 @@
   past it the middle of the job's log is dropped and the job keeps running)
   and `job_log_days` (default 7: a finished job's log and record are removed
   after this). Leaving a key out or setting it to 0 uses the default. A
-  negative value, now also for `timeout_seconds`, is refused when the config
-  is loaded or saved; a `timeout_seconds` above `max_timeout_seconds` is used
+  negative value is refused when the config is loaded or saved (see Changed
+  for `timeout_seconds`); a `timeout_seconds` above `max_timeout_seconds` is used
   as `max_timeout_seconds`. Changes to these timeouts and limits take effect
   at the next start.
 
@@ -60,6 +60,9 @@
   old behaviour: its command is stopped at the timeout ("Command timed out
   after 1m0s and was stopped."). To restore the old behaviour for an agent,
   add `shell_ctrl` to its `deny_tools`.
+- **BREAKING: a negative `tools.exec.timeout_seconds` is refused.** It used
+  to mean the default (60 seconds); now the config does not load and Agency
+  does not start until it is removed or set to 0, which keeps the default.
 - **Long `shell_exec` output is returned as its head and its tail**, with the
   middle left out and the file holding all of it named, instead of the first
   10,000 characters: the end of a build log, where the error usually is, is

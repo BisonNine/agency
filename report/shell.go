@@ -8,14 +8,14 @@ import (
 )
 
 // shellJobs is the agent's shell_ctrl state: off without shell_exec, off
-// when deny_tools removed it (a command is then stopped at its timeout),
+// when denied (deny_tools) (a command is then stopped at its timeout),
 // else on with the limits its jobs run under.
 func shellJobs(cfg *config.Config, a *config.AgentConfig) string {
 	switch {
 	case !a.IsToolAllowed(config.ShellExecTool):
 		return "off"
 	case !a.IsToolAllowed(config.ShellCtrlTool):
-		return "off (deny_tools); commands stop at their timeout"
+		return "off (denied); commands stop at their timeout"
 	}
 	ex := cfg.Tools.Exec.Effective()
 	return "on: " + itoa(ex.MaxJobs) + " running at most, each stopped after " + seconds(ex.MaxJobSeconds) +

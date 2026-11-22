@@ -30,7 +30,7 @@ func TestCollectAgents_ShellJobsRow(t *testing.T) {
 		t.Errorf("bob with limits set = %q, want %q", got, want)
 	}
 	cfg.Agents.List[1].DenyTools = []string{"shell_ctrl"}
-	if got := row("bob"); got != "off (deny_tools); commands stop at their timeout" {
+	if got := row("bob"); got != "off (denied); commands stop at their timeout" {
 		t.Errorf("bob with shell_ctrl denied = %q", got)
 	}
 }

@@ -51,6 +51,9 @@ func build(t *testing.T, m *Mount, cfg *config.Config, deps tools.ToolDeps) *age
 // newMount is a mount of the test's own, closed at its end.
 func testMount(t *testing.T) *Mount {
 	t.Helper()
+	// The test's temporary folders are created (and their removal
+	// registered) first, so Close stops the jobs before they are removed.
+	t.TempDir()
 	m := newMount()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -389,6 +392,9 @@ func TestModesOnDisk(t *testing.T) {
 
 	res := alice.run("shell_exec", map[string]any{"command": "echo hi", "background": true, "notify": false}, nil)
 	id := jobID(t, res.ForLLM)
+	if res := alice.run("shell_ctrl", map[string]any{"action": "wait", "id": id}, nil); !strings.Contains(res.ForLLM, "exited with code 0") {
+		t.Fatalf("wait = %q", res.ForLLM)
+	}
 	dir := filepath.Join(ws, config.ShellJobsDir)
 	checkMode(t, dir, 0o750)
 	checkMode(t, filepath.Join(dir, id+".log"), 0o640)
@@ -427,9 +433,7 @@ func TestCloseStopsJobs(t *testing.T) {
 	if err := m.Close(ctx); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if processAlive(pid) {
-		t.Errorf("child %d still running after Close", pid)
-	}
+	waitFor(t, func() bool { return !processAlive(pid) })
 	if m.Running("alice") != 0 {
 		t.Errorf("alice runs %d jobs after Close", m.Running("alice"))
 	}
@@ -505,4 +509,42 @@ func processAlive(pid int) bool {
 	}
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
+}
+
+// Jobs stopped by Close send no notice: the loop is stopping.
+func TestCloseSendsNoNotice(t *testing.T) {
+	m := newMount()
+	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: t.TempDir()})
+	got := make(chan *tools.ToolResult, 1)
+	res := alice.run("shell_exec", map[string]any{"command": "sleep 60", "background": true}, func(_ context.Context, r *tools.ToolResult) { got <- r })
+	jobID(t, res.ForLLM)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := m.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case r := <-got:
+		t.Errorf("notice at shutdown: %q", r.ForLLM)
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// A foreground command's route is dropped once it has ended, even when it
+// ended before its start was recorded.
+func TestRoutesDroppedForEndedCommands(t *testing.T) {
+	m := testMount(t)
+	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: t.TempDir()})
+	cb := func(context.Context, *tools.ToolResult) {}
+	for range 20 {
+		if res := alice.run("shell_exec", map[string]any{"command": "true"}, cb); res.IsError {
+			t.Fatal(res.ForLLM)
+		}
+	}
+	m.nmu.Lock()
+	n := len(m.routes)
+	m.nmu.Unlock()
+	if n != 0 {
+		t.Errorf("%d routes kept for ended commands", n)
+	}
 }

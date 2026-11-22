@@ -203,6 +203,9 @@ func agentToolsTable(a *config.AgentConfig) Table {
 	var cells [][]string
 	explicit := map[string]bool{}
 	for _, e := range tools {
+		if _, implied := config.GrantingTool(e); implied {
+			continue // listed below, only when its granting tool brings it
+		}
 		explicit[strings.ToLower(e)] = true
 		cells = append(cells, row(e, yesNo(isSensitive(e))))
 	}

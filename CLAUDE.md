@@ -1026,7 +1026,8 @@ shortcoming in the module, never here.
   answered in its default chat (`CronTarget`) or kept there. The gateway binds the
   hooks once the loop has `Started()` (`bindShellTools`; notices found before are
   held) and `shutdownGateway` calls `closeShellJobs` (`Host.Close`: every job
-  terminated, then killed after 5 s) before the loop stops. `/cancel` does not
+  terminated, then killed after 5 s) before the loop stops; jobs it stops send no notice (the
+  loop is stopping), and no tools are built until it returns. `/cancel` does not
   touch jobs yet: for the agent task list of phase 5b, `Host.Running(owner)`
   counts an agent's running jobs and `Host.StopAll(owner)` stops them. The folder
   is in `AlwaysReadableWorkspaceDirs` (read, never written, by the file tools) and

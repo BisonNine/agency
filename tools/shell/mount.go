@@ -50,8 +50,9 @@ const maxPending = 256
 
 // Mount holds the job managers of every workspace and routes their notices.
 type Mount struct {
-	mu    sync.Mutex
-	byDir map[string]*sdkshell.Tools // per absolute jobs directory
+	mu      sync.Mutex
+	byDir   map[string]*sdkshell.Tools // per absolute jobs directory
+	closing bool                       // Close is stopping the jobs: build nothing
 
 	guard atomic.Pointer[guard]
 
@@ -165,6 +166,9 @@ func (m *Mount) toolsFor(cfg *config.Config, workspace string) (*sdkshell.Tools,
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closing {
+		return nil, errors.New("shutting down")
+	}
 	if t := m.byDir[dir]; t != nil {
 		return t, nil
 	}
@@ -247,6 +251,13 @@ func (m *Mount) forget(dir, id string) {
 // so it follows the same turn-chat rules. A job lost in a restart has no
 // call: its notice goes to the owner's main conversation through the hooks.
 func (m *Mount) notice(dir string, n sdkshell.Notice) {
+	if n.State == proc.StateStopped && n.StopReason == proc.StopShutdown {
+		// The loop is stopping: a turn started now would not be answered.
+		m.forget(dir, n.JobID)
+		logger.InfoCF("shell", "Shell job stopped at shutdown; no notice sent",
+			map[string]any{"agent_id": n.Owner, "job": n.JobID})
+		return
+	}
 	m.nmu.Lock()
 	route := m.routes[jobKey(dir, n.JobID)]
 	delete(m.routes, jobKey(dir, n.JobID))
@@ -256,6 +267,9 @@ func (m *Mount) notice(dir string, n sdkshell.Notice) {
 			deliver = m.hooks.Deliver
 		} else if len(m.pending) < maxPending {
 			m.pending = append(m.pending, pendingNotice{owner: n.Owner, text: n.Text})
+		} else {
+			logger.WarnCF("shell", "Lost shell job notice not kept: too many waiting",
+				map[string]any{"agent_id": n.Owner, "job": n.JobID})
 		}
 	}
 	m.nmu.Unlock()
@@ -277,12 +291,17 @@ func (m *Mount) audit(dir string, e sdkshell.AuditEvent) {
 	if e.Call != nil {
 		ctx = callContext(e.Call)
 	}
+	routed := e.Kind == sdkshell.AuditStart && e.JobID != "" && e.Call != nil && e.Call.Notify != nil
 	m.nmu.Lock()
-	if e.Kind == sdkshell.AuditStart && e.JobID != "" && e.Call != nil && e.Call.Notify != nil {
+	if routed {
 		m.routes[jobKey(dir, e.JobID)] = e.Call.Notify
 	}
 	turnID := m.hooks.TurnID
 	m.nmu.Unlock()
+	if routed && !m.running(dir, e.JobID) {
+		// It ended before its start was recorded: its end has been handled.
+		m.forget(dir, e.JobID)
+	}
 
 	store := audit.Default()
 	if store == nil {
@@ -319,6 +338,18 @@ func (m *Mount) audit(dir string, e sdkshell.AuditEvent) {
 		ev.Details = string(b)
 	}
 	store.Record(ev)
+}
+
+// running reports whether job id of the manager over dir is still running.
+func (m *Mount) running(dir, id string) bool {
+	m.mu.Lock()
+	t := m.byDir[dir]
+	m.mu.Unlock()
+	if t == nil {
+		return false
+	}
+	info, ok := t.Manager().Get(id)
+	return ok && info.Running()
 }
 
 // Bind installs the loop's hooks and delivers the notices kept until now.
@@ -367,16 +398,17 @@ func (m *Mount) StopAll(owner string) int {
 	return int(n.Load())
 }
 
-// Close stops every job of every workspace (terminate, grace, kill) and
-// forgets the managers and the hooks, so a gateway started again in this
+// Close stops every job of every workspace (terminate, grace, kill), with
+// no end-of-job notice (the loop is stopping), builds no tools meanwhile, and
+// then forgets the managers and the hooks, so a gateway started again in this
 // process starts afresh. It returns when the jobs have ended or ctx ends.
 func (m *Mount) Close(ctx context.Context) error {
 	m.mu.Lock()
+	m.closing = true
 	all := make([]*sdkshell.Tools, 0, len(m.byDir))
 	for _, t := range m.byDir {
 		all = append(all, t)
 	}
-	m.byDir = make(map[string]*sdkshell.Tools)
 	m.mu.Unlock()
 
 	var wg sync.WaitGroup
@@ -386,6 +418,10 @@ func (m *Mount) Close(ctx context.Context) error {
 	}
 	wg.Wait()
 
+	m.mu.Lock()
+	m.byDir = make(map[string]*sdkshell.Tools)
+	m.closing = false
+	m.mu.Unlock()
 	m.nmu.Lock()
 	m.hooks, m.bound = Hooks{}, false
 	m.routes = make(map[string]func(*toolspec.Result))
