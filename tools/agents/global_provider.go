@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
@@ -41,7 +42,8 @@ const spawnToolDescription = "Spawn a subagent to handle a task. Use 'mode' to c
 	"task model of that kind; omit it to use the first one that works. Output is saved in your workspace under " +
 	"files/generated/<date>/ and the result gives the paths: images and audio come back as paths only, so send one " +
 	"to the chat with msg_send_file; text and transcripts come back inline too, cut when long, with the full text in " +
-	"a .md file. agent_id and character_card can't be used with kind."
+	"a .md file. agent_id and character_card can't be used with kind. If your turn is interrupted while it waits, " +
+	"the task goes on and its result arrives later as a background result."
 
 func spawnToolSchema() map[string]any {
 	return map[string]any{
@@ -114,6 +116,27 @@ func statusToolSchema() map[string]any {
 	}
 }
 
+// cancelToolDescription is agent_cancel's description.
+const cancelToolDescription = "Cancel your own background tasks (sub-agents and task-model calls started with agent_spawn), " +
+	"with the tasks they started. Give 'uuid' for one task, or 'all': true for every running one. A cancelled task " +
+	"sends no result. Returns how many were cancelled and which had already finished."
+
+func cancelToolSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"uuid": map[string]any{
+				"type":        "string",
+				"description": "The task uuid returned by agent_spawn (or shown by agent_list)",
+			},
+			"all": map[string]any{
+				"type":        "boolean",
+				"description": "Cancel every running task of yours",
+			},
+		},
+	}
+}
+
 func listToolSchema() map[string]any {
 	return map[string]any{
 		"type":       "object",
@@ -132,8 +155,12 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 	if v, ok := deps.Spawn.(global.TaskInspector); ok {
 		inspector = v
 	}
+	var canceller global.TaskCanceller
+	if v, ok := deps.Spawn.(global.TaskCanceller); ok {
+		canceller = v
+	}
 
-	return []global.ToolDefinition{
+	defs := []global.ToolDefinition{
 		{
 			Name:        "spawn",
 			Description: spawnToolDescription,
@@ -188,7 +215,7 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 		},
 		{
 			Name:        "status",
-			Description: "Check the status of a background task by uuid. Returns one of: unknown, running, done, error — with a pointer to the result file when available.",
+			Description: "Check the status of a background task by uuid. Returns one of: unknown, running, done, error, cancelled — with a pointer to the result file when available.",
 			RawSchema:   statusToolSchema(),
 			Category:    "agents",
 			Handler: func(call *global.ToolCall) (*global.Result, error) {
@@ -231,6 +258,51 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			},
 		},
 		messageTool(hostDeps(deps)),
+	}
+	// agent_cancel comes with agent_spawn (config.ImpliedTools): it is never
+	// a tool of its own in the tools list, so the catalogue's deps-free
+	// enumeration does not list it.
+	if td, ok := deps.Host.(tools.ToolDeps); ok && td.Cfg != nil {
+		defs = append(defs, cancelTool(canceller))
+	}
+	return defs
+}
+
+// cancelTool is agent_cancel: the caller cancels its own tasks.
+func cancelTool(canceller global.TaskCanceller) global.ToolDefinition {
+	return global.ToolDefinition{
+		Name:        strings.TrimPrefix(config.AgentCancelTool, "agent_"),
+		Description: cancelToolDescription,
+		RawSchema:   cancelToolSchema(),
+		Category:    "agents",
+		Handler: func(call *global.ToolCall) (*global.Result, error) {
+			if canceller == nil {
+				return &global.Result{IsError: true, ForLLM: "task cancel not available"}, nil
+			}
+			id := strings.TrimSpace(strArg(call.Args, "uuid"))
+			all, isBool := call.Args["all"].(bool)
+			all = isBool && all
+			var res *global.TaskCancelResult
+			var err error
+			switch {
+			case all && id != "":
+				return &global.Result{IsError: true, ForLLM: "give either uuid or all, not both"}, nil
+			case all:
+				res, err = canceller.CancelAllTasks()
+			case id != "":
+				res, err = canceller.CancelTask(id)
+			default:
+				return &global.Result{IsError: true, ForLLM: "uuid or all is required"}, nil
+			}
+			if err != nil {
+				return &global.Result{IsError: true, ForLLM: fmt.Sprintf("cancel failed: %v", err)}, nil
+			}
+			b, err := json.Marshal(res)
+			if err != nil {
+				return &global.Result{IsError: true, ForLLM: fmt.Sprintf("cancel result encode failed: %v", err)}, nil
+			}
+			return &global.Result{ForLLM: string(b), Silent: true}, nil
+		},
 	}
 }
 

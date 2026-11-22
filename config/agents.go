@@ -339,7 +339,8 @@ func MatchToolPattern(patterns []string, name string) bool {
 // that list; a denied tool is never allowed.
 //
 // shell_exec is allowed only when the list names it exactly, and a tool in
-// ImpliedTools (shell_ctrl) only through the tool that implies it.
+// ImpliedTools (shell_ctrl, agent_cancel) only through the tool that implies
+// it.
 func (a *AgentConfig) IsToolAllowed(name string) bool {
 	if a == nil {
 		return false
@@ -378,13 +379,22 @@ func IsShellTool(name string) bool {
 // ImpliedTools), and deny_tools can remove it.
 const ShellCtrlTool = "shell_ctrl"
 
+// AgentSpawnTool is the published name of the sub-agent tool.
+const AgentSpawnTool = "agent_spawn"
+
+// AgentCancelTool is the published name of the tool an agent cancels its own
+// tasks with. It is never granted on its own: an agent granted agent_spawn
+// has it too (see ImpliedTools), and deny_tools can remove it.
+const AgentCancelTool = "agent_cancel"
+
 // ImpliedTools lists the tools a grant brings with it: an agent allowed the
 // key tool is allowed each tool in its list, unless deny_tools names it. A
 // tool listed here is granted only that way; naming it in the tools list, a
 // "*" or a prefix entry does not grant it. Check Up shows each with the tool
 // it came with.
 var ImpliedTools = map[string][]string{
-	ShellExecTool: {ShellCtrlTool},
+	ShellExecTool:  {ShellCtrlTool},
+	AgentSpawnTool: {AgentCancelTool},
 }
 
 // GrantingTool returns the tool whose grant implies name, if name is granted

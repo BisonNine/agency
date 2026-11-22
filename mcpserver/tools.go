@@ -529,8 +529,9 @@ func dispatchToolCall(
 	// dispatch) arrive here, not through the loop, and would otherwise start at
 	// depth 0 whatever the turn's depth.
 	ctx = toolsagents.WithSpawnDepth(ctx, rec.depth)
-	// Likewise the turn's ask chain (SetTurnScope).
+	// Likewise the turn's ask chain and the task it runs in (SetTurnScope).
 	ctx = tools.WithAskChain(ctx, rec.askChain)
+	ctx = toolsagents.WithTaskID(ctx, rec.taskID)
 
 	// Everything the call sends to "the current chat" (msg_send,
 	// msg_send_file, ForUser, breadcrumbs, background results, a

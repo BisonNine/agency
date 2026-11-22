@@ -13,11 +13,13 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
-// scopeTool records the ask chain it ran with.
+// scopeTool records the ask chain and task it ran with.
 type scopeTool struct {
 	chain []string
+	task  string
 }
 
 func (s *scopeTool) Name() string               { return "probe" }
@@ -25,6 +27,7 @@ func (s *scopeTool) Description() string        { return "records turn scope" }
 func (s *scopeTool) Parameters() map[string]any { return map[string]any{} }
 func (s *scopeTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
 	s.chain = tools.AskChain(ctx)
+	s.task = toolsagents.TaskID(ctx)
 	return &tools.ToolResult{ForLLM: "ok", ForUser: "for the chat"}
 }
 
@@ -39,25 +42,25 @@ func dispatchScope(t *testing.T, st *SessionTokenStore, tok string, msgBus *bus.
 	return tool
 }
 
-// A CLI agent's tool calls carry the ask chain of the turn holding the
-// token, as in-process calls do (so an agent waiting in the
+// A CLI agent's tool calls carry the ask chain and task of the turn holding
+// the token, as in-process calls do (so an agent waiting in the
 // exchange cannot be asked over MCP either); a later turn replaces them, and
 // a token rotation keeps them.
 func TestDispatch_CarriesTurnScope(t *testing.T) {
 	st := newSessionTokenStore()
 	st.Issue("alice", "agent:alice:main", "/ws")
 
-	st.SetTurnScope("agent:alice:main", []string{"bob", "alice"})
+	st.SetTurnScope("agent:alice:main", []string{"bob", "alice"}, "task-1")
 	tok := st.Issue("alice", "agent:alice:main", "/ws") // rotation keeps the scope
 	got := dispatchScope(t, st, tok, nil)
-	if !slices.Equal(got.chain, []string{"bob", "alice"}) {
-		t.Fatalf("scope = %v, want [bob alice]", got.chain)
+	if !slices.Equal(got.chain, []string{"bob", "alice"}) || got.task != "task-1" {
+		t.Fatalf("scope = %v in %q, want [bob alice] in task-1", got.chain, got.task)
 	}
 
-	st.SetTurnScope("agent:alice:main", []string{"alice"})
+	st.SetTurnScope("agent:alice:main", []string{"alice"}, "")
 	got = dispatchScope(t, st, tok, nil)
-	if !slices.Equal(got.chain, []string{"alice"}) {
-		t.Fatalf("scope after a later turn = %v, want [alice]", got.chain)
+	if !slices.Equal(got.chain, []string{"alice"}) || got.task != "" {
+		t.Fatalf("scope after a later turn = %v in %q, want [alice] in no task", got.chain, got.task)
 	}
 
 	svc := "SST" + strings.Repeat("cd", 32)

@@ -300,9 +300,10 @@ type SessionTokenIssuer interface {
 	// it. No-op when the sessionKey is unknown.
 	SetDepth(sessionKey string, depth int)
 	// SetTurnScope records the ask chain of the turn starting on sessionKey
-	// (see tools.AskChain), so MCP tool calls made with the session's token
-	// carry it. No-op when the sessionKey is unknown.
-	SetTurnScope(sessionKey string, askChain []string)
+	// (see tools.AskChain) and the task it runs in (toolsagents.TaskID), so
+	// MCP tool calls made with the session's token carry them. No-op when
+	// the sessionKey is unknown.
+	SetTurnScope(sessionKey string, askChain []string, taskID string)
 	// BeginTurn records a turn of sessionKey whose final reply goes to chatID
 	// on channel until the returned end is called, so MCP tool calls made
 	// with the session's token (CLI providers) send their output for "the

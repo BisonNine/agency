@@ -387,12 +387,14 @@ shortcoming in the module, never here.
   page's "Default tools" button writes into a list (`GET /api/agents/tools`
   `default_tools`). Suites (`forum`, `fusion`, `maestro`, `cogmem`, `ccv3`, `classifiers`) and
   `mcp_tools` have their own switches. **Implied tools:** a tool in
-  `config.ImpliedTools` (today only `shell_ctrl`, implied by `shell_exec`) is
-  granted only with the tool that implies it (`config.GrantingTool`): naming it
-  in `tools`, `"*"` or a prefix never grants it, `deny_tools` removes it, and
-  it is not in the catalogue's tool list (`Describe`, the Agents page,
-  `CODING_TOOLS`); Check Up lists it "yes (with shell_exec)" and the
-  capabilities golden file shows it. Check Up lists each enabled agent with no
+  `config.ImpliedTools` (`shell_ctrl`, implied by `shell_exec`; `agent_cancel`,
+  implied by `agent_spawn`) is granted only with the tool that implies it
+  (`config.GrantingTool`): naming it in `tools`, `"*"` or a prefix never grants
+  it (a `"*"` or prefix that grants `agent_spawn` brings `agent_cancel` with
+  it), `deny_tools` removes it, and it is not in the catalogue's tool list
+  (`Describe`, the Agents page, `CODING_TOOLS`); Check Up lists it "yes (with
+  shell_exec)" / "yes (with agent_spawn)" and the capabilities golden file
+  shows it. Check Up lists each enabled agent with no
   tools. An agent whose registry is empty (no native, suite or MCP tool) gets
   `noToolsNotice` in its dynamic prompt layer (`ContextBuilder.WithToolsGranted`,
   read every turn; not for fresh temporary or human agents). Skills follow the

@@ -57,3 +57,19 @@ func TestCollectAgents_ShellCtrlNamedAlone(t *testing.T) {
 		t.Errorf("shell_ctrl marker = %q", m["shell_ctrl"])
 	}
 }
+
+// agent_cancel comes with agent_spawn: Check Up lists it with the tool it
+// came with, and named alone it grants nothing.
+func TestCollectAgents_AgentCancelImplied(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Agents.List[1].Tools = []string{"file_read", "agent_spawn"}
+	m := toolMarkers(findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "bob"), "Internal tools"))
+	if m["agent_cancel"] != "yes (with agent_spawn)" {
+		t.Errorf("agent_cancel marker = %q", m["agent_cancel"])
+	}
+	cfg.Agents.List[1].Tools = []string{"file_read", "agent_cancel"}
+	m = toolMarkers(findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "bob"), "Internal tools"))
+	if m["agent_cancel"] != "ignored (comes with agent_spawn)" {
+		t.Errorf("agent_cancel named alone = %q", m["agent_cancel"])
+	}
+}

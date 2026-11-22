@@ -282,6 +282,41 @@ func TestAgentConfig_IsToolAllowed_ShellCtrlImplied(t *testing.T) {
 	}
 }
 
+// agent_cancel comes with agent_spawn and only with it: naming it alone, or
+// a prefix without agent_spawn, never grants it; a grant of agent_spawn by a
+// wildcard or prefix brings it; deny_tools removes it.
+func TestAgentConfig_IsToolAllowed_AgentCancelImplied(t *testing.T) {
+	tests := []struct {
+		name      string
+		tools     []string
+		deny      []string
+		wantAllow bool
+	}{
+		{"with agent_spawn", []string{"agent_spawn"}, nil, true},
+		{"with agent_spawn by wildcard", []string{"*"}, nil, true},
+		{"with agent_spawn by prefix", []string{"agent_*"}, nil, true},
+		{"named alone", []string{"agent_cancel"}, nil, false},
+		{"no tools", nil, nil, false},
+		{"denied by name", []string{"agent_spawn"}, []string{"agent_cancel"}, false},
+		{"agent_spawn denied", []string{"*"}, []string{"agent_spawn"}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &AgentConfig{Tools: tc.tools, DenyTools: tc.deny}
+			if got := a.IsToolAllowed(AgentCancelTool); got != tc.wantAllow {
+				t.Errorf("IsToolAllowed(agent_cancel) with tools=%v deny=%v = %v, want %v", tc.tools, tc.deny, got, tc.wantAllow)
+			}
+		})
+	}
+	a := &AgentConfig{Tools: []string{"agent_spawn"}, DenyTools: []string{"agent_cancel"}}
+	if !a.IsToolAllowed(AgentSpawnTool) {
+		t.Error("denying agent_cancel removed agent_spawn")
+	}
+	if g, ok := GrantingTool("Agent_Cancel"); !ok || g != AgentSpawnTool {
+		t.Errorf("GrantingTool(agent_cancel) = %q, %v", g, ok)
+	}
+}
+
 // A config that still sets the removed tools.tool_overrides loads, the key is
 // reported as unknown, and it changes nobody's tools: each agent's own tools
 // list alone decides.

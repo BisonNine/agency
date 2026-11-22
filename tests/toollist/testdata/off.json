@@ -627,6 +627,24 @@
   "bob": [
     {
       "type": "function",
+      "name": "agent_cancel",
+      "description": "Cancel your own background tasks (sub-agents and task-model calls started with agent_spawn), with the tasks they started. Give 'uuid' for one task, or 'all': true for every running one. A cancelled task sends no result. Returns how many were cancelled and which had already finished.",
+      "parameters": {
+        "properties": {
+          "all": {
+            "description": "Cancel every running task of yours",
+            "type": "boolean"
+          },
+          "uuid": {
+            "description": "The task uuid returned by agent_spawn (or shown by agent_list)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
       "name": "agent_list",
       "description": "List this agent's background tasks. Returns uuid, name, and status for each.",
       "parameters": {
@@ -665,7 +683,7 @@
     {
       "type": "function",
       "name": "agent_spawn",
-      "description": "Spawn a subagent to handle a task. Use 'mode' to choose how it runs: 'callback' (default) runs it in the background and notifies you when done with a pointer to a result file in your workspace (read it with your file tools, or poll agent_status); 'wait' runs it to completion and returns the result immediately. Callback mode requires 'name', a short identifier for the task. 'media' attaches media:// refs (from '[attachment ref(s): …]' markers in the conversation) to the subagent's initial message — useful to hand an image you cannot view to a vision-capable agent or model for analysis. With 'kind' it calls a task model instead of a subagent: one call, no tools, no agent. Kinds: 'text' (write, translate or summarise: 'task' is the prompt, text 'files' are added to it), 'image' (generate, or edit the images in 'files'/'media': 'task' is the prompt), 'tts' (speak 'task' aloud; optional 'voice' and 'format'), 'stt' (transcribe the one audio file in 'files' or 'media'; 'task' is an optional hint). 'model' then names a task model of that kind; omit it to use the first one that works. Output is saved in your workspace under files/generated/\u003cdate\u003e/ and the result gives the paths: images and audio come back as paths only, so send one to the chat with msg_send_file; text and transcripts come back inline too, cut when long, with the full text in a .md file. agent_id and character_card can't be used with kind.",
+      "description": "Spawn a subagent to handle a task. Use 'mode' to choose how it runs: 'callback' (default) runs it in the background and notifies you when done with a pointer to a result file in your workspace (read it with your file tools, or poll agent_status); 'wait' runs it to completion and returns the result immediately. Callback mode requires 'name', a short identifier for the task. 'media' attaches media:// refs (from '[attachment ref(s): …]' markers in the conversation) to the subagent's initial message — useful to hand an image you cannot view to a vision-capable agent or model for analysis. With 'kind' it calls a task model instead of a subagent: one call, no tools, no agent. Kinds: 'text' (write, translate or summarise: 'task' is the prompt, text 'files' are added to it), 'image' (generate, or edit the images in 'files'/'media': 'task' is the prompt), 'tts' (speak 'task' aloud; optional 'voice' and 'format'), 'stt' (transcribe the one audio file in 'files' or 'media'; 'task' is an optional hint). 'model' then names a task model of that kind; omit it to use the first one that works. Output is saved in your workspace under files/generated/\u003cdate\u003e/ and the result gives the paths: images and audio come back as paths only, so send one to the chat with msg_send_file; text and transcripts come back inline too, cut when long, with the full text in a .md file. agent_id and character_card can't be used with kind. If your turn is interrupted while it waits, the task goes on and its result arrives later as a background result.",
       "parameters": {
         "properties": {
           "agent_id": {
@@ -739,7 +757,7 @@
     {
       "type": "function",
       "name": "agent_status",
-      "description": "Check the status of a background task by uuid. Returns one of: unknown, running, done, error — with a pointer to the result file when available.",
+      "description": "Check the status of a background task by uuid. Returns one of: unknown, running, done, error, cancelled — with a pointer to the result file when available.",
       "parameters": {
         "properties": {
           "uuid": {

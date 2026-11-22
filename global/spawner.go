@@ -81,7 +81,7 @@ type Spawner interface {
 type TaskStatus struct {
 	UUID       string `json:"uuid"`
 	Name       string `json:"name"`
-	Status     string `json:"status"` // unknown | running | done | error
+	Status     string `json:"status"` // unknown | running | done | error | cancelled
 	ResultFile string `json:"result_file,omitempty"`
 	Error      string `json:"error,omitempty"`
 	CreatedAt  string `json:"created_at,omitempty"`
@@ -105,6 +105,28 @@ type TaskInspector interface {
 	TaskStatus(uuid string) (*TaskStatus, error)
 	// TaskList returns all tracked tasks for the owning agent.
 	TaskList() ([]TaskBrief, error)
+}
+
+// TaskCanceller is an optional capability of a Spawner: cancel the owning
+// agent's own tasks (agent_cancel), each with the tasks it started. Another
+// agent's task is unknown. Cancelling a finished task is not an error.
+type TaskCanceller interface {
+	// CancelTask cancels the task with the given uuid.
+	CancelTask(uuid string) (*TaskCancelResult, error)
+	// CancelAllTasks cancels every running task of the owning agent.
+	CancelAllTasks() (*TaskCancelResult, error)
+}
+
+// TaskCancelResult is what a cancel did.
+type TaskCancelResult struct {
+	// Cancelled counts the tasks cancelled, with the tasks they started;
+	// Tasks lists them.
+	Cancelled int         `json:"cancelled"`
+	Tasks     []TaskBrief `json:"tasks,omitempty"`
+	// AlreadyFinished lists the named tasks that had already ended.
+	AlreadyFinished []TaskBrief `json:"already_finished,omitempty"`
+	// Unknown lists the uuids that name no task of the agent.
+	Unknown []string `json:"unknown,omitempty"`
 }
 
 // TurnUsage is the resource accounting for one agent turn (all LLM iterations

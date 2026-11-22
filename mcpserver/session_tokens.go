@@ -44,6 +44,10 @@ type sessionRecord struct {
 	// (SetTurnScope), applied to tool calls presented with this token like
 	// depth. Service tokens have none.
 	askChain []string
+	// taskID is the task the session's current turn runs in (a sub-agent's
+	// worker), recorded with the ask chain: a task a call with this token
+	// starts is that task's own, cancelled with it.
+	taskID string
 	// service marks a per-agent service token (RegisterService,
 	// SyncServiceTokens): it belongs to no turn, so a call with it has no
 	// reply chat whatever turns its session runs.
@@ -145,6 +149,7 @@ func (s *SessionTokenStore) Issue(agentID, sessionKey, archiveDir string) string
 		// Keep the running turn's scope across rotation.
 		rec.depth = s.tokens[old].depth
 		rec.askChain = s.tokens[old].askChain
+		rec.taskID = s.tokens[old].taskID
 		delete(s.tokens, old)
 	}
 	s.tokens[tok] = rec
@@ -306,14 +311,15 @@ func (s *SessionTokenStore) SetDepth(sessionKey string, depth int) {
 	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.depth = depth })
 }
 
-// SetTurnScope records the ask chain of the turn now running on sessionKey on
-// its conversation token, so MCP tool calls made with it (a CLI provider's)
-// carry it as in-process tool calls do: an agent waiting in the exchange
-// cannot be asked. Called by the agent loop at the start of every turn.
-// No-op if the session has no token.
-func (s *SessionTokenStore) SetTurnScope(sessionKey string, askChain []string) {
+// SetTurnScope records the ask chain of the turn now running on sessionKey
+// and the task it runs in on its conversation token, so MCP tool calls made
+// with it (a CLI provider's) carry them as in-process tool calls do: an
+// agent waiting in the exchange cannot be asked, and a task the call starts
+// is cancelled with the task it was started in. Called by the agent loop at
+// the start of every turn. No-op if the session has no token.
+func (s *SessionTokenStore) SetTurnScope(sessionKey string, askChain []string, taskID string) {
 	chain := slices.Clone(askChain)
-	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.askChain = chain })
+	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.askChain, rec.taskID = chain, taskID })
 }
 
 // updateRecord applies update to the conversation token record of

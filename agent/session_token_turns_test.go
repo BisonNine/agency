@@ -44,7 +44,7 @@ func (r *recordingSTI) SetDepth(sessionKey string, depth int) {
 	r.depths = append(r.depths, depthCall{sessionKey: sessionKey, depth: depth})
 }
 
-func (r *recordingSTI) SetTurnScope(string, []string) {}
+func (r *recordingSTI) SetTurnScope(string, []string, string) {}
 
 // BeginTurn records the turn's reply chat (calls) and keeps it while it runs
 // (activeTurns).

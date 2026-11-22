@@ -447,7 +447,7 @@ type scopeSTI struct {
 	scopes  map[string][]string
 }
 
-func (s *scopeSTI) SetTurnScope(sessionKey string, chain []string) {
+func (s *scopeSTI) SetTurnScope(sessionKey string, chain []string, _ string) {
 	s.scopeMu.Lock()
 	defer s.scopeMu.Unlock()
 	if s.scopes == nil {
