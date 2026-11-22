@@ -303,18 +303,18 @@ packages import only `tools`.
 |---|---|
 | `Register` | `Put(Entry{Tool})` |
 | `RegisterHidden`, `RegisterHiddenGroup` | `Put(Entry{Hidden: true, Group, RevealTogether})` |
-| `RegisterSuite*` | the same `Put`; the wrapper records the name as suite-exempt |
-| `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (`Hidden = !IsCore`), returning the removed count |
+| `RegisterSuite*` | the same `Put`, with `Meta` marking the tool suite-exempt |
+| `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (`Hidden = !IsCore`, `SuiteExempt` in `Meta`), returning the removed count |
 | `Get`, `List`, `Count`, `Version` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version` |
-| `ExecuteUnattended` | refuses an unknown or session-scoped tool, then `ExecuteWithContext` with no chat |
+| `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
 | `GetDefinitions`, `GetSummaries` | `Listed()` |
 | `ToProviderDefs` | `Snapshot().List()` (`Name = Published`, `Deferred = Hidden`) |
 | `SnapshotHiddenTools`, `HiddenNamespaces`, discovery | `Snapshot().Hidden()` |
 
-`ExecuteWithContext` looks the tool up, applies the agent's allow checker from
-the context (`WithToolAllowChecker`: a denied tool is refused with
-`NotEnabledMessage`; a suite tool skips the allow list but not the deny list),
-puts the chat (`toolkit.WithChat`) and the agent id of the turn
+`ExecuteWithContext` runs the tool with `ExecuteGated`: the gate applies the
+agent's allow checker from the context to exactly the tool that will run
+(`WithToolAllowChecker`: a denied tool is refused with `NotEnabledMessage`; a
+suite tool skips the allow list but not the deny list). It also puts the chat (`toolkit.WithChat`) and the agent id of the turn
 (`toolkit.WithAgentID`, which the toolspec bridge hands to handlers as
 `call.AgentID`) on the context, and runs it through the catalogue.
 

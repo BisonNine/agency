@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	"go.bison9.com/agent/toolkit"
 
@@ -36,17 +35,29 @@ type ToolEntry struct {
 
 // ToolRegistry is one agent's tools: a thin wrapper over a toolkit catalogue
 // that keeps the method set the host has always used and adds the host's own
-// rules, the suite exemption and the per-call allow checker. The catalogue
-// holds the tools; the wrapper records only which names are suite-exempt.
+// rules, the suite exemption and the per-call allow checker. Whether a tool is
+// suite-exempt travels with its catalogue entry (Entry.Meta), so a call is
+// checked against exactly the tool that runs.
 type ToolRegistry struct {
 	cat *toolkit.Catalog
+}
 
-	// mu serialises the wrapper's writes and pairs a name's catalogue entry
-	// with its suite exemption for a reader, so a call never sees one tool's
-	// entry with another's exemption. Catalogue reads take no lock of their
-	// own.
-	mu     sync.RWMutex
-	exempt map[string]bool // suite-exempt names, under mu
+// suiteExempt is the Meta of a tool registered as part of an all-or-nothing
+// suite; any other tool has none.
+type suiteExempt struct{}
+
+// entryMeta is the Meta for a tool that is, or is not, suite-exempt.
+func entryMeta(exempt bool) any {
+	if exempt {
+		return suiteExempt{}
+	}
+	return nil
+}
+
+// isSuiteExempt reports whether info is a suite-exempt tool.
+func isSuiteExempt(info toolkit.Info) bool {
+	_, ok := info.Meta.(suiteExempt)
+	return ok
 }
 
 // toolkitLogger is the catalogue's logger: the host's SDK handler, with
@@ -55,27 +66,18 @@ var toolkitLogger = logger.SDKAs("toolkit", "tool")
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
-		cat:    toolkit.New(toolkit.WithLogger(toolkitLogger), toolkit.WithTruncate(utils.Truncate)),
-		exempt: make(map[string]bool),
+		cat: toolkit.New(toolkit.WithLogger(toolkitLogger), toolkit.WithTruncate(utils.Truncate)),
 	}
 }
 
-// put registers e under the write lock, recording whether its name is
-// suite-exempt.
-func (r *ToolRegistry) put(e toolkit.Entry, suiteExempt bool, what string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// put registers e, its Meta recording whether it is suite-exempt.
+func (r *ToolRegistry) put(e toolkit.Entry, exempt bool, what string) {
+	e.Meta = entryMeta(exempt)
 	if err := r.cat.Put(e); err != nil {
 		logger.ErrorCF("tools", "Tool registration refused", map[string]any{"error": err.Error()})
 		return
 	}
-	name := e.Tool.Name()
-	if suiteExempt {
-		r.exempt[name] = true
-	} else {
-		delete(r.exempt, name)
-	}
-	fields := map[string]any{"name": name}
+	fields := map[string]any{"name": e.Tool.Name()}
 	if e.Hidden {
 		fields["group"] = e.Group
 	}
@@ -142,8 +144,6 @@ func (r *ToolRegistry) RemoveByPrefix(prefix string) int {
 // Returns how many tools were removed. The version moves when anything was
 // removed or added.
 func (r *ToolRegistry) ReplaceByPrefix(prefix string, entries []ToolEntry) int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	conv := make([]toolkit.Entry, 0, len(entries))
 	for _, e := range entries {
 		conv = append(conv, toolkit.Entry{
@@ -151,24 +151,10 @@ func (r *ToolRegistry) ReplaceByPrefix(prefix string, entries []ToolEntry) int {
 			Hidden:         !e.IsCore,
 			Group:          e.Group,
 			RevealTogether: e.RevealTogether,
+			Meta:           entryMeta(e.SuiteExempt),
 		})
 	}
 	_, removed := r.cat.ReplaceEntries(prefix, conv)
-	for name := range r.exempt {
-		if strings.HasPrefix(name, prefix) {
-			delete(r.exempt, name)
-		}
-	}
-	for _, e := range entries {
-		if e.Tool == nil {
-			continue
-		}
-		if e.SuiteExempt {
-			r.exempt[e.Tool.Name()] = true
-		} else {
-			delete(r.exempt, e.Tool.Name())
-		}
-	}
 	return removed
 }
 
@@ -289,22 +275,12 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 // ExecuteUnattended runs a registered tool with no session behind it (a
 // scheduled watch probe, a classifier run): it refuses a tool the registry
 // does not hold (ErrToolNotRegistered) and a SessionScoped one
-// (ErrToolSessionScoped), runs it through ExecuteWithContext with no channel,
-// chat or async callback (so the context's allow checker applies), and turns
-// an IsError result into an error carrying the tool's ForLLM text.
+// (ErrToolSessionScoped), applies the context's allow checker as
+// ExecuteWithContext does, passes no channel, chat or async callback, and
+// turns an IsError result into an error carrying the tool's ForLLM text.
 func (r *ToolRegistry) ExecuteUnattended(ctx context.Context, name string, args map[string]any) (string, error) {
-	tool, ok := r.Get(name)
-	if !ok {
-		return "", fmt.Errorf("tool %q: %w", name, ErrToolNotRegistered)
-	}
-	if scoped, isScoped := tool.(SessionScoped); isScoped && scoped.IsSessionScoped() {
-		return "", fmt.Errorf("tool %q: %w", name, ErrToolSessionScoped)
-	}
-	res := r.ExecuteWithContext(ctx, name, args, "", "", nil)
-	if res.IsError {
-		return "", fmt.Errorf("tool %q failed: %s", name, res.ForLLM)
-	}
-	return res.ForLLM, nil
+	ctx = withCallAgent(toolkit.WithChat(ctx, "", ""))
+	return r.cat.ExecuteUnattendedGated(ctx, name, args, allowGate(name))
 }
 
 // withCallAgent puts the agent the host's turn runs for (spawnllm's key) on
@@ -313,11 +289,35 @@ func withCallAgent(ctx context.Context) context.Context {
 	return toolkit.WithAgentID(ctx, providers.AgentIDFromContext(ctx))
 }
 
+// allowGate is the host's per-call grant check, run by the catalogue on the
+// exact tool a call resolved to (name is the name the caller used). It is
+// defense in depth over registration: the agent's allow checker on the
+// context refuses a tool it denies, and one it does not allow unless the
+// tool is suite-exempt (cogmem, maestro, fusion are gated as a unit by the
+// per-agent suite flag at registration). The check uses the internal name,
+// so MCP tools route to the mcp_tools allow-list even when called by their
+// bare ExternalName. With no checker on the context every tool may run.
+func allowGate(name string) toolkit.Gate {
+	return func(ctx context.Context, info toolkit.Info) *toolkit.Result {
+		checker := ToolAllowCheckerFromCtx(ctx)
+		if checker == nil {
+			return nil
+		}
+		if checker.IsToolDenied(info.Name) || (!isSuiteExempt(info) && !checker.IsToolAllowed(info.Name)) {
+			logger.WarnCF("tool", "Tool execution denied by agent allowlist",
+				map[string]any{"tool": info.Name})
+			return ErrorResult(NotEnabledMessage(name)).WithError(Refusal(fmt.Errorf("tool not permitted: %s", name)))
+		}
+		return nil
+	}
+}
+
 // ExecuteWithContext executes a registered tool, hidden by discovery or not,
-// with channel/chatID context and optional async callback.
-// If the tool implements AsyncExecutor and a non-nil callback is provided,
+// with channel/chatID context and optional async callback. The model may name
+// an MCP tool by its bare ExternalName as well as its internal name. If the
+// tool implements AsyncExecutor and a non-nil callback is provided,
 // ExecuteAsync is called instead of Execute — the callback is a parameter,
-// never stored as mutable state on the tool.
+// never stored as mutable state on the tool. Tool arguments are never logged.
 func (r *ToolRegistry) ExecuteWithContext(
 	ctx context.Context,
 	name string,
@@ -325,38 +325,11 @@ func (r *ToolRegistry) ExecuteWithContext(
 	channel, chatID string,
 	asyncCallback AsyncCallback,
 ) *ToolResult {
-	// Resolve first so the model may call an MCP tool by its bare ExternalName
-	// (the name it is advertised under) as well as the internal registry key.
-	r.mu.RLock()
-	info, found := r.cat.Lookup(name)
-	suiteExempt := found && r.exempt[info.Name]
-	r.mu.RUnlock()
-
-	// Defense-in-depth: check tool allowlist from context before execution.
-	// Suite tools (cogmem, maestro, fusion) are exempt from the ALLOW side — they
-	// are gated as a unit by the per-agent suite flag at registration, not by the
-	// per-tool allowlist — but the agent's deny list still applies to them. Gate
-	// on the canonical (internal) name so MCP tools route to the mcp_tools
-	// allow-list even when the caller used the bare ExternalName. A tool that is
-	// not registered is left to the catalogue, which reports it not found.
-	if checker := ToolAllowCheckerFromCtx(ctx); found && checker != nil {
-		canonical := info.Name
-		if checker.IsToolDenied(canonical) || (!suiteExempt && !checker.IsToolAllowed(canonical)) {
-			// Tool arguments are intentionally NOT logged: they routinely
-			// contain memory content, file contents, and other user data.
-			logger.InfoCF("tool", "Tool execution started", map[string]any{"tool": name})
-			logger.WarnCF("tool", "Tool execution denied by agent allowlist",
-				map[string]any{"tool": canonical})
-			return ErrorResult(NotEnabledMessage(name)).WithError(Refusal(fmt.Errorf("tool not permitted: %s", name)))
-		}
-	}
-
 	// Who the call is for: tools read the chat via ToolChannel/ToolChatID and
 	// bridged toolspec tools the agent id. Always set — tools validate what
 	// they require.
-	ctx = toolkit.WithChat(ctx, channel, chatID)
-	ctx = withCallAgent(ctx)
-	return r.cat.Execute(ctx, name, args, asyncCallback)
+	ctx = withCallAgent(toolkit.WithChat(ctx, channel, chatID))
+	return r.cat.ExecuteGated(ctx, name, args, asyncCallback, allowGate(name))
 }
 
 // GetDefinitions returns the schemas of the core tools (those not hidden by

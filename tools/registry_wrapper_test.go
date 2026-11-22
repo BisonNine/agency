@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"go.bison9.com/agent/toolkit"
@@ -13,6 +14,12 @@ import (
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/providers"
 )
+
+// exempt reports whether name is registered as suite-exempt.
+func exempt(r *ToolRegistry, name string) bool {
+	info, ok := r.cat.Get(name)
+	return ok && isSuiteExempt(info)
+}
 
 // These tests pin how ToolRegistry maps onto its toolkit catalogue, and the
 // host rules it adds on top: the suite exemption, the per-call allow checker
@@ -49,7 +56,7 @@ func TestWrapper_RegisterMapsEntries(t *testing.T) {
 				t.Errorf("entry = hidden %v group %q reveal %v, want %v %q %v",
 					info.Hidden, info.Group, info.RevealTogether, tc.hidden, tc.group, tc.reveal)
 			}
-			if got := r.exempt[tc.name]; got != tc.exempt {
+			if got := exempt(r, tc.name); got != tc.exempt {
 				t.Errorf("suite-exempt = %v, want %v", got, tc.exempt)
 			}
 		})
@@ -61,7 +68,7 @@ func TestWrapper_ReRegisterClearsExemption(t *testing.T) {
 	r := NewToolRegistry()
 	r.RegisterSuite(newMockTool("x", "suite"))
 	r.Register(newMockTool("x", "plain"))
-	if r.exempt["x"] {
+	if exempt(r, "x") {
 		t.Fatal("x kept its suite exemption after an ordinary registration")
 	}
 }
@@ -88,15 +95,12 @@ func TestWrapper_ReplaceByPrefixMapsEntries(t *testing.T) {
 	if info, _ := r.cat.Get("mcp_a_deferred"); !info.Hidden || info.Group != "a" || !info.RevealTogether {
 		t.Errorf("deferred entry = %+v, want hidden in reveal-together group a", info)
 	}
-	if r.exempt["mcp_a_old"] || !r.exempt["mcp_a_suite"] || r.exempt["mcp_a_listed"] {
-		t.Errorf("exemptions = %v, want only mcp_a_suite", r.exempt)
+	if exempt(r, "mcp_a_old") || !exempt(r, "mcp_a_suite") || exempt(r, "mcp_a_listed") {
+		t.Error("want only mcp_a_suite suite-exempt")
 	}
 
 	if n := r.RemoveByPrefix("mcp_a_"); n != 3 {
 		t.Errorf("RemoveByPrefix = %d, want 3", n)
-	}
-	if r.exempt["mcp_a_suite"] {
-		t.Error("a removed tool kept its suite exemption")
 	}
 	if got := r.List(); !slices.Equal(got, []string{"other"}) {
 		t.Errorf("List after removal = %v", got)
@@ -303,5 +307,64 @@ func TestWrapper_ExecuteUnattendedChecksAndClearsChat(t *testing.T) {
 	want := `tool "probe_whoami" failed: ` + NotEnabledMessage("probe_whoami")
 	if err == nil || err.Error() != want || out != "" {
 		t.Errorf("denied call = %q, %v; want error %q", out, err, want)
+	}
+}
+
+// countingTool counts its runs.
+type countingTool struct {
+	mockRegistryTool
+	runs *atomic.Int64
+}
+
+func (c *countingTool) Execute(context.Context, map[string]any) *ToolResult {
+	c.runs.Add(1)
+	return SilentResult("ran")
+}
+
+// While a suite-exempt tool is swapped for an ordinary one of the same name
+// under a checker that does not allow it, the ordinary one never runs: each
+// call is checked against exactly the tool it runs (run with -race).
+func TestWrapper_GateChecksTheToolThatRuns(t *testing.T) {
+	r := NewToolRegistry()
+	var exemptRuns, plainRuns atomic.Int64
+	exemptTool := &countingTool{mockRegistryTool: *newMockTool("mcp_s_x", "exempt"), runs: &exemptRuns}
+	plainTool := &countingTool{mockRegistryTool: *newMockTool("mcp_s_x", "plain"), runs: &plainRuns}
+	ctx := WithToolAllowChecker(context.Background(), mockAllowChecker{})
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			r.ReplaceByPrefix("mcp_s_", []ToolEntry{{Tool: exemptTool, IsCore: true, SuiteExempt: true}})
+			r.ReplaceByPrefix("mcp_s_", []ToolEntry{{Tool: plainTool, IsCore: true}})
+		}
+	}()
+	var callers sync.WaitGroup
+	for range 4 {
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			for range 500 {
+				r.ExecuteWithContext(ctx, "mcp_s_x", nil, "", "", nil)
+				_, _ = r.ExecuteUnattended(ctx, "mcp_s_x", nil)
+			}
+		}()
+	}
+	callers.Wait()
+	close(stop)
+	wg.Wait()
+
+	if n := plainRuns.Load(); n != 0 {
+		t.Fatalf("the denied tool ran %d times", n)
+	}
+	if exemptRuns.Load() == 0 {
+		t.Log("the exempt tool never ran; the swap always won the race")
 	}
 }
