@@ -148,6 +148,10 @@
 
 ### Fixed
 
+- **Messages written while the service was stopping or restarting are no
+  longer lost.** An interrupted reply, a tool result or a message queued at
+  that moment could overwrite another in the conversation history, so one of
+  them disappeared. Each is now kept.
 - **On the device listener, every run now ends exactly once, under its own
   run id.** A run interrupted by a `/cancel` sent during it used to have its
   closing events carry the `/cancel` request's run id, so it never ended for

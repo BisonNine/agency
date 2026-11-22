@@ -33,13 +33,15 @@ func seedRetentionArchive(t *testing.T, dir, key string, updated time.Time, pend
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := a.State()
-	if err != nil {
-		t.Fatal(err)
-	}
-	st.UpdatedAt = updated
-	st.PendingTurn = pending
-	if err := a.SetState(st); err != nil {
+	if err := a.Update(func(tx *memory.StateTx) error {
+		st, err := tx.State()
+		if err != nil {
+			return err
+		}
+		st.UpdatedAt = updated
+		st.PendingTurn = pending
+		return tx.SetState(st)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Close(); err != nil {
