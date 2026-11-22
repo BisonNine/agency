@@ -887,6 +887,14 @@ func (r *Registry[T]) putBack(e *entry[T]) {
 		r.mu.Unlock()
 		logger.WarnCF("agent", "Unreleased temporary agent instance closed: its id is taken",
 			map[string]any{"agent_id": e.spec.ID, "agent": e.spec.Label()})
+		// Every closed instance is retired first; it could not be released
+		// before, so a refusal now changes nothing.
+		if r.retire != nil {
+			if err := r.retire(e.spec, e.inst); err != nil {
+				logger.DebugCF("agent", "Unreleased temporary agent instance not released",
+					map[string]any{"agent_id": e.spec.ID, "error": err.Error()})
+			}
+		}
 		closeQuietly(e.inst, e.spec)
 		return
 	}

@@ -99,6 +99,11 @@ type AgentLoop struct {
 	// a leaf: nothing else is locked while it is held.
 	unretiredMu sync.Mutex
 	unretired   map[string][]*AgentInstance
+	// removeSetHook and removeSetDone, when set (tests only), run in
+	// removeSet once it has found that the registry still holds the retired
+	// instance's id, and when it returns.
+	removeSetHook func(inst *AgentInstance)
+	removeSetDone func(inst *AgentInstance)
 	// alerter receives operator alerts (parked models, dead MCP servers, …);
 	// nil until SetAlerter, in which case Alerter() hands out a Nop.
 	alerterMu       sync.RWMutex

@@ -67,6 +67,9 @@ type AgentInstance struct {
 	// builtWith is the configuration the agent was built with: what its
 	// lists in the model catalogue are stated from (assignOne).
 	builtWith *config.Config
+	// listsRetired marks an instance removeSet was told is retired: never
+	// recorded as unretired again. Guarded by AgentLoop.unretiredMu.
+	listsRetired bool
 
 	// VisionClients is the ordered vision-describe side-model chain (from
 	// the Describe images list on the Task models page). When the active model is

@@ -175,6 +175,7 @@ func (al *AgentLoop) liveInstances(registry *AgentRegistry) []*AgentInstance {
 func (al *AgentLoop) retired(inst *AgentInstance) []*AgentInstance {
 	al.unretiredMu.Lock()
 	defer al.unretiredMu.Unlock()
+	inst.listsRetired = true
 	kept := slices.DeleteFunc(al.unretired[inst.ID], func(i *AgentInstance) bool { return i == inst })
 	if len(kept) == 0 {
 		delete(al.unretired, inst.ID)
@@ -193,6 +194,9 @@ func (al *AgentLoop) noteSelectionAgents(instances []*AgentInstance) {
 		al.unretired = make(map[string][]*AgentInstance)
 	}
 	for _, inst := range instances {
+		if inst.listsRetired {
+			continue
+		}
 		al.selectionAgents.Store(inst.ID, inst)
 		if !slices.Contains(al.unretired[inst.ID], inst) {
 			al.unretired[inst.ID] = append(al.unretired[inst.ID], inst)
@@ -246,15 +250,23 @@ func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, diges
 // a turn), the set is stated for the latest such one; when none is, the set
 // is removed. Derived summarization models no remaining list names go too.
 func (al *AgentLoop) removeSet(registry *AgentRegistry, inst *AgentInstance) {
+	if al.removeSetDone != nil {
+		defer al.removeSetDone(inst)
+	}
 	id := inst.ID
+	// The bookkeeping first, then the registry: a retirement racing this one
+	// sees inst gone whichever way this check goes.
+	al.retired(inst)
 	if _, ok := registry.Get(id); ok {
-		// A replaced instance: only the bookkeeping, no list changes.
-		al.retired(inst)
+		if al.removeSetHook != nil {
+			al.removeSetHook(inst)
+		}
+		// A replaced instance: no list changes.
 		return
 	}
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
-	kept := al.retired(inst)
+	kept := al.retired(inst) // what is left now
 	if _, ok := registry.Get(id); ok {
 		return
 	}

@@ -456,13 +456,88 @@ func TestReload_DroppedTwiceUnderOneID(t *testing.T) {
 				endA()
 			}
 			waitFor(t, "bob's set to go", func() bool { return len(al.catalog.Set("bob").Purposes()) == 0 })
+			waitFor(t, "bob's bookkeeping to go", func() bool { return al.liveCount("bob") == 0 })
+			noUnretiredLeak(t, al)
 		})
 	}
 }
 
-// liveCount is how many instances under id are not retired.
+// liveCount is how many instances under id are not retired, read with
+// assignMu held so that a removeSet in progress has also stated the lists.
 func (al *AgentLoop) liveCount(id string) int {
+	al.assignMu.Lock()
+	defer al.assignMu.Unlock()
 	al.unretiredMu.Lock()
 	defer al.unretiredMu.Unlock()
 	return len(al.unretired[id])
+}
+
+// noUnretiredLeak fails unless every id with an unretired instance is one
+// the registry holds or one of busy (agents dropped while in a turn).
+func noUnretiredLeak(t *testing.T, al *AgentLoop, busy ...string) {
+	t.Helper()
+	al.assignMu.Lock()
+	al.unretiredMu.Lock()
+	ids := make([]string, 0, len(al.unretired))
+	for id := range al.unretired {
+		ids = append(ids, id)
+	}
+	al.unretiredMu.Unlock()
+	al.assignMu.Unlock()
+	for _, id := range ids {
+		if _, ok := al.GetRegistry().Get(id); !ok && !slices.Contains(busy, id) {
+			t.Errorf("unretired instances left for %s, which the registry does not hold", id)
+		}
+	}
+}
+
+// A replaced instance whose retirement passes the registry check and then
+// stalls while a second reload drops the agent and retires its newer
+// instance: once both are retired no set, choice entry or bookkeeping is
+// left for the agent.
+func TestRemoveSet_RetirementRacesDrop(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	al := mustNewAgentLoop(t, bobConfig(base, false, "c"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	r := al.GetRegistry()
+	a, _ := r.Get("bob")
+	endA, ok := r.BeginTurn("bob", a)
+	if !ok {
+		t.Fatal("bob could not begin a turn")
+	}
+	if err := al.ReloadConfig(context.Background(), bobConfig(base, false, "b")); err != nil {
+		t.Fatal(err) // rebuilds bob while A is in its turn
+	}
+	if b, _ := r.Get("bob"); b == a {
+		t.Fatal("bob was not rebuilt")
+	}
+	stalled, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	al.removeSetHook = func(inst *AgentInstance) {
+		if inst == a {
+			close(stalled)
+			<-release
+		}
+	}
+	al.removeSetDone = func(inst *AgentInstance) {
+		if inst == a {
+			close(done)
+		}
+	}
+	endA()
+	<-stalled
+	if err := al.ReloadConfig(context.Background(), bobConfig(base, false)); err != nil {
+		t.Fatal(err) // drops bob; B, idle, retires now
+	}
+	close(release)
+	<-done
+	if p := al.catalog.Set("bob").Purposes(); len(p) != 0 {
+		t.Errorf("bob's set remains: %v", p)
+	}
+	if _, ok := al.selectionAgents.Load("bob"); ok {
+		t.Error("a choice entry for bob remains")
+	}
+	if n := al.liveCount("bob"); n != 0 {
+		t.Errorf("%d unretired instance(s) of bob remain", n)
+	}
+	noUnretiredLeak(t, al)
 }

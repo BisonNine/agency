@@ -345,7 +345,50 @@ func TestTemporaryAgentDeleted_SetRemoved(t *testing.T) {
 		if p := al.catalog.Set(id).Purposes(); len(p) != 0 {
 			t.Fatalf("the deleted clone's set remains: %v", p)
 		}
+		if n := al.liveCount(id); n != 0 {
+			t.Fatalf("%d unretired instance(s) of the deleted clone remain", n)
+		}
 	}
+	noUnretiredLeak(t, al)
+}
+
+// A temporary agent deleted after its insertion but before its lists are
+// stated gets no set and leaves no bookkeeping.
+func TestAssignOne_SkipsAgentDeletedBeforeLists(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	al := mustNewAgentLoop(t, abcConfig(t.TempDir(), "a", "b"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	r := al.GetRegistry()
+	// The insert hook waits on listsGate; the deletion does not.
+	al.listsGate.Lock()
+	created := make(chan error, 1)
+	go func() {
+		_, err := r.CreateClone("main")
+		created <- err
+	}()
+	var id string
+	waitFor(t, "the clone's insertion", func() bool {
+		for _, cand := range r.All() {
+			if cand != "main" {
+				id = cand
+				return true
+			}
+		}
+		return false
+	})
+	if err := r.Delete(id); err != nil {
+		t.Fatal(err)
+	}
+	al.listsGate.Unlock()
+	if err := <-created; err != nil {
+		t.Fatal(err)
+	}
+	if p := al.catalog.Set(id).Purposes(); len(p) != 0 {
+		t.Fatalf("the deleted clone has a set: %v", p)
+	}
+	if n := al.liveCount(id); n != 0 {
+		t.Fatalf("%d unretired instance(s) of the deleted clone", n)
+	}
+	noUnretiredLeak(t, al)
 }
 
 // A configured agent dropped from the configuration loses its set; one that
@@ -374,6 +417,10 @@ func TestConfiguredAgentDropped_SetRemoved(t *testing.T) {
 	if len(al.catalog.Set("main").Purposes()) == 0 {
 		t.Fatal("main lost its models")
 	}
+	if n := al.liveCount("bob"); n != 0 {
+		t.Fatalf("%d unretired instance(s) of bob remain", n)
+	}
+	noUnretiredLeak(t, al)
 }
 
 // A settings change that clears the cooldowns re-arms the alerts, as an
