@@ -214,6 +214,11 @@ func (al *AgentLoop) modelCall(ctx, turnCtx context.Context, agent *AgentInstanc
 // boundary is streamed, then the eviction notice posted, then the heartbeat
 // stopped.
 func (al *AgentLoop) endTurn(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState) {
+	// Last, and also when a step before it panics: the heartbeat's
+	// goroutine stops only when told to.
+	if st.stopProgress != nil {
+		defer st.stopProgress()
+	}
 	if st.stream != nil {
 		st.stream.Flush()
 	}
@@ -221,9 +226,6 @@ func (al *AgentLoop) endTurn(ctx context.Context, agent *AgentInstance, opts pro
 	evicted := st.evicted
 	st.mu.Unlock()
 	al.publishEvictionNotice(ctx, agent, opts, evicted)
-	if st.stopProgress != nil {
-		st.stopProgress()
-	}
 }
 
 // turnScope is the scope of a turn of agent on sessionKey: its accounting

@@ -79,7 +79,7 @@ type interimHooks struct {
 }
 
 // add registers p's callbacks, each at the end of its kind. A callback of a
-// kind the engine does not call yet (BeforeTurn, AfterTurn, BeforeModel,
+// kind the engine does not call (BeforeTurn, AfterTurn, BeforeModel,
 // OnModelError, OnInterrupt) is refused with a panic, so none is ever
 // registered and silently ignored.
 func (h *turnHooks) add(p hook.Plugin) {

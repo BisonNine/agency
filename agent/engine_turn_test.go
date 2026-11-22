@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/clock"
+	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
@@ -669,7 +670,17 @@ func TestEngine_CallbackPanicEndsTheTurn(t *testing.T) {
 		{"interim ToolResult", func(f *engineFixture) {
 			f.spec.hooks.addInterim(interimHooks{Name: "tool-output", ToolResult: func(context.Context, hook.ToolCall, *toolkit.Result) { panic("Bob's bug") }})
 		}},
-		{"tool environment", func(f *engineFixture) { f.spec.env = panickyEnv{f.env} }},
+		{"OnToolError", func(f *engineFixture) {
+			f.env.tools["noop"] = func(context.Context, map[string]any) *toolkit.Result { return toolkit.ErrorResult("no") }
+			f.spec.hooks.add(hook.Plugin{Name: "errors", OnToolError: func(context.Context, *hook.ToolCall, *toolkit.Result) *toolkit.Result { panic("Bob's bug") }})
+		}},
+		{"interim Narrate", func(f *engineFixture) {
+			f.spec.hooks.addInterim(interimHooks{Name: "narration", Narrate: func(context.Context, int, string) { panic("Bob's bug") }})
+		}},
+		{"interim ToolsReturned", func(f *engineFixture) {
+			f.spec.hooks.addInterim(interimHooks{Name: "progress", ToolsReturned: func(context.Context, int) { panic("Bob's bug") }})
+		}},
+		{"loop (the tool list panics)", func(f *engineFixture) { f.spec.env = panickyEnv{f.env} }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -726,6 +737,10 @@ func TestEngine_ToolCallbackPanicFinishesTheCall(t *testing.T) {
 	}()
 	if countOf(f.rec.kinds(), "ToolCallStarted") != 1 || countOf(f.rec.kinds(), "ToolCallFinished") != 1 {
 		t.Fatalf("events = %v", f.rec.kinds())
+	}
+	evs := f.rec.all()
+	if fin, ok := evs[len(evs)-1].(hook.TurnFinished); !ok || fin.Outcome != hook.OutcomeError {
+		t.Fatalf("last event = %+v, want TurnFinished with an error", evs[len(evs)-1])
 	}
 }
 
@@ -810,5 +825,26 @@ func TestEngine_LogLinesNameTheirCallSite(t *testing.T) {
 	newEngineTurn(f.spec, nil).logDispatchTarget()
 	if len(funcs) != 1 || !strings.HasSuffix(funcs[0], ".(*engineTurn).logDispatchTarget") || !strings.HasPrefix(funcs[0], "Dispatching to model@") {
 		t.Fatalf("logged from %v", funcs)
+	}
+}
+
+// A compaction reported on a turn's context reaches the hooks the turn has
+// at that moment: those it was scoped with, then the ones put in place when
+// its model loop starts.
+func TestEngine_CompactionReachesTheTurnsCurrentHooks(t *testing.T) {
+	var seen []string
+	tap := func(name string) *turnHooks {
+		h := &turnHooks{}
+		h.add(hook.Plugin{Name: name, OnCompaction: func(context.Context, hook.Compaction) { seen = append(seen, name) }})
+		return h
+	}
+	ctx, turn := beginTurnContext(context.Background(), hook.Scope{AgentID: "alice", Session: "s"}, tap("early"), newFake())
+	start := ctxengine.CompactionStart{SessionKey: "s", Blocking: true}
+	engineCompactionStart(ctx, start)
+	turn.use(tap("loop"))
+	engineCompactionStart(ctx, start)
+	engineCompactionStart(context.Background(), start) // no turn: reaches none
+	if !slices.Equal(seen, []string{"early", "loop"}) {
+		t.Fatalf("reached %v", seen)
 	}
 }

@@ -88,7 +88,7 @@ type engineModelFacts struct {
 
 // turnEnv is what the engine reaches the host's services through, besides
 // the callbacks: tools, the session's context, models, and the few host
-// decisions the hook package has no type for yet (marked interim).
+// decisions the hook package has no type for (marked interim).
 type turnEnv interface {
 	turnTools
 	turnSession
@@ -133,7 +133,7 @@ type turnModels interface {
 	directProtocol(name string) (string, bool)
 }
 
-// turnHost are host decisions with no hook type yet (interim).
+// turnHost are host decisions with no hook type (interim).
 type turnHost interface {
 	// stopCause classifies why ctx ended (interim: the host's causes).
 	stopCause(ctx context.Context) (shutdown, onPurpose bool)
@@ -269,7 +269,7 @@ func newEngineTurn(spec engineSpec, messages []spawnllm.Message) *engineTurn {
 }
 
 // turnHandle is a running turn's handle: the means to stop it with a cause,
-// and its end. The host does not call it yet: it stops a turn by cancelling
+// and its end. The host does not call it: it stops a turn by cancelling
 // the context it passes in, which reaches the turn's context the same way.
 type turnHandle struct {
 	cancel context.CancelCauseFunc
@@ -315,7 +315,9 @@ var errEngineIncomplete = errors.New("turn engine: no context manager or host se
 // run runs the model loop to its end. It emits TurnStarted first and exactly
 // one TurnFinished last, however the loop ends: a panic in the loop or a
 // callback ends the turn with OutcomeError in its TurnFinished, and then
-// goes on to the caller.
+// goes on to the caller. A spec without a context manager or host services
+// is refused before the turn starts (errEngineIncomplete): no event is
+// emitted and the turn has no handle.
 func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 	if e.spec.cm == nil || e.spec.env == nil {
 		return engineResult{}, errEngineIncomplete

@@ -88,9 +88,20 @@ func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, tool
 	call := e.hookCall(tc)
 	answered := false
 	start := time.Now()
-	execCtx := ctx
+	execCtx, cancelExec := ctx, context.CancelFunc(func() {})
+	if toolTimeout > 0 {
+		execCtx, cancelExec = context.WithTimeout(ctx, toolTimeout)
+	}
 	defer func() {
+		// The call's context is live until its ToolCallFinished is emitted.
+		defer cancelExec()
 		if r := recover(); r != nil {
+			e.logAt(slog.LevelError, "panic in tool callback",
+				map[string]any{
+					"tool":  tc.Name,
+					"panic": fmt.Sprintf("%v", r),
+					"stack": string(debug.Stack()),
+				})
 			slot.callbackPanic = r
 			if slot.result == nil {
 				slot.result = toolkit.ErrorResult(fmt.Sprintf("Tool %s failed with an internal error.", tc.Name))
@@ -118,24 +129,26 @@ func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, tool
 			"iteration": e.iteration,
 		}))
 
-	if toolTimeout > 0 {
-		var toolCancel context.CancelFunc
-		execCtx, toolCancel = context.WithTimeout(ctx, toolTimeout)
-		defer toolCancel()
-	}
-
 	result := e.beforeTool(execCtx, &call)
 	answered = result != nil
 	if !answered {
-		result = e.execute(execCtx, tc.Name, call.Arguments)
+		var panicked bool
+		result, panicked = e.execute(execCtx, tc.Name, call.Arguments)
+		if panicked {
+			// A tool that panicked is not seen by the result callbacks.
+			slot.result = result
+			return
+		}
 	}
+	// Set before the result callbacks, so a call whose callback panics still
+	// finishes with the tool's result.
 	slot.result = result
 	slot.result = e.afterTool(execCtx, &call, result)
 }
 
 // execute runs the tool. A panicking tool is logged and becomes an error
-// result.
-func (e *engineTurn) execute(ctx context.Context, name string, args map[string]any) (result *toolkit.Result) {
+// result (panicked set).
+func (e *engineTurn) execute(ctx context.Context, name string, args map[string]any) (result *toolkit.Result, panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logAt(slog.LevelError, "panic in tool call",
@@ -148,9 +161,10 @@ func (e *engineTurn) execute(ctx context.Context, name string, args map[string]a
 				Err:    &toolPanicError{tool: name, value: r},
 				ForLLM: fmt.Sprintf("Tool %s failed with an internal error.", name),
 			}
+			panicked = true
 		}
 	}()
-	return e.spec.env.executeTool(ctx, name, args)
+	return e.spec.env.executeTool(ctx, name, args), false
 }
 
 // beforeTool runs the BeforeTool callbacks; a non-nil result answers the

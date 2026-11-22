@@ -145,3 +145,20 @@ func TestRecordToolCall_StatsThenAudit(t *testing.T) {
 		t.Fatalf("audit rows = %+v, want the one call that ran", rows)
 	}
 }
+
+// A step of the end of the loop that panics still stops the heartbeat, whose
+// goroutine would otherwise keep editing the placeholder.
+func TestEndTurn_PanicStillStopsTheHeartbeat(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	tl := newTestAgentLoop(t)
+	agent := tl.al.registry.Default()
+	h, st := tl.al.buildTurnHooks(context.Background(), agent, processOptions{SessionKey: "s", Channel: "telegram", ChatID: "c1"}, "m")
+	st.stream = newStreamCoalescer(func(string) { panic("Bob's bug") })
+	st.stream.Add("Hi Bob")
+	stopped := false
+	st.stopProgress = func() { stopped = true }
+	h.emit(context.Background(), hook.TurnFinished{})
+	if !stopped {
+		t.Fatal("the heartbeat was not stopped")
+	}
+}
