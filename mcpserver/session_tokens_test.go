@@ -677,3 +677,34 @@ func TestDispatch_AllToolsRequireSessionToken(t *testing.T) {
 		t.Errorf("tool must not execute on missing token, calls=%d", rf.calls)
 	}
 }
+
+// Conversation tokens live in the SDK's mcphost.Store under the agent and
+// session they name; rotation revokes the old one there too.
+func TestSessionTokenStore_HeldByMCPHostStore(t *testing.T) {
+	st := NewSessionTokenStore()
+	first := st.Issue("alice", "agent:alice:main", "/tmp/a")
+	g, _, ok := st.sessions.Resolve(first)
+	if !ok || g.Scope.AgentID != "alice" || g.Scope.Session != "agent:alice:main" {
+		t.Fatalf("grant = %+v, %v; want alice's main session", g, ok)
+	}
+	second := st.Issue("alice", "agent:alice:main", "/tmp/a")
+	if _, _, ok := st.sessions.Resolve(first); ok {
+		t.Error("the rotated token still resolves in the mcphost store")
+	}
+	if _, _, ok := st.sessions.Resolve(second); !ok {
+		t.Error("the new token does not resolve in the mcphost store")
+	}
+}
+
+// Registering a token that already stands for another session rebinds it to
+// the new one, as the map the store replaced did.
+func TestRegister_RebindsATokenToAnotherSession(t *testing.T) {
+	st := NewSessionTokenStore()
+	const tok = "SST-fixed"
+	st.Register(tok, "alice", "test-session", "/tmp/a")
+	st.Register(tok, "bob", "other-session", "/tmp/b")
+	rec, ok := st.Resolve(tok)
+	if !ok || rec.agentID != "bob" || rec.sessionKey != "other-session" {
+		t.Fatalf("Resolve = %+v, %v; want bob's other-session", rec, ok)
+	}
+}

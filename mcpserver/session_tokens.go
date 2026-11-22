@@ -10,6 +10,9 @@ import (
 	"slices"
 	"sync"
 
+	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/mcphost"
+
 	"go.bison9.com/agency/internal/tokenhash"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
@@ -68,16 +71,27 @@ type sessionRecord struct {
 // Session-scoped tools (get_session_messages, search_session_messages) require a
 // session_token so the MCP server can inject the correct session key into the
 // tool's execution context regardless of which HTTP request carries the call.
+//
+// Conversation and registered (test) tokens are held by the SDK's
+// mcphost.Store, issued in the SST format (mcphost.WithGenerator), each grant's
+// Value the sessionRecord. The rest is the host's: rotation per session key,
+// pinning, the long-lived service tokens (kept hashed at rest), the turn scope
+// a turn records on its token, and the running turns a call's chat comes from.
 type SessionTokenStore struct {
+	// sessions holds the conversation and registered tokens. Every change is
+	// made under mu, so an index below and the store never disagree.
+	sessions *mcphost.Store
+
 	mu     sync.RWMutex
-	tokens map[string]sessionRecord // token → record
-	bySess map[string]string        // conversation sessionKey → token (rotation/revocation)
-	// bySvc indexes long-lived service tokens by agent id. They are tracked
+	bySess map[string]string // conversation sessionKey → token (rotation/revocation)
+	// svc holds the long-lived service tokens, keyed by the token, or by its
+	// hash when hashed. bySvc indexes them by agent id. They are tracked
 	// separately from bySess because a service token resolves to the agent's
 	// main session, which already has a conversation token: several tokens may
 	// name one session, and rotating the conversation token must not disturb
 	// the service token (or vice versa).
-	bySvc map[string]string // agentID → service token
+	svc   map[string]sessionRecord
+	bySvc map[string]string // agentID → service token (its svc key)
 	// home maps an agent to the agent its late results go to (a clone's
 	// source); nil keeps every agent's own. Set once at startup.
 	home func(agentID string) string
@@ -104,23 +118,33 @@ func NewSessionTokenStore() *SessionTokenStore { return newSessionTokenStore() }
 
 func newSessionTokenStore() *SessionTokenStore {
 	return &SessionTokenStore{
-		tokens: make(map[string]sessionRecord),
-		bySess: make(map[string]string),
-		bySvc:  make(map[string]string),
+		sessions: mcphost.NewStore(mcphost.WithGenerator(generateSessionToken)),
+		bySess:   make(map[string]string),
+		svc:      make(map[string]sessionRecord),
+		bySvc:    make(map[string]string),
 	}
+}
+
+// grantFor is the mcphost grant of a conversation or registered token.
+func grantFor(rec sessionRecord) mcphost.Grant {
+	return mcphost.Grant{Scope: hook.Scope{AgentID: rec.agentID, Session: rec.sessionKey}, Value: rec}
+}
+
+// sessionRecordOf returns the record a token of the sessions store stands
+// for.
+func (s *SessionTokenStore) sessionRecordOf(token string) (sessionRecord, bool) {
+	g, _, ok := s.sessions.Resolve(token)
+	if !ok {
+		return sessionRecord{}, false
+	}
+	rec, ok := g.Value.(sessionRecord)
+	return rec, ok
 }
 
 // Issue generates a new token for the given session and stores the mapping.
 // If a token already exists for this sessionKey, it is revoked first.
 // Returns the new SST<64hex> token.
 func (s *SessionTokenStore) Issue(agentID, sessionKey, archiveDir string) string {
-	tok, err := generateSessionToken()
-	if err != nil {
-		// crypto/rand failure is catastrophic; return empty so callers can fail
-		// closed rather than binding to a predictable value.
-		return ""
-	}
-
 	// Resolve the home agent outside the store's lock: the resolver reads the
 	// agent registry.
 	s.mu.RLock()
@@ -142,17 +166,26 @@ func (s *SessionTokenStore) Issue(agentID, sessionKey, archiveDir string) string
 	// pinned tokens (test + service tokens) must not be rotated by normal session
 	// activity. Return the existing token so the caller (getContextManager) can
 	// store it in the system prompt if needed.
-	if old, ok := s.bySess[sessionKey]; ok {
-		if s.tokens[old].pinned {
+	old, hadOld := s.bySess[sessionKey]
+	if hadOld {
+		prior, _ := s.sessionRecordOf(old)
+		if prior.pinned {
 			return old
 		}
 		// Keep the running turn's scope across rotation.
-		rec.depth = s.tokens[old].depth
-		rec.askChain = s.tokens[old].askChain
-		rec.taskID = s.tokens[old].taskID
-		delete(s.tokens, old)
+		rec.depth = prior.depth
+		rec.askChain = prior.askChain
+		rec.taskID = prior.taskID
 	}
-	s.tokens[tok] = rec
+	tok, err := s.sessions.Issue(grantFor(rec))
+	if err != nil {
+		// crypto/rand failure is catastrophic; return empty so callers can fail
+		// closed rather than binding to a predictable value.
+		return ""
+	}
+	if hadOld {
+		s.sessions.Revoke(old)
+	}
 	s.bySess[sessionKey] = tok
 	logger.InfoCF("mcpserver", "session token issued",
 		map[string]any{"agent": agentID, "session": sessionKey})
@@ -168,13 +201,20 @@ func (s *SessionTokenStore) Register(token, agentID, sessionKey, archiveDir stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Revoke any existing token for this session key.
+	// Revoke any existing token for this session key, and the token itself
+	// if it stands for another session: the token now names this one.
 	if old, ok := s.bySess[sessionKey]; ok {
-		delete(s.tokens, old)
+		s.sessions.Revoke(old)
 	}
+	s.sessions.Revoke(token)
 
 	rec := sessionRecord{agentID: agentID, sessionKey: sessionKey, archiveDir: archiveDir, pinned: true}
-	s.tokens[token] = rec
+	if err := s.sessions.Register(token, grantFor(rec)); err != nil {
+		// Only an empty token is refused here: the store held neither.
+		logger.WarnCF("mcpserver", "session token not registered",
+			map[string]any{"agent": agentID, "session": sessionKey, "error": err.Error()})
+		return
+	}
 	s.bySess[sessionKey] = token
 }
 
@@ -193,9 +233,9 @@ func (s *SessionTokenStore) RegisterService(token, agentID, archiveDir string) {
 	// conversation token (bySess) is a separate credential and stays put, so
 	// registering a service token can never revoke the agent's own token.
 	if old, ok := s.bySvc[agentID]; ok {
-		delete(s.tokens, old)
+		delete(s.svc, old)
 	}
-	s.tokens[token] = sessionRecord{
+	s.svc[token] = sessionRecord{
 		agentID:    agentID,
 		sessionKey: sessionKey,
 		archiveDir: archiveDir,
@@ -222,7 +262,7 @@ func (s *SessionTokenStore) SyncServiceTokens(tokens map[string]string, archiveD
 	// Drop every existing service token. They are indexed by agent, so this never
 	// touches a conversation token, though both name the agent's main session.
 	for agentID, tok := range s.bySvc {
-		delete(s.tokens, tok)
+		delete(s.svc, tok)
 		delete(s.bySvc, agentID)
 	}
 	// Register the current set.
@@ -231,7 +271,7 @@ func (s *SessionTokenStore) SyncServiceTokens(tokens map[string]string, archiveD
 		if archiveDir == "" {
 			continue
 		}
-		s.tokens[tok] = sessionRecord{
+		s.svc[tok] = sessionRecord{
 			agentID:    agentID,
 			sessionKey: routing.BuildAgentMainSessionKey(agentID),
 			archiveDir: archiveDir,
@@ -334,24 +374,31 @@ func (s *SessionTokenStore) updateRecord(sessionKey string, update func(*session
 	if !ok {
 		return
 	}
-	rec, ok := s.tokens[tok]
+	g, _, ok := s.sessions.Resolve(tok)
+	if !ok {
+		return
+	}
+	rec, ok := g.Value.(sessionRecord)
 	if !ok {
 		return
 	}
 	update(&rec)
-	s.tokens[tok] = rec
+	s.sessions.Rescope(tok, g.Scope, rec)
 }
 
 // Resolve looks up a presented token. Returns the record and true if found.
 // A record stored under the token's hash is reached by hashing the presented
 // value; presenting the hash string itself matches nothing.
 func (s *SessionTokenStore) Resolve(token string) (sessionRecord, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if rec, ok := s.tokens[token]; ok && !rec.hashed {
+	if rec, ok := s.sessionRecordOf(token); ok {
 		return rec, true
 	}
-	if rec, ok := s.tokens[tokenhash.Hash(token)]; ok && rec.hashed {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if rec, ok := s.svc[token]; ok && !rec.hashed {
+		return rec, true
+	}
+	if rec, ok := s.svc[tokenhash.Hash(token)]; ok && rec.hashed {
 		return rec, true
 	}
 	return sessionRecord{}, false
@@ -362,7 +409,7 @@ func (s *SessionTokenStore) Revoke(sessionKey string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if tok, ok := s.bySess[sessionKey]; ok {
-		delete(s.tokens, tok)
+		s.sessions.Revoke(tok)
 		delete(s.bySess, sessionKey)
 	}
 }
@@ -371,10 +418,21 @@ func (s *SessionTokenStore) Revoke(sessionKey string) {
 func (s *SessionTokenStore) RevokeAgent(agentID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for tok, rec := range s.tokens {
+	var sessionKeys []string
+	s.sessions.RevokeFunc(func(g mcphost.Grant) bool {
+		if g.Scope.AgentID != agentID {
+			return false
+		}
+		sessionKeys = append(sessionKeys, g.Scope.Session)
+		return true
+	})
+	for _, key := range sessionKeys {
+		delete(s.bySess, key)
+	}
+	for tok, rec := range s.svc {
 		if rec.agentID == agentID {
 			delete(s.bySess, rec.sessionKey)
-			delete(s.tokens, tok)
+			delete(s.svc, tok)
 		}
 	}
 	delete(s.bySvc, agentID)

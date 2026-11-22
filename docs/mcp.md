@@ -77,6 +77,10 @@ at.
   creates it once and hands it to every server it builds (at start and on each
   config reload), so a reload does not invalidate the tokens already rendered
   into running turns and Maestro workers.
+- Conversation and registered tokens are held by the agent SDK's
+  `mcphost.Store` (issued in the `SST<64 hex>` format through its generator
+  option); rotation per session, pinning, service tokens (kept hashed at rest)
+  and the turn scope stay in `SessionTokenStore`.
 - A bearer token **is** a session token, just transported in the header — not a
   new credential type. The same `SST<64 hex>` value is accepted both ways.
 - Issuance: `Issue()` mints per-session tokens; `Register()` pre-mints a known
