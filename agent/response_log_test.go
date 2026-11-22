@@ -111,3 +111,40 @@ func TestLLMResponseLine_PlaceAndFields(t *testing.T) {
 		})
 	}
 }
+
+// The "LLM response" line logs the answer as the model gave it, before any
+// other AfterModel changed it: an empty reply the reasoning stands in for is
+// logged with no content.
+func TestLLMResponseLine_LogsTheAnswerUnchanged(t *testing.T) {
+	tl := newTestAgentLoop(t)
+	tl.cfg.Agents.Defaults.ShowReasoningAsContent = true
+	agent := tl.al.registry.Default()
+	setTestProvider(agent, &sequenceProvider{
+		responses: []*providers.LLMResponse{{Reasoning: "Alice's thought", Normal: true}},
+		errors:    []error{nil},
+	})
+	opts := processOptions{SessionKey: "s", Channel: "cli", ChatID: "direct", UserMessage: "hi"}
+	cm, release := tl.al.getContextManager(agent, opts.SessionKey)
+	defer release()
+
+	buf := &bytes.Buffer{}
+	restore := logger.RedirectForTest(buf)
+	reply, err := tl.al.runLLMIteration(context.Background(), agent, []providers.Message{{Role: "user", Content: "hi"}}, opts, cm, nil)
+	restore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.content != "Alice's thought" {
+		t.Fatalf("reply = %q, want the reasoning standing in", reply.content)
+	}
+	var lines []map[string]any
+	for _, rec := range readLogRecords(t, buf) {
+		if rec["message"] == "LLM response" {
+			lines = append(lines, rec)
+		}
+	}
+	if len(lines) != 1 {
+		t.Fatalf("\"LLM response\" lines = %d, want 1", len(lines))
+	}
+	assertFields(t, lines[0], map[string]any{"content_chars": float64(0), "reasoning_chars": float64(15)})
+}

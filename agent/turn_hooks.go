@@ -109,10 +109,11 @@ func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
 //     store-fault alert, then the reply sent, then its "Response" line;
 //   - each finished tool call: its statistics, then its audit row, after
 //     the call (recordToolCall); nothing is audited before a call runs;
-//   - AfterModel: the "LLM response" line is logged first, from the answer
-//     as the model gave it; then generated images are saved and delivered before the
-//     reasoning may stand in for an empty reply, and both run before the
-//     engine stores the assistant message (the notes are in it);
+//   - AfterModel: the "LLM response" line is logged first, from the
+//     answer as the model gave it; then generated images are saved and
+//     delivered before the reasoning may stand in for an empty reply, and
+//     both run before the engine stores the assistant message (the notes
+//     are in it);
 //   - BeforeModel: the session's pins follow a request built from the
 //     session store (Rebuilt) before its media are resolved.
 //
@@ -155,6 +156,9 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 	images := &turnImages{al: al, agent: agent, opts: o, model: model}
 	h.add(hook.Plugin{Name: "images", AfterModel: images.afterModel})
 	h.add(hook.Plugin{Name: "reasoning-as-content", AfterModel: al.reasoningAsContent})
+	// The only BeforeModel, and it must stay the first: a rebuilt request
+	// (Rebuilt) is reported to the BeforeModel callbacks of one attempt
+	// only, so one answering before it would leave the refs unresolved.
 	h.add(hook.Plugin{Name: "request-media", BeforeModel: al.requestMediaPlugin()})
 
 	h.add(hook.Plugin{Name: "tool-record", OnEvent: func(ctx context.Context, ev hook.Event) {

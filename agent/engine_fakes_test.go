@@ -40,6 +40,8 @@ type fakeContext struct {
 	assembles int
 	// failAdd makes every add fail with this error.
 	failAdd error
+	// failAfterForce makes every Assemble after a forced compression fail.
+	failAfterForce bool
 	// assembled is the history every Assembly returns.
 	assembled []spawnllm.Message
 }
@@ -76,6 +78,9 @@ func (f *fakeContext) Assemble(context.Context, ctxengine.AssembleRequest) (ctxe
 	defer f.mu.Unlock()
 	f.log = append(f.log, "assemble")
 	f.assembles++
+	if f.failAfterForce && slices.Contains(f.log, "force") {
+		return ctxengine.Assembly{}, errors.New("assembly failed")
+	}
 	a := ctxengine.Assembly{PromptTokenEstimate: f.estimate, Messages: slices.Clone(f.assembled)}
 	if f.evictOnce && f.assembles > 1 {
 		f.evictOnce = false

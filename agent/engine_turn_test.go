@@ -960,8 +960,8 @@ func TestEngine_CompactionReachesTheTurnsHooks(t *testing.T) {
 
 // BeforeModel is told a request was rebuilt from the session store on the
 // turn's first request and after an eviction or an overflow retry replaced
-// the working request, and not on a request kept from the step before or
-// retried after a timeout.
+// the working request, and not on a request kept from the step before,
+// retried after a timeout, or kept because an overflow's reassembly failed.
 func TestEngine_RebuiltOnStoreRequests(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -992,6 +992,12 @@ func TestEngine_RebuiltOnStoreRequests(t *testing.T) {
 			[]modelstest.Step{modelstest.Fail(errors.New("context_length_exceeded: request too long")), modelstest.Reply("done")},
 			nil, false,
 			[]bool{true, true},
+		},
+		{
+			"overflow, reassembly failed",
+			[]modelstest.Step{modelstest.Fail(errors.New("context_length_exceeded: request too long")), modelstest.Reply("done")},
+			func(f *engineFixture) { f.cm.failAfterForce = true }, false,
+			[]bool{true, false},
 		},
 		{
 			"timeout",
