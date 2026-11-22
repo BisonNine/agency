@@ -206,8 +206,9 @@ type RetireFunc[T Instance] func(spec Spec, inst T) error
 type InsertedFunc[T Instance] func(spec Spec, inst T)
 
 // ClosedFunc is told when the registry closes an instance that Retire
-// refused to release and that cannot go back (its id is taken, or the
-// registry has closed), so the host can drop what it keeps for it.
+// refused to release (put back with its id taken, or held as an orphan or
+// put back once the registry has closed), so the host can drop what it
+// keeps for it.
 type ClosedFunc[T Instance] func(spec Spec, inst T)
 
 // Hooks are the host functions the registry calls.
@@ -649,15 +650,18 @@ func (r *Registry[T]) Close() {
 		return
 	}
 	r.closed = true
-	entries := make([]*entry[T], 0, len(r.entries)+len(r.orphans))
+	entries := make([]*entry[T], 0, len(r.entries))
 	for _, e := range r.entries {
 		entries = append(entries, e)
 	}
-	entries = append(entries, r.orphans...)
+	orphans := r.orphans
 	r.orphans = nil
 	r.mu.Unlock()
 	for _, e := range entries {
 		closeQuietly(e.inst, e.spec)
+	}
+	for _, e := range orphans {
+		r.closeUnreleased(e)
 	}
 	// The goroutines take mu, persistMu and the host's hooks; Close holds
 	// none of them here.
@@ -877,7 +881,7 @@ func (r *Registry[T]) keepOrphan(e *entry[T]) {
 		return
 	}
 	r.mu.Unlock()
-	closeQuietly(e.inst, e.spec)
+	r.closeUnreleased(e)
 }
 
 // putBack returns an entry that could not be released to the map; once Close
@@ -895,6 +899,8 @@ func (r *Registry[T]) putBack(e *entry[T]) {
 		r.mu.Unlock()
 		logger.WarnCF("agent", "Unreleased temporary agent instance closed: its id is taken",
 			map[string]any{"agent_id": e.spec.ID, "agent": e.spec.Label()})
+		// Not retired again: the host keys what Retire releases by the id,
+		// which the agent now holding it shares.
 		r.closeUnreleased(e)
 		return
 	}

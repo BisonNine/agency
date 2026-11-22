@@ -171,9 +171,14 @@ func TestNonOwner_PrivateRoot(t *testing.T) {
 // closed, not leaked.
 func TestPutBack_TakenIDClosesInstance(t *testing.T) {
 	h := newFakeHost()
-	r := mustNew(t, testConfig(t), h)
 	var told *fakeInst
-	r.closedFn = func(_ Spec, inst *fakeInst) { told = inst }
+	hooks := h.hooks()
+	hooks.Closed = func(_ Spec, inst *fakeInst) { told = inst }
+	r, err := New(t.Context(), testConfig(t), hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
 	id := mustFresh(t, r, config.AgentConfig{})
 	r.mu.Lock()
 	e := r.entries[id]
@@ -185,6 +190,29 @@ func TestPutBack_TakenIDClosesInstance(t *testing.T) {
 	}
 	if told != e.inst {
 		t.Fatal("the host was not told the unreleased instance was closed")
+	}
+}
+
+// An entry put back after the registry has closed is closed, and the host
+// is told.
+func TestPutBack_AfterCloseTellsHost(t *testing.T) {
+	h := newFakeHost()
+	var told *fakeInst
+	hooks := h.hooks()
+	hooks.Closed = func(_ Spec, inst *fakeInst) { told = inst }
+	r, err := New(t.Context(), testConfig(t), hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := mustFresh(t, r, config.AgentConfig{})
+	r.mu.Lock()
+	e := r.entries[id]
+	delete(r.entries, id)
+	r.mu.Unlock()
+	r.Close()
+	r.putBack(e)
+	if !e.inst.closed() || told != e.inst {
+		t.Fatalf("closed %v, host told %v: want both", e.inst.closed(), told == e.inst)
 	}
 }
 

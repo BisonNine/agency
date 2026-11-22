@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/models"
 
+	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
@@ -438,20 +439,30 @@ func TestReload_DroppedTwiceUnderOneID(t *testing.T) {
 					}
 				}
 			}
-			_, endA := begin()
+			a, endA := begin()
 			reload(bobConfig(base, true))       // drop A (adopting)
 			reload(bobConfig(base, false, "a")) // re-add as B, on a
-			_, endB := begin()
+			b, endB := begin()
 			reload(bobConfig(base, true)) // drop B
 			wantLists("both dropped", "a")
+			// Each retirement is observed once its removeSet has returned.
+			retiredA, retiredB := make(chan struct{}), make(chan struct{})
+			al.removeSetDone = func(inst *AgentInstance) {
+				switch inst {
+				case a:
+					close(retiredA)
+				case b:
+					close(retiredB)
+				}
+			}
 			if order == "older retires first" {
 				endA()
-				waitFor(t, "A's retirement", func() bool { return al.liveCount("bob") == 1 })
+				waitChan(t, retiredA, "A's retirement")
 				wantLists("A retired", "a")
 				endB()
 			} else {
 				endB()
-				waitFor(t, "B's retirement", func() bool { return al.liveCount("bob") == 1 })
+				waitChan(t, retiredB, "B's retirement")
 				wantLists("B retired", "c")
 				endA()
 			}
@@ -548,6 +559,31 @@ func TestRemoveSet_RetirementRacesDrop(t *testing.T) {
 	}
 	if n := al.liveCount("bob"); n != 0 {
 		t.Errorf("%d unretired instance(s) of bob remain", n)
+	}
+	noUnretiredLeak(t, al)
+}
+
+// An instance the registry closes unreleased leaves the bookkeeping; while
+// the registry holds another instance under its id, that one's set stays.
+func TestAgentClosed_DropsBookkeepingOnly(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	al := mustNewAgentLoop(t, abcConfig(t.TempDir(), "a"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	r := al.GetRegistry()
+	id, err := r.CreateClone("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, _ := r.Get(id)
+	stale := &AgentInstance{ID: id}
+	al.assignMu.Lock()
+	al.noteSelectionAgents([]*AgentInstance{stale, live})
+	al.assignMu.Unlock()
+	al.agentClosed(agentreg.Spec{ID: id}, stale)
+	if n := al.liveCount(id); n != 1 {
+		t.Fatalf("unretired instances = %d, want only the live one", n)
+	}
+	if len(al.catalog.Set(id).Purposes()) == 0 {
+		t.Fatal("the live instance's set was removed")
 	}
 	noUnretiredLeak(t, al)
 }
