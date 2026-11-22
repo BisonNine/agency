@@ -128,8 +128,8 @@ func TestInbound_BurstMergesIntoOneFollowUpTurn(t *testing.T) {
 	p.waitStarted(t)
 	p.release <- struct{}{}
 	out := nextOutbound(t, msgBus)
-	if out.OriginalMessageID != "id5" {
-		t.Fatalf("merged reply to %q, want id5", out.OriginalMessageID)
+	if out.OriginalMessageID != "id5" || !slices.Equal(out.AlsoAnswers, []string{"id2", "id3", "id4"}) {
+		t.Fatalf("merged reply to %q (also %v), want id5 (also id2, id3, id4)", out.OriginalMessageID, out.AlsoAnswers)
 	}
 	al.activeRequests.Wait()
 

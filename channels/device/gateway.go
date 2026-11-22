@@ -486,11 +486,11 @@ func (c *DeviceChannel) DisconnectDevice(deviceID string) { c.server.DisconnectD
 // text delta to the connected device as incremental chat/agent stream events.
 // Best-effort: a missing connection is a no-op (the terminal Send remains
 // authoritative).
-func (c *DeviceChannel) StreamDelta(_ context.Context, chatID, delta string) error {
+func (c *DeviceChannel) StreamDelta(_ context.Context, chatID, messageID, delta string) error {
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
 	}
-	c.server.StreamDelta(chatID, delta)
+	c.server.StreamDelta(chatID, messageID, delta)
 	return nil
 }
 
@@ -501,7 +501,7 @@ func (c *DeviceChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	if !c.IsRunning() {
 		return channels.ErrNotRunning
 	}
-	err := c.server.DeliverReply(ctx, msg.ChatID, msg.OriginalMessageID, msg.Content)
+	err := c.server.DeliverReply(ctx, msg.ChatID, msg.OriginalMessageID, msg.Content, msg.AlsoAnswers, msg.Outcome)
 	if err != nil && ctx.Err() != nil {
 		// Shutting down: not a delivery fault, and never an alert.
 		return ctx.Err()

@@ -373,7 +373,7 @@ func (m *Manager) SupportsStreaming(channel string) bool {
 // channel if its owner implements StreamCapable; a no-op otherwise. Errors are
 // swallowed: streaming is best-effort progress and the terminal reply (Send)
 // remains authoritative.
-func (m *Manager) StreamDelta(ctx context.Context, channel, chatID, delta string) {
+func (m *Manager) StreamDelta(ctx context.Context, channel, chatID, messageID, delta string) {
 	m.mu.RLock()
 	ch, ok := m.channels[channel]
 	m.mu.RUnlock()
@@ -384,7 +384,7 @@ func (m *Manager) StreamDelta(ctx context.Context, channel, chatID, delta string
 	if !ok {
 		return
 	}
-	if err := sc.StreamDelta(ctx, chatID, delta); err != nil {
+	if err := sc.StreamDelta(ctx, chatID, messageID, delta); err != nil {
 		logger.DebugCF("channels", "Stream delta failed", map[string]any{
 			"channel": channel, "chat_id": chatID, "error": err.Error(),
 		})

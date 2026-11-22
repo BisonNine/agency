@@ -136,7 +136,9 @@ type MessageLengthProvider interface {
 // here via StreamDelta; channels that do not implement it are streamed nothing
 // and behave exactly as before (the terminal reply still arrives via Send).
 type StreamCapable interface {
-	StreamDelta(ctx context.Context, chatID, delta string) error
+	// StreamDelta sends delta, part of the reply to the inbound message
+	// messageID ("" when unknown), to chatID.
+	StreamDelta(ctx context.Context, chatID, messageID, delta string) error
 }
 
 type BaseChannel struct {

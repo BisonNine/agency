@@ -130,11 +130,14 @@
 
 ### Fixed
 
-- **On the device listener, a run interrupted by a `/cancel` sent during it
-  now ends under its own run id with state `aborted`.** Its closing events
-  used to carry the `/cancel` request's run id, so the original run never
-  ended for the client. Now that run gets `agent` lifecycle end and a `chat`
-  event with state `aborted` under its own id, before the `/cancel` reply.
+- **On the device listener, every run now ends exactly once, under its own
+  run id.** A run interrupted by a `/cancel` sent during it used to have its
+  closing events carry the `/cancel` request's run id, so it never ended for
+  the client; it now gets `agent` lifecycle end and a `chat` event with state
+  `aborted` under its own id, before the `/cancel` reply. Messages sent while
+  the agent was busy, which it answers together in one reply, used to leave
+  every run but the last open; each now ends with that reply's state
+  (`final`, `error` or `aborted`) under its own id.
 
 - **An image or file in a message could reach the model as an unreadable
   reference.** When the conversation was compacted, or old tool output was

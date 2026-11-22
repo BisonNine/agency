@@ -287,8 +287,7 @@ its speech pipeline) and **complete the turn** on `stream:"lifecycle"` with `dat
 The socket is not blocked while a reply is pending, so a client may send another `chat.send`
 during a run. ClawEh keeps every run of a connection open by its `runId` until its reply: a
 reply goes to the run it answers (its `runId`); a reply that names no run goes to the
-latest open run. Partial text
-streams to the latest open run that is not a `/cancel`.
+latest open run.
 
 There is no abort request. To stop a reply, a client sends `/cancel` (or `/cancel all`) as a
 second `chat.send`; it reaches the same command as on any text channel. Its reply ends the
@@ -304,7 +303,12 @@ runs started before it on the connection first, each under **its own** `runId`:
     "runId":"req-4","sessionKey":"...","seq":1,"state":"aborted" },"seq":<frame> }
 ```
 
-A run whose turn never replies is forgotten once 16 newer runs were started on the connection.
+Messages sent while the agent is busy are answered together in one reply (to the last one).
+The runs of the earlier ones end first, each under its own `runId`, with `agent` lifecycle end
+and a `chat` event without a message whose state is the reply's (`final`, `error` or
+`aborted`). Partial text streams to the run of the message being answered. Every run ends
+once: a reply for a run that has already ended is dropped. A run whose turn never replies is
+forgotten once 16 newer runs were started on the connection.
 
 ## Agent selection & session scope
 

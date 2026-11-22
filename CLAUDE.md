@@ -1200,10 +1200,13 @@ Hard-won learnings (don't relearn these):
   Hermes bundle). The **R1 (node) uses both**: `chat`/`final` for the on-screen transcript and
   the `agent` `assistant` text for its **speech** pipeline (`lifecycle/end` completes it).
 - **Runs by id.** A connection keeps its open runs by `runId` (`liveConn.runs`, at most
-  16); a reply ends the run its `OriginalMessageID` names (a reply naming none: the latest), partial text
-  streams to the latest run that is not a `/cancel`, and the reply to a `/cancel` first ends
-  every older run with `agent` lifecycle end and `chat` state `aborted` under its own id
-  (`emitAborted`). No abort request exists.
+  16); a reply ends the run its `OriginalMessageID` names (a reply naming none: the latest)
+  and first the runs of the messages merged into its turn (`OutboundMessage.AlsoAnswers`,
+  from `InboundMessage.Merged`) with its state; partial text streams to the run of the turn's
+  message (`StreamCapable.StreamDelta` takes the message id); the reply to a `/cancel` first
+  ends every older run with `agent` lifecycle end and `chat` state `aborted` under its own id
+  (`emitEnd`); a reply for a run that has ended (the last 64 remembered) is dropped, so every
+  run ends once. No abort request exists.
 - **Order: `agent` stream BEFORE `chat` final.** `emitChatReply` emits `agent:assistant` →
   `agent:lifecycle/end` → `chat:final`. If `chat`/`final` goes first, the R1 marks the turn
   complete and paints the transcript **without speaking** — reply shows but is silent. Sending

@@ -17,7 +17,7 @@ type streamMockChannel struct {
 	deltas []string
 }
 
-func (s *streamMockChannel) StreamDelta(_ context.Context, _, delta string) error {
+func (s *streamMockChannel) StreamDelta(_ context.Context, _, _, delta string) error {
 	s.deltas = append(s.deltas, delta)
 	return nil
 }
@@ -44,13 +44,13 @@ func TestStreamDeltaRouting(t *testing.T) {
 	m.channels["stream"] = sc
 	m.channels["plain"] = &mockChannel{}
 
-	m.StreamDelta(context.Background(), "stream", "chat-1", "hello ")
-	m.StreamDelta(context.Background(), "stream", "chat-1", "world")
+	m.StreamDelta(context.Background(), "stream", "chat-1", "", "hello ")
+	m.StreamDelta(context.Background(), "stream", "chat-1", "", "world")
 	if len(sc.deltas) != 2 || sc.deltas[0] != "hello " || sc.deltas[1] != "world" {
 		t.Fatalf("expected deltas [hello , world] routed to StreamCapable channel, got %v", sc.deltas)
 	}
 
 	// Non-capable and unknown channels are no-ops (must not panic).
-	m.StreamDelta(context.Background(), "plain", "chat-1", "ignored")
-	m.StreamDelta(context.Background(), "missing", "chat-1", "ignored")
+	m.StreamDelta(context.Background(), "plain", "chat-1", "", "ignored")
+	m.StreamDelta(context.Background(), "missing", "chat-1", "", "ignored")
 }

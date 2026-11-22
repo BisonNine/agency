@@ -274,9 +274,9 @@ func (al *AgentLoop) startModelLoop(ctx context.Context, agent *AgentInstance, o
 	// serves every model call in the turn; any other turn asks for none.
 	loop.TextDeltas = streamToolNarration && al.channelManager != nil && al.channelManager.SupportsStreaming(opts.Channel)
 	if loop.TextDeltas {
-		channel, chatID := opts.Channel, opts.ChatID
+		channel, chatID, messageID := opts.Channel, opts.ChatID, opts.MessageID
 		st.stream = newStreamCoalescer(func(batch string) {
-			al.channelManager.StreamDelta(ctx, channel, chatID, batch)
+			al.channelManager.StreamDelta(ctx, channel, chatID, messageID, batch)
 		})
 	}
 	st.notifyFallback = al.fallbackNotifier(ctx, opts)

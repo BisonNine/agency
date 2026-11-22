@@ -23,6 +23,7 @@ import (
 
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/gatewayproto"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
@@ -112,14 +113,21 @@ type liveConn struct {
 	sessionKey string
 	// runs are the runs started on this connection (chat.send) that have
 	// not ended yet, oldest first, at most maxOpenRuns (guarded by mu). A
-	// reply ends the run it answers (by run id), else the latest; the reply
-	// to a /cancel first ends every run started before it as aborted.
-	runs []*deviceRun
+	// reply ends the run it answers (by run id; a reply naming none, the
+	// latest); the reply to a /cancel first ends every run started before it
+	// as aborted. ended remembers the last maxEndedRuns run ids that ended,
+	// so a late reply for one is dropped rather than ending it twice.
+	runs  []*deviceRun
+	ended []string
 }
 
 // maxOpenRuns bounds the runs a connection keeps open: a run whose turn
 // sends no reply is forgotten once this many newer ones were started.
-const maxOpenRuns = 16
+// maxEndedRuns bounds the ended run ids a connection remembers.
+const (
+	maxOpenRuns  = 16
+	maxEndedRuns = 64
+)
 
 // deviceRun is one run of a connection: the reply to one chat.send.
 type deviceRun struct {
@@ -144,15 +152,24 @@ func (lc *liveConn) startRun(id string, cancel bool) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 	lc.runs = slices.DeleteFunc(lc.runs, func(r *deviceRun) bool { return r.id == id })
+	lc.ended = slices.DeleteFunc(lc.ended, func(e string) bool { return e == id })
 	lc.runs = append(lc.runs, &deviceRun{id: id, cancel: cancel})
 	if n := len(lc.runs); n > maxOpenRuns {
 		lc.runs = slices.Delete(lc.runs, 0, n-maxOpenRuns)
 	}
 }
 
-// streamingRun is the run partial text belongs to: the latest open run
-// that is not a /cancel. Called with mu held.
-func (lc *liveConn) streamingRun() *deviceRun {
+// streamingRun is the run partial text of the reply to messageID belongs
+// to: that open run, or for an unknown message the latest open run that is
+// not a /cancel. Nil when there is none (the run has ended). Called with mu
+// held.
+func (lc *liveConn) streamingRun(messageID string) *deviceRun {
+	if messageID != "" {
+		if i := lc.openRun(messageID); i >= 0 {
+			return lc.runs[i]
+		}
+		return nil
+	}
 	for _, r := range slices.Backward(lc.runs) {
 		if !r.cancel {
 			return r
@@ -161,29 +178,62 @@ func (lc *liveConn) streamingRun() *deviceRun {
 	return nil
 }
 
-// endRun closes the run a reply answers: run id; for a reply that names no
-// run, the latest open run. A reply naming a run no longer open (it ended
-// already) keeps its id and touches no other run. When the run is a
+// openRun is the index of open run id, or -1. Called with mu held.
+func (lc *liveConn) openRun(id string) int {
+	return slices.IndexFunc(lc.runs, func(r *deviceRun) bool { return r.id == id })
+}
+
+// endedRun records that run id ended. Called with mu held.
+func (lc *liveConn) endedRun(id string) {
+	if id == "" {
+		return
+	}
+	lc.ended = append(lc.ended, id)
+	if n := len(lc.ended); n > maxEndedRuns {
+		lc.ended = slices.Delete(lc.ended, 0, n-maxEndedRuns)
+	}
+}
+
+// endRun closes the run a reply answers, and the runs of the messages
+// merged into it (merged; they are returned, to be ended with the reply's
+// outcome). The run is id's; for a reply that names no run, the latest open
+// run; a run of that id never seen open keeps its id. A reply for a run
+// that has already ended returns no run: it is dropped. When the run is a
 // /cancel, the runs started before it end too: they are returned, to be
 // ended as aborted.
-func (lc *liveConn) endRun(id string) (run *deviceRun, aborted []*deviceRun) {
+func (lc *liveConn) endRun(id string, merged []string) (run *deviceRun, alsoEnded, aborted []*deviceRun) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
-	i := slices.IndexFunc(lc.runs, func(r *deviceRun) bool { return r.id == id })
+	if id != "" && slices.Contains(lc.ended, id) {
+		return nil, nil, nil
+	}
+	for _, m := range merged {
+		if i := lc.openRun(m); i >= 0 && m != id {
+			alsoEnded = append(alsoEnded, lc.runs[i])
+			lc.runs = slices.Delete(lc.runs, i, i+1)
+			lc.endedRun(m)
+		}
+	}
+	i := lc.openRun(id)
 	if i < 0 && id == "" {
 		i = len(lc.runs) - 1
 	}
 	if i < 0 {
-		return &deviceRun{id: id}, nil
+		lc.endedRun(id)
+		return &deviceRun{id: id}, alsoEnded, nil
 	}
 	run = lc.runs[i]
+	lc.endedRun(run.id)
 	if run.cancel {
 		aborted = slices.Clone(lc.runs[:i])
+		for _, r := range aborted {
+			lc.endedRun(r.id)
+		}
 		lc.runs = slices.Delete(lc.runs, 0, i+1)
-		return run, aborted
+		return run, alsoEnded, aborted
 	}
 	lc.runs = slices.Delete(lc.runs, i, i+1)
-	return run, nil
+	return run, alsoEnded, nil
 }
 
 // NewServer builds a gateway protocol server backed by the pairing store.
@@ -1531,7 +1581,7 @@ func (s *Server) handleChatHistory(ctx context.Context, lc *liveConn, req gatewa
 // It marks the run as streamed so the terminal emitChatReply does not re-send the
 // assistant text. Returns false when no connection matches or there is no active
 // run (nothing to correlate the delta to).
-func (s *Server) StreamDelta(chatID, delta string) bool {
+func (s *Server) StreamDelta(chatID, messageID, delta string) bool {
 	if delta == "" {
 		return false
 	}
@@ -1542,7 +1592,7 @@ func (s *Server) StreamDelta(chatID, delta string) bool {
 	}
 
 	lc.mu.Lock()
-	run := lc.streamingRun()
+	run := lc.streamingRun(messageID)
 	if run == nil {
 		lc.mu.Unlock()
 		return false
@@ -1614,7 +1664,7 @@ func (s *Server) StreamDelta(chatID, delta string) bool {
 // its connection is closing (closed, or closed because it stopped reading),
 // and channels.ErrSendFailed for a fault of the server itself (the pairing
 // store failed).
-func (s *Server) DeliverReply(ctx context.Context, chatID, runID, content string) error {
+func (s *Server) DeliverReply(ctx context.Context, chatID, runID, content string, merged []string, outcome string) error {
 	v, _ := s.conns.Load(chatID)
 	lc, ok := v.(*liveConn)
 	if !ok {
@@ -1623,7 +1673,7 @@ func (s *Server) DeliverReply(ctx context.Context, chatID, runID, content string
 	lc.mu.Lock()
 	sessionKey := lc.sessionKey
 	lc.mu.Unlock()
-	if !s.emitChatReply(lc, runID, sessionKey, content) {
+	if !s.emitReplyFor(lc, runID, sessionKey, content, merged, outcome) {
 		return fmt.Errorf("%s: the connection is closing: %w", chatID, channels.ErrRecipientOffline)
 	}
 	return nil
@@ -1656,9 +1706,27 @@ func (s *Server) undeliverable(ctx context.Context, chatID string) error {
 //
 // Frame-level seq is monotonic per connection; agent/chat payload seq is per-run.
 func (s *Server) emitChatReply(lc *liveConn, runID, sessionKey, content string) bool {
-	run, aborted := lc.endRun(runID)
+	return s.emitReplyFor(lc, runID, sessionKey, content, nil, "")
+}
+
+// emitReplyFor is emitChatReply for a reply that also answers the messages
+// merged into its turn (merged), whose runs end first with the reply's
+// outcome (see emitEnd). A reply for a run that has already ended is
+// dropped (reported delivered).
+func (s *Server) emitReplyFor(lc *liveConn, runID, sessionKey, content string, merged []string, outcome string) bool {
+	run, alsoEnded, aborted := lc.endRun(runID, merged)
+	if run == nil {
+		logger.InfoCF("device", "Reply for a run that already ended dropped",
+			map[string]any{"deviceId": lc.deviceID, "runId": runID})
+		return true
+	}
 	for _, r := range aborted {
-		if !s.emitAborted(lc, r, sessionKey) {
+		if !s.emitEnd(lc, r, sessionKey, "aborted") {
+			return false
+		}
+	}
+	for _, r := range alsoEnded {
+		if !s.emitEnd(lc, r, sessionKey, endState(outcome)) {
 			return false
 		}
 	}
@@ -1745,9 +1813,24 @@ func (s *Server) emitChatReply(lc *liveConn, runID, sessionKey, content string) 
 	}, chatFrameSeq)
 }
 
-// emitAborted ends a run a /cancel stopped: "agent" lifecycle end, then a
-// "chat" event with state aborted, under the run's own id.
-func (s *Server) emitAborted(lc *liveConn, run *deviceRun, sessionKey string) bool {
+// endState is the chat state that ends a merged message's run, by the
+// outcome of the reply that answered it.
+func endState(outcome string) string {
+	switch outcome {
+	case bus.OutcomeError:
+		return "error"
+	case bus.OutcomeCancelled:
+		return "aborted"
+	default:
+		return "final"
+	}
+}
+
+// emitEnd ends a run without a reply of its own: "agent" lifecycle end,
+// then a "chat" event with state (aborted for a run a /cancel stopped; for
+// a message merged into another's turn, the state of that reply) and no
+// message, under the run's own id.
+func (s *Server) emitEnd(lc *liveConn, run *deviceRun, sessionKey, state string) bool {
 	lc.mu.Lock()
 	lc.seq++
 	agentEndFrameSeq := lc.seq
@@ -1760,8 +1843,8 @@ func (s *Server) emitAborted(lc *liveConn, run *deviceRun, sessionKey string) bo
 	lc.mu.Unlock()
 
 	if s.opts.LogMessages {
-		logger.InfoCF("device", "chat run aborted", map[string]any{
-			"deviceId": lc.deviceID, "runId": run.id, "sessionKey": sessionKey,
+		logger.InfoCF("device", "chat run ended", map[string]any{
+			"deviceId": lc.deviceID, "runId": run.id, "sessionKey": sessionKey, "state": state,
 		})
 	}
 	ts := time.Now().UnixMilli()
@@ -1776,7 +1859,7 @@ func (s *Server) emitAborted(lc *liveConn, run *deviceRun, sessionKey string) bo
 	return lc.cw.send(gatewayproto.NewEvent("chat", map[string]any{
 		"runId":      run.id,
 		"sessionKey": sessionKey,
-		"state":      "aborted",
+		"state":      state,
 		"seq":        chatPayloadSeq,
 	}, &chatFrameSeq))
 }

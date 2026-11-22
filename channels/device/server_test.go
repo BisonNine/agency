@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/gatewayproto"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/utils"
@@ -317,7 +318,7 @@ func TestHandshakeSharedToken(t *testing.T) {
 func TestConversationEcho(t *testing.T) {
 	srv, _, wsURL := newTestServer(t, ServerOptions{ServerVersion: "test-1", AutoApprove: true})
 	srv.SetInbound(func(_, chatID, content, _, _ string, _ []InboundAttachment) {
-		if err := srv.DeliverReply(context.Background(), chatID, "", "echo: "+content); err != nil {
+		if err := srv.DeliverReply(context.Background(), chatID, "", "echo: "+content, nil, ""); err != nil {
 			t.Errorf("DeliverReply: %v", err)
 		}
 	})
@@ -511,9 +512,9 @@ func TestStreamThenFinal(t *testing.T) {
 	srv, _, wsURL := newTestServer(t, ServerOptions{ServerVersion: "test-1", AutoApprove: true})
 	srv.SetInbound(func(_, chatID, _, _, _ string, _ []InboundAttachment) {
 		// Stream two partial deltas, then finalize with the full reply.
-		srv.StreamDelta(chatID, "Hello ")
-		srv.StreamDelta(chatID, "world.")
-		if err := srv.DeliverReply(context.Background(), chatID, "", "Hello world."); err != nil {
+		srv.StreamDelta(chatID, "", "Hello ")
+		srv.StreamDelta(chatID, "", "world.")
+		if err := srv.DeliverReply(context.Background(), chatID, "", "Hello world.", nil, ""); err != nil {
 			t.Errorf("DeliverReply: %v", err)
 		}
 	})
@@ -586,7 +587,7 @@ func TestStreamThenFinal(t *testing.T) {
 func TestNonStreamedRunUnchanged(t *testing.T) {
 	srv, _, wsURL := newTestServer(t, ServerOptions{ServerVersion: "test-1", AutoApprove: true})
 	srv.SetInbound(func(_, chatID, content, _, _ string, _ []InboundAttachment) {
-		if err := srv.DeliverReply(context.Background(), chatID, "", "echo: "+content); err != nil {
+		if err := srv.DeliverReply(context.Background(), chatID, "", "echo: "+content, nil, ""); err != nil {
 			t.Errorf("DeliverReply: %v", err)
 		}
 	})
@@ -680,11 +681,11 @@ func TestCancelDuringRunEndsItAsAborted(t *testing.T) {
 		case "/cancel":
 			// The stopped turn sends nothing of its own; the /cancel's
 			// reply speaks for both.
-			if err := srv.DeliverReply(context.Background(), chatID, runID, "Alice: stopped."); err != nil {
+			if err := srv.DeliverReply(context.Background(), chatID, runID, "Alice: stopped.", nil, ""); err != nil {
 				t.Errorf("DeliverReply: %v", err)
 			}
 		case "again":
-			if err := srv.DeliverReply(context.Background(), chatID, runID, "fine"); err != nil {
+			if err := srv.DeliverReply(context.Background(), chatID, runID, "fine", nil, ""); err != nil {
 				t.Errorf("DeliverReply: %v", err)
 			}
 		}
@@ -713,5 +714,95 @@ func TestCancelDuringRunEndsItAsAborted(t *testing.T) {
 	want = []runFrame{{"run-3", "agent:assistant"}, {"run-3", "agent:lifecycle:end"}, {"run-3", "chat:final"}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("next run frames = %v, want %v", got, want)
+	}
+}
+
+// openRuns connects a device and starts runs ids (chat.send, nothing
+// answered), returning the connection and its chat id once every run is
+// acknowledged.
+func openRuns(t *testing.T, ids ...string) (*Server, *websocket.Conn, string) {
+	t.Helper()
+	srv, _, wsURL := newTestServer(t, ServerOptions{ServerVersion: "test-1", AutoApprove: true})
+	em := newEmulator(t)
+	conn, resp := em.open(t, wsURL, "")
+	t.Cleanup(func() { utils.CloseQuietly(conn) })
+	if !resp.OK {
+		t.Fatalf("handshake failed: %+v", resp.Error)
+	}
+	for i, id := range ids {
+		em.writeReq(t, conn, fmt.Sprintf("m%d", i), "chat.send", map[string]any{"message": "message " + id, "sessionKey": "sess-1", "idempotencyKey": id})
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	for acked := 0; acked < len(ids); {
+		var f collectedFrame
+		if err := conn.ReadJSON(&f); err != nil {
+			t.Fatalf("read ack: %v", err)
+		}
+		if f.Type == gatewayproto.FrameRes {
+			acked++
+		}
+	}
+	return srv, conn, "device:" + em.deviceID()
+}
+
+// With two runs open, each run's streamed text goes out under its own id,
+// and a streamed run's final does not repeat its text.
+func TestStreamDeltaGoesToItsOwnRun(t *testing.T) {
+	srv, conn, chatID := openRuns(t, "run-a", "run-b")
+	srv.StreamDelta(chatID, "run-a", "A text")
+	if err := srv.DeliverReply(context.Background(), chatID, "run-a", "A text", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	got := readRunFrames(t, conn, 4)
+	want := []runFrame{
+		{"run-a", "chat:delta"}, {"run-a", "agent:assistant"},
+		{"run-a", "agent:lifecycle:end"}, {"run-a", "chat:final"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("frames = %v, want %v", got, want)
+	}
+}
+
+// A reply for a run a /cancel already ended is dropped: the run gets one
+// terminal event.
+func TestLateReplyForAnEndedRunIsDropped(t *testing.T) {
+	srv, conn, chatID := openRuns(t, "run-a")
+	if err := srv.DeliverReply(context.Background(), chatID, "run-a", "first", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.DeliverReply(context.Background(), chatID, "run-a", "again", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	srv.StreamDelta(chatID, "run-a", "late")
+	got := readRunFrames(t, conn, 3)
+	if got[2] != (runFrame{"run-a", "chat:final"}) {
+		t.Fatalf("frames = %v", got)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	var f collectedFrame
+	if err := conn.ReadJSON(&f); err == nil {
+		t.Fatalf("a second terminal event: %+v", f)
+	}
+}
+
+// The runs of messages merged into one turn end with its reply's outcome,
+// each under its own id, before the reply.
+func TestMergedRunsEndWithTheReply(t *testing.T) {
+	srv, conn, chatID := openRuns(t, "run-a", "run-b", "run-c")
+	if err := srv.DeliverReply(context.Background(), chatID, "run-c", "all three", []string{"run-a", "run-b"}, bus.OutcomeOK); err != nil {
+		t.Fatal(err)
+	}
+	got := readRunFrames(t, conn, 7)
+	want := []runFrame{
+		{"run-a", "agent:lifecycle:end"}, {"run-a", "chat:final"},
+		{"run-b", "agent:lifecycle:end"}, {"run-b", "chat:final"},
+		{"run-c", "agent:assistant"}, {"run-c", "agent:lifecycle:end"}, {"run-c", "chat:final"},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("frames = %v, want %v", got, want)
 	}
 }

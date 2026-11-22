@@ -276,6 +276,13 @@ func mergeMessages(batch []bus.InboundMessage) bus.InboundMessage {
 	}
 	merged.Content = strings.Join(parts, "\n")
 	merged.Media = media
+	merged.Merged = nil
+	for _, m := range batch[:len(batch)-1] {
+		merged.Merged = append(merged.Merged, m.Merged...)
+		if m.MessageID != "" {
+			merged.Merged = append(merged.Merged, m.MessageID)
+		}
+	}
 	// Someone's message merged with claw's own is someone's.
 	merged.Internal = !slices.ContainsFunc(batch, func(m bus.InboundMessage) bool { return !m.Internal })
 	return merged

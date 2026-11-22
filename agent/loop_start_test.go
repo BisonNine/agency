@@ -149,7 +149,7 @@ type streamChannel struct {
 	edits  []string
 }
 
-func (c *streamChannel) StreamDelta(_ context.Context, _, delta string) error {
+func (c *streamChannel) StreamDelta(_ context.Context, _, _, delta string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.deltas = append(c.deltas, delta)

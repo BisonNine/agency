@@ -36,6 +36,10 @@ type InboundMessage struct {
 	// a chat. Every internal publisher sets it; an internal message is never
 	// taken as a person's answer.
 	Internal bool `json:"internal,omitempty"`
+	// Merged are the ids of the earlier messages merged into this one (the
+	// agent loop runs a chat's queued messages as one turn); their reply is
+	// this message's.
+	Merged []string `json:"-"`
 }
 
 type OutboundMessage struct {
@@ -63,6 +67,10 @@ type OutboundMessage struct {
 	// delivered, the channel manager shows them again, so the chat still
 	// looks busy until the reply.
 	StillWorking bool `json:"-"`
+	// AlsoAnswers are the ids of the inbound messages merged into the turn
+	// this final reply answers (InboundMessage.Merged): it is their reply
+	// too.
+	AlsoAnswers []string `json:"-"`
 }
 
 // Outcomes of a turn, carried on its final reply (OutboundMessage.Outcome).

@@ -202,6 +202,7 @@ func (al *AgentLoop) publishInboundReply(ctx, turnCtx context.Context, msg bus.I
 		Content:           text,
 		OriginalMessageID: msg.MessageID,
 		Outcome:           outcome,
+		AlsoAnswers:       msg.Merged,
 	}); err != nil {
 		logger.WarnCF("agent", "Failed to publish outbound response",
 			turnFields(turnCtx, map[string]any{
