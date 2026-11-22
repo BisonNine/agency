@@ -197,6 +197,7 @@ func (al *AgentLoop) newSpawner(
 	spawnMgr := toolsagents.NewSubagentManager(toolsagents.SubagentManagerConfig{
 		Workspace:         currentAgent.Workspace,
 		Live:              al.taskLive,
+		Tasks:             al.tasks,
 		SelfResolver:      func() []providers.FallbackCandidate { return al.workerCandidates(currentAgent) },
 		CallerAgentID:     agentID,
 		CandidateResolver: candidateResolver,

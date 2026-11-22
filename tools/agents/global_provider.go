@@ -298,15 +298,16 @@ const spawnAmbiguousText = "A background task can't be started now: this agent i
 
 var errSpawnAmbiguous = errors.New("background spawn while the agent answers more than one conversation")
 
-// resolveSpawnMode maps the tool's "mode" argument to a global.SpawnMode and, for
-// callback mode, the OnResult sink that delivers the worker's completion pointer
-// (via ToolCall.Notify on the agent-loop path). When no async path is offered
-// (Notify == nil, e.g. MCP), callback mode still runs and tracks the task — the
-// result is retrieved via agent_status / the result file — but no push fires.
+// resolveSpawnMode maps the tool's "mode" argument to a global.SpawnMode and
+// the OnResult sink that delivers the worker's completion pointer (via
+// ToolCall.Notify): for callback mode always, for wait mode only when the turn
+// stops waiting before the worker finishes. When no async path is offered
+// (Notify == nil), the task still runs and is tracked — the result is
+// retrieved via agent_status / the result file — but no push fires.
 func resolveSpawnMode(modeStr string, call *global.ToolCall) (global.SpawnMode, func(*global.Result)) {
 	switch strings.ToLower(strings.TrimSpace(modeStr)) {
 	case "wait", "sync", "synchronous":
-		return global.SpawnAndWait, nil
+		return global.SpawnAndWait, call.Notify
 	default: // "callback", "", or unknown → background, tracked
 		return global.SpawnCallback, call.Notify
 	}

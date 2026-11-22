@@ -179,6 +179,9 @@ type AgentLoop struct {
 	// closed by Close() to stop the supervisor goroutine.
 	taskLive  *toolsagents.LiveSet
 	superStop chan struct{}
+	// tasks is the process's task registry: every running sub-agent and
+	// task-model job on a context of its own, by id and owner.
+	tasks *toolsagents.TaskRegistry
 
 	// sweepWG tracks the temporary-agent sweeper, stopped by evictStop.
 	sweepWG sync.WaitGroup
@@ -393,6 +396,7 @@ func NewAgentLoop(
 		exposeReasoningCache:  make(map[string]bool),
 		showToolActivityCache: make(map[string]bool),
 		taskLive:              toolsagents.NewLiveSet(),
+		tasks:                 toolsagents.NewTaskRegistry(),
 		superStop:             make(chan struct{}),
 	}
 	if n := cfg.Agents.Defaults.MaxConcurrentTurns; n > 0 {

@@ -25,7 +25,7 @@ func TestRun_RoutesContentToFileWithCallbackBlock(t *testing.T) {
 		},
 	})
 
-	res, err := mgr.Run(context.Background(), "do work", "job", "", "cli", "direct", "", "", nil)
+	res, err := mgr.Run(context.Background(), "do work", "job", "", "cli", "direct", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestRun_UsesRunFull(t *testing.T) {
 		},
 	})
 
-	res, err := mgr.Run(context.Background(), "write chapter 4", "chap", "", "cli", "direct", "Pro", "", nil)
+	res, err := mgr.Run(context.Background(), "write chapter 4", "chap", "", "cli", "direct", "Pro", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestRun_PassesMediaToRunFull(t *testing.T) {
 	})
 
 	refs := []string{"media://11111111-1111-1111-1111-111111111111"}
-	if _, err := mgr.Run(context.Background(), "describe the image", "img", "", "cli", "direct", "", "", refs); err != nil {
+	if _, err := mgr.Run(context.Background(), "describe the image", "img", "", "cli", "direct", "", "", refs, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	mu.Lock()

@@ -23,6 +23,9 @@ const (
 	StatusRunning = "running"
 	StatusDone    = "done"
 	StatusError   = "error"
+	// StatusCancelled: the task was cancelled (agent_cancel, /cancel all)
+	// before it finished.
+	StatusCancelled = "cancelled"
 	// StatusUnknown is never persisted; it is what a status lookup returns when no
 	// record exists for a uuid.
 	StatusUnknown = "unknown"
@@ -77,6 +80,10 @@ type TaskRecord struct {
 	Files  []string `json:"files,omitempty"`
 	Voice  string   `json:"voice,omitempty"`
 	Format string   `json:"format,omitempty"`
+	// Parent is the id of the task this one was started in (a worker's own
+	// task); empty for a task a turn started. Cancelling the parent
+	// cancels it too.
+	Parent string `json:"parent,omitempty"`
 }
 
 // TaskResults is the worker's output payload, persisted to <uuid>-results.json.
@@ -87,6 +94,8 @@ type TaskResults struct {
 	FinishedAt string `json:"finished_at"`
 	Iterations int    `json:"iterations,omitempty"`
 	Content    string `json:"content"`
+	// Incomplete marks the output of a task cancelled before it finished.
+	Incomplete bool `json:"incomplete,omitempty"`
 }
 
 // tasksDirFor returns the tasks directory under a workspace.

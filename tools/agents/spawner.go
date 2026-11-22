@@ -115,7 +115,7 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*global.R
 
 	switch req.Mode {
 	case global.SpawnAndWait:
-		res, err := s.mgr.Run(ctx, req.Task, req.Label, req.TargetAgentID, channel, chatID, req.Model, strings.TrimSpace(req.CharacterCard), req.Media)
+		res, err := s.mgr.Run(ctx, req.Task, req.Label, req.TargetAgentID, channel, chatID, req.Model, strings.TrimSpace(req.CharacterCard), req.Media, onResultCallback(req.OnResult))
 		if err != nil {
 			return &global.Result{IsError: true, ForLLM: fmt.Sprintf("subagent execution failed: %v", err)}, nil
 		}
@@ -129,14 +129,7 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*global.R
 		if name == "" {
 			return &global.Result{IsError: true, ForLLM: "name is required for callback mode (a short identifier for the task)"}, nil
 		}
-		var cb tools.AsyncCallback
-		if req.OnResult != nil {
-			onResult := req.OnResult
-			cb = func(_ context.Context, r *tools.ToolResult) {
-				onResult(tools.ResultToGlobal(r))
-			}
-		}
-		id, err := s.mgr.SpawnCallback(req.Task, name, req.TargetAgentID, channel, chatID, req.Model, strings.TrimSpace(req.CharacterCard), req.Media, cb, SpawnDepth(ctx)) //nolint:contextcheck // callback-mode sub-agents run detached from the spawning turn by design; their lifetime is the task record
+		id, err := s.mgr.spawnCallback(ctx, originOf(ctx), req.Task, name, req.TargetAgentID, channel, chatID, req.Model, strings.TrimSpace(req.CharacterCard), req.Media, onResultCallback(req.OnResult))
 		if err != nil {
 			return &global.Result{IsError: true, ForLLM: fmt.Sprintf("failed to spawn subagent: %v", err)}, nil
 		}
@@ -145,6 +138,15 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*global.R
 			name, id, id)
 		return tools.ResultToGlobal(tools.AsyncResult(msg)), nil
 	}
+}
+
+// onResultCallback adapts a spawn request's OnResult to the manager's
+// callback; nil when there is none.
+func onResultCallback(onResult func(*global.Result)) tools.AsyncCallback {
+	if onResult == nil {
+		return nil
+	}
+	return func(_ context.Context, r *tools.ToolResult) { onResult(tools.ResultToGlobal(r)) }
 }
 
 // TaskStatus implements global.TaskInspector.

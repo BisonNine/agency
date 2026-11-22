@@ -39,7 +39,7 @@ func TestSpawn_NoRunnerIsUnavailable(t *testing.T) {
 	mgr := NewSubagentManager(SubagentManagerConfig{Workspace: ws, Live: NewLiveSet()})
 	wantErr := global.ErrSpawnUnavailable.Error()
 
-	res, err := mgr.Run(context.Background(), "work", "job", "", "cli", "direct", "", "", nil)
+	res, err := mgr.Run(context.Background(), "work", "job", "", "cli", "direct", "", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

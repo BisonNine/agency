@@ -21,6 +21,7 @@ type SubagentManager struct {
 	workspace    string
 	ownerAgentID string
 	live         *LiveSet
+	tasks        *TaskRegistry
 
 	// Worker model candidates: selfResolver's for self-spawns, or the target
 	// agent's (resolved via candidateResolver). Used to validate a spawn.
@@ -51,6 +52,9 @@ type SubagentManagerConfig struct {
 	// Live is the process-shared running-task set, shared across reloads so the
 	// supervisor never relaunches a task that is still running.
 	Live *LiveSet
+	// Tasks is the process's task registry (every running sub-agent and
+	// task-model job, by id and owner); nil gives the manager one of its own.
+	Tasks *TaskRegistry
 	// SelfResolver returns the calling agent's worker model candidates for
 	// self-spawns, at the time of each spawn.
 	SelfResolver func() []providers.FallbackCandidate
@@ -81,7 +85,12 @@ func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
 	if a == nil {
 		a = alerter.Nop{}
 	}
+	tasks := cfg.Tasks
+	if tasks == nil {
+		tasks = NewTaskRegistry()
+	}
 	return &SubagentManager{
+		tasks:             tasks,
 		alerter:           a,
 		workspace:         cfg.Workspace,
 		ownerAgentID:      cfg.CallerAgentID,
@@ -194,15 +203,39 @@ func candidateNames(candidates []providers.FallbackCandidate) string {
 
 // SpawnCallback launches a tracked background worker. It mints a uuid, writes the
 // status record + .run marker to the launcher's workspace, registers the task as
-// live, and runs the worker on a detached context (so it outlives the launching
-// turn). When the worker finishes, a compact pointer Result is delivered to cb.
-// parentDepth is the spawning turn's sub-agent depth, restored on the
-// worker's context. Returns the task uuid.
+// live, and runs the worker on a context of its own (so it outlives the
+// launching turn). When the worker finishes, a compact pointer Result is
+// delivered to cb. parentDepth is the spawning turn's sub-agent depth, restored
+// on the worker's context. Returns the task uuid.
 func (sm *SubagentManager) SpawnCallback(
 	task, name, agentID, originChannel, originChatID, model, characterCard string,
 	media []string,
 	cb tools.AsyncCallback,
 	parentDepth int,
+) (string, error) {
+	return sm.spawnCallback(context.Background(), spawnOrigin{depth: parentDepth}, task, name, agentID, originChannel, originChatID, model, characterCard, media, cb)
+}
+
+// spawnOrigin is what a task takes from the turn that starts it: its
+// sub-agent depth, its ask chain and the task the turn runs in, if any.
+type spawnOrigin struct {
+	depth    int
+	askChain []string
+	parent   string
+}
+
+// originOf is the spawn origin of a call on ctx.
+func originOf(ctx context.Context) spawnOrigin {
+	return spawnOrigin{depth: SpawnDepth(ctx), askChain: tools.AskChain(ctx), parent: TaskID(ctx)}
+}
+
+// spawnCallback is SpawnCallback for a task started from origin.
+func (sm *SubagentManager) spawnCallback(
+	ctx context.Context,
+	origin spawnOrigin,
+	task, name, agentID, originChannel, originChatID, model, characterCard string,
+	media []string,
+	cb tools.AsyncCallback,
 ) (string, error) {
 	if strings.TrimSpace(task) == "" {
 		return "", errors.New("task is required")
@@ -225,7 +258,8 @@ func (sm *SubagentManager) SpawnCallback(
 		CreatedAt:     nowRFC(),
 		RetryAfter:    now + retryDelaySecs(),
 		ResultsPath:   relResultsPath(id),
-		SpawnDepth:    parentDepth,
+		SpawnDepth:    origin.depth,
+		Parent:        origin.parent,
 	}
 	dir := sm.tasksDir()
 	if err := writeStatus(dir, rec); err != nil {
@@ -244,78 +278,8 @@ func (sm *SubagentManager) SpawnCallback(
 		"model":   model,
 		"channel": originChannel,
 	})
-	go sm.runRecord(rec, cb, false)
+	sm.launch(ctx, rec, cb, false, false, origin.askChain)
 	return id, nil
-}
-
-// runRecord executes a task to completion on a detached context and finalizes it
-// (results file, status, .run cleanup, live-set removal, callback). resumed
-// prepends the interruption note. Panics are recovered and recorded as errors.
-func (sm *SubagentManager) runRecord(rec *TaskRecord, cb tools.AsyncCallback, resumed bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			err := fmt.Errorf("panic: %v", r)
-			if rec.Kind != "" {
-				sm.finishTaskRecord(rec, nil, err, cb)
-				return
-			}
-			sm.finalize(rec, "", 0, err, cb)
-		}
-	}()
-
-	rec.StartedAt = nowRFC()
-	sm.persistStatus(sm.tasksDir(), rec)
-	if rec.Kind != "" {
-		sm.runTaskRecord(rec, cb)
-		return
-	}
-
-	taskText := rec.Task
-	if resumed {
-		taskText = interruptionNote + "\n\n" + rec.Task
-	}
-
-	if sm.runFull == nil {
-		sm.finalize(rec, "", 0, errRunnerNotConfigured(), cb)
-		return
-	}
-
-	// Run a temporary clone of the agent; it is deleted once the result has
-	// been delivered.
-	target := sm.targetAgent(rec.AgentID)
-	// Restore the spawning agent's depth onto the detached context so the
-	// worker (and any layer it spawns) stays within MaxSpawnDepth.
-	runCtx := WithSpawnDepth(context.Background(), rec.SpawnDepth)
-	fr, release, err := sm.runFull(runCtx, target, taskText, rec.Model, rec.CharacterCard, rec.Media)
-	defer release()
-	if err != nil {
-		sm.finalize(rec, "", 0, err, cb)
-		return
-	}
-	sm.finalize(rec, fr.Content, fr.Iterations, nil, cb)
-}
-
-// finalize writes the results + status, clears the run marker, removes the task
-// from the live set, and delivers the compact pointer to cb.
-func (sm *SubagentManager) finalize(rec *TaskRecord, content string, iterations int, runErr error, cb tools.AsyncCallback) {
-	result := sm.recordResults(rec, content, iterations, runErr)
-	dir := sm.tasksDir()
-	clearRun(dir, rec.UUID)
-	sm.live.Remove(rec.UUID)
-
-	logger.InfoCF("subagent", "subagent.run.finished", map[string]any{
-		"uuid": rec.UUID, "name": rec.Name, "agent": sm.targetAgent(rec.AgentID),
-		"mode": "callback", "status": rec.Status, "iterations": iterations,
-		"content_len": len(content), "error": rec.Error,
-	})
-
-	if cb != nil {
-		logger.InfoCF("subagent", "subagent.callback.fired", map[string]any{
-			"uuid": rec.UUID, "name": rec.Name, "agent": sm.targetAgent(rec.AgentID),
-			"status": rec.Status, "result_file": rec.ResultsPath,
-		})
-		cb(context.Background(), result)
-	}
 }
 
 // friendlyMode maps the internal task mode to the user-facing term: a
@@ -464,7 +428,7 @@ func (sm *SubagentManager) SuperviseOnce(now int64, cbFor func(rec *TaskRecord) 
 			clearRun(dir, id) // orphan marker with no readable status
 			continue
 		}
-		if rec.Status == StatusDone || rec.Status == StatusError {
+		if rec.Status == StatusDone || rec.Status == StatusError || rec.Status == StatusCancelled {
 			clearRun(dir, id) // stale marker for an already-terminal task
 			continue
 		}
@@ -490,7 +454,7 @@ func (sm *SubagentManager) SuperviseOnce(now int64, cbFor func(rec *TaskRecord) 
 		if cbFor != nil {
 			cb = cbFor(rec)
 		}
-		go sm.runRecord(rec, cb, true)
+		sm.launch(context.Background(), rec, cb, true, false, nil)
 	}
 }
 
@@ -558,16 +522,19 @@ func (sm *SubagentManager) RunSync(ctx context.Context, task, agentID, model str
 	return fr, nil
 }
 
-// Run executes a sub-agent task synchronously and returns its completion
-// notification. Like SpawnCallback, the worker's output is written to a results
-// file and the returned result is a pointer (CALLBACK block + security framing),
-// never the raw content — so a synchronous spawn never leaks sub-agent output
-// inline. agentID == "" is a self-spawn. channel/chatID are used for attribution
-// and tool context.
+// Run executes a sub-agent task and waits for its completion notification.
+// Like SpawnCallback, the worker's output is written to a results file and
+// the returned result is a pointer (CALLBACK block + security framing), never
+// the raw content — so a synchronous spawn never leaks sub-agent output
+// inline. agentID == "" is a self-spawn. channel/chatID are used for
+// attribution and tool context. The worker runs on a context of its own: when
+// ctx ends before it finishes, Run stops waiting and returns at once, and the
+// task goes on as a background task whose result goes to onDetach (see await).
 func (sm *SubagentManager) Run(
 	ctx context.Context,
 	task, label, agentID, channel, chatID, model, characterCard string,
 	media []string,
+	onDetach tools.AsyncCallback,
 ) (*tools.ToolResult, error) {
 	if strings.TrimSpace(task) == "" {
 		return nil, errors.New("task is required")
@@ -581,6 +548,7 @@ func (sm *SubagentManager) Run(
 		labelStr = "(unnamed)"
 	}
 
+	origin := originOf(ctx)
 	id := uuid.NewString()
 	rec := &TaskRecord{
 		UUID:          id,
@@ -597,33 +565,17 @@ func (sm *SubagentManager) Run(
 		Status:        StatusRunning,
 		CreatedAt:     nowRFC(),
 		ResultsPath:   relResultsPath(id),
+		SpawnDepth:    origin.depth,
+		Parent:        origin.parent,
 	}
 
 	if sm.runFull == nil {
 		return sm.recordResults(rec, "", 0, errRunnerNotConfigured()), nil
 	}
 
-	// Run a temporary clone of the agent; it is deleted once the result is
-	// recorded.
-	target := sm.targetAgent(agentID)
 	logger.InfoCF("subagent", "subagent.spawn.launched", map[string]any{
-		"uuid": id, "label": labelStr, "agent": target,
+		"uuid": id, "label": labelStr, "agent": sm.targetAgent(agentID),
 		"owner": sm.ownerAgentID, "mode": "wait", "model": model, "channel": channel,
 	})
-	fr, release, err := sm.runFull(ctx, target, task, model, characterCard, media)
-	defer release()
-	var content string
-	var iterations int
-	if err != nil {
-		logger.WarnCF("subagent", "subagent.run.failed", map[string]any{
-			"uuid": id, "label": labelStr, "agent": target, "mode": "wait", "error": err.Error(),
-		})
-	} else {
-		content, iterations = fr.Content, fr.Iterations
-		logger.InfoCF("subagent", "subagent.run.finished", map[string]any{
-			"uuid": id, "label": labelStr, "agent": target, "mode": "wait",
-			"iterations": iterations, "content_len": len(content),
-		})
-	}
-	return sm.recordResults(rec, content, iterations, err), nil
+	return sm.await(ctx, sm.launch(ctx, rec, nil, false, true, origin.askChain), onDetach), nil
 }

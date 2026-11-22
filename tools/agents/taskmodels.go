@@ -98,21 +98,28 @@ func taskRequestOf(rec *TaskRecord) TaskModelRequest {
 	}
 }
 
-// RunTask runs a task-model call to completion (wait mode) and returns its
-// result. The record is kept like a sub-agent's (status and results files).
-func (sm *SubagentManager) RunTask(ctx context.Context, label, channel, chatID string, req TaskModelRequest) *tools.ToolResult {
+// RunTask runs a task-model call and waits for its result (wait mode). The
+// record is kept like a sub-agent's (status and results files). Like Run, it
+// stops waiting when ctx ends first; the call goes on and its result goes to
+// onDetach.
+func (sm *SubagentManager) RunTask(ctx context.Context, label, channel, chatID string, req TaskModelRequest, onDetach tools.AsyncCallback) *tools.ToolResult {
 	if strings.TrimSpace(label) == "" {
 		label = "(unnamed)"
 	}
-	rec := sm.newTaskRecord(label, "wait", channel, chatID, req, SpawnDepth(ctx))
-	res, err := sm.runTaskModel(ctx, rec)
-	return sm.recordTaskResults(rec, res, err)
+	origin := originOf(ctx)
+	rec := sm.newTaskRecord(label, "wait", channel, chatID, req, origin)
+	return sm.await(ctx, sm.launch(ctx, rec, nil, false, true, origin.askChain), onDetach)
 }
 
 // SpawnTaskCallback launches a tracked background task-model call, like
 // SpawnCallback, and returns its uuid.
 func (sm *SubagentManager) SpawnTaskCallback(name, channel, chatID string, req TaskModelRequest, cb tools.AsyncCallback, parentDepth int) (string, error) {
-	rec := sm.newTaskRecord(name, "callback", channel, chatID, req, parentDepth)
+	return sm.spawnTaskCallback(context.Background(), spawnOrigin{depth: parentDepth}, name, channel, chatID, req, cb)
+}
+
+// spawnTaskCallback is SpawnTaskCallback for a call started from origin.
+func (sm *SubagentManager) spawnTaskCallback(ctx context.Context, origin spawnOrigin, name, channel, chatID string, req TaskModelRequest, cb tools.AsyncCallback) (string, error) {
+	rec := sm.newTaskRecord(name, "callback", channel, chatID, req, origin)
 	rec.RetryAfter = nowEpoch() + retryDelaySecs()
 	dir := sm.tasksDir()
 	if err := writeStatus(dir, rec); err != nil {
@@ -122,11 +129,11 @@ func (sm *SubagentManager) SpawnTaskCallback(name, channel, chatID string, req T
 		return "", fmt.Errorf("failed to write task marker: %w", err)
 	}
 	sm.live.Add(rec.UUID)
-	go sm.runRecord(rec, cb, false)
+	sm.launch(ctx, rec, cb, false, false, origin.askChain)
 	return rec.UUID, nil
 }
 
-func (sm *SubagentManager) newTaskRecord(name, mode, channel, chatID string, req TaskModelRequest, depth int) *TaskRecord {
+func (sm *SubagentManager) newTaskRecord(name, mode, channel, chatID string, req TaskModelRequest, origin spawnOrigin) *TaskRecord {
 	id := uuid.NewString()
 	return &TaskRecord{
 		UUID:         id,
@@ -145,7 +152,8 @@ func (sm *SubagentManager) newTaskRecord(name, mode, channel, chatID string, req
 		Status:       StatusRunning,
 		CreatedAt:    nowRFC(),
 		ResultsPath:  relResultsPath(id),
-		SpawnDepth:   depth,
+		SpawnDepth:   origin.depth,
+		Parent:       origin.parent,
 	}
 }
 
@@ -159,24 +167,6 @@ func (sm *SubagentManager) runTaskModel(ctx context.Context, rec *TaskRecord) (*
 		return nil, errors.New("task models are not available")
 	}
 	return sm.taskRunner.Run(ctx, sm.ownerAgentID, sm.workspace, taskRequestOf(rec))
-}
-
-// runTaskRecord is runRecord for a task-model record.
-func (sm *SubagentManager) runTaskRecord(rec *TaskRecord, cb tools.AsyncCallback) {
-	runCtx := WithSpawnDepth(context.Background(), rec.SpawnDepth)
-	res, err := sm.runTaskModel(runCtx, rec)
-	sm.finishTaskRecord(rec, res, err, cb)
-}
-
-// finishTaskRecord records a background task-model call's result, clears
-// its run marker and live entry, and delivers the result to cb.
-func (sm *SubagentManager) finishTaskRecord(rec *TaskRecord, res *TaskModelResult, err error, cb tools.AsyncCallback) {
-	result := sm.recordTaskResults(rec, res, err)
-	clearRun(sm.tasksDir(), rec.UUID)
-	sm.live.Remove(rec.UUID)
-	if cb != nil {
-		cb(context.Background(), result)
-	}
 }
 
 // recordTaskResults writes the results and status files and returns the
@@ -293,7 +283,7 @@ func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*glob
 		chatID = "direct"
 	}
 	if req.Mode == global.SpawnAndWait {
-		return tools.ResultToGlobal(s.mgr.RunTask(ctx, req.Label, channel, chatID, treq)), nil
+		return tools.ResultToGlobal(s.mgr.RunTask(ctx, req.Label, channel, chatID, treq, onResultCallback(req.OnResult))), nil
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -302,12 +292,7 @@ func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*glob
 	if name == "" {
 		return refuse("name is required for callback mode (a short identifier for the task)")
 	}
-	var cb tools.AsyncCallback
-	if req.OnResult != nil {
-		onResult := req.OnResult
-		cb = func(_ context.Context, r *tools.ToolResult) { onResult(tools.ResultToGlobal(r)) }
-	}
-	id, err := s.mgr.SpawnTaskCallback(name, channel, chatID, treq, cb, SpawnDepth(ctx)) //nolint:contextcheck // background task-model calls run detached from the spawning turn, like sub-agents
+	id, err := s.mgr.spawnTaskCallback(ctx, originOf(ctx), name, channel, chatID, treq, onResultCallback(req.OnResult))
 	if err != nil {
 		return &global.Result{IsError: true, ForLLM: fmt.Sprintf("failed to start the task: %v", err)}, nil
 	}

@@ -222,7 +222,7 @@ func TestShell_ActingAsTheAgent(t *testing.T) {
 			t.Fatalf("%s has no sub-agent manager", a.id)
 		}
 
-		res, err := inst.spawnMgr.Run(ctx, "run it", "job", "", "cli", "direct", "", "", nil)
+		res, err := inst.spawnMgr.Run(ctx, "run it", "job", "", "cli", "direct", "", "", nil, nil)
 		if err != nil {
 			t.Fatalf("%s agent_spawn wait: %v", a.id, err)
 		}

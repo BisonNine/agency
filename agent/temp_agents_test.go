@@ -228,7 +228,7 @@ func TestSubagentSpawn_CreatesAndDeletesClone(t *testing.T) {
 	}
 
 	t.Run("agent_spawn wait", func(t *testing.T) {
-		res, err := main.spawnMgr.Run(context.Background(), "do it", "job", "", "cli", "direct", "", "", nil)
+		res, err := main.spawnMgr.Run(context.Background(), "do it", "job", "", "cli", "direct", "", "", nil, nil)
 		if err != nil || res.IsError {
 			t.Fatalf("Run: %v %+v", err, res)
 		}

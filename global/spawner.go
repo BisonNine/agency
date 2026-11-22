@@ -57,8 +57,9 @@ type SpawnRequest struct {
 	Files  []string // workspace paths, read with the agent's file permission
 	Voice  string
 	Format string
-	// OnResult receives the compact completion pointer for SpawnCallback. Ignored
-	// for SpawnAndWait. The host supplies it; a nil OnResult is fine — the worker
+	// OnResult receives the compact completion pointer for SpawnCallback; for
+	// SpawnAndWait only when the spawning turn stops waiting before the worker
+	// finishes (it goes on in the background). The host supplies it; a nil OnResult is fine — the worker
 	// still runs and is tracked, the push is simply skipped (the result remains in
 	// the file and is available via agent_status).
 	OnResult func(*Result)

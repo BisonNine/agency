@@ -150,7 +150,7 @@ func TestResolveSpawnMode(t *testing.T) {
 		want      global.SpawnMode
 		wantSink  bool
 	}{
-		{"wait", true, global.SpawnAndWait, false},
+		{"wait", true, global.SpawnAndWait, true}, // a wait the turn stops waiting for reports later
 		{"sync", false, global.SpawnAndWait, false},
 		{"callback", true, global.SpawnCallback, true},
 		{"", true, global.SpawnCallback, true},
