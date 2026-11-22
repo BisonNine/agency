@@ -57,7 +57,7 @@ func TestLLMResponseLine_PlaceAndFields(t *testing.T) {
 			}
 
 			recs := readLogRecords(t, buf)
-			var msgs []string
+			msgs := make([]string, 0, len(recs))
 			at := -1
 			for i, rec := range recs {
 				msgs = append(msgs, fmt.Sprint(rec["message"]))

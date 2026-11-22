@@ -73,12 +73,12 @@ type turnMemory interface {
 }
 
 // turnEnv is what the engine reaches the host's services through, besides
-// the callbacks: tools, the session's context, and the few host decisions
-// the hook package has no type for (marked interim).
+// the callbacks: tools, the session's context, and the client of an agent
+// none of whose models resolves (interim).
 type turnEnv interface {
 	turnTools
 	turnSession
-	turnHost
+	directClients
 }
 
 // directClients serve an agent none of whose models resolves (interim:
@@ -120,11 +120,6 @@ type turnStore interface {
 	SetPendingTurn(sessionKey string) error
 	ClearPendingTurn(sessionKey string) error
 	Save(key string) error
-}
-
-// turnHost are host decisions with no hook type (interim).
-type turnHost interface {
-	directClients
 }
 
 // engineSpec is everything one turn of the engine runs with.

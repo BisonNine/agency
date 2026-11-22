@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -112,7 +113,7 @@ func TestFullLLMRequestLine_FollowsTruncationSwitch(t *testing.T) {
 		if noTruncate {
 			want = long
 		}
-		if got, _ := line["messages_json"].(string); !strings.Contains(got, "Content: "+want+"\n") {
+		if got := fmt.Sprint(line["messages_json"]); !strings.Contains(got, "Content: "+want+"\n") {
 			t.Errorf("no-truncate %v: messages_json = %q, want the content as %q", noTruncate, got, want)
 		}
 	}
