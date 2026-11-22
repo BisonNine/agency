@@ -1,6 +1,9 @@
 package tools
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 var (
 	providerMu      sync.RWMutex
@@ -19,6 +22,16 @@ func RegisterProvider(p ToolProvider) {
 		}
 	}
 	globalProviders = append(globalProviders, p)
+}
+
+// UnregisterProvider removes the provider with namespace from the global
+// registry; a namespace not registered is ignored.
+func UnregisterProvider(namespace string) {
+	providerMu.Lock()
+	defer providerMu.Unlock()
+	globalProviders = slices.DeleteFunc(globalProviders, func(p ToolProvider) bool {
+		return p.Namespace() == namespace
+	})
 }
 
 // GetProviders returns all registered providers.

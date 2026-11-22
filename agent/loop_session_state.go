@@ -66,11 +66,14 @@ func (al *AgentLoop) chatModelNames(agent *AgentInstance) []string {
 // selected, else the agent's first chat model; its first configured name when
 // none of its models resolves.
 func (al *AgentLoop) activeModelName(agent *AgentInstance, sessionKey string) string {
-	if name := al.catalog.Set(agent.ID).Selected(models.Chat, models.Scope(sessionKey)).Name; name != "" {
+	set := al.catalog.Set(agent.ID)
+	if name := set.Selected(models.Chat, models.Scope(sessionKey)).Name; name != "" {
 		return name
 	}
-	if len(agent.chatModels) > 0 {
-		return agent.chatModels[0]
+	// With no chat model in the set the turn runs on the default model's
+	// client under the agent's configured name: the name it sends.
+	if list := set.List(models.Chat); len(list) > 0 {
+		return list[0].Name
 	}
 	return agent.Model
 }
@@ -92,6 +95,8 @@ func (al *AgentLoop) sessionLimits(agent *AgentInstance, sessionKey string) runL
 // active one. The set stores the choice through sessionSelections, so it
 // survives a restart.
 func (al *AgentLoop) setActiveModelIndex(agent *AgentInstance, sessionKey string, idx int) error {
+	al.listsGate.RLock()
+	defer al.listsGate.RUnlock()
 	names := al.chatModelNames(agent)
 	n := len(names)
 	if n == 0 {
@@ -110,12 +115,13 @@ func (al *AgentLoop) setActiveModelIndex(agent *AgentInstance, sessionKey string
 type sessionSelections struct{ al *AgentLoop }
 
 // selectionAgent is the agent whose set is set, with its session store.
+// It reads selectionAgents, never the registry: it runs under listsGate.
 func (s sessionSelections) selectionAgent(set string) (*AgentInstance, compactionStateStore, bool) {
-	r := s.al.GetRegistry()
-	if r == nil {
+	v, ok := s.al.selectionAgents.Load(set)
+	if !ok {
 		return nil, nil, false
 	}
-	inst, ok := r.Get(set)
+	inst, ok := v.(*AgentInstance)
 	if !ok || inst == nil {
 		return nil, nil, false
 	}

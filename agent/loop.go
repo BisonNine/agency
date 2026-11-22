@@ -67,8 +67,26 @@ type AgentLoop struct {
 	catalogDigest string
 	// assignMu serialises what states agents' lists in the catalogue
 	// (assignOne, reconcileAll, adoptFor, removeSet). It is never held
-	// across a model call, and taken only with no registry lock held.
+	// across a model call. While it is held, the only locks taken are the
+	// registry's own read lock and al.mu for reading; nothing that creates
+	// agents or reloads is called under it.
 	assignMu sync.Mutex
+	// reloading serialises ReloadConfig: one reload decides, commits and
+	// states its lists before the next starts.
+	reloading sync.Mutex
+	// listsGate keeps turns from choosing a model while a reload's agents
+	// are visible but their lists are not yet stated: the reload write-locks
+	// it in its commit and releases it once the adopt or reconcile is done;
+	// selectTurnModel, setActiveModelIndex and agentInserted read-lock it.
+	// Lock order: reload lock → registry lock → listsGate → assignMu. A
+	// reader takes no registry lock while it holds listsGate (the selection
+	// store reads selectionAgents, not the registry), and no model call is
+	// made under it. The reload may read the registry while it holds the
+	// write lock: only that reload commits, and it has committed.
+	listsGate sync.RWMutex
+	// selectionAgents is the instance each set was last stated for, by
+	// agent id: what the selection store reads and writes choices through.
+	selectionAgents sync.Map
 	// alerter receives operator alerts (parked models, dead MCP servers, …);
 	// nil until SetAlerter, in which case Alerter() hands out a Nop.
 	alerterMu       sync.RWMutex
@@ -381,7 +399,7 @@ func NewAgentLoop(
 		return nil, err
 	}
 	al.registry = registry
-	al.reconcileAll(registry)
+	al.reconcileAll(registry, cfg)
 
 	// Per-agent state managers and message-token managers: config agents only.
 	for _, agentID := range registry.List() {
@@ -606,6 +624,8 @@ func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error
 		return fmt.Errorf("context canceled before registry creation: %w", err)
 	}
 
+	al.reloading.Lock()
+	defer al.reloading.Unlock()
 	registry := al.GetRegistry()
 
 	// A reload that changes what the catalogue is built from (catalogDigest)
@@ -615,16 +635,10 @@ func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error
 	digest := catalogDigest(cfg)
 	committed, err := al.reloadRegistry(ctx, registry, cfg)
 	if committed {
-		// Made once the registry has swapped the agents in, even when it
-		// then failed, outside its lock: the catalogue writes the sessions'
-		// model choices through the agents' stores, which it reaches
-		// through the registry. A reload that did not commit changes no
-		// list.
-		if digest != al.catalogDigest {
-			al.adoptFor(registry, cfg, digest)
-		} else {
-			al.reconcileAll(registry)
-		}
+		// The commit took listsGate: no turn chooses a model until the new
+		// agents' lists are stated. Stated even when the reload then
+		// failed; a reload that did not commit changes no list.
+		al.stateListsAfterCommit(registry, cfg, digest)
 	}
 	if err != nil {
 		return err
@@ -687,6 +701,9 @@ func (al *AgentLoop) reloadRegistry(
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}
+			// Released by stateListsAfterCommit: committed is reported
+			// on every path from here.
+			al.listsGate.Lock()
 			al.mu.Lock()
 			al.cfg = cfg
 			al.mu.Unlock()

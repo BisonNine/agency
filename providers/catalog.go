@@ -309,16 +309,11 @@ func defaultModelProblem(cfg *config.Config, c *models.Catalog) error {
 
 // CheckDefaultModel is defaultModelProblem on a catalogue built quietly for
 // cfg and closed afterwards: for a check made beside (or before) the running
-// catalogue, which logs nothing the running one's build does.
+// catalogue, which logs nothing the running one's build does. The check
+// makes no call, so the close has nothing to wait for.
 func CheckDefaultModel(ctx context.Context, cfg *config.Config) error {
 	c := newQuietCatalogBuilder().Build(cfg)
-	problem := defaultModelProblem(cfg, c)
-	if err := c.Close(ctx); err != nil {
-		// Not a problem of the model: the check's own clients are left to
-		// close with the process.
-		logger.DebugCF("providers", "default model check: model clients not closed", map[string]any{"error": err.Error()})
-	}
-	return problem
+	return errors.Join(defaultModelProblem(cfg, c), c.Close(ctx))
 }
 
 // derivedPrefix marks the models a summarization chain derives for a name
@@ -394,7 +389,7 @@ func clientProblem(err error) error {
 		return fmt.Errorf("provider %q: protocol %q serves task models only (speech), not chat", ce.Provider, ce.Protocol)
 	case errors.Is(err, models.ErrNoClient):
 		return fmt.Errorf("provider %q: unknown protocol %q", ce.Provider, ce.Protocol)
-	case ce.Err != nil && ce.Err.Error() == "model is required":
+	case errors.Is(ce.Err, modelspec.ErrModelRequired):
 		return ce.Err
 	default:
 		return fmt.Errorf("provider %q: %w", ce.Provider, ce.Err)

@@ -85,13 +85,68 @@ func TestActiveModelName_FirstResolvedModel(t *testing.T) {
 	if got := al.activeModelName(agent, "s"); got != "b" {
 		t.Fatalf("active model = %q, want b (what b-wire resolves to)", got)
 	}
-	// With the set emptied (the catalogue left the models out), the first
-	// resolved name still names it.
+	// With the set's chat list emptied (the catalogue left the models out),
+	// the turn runs on the default model's client under the configured name,
+	// and status names what is sent.
 	if _, err := al.catalog.Set(agent.ID).Replace(models.Chat); err != nil {
 		t.Fatal(err)
 	}
-	if got, turn := al.activeModelName(agent, "s"), al.selectTurnModel(agent, "s").model; got != "b" || turn != got {
-		t.Fatalf("active model with no set = %q, the turn's %q; want b for both", got, turn)
+	if got, turn := al.activeModelName(agent, "s"), al.selectTurnModel(agent, "s").model; got != "b-wire" || turn != got {
+		t.Fatalf("active model with no set = %q, the turn's %q; want b-wire for both", got, turn)
+	}
+}
+
+// A busy temporary agent outlives a reload that removed its models: its
+// next turn runs on the new default model's client under the agent's own
+// configured name, and status names that same name.
+func TestReloadAdopt_BusyTemporaryAgentModelsRemoved(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	al := mustNewAgentLoop(t, abcConfig(base, "a-wire"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	r := al.GetRegistry()
+	id, err := r.CreateClone("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone, _ := r.Get(id)
+	end, ok := r.BeginTurn(id, clone)
+	if !ok {
+		t.Fatal("the clone could not begin a turn")
+	}
+	defer end()
+
+	changed := abcConfig(base, "b")
+	changed.Models = slices.DeleteFunc(changed.Models, func(m config.ModelConfig) bool { return m.ModelName == "a" })
+	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, changed); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := al.catalog.Get("a"); ok {
+		t.Fatal("the reload kept model a")
+	}
+	p := &replayProvider{errs: map[string]string{}}
+	if err := al.catalog.RegisterClient("b", p); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := r.Get(id)
+	if now.Model != "a-wire" {
+		t.Fatalf("the clone's configured model = %q, want a-wire", now.Model)
+	}
+	tm := al.selectTurnModel(now, "s")
+	if len(tm.candidates) != 0 || tm.direct != "b" || tm.model != now.Model {
+		t.Fatalf("turn model = %+v, want %q on b's client", tm, now.Model)
+	}
+	if got := al.activeModelName(now, "s"); got != now.Model {
+		t.Fatalf("active model = %q, want %q", got, now.Model)
+	}
+	turn := &llmTurn{
+		al: al, agent: now, chain: tm.chain, candidates: tm.candidates, model: tm.model, limits: tm.limits, direct: tm.direct,
+		messages: []providers.Message{{Role: "user", Content: "hi"}},
+	}
+	if _, err := turn.callModel(context.Background(), turn.newDispatch(nil, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.calls(); !slices.Equal(got, []string{now.Model}) {
+		t.Fatalf("calls = %v, want [%s]", got, now.Model)
 	}
 }
 
@@ -175,6 +230,64 @@ func TestDerivedSummaryModel_KeyAndCooldowns(t *testing.T) {
 	}
 }
 
+// A derived summarization model follows the default model: change only the
+// default model and the next summary call for the raw name goes to the new
+// default's provider and protocol; drop the raw name and no model or
+// /cooldowns entry is left for it.
+func TestDerivedSummaryModel_FollowsDefaultModel(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	conf := func(def string, summarizers ...string) *config.Config {
+		cfg := abcConfig(base, def)
+		cfg.Providers = append(cfg.Providers, config.Provider{Name: "q", Protocol: "anthropic", BaseURL: "http://127.0.0.1:0", APIKey: "k"})
+		cfg.Models[2].Provider = "q" // c
+		cfg.Summarization.Models = summarizers
+		return cfg
+	}
+	al := mustNewAgentLoop(t, conf("a", "raw-summarizer"), bus.NewMessageBus(), &mockProvider{}, nil)
+	name := providers.DerivedSummaryName("raw-summarizer")
+	first := func() models.Candidate {
+		t.Helper()
+		cands := al.catalog.Set("main").Begin(models.Summarize, "s").Candidates()
+		if len(cands) == 0 || cands[0].Name != name {
+			t.Fatalf("summarize candidates = %+v, want %s first", cands, name)
+		}
+		return cands[0]
+	}
+	if c := first(); c.Provider != "p" || c.Protocol != "openai-chat" || c.Model != "raw-summarizer" {
+		t.Fatalf("before = %s/%s/%s", c.Provider, c.Protocol, c.Model)
+	}
+	if err := al.catalog.RegisterClient(name, &scriptedProvider{err: errors.New("API request failed:   Status: 402   Body: {}")}); err != nil {
+		t.Fatal(err)
+	}
+	caller, _ := al.newCompressModelCaller(al.GetRegistry().Default(), "s", models.Summarize)
+	if _, err := caller.Complete(context.Background(), ctxRequest()); err != nil {
+		t.Fatalf("Complete: %v (a should have answered)", err)
+	}
+	if len(newCooldownRuntime(al).ListCooldowns()) == 0 {
+		t.Fatal("the failing derived model was not parked")
+	}
+
+	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, conf("c", "raw-summarizer")); err != nil {
+		t.Fatal(err)
+	}
+	if c := first(); c.Provider != "q" || c.Protocol != "anthropic" || c.Model != "raw-summarizer" {
+		t.Fatalf("after the default model changed = %s/%s/%s, want q/anthropic/raw-summarizer", c.Provider, c.Protocol, c.Model)
+	}
+
+	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, conf("c")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := al.catalog.Get(name); ok {
+		t.Fatal("the derived model of a dropped name remains")
+	}
+	for _, cd := range newCooldownRuntime(al).ListCooldowns() {
+		if cd.Model == "raw-summarizer" {
+			t.Fatalf("/cooldowns lists the dropped name: %+v", cd)
+		}
+	}
+}
+
 // Deleting temporary agents removes their sets.
 func TestTemporaryAgentDeleted_SetRemoved(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
@@ -194,6 +307,34 @@ func TestTemporaryAgentDeleted_SetRemoved(t *testing.T) {
 		if p := al.catalog.Set(id).Purposes(); len(p) != 0 {
 			t.Fatalf("the deleted clone's set remains: %v", p)
 		}
+	}
+}
+
+// A configured agent dropped from the configuration loses its set; one that
+// stays keeps it.
+func TestConfiguredAgentDropped_SetRemoved(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	withBob := func() *config.Config {
+		cfg := abcConfig(base, "a", "b")
+		cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Name: "Bob"})
+		return cfg
+	}
+	al := mustNewAgentLoop(t, withBob(), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	if len(al.catalog.Set("bob").Purposes()) == 0 {
+		t.Fatal("bob has no models")
+	}
+	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, abcConfig(base, "a", "b")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := al.GetRegistry().Get("bob"); ok {
+		t.Fatal("bob is still registered")
+	}
+	if p := al.catalog.Set("bob").Purposes(); len(p) != 0 {
+		t.Fatalf("the dropped agent's set remains: %v", p)
+	}
+	if len(al.catalog.Set("main").Purposes()) == 0 {
+		t.Fatal("main lost its models")
 	}
 }
 

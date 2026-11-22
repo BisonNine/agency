@@ -463,6 +463,10 @@ type turnModel struct {
 // multi-step tool chain never switches model mid-way. A fresh temporary
 // agent's CLI models run isolated in its own workspace.
 func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *turnModel {
+	// Not while a reload's lists are being stated (listsGate); the chain
+	// is pinned here, so the model call runs without the gate.
+	al.listsGate.RLock()
+	defer al.listsGate.RUnlock()
 	set := al.catalog.Set(agent.ID)
 	scope := models.Scope(sessionKey)
 	chain := set.Begin(models.Chat, scope)

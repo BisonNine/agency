@@ -19,7 +19,6 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -132,17 +131,27 @@ func (cancelOnBuild) Build(tools.ToolDeps) []tools.Tool {
 	return nil
 }
 
-// (c)(d) A reload that fails, or whose context ends while it builds, changes
-// no agent's list and no stored /model choice.
+// useBuildHook registers cancelOnBuild for the test only.
+func useBuildHook(t *testing.T) {
+	t.Helper()
+	tools.RegisterProvider(cancelOnBuild{})
+	t.Cleanup(func() {
+		buildHook.Store(nil)
+		tools.UnregisterProvider(cancelOnBuild{}.Namespace())
+	})
+}
+
+// (c)(d) A reload that fails to build, or whose context ends while it
+// builds, changes no agent's list and no stored /model choice.
 func TestReload_FailedOrAbandonedChangesNothing(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
-	tools.RegisterProvider(cancelOnBuild{})
-	for _, tc := range []string{"adopting", "lists only"} {
+	useBuildHook(t)
+	for _, tc := range []string{"adopting", "lists only", "build error"} {
 		t.Run(tc, func(t *testing.T) {
 			base := t.TempDir()
 			cfg := abcConfig(base, "a", "b", "c")
 			cfg.Agents.List[0].Tools = []string{"*"}
-			al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
+			al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
 			main := al.GetRegistry().Default()
 			selectModel(t, al, main, "s", "c")
 			next := abcConfig(base, "c", "b")
@@ -151,19 +160,41 @@ func TestReload_FailedOrAbandonedChangesNothing(t *testing.T) {
 				next.Models[0].RequestTimeout = 9
 			}
 			ctx, cancel := context.WithCancel(context.Background())
-			hook := func() { cancel(); time.Sleep(10 * time.Millisecond) }
-			buildHook.Store(&hook)
-			t.Cleanup(func() { buildHook.Store(nil) })
-			if err := al.ReloadConfig(ctx, next); err == nil {
-				t.Fatal("the abandoned reload succeeded")
+			defer cancel()
+			release := make(chan struct{})
+			if tc == "build error" {
+				hook := func() { panic("tool build failed") }
+				buildHook.Store(&hook)
+			} else {
+				// The reload is abandoned while it builds: the build stays
+				// blocked until ReloadConfig has returned.
+				var once sync.Once
+				hook := func() { once.Do(func() { cancel(); <-release }) }
+				buildHook.Store(&hook)
 			}
+			err := al.ReloadConfig(ctx, next)
 			buildHook.Store(nil)
+			close(release)
+			if err == nil {
+				t.Fatal("the reload succeeded")
+			}
+			// Wait for the abandoned build to end: a creation waits for it.
+			id, cerr := al.GetRegistry().CreateClone("main")
+			if cerr != nil {
+				t.Fatal(cerr)
+			}
+			if err := al.GetRegistry().Delete(id); err != nil {
+				t.Fatal(err)
+			}
+			if al.GetConfig() != cfg {
+				t.Fatal("the reload committed")
+			}
 			main = al.GetRegistry().Default()
 			if got := al.chatModelNames(main); !slices.Equal(got, []string{"a", "b", "c"}) {
-				t.Fatalf("lists after the abandoned reload = %v", got)
+				t.Fatalf("lists after the failed reload = %v", got)
 			}
 			if got := al.activeModelName(main, "s"); got != "c" || storedIndex(t, main, "s") != 2 {
-				t.Fatalf("choice after the abandoned reload = %q / %d", got, storedIndex(t, main, "s"))
+				t.Fatalf("choice after the failed reload = %q / %d", got, storedIndex(t, main, "s"))
 			}
 		})
 	}
@@ -193,15 +224,6 @@ func TestReload_PanicAfterCommitStillAssigns(t *testing.T) {
 	checkAllAssigned(t, al)
 	if got := al.chatModelNames(al.GetRegistry().Default()); !slices.Equal(got, []string{"b", "c"}) {
 		t.Fatalf("main after the committed reload = %v, want [b c]", got)
-	}
-}
-
-// CheckDefaultModel never reports its own clients' close as a model problem.
-func TestCheckDefaultModel_CancelledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := providers.CheckDefaultModel(ctx, abcConfig(t.TempDir(), "a")); err != nil {
-		t.Fatalf("err = %v, want none", err)
 	}
 }
 

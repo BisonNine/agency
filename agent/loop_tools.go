@@ -321,7 +321,15 @@ func (al *AgentLoop) registerProviderTools(currentAgent *AgentInstance, cfg *con
 // its new instance, so only what still uses the old one is released.
 func (al *AgentLoop) retireAgent(spec agentreg.Spec, inst *AgentInstance) error {
 	if spec.Origin == agentreg.OriginConfig {
-		return al.releaseReplacedInstance(inst)
+		if err := al.releaseReplacedInstance(inst); err != nil {
+			return err
+		}
+		// An agent the configuration no longer has loses its models; one
+		// rebuilt keeps them on its new instance.
+		if _, ok := al.GetRegistry().Get(inst.ID); !ok {
+			al.removeSet(al.GetRegistry(), inst.ID)
+		}
+		return nil
 	}
 	sessionKey := routing.BuildAgentMainSessionKey(inst.ID)
 	if !al.dropContextManager(context.Background(), inst, sessionKey, evictReasonTempDeleted) {
