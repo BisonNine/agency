@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/memory"
 )
 
 // A jsonl + meta.json pair the way the old store wrote them, folded into the
@@ -66,7 +66,7 @@ func TestMigrateDirs_FoldsJSONLIntoArchiveDB(t *testing.T) {
 		}
 	}
 
-	db, err := memory.OpenReadOnly(memory.ArchivePath(dir, key))
+	db, err := memory.OpenReadOnly(memory.ArchivePath(dir, key), nil)
 	if err != nil {
 		t.Fatalf("OpenReadOnly: %v", err)
 	}

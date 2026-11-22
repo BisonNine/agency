@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/providers"
@@ -84,7 +84,7 @@ type finalLLMProvider struct {
 }
 
 func (p *finalLLMProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	_ []providers.Message,
 	_ []providers.ToolDefinition,
 	_ string,

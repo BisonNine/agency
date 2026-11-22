@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ctxengine/memory"
-	"github.com/PivotLLM/ctxengine/session"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/alerts"

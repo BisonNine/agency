@@ -24,7 +24,7 @@ import (
 // chatFunc is a model whose answer a test scripts.
 type chatFunc func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error)
 
-func (f chatFunc) Chat(ctx context.Context, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (f chatFunc) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	return f(ctx, messages)
 }
 

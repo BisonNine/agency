@@ -14,7 +14,7 @@ import (
 type mockRegistryProvider struct{}
 
 func (m *mockRegistryProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	tools []providers.ToolDefinition,
 	model string,

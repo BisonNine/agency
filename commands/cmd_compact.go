@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/ctxengine"
 )
 
 func compactCommand() Definition {

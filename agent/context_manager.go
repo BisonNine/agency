@@ -13,15 +13,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/cogmem"
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/spawnllm/openai_compat"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/fsmode"
+	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/dump"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
@@ -55,14 +57,14 @@ func (c *providerLLMClient) CooldownProvider() string { return c.providerName }
 
 // chat dispatches one call to the resolved provider, requesting a JSON-object
 // response format when jsonObject is set.
-func (c *providerLLMClient) chat(ctx context.Context, messages []providers.Message, jsonObject bool) (*providers.LLMResponse, error) {
+func (c *providerLLMClient) chat(ctx context.Context, id global.Identity, messages []providers.Message, jsonObject bool) (*providers.LLMResponse, error) {
 	var opts map[string]any
 	if jsonObject {
 		opts = map[string]any{
 			openai_compat.ResponseFormatJSONObjectOption: true,
 		}
 	}
-	return c.provider.Chat(ctx, messages, nil, c.model, opts)
+	return c.provider.Chat(ctx, id, messages, nil, c.model, opts)
 }
 
 // compressModelCaller is the host's ctxengine.ModelCaller: it walks the
@@ -79,6 +81,9 @@ type compressModelCaller struct {
 	// caller and sessionKey label the log lines.
 	caller     llmCaller
 	sessionKey string
+	// id is who the calls are billed to: the agent whose conversation or
+	// memory is being summarized.
+	id global.Identity
 	// noSessionKey leaves session_key off the finish line, for a caller whose
 	// sessionKey names no conversation (memory consolidation).
 	noSessionKey bool
@@ -122,7 +127,7 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 			sessionKey = ""
 		}
 		start := time.Now()
-		resp, chatErr := cl.chat(ctx, messages, jsonObject)
+		resp, chatErr := cl.chat(ctx, c.id, messages, jsonObject)
 		emitLLMFinishEvent(llmFinish{
 			caller:         c.caller,
 			kind:           llmKindCompression,
@@ -329,7 +334,7 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 		// A person's conversation is never given to a model: no
 		// summarization chain at all, so compaction and consolidation find
 		// no model (and the person is never asked to summarize).
-		return &compressModelCaller{caller: callerOf(agent), sessionKey: sessionKey}, ""
+		return &compressModelCaller{caller: callerOf(agent), sessionKey: sessionKey, id: agent.Identity()}, ""
 	}
 	var agentModels, globalModels []string
 	if agent.Config != nil {
@@ -371,6 +376,7 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 		cooldown:   al.cooldownTracker(),
 		caller:     callerOf(agent),
 		sessionKey: sessionKey,
+		id:         agent.Identity(),
 	}, effective
 }
 
@@ -545,8 +551,8 @@ func (al *AgentLoop) buildSessionEntry(bk sessionBuildKey, done chan struct{}, a
 	opts := append([]ctxengine.Option{
 		ctxengine.WithContextWindow(al.sessionLimits(agent, sessionKey).contextWindow),
 		ctxengine.WithArchiveDir(engineArchiveDir),
-		ctxengine.WithFolderPermissions(stateModes.Dir),
-		ctxengine.WithFilePermissions(stateModes.File),
+		ctxengine.WithFileModes(fsmode.Modes{Dir: stateModes.Dir, File: stateModes.File}),
+		ctxengine.WithLogger(logger.SDK()),
 		ctxengine.WithModelCaller(caller),
 		ctxengine.WithCompressModel(ctxengine.ModelChain{Primary: effectiveCompressModel}),
 		ctxengine.WithCompressionProfileDir(agent.StateDir),

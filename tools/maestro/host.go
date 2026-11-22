@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	mconfig "github.com/PivotLLM/Maestro/config"
-	mmaestro "github.com/PivotLLM/Maestro/pkg/maestro"
-	mreference "github.com/PivotLLM/Maestro/reference"
+	mconfig "go.bison9.com/maestro/config"
+	mmaestro "go.bison9.com/maestro/pkg/maestro"
+	mreference "go.bison9.com/maestro/reference"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"

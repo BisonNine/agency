@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/PivotLLM/toolspec"
+	"go.bison9.com/agent/toolspec"
 	_ "modernc.org/sqlite"
 
 	"go.bison9.com/agency/internal/perms"

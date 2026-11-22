@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"go.bison9.com/agency/global"
 )
 
 // AgentMentionConfig controls how agent names are extracted from message content.
@@ -610,6 +612,12 @@ func (a *AgentConfig) DisplayName() string {
 		return name
 	}
 	return a.ID
+}
+
+// Identity is who the agent's model and API calls are billed to: its
+// normalized id, its display name and the project.
+func (a *AgentConfig) Identity() global.Identity {
+	return global.Identity{Agent: NormalizeAgentID(a.ID), Name: a.DisplayName(), Project: global.Project}
 }
 
 // AgentHasFusion reports whether the agent has the Fusion tool suite enabled.

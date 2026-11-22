@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/PivotLLM/cogmem"
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
@@ -487,7 +487,7 @@ func (t *llmTurn) directAnswer(response *providers.LLMResponse) bool {
 func (t *llmTurn) runToolCalls(ctx context.Context, response *providers.LLMResponse) (bool, error) {
 	calls := make([]providers.ToolCall, 0, len(response.ToolCalls))
 	for _, tc := range response.ToolCalls {
-		calls = append(calls, providers.NormalizeToolCall(tc))
+		calls = append(calls, providers.NormalizeToolCall(tc, logger.SDK()))
 	}
 	toolNames := make([]string, 0, len(calls))
 	for _, tc := range calls {

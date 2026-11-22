@@ -9,7 +9,7 @@ import (
 type mockProvider struct{}
 
 func (m *mockProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	tools []providers.ToolDefinition,
 	model string,

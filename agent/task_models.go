@@ -21,13 +21,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/PivotLLM/spawnllm/imagegen"
-	"github.com/PivotLLM/spawnllm/protocoltypes"
-	"github.com/PivotLLM/spawnllm/speech"
 	"github.com/google/uuid"
+	"go.bison9.com/agent/spawnllm/imagegen"
+	"go.bison9.com/agent/spawnllm/protocoltypes"
+	"go.bison9.com/agent/spawnllm/speech"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -59,6 +60,10 @@ type taskModelHost struct {
 	// clone is the short id of the clone whose spawner this is, "" for any
 	// other agent: its audit rows say so, as its tool calls' do.
 	clone string
+	// id is who the calls are billed to: the agent whose spawner this is (a
+	// clone's calls go to its source under the clone's label). Zero bills
+	// the agent Run is called for.
+	id global.Identity
 }
 
 var _ toolsagents.TaskModelRunner = (*taskModelHost)(nil)
@@ -327,6 +332,10 @@ func (h *taskModelHost) Run(ctx context.Context, agentID, workspace string, req 
 	}
 	cfg := h.al.GetConfig()
 	tracker := h.al.cooldownTracker()
+	id := h.id
+	if id.Agent == "" {
+		id = h.al.identityOf(agentID)
+	}
 	for _, alias := range candidates {
 		if ctx.Err() != nil {
 			return res, ctx.Err()
@@ -347,7 +356,7 @@ func (h *taskModelHost) Run(ctx context.Context, agentID, workspace string, req 
 			continue
 		}
 		start := h.al.clk().Now()
-		out, callErr := h.call(ctx, cfg, agentID, alias, mc, prov, req, inputs)
+		out, callErr := h.call(ctx, cfg, agentID, id, alias, mc, prov, req, inputs)
 		elapsed := h.al.clk().Since(start)
 		if out != nil && out.cost != nil {
 			h.al.recordSpend(*out.cost)
@@ -422,25 +431,25 @@ type callOutput struct {
 	cost   *float64
 }
 
-// call makes one model call of the kind.
-func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, agentID, alias string, mc *config.ModelConfig,
+// call makes one model call of the kind, billed to id.
+func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, agentID string, id global.Identity, alias string, mc *config.ModelConfig,
 	prov *config.Provider, req toolsagents.TaskModelRequest, inputs []taskInput,
 ) (*callOutput, error) {
 	callCtx, cancel := context.WithTimeout(ctx, attemptTimeout(cfg, mc))
 	defer cancel()
 	switch req.Kind {
 	case toolsagents.TaskKindTTS:
-		return h.speak(callCtx, cfg, alias, mc, prov, req)
+		return h.speak(callCtx, id, cfg, alias, mc, prov, req)
 	case toolsagents.TaskKindSTT:
-		return h.transcribe(callCtx, mc, prov, req, inputs[0])
+		return h.transcribe(callCtx, id, mc, prov, req, inputs[0])
 	case toolsagents.TaskKindImage:
 		entry, _ := cfg.TaskModels.Entry(config.TaskUseImage, alias)
 		if entry.EffectiveImageAPI() == config.ImageAPIImages {
-			return h.imagesAPI(callCtx, mc, prov, req, inputs)
+			return h.imagesAPI(callCtx, id, mc, prov, req, inputs)
 		}
-		return h.chat(callCtx, cfg, agentID, alias, mc, prov, req, inputs, true)
+		return h.chat(callCtx, cfg, agentID, id, alias, mc, prov, req, inputs, true)
 	default:
-		return h.chat(callCtx, cfg, agentID, alias, mc, prov, req, inputs, false)
+		return h.chat(callCtx, cfg, agentID, id, alias, mc, prov, req, inputs, false)
 	}
 }
 
@@ -460,7 +469,7 @@ func attemptTimeout(cfg *config.Config, mc *config.ModelConfig) time.Duration {
 
 // chat is one dispatcher Chat with no tool definitions: the prompt, text
 // inputs added as text, images attached. wantImages makes it an image call.
-func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, agentID, alias string, mc *config.ModelConfig,
+func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, agentID string, id global.Identity, alias string, mc *config.ModelConfig,
 	prov *config.Provider, req toolsagents.TaskModelRequest, inputs []taskInput, wantImages bool,
 ) (*callOutput, error) {
 	if config.TaskOnlyProtocol(prov.Protocol) {
@@ -494,7 +503,7 @@ func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, agentID, a
 		}
 		fmt.Fprintf(&content, "\n\n--- %s ---\n%s", in.name, string(in.data))
 	}
-	resp, err := provider.Chat(ctx, []providers.Message{{Role: "user", Content: content.String(), Media: media}}, nil, mc.Model, nil)
+	resp, err := provider.Chat(ctx, id, []providers.Message{{Role: "user", Content: content.String(), Media: media}}, nil, mc.Model, nil)
 	out := &callOutput{}
 	if resp != nil && resp.Status != nil {
 		out.cost = resp.Status.CostUSD
@@ -520,13 +529,13 @@ func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, agentID, a
 
 // imagesAPI calls the OpenAI-style image endpoints: an edit with input
 // images, else a generation.
-func (h *taskModelHost) imagesAPI(ctx context.Context, mc *config.ModelConfig, prov *config.Provider,
+func (h *taskModelHost) imagesAPI(ctx context.Context, id global.Identity, mc *config.ModelConfig, prov *config.Provider,
 	req toolsagents.TaskModelRequest, inputs []taskInput,
 ) (*callOutput, error) {
 	if prov.Protocol != "openai-chat" && prov.Protocol != "openai-responses" {
 		return nil, fmt.Errorf("provider %s has no OpenAI-style image API", prov.Name)
 	}
-	client := imagegen.NewOpenAI(prov.BaseURL, prov.APIKey, imagegen.WithHTTPClient(h.httpClient))
+	client := imagegen.NewOpenAI(prov.BaseURL, prov.APIKey, imagegen.WithHTTPClient(h.httpClient), imagegen.WithLogger(logger.SDK()))
 	var r *imagegen.Result
 	var err error
 	if len(inputs) > 0 {
@@ -534,9 +543,9 @@ func (h *taskModelHost) imagesAPI(ctx context.Context, mc *config.ModelConfig, p
 		for _, in := range inputs {
 			imgs = append(imgs, imagegen.InputImage{Data: bytes.NewReader(in.data), Filename: in.name, ContentType: in.contentType})
 		}
-		r, err = client.Edit(ctx, &imagegen.EditRequest{Model: mc.Model, Prompt: req.Prompt, Images: imgs})
+		r, err = client.Edit(ctx, id, &imagegen.EditRequest{Model: mc.Model, Prompt: req.Prompt, Images: imgs})
 	} else {
-		r, err = client.Generate(ctx, &imagegen.GenerateRequest{Model: mc.Model, Prompt: req.Prompt})
+		r, err = client.Generate(ctx, id, &imagegen.GenerateRequest{Model: mc.Model, Prompt: req.Prompt})
 	}
 	if err != nil {
 		return nil, err
@@ -549,7 +558,7 @@ func (h *taskModelHost) imagesAPI(ctx context.Context, mc *config.ModelConfig, p
 
 // speak synthesizes the prompt with the call's voice and format, else the
 // model's tts_defaults.
-func (h *taskModelHost) speak(ctx context.Context, cfg *config.Config, alias string, mc *config.ModelConfig,
+func (h *taskModelHost) speak(ctx context.Context, id global.Identity, cfg *config.Config, alias string, mc *config.ModelConfig,
 	prov *config.Provider, req toolsagents.TaskModelRequest,
 ) (*callOutput, error) {
 	backend, problem := h.speechBackend(prov)
@@ -566,7 +575,7 @@ func (h *taskModelHost) speak(ctx context.Context, cfg *config.Config, alias str
 			format = d.Format
 		}
 	}
-	sp, err := backend.Synthesize(ctx, &speech.SynthesizeRequest{Model: mc.Model, Text: req.Prompt, Voice: voiceName, Format: format})
+	sp, err := backend.Synthesize(ctx, id, &speech.SynthesizeRequest{Model: mc.Model, Text: req.Prompt, Voice: voiceName, Format: format})
 	if err != nil {
 		return nil, err
 	}
@@ -578,14 +587,14 @@ func (h *taskModelHost) speak(ctx context.Context, cfg *config.Config, alias str
 }
 
 // transcribe sends the one audio input to the model.
-func (h *taskModelHost) transcribe(ctx context.Context, mc *config.ModelConfig, prov *config.Provider,
+func (h *taskModelHost) transcribe(ctx context.Context, id global.Identity, mc *config.ModelConfig, prov *config.Provider,
 	req toolsagents.TaskModelRequest, in taskInput,
 ) (*callOutput, error) {
 	backend, problem := h.speechBackend(prov)
 	if problem != "" {
 		return nil, errors.New(problem)
 	}
-	tr, err := backend.Transcribe(ctx, &speech.TranscribeRequest{
+	tr, err := backend.Transcribe(ctx, id, &speech.TranscribeRequest{
 		Model: mc.Model, Audio: bytes.NewReader(in.data), Filename: in.name,
 		ContentType: in.contentType, Prompt: req.Prompt,
 	})

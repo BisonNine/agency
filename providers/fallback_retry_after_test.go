@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/spawnllm/common"
-	"github.com/PivotLLM/spawnllm/openai_compat"
+	"go.bison9.com/agent/spawnllm/common"
+	"go.bison9.com/agent/spawnllm/openai_compat"
 )
 
 // TestFallback_SameProviderFallbackNotCooldownSkipped is the regression test
@@ -218,7 +218,7 @@ func TestOpenAICompat_RetryAfterPropagated(t *testing.T) {
 	defer server.Close()
 
 	p := openai_compat.NewProvider("key", server.URL, "")
-	_, err := p.Chat(context.Background(), nil, nil, "scout", nil)
+	_, err := p.Chat(context.Background(), testIdentity, nil, nil, "scout", nil)
 	if err == nil {
 		t.Fatal("expected error from 429")
 	}

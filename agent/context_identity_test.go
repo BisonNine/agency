@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/cogmem"
+	"go.bison9.com/agent/cogmem"
 
 	"go.bison9.com/agency/app"
 )

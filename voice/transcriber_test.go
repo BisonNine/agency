@@ -13,9 +13,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/spawnllm/speech"
+	"go.bison9.com/agent/spawnllm/speech"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 )
 
@@ -294,7 +295,7 @@ func TestTranscribe_ThroughSpawnllm(t *testing.T) {
 	if tr == nil || tr.Name() != "fast-stt" {
 		t.Fatalf("DetectTranscriber() = %v", tr)
 	}
-	resp, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath})
+	resp, err := tr.Transcribe(context.Background(), testIdentity, AudioFile{Path: audioPath})
 	if err != nil {
 		t.Fatalf("Transcribe() error: %v", err)
 	}
@@ -304,7 +305,7 @@ func TestTranscribe_ThroughSpawnllm(t *testing.T) {
 	if len(*seen) != 1 || !strings.HasPrefix((*seen)[0], "/v1/audio/transcriptions Bearer sk-test multipart/form-data") {
 		t.Errorf("requests = %v", *seen)
 	}
-	if _, err := tr.Transcribe(context.Background(), AudioFile{Path: filepath.Join(t.TempDir(), "nonexistent.ogg")}); err == nil {
+	if _, err := tr.Transcribe(context.Background(), testIdentity, AudioFile{Path: filepath.Join(t.TempDir(), "nonexistent.ogg")}); err == nil {
 		t.Error("a missing file transcribed")
 	}
 }
@@ -317,7 +318,7 @@ type stubTranscriber struct {
 }
 
 func (s stubTranscriber) Name() string { return s.name }
-func (s stubTranscriber) Transcribe(context.Context, AudioFile) (*TranscriptionResponse, error) {
+func (s stubTranscriber) Transcribe(context.Context, global.Identity, AudioFile) (*TranscriptionResponse, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -330,7 +331,7 @@ func TestFallbackTranscriber(t *testing.T) {
 			stubTranscriber{name: "a", err: errors.New("boom")},
 			stubTranscriber{name: "b", text: "from b"},
 		}}
-		got, err := f.Transcribe(context.Background(), AudioFile{Path: "x"})
+		got, err := f.Transcribe(context.Background(), testIdentity, AudioFile{Path: "x"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -344,7 +345,7 @@ func TestFallbackTranscriber(t *testing.T) {
 			stubTranscriber{name: "a", text: ""}, // silence
 			stubTranscriber{name: "b", text: "should not reach"},
 		}}
-		got, err := f.Transcribe(context.Background(), AudioFile{Path: "x"})
+		got, err := f.Transcribe(context.Background(), testIdentity, AudioFile{Path: "x"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -358,7 +359,7 @@ func TestFallbackTranscriber(t *testing.T) {
 			stubTranscriber{name: "a", err: errors.New("first")},
 			stubTranscriber{name: "b", err: errors.New("last")},
 		}}
-		_, err := f.Transcribe(context.Background(), AudioFile{Path: "x"})
+		_, err := f.Transcribe(context.Background(), testIdentity, AudioFile{Path: "x"})
 		if err == nil || err.Error() != "last" {
 			t.Errorf("err = %v, want %q", err, "last")
 		}
@@ -406,7 +407,7 @@ func TestTranscribe_OGAVoiceNoteToOpenRouter(t *testing.T) {
 	}
 	tr := NewTranscriber("or", "openai/whisper-1",
 		speech.NewOpenAI(srv.URL, "k", speech.WithTranscriptionAPI(speech.TranscriptionInputAudio)), nil)
-	res, err := tr.Transcribe(context.Background(), AudioFile{Path: path, Filename: "file_3.oga", ContentType: "audio/ogg"})
+	res, err := tr.Transcribe(context.Background(), testIdentity, AudioFile{Path: path, Filename: "file_3.oga", ContentType: "audio/ogg"})
 	if err != nil || res.Text != "heard" {
 		t.Fatalf("Transcribe = %+v, %v", res, err)
 	}

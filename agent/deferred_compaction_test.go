@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/ctxengine/memory"
-	"github.com/PivotLLM/ctxengine/session"
-	"github.com/PivotLLM/spawnllm/openai_compat"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -293,7 +293,7 @@ type ageProvider struct {
 	summaries chan struct{}
 }
 
-func (p *ageProvider) Chat(_ context.Context, _ []providers.Message, _ []providers.ToolDefinition, _ string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *ageProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, _ string, opts map[string]any) (*providers.LLMResponse, error) {
 	if _, summary := opts[openai_compat.ResponseFormatJSONObjectOption]; summary {
 		p.summaries <- struct{}{}
 		return &providers.LLMResponse{Content: `{"version":2,"state":{"goals":[{"text":"weekly notes with Bob","refs":[{"seq_start":1,"seq_end":2}]}]},"covered_seq_start":0,"covered_seq_end":0}`, FinishReason: "stop"}, nil

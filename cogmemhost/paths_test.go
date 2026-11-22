@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/PivotLLM/cogmem/store"
+	"go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/utils"

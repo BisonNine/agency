@@ -29,7 +29,7 @@ func TestHumanProvider_FromFactory(t *testing.T) {
 
 // Outside a human agent's turn there is nobody to ask: the provider refuses.
 func TestHumanProvider_RefusesWithoutRelay(t *testing.T) {
-	_, err := NewHumanProvider("Bob (human)", 0).Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, "", nil)
+	_, err := NewHumanProvider("Bob (human)", 0).Chat(context.Background(), testIdentity, []Message{{Role: "user", Content: "hi"}}, nil, "", nil)
 	if !errors.Is(err, ErrHumanUnreachable) {
 		t.Fatalf("err = %v, want ErrHumanUnreachable", err)
 	}
@@ -52,7 +52,7 @@ func TestHumanProvider_RelaysLatestUserMessage(t *testing.T) {
 		{Role: "assistant", Content: "old answer"},
 		{Role: "user", Content: "[From: Alice]\nPlease review the draft."},
 	}
-	resp, err := NewHumanProvider("Bob (human)", time.Minute).Chat(WithHumanRelay(context.Background(), relay), msgs, nil, "bob", nil)
+	resp, err := NewHumanProvider("Bob (human)", time.Minute).Chat(WithHumanRelay(context.Background(), relay), testIdentity, msgs, nil, "bob", nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -76,14 +76,14 @@ func TestHumanProvider_Timeout(t *testing.T) {
 	}
 	msgs := []Message{{Role: "user", Content: "hi"}}
 
-	resp, err := NewHumanProvider("Bob (human)", 20*time.Millisecond).Chat(WithHumanRelay(context.Background(), wait), msgs, nil, "", nil)
+	resp, err := NewHumanProvider("Bob (human)", 20*time.Millisecond).Chat(WithHumanRelay(context.Background(), wait), testIdentity, msgs, nil, "", nil)
 	if err != nil || resp == nil || resp.Content != "" {
 		t.Fatalf("timeout: resp %+v, err %v; want an empty reply", resp, err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := NewHumanProvider("Bob (human)", time.Minute).Chat(WithHumanRelay(ctx, wait), msgs, nil, "", nil); !errors.Is(err, context.Canceled) {
+	if _, err := NewHumanProvider("Bob (human)", time.Minute).Chat(WithHumanRelay(ctx, wait), testIdentity, msgs, nil, "", nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled turn: err = %v, want context.Canceled", err)
 	}
 }

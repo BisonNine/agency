@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"testing"
 
-	cogmemstore "github.com/PivotLLM/cogmem/store"
+	cogmemstore "go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/cogmemhost"

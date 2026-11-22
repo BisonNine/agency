@@ -277,7 +277,7 @@ func (t *llmTurn) callModel(ctx context.Context, d *llmDispatch) (*providers.LLM
 	if len(t.candidates) == 0 || fallback == nil {
 		start := time.Now()
 		t.sent = t.requestMessages(hasTools, d.runProvider)
-		resp, err := d.runProvider.Chat(ctx, al.messagesForModel(t.sent, d.runModel, hasTools), d.defs, d.runModel, t.requestOptions(d, hasTools, d.runProvider, t.model))
+		resp, err := d.runProvider.Chat(ctx, t.agent.Identity(), al.messagesForModel(t.sent, d.runModel, hasTools), d.defs, d.runModel, t.requestOptions(d, hasTools, d.runProvider, t.model))
 		t.emitFinish(ctx, d.provider, t.model, d.runModel, time.Since(start), resp, err)
 		return resp, err
 	}
@@ -336,7 +336,7 @@ func (t *llmTurn) chatCandidate(
 	// a non-vision candidate. Keyed by alias like GetModelConfig.
 	t.sent = t.requestMessages(hasTools, provider)
 	msgs := al.messagesForModel(t.sent, candidateModelName(c), hasTools)
-	return provider.Chat(ctx, msgs, d.defs, c.Model, t.requestOptions(d, hasTools, provider, candidateModelName(c)))
+	return provider.Chat(ctx, t.agent.Identity(), msgs, d.defs, c.Model, t.requestOptions(d, hasTools, provider, candidateModelName(c)))
 }
 
 // requestOptions are the options for one provider call to model (a

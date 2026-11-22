@@ -12,10 +12,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PivotLLM/cogmem"
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/ctxengine/memory"
-	"github.com/PivotLLM/ctxengine/session"
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/logger"
 )

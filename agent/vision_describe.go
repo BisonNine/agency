@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
@@ -33,6 +34,8 @@ type providerVisionClient struct {
 	caller      llmCaller
 	alias       string
 	ourProvider string
+	// id is who the calls are billed to: the agent the chain belongs to.
+	id global.Identity
 }
 
 // Model returns the model name, used to label log lines.
@@ -42,7 +45,7 @@ func (c *providerVisionClient) Complete(ctx context.Context, messages []provider
 	// No response-format option: a describe call wants free-form prose, not a
 	// JSON object.
 	start := time.Now()
-	resp, err := c.provider.Chat(ctx, messages, nil, c.model, nil)
+	resp, err := c.provider.Chat(ctx, c.id, messages, nil, c.model, nil)
 	emitLLMFinishEvent(llmFinish{
 		caller:         c.caller,
 		kind:           llmKindVision,
@@ -99,6 +102,7 @@ func (al *AgentLoop) buildVisionLLMClient(cfg *config.Config, agent *AgentInstan
 		caller:      callerOf(agent),
 		alias:       alias,
 		ourProvider: compressProviderName(cfg, alias),
+		id:          agent.Identity(),
 	}, true
 }
 

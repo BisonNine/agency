@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	mconfig "github.com/PivotLLM/Maestro/config"
+	mconfig "go.bison9.com/maestro/config"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/spawnllm/common"
-	"github.com/PivotLLM/spawnllm/openai_compat"
+	"go.bison9.com/agent/spawnllm/common"
+	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/providers"
 )
@@ -140,7 +140,7 @@ func TestSpawnllmOpenAICompat_ClawEhDefinitions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := p.Chat(t.Context(), tt.msgs, defs, "gpt-4o", nil); err != nil {
+			if _, err := p.Chat(t.Context(), testIdentity, tt.msgs, defs, "gpt-4o", nil); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			mu.Lock()

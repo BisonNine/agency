@@ -32,7 +32,7 @@ func newBlockingProvider() *blockingProvider {
 	return &blockingProvider{started: make(chan struct{}, 32), release: make(chan struct{})}
 }
 
-func (p *blockingProvider) Chat(ctx context.Context, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *blockingProvider) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	user := ""
 	for _, m := range slices.Backward(messages) {
 		if m.Role == "user" {

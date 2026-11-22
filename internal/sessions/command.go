@@ -10,12 +10,13 @@ import (
 	"os"
 	"sort"
 
-	"github.com/PivotLLM/ctxengine/session"
 	"github.com/spf13/cobra"
+	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/internal"
 	"go.bison9.com/agency/internal/pidfile"
+	"go.bison9.com/agency/logger"
 )
 
 // NewSessionsCommand builds the `claw sessions` command group.
@@ -113,7 +114,7 @@ func migrateDirs(w io.Writer, dirs []string) error {
 		if _, err := os.Stat(dir); err != nil {
 			continue // no sessions directory yet — nothing to migrate
 		}
-		report, err := session.MigrateJSONL(dir)
+		report, err := session.MigrateJSONL(dir, logger.SDK())
 		if err != nil {
 			if _, werr := fmt.Fprintf(w, "%s: error: %v\n", dir, err); werr != nil {
 				return werr

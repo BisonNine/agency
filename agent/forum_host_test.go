@@ -149,7 +149,7 @@ type forumModel struct {
 
 func (m *forumModel) GetDefaultModel() string { return "mock-model" }
 
-func (m *forumModel) Chat(ctx context.Context, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (m *forumModel) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	user := lastUser(messages)
 	last := messages[len(messages)-1]
 	forumTurn := strings.Contains(user, "[Message from Alice — Alice is waiting for your reply]")

@@ -6,15 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PivotLLM/cogmem"
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/ctxengine/session"
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/fsmode"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
 	agentws "go.bison9.com/agency/internal/workspace"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -113,6 +115,16 @@ func (a *AgentInstance) Label() string {
 // (config.AgentConfig.DisplayName).
 func (a *AgentInstance) DisplayName() string {
 	return (&config.AgentConfig{ID: a.ID, Name: a.Name}).DisplayName()
+}
+
+// Identity is who the agent's model and API calls are billed to. A clone is
+// billed to the agent it was cloned from, under its own label, so its spend
+// rolls up to the agent that caused it; every other agent to itself.
+func (a *AgentInstance) Identity() global.Identity {
+	if a.Spec.IsClone() {
+		return global.Identity{Agent: config.NormalizeAgentID(a.Spec.SourceID), Name: a.Label(), Project: global.Project}
+	}
+	return (&config.AgentConfig{ID: a.ID, Name: a.Name}).Identity()
 }
 
 // sessionsDirName is the directory under an agent's state directory that
@@ -576,7 +588,7 @@ func initSessionStore(dir string, modes config.Modes) (session.SessionStore, err
 		return nil, err
 	}
 	store, err := session.NewSQLiteStore(dir,
-		session.WithFolderPermissions(modes.Dir), session.WithFilePermissions(modes.File))
+		session.WithFileModes(fsmode.Modes{Dir: modes.Dir, File: modes.File}), session.WithLogger(logger.SDK()))
 	if err != nil {
 		return nil, fmt.Errorf("open session store %s: %w", dir, err)
 	}
@@ -700,4 +712,19 @@ func compressionOptions(c *config.CompressionConfig) []ctxengine.Option {
 		}
 	}
 	return opts
+}
+
+// identityOf is who a call made on behalf of agentID is billed to: the
+// running agent's Identity, or, for an id the registry does not hold, the id
+// itself. An empty id has no owner.
+func (al *AgentLoop) identityOf(agentID string) global.Identity {
+	if strings.TrimSpace(agentID) == "" {
+		return global.NoOwnerIdentity
+	}
+	if r := al.GetRegistry(); r != nil {
+		if inst, ok := r.Get(agentID); ok && inst != nil {
+			return inst.Identity()
+		}
+	}
+	return (&config.AgentConfig{ID: agentID}).Identity()
 }

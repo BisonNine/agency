@@ -16,7 +16,6 @@ import (
 	"go.bison9.com/agency/alerts"
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/dump"
 	"go.bison9.com/agency/global"
@@ -223,8 +222,7 @@ func startGatewayRun(
 
 // startFileLogging enables file logging as early as possible, so startup,
 // config load, prune warnings and any fatal error are captured in claw.log,
-// not just on the console or journal, and routes the shared modules' logs
-// into ClawEh's logger. It returns the log file's path; the configured
+// not just on the console or journal. It returns the log file's path; the configured
 // format and level are applied once the config is loaded
 // (applyLoggingConfig).
 func startFileLogging(baseDir string) string {
@@ -233,8 +231,6 @@ func startFileLogging(baseDir string) string {
 	if err := logger.EnableFileLogging(logPath, false); err != nil {
 		logger.WarnCF("gateway", "Failed to enable file logging", map[string]any{"path": logPath, "error": err.Error()})
 	}
-	installSpawnllmLogging()
-	cogmemhost.InstallLogging()
 	return logPath
 }
 

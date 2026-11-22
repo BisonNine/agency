@@ -3,8 +3,8 @@
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
-// The transport-neutral tool-definition layer now lives in its own standalone,
-// dependency-free module, github.com/PivotLLM/toolspec, so tool packages and
+// The transport-neutral tool-definition layer lives in the agent SDK's
+// dependency-free package go.bison9.com/agent/toolspec, so tool packages and
 // external hosts (Maestro, MCPFusion) can comply with the ClawEh tool interface
 // without import cycles. This file re-exports it under the historical global
 // names via type aliases, so existing call sites (global.ToolDefinition, etc.)
@@ -13,7 +13,7 @@
 
 package global
 
-import "github.com/PivotLLM/toolspec"
+import "go.bison9.com/agent/toolspec"
 
 // Tool-contract types — aliases of the toolspec module (identical types).
 type (

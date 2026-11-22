@@ -6,7 +6,7 @@ package providers
 import (
 	"testing"
 
-	"github.com/PivotLLM/spawnllm"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
 )

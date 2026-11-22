@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/cogmem"
-	cogmemstore "github.com/PivotLLM/cogmem/store"
+	"go.bison9.com/agent/cogmem"
+	cogmemstore "go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -49,7 +49,7 @@ func newGatedRecorder() *recordingProvider {
 	return &recordingProvider{gate: make(chan struct{}), started: make(chan struct{}, 32)}
 }
 
-func (p *recordingProvider) Chat(ctx context.Context, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *recordingProvider) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	names := make([]string, 0, len(defs))
 	for _, d := range defs {
 		names = append(names, d.Function.Name)

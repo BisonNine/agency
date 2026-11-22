@@ -22,7 +22,7 @@ func TestIntegration_DispatchStatus_ClaudeCLI(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	resp, err := p.Chat(ctx, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
+	resp, err := p.Chat(ctx, testIdentity, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -78,7 +78,7 @@ func TestIntegration_DispatchStatus_CodexCLI(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	resp, err := p.Chat(ctx, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
+	resp, err := p.Chat(ctx, testIdentity, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -113,7 +113,7 @@ func TestIntegration_DispatchStatus_AntigravityCLI(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	resp, err := p.Chat(ctx, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
+	resp, err := p.Chat(ctx, testIdentity, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}

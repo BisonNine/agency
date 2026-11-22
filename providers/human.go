@@ -60,9 +60,9 @@ func (p *HumanProvider) GetDefaultModel() string { return p.label }
 // its own.
 func (p *HumanProvider) Timeout() time.Duration { return p.timeout }
 
-// Chat implements LLMProvider. Tools, the model id and the options are
+// Chat implements LLMProvider. The identity, tools, the model id and the options are
 // ignored: the person sees only the request.
-func (p *HumanProvider) Chat(ctx context.Context, messages []Message, _ []ToolDefinition, _ string, _ map[string]any) (*LLMResponse, error) {
+func (p *HumanProvider) Chat(ctx context.Context, _ Identity, messages []Message, _ []ToolDefinition, _ string, _ map[string]any) (*LLMResponse, error) {
 	relay := humanRelayFrom(ctx)
 	if relay == nil {
 		return nil, fmt.Errorf("model %q: %w", p.label, ErrHumanUnreachable)

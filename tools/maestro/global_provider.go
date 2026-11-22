@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"reflect"
 
-	mconfig "github.com/PivotLLM/Maestro/config"
-	mlogging "github.com/PivotLLM/Maestro/logging"
-	mmaestro "github.com/PivotLLM/Maestro/pkg/maestro"
-	"github.com/PivotLLM/Maestro/runner"
 	"github.com/tenebris-tech/alerter"
+	mconfig "go.bison9.com/maestro/config"
+	mlogging "go.bison9.com/maestro/logging"
+	mmaestro "go.bison9.com/maestro/pkg/maestro"
+	"go.bison9.com/maestro/runner"
 
 	"go.bison9.com/agency/alerts"
 	"go.bison9.com/agency/config"

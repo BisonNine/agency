@@ -31,7 +31,7 @@ type scriptedProvider struct {
 	err  error
 }
 
-func (s *scriptedProvider) Chat(context.Context, []Message, []ToolDefinition, string, map[string]any) (*LLMResponse, error) {
+func (s *scriptedProvider) Chat(context.Context, Identity, []Message, []ToolDefinition, string, map[string]any) (*LLMResponse, error) {
 	return s.resp, s.err
 }
 func (s *scriptedProvider) GetDefaultModel() string { return "scripted" }
@@ -108,7 +108,7 @@ func TestCLIDeclinedGuard_Chat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := testalerts.Install(t)
 			g := &cliDeclinedGuard{LLMProvider: &scriptedProvider{resp: tc.resp, err: tc.err}, label: "Claude CLI", protocol: "claude-cli"}
-			resp, err := g.Chat(context.Background(), nil, nil, "m", nil)
+			resp, err := g.Chat(context.Background(), testIdentity, nil, nil, "m", nil)
 			if resp != tc.resp {
 				t.Errorf("response replaced: got %v, want the inner %v", resp, tc.resp)
 			}

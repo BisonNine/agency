@@ -18,7 +18,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/PivotLLM/toolspec"
+	"go.bison9.com/agent/toolspec"
 )
 
 // The tool definitions. Names are bare; the host's

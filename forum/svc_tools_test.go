@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/toolspec"
 	"github.com/google/uuid"
+	"go.bison9.com/agent/toolspec"
 )
 
 // svcToolHost is a fake ToolHost: the agent "denied" has no forum

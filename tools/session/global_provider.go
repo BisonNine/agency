@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	sessiontools "github.com/PivotLLM/ctxengine/tools"
+	sessiontools "go.bison9.com/agent/ctxengine/tools"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/constants"
@@ -53,7 +53,9 @@ func (globalSessionProvider) RegisterTools(deps global.Deps) []global.ToolDefini
 	host := sessiontools.Host{
 		Compact: cd.CompactFn,
 		Clear:   cd.ClearFn,
-		Log:     logToClaw,
+		// The tools' own lines keep the component the host has always given
+		// them; the archives they open log as "memory".
+		Logger: logger.SDKAs("tools", "session-tools"),
 	}
 	if dir := cd.EffectiveStateDir(); dir != "" {
 		host.SessionsDir = filepath.Join(dir, "sessions")
@@ -104,19 +106,4 @@ func refuseClearInAsk(defs []global.ToolDefinition) []global.ToolDefinition {
 		}
 	}
 	return defs
-}
-
-// logToClaw routes sessiontools diagnostics into ClawEh's logger.
-func logToClaw(level, message string, fields map[string]any) {
-	const component = "session-tools"
-	switch level {
-	case "debug":
-		logger.DebugCF(component, message, fields)
-	case "warn":
-		logger.WarnCF(component, message, fields)
-	case "error":
-		logger.ErrorCF(component, message, fields)
-	default:
-		logger.InfoCF(component, message, fields)
-	}
 }

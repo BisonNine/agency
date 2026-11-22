@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine/session"
+	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"

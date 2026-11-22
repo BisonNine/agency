@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PivotLLM/spawnllm/openai_responses"
+	"go.bison9.com/agent/spawnllm/openai_responses"
 
 	"go.bison9.com/agency/config"
 )
@@ -42,7 +42,7 @@ func TestCreateProviderFromConfig_OpenAIResponses(t *testing.T) {
 		t.Errorf("modelID = %q", modelID)
 	}
 
-	out, err := provider.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, modelID, nil)
+	out, err := provider.Chat(context.Background(), testIdentity, []Message{{Role: "user", Content: "hi"}}, nil, modelID, nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}

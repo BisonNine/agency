@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal"
 	"go.bison9.com/agency/providers"
 )
@@ -173,7 +174,7 @@ func testModel(cfg *config.Config, mc config.ModelConfig, timeout time.Duration)
 	}
 
 	start := time.Now()
-	resp, err := provider.Chat(ctx, messages, nil, modelID, nil)
+	resp, err := provider.Chat(ctx, global.NoOwnerIdentity, messages, nil, modelID, nil)
 	r.elapsed = time.Since(start)
 
 	if err != nil {

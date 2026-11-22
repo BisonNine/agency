@@ -10,9 +10,9 @@ import (
 	"os"
 	"strings"
 
-	cogmemstore "github.com/PivotLLM/cogmem/store"
-	"github.com/PivotLLM/ctxengine/memory"
 	"github.com/tenebris-tech/alerter"
+	cogmemstore "go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/logger"

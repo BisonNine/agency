@@ -355,7 +355,7 @@ func TestSendFiles_TurnRecordsReplyChat(t *testing.T) {
 // probeProvider calls onChat on each request and answers "done".
 type probeProvider struct{ onChat func() }
 
-func (p *probeProvider) Chat(context.Context, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
+func (p *probeProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
 	p.onChat()
 	return &providers.LLMResponse{Content: "done"}, nil
 }

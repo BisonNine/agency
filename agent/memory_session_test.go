@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/cogmem"
-	"github.com/PivotLLM/cogmem/store"
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/providers"

@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	mconfig "github.com/PivotLLM/Maestro/config"
-	mglobal "github.com/PivotLLM/Maestro/global"
-	mlogging "github.com/PivotLLM/Maestro/logging"
-	mmaestro "github.com/PivotLLM/Maestro/pkg/maestro"
-	"github.com/PivotLLM/Maestro/runner"
+	mconfig "go.bison9.com/maestro/config"
+	mglobal "go.bison9.com/maestro/global"
+	mlogging "go.bison9.com/maestro/logging"
+	mmaestro "go.bison9.com/maestro/pkg/maestro"
+	"go.bison9.com/maestro/runner"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"

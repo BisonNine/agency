@@ -318,7 +318,7 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 	}
 
 	start := time.Now()
-	resp, chatErr := provider.Chat(ctx, []providers.Message{
+	resp, chatErr := provider.Chat(ctx, a.Identity(), []providers.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	}, nil, mc.Model, nil)

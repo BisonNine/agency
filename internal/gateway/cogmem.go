@@ -7,8 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/PivotLLM/cogmem/consolidate"
-	"github.com/PivotLLM/cogmem/store"
+	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/fsmode"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/cogmemhost"
@@ -42,13 +43,14 @@ func setupCogmemConsolidation(cfg *config.Config, agentLoop *agent.AgentLoop) *c
 		settings := cogmemhost.Settings(cfg.Agents.Defaults.EffectiveMemory(inst.Config))
 		caller := agentLoop.NewMemoryModelCaller(inst)
 		opts := append(settings.WorkerOptions(j.Workspace),
-			consolidate.WithFolderPermissions(modes.Dir), consolidate.WithFilePermissions(modes.File))
+			consolidate.WithFileModes(fsmode.Modes{Dir: modes.Dir, File: modes.File}), consolidate.WithLogger(logger.SDK()))
 		return consolidate.NewWorker(st, caller, opts...), nil
 	}
 
 	// Thresholds from the default agent's effective memory config. (Triggers are
 	// process-global; per-agent batch levers are applied in the factory.)
-	mopts := cogmemhost.Settings(defaultEffectiveMemory(cfg, agentLoop)).ManagerOptions()
+	mopts := append(cogmemhost.Settings(defaultEffectiveMemory(cfg, agentLoop)).ManagerOptions(),
+		consolidate.WithManagerLogger(logger.SDK()))
 
 	mgr := consolidate.NewManager(factory, mopts...)
 	mgr.Start(context.Background())

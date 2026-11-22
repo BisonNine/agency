@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/ctxengine/session"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"

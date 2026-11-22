@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/PivotLLM/cogmem/consolidate"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/cogmem/consolidate"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/app"

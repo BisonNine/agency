@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/ctxengine"
 )
 
 func TestSummarizeEvictions(t *testing.T) {

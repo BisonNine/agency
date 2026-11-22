@@ -10,6 +10,16 @@
   `CLAW_*` environment variables and the `mcp__claw__` tool prefix keep their
   names, and `claw upgrade` still fetches releases from the same place.
 
+### Fixed
+
+- **A CLI model call that fails keeps the tokens and cost the CLI reported.**
+  They used to be dropped: the call's `LLM finish` log line now shows them,
+  and a failed classifier or task-model call on a CLI counts toward the
+  day's spend total (`daily_spend_alert_usd`).
+- **Antigravity CLI output token counts are no longer too high.** Thinking
+  tokens were counted twice; the output tokens in the log and in a task
+  model's usage now match what the CLI reported.
+
 ## [0.6.5]
 
 ### Added

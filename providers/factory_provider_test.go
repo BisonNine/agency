@@ -295,7 +295,7 @@ func TestCreateProviderFromConfig_RequestTimeoutPropagation(t *testing.T) {
 	}
 
 	_, err = provider.Chat(
-		t.Context(),
+		t.Context(), testIdentity,
 		[]Message{{Role: "user", Content: "hi"}},
 		nil,
 		modelID,

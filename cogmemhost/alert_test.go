@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/PivotLLM/cogmem/store"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/testalerts"

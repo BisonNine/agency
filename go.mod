@@ -3,12 +3,6 @@ module go.bison9.com/agency
 go 1.27.4
 
 require (
-	github.com/PivotLLM/MCPFusion v0.4.11
-	github.com/PivotLLM/Maestro v0.5.10
-	github.com/PivotLLM/cogmem v0.0.13
-	github.com/PivotLLM/ctxengine v0.0.14
-	github.com/PivotLLM/spawnllm v0.1.28
-	github.com/PivotLLM/toolspec v0.4.1
 	github.com/a3tai/openclaw-go v1.20260325.0
 	github.com/adhocore/gronx v1.20.8
 	github.com/bmatcuk/doublestar/v4 v4.10.4
@@ -32,6 +26,9 @@ require (
 	github.com/tenebris-tech/alerter v0.1.7
 	github.com/tenebris-tech/mlogger v0.0.5
 	github.com/tenebris-tech/secmsg v0.1.2
+	go.bison9.com/agent v0.0.0-20261122132308-9d6114e02692
+	go.bison9.com/maestro v0.0.0-20261122130256-6f5d7b9a99cd
+	go.bison9.com/mcpfusion v0.0.0-20261122132946-c0a928bec113
 	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
 	golang.org/x/sys v0.50.0
@@ -54,7 +51,6 @@ require (
 	github.com/goccy/go-json v0.12.0 // indirect
 	github.com/gofrs/flock v0.13.2 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/grbit/go-json v0.11.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/itchyny/gojq v0.12.20 // indirect
 	github.com/itchyny/timefmt-go v0.1.9 // indirect

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/ctxengine/session"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/providers"
 )
@@ -67,7 +67,7 @@ EOFMOCK
 		sessionKey,
 		store,
 		ctxengine.WithContextWindow(1000),
-		ctxengine.WithModelCaller(&compressModelCaller{clients: []*providerLLMClient{client}}),
+		ctxengine.WithModelCaller(&compressModelCaller{id: testIdentity, clients: []*providerLLMClient{client}}),
 	)
 	if compactErr := cm.Compact(context.Background()); compactErr != nil {
 		t.Fatalf("Compact: %v", compactErr)

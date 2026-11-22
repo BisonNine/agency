@@ -7,14 +7,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/spawnllm"
-	anthropicmessages "github.com/PivotLLM/spawnllm/anthropic_messages"
-	"github.com/PivotLLM/spawnllm/azure"
-	"github.com/PivotLLM/spawnllm/openai_compat"
-	"github.com/PivotLLM/spawnllm/openai_responses"
+	"go.bison9.com/agent/fsmode"
+	"go.bison9.com/agent/spawnllm"
+	anthropicmessages "go.bison9.com/agent/spawnllm/anthropic_messages"
+	"go.bison9.com/agent/spawnllm/azure"
+	"go.bison9.com/agent/spawnllm/openai_compat"
+	"go.bison9.com/agent/spawnllm/openai_responses"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/childenv"
@@ -33,7 +35,8 @@ func compatOpts(model *config.ModelConfig, prov *config.Provider) []openai_compa
 		openai_compat.WithNoParallelToolCalls(prov.NoParallelToolCalls),
 		openai_compat.WithStrictAlternation(model.StrictAlternation),
 		openai_compat.WithResponseLogFile(model.ResponseLogFile),
-		openai_compat.WithFileModes(logModes.Dir, logModes.File),
+		openai_compat.WithFileModes(fsmode.Modes{Dir: logModes.Dir, File: logModes.File}),
+		openai_compat.WithLogger(logger.SDK()),
 		openai_compat.WithReasoningEffort(model.ReasoningEffort),
 		openai_compat.WithExtraBody(model.ExtraBody),
 		openai_compat.WithDropParams(model.DropParams),
@@ -58,7 +61,8 @@ func responsesOpts(model *config.ModelConfig, prov *config.Provider) []openai_re
 		openai_responses.WithProtocol(prov.Protocol),
 		openai_responses.WithResponseFormatJSONCapable(prov.ResponseFormatJSON),
 		openai_responses.WithResponseLogFile(model.ResponseLogFile),
-		openai_responses.WithFileModes(logModes.Dir, logModes.File),
+		openai_responses.WithFileModes(fsmode.Modes{Dir: logModes.Dir, File: logModes.File}),
+		openai_responses.WithLogger(logger.SDK()),
 	}
 }
 
@@ -99,7 +103,7 @@ func CreateProviderFromConfig(model *config.ModelConfig, prov *config.Provider) 
 		return openai_responses.NewProvider(prov.APIKey, prov.BaseURL, prov.Proxy, responsesOpts(model, prov)...), modelID, nil
 
 	case "azure":
-		return azure.NewProviderWithTimeout(prov.APIKey, prov.BaseURL, prov.Proxy, model.RequestTimeout), modelID, nil
+		return azure.NewProviderWithTimeout(prov.APIKey, prov.BaseURL, prov.Proxy, model.RequestTimeout, azure.WithLogger(logger.SDK())), modelID, nil
 
 	// "anthropic" and "anthropic-messages" are the same thing: Anthropic speaks
 	// one wire format, the Messages API. "anthropic" previously routed to the
@@ -111,7 +115,7 @@ func CreateProviderFromConfig(model *config.ModelConfig, prov *config.Provider) 
 		if prov.APIKey == "" {
 			return nil, "", fmt.Errorf("provider %q: api_key required for %s protocol", prov.Name, prov.Protocol)
 		}
-		return anthropicmessages.NewProviderWithTimeout(prov.APIKey, prov.BaseURL, model.RequestTimeout), modelID, nil
+		return anthropicmessages.NewProviderWithTimeout(prov.APIKey, prov.BaseURL, model.RequestTimeout, anthropicmessages.WithLogger(logger.SDK())), modelID, nil
 
 	case "claude-cli":
 		return newCLIProvider(NewClaudeCliProvider, NewClaudeCliProviderWithTimeout, model, prov), modelID, nil
@@ -178,6 +182,13 @@ func newCLIProvider[T LLMProvider](
 	if s, ok := p.(spawnllm.BaseEnvSetter); ok {
 		s.SetBaseEnv(childenv.CLI())
 	}
+	// The CLI logs to the host's logger, and logs the CLI's output only when
+	// logging.log_message_content allows it. Providers are rebuilt on every
+	// reload, so a changed setting applies to the next provider built.
+	if l, ok := p.(cliLogging); ok {
+		l.SetLogger(logger.SDK())
+		l.SetLogContent(logger.GetLogMessageContent())
+	}
 	if prov.BypassRestrictions {
 		return p
 	}
@@ -186,6 +197,13 @@ func newCLIProvider[T LLMProvider](
 		label = agent.Label
 	}
 	return &cliDeclinedGuard{LLMProvider: p, label: label, protocol: prov.Protocol}
+}
+
+// cliLogging is how a CLI provider is given its logger and told whether it
+// may log message content.
+type cliLogging interface {
+	SetLogger(l *slog.Logger)
+	SetLogContent(allowed bool)
 }
 
 // cliDeclinedGuard wraps a CLI provider running without its permission-bypass
@@ -204,8 +222,8 @@ type cliDeclinedGuard struct {
 // IsCLI marks the wrapped provider as a CLI, as the agent loop checks.
 func (g *cliDeclinedGuard) IsCLI() bool { return true }
 
-func (g *cliDeclinedGuard) Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any) (*LLMResponse, error) {
-	resp, err := g.LLMProvider.Chat(ctx, messages, tools, model, options)
+func (g *cliDeclinedGuard) Chat(ctx context.Context, id Identity, messages []Message, tools []ToolDefinition, model string, options map[string]any) (*LLMResponse, error) {
+	resp, err := g.LLMProvider.Chat(ctx, id, messages, tools, model, options)
 	var denied []string
 	if resp != nil && resp.Status != nil {
 		denied = resp.Status.DeniedTools

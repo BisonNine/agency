@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	cogmemstore "github.com/PivotLLM/cogmem/store"
+	cogmemstore "go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/utils"

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/commands"
@@ -153,7 +153,7 @@ func (al *AgentLoop) buildCommandsRuntime(
 // archiveStats reads the message count and time span of the session archive
 // at path; zero when it cannot be opened.
 func archiveStats(path string) (int, time.Time, time.Time) {
-	store, err := memory.OpenReadOnly(path)
+	store, err := memory.OpenReadOnly(path, logger.SDK())
 	if err != nil {
 		return 0, time.Time{}, time.Time{}
 	}

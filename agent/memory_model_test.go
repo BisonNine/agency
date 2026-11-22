@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PivotLLM/cogmem/consolidate"
+	"go.bison9.com/agent/cogmem/consolidate"
 )
 
 // The adapter must hand the request through unchanged — including Exclude,

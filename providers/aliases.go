@@ -3,8 +3,8 @@
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
-// The LLM provider clients, protocol DTOs, and the provider interfaces now live
-// in the standalone github.com/PivotLLM/spawnllm module so ClawEh and Maestro
+// The LLM provider clients, protocol DTOs, and the provider interfaces live in
+// the agent SDK's package go.bison9.com/agent/spawnllm so ClawEh and Maestro
 // can share the dispatch core (single binary) without import cycles. This file
 // re-exports them under the historical providers names via aliases, so the
 // policy/config code that stays here (dispatcher, factory, fallback, cooldown)
@@ -14,14 +14,18 @@
 package providers
 
 import (
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/spawnllm"
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // MessageTypeToolError marks a tool result that reports a failure. Defined by
 // the context engine, which reads it in its eviction sweep; re-exported here
 // so the loop and the tools keep their historical name for it.
 const MessageTypeToolError = ctxengine.MessageTypeToolError
+
+// Identity names who a call is for (accounting.Identity); every Chat takes one.
+type Identity = accounting.Identity
 
 // Interfaces + concrete provider types.
 type (

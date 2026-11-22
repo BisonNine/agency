@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/cogmem/portable"
-	cogmemstore "github.com/PivotLLM/cogmem/store"
+	"go.bison9.com/agent/cogmem/portable"
+	cogmemstore "go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/utils"

@@ -119,7 +119,7 @@ fi
 # MAESTRO_TEST_SH overrides the script location (e.g. a Maestro checkout when
 # iterating on the suite); the default is the pinned Maestro module.
 if [ -z "${MAESTRO_TEST_SH:-}" ]; then
-    MAESTRO_DIR="$(cd "$ROOT" && go list -m -f '{{.Dir}}' github.com/PivotLLM/Maestro)"
+    MAESTRO_DIR="$(cd "$ROOT" && go list -m -f '{{.Dir}}' go.bison9.com/maestro)"
     MAESTRO_TEST_SH="$MAESTRO_DIR/test.sh"
 fi
 if [ ! -f "$MAESTRO_TEST_SH" ]; then

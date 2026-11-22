@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/spawnllm/common"
+	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
@@ -21,7 +21,7 @@ type modelScriptProvider struct {
 	answer func(ctx context.Context, model string) (*providers.LLMResponse, error)
 }
 
-func (p modelScriptProvider) Chat(ctx context.Context, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p modelScriptProvider) Chat(ctx context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
 	return p.answer(ctx, model)
 }
 

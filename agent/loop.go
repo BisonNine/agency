@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PivotLLM/cogmem/consolidate"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/cogmem/consolidate"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/alerts"
@@ -309,10 +309,6 @@ func NewAgentLoop(
 	for _, opt := range opts {
 		opt(&lo)
 	}
-	// Route the context engine's logs into ours before anything constructs a
-	// session store or context manager.
-	InstallLogging()
-
 	// Set up shared fallback chain with the config-driven cooldown policy.
 	cooldown := providers.NewCooldownTrackerWithPolicy(cooldownPolicy(cfg))
 	fallbackChain := providers.NewFallbackChain(cooldown)

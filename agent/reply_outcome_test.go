@@ -27,7 +27,7 @@ type fixedProvider struct {
 	err  error
 }
 
-func (p *fixedProvider) Chat(context.Context, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
+func (p *fixedProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
 	if p.err != nil {
 		return nil, p.err
 	}

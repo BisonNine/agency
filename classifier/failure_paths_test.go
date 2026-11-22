@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/toolspec"
+	"go.bison9.com/agent/toolspec"
 )
 
 // classifier_test and classifier_rerun pass a failing source through with

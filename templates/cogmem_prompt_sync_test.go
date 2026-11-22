@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/cogmem/consolidate"
+	"go.bison9.com/agent/cogmem/consolidate"
 
 	"go.bison9.com/agency/templates"
 )

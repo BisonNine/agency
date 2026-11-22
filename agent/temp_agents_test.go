@@ -322,12 +322,12 @@ type modelRecordingProvider struct {
 }
 
 func (p *modelRecordingProvider) Chat(
-	ctx context.Context, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
+	ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
 ) (*providers.LLMResponse, error) {
 	p.mu.Lock()
 	p.models = append(p.models, model)
 	p.mu.Unlock()
-	return p.LLMProvider.Chat(ctx, messages, defs, model, opts)
+	return p.LLMProvider.Chat(ctx, testIdentity, messages, defs, model, opts)
 }
 
 // TestSubagentSpawn_ModelNarrowsClone: a sub-agent asked for one of the
@@ -379,8 +379,8 @@ type inspectingProvider struct {
 }
 
 func (p *inspectingProvider) Chat(
-	ctx context.Context, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
+	ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
 ) (*providers.LLMResponse, error) {
 	p.inspect(ctx)
-	return p.LLMProvider.Chat(ctx, messages, defs, model, opts)
+	return p.LLMProvider.Chat(ctx, testIdentity, messages, defs, model, opts)
 }

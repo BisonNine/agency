@@ -12,10 +12,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/PivotLLM/cogmem"
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/spawnllm/common"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/global"

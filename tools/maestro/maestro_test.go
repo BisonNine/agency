@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	mllm "github.com/PivotLLM/Maestro/llm"
+	mllm "go.bison9.com/maestro/llm"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"

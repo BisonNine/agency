@@ -6,7 +6,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/config"
 )

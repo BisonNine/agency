@@ -9,13 +9,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/PivotLLM/ctxengine"
-	llmlogger "github.com/PivotLLM/ctxengine/logger"
-	"github.com/PivotLLM/spawnllm/openai_compat"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/spawnllm/openai_compat"
 
-	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
 
@@ -33,7 +30,7 @@ type scriptedCall struct {
 	opts  map[string]any
 }
 
-func (p *scriptedProvider) Chat(_ context.Context, _ []providers.Message, _ []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *scriptedProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
 	p.mu.Lock()
 	p.calls = append(p.calls, scriptedCall{model: model, opts: opts})
 	p.mu.Unlock()
@@ -60,7 +57,7 @@ func compressClient(p providers.LLMProvider, providerName, model string) *provid
 func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 	first := &scriptedProvider{content: "from-first"}
 	second := &scriptedProvider{content: "from-second"}
-	c := &compressModelCaller{clients: []*providerLLMClient{
+	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{
 		compressClient(first, "p1", "model-a"),
 		compressClient(second, "p2", "model-b"),
 	}}
@@ -90,7 +87,7 @@ func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 	broken := &scriptedProvider{err: errors.New("boom")}
 	good := &scriptedProvider{content: "ok"}
-	c := &compressModelCaller{clients: []*providerLLMClient{
+	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{
 		compressClient(broken, "p1", "model-a"),
 		compressClient(good, "p2", "model-b"),
 	}}
@@ -99,7 +96,7 @@ func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 		t.Fatalf("expected the chain to move past the failing model: %+v, %v", reply, err)
 	}
 
-	onlyBroken := &compressModelCaller{clients: []*providerLLMClient{compressClient(broken, "p1", "model-a")}}
+	onlyBroken := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{compressClient(broken, "p1", "model-a")}}
 	reply, err = onlyBroken.Complete(context.Background(), ctxengine.ModelRequest{})
 	if err == nil || reply.Model != "model-a" {
 		t.Fatalf("expected the last error with the model named: %+v, %v", reply, err)
@@ -110,7 +107,7 @@ func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 // becomes the provider's response-format option, and its absence sends none.
 func TestCompressModelCaller_JSONObjectForwarded(t *testing.T) {
 	p := &scriptedProvider{content: "{}"}
-	c := &compressModelCaller{clients: []*providerLLMClient{compressClient(p, "p1", "m")}}
+	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{compressClient(p, "p1", "m")}}
 	if _, err := c.Complete(context.Background(), ctxengine.ModelRequest{JSONObject: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -227,46 +224,5 @@ func TestSessionToken_IssuedAndReissuedOnEntry(t *testing.T) {
 	}
 	if al.sessionToken(agent, "no-such-session") != "" {
 		t.Fatal("an uncached session has no token")
-	}
-}
-
-// logCapture collects host log lines for the bridge test.
-type logCapture struct {
-	mu  sync.Mutex
-	buf []byte
-}
-
-func (c *logCapture) Write(p []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.buf = append(c.buf, p...)
-	return len(p), nil
-}
-
-func (c *logCapture) String() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return string(c.buf)
-}
-
-// TestInstallLogging_BridgesEngineLogs: after InstallLogging, an event the
-// engine emits through its own seam shows up in ClawEh's logger with its
-// level, component and fields.
-func TestInstallLogging_BridgesEngineLogs(t *testing.T) {
-	var out logCapture
-	restore := logger.RedirectForTest(&out)
-	defer restore()
-	InstallLogging()
-	defer llmlogger.SetBackend(nil)
-
-	llmlogger.WarnCF("llmcontext", "bridge check", map[string]any{"session_key": "s1"})
-	llmlogger.DebugCF("memory", "debug bridge", nil)
-	time.Sleep(10 * time.Millisecond)
-
-	got := out.String()
-	for _, want := range []string{"bridge check", "llmcontext", "s1", "\"level\":\"warn\"", "debug bridge", "\"level\":\"debug\""} {
-		if !strings.Contains(got, want) {
-			t.Errorf("host log missing %q:\n%s", want, got)
-		}
 	}
 }

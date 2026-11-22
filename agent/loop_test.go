@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
@@ -262,7 +262,7 @@ type simpleMockProvider struct {
 }
 
 func (m *simpleMockProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	tools []providers.ToolDefinition,
 	model string,
@@ -284,7 +284,7 @@ type countingMockProvider struct {
 }
 
 func (m *countingMockProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	tools []providers.ToolDefinition,
 	model string,
@@ -599,7 +599,7 @@ type failFirstMockProvider struct {
 }
 
 func (m *failFirstMockProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	tools []providers.ToolDefinition,
 	model string,
@@ -1293,7 +1293,7 @@ type errorProvider struct {
 }
 
 func (e *errorProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	toolDefs []providers.ToolDefinition,
 	model string,
@@ -1367,7 +1367,7 @@ type sequenceProvider struct {
 }
 
 func (p *sequenceProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	toolDefs []providers.ToolDefinition,
 	model string,

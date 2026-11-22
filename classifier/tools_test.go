@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/toolspec"
+	"go.bison9.com/agent/toolspec"
 )
 
 // definitionFieldKeys lists every "<GoType>.<json name>" reachable from

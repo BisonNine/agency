@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	mconfig "github.com/PivotLLM/Maestro/config"
-	mllm "github.com/PivotLLM/Maestro/llm"
+	mconfig "go.bison9.com/maestro/config"
+	mllm "go.bison9.com/maestro/llm"
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"

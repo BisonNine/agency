@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/cogmem/consolidate"
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/config"
@@ -283,7 +283,7 @@ func TestLLMTurnEmitFinish_Subagent(t *testing.T) {
 // answers the backup's.
 type failoverProvider struct{}
 
-func (failoverProvider) Chat(_ context.Context, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
+func (failoverProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
 	if model == "primary-wire" {
 		return nil, errors.New("status 429: rate limit exceeded")
 	}

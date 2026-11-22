@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/PivotLLM/spawnllm/common"
+	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/providers"
 )

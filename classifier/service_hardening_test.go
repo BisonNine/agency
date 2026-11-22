@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/toolspec"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/classifier/classifierfs"
 )

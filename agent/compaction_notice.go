@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"

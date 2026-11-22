@@ -6,8 +6,9 @@ package agent
 import (
 	"encoding/json"
 
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/memory"
 
+	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
@@ -47,7 +48,7 @@ func buildSessionInfo(al *AgentLoop, agent *AgentInstance, sessionKey string) (*
 	}
 
 	archivePath := archiveDBPath(agent.StateDir, sessionKey)
-	if a, openErr := memory.OpenReadOnly(archivePath); openErr == nil {
+	if a, openErr := memory.OpenReadOnly(archivePath, logger.SDK()); openErr == nil {
 		defer utils.CloseQuietly(a)
 		minSeq, maxSeq, boundsErr := a.Bounds()
 		if boundsErr == nil {

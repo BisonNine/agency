@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine"
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
@@ -46,7 +46,7 @@ type defsRecordingProvider struct {
 	messages  [][]providers.Message
 }
 
-func (p *defsRecordingProvider) Chat(_ context.Context, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *defsRecordingProvider) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.defs = append(p.defs, slices.Clone(defs))

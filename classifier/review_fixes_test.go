@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/toolspec"
+	"go.bison9.com/agent/toolspec"
 )
 
 // failClassifiedWrites makes every write of a classification to the

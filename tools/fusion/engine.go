@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"sync"
 
-	mcpfusion "github.com/PivotLLM/MCPFusion/fusion"
 	"github.com/tenebris-tech/alerter"
+	mcpfusion "go.bison9.com/mcpfusion/fusion"
 
 	"go.bison9.com/agency/alerts"
 	"go.bison9.com/agency/app"

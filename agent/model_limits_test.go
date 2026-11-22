@@ -35,7 +35,7 @@ type limitsProvider struct {
 	system string
 }
 
-func (p *limitsProvider) Chat(_ context.Context, msgs []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *limitsProvider) Chat(_ context.Context, _ providers.Identity, msgs []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls = append(p.calls, limitsCall{model: model, maxTokens: opts["max_tokens"], thinking: opts["thinking_level"]})

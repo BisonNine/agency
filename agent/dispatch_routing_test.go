@@ -18,7 +18,7 @@ import (
 type cliMockProvider struct{}
 
 func (m *cliMockProvider) Chat(
-	ctx context.Context,
+	ctx context.Context, _ providers.Identity,
 	messages []providers.Message,
 	tools []providers.ToolDefinition,
 	model string,

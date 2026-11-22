@@ -19,6 +19,7 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
 	"go.bison9.com/agency/voice"
@@ -32,7 +33,7 @@ type stubTranscriber struct {
 
 func (s stubTranscriber) Name() string { return "stub" }
 
-func (s stubTranscriber) Transcribe(context.Context, voice.AudioFile) (*voice.TranscriptionResponse, error) {
+func (s stubTranscriber) Transcribe(context.Context, global.Identity, voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -277,7 +278,7 @@ type failTranscriber struct{ t *testing.T }
 
 func (failTranscriber) Name() string { return "fail" }
 
-func (f failTranscriber) Transcribe(context.Context, voice.AudioFile) (*voice.TranscriptionResponse, error) {
+func (f failTranscriber) Transcribe(context.Context, global.Identity, voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	f.t.Error("a voice message to a human agent was transcribed")
 	return &voice.TranscriptionResponse{Text: "heard"}, nil
 }
@@ -320,21 +321,26 @@ func TestPrepareInbound_HumanAgentNeverTranscribed(t *testing.T) {
 	}
 }
 
-// recordingTranscriber records the audio files it is given.
+// recordingTranscriber records the audio files it is given and who each
+// call was billed to.
 type recordingTranscriber struct {
 	got *[]voice.AudioFile
+	ids *[]global.Identity
 }
 
 func (r recordingTranscriber) Name() string { return "recording" }
 
-func (r recordingTranscriber) Transcribe(_ context.Context, a voice.AudioFile) (*voice.TranscriptionResponse, error) {
+func (r recordingTranscriber) Transcribe(_ context.Context, id global.Identity, a voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	*r.got = append(*r.got, a)
+	if r.ids != nil {
+		*r.ids = append(*r.ids, id)
+	}
 	return &voice.TranscriptionResponse{Text: "ok"}, nil
 }
 
 // A voice note is handed to the transcriber with the name and type it came
 // with, not only its stored path (a Telegram .oga note may be stored under a
-// name without that extension).
+// name without that extension), and billed to the agent the message is for.
 func TestPrepareInbound_VoicePassesNameAndType(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
@@ -342,7 +348,8 @@ func TestPrepareInbound_VoicePassesNameAndType(t *testing.T) {
 	store := media.NewFileMediaStore()
 	al.SetMediaStore(store)
 	var got []voice.AudioFile
-	al.SetTranscriber(recordingTranscriber{got: &got})
+	var ids []global.Identity
+	al.SetTranscriber(recordingTranscriber{got: &got, ids: &ids})
 
 	src := filepath.Join(t.TempDir(), "file_3")
 	if err := os.WriteFile(src, []byte("OggS"), 0o600); err != nil {
@@ -357,5 +364,9 @@ func TestPrepareInbound_VoicePassesNameAndType(t *testing.T) {
 	al.prepareInbound(context.Background(), msg)
 	if len(got) != 1 || got[0].Path != src || got[0].Filename != "file_3.oga" || got[0].ContentType != "audio/ogg" {
 		t.Fatalf("transcriber got %+v", got)
+	}
+	main, _ := al.GetRegistry().Get("main")
+	if len(ids) != 1 || ids[0] != main.Identity() {
+		t.Fatalf("transcription billed to %+v, want [%+v]", ids, main.Identity())
 	}
 }

@@ -75,7 +75,7 @@ func TestNewDispatch_TemperatureInRequest(t *testing.T) {
 			d := turn.newDispatch(nil, 0)
 
 			msgs := []providers.Message{{Role: "user", Content: "hi"}}
-			if _, err := d.runProvider.Chat(context.Background(), msgs, nil, d.runModel, turn.requestOptions(d, false, d.runProvider, turn.model)); err != nil {
+			if _, err := d.runProvider.Chat(context.Background(), testIdentity, msgs, nil, d.runModel, turn.requestOptions(d, false, d.runProvider, turn.model)); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			got, present := body["temperature"]
@@ -154,7 +154,7 @@ func TestNewDispatch_AnthropicRequest(t *testing.T) {
 			d := turn.newDispatch(nil, 0)
 
 			msgs := []providers.Message{{Role: "user", Content: "hi"}}
-			if _, err := d.runProvider.Chat(context.Background(), msgs, nil, d.runModel, turn.requestOptions(d, false, d.runProvider, turn.model)); err != nil {
+			if _, err := d.runProvider.Chat(context.Background(), testIdentity, msgs, nil, d.runModel, turn.requestOptions(d, false, d.runProvider, turn.model)); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			if got, present := body["temperature"]; present {

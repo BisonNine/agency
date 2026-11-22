@@ -6,7 +6,7 @@ package agent
 import (
 	"context"
 
-	"github.com/PivotLLM/cogmem/consolidate"
+	"go.bison9.com/agent/cogmem/consolidate"
 )
 
 // chainCompleter is the plain-typed chain walk the host's summarization

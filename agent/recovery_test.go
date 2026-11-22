@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"

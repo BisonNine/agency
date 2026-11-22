@@ -6,11 +6,11 @@ package agent
 import (
 	"context"
 
-	"github.com/PivotLLM/cogmem"
-	"github.com/PivotLLM/cogmem/consolidate"
-	"github.com/PivotLLM/cogmem/store"
-	"github.com/PivotLLM/ctxengine"
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/logger"
@@ -48,6 +48,7 @@ func (al *AgentLoop) wireCognitiveMemory(agent *AgentInstance, sessionKey string
 		Manager:   cogMgr,
 		// The store's directory and files take the agents area's modes.
 		StoreOptions: cogmemhost.StoreOptions(modes),
+		Logger:       logger.SDK(),
 		OnOpen: func(ctx context.Context, st *store.Store) {
 			backfillInbox(ctx, st, agent.Label(), agent.StateDir, sessionKey, perMessageChars)
 		},
@@ -68,7 +69,7 @@ func backfillInbox(ctx context.Context, st *store.Store, agentID, stateDir, sess
 		return
 	}
 	copied := 0
-	if a, err := memory.OpenReadOnly(archiveDBPath(stateDir, sessionKey)); err == nil {
+	if a, err := memory.OpenReadOnly(archiveDBPath(stateDir, sessionKey), logger.SDK()); err == nil {
 		defer utils.CloseQuietly(a)
 		if _, maxSeq, err := a.Bounds(); err == nil && maxSeq > state.ConsolidatedSeq {
 			rows, err := a.QueryRange(state.ConsolidatedSeq+1, maxSeq)

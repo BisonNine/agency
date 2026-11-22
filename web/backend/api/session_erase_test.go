@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/web/backend/middleware"

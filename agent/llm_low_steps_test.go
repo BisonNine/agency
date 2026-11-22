@@ -43,7 +43,7 @@ func TestLowStepsNote(t *testing.T) {
 // optsChatFunc is a scripted model that also sees the request options.
 type optsChatFunc func(ctx context.Context, messages []providers.Message, options map[string]any) (*providers.LLMResponse, error)
 
-func (f optsChatFunc) Chat(ctx context.Context, messages []providers.Message, _ []providers.ToolDefinition, _ string, options map[string]any) (*providers.LLMResponse, error) {
+func (f optsChatFunc) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, options map[string]any) (*providers.LLMResponse, error) {
 	return f(ctx, messages, options)
 }
 

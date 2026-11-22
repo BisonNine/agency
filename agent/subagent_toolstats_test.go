@@ -26,12 +26,12 @@ type agentRecordingProvider struct {
 }
 
 func (p *agentRecordingProvider) Chat(
-	ctx context.Context, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
+	ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
 ) (*providers.LLMResponse, error) {
 	p.mu.Lock()
 	p.agents = append(p.agents, providers.AgentIDFromContext(ctx))
 	p.mu.Unlock()
-	return p.LLMProvider.Chat(ctx, messages, defs, model, opts)
+	return p.LLMProvider.Chat(ctx, testIdentity, messages, defs, model, opts)
 }
 
 func (p *agentRecordingProvider) lastAgent() string {

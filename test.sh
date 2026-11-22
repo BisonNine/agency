@@ -535,7 +535,7 @@ PY
                 # credentials) so the probe suite can check per-agent Fusion
                 # gating on the running binary: main lists the service, alice
                 # has Fusion on but lists nothing and must get none of its tools.
-                FUSION_SAMPLE="$(go list -m -f '{{.Dir}}' github.com/PivotLLM/MCPFusion 2>/dev/null)/configs/wxca.json"
+                FUSION_SAMPLE="$(go list -m -f '{{.Dir}}' go.bison9.com/mcpfusion 2>/dev/null)/configs/wxca.json"
                 FUSION_SERVICE=""
                 if [ -f "$FUSION_SAMPLE" ]; then
                     mkdir -p "$INTEG_HOME/fusion"

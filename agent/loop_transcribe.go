@@ -16,6 +16,7 @@ import (
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/utils"
 	"go.bison9.com/agency/voice"
@@ -59,6 +60,13 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	// dropped from Media so it isn't also materialized as a raw file the model
 	// can't use (it becomes a "[voice: ...]" transcript, or the untranscribed
 	// note, in the content).
+	// The transcription is billed to the agent the message is for. A message
+	// with no resolvable agent (a system message, a route that failed) has no
+	// owner.
+	id := global.NoOwnerIdentity
+	if target != nil {
+		id = target.Identity()
+	}
 	var transcriptions []voiceTranscript
 	kept := make([]string, 0, len(msg.Media))
 	for _, ref := range msg.Media {
@@ -72,7 +80,7 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 			kept = append(kept, ref)
 			continue
 		}
-		result, err := transcriber.Transcribe(ctx, voice.AudioFile{Path: path, Filename: meta.Filename, ContentType: meta.ContentType})
+		result, err := transcriber.Transcribe(ctx, id, voice.AudioFile{Path: path, Filename: meta.Filename, ContentType: meta.ContentType})
 		if err != nil {
 			logger.WarnCF("voice", "Transcription failed", map[string]any{
 				"ref": ref, "channel": msg.Channel, "chat_id": msg.ChatID, "error": err.Error(),

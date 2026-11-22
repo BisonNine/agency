@@ -46,7 +46,7 @@ type shellModel struct {
 
 func (m *shellModel) GetDefaultModel() string { return "mock-model" }
 
-func (m *shellModel) Chat(_ context.Context, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (m *shellModel) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	m.mu.Lock()
 	m.offered = append(m.offered, slices.ContainsFunc(defs, func(d providers.ToolDefinition) bool {
 		return d.Function.Name == config.ShellExecTool

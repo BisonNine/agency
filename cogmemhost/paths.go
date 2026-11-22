@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/PivotLLM/cogmem/store"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/fsmode"
 
 	"go.bison9.com/agency/alerts"
 	"go.bison9.com/agency/config"
@@ -34,7 +35,7 @@ func Dir(stateDir string) string {
 // modes; every opener of an agent's store passes them, since opening sets the
 // database files to the configured mode.
 func StoreOptions(modes config.Modes) []store.Option {
-	return []store.Option{store.WithFolderPermissions(modes.Dir), store.WithFilePermissions(modes.File)}
+	return []store.Option{store.WithFileModes(fsmode.Modes{Dir: modes.Dir, File: modes.File})}
 }
 
 // Migrate opens the agent's memory once at load so any pending schema

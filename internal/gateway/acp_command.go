@@ -72,7 +72,6 @@ func acpCmd(debug bool, wsURL string, autoPair bool) error {
 	if err := logger.EnableFileLogging(logPath, false); err != nil {
 		fmt.Fprintf(os.Stderr, "acp: enable file logging: %v\n", err)
 	}
-	installSpawnllmLogging()
 
 	cfg, err := internal.LoadConfig()
 	if err != nil {

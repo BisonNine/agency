@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PivotLLM/cogmem"
+	"go.bison9.com/agent/cogmem"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"

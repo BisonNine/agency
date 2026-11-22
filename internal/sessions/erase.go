@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/PivotLLM/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
 )
 
@@ -75,7 +76,7 @@ func Erase(cfg *config.Config, req EraseRequest, release func(key string) error)
 		Peer:    &routing.RoutePeer{Kind: "direct", ID: chatID},
 	})
 	for _, dir := range cfg.AgentSessionDirs() {
-		keys, err := memory.ListSessions(dir)
+		keys, err := memory.ListSessions(dir, logger.SDK())
 		if err != nil {
 			errs = append(errs, err)
 			continue

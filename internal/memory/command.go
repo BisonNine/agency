@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/PivotLLM/cogmem/store"
 	"github.com/spf13/cobra"
+	"go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/internal"

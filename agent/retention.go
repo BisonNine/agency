@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ctxengine/memory"
-	"github.com/PivotLLM/ctxengine/session"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/logger"
@@ -166,7 +166,7 @@ func pruneSessions(dir string, store session.SessionStore, now time.Time, days i
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		a, err := memory.OpenReadOnly(path)
+		a, err := memory.OpenReadOnly(path, logger.SDK())
 		if err != nil {
 			continue
 		}

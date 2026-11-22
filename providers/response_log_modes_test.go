@@ -53,7 +53,7 @@ func TestResponseLog_ConfiguredLogsModes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := provider.Chat(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil, modelID, nil); err != nil {
+			if _, err := provider.Chat(context.Background(), testIdentity, []Message{{Role: "user", Content: "hi"}}, nil, modelID, nil); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			for p, want := range map[string]os.FileMode{dir: 0o750, logFile: 0o640} {

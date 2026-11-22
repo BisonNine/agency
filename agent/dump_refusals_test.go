@@ -21,7 +21,7 @@ import (
 // refusingProvider is a model that refuses every request.
 type refusingProvider struct{}
 
-func (refusingProvider) Chat(context.Context, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
+func (refusingProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
 	return &providers.LLMResponse{Content: "I can't help with that.", FinishReason: "refusal"}, nil
 }
 

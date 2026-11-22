@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ctxengine/memory"
-	"github.com/PivotLLM/ctxengine/session"
-	"github.com/PivotLLM/spawnllm"
+	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
 )

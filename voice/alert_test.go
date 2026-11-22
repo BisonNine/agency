@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/spawnllm/speech"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/spawnllm/speech"
 
 	"go.bison9.com/agency/config"
 )
@@ -144,7 +144,7 @@ func TestTranscribe_AlertsOnRejection(t *testing.T) {
 			rec := &alertRecorder{}
 			for _, status := range []int{http.StatusInternalServerError, http.StatusTooManyRequests} {
 				tr := newTranscriber(statusServer(t, status, "later").URL, rec)
-				if _, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+				if _, err := tr.Transcribe(context.Background(), testIdentity, AudioFile{Path: audioPath}); err == nil {
 					t.Fatalf("status %d must fail", status)
 				}
 			}
@@ -156,7 +156,7 @@ func TestTranscribe_AlertsOnRejection(t *testing.T) {
 				freshRejections(t)
 				rec := &alertRecorder{}
 				tr := newTranscriber(statusServer(t, status, longBody).URL, rec)
-				if _, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+				if _, err := tr.Transcribe(context.Background(), testIdentity, AudioFile{Path: audioPath}); err == nil {
 					t.Fatalf("status %d must fail", status)
 				}
 				if len(rec.alerts) != 1 {
@@ -199,7 +199,7 @@ func TestTranscribe_RejectionAlertsOncePerOutage(t *testing.T) {
 		t.Helper()
 		// A new transcriber each time, as after a config reload.
 		tr := NewTranscriber(model, "whisper-1", speech.NewOpenAI(base, "sk"), rec)
-		_, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath})
+		_, err := tr.Transcribe(context.Background(), testIdentity, AudioFile{Path: audioPath})
 		return err
 	}
 
@@ -240,13 +240,13 @@ func TestTranscribe_NoAlerterDoesNotCount(t *testing.T) {
 	}
 	refused := statusServer(t, http.StatusUnauthorized, "bad key")
 	quiet := NewTranscriber("groq", "whisper-1", speech.NewOpenAI(refused.URL, "sk"), nil)
-	if _, err := quiet.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+	if _, err := quiet.Transcribe(context.Background(), testIdentity, AudioFile{Path: audioPath}); err == nil {
 		t.Fatal("a 401 transcribed")
 	}
 
 	rec := &alertRecorder{}
 	heard := NewTranscriber("groq", "whisper-1", speech.NewOpenAI(refused.URL, "sk"), rec)
-	if _, err := heard.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+	if _, err := heard.Transcribe(context.Background(), testIdentity, AudioFile{Path: audioPath}); err == nil {
 		t.Fatal("a 401 transcribed")
 	}
 	if len(rec.alerts) != 1 {
@@ -272,7 +272,7 @@ func TestTranscribe_AlertsOnGeminiKeyInvalid(t *testing.T) {
 		rec := &alertRecorder{}
 		srv := statusServer(t, http.StatusBadRequest, tc.body)
 		tr := NewTranscriber("gemini-stt", "gemini-2.5-flash", speech.NewGemini(srv.URL, "bad"), rec)
-		if _, err := tr.Transcribe(context.Background(), AudioFile{Path: audioPath}); err == nil {
+		if _, err := tr.Transcribe(context.Background(), testIdentity, AudioFile{Path: audioPath}); err == nil {
 			t.Fatal("a 400 transcribed")
 		}
 		if got := len(rec.alerts) == 1; got != tc.alert {

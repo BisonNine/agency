@@ -34,7 +34,7 @@ type countingProvider struct {
 	calls []string
 }
 
-func (p *countingProvider) Chat(_ context.Context, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *countingProvider) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	last := ""
