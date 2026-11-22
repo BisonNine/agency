@@ -1651,6 +1651,32 @@ next session must know.
       (765f25e). `hook/DESIGN.md` there is the brief for 5a and holds
       the open questions for the maintainer.
 - [ ] Phase 5a: callbacks and events in place
+  - First half landed (host 2570d57): the model loop is a generic
+    engine in `agent/engine_*.go` that imports only the standard
+    library and the SDK (`engine_guard_test.go` enforces it, by imports
+    and by type-checking the engine files alone); the host's behaviour
+    is registered per turn in `agent/turn_hooks.go`. A review found no
+    difference on normal paths in outbound text, prompts, results,
+    audit rows, usage, dumps or model requests. Accepted differences:
+    a batch's breadcrumbs are published before its first call starts;
+    a panic in an event consumer is logged and the turn goes on (a
+    panic in a callback still ends the turn as before); lines logged
+    through `logger.SDK()` name their real call site.
+  - Second half not started: SDK `hook` was revised from the first
+    half's findings (SDK cfeb61d; `hook/DESIGN.md` section 7 is the
+    checklist). It moves the turn envelope (`loop_turn.go`,
+    `turn_reply.go`, storing the inbound message and the reply) behind
+    the engine, wires every callback kind, and replaces every interim
+    hook (`interimHooks`, `turnEnv`'s interim methods, the
+    refused-callback guard). Accepted for it: `ToolResultStored` fires
+    after storage, so a result the store refuses is no longer shown.
+  - `CLAUDE.md` has no "Turn engine" passage yet: the worker's edit was
+    blocked by the permission system; waiting for the maintainer.
+  - Open questions from `hook/DESIGN.md` (decided for now, to confirm):
+    ids unchanged (`ident` not adopted by the host, because
+    `SameAgentID("!!!","main")` would turn false); the host keeps its
+    session queue through 5b; task registration is designed in 5b; tool
+    output is not redacted before storage.
 - [ ] Phase 5b: cancellation
 - [ ] Phase 5c: engine moved, root package, conformance suite
 - [ ] Phase 5d: example host
