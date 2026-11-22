@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/testbinary"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testbinary"
 )
 
 // A sessions directory that still holds a JSONL-layout session must stop the

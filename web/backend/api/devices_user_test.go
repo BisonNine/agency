@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/web/backend/middleware"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/web/backend/middleware"
 )
 
 // pairTestDevice pairs a device with id deviceID in the handler's store.

@@ -13,7 +13,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 type alertRecorder struct {

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // A device's chat.history on a session nobody has used yet creates the

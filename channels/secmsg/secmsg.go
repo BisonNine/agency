@@ -19,14 +19,14 @@ import (
 	smclient "github.com/tenebris-tech/secmsg/client"
 	"github.com/tenebris-tech/secmsg/schema"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/identity"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/identity"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/media"
+	"go.bison9.com/agency/utils"
 )
 
 // groupChatPrefix marks an outbound ChatID as a group target. The bus carries

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/cron"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/cron"
 )
 
 // A human agent takes no scheduled jobs: adding one for it is refused, and a

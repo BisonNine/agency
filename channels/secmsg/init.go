@@ -1,7 +1,7 @@
 package secmsg
 
 import (
-	"github.com/PivotLLM/ClawEh/channels"
+	"go.bison9.com/agency/channels"
 )
 
 func init() {

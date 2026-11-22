@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // runReasoningIterationOnce drives one runLLMIteration with a direct-answer

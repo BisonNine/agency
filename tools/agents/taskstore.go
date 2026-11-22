@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
 )
 
 // Task statuses persisted in <uuid>-status.json.

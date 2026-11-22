@@ -3,7 +3,7 @@ package providers
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestCreateProvider_ClaudeCli(t *testing.T) {

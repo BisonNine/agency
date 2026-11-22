@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // slowPattern is a valid glob whose brace groups make matching each name

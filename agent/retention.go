@@ -16,9 +16,9 @@ import (
 	"github.com/PivotLLM/ctxengine/session"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
 )
 
 // The nightly retention pass fires at this local time, after cogmem's default

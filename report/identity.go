@@ -6,8 +6,8 @@ package report
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
 )
 
 // timeFormat is the local time, with zone, used everywhere in the report.

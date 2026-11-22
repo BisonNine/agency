@@ -9,8 +9,8 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // modelRefPrune is what one runtimeConfig pass did about references to models

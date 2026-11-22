@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // secretFixture returns a config carrying one credential of each shape the

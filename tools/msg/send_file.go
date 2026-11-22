@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/utils"
 )
 
 // MaxSendFiles is the most files one msg_send_file call sends.

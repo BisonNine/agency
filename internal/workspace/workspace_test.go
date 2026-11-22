@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/templates"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/templates"
 )
 
 func exists(t *testing.T, path string) bool {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal"
 )
 
 func readFile(t *testing.T, path string) []byte {

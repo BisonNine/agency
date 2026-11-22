@@ -21,12 +21,12 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/gatewayproto"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/gatewayproto"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/utils"
 )
 
 const (

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/providers"
 )
 
 // An async sub-agent result arrives later as a "system" message and is spliced

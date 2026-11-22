@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // swappingReader is the fixture's reader with a hook run when the target is

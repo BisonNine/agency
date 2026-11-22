@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestLoadChannelPrompt(t *testing.T) {

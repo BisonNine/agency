@@ -18,7 +18,7 @@ import (
 // stdlib-only internal/mergepatch, and forumfs imports nothing, so config can
 // name the forum's folders without depending on the forum.
 func TestForumImportsNoClawEhPackage(t *testing.T) {
-	const module = "github.com/PivotLLM/ClawEh/"
+	const module = "go.bison9.com/agency/"
 	for dir, allowed := range map[string]map[string]bool{
 		".":       {module + "forum/forumfs": true, module + "internal/mergepatch": true},
 		"forumfs": {},

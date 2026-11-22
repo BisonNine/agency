@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal"
-	"github.com/PivotLLM/ClawEh/internal/testbinary"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal"
+	"go.bison9.com/agency/internal/testbinary"
 )
 
 // An existing service decides the mode: re-running the installer at the wrong

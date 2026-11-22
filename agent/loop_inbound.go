@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	toolsagents "go.bison9.com/agency/tools/agents"
+	"go.bison9.com/agency/utils"
 )
 
 // errAgentGone marks a message addressed to an agent that does not exist (a

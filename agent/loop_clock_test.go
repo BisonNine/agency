@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/logger"
 )
 
 // The backoff before retrying a timed-out dispatch is waited out on the

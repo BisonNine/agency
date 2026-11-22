@@ -8,9 +8,9 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/media"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/media"
 )
 
 // ReloadResult names the channels a Reload kept running, rebuilt, added and

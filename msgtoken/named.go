@@ -16,11 +16,11 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/alerts"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/alerts"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
 )
 
 // namedFileName is the state file under the data dir's internal/ directory that

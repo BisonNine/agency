@@ -15,9 +15,9 @@ import (
 	mmaestro "github.com/PivotLLM/Maestro/pkg/maestro"
 	mreference "github.com/PivotLLM/Maestro/reference"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools/files"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools/files"
 )
 
 // runnerConfig maps the agent's maestro block onto Maestro's runner settings.

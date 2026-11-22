@@ -14,9 +14,9 @@ import (
 	"github.com/PivotLLM/ctxengine/session"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/alerts"
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/alerts"
+	"go.bison9.com/agency/internal/clock"
 )
 
 type alertRecorder struct {

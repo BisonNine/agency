@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // With security.permissions set, every folder Prepare creates takes exactly

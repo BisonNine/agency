@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/ccv3"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/ccv3"
+	"go.bison9.com/agency/config"
 )
 
 // bodyHost is a policy host whose mux records whether a handler ran and how

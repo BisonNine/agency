@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
 )
 
 // A late async result is addressed when the callback is built: a clone's to

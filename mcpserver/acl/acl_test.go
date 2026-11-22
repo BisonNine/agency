@@ -6,7 +6,7 @@ package acl_test
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/mcpserver/acl"
+	"go.bison9.com/agency/mcpserver/acl"
 )
 
 func TestDefault_AllowsAnyAgentAnyTool(t *testing.T) {

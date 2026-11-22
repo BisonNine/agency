@@ -12,7 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/PivotLLM/ClawEh/gatewayproto"
+	"go.bison9.com/agency/gatewayproto"
 )
 
 // allowedServer is a test server whose querier knows alice, agent3 and bob

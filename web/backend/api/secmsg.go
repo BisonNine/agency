@@ -10,9 +10,9 @@ import (
 
 	"github.com/tenebris-tech/secmsg/schema"
 
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/channels/secmsg"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/channels/secmsg"
+	"go.bison9.com/agency/config"
 )
 
 // SecMsgLinker is the slice of a running secmsg channel the WebUI pairing panel

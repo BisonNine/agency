@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/internal"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/internal"
 )
 
 // NewTLSCommand returns `claw tls`: it prints the certificate the HTTPS

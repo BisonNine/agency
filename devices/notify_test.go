@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/devices/events"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/devices/events"
 )
 
 // notifyOnce sends one USB event through a service whose delivery target is

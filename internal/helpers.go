@@ -6,10 +6,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
 )
 
 // GetClawHome returns the claw home directory.

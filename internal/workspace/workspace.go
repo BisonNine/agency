@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/templates"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/templates"
 )
 
 // Populate writes the default workspace template files into workspace, skipping

@@ -6,10 +6,10 @@ package agent
 import (
 	"fmt"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
 )
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {

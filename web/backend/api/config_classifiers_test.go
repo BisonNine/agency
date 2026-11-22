@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestHandlePatchConfig_ClassifiersRoundTrip: the System page's classifiers

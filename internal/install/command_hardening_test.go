@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/global"
 )
 
 // blockPath puts a regular file at the host path p, so creating a folder at

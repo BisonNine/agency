@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/perms"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/perms"
 )
 
 // The cron store and its folder take exactly the default area's configured

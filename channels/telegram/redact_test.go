@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // testSecret is the part of testToken that must never be written out.

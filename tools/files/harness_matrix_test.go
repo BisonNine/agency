@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // harnessDoc is the content of every file the matrix edits.

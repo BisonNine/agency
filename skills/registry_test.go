@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/utils"
 )
 
 // mockRegistry is a test double implementing SkillRegistry.

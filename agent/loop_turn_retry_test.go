@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 func TestWithJitter_WithinBounds(t *testing.T) {

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/tools/files"
-	toolsmsg "github.com/PivotLLM/ClawEh/tools/msg"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/tools/files"
+	toolsmsg "go.bison9.com/agency/tools/msg"
 )
 
 // recordingFileSender records the chat it was asked to send files to.

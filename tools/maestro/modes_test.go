@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Everything Maestro creates in an agent's maestro folder, through the tools

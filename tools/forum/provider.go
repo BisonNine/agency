@@ -16,14 +16,14 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"github.com/PivotLLM/ClawEh/config"
-	forumpkg "github.com/PivotLLM/ClawEh/forum"
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
-	"github.com/PivotLLM/ClawEh/tools/files"
+	"go.bison9.com/agency/config"
+	forumpkg "go.bison9.com/agency/forum"
+	"go.bison9.com/agency/forum/forumfs"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
+	"go.bison9.com/agency/tools/files"
 )
 
 // Suite is the forum suite's name: the per-agent switch (`forum`) and the

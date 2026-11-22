@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/tools"
 )
 
 func TestMessageTool_Execute_Success(t *testing.T) {

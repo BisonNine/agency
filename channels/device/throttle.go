@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
 )
 
 // authPruneInterval bounds how often the throttle sweeps forgotten IPs.

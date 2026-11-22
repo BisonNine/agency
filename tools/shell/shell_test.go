@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/tools"
 )
 
 // TestShellTool_Success verifies successful command execution

@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
 )
 
 // filesSummary states, from the same inputs the Agents section uses, whether

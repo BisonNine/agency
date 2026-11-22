@@ -10,8 +10,8 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/logger"
 )
 
 // roomNameTimeout bounds the one room-name lookup made when a room is first

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/PivotLLM/ClawEh/skills"
+	"go.bison9.com/agency/skills"
 )
 
 func TestFindSkillsToolName(t *testing.T) {

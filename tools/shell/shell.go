@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/childenv"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/childenv"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 type ExecTool struct {

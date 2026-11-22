@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/gatewayproto"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/gatewayproto"
 )
 
 // BuildSetupPayload builds the device QR payload. When externalURL is set it is the

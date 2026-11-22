@@ -14,17 +14,17 @@ import (
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/forum"
-	"github.com/PivotLLM/ClawEh/logger"
-	climcp "github.com/PivotLLM/ClawEh/mcp"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/forum"
+	"go.bison9.com/agency/logger"
+	climcp "go.bison9.com/agency/mcp"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
 )
 
 // countingProvider answers for the ordinary agent and counts every call, so

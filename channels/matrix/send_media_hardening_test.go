@@ -16,9 +16,9 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/id"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/media"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/media"
 )
 
 // matrixMediaServer is a homeserver stub recording uploads and the media

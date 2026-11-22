@@ -22,10 +22,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // fqdnLookupTimeout bounds the DNS lookup for the host's canonical name so a

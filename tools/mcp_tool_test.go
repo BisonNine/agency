@@ -10,7 +10,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/PivotLLM/ClawEh/tools/untrusted"
+	"go.bison9.com/agency/tools/untrusted"
 )
 
 // MockMCPManager is a mock implementation of MCPManager interface for testing

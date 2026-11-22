@@ -4,7 +4,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // providerReady reports whether a provider is usable as configured — the single

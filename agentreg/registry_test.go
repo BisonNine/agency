@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // fakeInst is a registry instance that records its spec and how often it was

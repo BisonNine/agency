@@ -13,9 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/internal/install"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/install"
 )
 
 // NewAdminCommand returns `claw admin [username]`: create or replace the one

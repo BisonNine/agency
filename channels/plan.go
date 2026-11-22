@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // channelSpec is one channel a configuration asks for: its name, how to build

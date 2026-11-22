@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
 )
 
 func newClockedThrottle(start time.Time) (*authThrottle, *time.Time) {

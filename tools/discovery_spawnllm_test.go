@@ -16,7 +16,7 @@ import (
 	"github.com/PivotLLM/spawnllm/common"
 	"github.com/PivotLLM/spawnllm/openai_compat"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // spawnllmRegistry is a discovery-on registry with core tools, the two

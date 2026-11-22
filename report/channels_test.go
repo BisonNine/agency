@@ -6,7 +6,7 @@ package report
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestCollectChannels_AnySenderCalledOut(t *testing.T) {

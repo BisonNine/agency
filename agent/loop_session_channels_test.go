@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestSessionChannelsForAgent_FiltersByAgentID verifies the per-agent channel

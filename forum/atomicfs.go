@@ -19,7 +19,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // File-system primitives of the store: confined, symlink-refusing access

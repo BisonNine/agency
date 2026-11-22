@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // deny_tools is evaluated after the generic Tools allow list, under

@@ -17,14 +17,14 @@ import (
 	"github.com/PivotLLM/cogmem"
 	cogmemstore "github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/utils"
 )
 
 // recordedCall is what the model was sent on one call.

@@ -56,7 +56,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/PivotLLM/ClawEh/internal/admin"
+	"go.bison9.com/agency/internal/admin"
 )
 
 // mailServer is the MCP mailbox: list and read, each answering JSON text.

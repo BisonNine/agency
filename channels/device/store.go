@@ -16,12 +16,12 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/internal/tokenhash"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/internal/tokenhash"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // ErrPendingNotFound is returned when an approve/reject references an unknown request.

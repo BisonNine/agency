@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal"
+	"go.bison9.com/agency/providers"
 )
 
 const testPrompt = `Reply with only the single word: OK`

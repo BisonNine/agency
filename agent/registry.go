@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"github.com/PivotLLM/ClawEh/agentreg"
+	"go.bison9.com/agency/agentreg"
 )
 
 // AgentRegistry is the agent registry (package agentreg) holding this

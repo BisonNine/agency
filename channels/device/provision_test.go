@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestGenerateSharedToken(t *testing.T) {

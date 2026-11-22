@@ -9,9 +9,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // registerTaskModelRoutes binds the Task models page's endpoints.

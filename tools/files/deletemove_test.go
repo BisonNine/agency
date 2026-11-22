@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 func TestFileDelete_RequiresSure(t *testing.T) {

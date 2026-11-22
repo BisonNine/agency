@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/tools/fusion"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/tools/fusion"
 )
 
 type agentToolEntry struct {

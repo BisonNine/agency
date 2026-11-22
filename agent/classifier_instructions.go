@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/tools/files"
-	toolsmsg "github.com/PivotLLM/ClawEh/tools/msg"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/tools/files"
+	toolsmsg "go.bison9.com/agency/tools/msg"
+	"go.bison9.com/agency/utils"
 )
 
 var _ classifier.InstructionsReader = (*ClassifierHost)(nil)

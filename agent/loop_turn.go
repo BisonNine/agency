@@ -17,13 +17,13 @@ import (
 	"github.com/PivotLLM/spawnllm/common"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
+	"go.bison9.com/agency/utils"
 )
 
 // processOptions configures how a message is processed

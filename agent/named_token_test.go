@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // setDefaultBinding gives the agent a concrete default-channel binding so

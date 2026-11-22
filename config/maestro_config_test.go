@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 func TestMaestroConfig_UnmarshalObject(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/ccv3"
+	"go.bison9.com/agency/ccv3"
 )
 
 func agentSub(t *testing.T, s Section, id string) Section {

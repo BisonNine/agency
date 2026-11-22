@@ -11,7 +11,7 @@ import (
 
 	"github.com/PivotLLM/spawnllm/openai_responses"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestCreateProviderFromConfig_OpenAIResponses verifies the factory routes the

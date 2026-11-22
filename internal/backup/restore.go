@@ -18,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // LockFileName is the process's PID/lock file in CLAW_HOME/internal. claw holds

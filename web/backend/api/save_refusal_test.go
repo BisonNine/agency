@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // responseErrors decodes a JSON error answer and returns its errors list.

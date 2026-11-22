@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
 )
 
 // coalescedMessage holds the fully-parsed arguments for one inbound Telegram

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // startSyncAgainst runs the channel against a fake homeserver.

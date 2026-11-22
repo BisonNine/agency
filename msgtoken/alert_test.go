@@ -10,7 +10,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // TestManager_UnreadableStoreAlerts: a corrupt per-agent store alerts high

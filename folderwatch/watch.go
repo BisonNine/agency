@@ -19,12 +19,12 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
 )
 
 // A marker records the set of file paths the watcher has already seen in one

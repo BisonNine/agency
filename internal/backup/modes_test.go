@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // An existing destination is only ever tightened: a 0700 one stays 0700 under

@@ -3,8 +3,8 @@ package providers_test
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // TestProviderDispatcher_Get_TimeoutInjected verifies that the default timeout

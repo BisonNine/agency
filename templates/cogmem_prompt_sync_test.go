@@ -10,7 +10,7 @@ import (
 
 	"github.com/PivotLLM/cogmem/consolidate"
 
-	"github.com/PivotLLM/ClawEh/templates"
+	"go.bison9.com/agency/templates"
 )
 
 // The seeded COGMEM.md must NOT be a copy of the engine prompt.

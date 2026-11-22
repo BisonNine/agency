@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/cron"
+	"go.bison9.com/agency/cron"
 )
 
 const maxMessageDisplay = 80

@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/media"
+	"go.bison9.com/agency/providers"
 )
 
 // mediaRefPattern matches media store refs (media://<uuid>) wherever they

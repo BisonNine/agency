@@ -20,9 +20,9 @@ import (
 
 	"github.com/PivotLLM/cogmem"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools/files"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools/files"
 )
 
 // markdownExts are the extensions a memory may point at. Attachments are

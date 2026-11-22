@@ -3,11 +3,11 @@ package gateway
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/routing"
 )
 
 // Temporary agents are invisible to devices: agents.list never lists one and

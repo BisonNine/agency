@@ -14,7 +14,7 @@ import (
 	"hash/crc32"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/internal/mergepatch"
+	"go.bison9.com/agency/internal/mergepatch"
 )
 
 // Format names what Import read: the card version and its container.

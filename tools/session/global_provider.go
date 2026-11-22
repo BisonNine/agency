@@ -21,11 +21,11 @@ import (
 
 	sessiontools "github.com/PivotLLM/ctxengine/tools"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the session tools through the global layer.

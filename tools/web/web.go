@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/tools/untrusted"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/tools/untrusted"
+	"go.bison9.com/agency/utils"
 )
 
 const (

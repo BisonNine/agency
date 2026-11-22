@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/backup"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/backup"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // registerConfigRoutes binds configuration management endpoints to the ServeMux.

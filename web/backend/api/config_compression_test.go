@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // patchConfig applies a merge patch through the real handler and returns the

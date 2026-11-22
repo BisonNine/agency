@@ -18,12 +18,12 @@ import (
 	"github.com/PivotLLM/spawnllm/openai_compat"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/dump"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/dump"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // providerLLMClient is one resolved provider+model pair of the summarization

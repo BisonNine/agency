@@ -20,8 +20,8 @@ import (
 	mconfig "github.com/PivotLLM/Maestro/config"
 	mllm "github.com/PivotLLM/Maestro/llm"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
 )
 
 // hostProviderModel is the model label recorded when the sub-agent run did not

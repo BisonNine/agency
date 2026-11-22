@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // fakeTools is the agent's tool registry: handlers by tool name, and a log of

@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // A store created with the host's modes (Host.Modes) gives every folder and

@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // ErrUnknownServer is returned by Reconnect when the name is not a configured,

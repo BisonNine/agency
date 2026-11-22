@@ -8,10 +8,10 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
 )
 
 // recordToolCallAudit writes one tool_call row to the audit log for a tool the

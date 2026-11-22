@@ -15,7 +15,7 @@ import (
 	"github.com/PivotLLM/ctxengine"
 	"github.com/PivotLLM/ctxengine/session"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // TestCompress_E2E_ClaudeCLIReceivesFortification locks in the full compression

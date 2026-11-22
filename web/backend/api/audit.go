@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
 )
 
 // registerAuditRoutes binds the audit log read endpoint.

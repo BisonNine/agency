@@ -5,10 +5,10 @@ package tools_test
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsmsg "github.com/PivotLLM/ClawEh/tools/msg"
-	toolsshell "github.com/PivotLLM/ClawEh/tools/shell"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/tools"
+	toolsmsg "go.bison9.com/agency/tools/msg"
+	toolsshell "go.bison9.com/agency/tools/shell"
 )
 
 func TestMessageTool_Metadata(t *testing.T) {

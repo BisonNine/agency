@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal"
 )
 
 // Aliases expand to a full CIDR list, so the common choices do not require

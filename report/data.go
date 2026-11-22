@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/config"
 )
 
 func days(n int, zero string) string {

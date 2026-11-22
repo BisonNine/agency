@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/utils"
 )
 
 // providerTestRequest is the body of POST /api/providers/test: the (possibly

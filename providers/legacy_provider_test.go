@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Tests for CreateProvider (legacy_provider.go).

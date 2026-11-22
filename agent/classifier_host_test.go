@@ -17,17 +17,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsclassifier "github.com/PivotLLM/ClawEh/tools/classifier"
-	toolschedule "github.com/PivotLLM/ClawEh/tools/schedule"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
+	toolsclassifier "go.bison9.com/agency/tools/classifier"
+	toolschedule "go.bison9.com/agency/tools/schedule"
 )
 
 // classifierTool is a tool registered straight on an agent's registry.

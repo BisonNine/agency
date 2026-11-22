@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // newConfig returns the default config with CLAW_HOME at a fresh temp dir.

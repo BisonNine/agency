@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools/untrusted"
+	"go.bison9.com/agency/tools/untrusted"
 )
 
 var (

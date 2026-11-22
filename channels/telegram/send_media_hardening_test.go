@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/channels/internal/fdcheck"
-	"github.com/PivotLLM/ClawEh/media"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/channels/internal/fdcheck"
+	"go.bison9.com/agency/media"
 )
 
 // Audio and video go by their own methods to the chat (no topic: no thread

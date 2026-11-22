@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 const (

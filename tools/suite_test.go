@@ -7,8 +7,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 )
 
 type fakeSuiteProvider struct{ suite string }

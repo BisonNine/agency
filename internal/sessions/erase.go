@@ -10,8 +10,8 @@ import (
 
 	"github.com/PivotLLM/ctxengine/memory"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/routing"
 )
 
 // CogmemNote is reported with every erasure: cognitive memories are left in

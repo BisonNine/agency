@@ -12,8 +12,8 @@ import (
 
 	"github.com/slack-go/slack"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
 )
 
 // Start honours its context: an auth.test Slack never answers ends when the

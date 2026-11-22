@@ -17,11 +17,11 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/gatewayproto"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/gatewayproto"
+	"go.bison9.com/agency/utils"
 )
 
 // recordingQuerier knows the agents alice, agent3 and bob and counts History

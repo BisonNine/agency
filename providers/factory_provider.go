@@ -16,10 +16,10 @@ import (
 	"github.com/PivotLLM/spawnllm/openai_compat"
 	"github.com/PivotLLM/spawnllm/openai_responses"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/childenv"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/childenv"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
 )
 
 // compatOpts builds the openai_compat options from the endpoint-scoped provider

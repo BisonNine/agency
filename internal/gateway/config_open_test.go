@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 type lockedBuf struct {

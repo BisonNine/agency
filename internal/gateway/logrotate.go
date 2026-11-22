@@ -9,8 +9,8 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/logger"
 )
 
 // datedLogRe matches a rolled daily log such as "20260616-claw.log" or

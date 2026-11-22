@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // An allowed folder that holds the whole workspace does not lift the

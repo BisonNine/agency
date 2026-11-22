@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/internal/gateway"
+	"go.bison9.com/agency/internal/gateway"
 )
 
 func TestMain(m *testing.M) {

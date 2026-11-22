@@ -6,7 +6,7 @@ import (
 
 	"github.com/tenebris-tech/secmsg/schema"
 
-	"github.com/PivotLLM/ClawEh/channels"
+	"go.bison9.com/agency/channels"
 )
 
 func TestSendErrForCode(t *testing.T) {

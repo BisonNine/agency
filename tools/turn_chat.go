@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/constants"
+	"go.bison9.com/agency/constants"
 )
 
 // ReplyChat is where the final reply of the turn a tool call belongs to

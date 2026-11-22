@@ -17,7 +17,7 @@ import (
 // The ccv3 package imports no ClawEh package but the stdlib-only
 // internal/mergepatch, so every part of ClawEh can use it.
 func TestCCv3ImportsNoClawEhPackage(t *testing.T) {
-	const module = "github.com/PivotLLM/ClawEh/"
+	const module = "go.bison9.com/agency/"
 	allowed := map[string]bool{module + "internal/mergepatch": true}
 	files, err := filepath.Glob("*.go")
 	if err != nil {

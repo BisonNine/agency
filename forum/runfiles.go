@@ -21,7 +21,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // Reading and writing the forum's and its runs' files: the configuration

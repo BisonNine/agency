@@ -8,7 +8,7 @@ package gateway
 import (
 	spawnlog "github.com/PivotLLM/spawnllm/logger"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // spawnllmLogBackend routes spawnllm's provider/dispatch logs into ClawEh's

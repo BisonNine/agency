@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/global"
 )
 
 // GetClawHome returns the claw home directory.

@@ -8,7 +8,7 @@ import (
 
 	"github.com/PivotLLM/spawnllm"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestNewCLIProvider_EveryProtocolTakesBaseEnv checks that each CLI protocol's

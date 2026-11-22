@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/channels/device"
+	"go.bison9.com/agency/channels/device"
 )
 
 // TestAutoApproveLocalDevice verifies the bridge self-pairs its own pending

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // --- mock types ---

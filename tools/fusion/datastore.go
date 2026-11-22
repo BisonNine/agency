@@ -13,8 +13,8 @@ import (
 	"github.com/PivotLLM/toolspec"
 	_ "modernc.org/sqlite"
 
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/utils"
 )
 
 // sqliteDataStore implements toolspec.DataStore over a single shared SQLite file.

@@ -16,10 +16,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/channels/internal/fdcheck"
-	"github.com/PivotLLM/ClawEh/media"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/channels/internal/fdcheck"
+	"go.bison9.com/agency/media"
 )
 
 // discordUpload is one message Discord received: its path and the name and

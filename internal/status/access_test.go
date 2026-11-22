@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/internal/testbinary"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/testbinary"
 )
 
 func accessConfig(t *testing.T, host, mode string) *config.Config {

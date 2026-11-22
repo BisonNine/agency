@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // writeConfig persists cfg to a temp file and returns a handler over it.

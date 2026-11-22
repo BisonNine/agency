@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/templates"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/templates"
 )
 
 func readFile(t *testing.T, path string) string {

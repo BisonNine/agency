@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	ccv3pkg "github.com/PivotLLM/ClawEh/ccv3"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	ccv3pkg "go.bison9.com/agency/ccv3"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // testConfig is a configuration under a temporary CLAW_HOME: alice has the

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/tools/files"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/tools/files"
 )
 
 // testConfig mirrors the default agent posture: reads confined to the workspace,

@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/config"
 )
 
 // maxClassifierErrorChars caps a last-run error in the Classifiers table.

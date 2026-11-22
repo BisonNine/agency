@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/channels/device"
+	"go.bison9.com/agency/channels/device"
 )
 
 func TestCollectDevices_NoStoreIsUnavailableNotCreated(t *testing.T) {

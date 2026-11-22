@@ -5,7 +5,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // SetConnClock sets the clock c's connection-down alert is timed on, for

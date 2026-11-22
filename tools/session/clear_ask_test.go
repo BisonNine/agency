@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/tools"
 )
 
 // session_clear is refused in an asked turn and works from a chat.

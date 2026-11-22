@@ -3,8 +3,8 @@ package channels
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/commands"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/commands"
 )
 
 // TypingCapable — channels that can show a typing/thinking indicator.

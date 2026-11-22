@@ -10,8 +10,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
 )
 
 // TestHandleMessageSend_NamesLoginAccount: a message sent on a socket opened

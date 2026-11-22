@@ -3,8 +3,8 @@ package tools
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // ToolDescriptor holds static metadata for a single tool — no deps required.

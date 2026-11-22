@@ -15,8 +15,8 @@ import (
 
 	"maunium.net/go/mautrix/id"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
 )
 
 // failAfter bounds a wait for something the test expects to happen; it is a

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 func TestRedactArgs_WriteFile_RecordsContentBytes(t *testing.T) {

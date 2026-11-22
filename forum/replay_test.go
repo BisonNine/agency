@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // Helpers in this file are prefixed rp so they cannot collide with other

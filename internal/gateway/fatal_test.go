@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // newTestFatal builds a notifier whose exit is recorded, not performed, and

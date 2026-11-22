@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
-	skillspkg "github.com/PivotLLM/ClawEh/skills"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
+	skillspkg "go.bison9.com/agency/skills"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/utils"
 )
 
 // InstallSkillTool allows the LLM agent to install skills from registries.

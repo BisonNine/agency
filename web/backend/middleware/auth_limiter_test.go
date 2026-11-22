@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/admin"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/admin"
 )
 
 // limiterKind abstracts over the two lock tables so the same cases run

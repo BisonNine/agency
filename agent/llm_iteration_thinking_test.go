@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // TestRunLLMIteration_AnthropicThinkingReplayed verifies that the Anthropic

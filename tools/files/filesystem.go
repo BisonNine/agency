@@ -18,12 +18,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/utils"
 )
 
 const MaxReadFileSize = 32 * 1024 // 32KB (~8K tokens) per-read cap to avoid context overflow

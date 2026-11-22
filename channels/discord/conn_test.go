@@ -3,7 +3,7 @@ package discord
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/channels"
+	"go.bison9.com/agency/channels"
 )
 
 // A gateway disconnect starts an outage and the next connect ends it.

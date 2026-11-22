@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
 )
 
 // DefaultConfig returns the default configuration for ClawEh.

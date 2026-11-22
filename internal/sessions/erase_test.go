@@ -15,7 +15,7 @@ import (
 	"github.com/PivotLLM/ctxengine/session"
 	"github.com/PivotLLM/spawnllm"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // eraseTestConfig is a two-agent install (Alice default, Bob) under a temp

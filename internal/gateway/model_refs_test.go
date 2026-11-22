@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // openStore writes body to config.json in dir and opens the store on it.

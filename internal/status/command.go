@@ -3,7 +3,7 @@ package status
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 func NewStatusCommand() *cobra.Command {

@@ -8,8 +8,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/mcp"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/mcp"
 )
 
 // mcpStatusLoop is the slice of the running AgentLoop the MCP status endpoint

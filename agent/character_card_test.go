@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/ccv3"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/ccv3"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 const testCardPrompt = "# Character\n\nYou are Bob.\n\n## Personality\nDry."

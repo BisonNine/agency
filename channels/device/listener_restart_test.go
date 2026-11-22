@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testalerts"
+	"go.bison9.com/agency/utils"
 )
 
 // freePort asks the kernel for an unused loopback port.

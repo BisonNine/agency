@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/logger"
 )
 
 // checkedChannel is a channel whose connection check returns result, or,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 func TestCollectProviders_APIKeyNeverShown(t *testing.T) {

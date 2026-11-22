@@ -10,11 +10,11 @@ import (
 
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/mcpserver/acl"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsmaestro "github.com/PivotLLM/ClawEh/tools/maestro"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/mcpserver/acl"
+	"go.bison9.com/agency/tools"
+	toolsmaestro "go.bison9.com/agency/tools/maestro"
 )
 
 type hostFakeRunner struct{}

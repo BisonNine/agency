@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TrustedProxy attributes a request to the client behind a trusted reverse

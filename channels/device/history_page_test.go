@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/gatewayproto"
+	"go.bison9.com/agency/gatewayproto"
 )
 
 // transcriptEpoch is the stored time of transcript message 0; message i is

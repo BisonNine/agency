@@ -10,8 +10,8 @@ import (
 	"github.com/PivotLLM/cogmem/store"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // TestMigrate_AlertsOnFailure: a memory store that cannot be opened (its

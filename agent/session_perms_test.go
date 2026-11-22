@@ -11,8 +11,8 @@ import (
 
 	cogmemstore "github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/providers"
 )
 
 // A session's archive database and its -wal/-shm side files are 0600 from

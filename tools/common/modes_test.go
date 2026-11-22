@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // A file copied into the common folder, and the folders created for it, take

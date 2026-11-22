@@ -10,12 +10,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // workerTestConfig has Alice on "one" with worker models two, three

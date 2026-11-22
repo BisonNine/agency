@@ -6,7 +6,7 @@ package api
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // A device assignment counts only for an agent the service runs; otherwise

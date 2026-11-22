@@ -15,13 +15,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/utils"
 )
 
 // NewDevicesCommand returns the `claw devices` command group.

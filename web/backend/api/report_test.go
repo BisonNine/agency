@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/report"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/report"
 )
 
 var testNow = time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)

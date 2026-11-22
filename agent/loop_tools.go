@@ -11,17 +11,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
-	toolsmsg "github.com/PivotLLM/ClawEh/tools/msg"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
+	toolsmsg "go.bison9.com/agency/tools/msg"
 )
 
 // agentBuilder returns the registry's BuildFunc: it builds the instance a spec

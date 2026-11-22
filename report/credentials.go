@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/msgtoken"
-	"github.com/PivotLLM/ClawEh/servicetoken"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/msgtoken"
+	"go.bison9.com/agency/servicetoken"
 )
 
 // serviceTokenRows reports which agents hold an MCP-host service token,

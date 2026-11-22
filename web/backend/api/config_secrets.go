@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Secret handling for GET/PUT/PATCH /api/config.

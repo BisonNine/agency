@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/forum"
+	"go.bison9.com/agency/forum"
 )
 
 // recoverForums waits for the agent loop to accept asks before it lists the

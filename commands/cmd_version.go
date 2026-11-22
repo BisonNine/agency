@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 func versionCommand() Definition {

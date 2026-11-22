@@ -3,8 +3,8 @@ package skills
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/skills"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/skills"
 )
 
 func newRemoveCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra.Command {

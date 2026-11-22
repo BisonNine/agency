@@ -11,7 +11,7 @@ import (
 
 	"github.com/PivotLLM/cogmem"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 // legacyIdentity is the identity section exactly as it was rendered before the

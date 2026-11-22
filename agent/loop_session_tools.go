@@ -8,8 +8,8 @@ import (
 
 	"github.com/PivotLLM/ctxengine/memory"
 
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/utils"
 )
 
 // buildSessionInfo constructs session info for the given agent and session key.

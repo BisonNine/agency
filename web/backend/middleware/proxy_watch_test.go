@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // TestProxyWatch records a forwarded request from an untrusted loopback peer

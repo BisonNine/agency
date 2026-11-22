@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // The pair response's warnings are the short hover text on the Devices page:

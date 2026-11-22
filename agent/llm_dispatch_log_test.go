@@ -11,9 +11,9 @@ import (
 
 	"github.com/PivotLLM/spawnllm/common"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // modelScriptProvider answers each call by the wire model it is sent.

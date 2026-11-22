@@ -15,7 +15,7 @@ import (
 	mmaestro "github.com/PivotLLM/Maestro/pkg/maestro"
 	mreference "github.com/PivotLLM/Maestro/reference"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestRunnerConfig_Mapping(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // putProvider sends PUT /api/providers/<index> with body and returns the

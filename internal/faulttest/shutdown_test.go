@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/internal/test/stubprovider"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/internal/test/stubprovider"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // 7. Stop cancels a turn blocked on a provider that never answers: the turn

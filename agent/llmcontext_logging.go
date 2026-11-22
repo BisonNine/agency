@@ -6,7 +6,7 @@ package agent
 import (
 	llmlogger "github.com/PivotLLM/ctxengine/logger"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // llmcontextLogBackend routes the context engine's structured log events into

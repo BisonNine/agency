@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 const messageToolDescription = "Send a message to another agent. " +

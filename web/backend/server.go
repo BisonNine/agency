@@ -3,8 +3,8 @@ package webserver
 import (
 	"net/http"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/web/backend/api"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/web/backend/api"
 )
 
 // Options configures the in-process web server before it is mounted on the

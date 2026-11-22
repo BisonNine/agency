@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/cron"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/cron"
+	"go.bison9.com/agency/tools"
 )
 
 // probeTool answers a watch probe with result.

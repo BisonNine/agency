@@ -13,12 +13,12 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	classifierpkg "github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
+	classifierpkg "go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 // Suite is the per-agent switch that gates the classifier tools

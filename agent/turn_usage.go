@@ -4,8 +4,8 @@
 package agent
 
 import (
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/providers"
 )
 
 // addTurnUsage folds one successful LLM call's dispatch status into the turn's

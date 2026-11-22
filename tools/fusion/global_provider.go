@@ -6,10 +6,10 @@ package fusion
 import (
 	"sort"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
 )
 
 // GlobalProvider mounts MCPFusion's config-driven REST-API tools under the

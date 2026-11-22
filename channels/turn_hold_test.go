@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // heldChat is a manager on a fake clock with one editing channel, "test", and

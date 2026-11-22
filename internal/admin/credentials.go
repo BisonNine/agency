@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // FileName is the credentials file's name inside CLAW_HOME.

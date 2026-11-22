@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestHandleListSkills(t *testing.T) {

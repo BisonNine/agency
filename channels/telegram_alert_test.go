@@ -12,11 +12,11 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/channels/telegram"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/channels/telegram"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/logger"
 )
 
 type recorder struct {

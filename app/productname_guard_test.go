@@ -36,8 +36,8 @@ var productWord = regexp.MustCompile(`(?i)(^|[^a-z0-9_])claw(eh)?([^a-z0-9_]|$)`
 // allowed here: define it in global/identifiers.go, the one file this guard
 // skips.
 var fixedIdentifiers = []*regexp.Regexp{
-	// Module path and repositories under the PivotLLM organisation
-	// (github.com/PivotLLM/ClawEh, PivotLLM/ClawEh-skills).
+	// Repositories under the PivotLLM organisation: the release repository
+	// (github.com/PivotLLM/ClawEh) and PivotLLM/ClawEh-skills.
 	regexp.MustCompile(`PivotLLM/ClawEh[\w-]*`),
 	// The macOS launchd job label and its plist.
 	regexp.MustCompile(`com\.pivotllm\.claweh(\.plist)?`),
@@ -262,7 +262,7 @@ func TestNamesProduct(t *testing.T) {
 		{"openclaw", false},
 		{"clawhub.ai", false},
 		{"clawdbot-gateway", false},
-		{"github.com/PivotLLM/ClawEh/app", false},
+		{"go.bison9.com/agency/app", false},
 		{"PivotLLM/ClawEh-skills/weather", false},
 		{"com.pivotllm.claweh.plist", false},
 		{"~/.claw/config.json", false},

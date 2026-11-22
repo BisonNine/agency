@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/mcpserver/acl"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/mcpserver/acl"
+	"go.bison9.com/agency/tools"
 )
 
 // listedToolNames sends a tools/list JSON-RPC message through the MCP

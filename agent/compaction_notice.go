@@ -10,9 +10,9 @@ import (
 
 	"github.com/PivotLLM/ctxengine"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 // compactionNoticeTimeout bounds enqueueing the notice. The engine calls the

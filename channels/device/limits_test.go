@@ -12,10 +12,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/gatewayproto"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/gatewayproto"
+	"go.bison9.com/agency/utils"
 )
 
 // dial opens a socket and returns the connection plus the handshake's HTTP

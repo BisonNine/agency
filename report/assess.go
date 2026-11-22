@@ -7,8 +7,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
 )
 
 // Identity is the one-line product identification shown above the assessment

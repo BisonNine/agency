@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
 )
 
 // builtinFake is a built-in channel that hands every message it is sent to a

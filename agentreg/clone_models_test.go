@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // workerConfig is testConfig with alice on m1 and worker models m2, m3.

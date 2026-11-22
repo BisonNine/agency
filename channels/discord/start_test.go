@@ -11,8 +11,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
 )
 
 // Start honours its context: a bot-user lookup Discord never answers ends

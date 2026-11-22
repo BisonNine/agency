@@ -18,8 +18,8 @@ package layout
 import (
 	"os"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // Prepare creates internal/, bin/, cli/, skills/, cards/ and the common

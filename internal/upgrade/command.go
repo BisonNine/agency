@@ -25,11 +25,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/install"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/install"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 const (

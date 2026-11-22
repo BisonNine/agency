@@ -6,7 +6,7 @@ package identity
 import (
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 // BuildCanonicalID constructs a canonical "platform:id" identifier.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Runtime provides runtime dependencies to command handlers. It is constructed

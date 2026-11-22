@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // TestAgentTools_OnlyWhatTheListNames: an agent gets only the native tools its

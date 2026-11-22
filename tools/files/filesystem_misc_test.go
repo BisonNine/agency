@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/utils"
 )
 
 // Tests for NewReadFileTool default maxSize and hostFs.Open permission error.

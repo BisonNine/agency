@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // GetIsolated: an HTTP model is the shared cached provider; a CLI model is a

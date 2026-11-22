@@ -7,9 +7,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/providers"
 )
 
 // A turn with no chat takes no chat hold: there is no typing indicator,

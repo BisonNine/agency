@@ -13,8 +13,8 @@ import (
 	"github.com/PivotLLM/cogmem/store"
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/internal"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/internal"
 )
 
 // NewMemoryCommand builds the `claw memory` command group.

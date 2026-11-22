@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/routing"
 )
 
 // limitsCall is one provider call: the wire model, and the max_tokens and

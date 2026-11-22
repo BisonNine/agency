@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/commands"
+	"go.bison9.com/agency/commands"
 )
 
 func TestStartCommandRegistration_DoesNotBlock(t *testing.T) {

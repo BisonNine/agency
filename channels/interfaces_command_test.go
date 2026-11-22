@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/commands"
+	"go.bison9.com/agency/commands"
 )
 
 type mockRegistrar struct{}

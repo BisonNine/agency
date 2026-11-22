@@ -12,8 +12,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/logger"
 )
 
 // LegacyMountConfig is one entry of the retired agents.list[].mounts list.

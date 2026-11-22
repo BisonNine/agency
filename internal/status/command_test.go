@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 func TestNewStatusCommand(t *testing.T) {

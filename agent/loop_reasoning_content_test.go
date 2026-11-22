@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // runReasoningOnlyTurn drives one iteration where the model returns empty content

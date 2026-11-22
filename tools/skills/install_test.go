@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/PivotLLM/ClawEh/skills"
+	"go.bison9.com/agency/skills"
 )
 
 func TestInstallSkillToolName(t *testing.T) {

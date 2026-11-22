@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/mergepatch"
+	"go.bison9.com/agency/internal/mergepatch"
 )
 
 const (

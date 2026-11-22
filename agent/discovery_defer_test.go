@@ -16,9 +16,9 @@ import (
 
 	"github.com/PivotLLM/ctxengine"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
 )
 
 // notebookTool is a hidden tool the discovery tests find and call.

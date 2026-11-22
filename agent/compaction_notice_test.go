@@ -11,11 +11,11 @@ import (
 
 	"github.com/PivotLLM/ctxengine"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // TestCompactionNotice_WhoIsTold: only a turn answering a person in a chat

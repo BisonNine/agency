@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
 )
 
 func TestAgentModels_RoundTrip(t *testing.T) {

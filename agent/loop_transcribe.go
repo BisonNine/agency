@@ -14,11 +14,11 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
-	"github.com/PivotLLM/ClawEh/voice"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
+	"go.bison9.com/agency/voice"
 )
 
 var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)

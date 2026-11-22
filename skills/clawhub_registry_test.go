@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/utils"
 )
 
 func newTestRegistry(serverURL, authToken string) *ClawHubRegistry {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/internal/tokenhash"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/internal/tokenhash"
+	"go.bison9.com/agency/tools"
 )
 
 // --- SessionTokenStore unit tests ---

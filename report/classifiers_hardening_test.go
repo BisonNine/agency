@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // reportTools lists one item per source tool: a_list "fail-item", b_list

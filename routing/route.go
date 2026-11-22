@@ -3,7 +3,7 @@ package routing
 import (
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // RouteInput contains the routing context from an inbound message.

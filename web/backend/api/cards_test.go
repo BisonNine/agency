@@ -18,9 +18,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/ccv3"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/audit"
+	"go.bison9.com/agency/ccv3"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/audit"
 )
 
 const watsonV3 = `{"spec":"chara_card_v3","spec_version":"3.0","data":{"name":"Watson","description":"A doctor."}}`

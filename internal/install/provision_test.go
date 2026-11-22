@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/internal/testbinary"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/testbinary"
 )
 
 // stubInstallSeams replaces the service registration with a recorder and the

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/media"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
 )
 
 // countInHistory counts the stored messages of agent's main conversation

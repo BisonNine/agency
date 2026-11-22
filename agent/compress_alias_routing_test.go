@@ -6,8 +6,8 @@ package agent
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // TestBuildCompressLLMClient_PerAliasRouting is the regression-lock for the

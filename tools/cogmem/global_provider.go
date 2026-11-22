@@ -19,10 +19,10 @@ package cogmem
 import (
 	cogmemtools "github.com/PivotLLM/cogmem/tools"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the cognitive-memory tools through the global layer.

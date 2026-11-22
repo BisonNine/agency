@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // registerProviderRoutes binds named-provider management endpoints.

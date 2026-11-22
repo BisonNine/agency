@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/utils"
 )
 
 // A link in an allow-read host folder is followed only to a place the agent

@@ -7,12 +7,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
-	toolscogmem "github.com/PivotLLM/ClawEh/tools/cogmem"
-	toolsfiles "github.com/PivotLLM/ClawEh/tools/files"
-	toolsmaestro "github.com/PivotLLM/ClawEh/tools/maestro"
-	toolssession "github.com/PivotLLM/ClawEh/tools/session"
-	toolsshell "github.com/PivotLLM/ClawEh/tools/shell"
+	"go.bison9.com/agency/tools"
+	toolscogmem "go.bison9.com/agency/tools/cogmem"
+	toolsfiles "go.bison9.com/agency/tools/files"
+	toolsmaestro "go.bison9.com/agency/tools/maestro"
+	toolssession "go.bison9.com/agency/tools/session"
+	toolsshell "go.bison9.com/agency/tools/shell"
 )
 
 // TestMain registers the tool providers needed by agent-package tests.

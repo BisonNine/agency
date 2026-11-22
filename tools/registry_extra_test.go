@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // mockTool is a simple tool for registry tests.

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/health"
-	"github.com/PivotLLM/ClawEh/providers"
-	webserver "github.com/PivotLLM/ClawEh/web/backend"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/health"
+	"go.bison9.com/agency/providers"
+	webserver "go.bison9.com/agency/web/backend"
 )
 
 // hitCallback POSTs to /api/message/{token} via the external mux that

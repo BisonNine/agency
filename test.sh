@@ -329,7 +329,7 @@ if $RUN_COVERAGE && [ -f "$COVERAGE_FILE" ]; then
     while IFS= read -r entry; do
         num=$(echo "$entry" | awk '{print $1}')
         pkg=$(echo "$entry" | awk '{print $2}')
-        shortpkg=$(echo "$pkg" | sed 's|github.com/PivotLLM/ClawEh/||')
+        shortpkg=$(echo "$pkg" | sed 's|go.bison9.com/agency/||')
         pct="${num}%"
         if (( $(echo "$num < $COVERAGE_MIN" | bc -l) )); then
             color="${RED}"

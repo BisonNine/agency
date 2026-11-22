@@ -14,7 +14,7 @@ import (
 	"github.com/PivotLLM/cogmem/portable"
 	cogmemstore "github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/utils"
 )
 
 // curateEnv seeds a store and returns its id plus a mux, for the curation

@@ -3,7 +3,7 @@ package shell
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestExecTool_SetAllowPatterns_ValidPatterns verifies SetAllowPatterns accepts valid patterns.

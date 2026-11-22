@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/identity"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/identity"
 )
 
 func deviceSender(id string) bus.SenderInfo {

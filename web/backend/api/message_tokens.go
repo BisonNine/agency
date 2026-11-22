@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/msgtoken"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/msgtoken"
+	"go.bison9.com/agency/routing"
 )
 
 // messageTokenLoop is the slice of the running AgentLoop the message-token API

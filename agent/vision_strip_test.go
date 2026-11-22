@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // visionStripLoop builds a minimal AgentLoop whose config knows a vision model,

@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/internal"
-	"github.com/PivotLLM/ClawEh/skills"
+	"go.bison9.com/agency/internal"
+	"go.bison9.com/agency/skills"
 )
 
 type deps struct {

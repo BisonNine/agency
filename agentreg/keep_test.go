@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 )
 
 // A temp_agents.json restore cannot use keeps everything: the file, every

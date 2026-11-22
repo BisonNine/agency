@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 func TestPermissionsValidate(t *testing.T) {

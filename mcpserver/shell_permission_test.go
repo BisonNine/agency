@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/tools/shell"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/tools/shell"
 )
 
 // TestDispatch_ShellFollowsTheTokensAgent: a shell_exec call over MCP runs

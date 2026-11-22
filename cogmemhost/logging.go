@@ -11,7 +11,7 @@ package cogmemhost
 import (
 	cogmemlog "github.com/PivotLLM/cogmem/logger"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // logBackend routes cogmem's events into ClawEh's logger so they land in

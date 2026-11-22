@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolfiles "github.com/PivotLLM/ClawEh/tools/files"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
+	toolfiles "go.bison9.com/agency/tools/files"
 )
 
 const testSession = "chan:123"

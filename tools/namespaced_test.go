@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 )
 
 // fakeGlobalProvider returns bare-named tools for bridge testing.

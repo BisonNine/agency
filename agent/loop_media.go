@@ -15,10 +15,10 @@ import (
 
 	"github.com/h2non/filetype"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/media"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/utils"
 )
 
 // resolveMediaRefs resolves media:// refs in messages.

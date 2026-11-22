@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsmsg "github.com/PivotLLM/ClawEh/tools/msg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/tools"
+	toolsmsg "go.bison9.com/agency/tools/msg"
 )
 
 // sentMessage is one msg_send delivery.

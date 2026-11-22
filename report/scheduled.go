@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/cron"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/cron"
 )
 
 // payloadPreview is how much of a job's message the report shows.

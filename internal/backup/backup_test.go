@@ -17,7 +17,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // openWAL creates (or opens) a WAL-mode SQLite database with a table t(id, v)

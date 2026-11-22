@@ -13,8 +13,8 @@ import (
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver, the one every store in the repo uses
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // dbBusyTimeout is how long a read waits on a writer's lock before giving up.

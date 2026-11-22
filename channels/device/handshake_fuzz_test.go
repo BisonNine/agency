@@ -14,7 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/PivotLLM/ClawEh/gatewayproto"
+	"go.bison9.com/agency/gatewayproto"
 )
 
 const (

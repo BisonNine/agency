@@ -17,7 +17,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // The forum's cross-process lock and the sweep of temporary entries a

@@ -3,7 +3,7 @@ package gateway
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestMCPVisibilityList verifies per-endpoint visibility resolution: an explicit

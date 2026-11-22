@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 // deletingChannel can delete the placeholder it sent.

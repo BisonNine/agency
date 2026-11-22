@@ -42,10 +42,10 @@ const (
 
 // Build metadata, injected via ldflags by the Makefile:
 //
-//	-X github.com/PivotLLM/ClawEh/app.gitCommit=<sha8>
-//	-X github.com/PivotLLM/ClawEh/app.buildTime=<rfc3339>
-//	-X github.com/PivotLLM/ClawEh/app.goVersion=<go version>
-//	-X github.com/PivotLLM/ClawEh/app.buildNumber=<utc yyyymmddhhmmss>
+//	-X go.bison9.com/agency/app.gitCommit=<sha8>
+//	-X go.bison9.com/agency/app.buildTime=<rfc3339>
+//	-X go.bison9.com/agency/app.goVersion=<go version>
+//	-X go.bison9.com/agency/app.buildNumber=<utc yyyymmddhhmmss>
 //
 // Unexported: `go tool link -X` sets package-level string vars by symbol name
 // and does not care about case, so privacy costs nothing here. All four are

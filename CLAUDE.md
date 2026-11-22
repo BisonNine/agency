@@ -71,7 +71,7 @@ Rules:
 
 ## What This Is
 ClawEh is an independent Go project forked from sipeed/picoclaw on 2026-03-20.
-- Module: `github.com/PivotLLM/ClawEh`
+- Module: `go.bison9.com/agency`
 - Binary: `claw` (main.go at repo root) — the agent runtime, the WebUI HTTP layer, the session
   API, and the embedded frontend all share one process and one HTTP mux. The mux is
   served on **two listeners** (`internal/gateway/httphost.go`): plain HTTP on
@@ -214,7 +214,7 @@ No other file holds the product name as a string. Three accessors:
   parallel tests). There is no test hook in `app`.
 
 What stays fixed (not the product label; renaming would break installs or
-other programs): the module path and repository (`PivotLLM/ClawEh`), `CLAW_*`
+other programs): the release repository (`PivotLLM/ClawEh`), `CLAW_*`
 environment variables, the data directories (`.claw`, `/opt/claw`), file names
 (`claw.log`, `claw.pid`, `claw.lock`, `claw-backup-*`, temp prefixes), cookies
 and localStorage keys, the WebSocket subprotocol `claw-token`, the MCP realm

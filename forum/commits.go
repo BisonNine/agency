@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // The commit log (commits/<seq>.json) and its index.

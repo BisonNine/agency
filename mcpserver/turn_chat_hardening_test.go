@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // chatProbe records the turn chat and tool context a call over the MCP host

@@ -4,7 +4,7 @@
 package agent
 
 import (
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // AgentLoop is the core Messenger: agent_message, /ask, /whisper and the

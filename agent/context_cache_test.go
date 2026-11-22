@@ -12,8 +12,8 @@ import (
 	"github.com/PivotLLM/ctxengine"
 	"github.com/PivotLLM/ctxengine/session"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/providers"
 )
 
 // assembleWithLayers runs the builder's prompt layers through the engine over

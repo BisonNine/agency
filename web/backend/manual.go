@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // manualFS holds the user manual: the VitePress build of manual/ (make

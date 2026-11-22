@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
 )
 
 // safeBufLoop mirrors the safeBuf helper in tools tests: a sync-safe

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/tools"
 )
 
 // SendCallback sends content to the chat and reports what became of it:

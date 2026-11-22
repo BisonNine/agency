@@ -15,9 +15,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/PivotLLM/ClawEh/gatewayproto"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/gatewayproto"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/utils"
 )
 
 // emulator is a minimal OpenClaw-protocol device client used to exercise the

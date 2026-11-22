@@ -26,16 +26,16 @@ import (
 	"github.com/PivotLLM/spawnllm/speech"
 	"github.com/google/uuid"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
-	"github.com/PivotLLM/ClawEh/tools/files"
-	toolsmsg "github.com/PivotLLM/ClawEh/tools/msg"
-	"github.com/PivotLLM/ClawEh/utils"
-	"github.com/PivotLLM/ClawEh/voice"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	toolsagents "go.bison9.com/agency/tools/agents"
+	"go.bison9.com/agency/tools/files"
+	toolsmsg "go.bison9.com/agency/tools/msg"
+	"go.bison9.com/agency/utils"
+	"go.bison9.com/agency/voice"
 )
 
 // taskAttemptTimeout bounds one model call of a task when neither the model

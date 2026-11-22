@@ -7,7 +7,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // withDiscovery swaps in a fake SecMsg discovery function for the duration of a

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // registerWebUIRoutes binds WebUI Channel management endpoints to the ServeMux.

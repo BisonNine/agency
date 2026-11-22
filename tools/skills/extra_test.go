@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/skills"
+	"go.bison9.com/agency/skills"
 )
 
 // TestFormatSearchResults_Cached verifies the (cached) annotation is added.

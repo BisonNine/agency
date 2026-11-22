@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // llmMaxRetries is how many times one dispatch is retried after a timeout or

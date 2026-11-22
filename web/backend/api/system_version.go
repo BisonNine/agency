@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 // registerVersionRoutes exposes the running build's version and the product's

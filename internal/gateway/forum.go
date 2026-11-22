@@ -7,11 +7,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/forum"
-	"github.com/PivotLLM/ClawEh/logger"
-	toolsforum "github.com/PivotLLM/ClawEh/tools/forum"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/forum"
+	"go.bison9.com/agency/logger"
+	toolsforum "go.bison9.com/agency/tools/forum"
 )
 
 // forumCloseTimeout bounds how long shutdown waits for the forums' runs and

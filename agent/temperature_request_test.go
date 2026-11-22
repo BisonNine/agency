@@ -11,8 +11,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // TestNewDispatch_TemperatureInRequest checks the temperature an HTTP model

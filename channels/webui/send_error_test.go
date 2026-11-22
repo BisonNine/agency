@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
 )
 
 // A reply to a WebUI session no browser has open is ErrRecipientOffline.

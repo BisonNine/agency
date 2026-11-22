@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/cron"
-	"github.com/PivotLLM/ClawEh/cronmsg"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/cron"
+	"go.bison9.com/agency/cronmsg"
+	"go.bison9.com/agency/logger"
 )
 
 // A listen job turns a long-poll tool into a persistent callback. Where a

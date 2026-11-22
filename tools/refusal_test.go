@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // externalRefusalError is how a package that does not import tools marks a refusal.

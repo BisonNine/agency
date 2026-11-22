@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // CreateProvider builds the provider for the agent defaults' model from the

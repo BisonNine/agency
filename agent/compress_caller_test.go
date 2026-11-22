@@ -15,8 +15,8 @@ import (
 	llmlogger "github.com/PivotLLM/ctxengine/logger"
 	"github.com/PivotLLM/spawnllm/openai_compat"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // scriptedProvider answers Chat with a canned response or error and records

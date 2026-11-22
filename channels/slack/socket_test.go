@@ -13,8 +13,8 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // startAgainst runs the channel's Socket Mode loop against a fake Slack API

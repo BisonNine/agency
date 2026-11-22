@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/msgtoken"
+	"go.bison9.com/agency/msgtoken"
 )
 
 // TestValidateMessageToken guards the security boundary of the external-message

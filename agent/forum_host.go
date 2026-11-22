@@ -16,17 +16,17 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/ccv3"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/forum"
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/ccv3"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/forum"
+	"go.bison9.com/agency/forum/forumfs"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // ForumHost is ClawEh's side of the forum package's host contract over one

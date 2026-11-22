@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // echoRunFull is a fake full-pipeline runner that returns the task text as the

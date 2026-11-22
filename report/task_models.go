@@ -6,8 +6,8 @@ package report
 import (
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/voice"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/voice"
 )
 
 // Item names of the task-model assessment rows; the WebUI links them to the

@@ -10,13 +10,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/ccv3"
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/ccv3"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // cardExists reports whether the character-card library has card id.

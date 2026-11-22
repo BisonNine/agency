@@ -113,7 +113,7 @@ mkdir cmd/claw-auth/providers/newservice
 ```go
 package newservice
 
-import "github.com/PivotLLM/ClawEh/cmd/claw-auth/providers"
+import "go.bison9.com/agency/cmd/claw-auth/providers"
 
 type Provider struct {
     // Provider-specific fields

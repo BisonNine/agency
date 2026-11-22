@@ -7,9 +7,9 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/logger"
 )
 
 // setupFileChangeWatcher polls a single file every interval on clk and emits

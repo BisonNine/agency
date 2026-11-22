@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testalerts"
+	"go.bison9.com/agency/logger"
 )
 
 // unwrapCLI returns the spawnllm provider behind the declined-tools guard, or

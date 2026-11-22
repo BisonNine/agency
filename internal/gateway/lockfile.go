@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 const lockFileName = global.LockFileName

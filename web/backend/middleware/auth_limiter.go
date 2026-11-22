@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Login lockout. Failed logins are counted per client address and per

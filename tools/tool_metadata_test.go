@@ -6,7 +6,7 @@ package tools_test
 import (
 	"testing"
 
-	toolsfiles "github.com/PivotLLM/ClawEh/tools/files"
+	toolsfiles "go.bison9.com/agency/tools/files"
 )
 
 func TestReadFileTool_Metadata(t *testing.T) {

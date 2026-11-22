@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func patchMaestroConfig(t *testing.T, configPath, body string) *httptest.ResponseRecorder {

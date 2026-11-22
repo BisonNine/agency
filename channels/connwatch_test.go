@@ -9,7 +9,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // The connection watch tests run on a fake clock: an outage's alert is due

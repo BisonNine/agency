@@ -5,13 +5,13 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/internal/tlscert"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/tlscert"
+	"go.bison9.com/agency/routing"
 )
 
 // deviceAgentQuerier adapts the agent loop to the device channel's read-only

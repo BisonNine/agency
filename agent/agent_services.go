@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // errNotOwner is returned when an agent deletes a temporary agent it did not

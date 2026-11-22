@@ -3,7 +3,7 @@ package mcp
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 // TestClientInfo_IsTheRealProduct pins what an MCP server is told about its

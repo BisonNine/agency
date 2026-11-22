@@ -6,7 +6,7 @@ package maestro
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // A temporary agent (a sub-agent clone acting as its source) gets the Maestro

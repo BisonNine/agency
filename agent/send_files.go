@@ -17,12 +17,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/h2non/filetype"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/media"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/utils"
 )
 
 // sendFilesTimeout bounds how long msg_send_file waits for the channel to

@@ -8,8 +8,8 @@ package channels
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
 )
 
 // registerFakeFactory registers a factory for name for the test only.

@@ -6,10 +6,10 @@ package tools_test
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsfiles "github.com/PivotLLM/ClawEh/tools/files"
-	toolssession "github.com/PivotLLM/ClawEh/tools/session"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
+	toolsfiles "go.bison9.com/agency/tools/files"
+	toolssession "go.bison9.com/agency/tools/session"
 )
 
 // TestSessionScopedInterface verifies that every session tool the provider

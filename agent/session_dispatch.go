@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/commands"
-	"github.com/PivotLLM/ClawEh/constants"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/commands"
+	"go.bison9.com/agency/constants"
 )
 
 // sessionIdleTTL is how long a session's dispatch state survives with no turn

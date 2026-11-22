@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
 )
 
 // stubVisionClient is a fake vision side-model: it records the image Media it was

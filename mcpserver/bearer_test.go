@@ -13,8 +13,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/PivotLLM/ClawEh/mcpserver/acl"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/mcpserver/acl"
+	"go.bison9.com/agency/tools"
 )
 
 func TestExtractBearer(t *testing.T) {

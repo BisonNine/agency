@@ -12,10 +12,10 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
-	"github.com/PivotLLM/ClawEh/internal/testbinary"
-	"github.com/PivotLLM/ClawEh/web/backend/middleware"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/testalerts"
+	"go.bison9.com/agency/internal/testbinary"
+	"go.bison9.com/agency/web/backend/middleware"
 )
 
 const (

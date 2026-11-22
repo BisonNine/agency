@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/ccv3"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/ccv3"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
 )
 
 // Character cards in an agent's prompt. The library is

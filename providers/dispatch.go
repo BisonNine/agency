@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // ProviderDispatcher creates and caches per-model LLMProvider instances.

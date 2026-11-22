@@ -14,9 +14,9 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"golang.org/x/time/rate"
 
-	"github.com/PivotLLM/ClawEh/alerts"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/alerts"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // rejected is the alert a channel raises on every retry of a rejected token.

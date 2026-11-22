@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/mcp"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/mcp"
+	"go.bison9.com/agency/tools"
 )
 
 type mcpRuntime struct {

@@ -22,10 +22,10 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/internal/tokenhash"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/internal/tokenhash"
 )
 
 // prefix is the magic literal at the start of every session/service token. It

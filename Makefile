@@ -35,7 +35,7 @@ else
 BUILD_TIME=$(shell date +%FT%T%z)
 BUILD_NUMBER:=$(shell date -u +%Y%m%d%H%M%S)
 endif
-APP_PKG=github.com/PivotLLM/ClawEh/app
+APP_PKG=go.bison9.com/agency/app
 LDFLAGS=-ldflags "-X $(APP_PKG).gitCommit=$(GIT_COMMIT) -X $(APP_PKG).buildTime=$(BUILD_TIME) -X $(APP_PKG).goVersion=$(GO_VERSION) -X $(APP_PKG).buildNumber=$(BUILD_NUMBER) -s -w"
 # -trimpath keeps the build machine's directory layout out of the binary
 # (panic traces and the SBOM then match between machines) and is what makes

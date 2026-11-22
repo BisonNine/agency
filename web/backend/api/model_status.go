@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/utils"
 )
 
 const modelProbeTimeout = 800 * time.Millisecond

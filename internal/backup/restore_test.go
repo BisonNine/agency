@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // holdLock takes the gateway's lock in home the way the gateway does and

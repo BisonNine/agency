@@ -15,8 +15,8 @@ import (
 	"github.com/PivotLLM/ctxengine/memory"
 	"github.com/PivotLLM/ctxengine/session"
 
-	"github.com/PivotLLM/ClawEh/cronmsg"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/cronmsg"
+	"go.bison9.com/agency/providers"
 )
 
 // TestCronFire_SurvivesAgeCompactionOnArrival reproduces the production loss of

@@ -13,7 +13,7 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"golang.org/x/time/rate"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 type alertRecorder struct {

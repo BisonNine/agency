@@ -10,12 +10,12 @@ import (
 	"github.com/PivotLLM/cogmem/consolidate"
 	"github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
-	cogmemtools "github.com/PivotLLM/ClawEh/tools/cogmem"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
+	cogmemtools "go.bison9.com/agency/tools/cogmem"
 )
 
 // setupCogmemConsolidation builds and starts the cognitive-memory consolidation

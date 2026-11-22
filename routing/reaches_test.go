@@ -3,7 +3,7 @@ package routing
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestReaches: a sender reaches an agent its message routes to (binding or

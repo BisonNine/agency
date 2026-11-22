@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal"
-	"github.com/PivotLLM/ClawEh/web/backend/middleware"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal"
+	"go.bison9.com/agency/web/backend/middleware"
 )
 
 // seedConfig points CLAW_HOME at a temp dir holding a default config, and

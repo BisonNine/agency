@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/logger"
 )
 
 // Session cookie names. The __Host- prefix makes the browser refuse the cookie

@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/agenttoken"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsfiles "github.com/PivotLLM/ClawEh/tools/files"
+	"go.bison9.com/agency/agenttoken"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
+	toolsfiles "go.bison9.com/agency/tools/files"
 )
 
 // resolverFor builds an AgentResolver from a static map.

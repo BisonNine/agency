@@ -197,7 +197,7 @@ package weather
 import (
     "fmt"
 
-    "github.com/PivotLLM/ClawEh/global"
+    "go.bison9.com/agency/global"
 )
 
 // GlobalProvider is the exported entry point the aggregator mounts.
@@ -242,7 +242,7 @@ func (globalWeatherProvider) RegisterTools(deps global.Deps) []global.ToolDefini
 In `internal/gateway/tool_providers.go`:
 
 ```go
-import "github.com/PivotLLM/ClawEh/tools/weather"
+import "go.bison9.com/agency/tools/weather"
 
 func registerToolProviders() {
     // … existing …

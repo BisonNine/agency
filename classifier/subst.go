@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/internal/dotpath"
+	"go.bison9.com/agency/internal/dotpath"
 )
 
 // Substitution (design 4.3): a string argument value that is exactly one

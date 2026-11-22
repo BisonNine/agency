@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 // The media worker reports how each file's delivery ended: nil when sent,

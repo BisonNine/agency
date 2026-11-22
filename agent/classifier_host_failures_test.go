@@ -15,10 +15,10 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/tools/untrusted"
+	"go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/tools/untrusted"
 )
 
 // mailServer is an external MCP server with a mailbox: list returns the

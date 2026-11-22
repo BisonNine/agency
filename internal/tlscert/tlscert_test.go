@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // writePair writes a self-signed pair for names into dir and returns its paths.

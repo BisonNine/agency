@@ -7,11 +7,11 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/devices/events"
-	"github.com/PivotLLM/ClawEh/devices/sources"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/devices/events"
+	"go.bison9.com/agency/devices/sources"
+	"go.bison9.com/agency/logger"
 )
 
 type Service struct {

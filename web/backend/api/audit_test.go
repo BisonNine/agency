@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/audit"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/audit"
 )
 
 // initTestAudit installs a process-wide audit store in a temp dir for the test.

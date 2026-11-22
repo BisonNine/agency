@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 const testFetchLimit = int64(10 * 1024 * 1024)

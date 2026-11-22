@@ -12,7 +12,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/mark3labs/mcp-go/server/servertest"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // noopHandler answers any tool call with an empty result.

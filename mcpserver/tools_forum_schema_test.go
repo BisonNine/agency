@@ -11,9 +11,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/forum"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/forum"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // forumDefs serves the forum's real tool definitions; building them does

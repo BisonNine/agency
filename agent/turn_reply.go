@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 // agentGoneText is the reply to a sender that required one from an agent that

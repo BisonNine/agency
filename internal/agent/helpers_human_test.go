@@ -6,7 +6,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // `claw agent` applies the same human-agent rules as the gateway: an agent

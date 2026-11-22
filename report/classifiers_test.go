@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/config"
 )
 
 // writeClassifier writes a definition file into the agent's classifiers

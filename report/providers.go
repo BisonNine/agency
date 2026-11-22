@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
 )
 
 // cliModelSentinels are the model ids each CLI provider treats as "let the CLI

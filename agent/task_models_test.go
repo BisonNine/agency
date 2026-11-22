@@ -19,14 +19,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/providers"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/media"
+	"go.bison9.com/agency/providers"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // pngBytes is a minimal PNG signature, enough for type detection.

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/skills"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/skills"
+	"go.bison9.com/agency/utils"
 )
 
 const skillsSearchMaxResults = 20

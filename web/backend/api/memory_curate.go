@@ -18,8 +18,8 @@ import (
 	"github.com/PivotLLM/cogmem/portable"
 	cogmemstore "github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // maxImportBytes caps an uploaded memory document. A real export of the largest

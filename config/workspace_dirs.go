@@ -4,8 +4,8 @@
 package config
 
 import (
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // AlwaysReadableWorkspaceDirs are the workspace folders an agent may always

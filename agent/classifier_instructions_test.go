@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/config"
 )
 
 // instructionsHost is a host over Alice, granted file_read_bytes, with

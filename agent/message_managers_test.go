@@ -3,8 +3,8 @@ package agent
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/msgtoken"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/msgtoken"
 )
 
 // stopManagers stops ms's rotation goroutines when the test ends, as the loop

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // driveEmptyResponse runs one turn with the given provider responses and returns

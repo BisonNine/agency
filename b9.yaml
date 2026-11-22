@@ -2,7 +2,7 @@
 # It is not needed to build this product.
 
 name:   ClawEh
-module: github.com/PivotLLM/ClawEh
+module: go.bison9.com/agency
 github: PivotLLM/ClawEh
 
 version:
@@ -21,7 +21,7 @@ govulncheck:
 licenses:
   enabled:  true
   template: license.tmpl
-  ignore:   github.com/PivotLLM/ClawEh
+  ignore:   go.bison9.com/agency
   out:      OPEN-SOURCE-LICENSES.txt
 
 build:

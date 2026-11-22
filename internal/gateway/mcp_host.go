@@ -6,14 +6,14 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/mcpserver"
-	"github.com/PivotLLM/ClawEh/servicetoken"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/mcpserver"
+	"go.bison9.com/agency/servicetoken"
+	"go.bison9.com/agency/tools"
 )
 
 // mcpVisibilityList resolves a per-endpoint tools/list visibility filter. Empty

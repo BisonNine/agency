@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // fakeClock puts a fake clock, reading the current time, on al and returns

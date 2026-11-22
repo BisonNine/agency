@@ -1,9 +1,9 @@
 package web
 
 import (
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the web tools through the transport-neutral global

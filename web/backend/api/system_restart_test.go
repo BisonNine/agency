@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/internal/audit"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/internal/audit"
 )
 
 // newRestartHandler returns a handler with the restart hook and the

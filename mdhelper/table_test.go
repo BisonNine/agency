@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/utils"
 )
 
 func TestFormatTables(t *testing.T) {

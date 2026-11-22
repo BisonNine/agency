@@ -7,9 +7,9 @@ import (
 
 	"github.com/tenebris-tech/secmsg/schema"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
 )
 
 // newTestChannel builds a channel wired to a real bus with a fixed resolved

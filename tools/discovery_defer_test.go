@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // discoveryOnRegistry is a registry as an agent with discovery on builds it:

@@ -12,7 +12,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // The default alerts log, and a logs folder the alerter creates for it, take

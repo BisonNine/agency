@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/routing"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/routing"
 )
 
 // A sub-agent's tool calls are audited under the agent it copies, so the

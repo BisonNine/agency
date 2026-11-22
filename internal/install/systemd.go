@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/global"
 )
 
 const (

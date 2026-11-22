@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/internal/testbinary"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/internal/testbinary"
+	"go.bison9.com/agency/logger"
 )
 
 const (

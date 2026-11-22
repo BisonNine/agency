@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // channelInfo is one enabled inbound channel as the report describes it.

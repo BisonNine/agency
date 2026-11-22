@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/msgtoken"
-	"github.com/PivotLLM/ClawEh/servicetoken"
+	"go.bison9.com/agency/msgtoken"
+	"go.bison9.com/agency/servicetoken"
 )
 
 func TestCollectCredentials_FreshInstall(t *testing.T) {

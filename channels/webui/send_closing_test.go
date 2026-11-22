@@ -9,8 +9,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/utils"
 )
 
 // serverConn returns the server side of a live WebSocket connection whose

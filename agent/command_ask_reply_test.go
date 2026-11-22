@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/tools"
 )
 
 // The /ask reply shows a person's outcome (unreachable chat, cancelled,

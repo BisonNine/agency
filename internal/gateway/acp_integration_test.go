@@ -14,11 +14,11 @@ import (
 	"github.com/a3tai/openclaw-go/identity"
 	"github.com/a3tai/openclaw-go/protocol"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/tlscert"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/tlscert"
+	"go.bison9.com/agency/utils"
 )
 
 const acpTestToken = "acp-integration-shared-token"

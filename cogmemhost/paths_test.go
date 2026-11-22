@@ -10,8 +10,8 @@ import (
 
 	"github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/utils"
 )
 
 // TestMigrate_UpgradesSchemaInPlace: an existing memory is opened once so its

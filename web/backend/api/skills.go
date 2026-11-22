@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/skills"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/skills"
+	"go.bison9.com/agency/utils"
 )
 
 type skillSupportResponse struct {

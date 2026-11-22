@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/logger"
 )
 
 //go:embed all:dist

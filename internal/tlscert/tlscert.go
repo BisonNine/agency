@@ -27,9 +27,9 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/alerts"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/alerts"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // Source says where the certificate comes from.

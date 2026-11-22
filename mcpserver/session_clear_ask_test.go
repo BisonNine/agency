@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolssession "github.com/PivotLLM/ClawEh/tools/session"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/tools"
+	toolssession "go.bison9.com/agency/tools/session"
 )
 
 // session_clear is refused for a CLI agent while its token's source is an

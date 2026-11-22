@@ -27,12 +27,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/cmd/claw-auth/config"
-	"github.com/PivotLLM/ClawEh/cmd/claw-auth/debug"
-	"github.com/PivotLLM/ClawEh/cmd/claw-auth/mcp"
-	"github.com/PivotLLM/ClawEh/cmd/claw-auth/providers"
-	"github.com/PivotLLM/ClawEh/cmd/claw-auth/providers/google"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/cmd/claw-auth/config"
+	"go.bison9.com/agency/cmd/claw-auth/debug"
+	"go.bison9.com/agency/cmd/claw-auth/mcp"
+	"go.bison9.com/agency/cmd/claw-auth/providers"
+	"go.bison9.com/agency/cmd/claw-auth/providers/google"
 )
 
 // authCodeBlob represents the JSON payload inside a base64url-encoded auth code blob

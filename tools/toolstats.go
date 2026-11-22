@@ -6,7 +6,7 @@ package tools
 import (
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/agenttoken"
+	"go.bison9.com/agency/agenttoken"
 )
 
 // maxLastToolErrorRunes bounds the remembered text of the last failed call.

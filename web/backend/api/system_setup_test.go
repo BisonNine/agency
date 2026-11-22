@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func setupStatusFor(t *testing.T, cfg *config.Config, seed bool) setupStatusResponse {

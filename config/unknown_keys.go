@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // unknownConfigKeys walks a decoded config.json against the Config struct and

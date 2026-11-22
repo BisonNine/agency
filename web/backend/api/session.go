@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/internal/sessions"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/internal/sessions"
+	"go.bison9.com/agency/logger"
 )
 
 // registerSessionRoutes binds the session erase endpoint to the ServeMux.

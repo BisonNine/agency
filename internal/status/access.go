@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/admin"
-	"github.com/PivotLLM/ClawEh/internal/tlscert"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/tlscert"
 )
 
 // accessReport answers the question an operator on a headless machine asks

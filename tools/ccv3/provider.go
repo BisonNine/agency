@@ -10,8 +10,8 @@
 package ccv3
 
 import (
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 )
 
 // Suite is the suite's name: the per-agent switch (`ccv3`) and the tool's

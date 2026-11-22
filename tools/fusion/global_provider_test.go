@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 )
 
 // TestProvider_GatingOff verifies the per-agent gate: an agent without the fusion

@@ -8,8 +8,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/providers"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
+	"go.bison9.com/agency/providers"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // Every turn records its sub-agent depth on the session's token, so a CLI

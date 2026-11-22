@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/gatewayproto"
+	"go.bison9.com/agency/gatewayproto"
 )
 
 // newAuthTestServer builds a Server with the given shared secrets and no HTTP

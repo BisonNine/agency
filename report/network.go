@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/tlscert"
-	"github.com/PivotLLM/ClawEh/mcpserver"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/tlscert"
+	"go.bison9.com/agency/mcpserver"
 )
 
 const offHostNote = "reachable from other hosts, subject to the client allowlist"

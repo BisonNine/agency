@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 func TestCollectSummary_Confined(t *testing.T) {

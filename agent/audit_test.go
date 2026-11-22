@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 var turnIDPattern = regexp.MustCompile(`^[0-9a-f]{8}$`)

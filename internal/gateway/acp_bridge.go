@@ -13,8 +13,8 @@ import (
 	acplib "github.com/a3tai/openclaw-go/acp"
 	"github.com/a3tai/openclaw-go/protocol"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/logger"
 )
 
 // gatewaySender is the slice of the OpenClaw gateway client the bridge needs. It

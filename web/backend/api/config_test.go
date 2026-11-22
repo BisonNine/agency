@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestHandleUpdateConfig_DoesNotInheritDefaultModelFields(t *testing.T) {

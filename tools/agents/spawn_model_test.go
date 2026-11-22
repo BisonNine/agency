@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/providers"
 )
 
 func candList() []providers.FallbackCandidate {

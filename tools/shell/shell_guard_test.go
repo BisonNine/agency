@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/tools"
 )
 
 // Tests for guardCommand edge cases not covered by existing tests.

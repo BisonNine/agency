@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // RefreshCatalogue adds a tool that appeared in an agent registry, deletes one

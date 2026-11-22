@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 // Environment variables that create the account without a prompt, for an

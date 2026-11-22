@@ -6,8 +6,8 @@ package agent
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // backfillLoop builds an AgentLoop with two endpoints: one that demands

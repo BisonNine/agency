@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/media"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/media"
+	"go.bison9.com/agency/providers"
 )
 
 func TestMediaRefsIn(t *testing.T) {

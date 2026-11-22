@@ -11,8 +11,8 @@ import (
 
 	"github.com/slack-go/slack"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
 )
 
 // Send says why Slack refused a message: a conversation the app cannot post

@@ -16,9 +16,9 @@ package tools
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/providers"
 )
 
 // ---- Result conversion -----------------------------------------------------

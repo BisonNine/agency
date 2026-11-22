@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/clock"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/clock"
 )
 
 // A temporary agent's purpose and a clone's model override are kept on

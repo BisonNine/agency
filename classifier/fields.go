@@ -15,7 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/PivotLLM/ClawEh/internal/dotpath"
+	"go.bison9.com/agency/internal/dotpath"
 )
 
 // Field is one named value sent to the model about an item.

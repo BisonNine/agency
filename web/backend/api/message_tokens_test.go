@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/msgtoken"
+	"go.bison9.com/agency/msgtoken"
 )
 
 // fakeMessageTokenLoop is an in-memory stand-in for the AgentLoop's named-token

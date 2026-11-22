@@ -10,8 +10,8 @@ import (
 
 	"github.com/caarlos0/env/v11"
 
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/logger"
 )
 
 // warnLegacyMaestroBool logs one warning per agent whose config still uses the

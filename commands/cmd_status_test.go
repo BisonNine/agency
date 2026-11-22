@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 func TestStatus_BasicFields(t *testing.T) {

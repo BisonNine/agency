@@ -11,8 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 func TestLowStepsNote(t *testing.T) {

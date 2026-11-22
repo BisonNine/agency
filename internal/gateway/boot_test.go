@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/internal/perms"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/internal/perms"
 )
 
 // TestEnforceDataDirPerms_SetsDataDirMode: the data directory itself is set

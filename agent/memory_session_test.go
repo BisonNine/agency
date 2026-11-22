@@ -13,8 +13,8 @@ import (
 	"github.com/PivotLLM/cogmem/store"
 	"github.com/PivotLLM/ctxengine/memory"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/providers"
 )
 
 func openSessionStore(t *testing.T, agent *AgentInstance, key string) *store.Store {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/tenebris-tech/mlogger"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // logComponent tags Fusion-originated lines in the unified ClawEh log.

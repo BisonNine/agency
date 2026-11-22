@@ -18,7 +18,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/PivotLLM/ClawEh/internal/dotpath"
+	"go.bison9.com/agency/internal/dotpath"
 )
 
 // decodeDefinition parses a definition strictly: it must be one JSON object

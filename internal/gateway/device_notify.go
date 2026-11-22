@@ -4,8 +4,8 @@
 package gateway
 
 import (
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/devices"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/devices"
 )
 
 // defaultAgentTarget resolves where USB device notifications go: the default

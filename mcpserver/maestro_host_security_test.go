@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/mcpserver/acl"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsmaestro "github.com/PivotLLM/ClawEh/tools/maestro"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/mcpserver/acl"
+	"go.bison9.com/agency/tools"
+	toolsmaestro "go.bison9.com/agency/tools/maestro"
 )
 
 func maestroRegistryFor(t *testing.T, agentID string) *tools.ToolRegistry {

@@ -5,9 +5,9 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
 )
 
 // ChannelFactory is a constructor function that creates a Channel from config and message bus.

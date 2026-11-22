@@ -10,7 +10,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // GET /api/agents/tools gives the standard set the Agents page's "Default

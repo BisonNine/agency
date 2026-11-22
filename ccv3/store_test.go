@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/mergepatch"
+	"go.bison9.com/agency/internal/mergepatch"
 )
 
 // The pinned clock the store tests use, and a later one for updates.

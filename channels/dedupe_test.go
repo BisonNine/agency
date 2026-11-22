@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 func consumeInbound(t *testing.T, mb *bus.MessageBus) (bus.InboundMessage, bool) {

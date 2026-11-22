@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/perms"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/perms"
 )
 
 // Task files and the tasks folder take exactly the agents area's configured

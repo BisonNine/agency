@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // rangeEditTool implements the six explicit positional mutation tools so the LLM

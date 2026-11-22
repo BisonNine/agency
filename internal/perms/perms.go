@@ -23,9 +23,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
 )
 
 // Finding is one path whose mode differs from the one its area sets.

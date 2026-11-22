@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/global"
 )
 
 func TestSpawnDepth_ContextRoundTrip(t *testing.T) {

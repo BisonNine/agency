@@ -6,10 +6,10 @@ package gateway
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 func notifyTestLoop(t *testing.T, bindings []config.AgentBinding) *agent.AgentLoop {

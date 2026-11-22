@@ -1,8 +1,8 @@
 package schedule
 
 import (
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/tools"
 )
 
 // Provider is the singleton ToolProvider for schedule tools.

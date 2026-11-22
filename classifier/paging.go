@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/internal/dotpath"
+	"go.bison9.com/agency/internal/dotpath"
 )
 
 // Listing a source (source.paging). A source without paging is called once.

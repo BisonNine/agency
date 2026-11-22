@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // place creates rel under dir with mode m (a directory when rel ends in "/"),

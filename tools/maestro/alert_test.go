@@ -9,7 +9,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // TestAlertMaestroDisabled: the alert is high and keyed by the agent, so an

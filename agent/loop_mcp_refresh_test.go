@@ -14,9 +14,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	clawmcp "github.com/PivotLLM/ClawEh/mcp"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	clawmcp "go.bison9.com/agency/mcp"
 )
 
 // newRefreshTestServer serves an in-process streamable-HTTP MCP server with one

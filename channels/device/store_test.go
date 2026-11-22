@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/internal/tokenhash"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/internal/tokenhash"
 )
 
 // rawTokens reads the device_tokens.token column as stored.

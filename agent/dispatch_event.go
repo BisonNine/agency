@@ -7,8 +7,8 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 const finishEventMaxErrLen = 500

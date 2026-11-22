@@ -17,9 +17,9 @@ import (
 	"github.com/PivotLLM/ctxengine"
 	"github.com/PivotLLM/ctxengine/session"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // promptParityGolden is the parity oracle for the prompt-layer refactor: the

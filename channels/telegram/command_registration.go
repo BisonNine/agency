@@ -8,8 +8,8 @@ import (
 
 	"github.com/mymmrac/telego"
 
-	"github.com/PivotLLM/ClawEh/commands"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/commands"
+	"go.bison9.com/agency/logger"
 )
 
 var commandRegistrationBackoff = []time.Duration{

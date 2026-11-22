@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
+	"go.bison9.com/agency/classifier/classifierfs"
 )
 
 // itemMode says what handling one item may write.

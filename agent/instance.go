@@ -10,17 +10,17 @@ import (
 	"github.com/PivotLLM/ctxengine"
 	"github.com/PivotLLM/ctxengine/session"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/fileutil"
-	agentws "github.com/PivotLLM/ClawEh/internal/workspace"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/tools"
-	toolsagents "github.com/PivotLLM/ClawEh/tools/agents"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/fileutil"
+	agentws "go.bison9.com/agency/internal/workspace"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
+	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // AgentInstance represents a fully configured agent with its own workspace,

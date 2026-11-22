@@ -9,9 +9,9 @@ import (
 	smclient "github.com/tenebris-tech/secmsg/client"
 	"github.com/tenebris-tech/secmsg/schema"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/utils"
 )
 
 // TestLive exercises the real connect/handshake/subscribe path against a running

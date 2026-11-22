@@ -1,5 +1,5 @@
 package devices
 
-import "github.com/PivotLLM/ClawEh/devices/events"
+import "go.bison9.com/agency/devices/events"
 
 type EventSource = events.EventSource

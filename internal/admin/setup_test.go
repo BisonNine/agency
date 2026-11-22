@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/internal/testbinary"
+	"go.bison9.com/agency/internal/testbinary"
 )
 
 // fakeTerminal is a scripted terminal: lines for the username prompt and one

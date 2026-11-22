@@ -19,7 +19,7 @@ import (
 
 	"github.com/PivotLLM/toolspec"
 
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
+	"go.bison9.com/agency/classifier/classifierfs"
 )
 
 // restartedService is a second service over e's fakes and folder, as after

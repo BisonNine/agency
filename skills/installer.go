@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/utils"
 )
 
 // GitHubContent represents a file or directory in GitHub API response

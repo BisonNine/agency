@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/global"
 )
 
 // TestRun_RoutesContentToFileWithCallbackBlock verifies the user-facing result is

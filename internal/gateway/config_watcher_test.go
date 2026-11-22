@@ -11,9 +11,9 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/internal/testalerts"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/internal/testalerts"
 )
 
 // validConfigJSON is the minimal config the watcher's LoadConfig+ValidateModels

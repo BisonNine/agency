@@ -13,8 +13,8 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/logger"
 )
 
 const (

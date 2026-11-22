@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 type mockProvider struct{}

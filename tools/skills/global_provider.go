@@ -3,10 +3,10 @@ package skills
 import (
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/global"
-	skillspkg "github.com/PivotLLM/ClawEh/skills"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
+	skillspkg "go.bison9.com/agency/skills"
+	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the skill tools through the transport-neutral global

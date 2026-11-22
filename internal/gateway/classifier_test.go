@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/classifier"
+	"go.bison9.com/agency/classifier"
 )
 
 // startClassifiers starts the scheduler only once the agent loop runs: the

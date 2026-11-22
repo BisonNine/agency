@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 func TestFindSecMsgDaemon(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/global"
 )
 
 // The character card named on a spawn reaches the run function in both modes

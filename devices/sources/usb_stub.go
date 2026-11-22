@@ -5,7 +5,7 @@ package sources
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/devices/events"
+	"go.bison9.com/agency/devices/events"
 )
 
 type USBMonitor struct{}

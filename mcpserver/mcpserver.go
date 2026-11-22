@@ -39,11 +39,11 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/mcpserver/acl"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/mcpserver/acl"
+	"go.bison9.com/agency/tools"
 )
 
 // DefaultListen is the default bind address for the MCP server.

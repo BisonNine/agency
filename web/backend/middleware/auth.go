@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
 )
 
 // AuthExemptPaths are the routes every install serves without a login

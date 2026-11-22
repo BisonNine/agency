@@ -8,7 +8,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/alerts"
+	"go.bison9.com/agency/alerts"
 )
 
 const (

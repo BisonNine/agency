@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 // agentMessageToolName is the tool a whisper's recipient answers with.

@@ -14,10 +14,10 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/alerts"
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/devices/events"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/alerts"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/devices/events"
+	"go.bison9.com/agency/logger"
 )
 
 var usbClassToCapability = map[string]string{

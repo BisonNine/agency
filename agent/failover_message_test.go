@@ -10,9 +10,9 @@ import (
 
 	"github.com/PivotLLM/ctxengine"
 
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 const anthropic400 = `bad request (400): {"type":"error","error":{"type":"invalid_request_error","message":"thinking.type: adaptive is required for this model."}}`

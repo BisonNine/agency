@@ -11,10 +11,10 @@ import (
 
 	cogmemstore "github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/providers"
 )
 
 // With security.permissions.agents set, the agent's workspace and seeded

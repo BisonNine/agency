@@ -7,7 +7,7 @@ package mdhelper
 import (
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/utils"
 )
 
 // align is a column's horizontal alignment, parsed from a Markdown table's

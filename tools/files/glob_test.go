@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // touch sets a file's modification time to base plus n seconds.

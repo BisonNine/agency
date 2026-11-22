@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/tools"
 )
 
 // allowedByWorkspace holds, per agent workspace, the absolute folders the

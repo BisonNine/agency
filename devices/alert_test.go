@@ -11,7 +11,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/devices/events"
+	"go.bison9.com/agency/devices/events"
 )
 
 type alertRecorder struct {

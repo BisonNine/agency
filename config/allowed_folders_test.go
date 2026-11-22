@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // Saving an allowed folder whose path is not absolute is refused with one

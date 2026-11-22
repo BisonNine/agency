@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/utils"
 )
 
 // modeHostOptions builds the listener options the gateway derives from gw,

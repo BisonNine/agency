@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/classifier"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/classifier"
+	"go.bison9.com/agency/config"
 )
 
 // Before Bind every operation is refused as not ready, and the modes are

@@ -13,8 +13,8 @@ import (
 
 	"github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/tools"
 )
 
 // A memory store first created by a cogmem tool is owner-only: the directory

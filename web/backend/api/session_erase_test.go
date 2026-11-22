@@ -9,8 +9,8 @@ import (
 
 	"github.com/PivotLLM/ctxengine/memory"
 
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/web/backend/middleware"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/web/backend/middleware"
 )
 
 // DELETE /api/sessions?channel=&chat_id= removes the sender's sessions and

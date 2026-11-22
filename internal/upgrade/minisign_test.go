@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/PivotLLM/ClawEh/app"
+	"go.bison9.com/agency/app"
 )
 
 // testSigner is an in-test minisign keypair: it writes the public key line and

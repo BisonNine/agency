@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
-	"github.com/PivotLLM/ClawEh/internal/mergepatch"
+	"go.bison9.com/agency/classifier/classifierfs"
+	"go.bison9.com/agency/internal/mergepatch"
 )
 
 // Service owns every classifier of the scopes the host reports: the

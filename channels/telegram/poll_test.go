@@ -12,7 +12,7 @@ import (
 	ta "github.com/mymmrac/telego/telegoapi"
 	"github.com/stretchr/testify/require"
 
-	"github.com/PivotLLM/ClawEh/channels"
+	"go.bison9.com/agency/channels"
 )
 
 func rateLimited(retryAfter int) error {

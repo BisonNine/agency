@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/pidfile"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/pidfile"
 )
 
 // processStart is set when the package is initialised, which happens as the

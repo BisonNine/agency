@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // callTool sends a tools/call through the server's internal endpoint (the one

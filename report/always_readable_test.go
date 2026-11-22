@@ -6,7 +6,7 @@ package report
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Every always-readable workspace folder has a note in the Folder access table.

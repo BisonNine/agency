@@ -7,7 +7,7 @@ import (
 
 	"github.com/PivotLLM/spawnllm"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // CLI agents — the local binaries ClawEh can drive as providers.

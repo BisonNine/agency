@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/internal/admin"
+	"go.bison9.com/agency/internal/admin"
 )
 
 func TestResolveHome_EnvWins(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/fileutil"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/logger"
 )
 
 // State represents the persistent state for a workspace.

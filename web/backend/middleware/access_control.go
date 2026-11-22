@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // AllowAnyAddress is the allowlist entry meaning "any client address, IPv4 or

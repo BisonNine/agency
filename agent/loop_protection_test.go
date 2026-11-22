@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // TestLoopProtection_BreaksOnRepeatedToolCall verifies the agent loop aborts when

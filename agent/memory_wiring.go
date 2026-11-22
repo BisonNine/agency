@@ -12,9 +12,9 @@ import (
 	"github.com/PivotLLM/ctxengine"
 	"github.com/PivotLLM/ctxengine/memory"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // wireCognitiveMemory builds the cogmem session for a cognitive agent, or

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // storeFixture writes a minimal config into a private CLAW_HOME, opens the

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/PivotLLM/ClawEh/internal"
+	"go.bison9.com/agency/internal"
 )
 
 func NewCronCommand() *cobra.Command {

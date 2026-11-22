@@ -15,10 +15,10 @@ import (
 	"github.com/PivotLLM/ctxengine/session"
 	"github.com/PivotLLM/spawnllm/openai_compat"
 
-	"github.com/PivotLLM/ClawEh/agentreg"
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // compactMarkerChannel is the outbound channel dueContextManager queues a

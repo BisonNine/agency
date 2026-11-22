@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
+	"go.bison9.com/agency/classifier/classifierfs"
 )
 
 // citeDefinition is the inbox classifier with every kind of rule source:

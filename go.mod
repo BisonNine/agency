@@ -1,4 +1,4 @@
-module github.com/PivotLLM/ClawEh
+module go.bison9.com/agency
 
 go 1.27.4
 

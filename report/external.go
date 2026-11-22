@@ -7,10 +7,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/skills"
-	"github.com/PivotLLM/ClawEh/voice"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/skills"
+	"go.bison9.com/agency/voice"
 )
 
 func mcpServerRows(cfg *config.Config) [][]string {

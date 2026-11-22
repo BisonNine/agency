@@ -8,8 +8,8 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/logger"
 )
 
 // exitCodeServiceDied is the process exit status after a core service (the

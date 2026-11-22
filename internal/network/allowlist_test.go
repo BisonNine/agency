@@ -3,7 +3,7 @@ package network
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestParseAllowlist covers the aliases shared by `claw network` and

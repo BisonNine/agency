@@ -3,7 +3,7 @@ package identity
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 func TestBuildCanonicalID(t *testing.T) {

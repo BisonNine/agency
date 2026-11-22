@@ -6,8 +6,8 @@ package report
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/app"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
 )
 
 // collector builds one section of the report from the config and environment.

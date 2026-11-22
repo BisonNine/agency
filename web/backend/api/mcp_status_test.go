@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/mcp"
+	"go.bison9.com/agency/mcp"
 )
 
 type fakeMCPStatusLoop struct {

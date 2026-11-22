@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // EditFileTool edits a file by replacing old_text with new_text.

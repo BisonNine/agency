@@ -8,7 +8,7 @@ import (
 
 	"github.com/PivotLLM/spawnllm/common"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // renderBillingError converts a provider-billing failure into a short,

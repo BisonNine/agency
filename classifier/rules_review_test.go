@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
+	"go.bison9.com/agency/classifier/classifierfs"
 )
 
 // markerLine finds the classifier's own section markers in a prompt.

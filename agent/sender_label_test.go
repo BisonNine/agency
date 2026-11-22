@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 // prependSenderLabel attributes every message regardless of peer kind, so a

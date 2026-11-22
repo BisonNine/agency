@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/agent"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/health"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/tools/fusion"
+	"go.bison9.com/agency/agent"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/health"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools/fusion"
 )
 
 // handlerRegistrar is the channel-manager surface needed to populate the

@@ -16,7 +16,7 @@ import (
 	"github.com/PivotLLM/spawnllm/speech"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // TestDetectTranscriber_AlertsOnUnusableBackend: a Transcription model that

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 // recordingSTI is a SessionTokenIssuer that records the turns the loop

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/dump"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/dump"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/utils"
 )
 
 // formatMessagesForLog formats messages for logging

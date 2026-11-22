@@ -11,7 +11,7 @@ import (
 
 	cogmemstore "github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/utils"
 )
 
 // seedCogmemDB creates the agent's memory store (cogmem/cogmem.db) with one active

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the subagent task tools through the transport-neutral

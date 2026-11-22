@@ -3,7 +3,7 @@ package channels
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 // MediaSender is an optional interface for channels that can send

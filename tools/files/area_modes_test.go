@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/perms"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/perms"
 )
 
 // The file tools create folders and files with exactly the agents area's

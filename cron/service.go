@@ -15,10 +15,10 @@ import (
 	"github.com/adhocore/gronx"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/alerts"
-	"github.com/PivotLLM/ClawEh/internal/clock"
-	"github.com/PivotLLM/ClawEh/internal/perms"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/alerts"
+	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agency/internal/perms"
+	"go.bison9.com/agency/logger"
 )
 
 // KindListen is the schedule kind of a listen job: it has no next run because

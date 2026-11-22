@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // taskModelsSection is the "Task models" subsection of the providers section.

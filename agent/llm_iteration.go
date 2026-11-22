@@ -16,9 +16,9 @@ import (
 	"github.com/PivotLLM/cogmem"
 	"github.com/PivotLLM/ctxengine"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // maxIdenticalToolBatches caps how many consecutive iterations may request the

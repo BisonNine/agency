@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // collector captures dispatched messages in a goroutine-safe way and signals

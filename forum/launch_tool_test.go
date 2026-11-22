@@ -8,7 +8,7 @@ package forum
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/forum/forumfs"
+	"go.bison9.com/agency/forum/forumfs"
 )
 
 // forumfs.LaunchTool names the launch tool as the "forum" suite publishes it.

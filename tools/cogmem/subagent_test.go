@@ -11,9 +11,9 @@ import (
 
 	"github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/cogmemhost"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 const mainSession = "agent:alice:main"

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	webserver "github.com/PivotLLM/ClawEh/web/backend"
+	"go.bison9.com/agency/config"
+	webserver "go.bison9.com/agency/web/backend"
 )
 
 // The Tools page and its API are gone. Their old endpoints must answer 404

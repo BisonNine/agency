@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/constants"
-	"github.com/PivotLLM/ClawEh/tools"
-	"github.com/PivotLLM/ClawEh/tools/files"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/tools/files"
+	"go.bison9.com/agency/utils"
 )
 
 // fakeSender records what it is asked to send, reading each file as the

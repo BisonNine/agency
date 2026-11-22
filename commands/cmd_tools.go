@@ -3,7 +3,7 @@ package commands
 import (
 	"context"
 
-	"github.com/PivotLLM/ClawEh/global"
+	"go.bison9.com/agency/global"
 )
 
 func toolsCommand() Definition {

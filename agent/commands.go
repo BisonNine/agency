@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
-	"github.com/PivotLLM/ClawEh/routing"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
 )
 
 // webUIChannel is the WebUI chat's channel name. Its sender has no name of

@@ -6,8 +6,8 @@ package agents
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/tools"
 )
 
 func TestAskResult_Outcomes(t *testing.T) {

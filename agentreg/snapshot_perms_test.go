@@ -10,7 +10,7 @@ import (
 
 	cogmemstore "github.com/PivotLLM/cogmem/store"
 
-	"github.com/PivotLLM/ClawEh/cogmemhost"
+	"go.bison9.com/agency/cogmemhost"
 )
 
 // A clone's snapshot of its source's memory is owner-only (directory 0700,

@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Policy.MkdirAll and Policy.WriteFile create each folder and file with

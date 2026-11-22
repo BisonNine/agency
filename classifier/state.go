@@ -20,7 +20,7 @@ import (
 
 	_ "modernc.org/sqlite" // the "sqlite" database/sql driver
 
-	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
+	"go.bison9.com/agency/classifier/classifierfs"
 )
 
 // Item statuses in the processed table (design 7.1a).

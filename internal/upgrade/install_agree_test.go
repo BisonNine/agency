@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/internal/install"
+	"go.bison9.com/agency/internal/install"
 )
 
 // TestUpgradeAndInstallAgreeOnBinaryName: `install` puts the binary at

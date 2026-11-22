@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // hostAllowlist is the set of names the device listener answers to. It is the

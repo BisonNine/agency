@@ -10,9 +10,9 @@ import (
 	"github.com/PivotLLM/cogmem/store"
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/alerts"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/alerts"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // DirName is the directory inside an agent's state directory that cogmem owns.

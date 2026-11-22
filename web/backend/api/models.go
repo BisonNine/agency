@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/utils"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/utils"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.

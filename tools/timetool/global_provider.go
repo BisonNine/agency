@@ -4,8 +4,8 @@
 package timetool
 
 import (
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the time tool through the transport-neutral global

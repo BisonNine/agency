@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/bus"
+	"go.bison9.com/agency/bus"
 )
 
 // fakeChatHolder records the holds runQueuedTurn takes: how many are open per

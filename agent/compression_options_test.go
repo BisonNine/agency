@@ -8,7 +8,7 @@ import (
 
 	"github.com/PivotLLM/ctxengine"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // applyOpts is the only way to observe the mapper's effect: options are opaque

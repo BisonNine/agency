@@ -11,7 +11,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
-	"github.com/PivotLLM/ClawEh/providers"
+	"go.bison9.com/agency/providers"
 )
 
 // storeWriteFailingContextManager is a ContextManager whose store refuses one

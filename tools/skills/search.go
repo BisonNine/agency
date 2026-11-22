@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	skillspkg "github.com/PivotLLM/ClawEh/skills"
-	"github.com/PivotLLM/ClawEh/tools"
+	skillspkg "go.bison9.com/agency/skills"
+	"go.bison9.com/agency/tools"
 )
 
 // FindSkillsTool allows the LLM agent to search for installable skills from registries.

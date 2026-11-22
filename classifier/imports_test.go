@@ -19,7 +19,7 @@ import (
 // classifierfs imports nothing, so config can name the classifier folder
 // without depending on the engine and the agent loop can host it.
 func TestClassifierImportsNoClawEhPackage(t *testing.T) {
-	const module = "github.com/PivotLLM/ClawEh/"
+	const module = "go.bison9.com/agency/"
 	for dir, allowed := range map[string]map[string]bool{
 		".": {
 			module + "classifier/classifierfs": true,

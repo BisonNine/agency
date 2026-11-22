@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/mcpserver/acl"
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/mcpserver/acl"
+	"go.bison9.com/agency/tools"
 )
 
 // seedSessionToken is a test helper that issues a session token for the given

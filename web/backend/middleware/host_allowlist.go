@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/logger"
 )
 
 // HostAllowlist is the set of names a request's Host header may carry. It is

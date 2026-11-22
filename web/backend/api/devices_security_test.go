@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/channels/device"
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/internal/audit"
-	"github.com/PivotLLM/ClawEh/web/backend/middleware"
+	"go.bison9.com/agency/channels/device"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/web/backend/middleware"
 )
 
 // A WebUI save refuses a device listener on a network address with

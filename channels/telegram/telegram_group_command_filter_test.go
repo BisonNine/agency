@@ -10,9 +10,9 @@ import (
 	"github.com/mymmrac/telego"
 	ta "github.com/mymmrac/telego/telegoapi"
 
-	"github.com/PivotLLM/ClawEh/bus"
-	"github.com/PivotLLM/ClawEh/channels"
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/channels"
+	"go.bison9.com/agency/config"
 )
 
 type getMeCaller struct {

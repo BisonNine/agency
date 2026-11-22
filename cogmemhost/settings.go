@@ -6,7 +6,7 @@ package cogmemhost
 import (
 	"github.com/PivotLLM/cogmem"
 
-	"github.com/PivotLLM/ClawEh/config"
+	"go.bison9.com/agency/config"
 )
 
 // Settings maps an agent's effective memory config onto cogmem's settings.

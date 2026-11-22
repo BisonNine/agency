@@ -6,7 +6,7 @@ package mcpserver
 import (
 	"testing"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // A tools/call for an agent the host was not started with (a temporary agent

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/tools"
+	"go.bison9.com/agency/tools"
 )
 
 // NowTool reports the current date, time, and timezone.

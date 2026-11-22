@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PivotLLM/ClawEh/global"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
 )
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,

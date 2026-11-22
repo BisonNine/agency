@@ -19,8 +19,8 @@ import (
 	"github.com/PivotLLM/Maestro/runner"
 	"github.com/PivotLLM/Maestro/tasks"
 
-	"github.com/PivotLLM/ClawEh/config"
-	"github.com/PivotLLM/ClawEh/logger"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 )
 
 // reasonChangedWhileRunning is why a runner is kept although the settings it
