@@ -4,6 +4,23 @@
 
 ### Added
 
+- **Agents can cancel their own sub-agents with the new `agent_cancel` tool.**
+  `{"uuid": "<task id>"}` cancels one task, `{"all": true}` every running one;
+  the tasks a cancelled task started are cancelled with it. Task-model calls
+  made with `agent_spawn` are tasks too. The tool answers how many tasks were
+  cancelled and which had already finished; another agent's task is unknown to
+  it, as with `agent_status`. A cancelled task sends no result, keeps what it
+  had written in its results file (marked incomplete), and is not started
+  again after a restart. Shell jobs are not touched by it.
+- **Task status `cancelled`.** `agent_status` and `agent_list` show
+  `cancelled` for a task stopped by `agent_cancel` or `/cancel all`, beside
+  `running`, `done` and `error`.
+- **`/cancel all`.** It stops the reply in progress and the messages queued
+  behind it, like `/cancel`, and also every background task of the agent
+  (sub-agents, task-model calls and shell jobs), with the tasks they started.
+  The reply says how many it cancelled, for example "Alice: stopped, and
+  cancelled 2 background tasks."
+
 - **Agents can run shell commands in the background with the new
   `shell_ctrl` tool.** `shell_exec` can start a command as a job that keeps
   running while the agent carries on, and `shell_ctrl` lists the agent's jobs
@@ -46,6 +63,36 @@
 
 ### Changed
 
+- **BREAKING: `/cancel` no longer stops a sub-agent the reply was waiting
+  on.** A sub-agent spawned in `wait` mode now finishes, and its result
+  reaches the agent later as a background result, as a `callback` task's does
+  (the same holds when the reply runs out of time). The reply to `/cancel`
+  names the background tasks still running and points to `/cancel all`, which
+  restores the old effect and also stops the agent's other background tasks.
+  Sub-agents started in `callback` mode and shell jobs keep running after
+  `/cancel`, as before.
+- **A cancel sends one message instead of two or more.** `/cancel` used to
+  answer "Cancelled the current request." and the stopped reply then said
+  "⚠️ Cancelled by /cancel. …", plus one message for each dropped message
+  that required a reply. Now one message, in the chat `/cancel` was typed in,
+  names the agent and says what was stopped, how many queued messages were
+  skipped and how many background tasks are still running, for example
+  "Alice: stopped. 2 background tasks are still running — /cancel all stops
+  them too." With nothing to stop the reply is unchanged: "No pending messages
+  to cancel." A message from another chat, and an agent waiting on an answer,
+  are still told their request was cancelled.
+- **BREAKING: an agent granted `agent_spawn` now also has `agent_cancel`.** It
+  comes with `agent_spawn` (also when a `"*"` or prefix entry grants
+  `agent_spawn`) and is not a separate box on the Agents page or an entry in
+  the agent's `tools` list; Check Up lists it "with agent_spawn". To restore
+  the previous access, add `agent_cancel` to the agent's `deny_tools`. An MCP
+  host whose `internal_tools` or `external_tools` names its tools one by one
+  publishes `agent_cancel` only when it is added there.
+- **The `agent_spawn` and `agent_status` tool descriptions changed**:
+  `agent_spawn` tells the model that a waited task whose turn is interrupted
+  goes on and reports later as a background result, and `agent_status` lists
+  `cancelled` among the statuses.
+
 - **BREAKING: an agent granted `shell_exec` now also has `shell_ctrl`.** It
   comes with `shell_exec` and is not a separate box on the Agents page or an
   entry in the agent's `tools` list; Check Up lists it "with shell_exec". To
@@ -82,6 +129,12 @@
   names, and `claw upgrade` still fetches releases from the same place.
 
 ### Fixed
+
+- **On the device listener, a run interrupted by a `/cancel` sent during it
+  now ends under its own run id with state `aborted`.** Its closing events
+  used to carry the `/cancel` request's run id, so the original run never
+  ended for the client. Now that run gets `agent` lifecycle end and a `chat`
+  event with state `aborted` under its own id, before the `/cancel` reply.
 
 - **An image or file in a message could reach the model as an unreadable
   reference.** When the conversation was compacted, or old tool output was
