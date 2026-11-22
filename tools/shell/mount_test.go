@@ -530,21 +530,63 @@ func TestCloseSendsNoNotice(t *testing.T) {
 	}
 }
 
-// A foreground command's route is dropped once it has ended, even when it
-// ended before its start was recorded.
-func TestRoutesDroppedForEndedCommands(t *testing.T) {
+// The notice of a background job that exits at once still reaches the
+// callback of the call that started it.
+func TestNoticeOfAJobThatExitsAtOnce(t *testing.T) {
 	m := testMount(t)
 	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: t.TempDir()})
-	cb := func(context.Context, *tools.ToolResult) {}
 	for range 20 {
-		if res := alice.run("shell_exec", map[string]any{"command": "true"}, cb); res.IsError {
-			t.Fatal(res.ForLLM)
+		got := make(chan *tools.ToolResult, 1)
+		res := alice.run("shell_exec", map[string]any{"command": "true", "background": true}, func(_ context.Context, r *tools.ToolResult) { got <- r })
+		id := jobID(t, res.ForLLM)
+		select {
+		case r := <-got:
+			if !strings.Contains(r.ForLLM, "Shell job "+id+" ended") {
+				t.Errorf("notice = %q", r.ForLLM)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("no notice for job %s", id)
 		}
 	}
-	m.nmu.Lock()
-	n := len(m.routes)
-	m.nmu.Unlock()
-	if n != 0 {
-		t.Errorf("%d routes kept for ended commands", n)
+}
+
+// A job stopped by a clean shutdown is announced once at the next start,
+// to the owner's main conversation.
+func TestShutdownStoppedJobToldAtNextStart(t *testing.T) {
+	ws := t.TempDir()
+	first := newMount()
+	alice := build(t, first, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+	id := jobID(t, alice.run("shell_exec", map[string]any{"command": "sleep 60", "background": true}, func(context.Context, *tools.ToolResult) {}).ForLLM)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := first.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	second := testMount(t)
+	build(t, second, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+	var told []string
+	second.Bind(Hooks{Deliver: func(owner, text string) { told = append(told, owner+": "+text) }})
+	want := "alice: Shell job " + id + " was stopped when the service restarted"
+	if len(told) != 1 || !strings.HasPrefix(told[0], want) {
+		t.Errorf("told = %q, want one notice starting %q", told, want)
+	}
+}
+
+// A reload applies tools.exec's timeout to the next command of an agent
+// whose tools already exist.
+func TestReloadUpdatesTimeout(t *testing.T) {
+	m := testMount(t)
+	ws := t.TempDir()
+	cfg := config.DefaultConfig()
+	alice := build(t, m, cfg, tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+	if res := alice.run("shell_exec", map[string]any{"command": "sleep 2; echo slept"}, nil); !strings.Contains(res.ForLLM, "slept") {
+		t.Fatalf("before the reload = %q", res.ForLLM)
+	}
+	next := config.DefaultConfig()
+	next.Tools.Exec.TimeoutSeconds = 1
+	alice = build(t, m, next, tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+	if res := alice.run("shell_exec", map[string]any{"command": "sleep 3; echo slept"}, nil); !strings.Contains(res.ForLLM, "kept as job") {
+		t.Errorf("after the reload = %q, want kept at the 1s timeout", res.ForLLM)
 	}
 }

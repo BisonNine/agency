@@ -16,10 +16,12 @@
   sub-agent running in the background, and its answer goes to the chat the
   job was started from. A job belongs to the agent that started it (a
   sub-agent clone acts as that agent), is stopped when the service stops, and
-  is never started again: one found running after a crash or restart is
-  marked lost and the agent is told once. Classifiers and watch jobs cannot
+  is never started again: at the next start the agent is told once of each
+  job the stop ended, or that was running when the service crashed (marked
+  lost). Classifiers and watch jobs cannot
   start jobs. Each start, input (its length only) and stop is in the audit
-  log (`shell_ctrl_start`, `shell_ctrl_input`, `shell_ctrl_stop`); job logs
+  log (`shell_ctrl_start`, `shell_ctrl_input`, `shell_ctrl_stop`; the Audit
+  page's Kind filter lists them as Shell start, Shell input and Shell stop); job logs
   are not in the backup; Check Up shows each agent's job limits and the log
   folder. See the manual's "Shell commands and jobs" page.
 - **New `shell_exec` arguments:** `timeout_seconds` (how long to wait for the
@@ -38,8 +40,9 @@
   after this). Leaving a key out or setting it to 0 uses the default. A
   negative value is refused when the config is loaded or saved (see Changed
   for `timeout_seconds`); a `timeout_seconds` above `max_timeout_seconds` is used
-  as `max_timeout_seconds`. Changes to these timeouts and limits take effect
-  at the next start.
+  as `max_timeout_seconds`. A change applies from the next command after the
+  config is reloaded; a running job older than a shortened `max_job_seconds`
+  is stopped at once.
 
 ### Changed
 

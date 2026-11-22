@@ -1006,10 +1006,11 @@ shortcoming in the module, never here.
   SDK runs the commands, the jobs and their texts). `shell.Host` (one per process)
   keeps one SDK `Tools` per workspace (`<workspace>/state/shell`,
   `config.ShellJobsDir`), created at the first build for an agent granted
-  `shell_exec` with `tools.exec`'s effective limits (`ExecConfig.Effective`; the
-  SDK cannot change them later, so a change applies to an existing workspace at the
-  next start) and the agents-area modes (`cfg.AgentModes`); jobs found running
-  there are marked `lost` then. The host supplies: the guard, `childenv.Base()`,
+  `shell_exec` with `tools.exec`'s effective timeouts and limits
+  (`ExecConfig.Effective`; every later build, i.e. every reload, applies the
+  current ones with `Tools.Update`, from the next call on) and the agents-area modes (`cfg.AgentModes`); jobs found running
+  there are marked `lost` then, and jobs the previous shutdown stopped are
+  announced once. The host supplies: the guard, `childenv.Base()`,
   the workspace, the owner (`ToolDeps.AgentID`, a clone's source), `CtrlAvailable`
   (the agent's `IsToolAllowed("shell_ctrl")`; without it a foreground timeout
   kills and `background` is refused), `Unattended` (`tools.IsUnattended`, set by
@@ -1018,16 +1019,18 @@ shortcoming in the module, never here.
   turn id from `Hooks.TurnID`; `RedactArgs` logs `shell_ctrl`'s `text` as
   `text_bytes`) and the notice. The notice goes through the starting call's async
   callback (the definitions are marked `Async`, so the bridge passes
-  `ToolCall.Notify`, kept per job at the start's audit event and dropped at its end):
+  `ToolCall.Notify`, which `Config.Route` gives the SDK before the job starts and
+  the SDK hands back as `Notice.Route`):
   the loop's `asyncToolCallback` or the MCP host's `publishMCPAsyncToLLM`, i.e.
-  the path of a callback `agent_spawn`, with its turn-chat rules. A lost job's
-  notice has no call: `Hooks.Deliver` (`AgentLoop.deliverShellNotice`) queues it
+  the path of a callback `agent_spawn`, with its turn-chat rules. A notice at the
+  next start (a lost job, or one stopped by the previous shutdown) has no route: `Hooks.Deliver` (`AgentLoop.deliverShellNotice`) queues it
   as a `system` message (`async:shell_exec`) for the owner's main conversation,
   answered in its default chat (`CronTarget`) or kept there. The gateway binds the
   hooks once the loop has `Started()` (`bindShellTools`; notices found before are
   held) and `shutdownGateway` calls `closeShellJobs` (`Host.Close`: every job
-  terminated, then killed after 5 s) before the loop stops; jobs it stops send no notice (the
-  loop is stopping), and no tools are built until it returns. `/cancel` does not
+  terminated, then killed after 5 s) before the loop stops; it delivers no notice (the SDK
+  announces those jobs at the next start), and no tools are built until it
+  returns. `/cancel` does not
   touch jobs yet: for the agent task list of phase 5b, `Host.Running(owner)`
   counts an agent's running jobs and `Host.StopAll(owner)` stops them. The folder
   is in `AlwaysReadableWorkspaceDirs` (read, never written, by the file tools) and

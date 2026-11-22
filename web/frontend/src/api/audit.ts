@@ -11,6 +11,9 @@ export type AuditKind =
   | "classifier_write"
   | "classification"
   | "task_model"
+  | "shell_ctrl_start"
+  | "shell_ctrl_input"
+  | "shell_ctrl_stop"
 
 export const AUDIT_KINDS: AuditKind[] = [
   "tool_call",
@@ -22,6 +25,9 @@ export const AUDIT_KINDS: AuditKind[] = [
   "classifier_write",
   "classification",
   "task_model",
+  "shell_ctrl_start",
+  "shell_ctrl_input",
+  "shell_ctrl_stop",
 ]
 
 export interface AuditEvent {

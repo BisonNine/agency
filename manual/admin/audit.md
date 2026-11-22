@@ -25,7 +25,7 @@ What is kept, and what is not:
 ## Read it in the WebUI
 
 1. Open **Audit** in the **Services** group.
-2. Narrow the list with **Kind** (**Tool call**, **Config write**, **Auth**, **Restart**, **Card import**, **Card delete**, **Classifier change**, **Classification**) and **Agent**.
+2. Narrow the list with **Kind** (**Tool call**, **Config write**, **Auth**, **Restart**, **Card import**, **Card delete**, **Classifier change**, **Classification**, **Task model**, **Shell start**, **Shell input**, **Shell stop**) and **Agent**.
 3. Newest events are at the top. Click **Load more** to page back, and **Refresh** to fetch new events.
 
 Columns: **Time**, **Kind**, **Actor / agent**, **Channel**, **Tool / summary**, **Outcome**, **Duration**.

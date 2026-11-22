@@ -703,7 +703,10 @@
         "card_delete": "Card delete",
         "classifier_write": "Classifier change",
         "classification": "Classification",
-        "task_model": "Task model"
+        "task_model": "Task model",
+        "shell_ctrl_start": "Shell start",
+        "shell_ctrl_input": "Shell input",
+        "shell_ctrl_stop": "Shell stop"
       },
       "col": {
         "time": "Time",

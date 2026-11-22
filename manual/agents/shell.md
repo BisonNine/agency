@@ -46,7 +46,7 @@ When a job ends, Alice is told in her conversation with the command, how it ende
 
 A job belongs to the agent that started it. A [sub-agent clone](./subagents.md) of Alice acts as Alice: it sees and stops her jobs. Bob cannot see or stop them.
 
-Jobs are not tied to a turn: `/cancel` and the end of a turn leave them running. They are stopped when the service stops, without a notice. A job that was running when the service went down (a crash or a restart) is marked `lost` when it starts again, and the agent is told once; it is never started again.
+Jobs are not tied to a turn: `/cancel` and the end of a turn leave them running. They are stopped when the service stops. When it starts again, the agent is told once of each job the stop ended, and of each job that was running when the service went down without stopping them (a crash), which is marked `lost`. A job is never started again.
 
 [Classifiers](./classifiers.md) and [watch jobs](./scheduling.md) cannot start jobs or use `shell_ctrl`: nothing would collect the result. Their commands run in the foreground and are stopped at the timeout.
 
@@ -58,7 +58,7 @@ A command that ran in the foreground and whose whole output was returned leaves 
 
 ## Settings
 
-Under `tools` › `exec` in `config.json`. Leaving a key out, or setting it to 0, uses the default; a negative value is refused. A change applies from the next start.
+Under `tools` › `exec` in `config.json`. Leaving a key out, or setting it to 0, uses the default; a negative value is refused. A change applies from the next command after the config is reloaded; a running job older than a shortened `max_job_seconds` is stopped at once.
 
 | Key | Default | Meaning |
 |---|---|---|

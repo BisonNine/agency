@@ -56,9 +56,9 @@ type Mount struct {
 
 	guard atomic.Pointer[guard]
 
-	// nmu guards the routing state below; never held while calling out.
+	// nmu guards the hooks and the notices kept until they are bound;
+	// never held while calling out.
 	nmu     sync.Mutex
-	routes  map[string]func(*toolspec.Result) // jobKey → the starting call's async callback
 	hooks   Hooks
 	bound   bool
 	pending []pendingNotice
@@ -71,7 +71,7 @@ type pendingNotice struct{ owner, text string }
 var Host = newMount()
 
 func newMount() *Mount {
-	return &Mount{byDir: make(map[string]*sdkshell.Tools), routes: make(map[string]func(*toolspec.Result))}
+	return &Mount{byDir: make(map[string]*sdkshell.Tools)}
 }
 
 // GlobalProvider publishes the shell tools: the aggregator mounts it under
@@ -169,33 +169,32 @@ func (m *Mount) toolsFor(cfg *config.Config, workspace string) (*sdkshell.Tools,
 	if m.closing {
 		return nil, errors.New("shutting down")
 	}
+	set := settings(cfg)
 	if t := m.byDir[dir]; t != nil {
+		// A reload: the current tools.exec settings apply from the next call.
+		if uerr := t.Update(set); uerr != nil {
+			return nil, uerr
+		}
 		return t, nil
 	}
-	ex := cfg.Tools.Exec.Effective()
 	modes := cfg.AgentModes(dir)
 	t, err := sdkshell.New(sdkshell.Config{
 		Jobs: proc.Options{
-			Dir: dir,
-			Limits: proc.Limits{
-				MaxJobs:        ex.MaxJobs,
-				MaxJobTime:     time.Duration(ex.MaxJobSeconds) * time.Second,
-				MaxOutputBytes: int64(ex.MaxJobOutputBytes),
-				LogRetention:   time.Duration(ex.JobLogDays) * 24 * time.Hour,
-			},
-			Modes: fsmode.Modes{Dir: modes.Dir, File: modes.File},
-			OnEnd: func(info proc.Info) { m.forget(dir, info.ID) },
+			Dir:    dir,
+			Limits: set.Limits,
+			Modes:  fsmode.Modes{Dir: modes.Dir, File: modes.File},
 		},
-		Timeout:       time.Duration(ex.TimeoutSeconds) * time.Second,
-		MaxTimeout:    time.Duration(ex.MaxTimeoutSeconds) * time.Second,
+		Timeout:       set.Timeout,
+		MaxTimeout:    set.MaxTimeout,
 		Guard:         m.check,
 		Env:           func(*toolspec.ToolCall) []string { return childenv.Base() },
 		Workspace:     func(*toolspec.ToolCall) string { return workspace },
 		Owner:         owner,
 		CtrlAvailable: ctrlAvailable,
 		Unattended:    func(call *toolspec.ToolCall) bool { return tools.IsUnattended(callContext(call)) },
-		Notice:        func(n sdkshell.Notice) { m.notice(dir, n) },
-		Audit:         func(e sdkshell.AuditEvent) { m.audit(dir, e) },
+		Route:         route,
+		Notice:        m.notice,
+		Audit:         m.audit,
 		Logger:        logger.SDK(),
 	})
 	if err != nil {
@@ -203,6 +202,31 @@ func (m *Mount) toolsFor(cfg *config.Config, workspace string) (*sdkshell.Tools,
 	}
 	m.byDir[dir] = t
 	return t, nil
+}
+
+// settings are tools.exec's effective timeouts and job limits.
+func settings(cfg *config.Config) sdkshell.Settings {
+	ex := cfg.Tools.Exec.Effective()
+	return sdkshell.Settings{
+		Timeout:    time.Duration(ex.TimeoutSeconds) * time.Second,
+		MaxTimeout: time.Duration(ex.MaxTimeoutSeconds) * time.Second,
+		Limits: proc.Limits{
+			MaxJobs:        ex.MaxJobs,
+			MaxJobTime:     time.Duration(ex.MaxJobSeconds) * time.Second,
+			MaxOutputBytes: int64(ex.MaxJobOutputBytes),
+			LogRetention:   time.Duration(ex.JobLogDays) * 24 * time.Hour,
+		},
+	}
+}
+
+// route is where a job's notice goes: the async callback of the call that
+// starts it (ToolCall.Notify), the path a callback sub-agent's result
+// takes. Nil when the call has none.
+func route(call *toolspec.ToolCall) any {
+	if call.Notify == nil {
+		return nil
+	}
+	return call.Notify
 }
 
 // check is the command guard of the current tools.exec settings.
@@ -237,71 +261,48 @@ func callContext(call *toolspec.ToolCall) context.Context {
 	return context.Background()
 }
 
-func jobKey(dir, id string) string { return dir + "\x00" + id }
-
-// forget drops a job's route once it has ended (after its notice).
-func (m *Mount) forget(dir, id string) {
-	m.nmu.Lock()
-	delete(m.routes, jobKey(dir, id))
-	m.nmu.Unlock()
-}
-
-// notice delivers an end-of-job notice: through the async callback of the
-// call that started the job, as a callback sub-agent's result is delivered,
-// so it follows the same turn-chat rules. A job lost in a restart has no
-// call: its notice goes to the owner's main conversation through the hooks.
-func (m *Mount) notice(dir string, n sdkshell.Notice) {
-	if n.State == proc.StateStopped && n.StopReason == proc.StopShutdown {
-		// The loop is stopping: a turn started now would not be answered.
-		m.forget(dir, n.JobID)
-		logger.InfoCF("shell", "Shell job stopped at shutdown; no notice sent",
+// notice delivers an end-of-job notice through the async callback of the
+// call that started the job (Notice.Route), so it follows the same
+// turn-chat rules as a callback sub-agent's result. A job announced after a
+// restart (lost, or stopped by the previous shutdown) has no route: its
+// notice goes to the owner's main conversation through the hooks.
+func (m *Mount) notice(n sdkshell.Notice) {
+	if notify, ok := n.Route.(func(*toolspec.Result)); ok && notify != nil {
+		go notify(&toolspec.Result{ForLLM: n.Text})
+		return
+	}
+	afterRestart := n.State == proc.StateLost || (n.State == proc.StateStopped && n.StopReason == proc.StopShutdown)
+	if !afterRestart {
+		logger.InfoCF("shell", "Shell job notice not delivered: no conversation to tell",
 			map[string]any{"agent_id": n.Owner, "job": n.JobID})
 		return
 	}
 	m.nmu.Lock()
-	route := m.routes[jobKey(dir, n.JobID)]
-	delete(m.routes, jobKey(dir, n.JobID))
-	var deliver func(owner, text string)
-	if route == nil && n.State == proc.StateLost {
-		if m.bound {
-			deliver = m.hooks.Deliver
-		} else if len(m.pending) < maxPending {
+	deliver := m.hooks.Deliver
+	if !m.bound {
+		deliver = nil
+		if len(m.pending) < maxPending {
 			m.pending = append(m.pending, pendingNotice{owner: n.Owner, text: n.Text})
 		} else {
-			logger.WarnCF("shell", "Lost shell job notice not kept: too many waiting",
+			logger.WarnCF("shell", "Shell job notice not kept: too many waiting",
 				map[string]any{"agent_id": n.Owner, "job": n.JobID})
 		}
 	}
 	m.nmu.Unlock()
-	switch {
-	case route != nil:
-		go route(&toolspec.Result{ForLLM: n.Text})
-	case deliver != nil:
+	if deliver != nil {
 		go deliver(n.Owner, n.Text)
-	case n.State != proc.StateLost:
-		logger.InfoCF("shell", "Shell job notice not delivered: no conversation to tell",
-			map[string]any{"agent_id": n.Owner, "job": n.JobID})
 	}
 }
 
-// audit records a start, an input or a stop, and keeps the starting call's
-// async callback for the job's notice.
-func (m *Mount) audit(dir string, e sdkshell.AuditEvent) {
+// audit records a start, an input or a stop.
+func (m *Mount) audit(e sdkshell.AuditEvent) {
 	ctx := context.Background()
 	if e.Call != nil {
 		ctx = callContext(e.Call)
 	}
-	routed := e.Kind == sdkshell.AuditStart && e.JobID != "" && e.Call != nil && e.Call.Notify != nil
 	m.nmu.Lock()
-	if routed {
-		m.routes[jobKey(dir, e.JobID)] = e.Call.Notify
-	}
 	turnID := m.hooks.TurnID
 	m.nmu.Unlock()
-	if routed && !m.running(dir, e.JobID) {
-		// It ended before its start was recorded: its end has been handled.
-		m.forget(dir, e.JobID)
-	}
 
 	store := audit.Default()
 	if store == nil {
@@ -338,18 +339,6 @@ func (m *Mount) audit(dir string, e sdkshell.AuditEvent) {
 		ev.Details = string(b)
 	}
 	store.Record(ev)
-}
-
-// running reports whether job id of the manager over dir is still running.
-func (m *Mount) running(dir, id string) bool {
-	m.mu.Lock()
-	t := m.byDir[dir]
-	m.mu.Unlock()
-	if t == nil {
-		return false
-	}
-	info, ok := t.Manager().Get(id)
-	return ok && info.Running()
 }
 
 // Bind installs the loop's hooks and delivers the notices kept until now.
@@ -398,8 +387,8 @@ func (m *Mount) StopAll(owner string) int {
 	return int(n.Load())
 }
 
-// Close stops every job of every workspace (terminate, grace, kill), with
-// no end-of-job notice (the loop is stopping), builds no tools meanwhile, and
+// Close stops every job of every workspace (terminate, grace, kill), builds
+// no tools meanwhile, and
 // then forgets the managers and the hooks, so a gateway started again in this
 // process starts afresh. It returns when the jobs have ended or ctx ends.
 func (m *Mount) Close(ctx context.Context) error {
@@ -424,7 +413,6 @@ func (m *Mount) Close(ctx context.Context) error {
 	m.mu.Unlock()
 	m.nmu.Lock()
 	m.hooks, m.bound = Hooks{}, false
-	m.routes = make(map[string]func(*toolspec.Result))
 	m.nmu.Unlock()
 	return errors.Join(errs...)
 }
