@@ -844,7 +844,8 @@ func TestEngine_LoopPanicEndsTheSpan(t *testing.T) {
 		t.Errorf("run returned (%v) instead of panicking", err)
 	}()
 	kinds := f.rec.kinds()
-	if countOf(kinds, "TurnFinished") != 1 || f.rec.all()[len(kinds)-1].(hook.TurnFinished).Outcome != hook.OutcomeError {
+	last, isFin := f.rec.all()[len(kinds)-1].(hook.TurnFinished)
+	if countOf(kinds, "TurnFinished") != 1 || !isFin || last.Outcome != hook.OutcomeError {
 		t.Fatalf("events = %v", kinds)
 	}
 	started, calls := 0, 0
