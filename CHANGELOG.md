@@ -83,6 +83,12 @@
 
 ### Fixed
 
+- **A Maestro task tool called right after a task finished could fail with
+  "failed to create lock file".** When a dispatched task ended, its lock file
+  was deleted just after the agent was told, so a `maestro_task_list`,
+  `maestro_task_get` or `maestro_task_result_get` call made at that moment
+  could fail. The lock file is now left in place, and calls that race the
+  deletion of a task set get "task set not found" instead of a lock error.
 - **A CLI model call that fails keeps the tokens and cost the CLI reported.**
   They used to be dropped: the call's `LLM finish` log line now shows them,
   and a failed classifier or task-model call on a CLI counts toward the
