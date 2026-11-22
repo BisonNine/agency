@@ -18,7 +18,7 @@ type chainCompleter func(ctx context.Context, system, user string, jsonObject bo
 // consolidate.ModelCaller. Consolidation reuses the same chain as context
 // compaction — there is no separate memory-model config (see
 // config.MemoryConfig) — and the same host client: one chain walk, honouring
-// Exclude and the shared cooldown tracker, serving both modules. cogmem
+// Exclude and the catalogue's cooldowns, serving both modules. cogmem
 // validates the reply itself and calls again with a longer Exclude when a
 // model returns something unusable.
 type memoryModelCaller struct {

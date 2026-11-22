@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -155,8 +156,9 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 				return "", "", cl.model, ctxErr
 			}
 			if !last.called {
-				// Parked between the check above and the call.
-				cooling++
+				if !errors.Is(chatErr, models.ErrNoModelAvailable) {
+					cooling++ // parked between the check above and the call
+				}
 				continue
 			}
 			lastErr, lastModel = last.err, cl.model
@@ -309,8 +311,8 @@ func (al *AgentLoop) resolveDefaultCompressClient(agent *AgentInstance, sessionK
 // session: the agent's own summarization_models first, then the global
 // cfg.Summarization.Models, then the agent's primary model as a last-resort
 // fallback so summarization still works when the lists are empty or every
-// configured model fails. Cooldowns are shared with the main fallback chain
-// so a model parked by either path (e.g. an out-of-credits 402) is skipped by
+// configured model fails. Health is the catalogue's, shared with every other
+// path, so a model parked by any path (e.g. an out-of-credits 402) is skipped by
 // both. Also returns the effective (first) model name for the summary stamp.
 func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey string) (*compressModelCaller, string) {
 	if agent.HumanModel != "" {

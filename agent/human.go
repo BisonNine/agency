@@ -418,7 +418,7 @@ func (al *AgentLoop) runHumanTurn(ctx context.Context, agent *AgentInstance, opt
 		return "", fmt.Errorf("%s has no chat to reach the person in", agent.DisplayName())
 	}
 	hp, ok := al.catalogs.HumanClient(agent.HumanModel)
-	if !ok {
+	if _, inCatalog := al.catalog.Get(agent.HumanModel); !ok || !inCatalog {
 		return "", fmt.Errorf("model %q is not a person's model", agent.HumanModel)
 	}
 	relay := func(ctx context.Context, request string, timeout time.Duration) (string, error) {

@@ -449,6 +449,7 @@ func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *t
 	scope := models.Scope(sessionKey)
 	if idx := al.getActiveModelIndex(agent, sessionKey); idx > 0 && idx < len(agent.Candidates) {
 		if err := set.Select(models.Chat, agent.Candidates[idx].Name, scope); err != nil {
+			set.Reset(models.Chat, scope)
 			logger.DebugCF("agent", "active model not in the agent's chain; using its first model",
 				map[string]any{"agent_id": agent.ID, "model": agent.Candidates[idx].Name, "error": err.Error()})
 		}

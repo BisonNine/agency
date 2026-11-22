@@ -65,6 +65,10 @@ type AgentLoop struct {
 	catalog       *models.Catalog
 	catalogs      *providers.CatalogBuilder
 	catalogDigest string
+	// buildCatalog, while a reload that changes models builds its agents, is
+	// the catalogue about to be adopted, which the agents' models are
+	// assigned in; nil otherwise (they go to catalog).
+	buildCatalog atomic.Pointer[models.Catalog]
 	// dispatcher serves the task models and the describe-images models,
 	// which call clients the catalogue does not hand out.
 	dispatcher *providers.ProviderDispatcher
@@ -385,7 +389,7 @@ func NewAgentLoop(
 	// closures, spawn/subagent, msg with shared MessageTool), so it runs once
 	// al exists.
 	registry, err := agentreg.New(ctx, cfg, agentreg.Hooks[*AgentInstance]{
-		Build:    al.agentBuilder(provider, dispatcher, al.catalog),
+		Build:    al.agentBuilder(provider, dispatcher),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
 		Clock:    registryClock{al},
@@ -639,22 +643,30 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	// rebuilt agents' models are assigned in it, and it is adopted when the
 	// new agents are swapped in; its models start with no cooldown. Any
 	// other reload keeps the running catalogue, and with it the cooldowns:
-	// most saves do not touch models, and clearing them would alert again
-	// about a model that is still out of credit.
+	// most saves do not touch models, and clearing them would make the next
+	// turns call a model that is still out of credit again.
 	digest := catalogDigest(cfg)
 	var next *models.Catalog
-	target := al.catalog
 	if digest != al.catalogDigest {
 		next = al.catalogs.Build(cfg)
-		target = next
+		al.buildCatalog.Store(next)
 	}
-
-	if err := al.reloadRegistry(ctx, registry, provider, cfg, target, func() {
+	err := al.reloadRegistry(ctx, registry, provider, cfg, func() {
 		if next != nil {
 			al.adoptCatalog(next, digest)
+			al.buildCatalog.Store(nil)
 		}
-	}); err != nil {
+	})
+	al.buildCatalog.Store(nil)
+	if err != nil {
 		return err
+	}
+	// An agent the reload kept (one busy in a turn) has its models stated
+	// in the adopted catalogue too; for the others this changes nothing.
+	for _, id := range registry.All() {
+		if inst, ok := registry.Get(id); ok && inst != nil {
+			assignAgentModels(al.catalog, inst)
+		}
 	}
 
 	// Whispers held for an agent the new configuration removed are dropped;
@@ -694,8 +706,8 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 // (config agents from the config, temporary agents against it too), each
 // with its tools registered the same way as at start. Nothing changes until
 // all are built; then the registry swaps them in one step and, in the same
-// step, the config is swapped here and committed runs (it adopts a new model
-// catalogue), so readers see a consistent pair. A ctx that ends first returns at once: the rebuild is
+// step, the config is swapped here and committed is called (it adopts a new
+// model catalogue), so readers see a consistent pair. A ctx that ends first returns at once: the rebuild is
 // abandoned (the commit refuses) and closes what it built. Whichever of the
 // commit and the abandonment comes first wins. Panics are recovered and
 // reported as a failed reload.
@@ -704,7 +716,6 @@ func (al *AgentLoop) reloadRegistry(
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
 	cfg *config.Config,
-	catalog *models.Catalog,
 	committed func(),
 ) error {
 	const (
@@ -724,7 +735,7 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher, catalog), func() bool {
+		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher), func() bool {
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}

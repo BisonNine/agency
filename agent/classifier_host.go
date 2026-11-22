@@ -264,8 +264,10 @@ func (h *ClassifierHost) Call(ctx context.Context, agentID, tool string, args ma
 // Complete implements classifier.ModelCaller: one request, with no tools, on
 // the agent's classifier model (agents.list[].classifiers.model), which must
 // be one of the agent's models. There is no fallback: a model in cooldown is
-// refused with a *classifier.CooldownError, and a failure is recorded against
-// the shared cooldown policy like any other call. A CLI model runs isolated:
+// refused with a *classifier.CooldownError, and the call runs on the model's
+// single-model chain in the catalogue, which records a failure against its
+// health like any other call (and waits out a Retry-After of up to 3 s once
+// before giving up). A CLI model runs isolated:
 // in an empty folder of its own, removed afterwards, and never with the
 // provider's bypass flags. Its cost counts toward the daily spend alert like
 // any other model call.
@@ -331,6 +333,9 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 	if chatErr != nil {
 		if left := al.parkedFor(alias); !last.called && left > 0 {
 			return "", "", &classifier.CooldownError{Model: alias, Remaining: left}
+		}
+		if !last.called && errors.Is(chatErr, models.ErrNoModelAvailable) {
+			return "", "", fmt.Errorf("model %s is not configured or not enabled: %w", alias, classifier.ErrNoModel)
 		}
 		if last.called && last.err != nil {
 			chatErr = last.err

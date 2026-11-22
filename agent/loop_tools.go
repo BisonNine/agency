@@ -13,7 +13,6 @@ import (
 
 	sdkdiscovery "go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/toolkit"
-	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -35,17 +34,21 @@ import (
 // reload, al.cfg is still the old one at this point). A fresh temporary agent
 // gets no tools at all.
 //
-// The agent's models are assigned in catalog: the running catalogue, or on a
-// reload that changes models the one about to be adopted.
+// The agent's models are assigned in the running catalogue, or, while a
+// reload that changes models builds its agents, in the one about to be
+// adopted (buildCatalog).
 func (al *AgentLoop) agentBuilder(
 	provider providers.LLMProvider,
 	dispatcher *providers.ProviderDispatcher,
-	catalog *models.Catalog,
 ) agentreg.BuildFunc[*AgentInstance] {
 	return func(ctx context.Context, cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
 		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg, provider)
 		if err != nil {
 			return nil, err
+		}
+		catalog := al.catalog
+		if next := al.buildCatalog.Load(); next != nil {
+			catalog = next
 		}
 		assignAgentModels(catalog, inst)
 		if inst.HumanModel != "" {

@@ -77,6 +77,17 @@ func TestReload_CooldownsKeptUnlessModelsChange(t *testing.T) {
 	if len(tm.candidates) != 1 || tm.candidates[0].Name != "alpha" {
 		t.Fatalf("after adopting, the agent's chain is %+v, want alpha", tm.candidates)
 	}
+
+	// An agent created after the adoption gets its models in the running
+	// catalogue, not in the spent one the reload built.
+	cloneID, err := al.GetRegistry().CreateClone("alice")
+	if err != nil {
+		t.Fatalf("CreateClone: %v", err)
+	}
+	clone, _ := al.GetRegistry().Get(cloneID)
+	if tm := al.selectTurnModel(clone, "c"); len(tm.candidates) != 1 || tm.candidates[0].Name != "alpha" {
+		t.Fatalf("a clone made after the reload has chain %+v, want alpha", tm.candidates)
+	}
 }
 
 // The digest follows what the catalogue is built from, and nothing else.
@@ -98,7 +109,6 @@ func TestCatalogDigest(t *testing.T) {
 		"agent models":          {func(c *config.Config) { c.Agents.List[0].Models = []string{"alpha"} }, false},
 		"cooldown policy":       {func(c *config.Config) { c.Cooldown.RateLimitMinutes = 3 }, false},
 		"log content":           {func(c *config.Config) { c.Logging.LogMessageContent = true }, false},
-		"summarization models":  {func(c *config.Config) { c.Summarization.Models = []string{"alpha"} }, false},
 		"agents' request limit": {func(c *config.Config) { c.Agents.Defaults.RequestTimeout = 30 }, false},
 		"default context":       {func(c *config.Config) { c.Agents.Defaults.ContextWindow = 1000 }, false},
 	} {

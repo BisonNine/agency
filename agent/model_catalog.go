@@ -52,36 +52,25 @@ func ensureAssigned(s *models.Set, p models.Purpose, names []string, agentID str
 }
 
 // catalogAssignments is the part of a configuration the agents' model
-// assignments are made from, for the catalogue digest: a reload that changes
-// none of it, nor the providers and models, keeps the running catalogue and
-// its cooldowns.
+// assignments are made from, for the catalogue digest: the agents' chat
+// models, what their sets are built from. A reload that changes none of it,
+// nor the providers and models, keeps the running catalogue and its
+// cooldowns.
 type catalogAssignments struct {
-	DefaultModels       []string
-	Agents              []agentAssignments
-	SummarizationModels []string
-	TaskModels          config.TaskModelsConfig
+	DefaultModels []string           `json:"default_models"`
+	Agents        []agentAssignments `json:"agents"`
 }
 
 type agentAssignments struct {
-	ID                  string
-	Models              []string
-	WorkerModels        []string
-	SummarizationModels []string
+	ID     string   `json:"id"`
+	Models []string `json:"models"`
 }
 
 func assignmentsOf(cfg *config.Config) catalogAssignments {
-	a := catalogAssignments{
-		DefaultModels:       cfg.Agents.Defaults.Models,
-		SummarizationModels: cfg.Summarization.Models,
-		TaskModels:          cfg.TaskModels,
-	}
+	a := catalogAssignments{DefaultModels: cfg.Agents.Defaults.Models}
 	for i := range cfg.Agents.List {
 		ac := &cfg.Agents.List[i]
-		e := agentAssignments{ID: ac.ID, Models: ac.Models, SummarizationModels: ac.SummarizationModels}
-		if ac.Subagents != nil {
-			e.WorkerModels = ac.Subagents.Models
-		}
-		a.Agents = append(a.Agents, e)
+		a.Agents = append(a.Agents, agentAssignments{ID: ac.ID, Models: ac.Models})
 	}
 	return a
 }
