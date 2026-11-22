@@ -184,12 +184,15 @@ See [docs/test.md](docs/test.md) for how the suite is organised. Developer notes
 
 ### Shared modules
 
-Several parts of Agency are standalone Go modules so they can be reused (e.g. by Maestro) and compiled into one binary without import cycles:
+Several parts of Agency are standalone Go modules so they can be reused (e.g. by Maestro) and compiled into one binary without import cycles. The agent SDK, [`go.bison9.com/agent`](https://github.com/BisonNine/agent), is one module with these packages:
 
-- **[`toolspec`](https://github.com/PivotLLM/toolspec)** — the transport-neutral tool contract.
-- **[`spawnllm`](https://github.com/PivotLLM/spawnllm)** — the LLM-dispatch core: provider clients and the tool-call loop.
-- **[`ctxengine`](https://github.com/PivotLLM/ctxengine)** — the context engine: transcript, archive, compaction and the session tools.
-- **[`cogmem`](https://github.com/PivotLLM/cogmem)** — cognitive memory.
+- **`toolspec`** — the transport-neutral tool contract.
+- **`spawnllm`** — the LLM-dispatch core: provider clients and the tool-call loop.
+- **`ctxengine`** — the context engine: transcript, archive, compaction and the session tools.
+- **`cogmem`** — cognitive memory.
+- **`accounting`** — one record per model or API call, naming the agent it was made for.
+
+Maestro (`go.bison9.com/maestro`) and MCPFusion (`go.bison9.com/mcpfusion`) are compiled in as modules too.
 
 Policy (model selection, fallback, cooldown, configuration) remains in Agency.
 

@@ -9,7 +9,7 @@ guide is `docs/forum.md`; the agent guide is `readme/README.md`.
 ## 1. Dependencies
 
 The package imports the standard library, `github.com/google/uuid`,
-`github.com/PivotLLM/toolspec` (the tool contract, stdlib-only) and
+`go.bison9.com/agent/toolspec` (the tool contract, stdlib-only) and
 `github.com/santhosh-tekuri/jsonschema/v6` (Draft 2020-12 JSON Schema; it
 was already in `go.sum` as an indirect dependency and is now direct at the
 same version). It imports nothing else from ClawEh: no agent loop, no

@@ -58,9 +58,9 @@ To add an internal module you (a) add its import and (b) add one
 
 ---
 
-## 2. Core types (`github.com/PivotLLM/toolspec`)
+## 2. Core types (`go.bison9.com/agent/toolspec`)
 
-The types live in the standalone `toolspec` module; `global/tools.go` re-exports
+The types live in the agent SDK's `toolspec` package; `global/tools.go` re-exports
 them as aliases under the historical `global.*` names. Abridged below: toolspec
 also has `Group`/`RevealTogether` on `ToolDefinition` and `ConfigDir`/`DB` on
 `Deps`.
@@ -336,7 +336,7 @@ host supplies the concrete implementation.
 
 | Thing | Location |
 |---|---|
-| Transport-neutral types | `github.com/PivotLLM/toolspec` (aliases in `global/tools.go`) |
+| Transport-neutral types | `go.bison9.com/agent/toolspec` (aliases in `global/tools.go`) |
 | Namespacing bridge | `tools/namespaced.go` (`NamespacedProvider`) |
 | Registry | `tools/providers.go` (`RegisterProvider` / `GetProviders`) |
 | **Aggregator (wire new modules here)** | `internal/gateway/tool_providers.go` |
