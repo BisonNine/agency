@@ -53,6 +53,9 @@ type llmDispatch struct {
 	answered hook.ModelRef
 	// supplied: a BeforeModel or OnModelError callback answered, not a model.
 	supplied bool
+	// rebuilt: the request of the current attempt was built from the session
+	// store (hook.ModelInfo.Rebuilt).
+	rebuilt bool
 	// calling is the model of the provider call in flight, set from its
 	// ModelCallStarted to its ModelCall.
 	calling *hook.ModelRef
@@ -116,6 +119,7 @@ func (e *engineTurn) newDispatch(ctx context.Context, defs []spawnllm.ToolDefini
 func (e *engineTurn) requestModel(ctx context.Context, d *llmDispatch) (*spawnllm.LLMResponse, error) {
 	var err error
 	for retry := 0; retry <= e.spec.retries; retry++ {
+		d.rebuilt, e.rebuilt = e.rebuilt, false
 		info := e.modelInfo(d)
 		answer, perr, berr := e.hooks.callBeforeModel(ctx, info)
 		if perr != nil {
@@ -179,12 +183,14 @@ func (e *engineTurn) requestModel(ctx context.Context, d *llmDispatch) (*spawnll
 }
 
 // modelInfo is the dispatch as the model callbacks see it: the turn's
-// working request.
+// working request, and whether the current attempt's was built from the
+// session store.
 func (e *engineTurn) modelInfo(d *llmDispatch) *hook.ModelInfo {
 	return &hook.ModelInfo{
 		Iteration: e.iteration,
 		Model:     e.turnModelRef(),
 		Request:   hook.ModelRequest{Messages: e.messages, Tools: d.defs, Options: d.llmOpts},
+		Rebuilt:   d.rebuilt,
 	}
 }
 
@@ -248,6 +254,7 @@ func (e *engineTurn) compressForRetry(ctx context.Context, d *llmDispatch, err e
 	}
 	if asm, berr := comprMgr.Assemble(ctx, e.spec.env.assembleRequest(ctx, d.defs, e.messages)); berr == nil {
 		e.messages = asm.Messages
+		e.rebuilt = true
 		d.promptEstimate = asm.PromptTokenEstimate
 	}
 

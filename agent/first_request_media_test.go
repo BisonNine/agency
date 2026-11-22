@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -246,9 +247,12 @@ func (p *toolThenDoneProvider) Chat(_ context.Context, _ providers.Identity, msg
 type mediaTurn struct {
 	store     *pinRecordingStore
 	provider  *toolThenDoneProvider
+	agent     *AgentInstance
 	gone      string
 	kept      string
 	runWithCM func(cm *rebuildingSecondStep)
+	// run runs the turn on any context manager.
+	run func(cm ctxengine.ContextManager)
 }
 
 func newMediaTurn(t *testing.T) *mediaTurn {
@@ -276,9 +280,9 @@ func newMediaTurn(t *testing.T) *mediaTurn {
 	if agent.Config != nil {
 		agent.Config.Tools = []string{"*"}
 	}
-	mt := &mediaTurn{store: store, provider: &toolThenDoneProvider{}, gone: ref("alice-old.png"), kept: ref("alice-new.png")}
+	mt := &mediaTurn{store: store, provider: &toolThenDoneProvider{}, agent: agent, gone: ref("alice-old.png"), kept: ref("alice-new.png")}
 	setTestProvider(agent, mt.provider)
-	mt.runWithCM = func(cm *rebuildingSecondStep) {
+	mt.run = func(cm ctxengine.ContextManager) {
 		entry := &cmEntry{cm: cm, sessionKey: "s"}
 		entry.touch()
 		al.contextManagers.Store(agent.ID+":s", entry)
@@ -286,6 +290,7 @@ func newMediaTurn(t *testing.T) *mediaTurn {
 			t.Fatal(err)
 		}
 	}
+	mt.runWithCM = func(cm *rebuildingSecondStep) { mt.run(cm) }
 	return mt
 }
 
@@ -380,5 +385,114 @@ func TestRequestMedia_ResolvedOnceWithoutRebuild(t *testing.T) {
 	}
 	if len(mt.store.pins) != 1 || !slices.Equal(mt.store.pins[0], []string{mt.gone, mt.kept}) {
 		t.Fatalf("pins set = %v, want both images once", mt.store.pins)
+	}
+}
+
+// When a step's rebuild removes every attachment, the session's pins follow
+// it at once: the rebuilt request pins nothing, so both images are released
+// in this turn rather than the next.
+func TestRequestMedia_RebuildWithoutAttachmentsUnpins(t *testing.T) {
+	tests := []struct {
+		name    string
+		rebuild func(*ctxengine.Assembly)
+	}{
+		{"compaction", func(a *ctxengine.Assembly) { a.Compacted = true }},
+		{"eviction", func(a *ctxengine.Assembly) {
+			a.Evictions = []ctxengine.EvictionEvent{{Tool: "file_read_bytes", Resource: "notes.txt", Bytes: 10, Reason: "stale"}}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := newMediaTurn(t)
+			cm := &rebuildingSecondStep{
+				before:  []providers.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+				after:   []providers.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look"}},
+				rebuild: tt.rebuild,
+			}
+			mt.runWithCM(cm)
+
+			if len(mt.provider.calls) != 2 {
+				t.Fatalf("model calls = %d, want 2", len(mt.provider.calls))
+			}
+			if got := mediaOf(mt.provider.calls[1]); len(got) != 0 {
+				t.Fatalf("second call media = %v, want none", got)
+			}
+			mt.store.mu.Lock()
+			defer mt.store.mu.Unlock()
+			if len(mt.store.pins) != 2 || !slices.Equal(mt.store.pins[0], []string{mt.gone, mt.kept}) || len(mt.store.pins[1]) != 0 {
+				t.Fatalf("pins set = %v, want both images, then none", mt.store.pins)
+			}
+			if mt.store.resolves != 2 {
+				t.Fatalf("refs resolved = %d, want 2 (the first request's)", mt.store.resolves)
+			}
+		})
+	}
+}
+
+// overflowingOnce is a context manager whose turn starts with before and
+// keeps it, until a forced compression after a context-window error makes
+// the next assembly return after.
+type overflowingOnce struct {
+	capturingContextManager
+	before, after []providers.Message
+	compressed    bool
+}
+
+func (c *overflowingOnce) Assemble(context.Context, ctxengine.AssembleRequest) (ctxengine.Assembly, error) {
+	if c.compressed {
+		return ctxengine.Assembly{Messages: c.after, Compacted: true}, nil
+	}
+	return ctxengine.Assembly{Messages: c.before}, nil
+}
+
+func (c *overflowingOnce) ForceCompress(context.Context) error {
+	c.compressed = true
+	return nil
+}
+
+// overflowThenDoneProvider records the messages of every call; the first
+// overflows the context window, the next answers "done".
+type overflowThenDoneProvider struct {
+	messagesProvider
+}
+
+func (p *overflowThenDoneProvider) Chat(_ context.Context, _ providers.Identity, msgs []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls = append(p.calls, slices.Clone(msgs))
+	if len(p.calls) == 1 {
+		return nil, errors.New("context window exceeded: Alice's request is too long")
+	}
+	return &providers.LLMResponse{Content: "done", FinishReason: "stop", Normal: true}, nil
+}
+
+// When a request overflows the context window, the request the retry rebuilds
+// from the compressed store is resolved again and the pins follow it: the
+// retry carries the image still present as a data URL, and the reference
+// compressed away is released at once.
+func TestRequestMedia_ResolvedAfterOverflowRetry(t *testing.T) {
+	mt := newMediaTurn(t)
+	p := &overflowThenDoneProvider{}
+	setTestProvider(mt.agent, p)
+	cm := &overflowingOnce{
+		before: []providers.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+		after:  []providers.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+	}
+	mt.run(cm)
+
+	if len(p.calls) != 2 {
+		t.Fatalf("model calls = %d, want 2 (the overflow and its retry)", len(p.calls))
+	}
+	got := mediaOf(p.calls[1])
+	if len(got) != 1 || !strings.HasPrefix(got[0], "data:image/png;base64,") {
+		t.Fatalf("retry media = %v, want the kept image resolved", got)
+	}
+	mt.store.mu.Lock()
+	defer mt.store.mu.Unlock()
+	if len(mt.store.pins) != 2 || !slices.Equal(mt.store.pins[1], []string{mt.kept}) {
+		t.Fatalf("pins set = %v, want both images, then only %s", mt.store.pins, mt.kept)
+	}
+	if mt.store.resolves != 3 {
+		t.Fatalf("refs resolved = %d, want 3", mt.store.resolves)
 	}
 }

@@ -212,6 +212,9 @@ type engineTurn struct {
 	// messages is the request as sent: stored history plus this turn's
 	// unsaved steering messages, with media already resolved.
 	messages []spawnllm.Message
+	// rebuilt: messages were built from the session store since the last
+	// dispatch attempt took them (hook.ModelInfo.Rebuilt).
+	rebuilt bool
 	// releases are the context managers taken for compression, held until
 	// the turn ends.
 	releases []func()
@@ -446,6 +449,7 @@ func (e *engineTurn) begin(ctx context.Context, turn *hook.Turn) error {
 		return fmt.Errorf("context manager assemble: %w", err)
 	}
 	e.messages = asm.Messages
+	e.rebuilt = true
 	if err := e.spec.store.SetPendingTurn(e.spec.scope.Session); err != nil {
 		e.logAt(slog.LevelWarn, "Failed to set pending turn flag",
 			map[string]any{"error": err.Error(), "session": e.spec.scope.Session})
@@ -784,6 +788,7 @@ func (e *engineTurn) assemble(ctx context.Context, defs []spawnllm.ToolDefinitio
 	}
 	if asm.Changed() {
 		e.messages = asm.Messages
+		e.rebuilt = true
 	}
 	return asm.PromptTokenEstimate
 }

@@ -957,3 +957,68 @@ func TestEngine_CompactionReachesTheTurnsHooks(t *testing.T) {
 		t.Fatalf("reached %v", seen)
 	}
 }
+
+// BeforeModel is told a request was rebuilt from the session store on the
+// turn's first request and after an eviction or an overflow retry replaced
+// the working request, and not on a request kept from the step before or
+// retried after a timeout.
+func TestEngine_RebuiltOnStoreRequests(t *testing.T) {
+	tests := []struct {
+		name  string
+		steps []modelstest.Step
+		setup func(f *engineFixture)
+		// advance runs the turn past a timeout's backoff.
+		advance bool
+		want    []bool
+	}{
+		{"kept", []modelstest.Step{callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done")}, nil, false, []bool{true, false}},
+		{"eviction", []modelstest.Step{callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done")},
+			func(f *engineFixture) {
+				// The second step's assembly evicts.
+				f.spec.hooks.add(hook.Plugin{Name: "evict", OnEvent: func(_ context.Context, ev hook.Event) {
+					if _, ok := ev.(hook.ToolBatchStarted); ok {
+						f.cm.mu.Lock()
+						f.cm.evictOnce = true
+						f.cm.mu.Unlock()
+					}
+				}})
+			}, false, []bool{true, true}},
+		{"overflow", []modelstest.Step{modelstest.Fail(errors.New("context_length_exceeded: request too long")), modelstest.Reply("done")},
+			nil, false, []bool{true, true}},
+		{"timeout", []modelstest.Step{modelstest.Fail(fmt.Errorf("request: %w", context.DeadlineExceeded)), modelstest.Reply("done")},
+			nil, true, []bool{true, false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := modelstest.New().Script("alice-wire", tt.steps...)
+			clk := newFake()
+			_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+			f := newEngineFixture(t, chain, clk)
+			f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.NewResult("ok") })
+			if tt.setup != nil {
+				tt.setup(f)
+			}
+			var rebuilt []bool
+			f.spec.hooks.add(hook.Plugin{Name: "tap", BeforeModel: func(_ context.Context, info *hook.ModelInfo) (*spawnllm.LLMResponse, error) {
+				rebuilt = append(rebuilt, info.Rebuilt)
+				return nil, nil
+			}})
+			done := make(chan error, 1)
+			go func() { _, _, err := f.run(t); done <- err }()
+			if tt.advance {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := clk.BlockUntil(ctx, 1); err != nil {
+					t.Fatalf("the retry never waited on the clock: %v", err)
+				}
+				clk.Advance(2 * f.spec.retryBackoff)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(rebuilt, tt.want) {
+				t.Fatalf("Rebuilt = %v, want %v", rebuilt, tt.want)
+			}
+		})
+	}
+}

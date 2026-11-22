@@ -114,7 +114,7 @@ func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
 //     reasoning may stand in for an empty reply, and both run before the
 //     engine stores the assistant message (the notes are in it);
 //   - BeforeModel: the session's pins follow a request built from the
-//     session store before its media are resolved.
+//     session store (Rebuilt) before its media are resolved.
 //
 // The plugins that read per-chat settings are registered when the model
 // loop starts (loopPlugins). No tool callback is registered: tool calls
@@ -276,20 +276,17 @@ func (al *AgentLoop) turnPlugin(agent *AgentInstance, opts *processOptions, cm c
 
 // requestMediaPlugin makes the session's pins follow the request, and then
 // resolves its media refs for dispatch: images become base64 data URLs,
-// other media local paths in the content. It acts on the turn's first
-// request and on any later one that still holds media:// refs in its media:
-// one rebuilt from the store when the history was rewritten during the turn
-// (a compaction, an eviction or an overflow retry). A request kept from the
-// step before has its media resolved already, so nothing is read again; a
-// rebuild that leaves no refs in any media list leaves the pins to the next
-// turn.
+// other media local paths in the content. It acts on a request built from
+// the session store (hook.ModelInfo.Rebuilt): the turn's first, and any
+// later one rebuilt when the history was rewritten during the turn (a
+// compaction, an eviction or an overflow retry), so a reference the rewrite
+// removed is released at once. A request kept from the step before has its
+// media resolved already, so nothing is read again.
 func (al *AgentLoop) requestMediaPlugin() hook.BeforeModelFunc {
-	first := true
 	return func(ctx context.Context, call *hook.ModelInfo) (*providers.LLMResponse, error) {
-		if !first && !hasMediaRefs(call.Request.Messages) {
+		if !call.Rebuilt {
 			return nil, nil
 		}
-		first = false
 		scope, _ := hook.ScopeOf(ctx)
 		// Must run before resolveMediaRefs replaces refs with data URLs.
 		al.reconcileSessionPins(scope.Session, call.Request.Messages)

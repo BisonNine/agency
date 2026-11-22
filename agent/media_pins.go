@@ -29,20 +29,6 @@ func mediaRefsIn(refs []string) []string {
 	return out
 }
 
-// hasMediaRefs reports whether any message's media list still holds a
-// media:// ref, as history read back from the session store does until
-// resolveMediaRefs resolves it.
-func hasMediaRefs(messages []providers.Message) bool {
-	for i := range messages {
-		for _, ref := range messages[i].Media {
-			if strings.HasPrefix(ref, "media://") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // appendMediaRefMarker appends the attachment-ref marker to message content so
 // the ref survives in stored history even when the media itself is described
 // (Flow B) or stripped for a non-vision model. The refs are actionable: they
