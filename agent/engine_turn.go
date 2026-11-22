@@ -278,17 +278,29 @@ type turnHandle struct {
 	cancel context.CancelCauseFunc
 	done   chan struct{}
 	result hook.TurnResult
+	// hooks and scope are the turn's, for OnInterrupt.
+	hooks *turnHooks
+	scope hook.Scope
 }
 
 // Interrupt stops the turn with hook.ErrInterrupted.
-func (h *turnHandle) Interrupt() { h.cancel(hook.ErrInterrupted) }
+func (h *turnHandle) Interrupt() { h.Cancel(hook.ErrInterrupted) }
 
-// Cancel stops the turn with cause (nil means hook.ErrInterrupted).
+// Cancel stops the turn with cause (nil means hook.ErrInterrupted), then
+// tells the OnInterrupt observers, on a context that is never cancelled.
 func (h *turnHandle) Cancel(cause error) {
 	if cause == nil {
 		cause = hook.ErrInterrupted
 	}
+	running := true
+	select {
+	case <-h.done:
+		running = false
+	default:
+	}
 	h.cancel(cause)
+	h.hooks.callOnInterrupt(hook.WithScope(context.Background(), h.scope),
+		hook.Interrupted{Scope: h.scope, Cause: cause, Running: running})
 }
 
 // Done is closed once TurnFinished has been emitted.
@@ -329,7 +341,7 @@ func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 		return engineResult{}, errEngineIncomplete
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
-	e.handle = &turnHandle{cancel: cancel, done: make(chan struct{})}
+	e.handle = &turnHandle{cancel: cancel, done: make(chan struct{}), hooks: e.hooks, scope: e.spec.scope}
 	defer cancel(nil)
 
 	e.hooks.emit(ctx, hook.TurnStarted{EventHeader: e.header(), Message: e.spec.message, Options: e.spec.options})
