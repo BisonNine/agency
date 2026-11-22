@@ -250,3 +250,18 @@ func TestSDKAs(t *testing.T) {
 		t.Errorf("fields lost: %v", lines[0])
 	}
 }
+
+// A line logged through the SDK logger names its own call site, in the same
+// "file:line (func)" form as the host's lines, never the handler.
+func TestSDKCallerIsTheCallSite(t *testing.T) {
+	lines := captureSDK(t, INFO, func() {
+		SDK().Info("from the call site", "component", "alice")
+	})
+	if len(lines) != 1 {
+		t.Fatalf("lines = %d", len(lines))
+	}
+	caller := fmt.Sprint(lines[0]["caller"])
+	if !strings.HasPrefix(caller, "alice  sdk_test.go:") || !strings.Contains(caller, "(logger.TestSDKCallerIsTheCallSite.func1)") {
+		t.Fatalf("caller = %q, want this test's file and function", caller)
+	}
+}

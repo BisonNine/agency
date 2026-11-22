@@ -80,7 +80,8 @@ func (h sdkHandler) Handle(_ context.Context, r slog.Record) error {
 	if to, ok := h.rename[component]; ok {
 		component = to
 	}
-	logMessage(hostLevel(r.Level), component, r.Message, fields)
+	// The caller is the record's own call site, not this handler.
+	logMessageAt(hostLevel(r.Level), component, r.Message, fields, r.PC)
 	return nil
 }
 

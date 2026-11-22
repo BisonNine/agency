@@ -444,6 +444,19 @@ func getCallerInfo() (string, int, string) {
 	return "???", 0, "???"
 }
 
+// callerAt is the call site at pc, as getCallerInfo reports one; getCallerInfo
+// itself when pc is 0 or unknown.
+func callerAt(pc uintptr) (string, int, string) {
+	if pc == 0 {
+		return getCallerInfo()
+	}
+	frame, _ := runtime.CallersFrames([]uintptr{pc}).Next()
+	if frame.Function == "" {
+		return getCallerInfo()
+	}
+	return filepath.Base(frame.File), frame.Line, filepath.Base(frame.Function)
+}
+
 //nolint:zerologlint
 func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
 	switch level {
@@ -466,6 +479,12 @@ func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
 }
 
 func logMessage(level LogLevel, component string, message string, fields map[string]any) {
+	logMessageAt(level, component, message, fields, 0)
+}
+
+// logMessageAt is logMessage for a line whose call site is pc (from
+// runtime.Callers); 0 finds the call site by walking the stack.
+func logMessageAt(level LogLevel, component string, message string, fields map[string]any, pc uintptr) {
 	// The writers (SetLevel, the file setup, RedirectForTest) change these
 	// under mu; read them under it too, so a goroutine logging while the
 	// logger is reconfigured does not race.
@@ -477,7 +496,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		return
 	}
 
-	callerFile, callerLine, callerFunc := getCallerInfo()
+	callerFile, callerLine, callerFunc := callerAt(pc)
 
 	event := getEvent(out, level)
 
