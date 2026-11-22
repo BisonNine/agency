@@ -137,7 +137,7 @@ func (e *fakeEnv) assembleRequest(context.Context, []spawnllm.ToolDefinition, []
 
 func (e *fakeEnv) compressionManager() (ctxengine.ContextManager, func()) { return e.cm, func() {} }
 
-func (e *fakeEnv) sessionSummary() string            { return "" }
+func (e *fakeEnv) sessionSummary() string { return "" }
 func (e *fakeEnv) firstRequest(context.Context) ctxengine.AssembleRequest {
 	return ctxengine.AssembleRequest{}
 }
@@ -276,13 +276,13 @@ func newEngineFixture(t *testing.T, chain *models.Chain, clk *clock.Fake) *engin
 	hooks := &turnHooks{}
 	hooks.add(hook.Plugin{Name: "recorder", OnEvent: rec.on})
 	spec := engineSpec{
-		agentID:       "alice",
-		scope:         hook.Scope{AgentID: "alice", AgentName: "Alice", Session: "s", TurnID: "t1"},
-		message:       hook.UserText("hello"),
+		agentID: "alice",
+		scope:   hook.Scope{AgentID: "alice", AgentName: "Alice", Session: "s", TurnID: "t1"},
+		message: hook.UserText("hello"),
 		// The message is in the session's history (cm.assembled): the
 		// engine tests drive the turn from its first request.
-		options: hook.RunOptions{AlreadyStored: true},
-		store:   store,
+		options:       hook.RunOptions{AlreadyStored: true},
+		store:         store,
 		maxIterations: 6,
 		retries:       llmMaxRetries,
 		retryBackoff:  time.Second,
