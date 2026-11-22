@@ -288,6 +288,44 @@ func TestDerivedSummaryModel_FollowsDefaultModel(t *testing.T) {
 	}
 }
 
+// A busy temporary agent built while a derived summarization model could be
+// made does not bring it back once the configuration in force can no longer
+// make it (no default model).
+func TestDerivedSummaryModel_NotRestoredFromOldConfig(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	conf := func(def string) *config.Config {
+		cfg := abcConfig(base, def)
+		cfg.Summarization.Models = []string{"raw-summarizer"}
+		return cfg
+	}
+	al := mustNewAgentLoop(t, conf("a"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	r := al.GetRegistry()
+	id, err := r.CreateClone("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone, _ := r.Get(id)
+	end, ok := r.BeginTurn(id, clone)
+	if !ok {
+		t.Fatal("the clone could not begin a turn")
+	}
+	defer end()
+	name := providers.DerivedSummaryName("raw-summarizer")
+	if _, ok := al.catalog.Get(name); !ok {
+		t.Fatal("no derived model to begin with")
+	}
+	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, conf("no-such-model")); err != nil {
+		t.Fatal(err)
+	}
+	if now, _ := r.Get(id); now != clone {
+		t.Fatal("the busy clone was rebuilt")
+	}
+	if _, ok := al.catalog.Get(name); ok {
+		t.Fatal("the derived model came back from the busy clone's configuration")
+	}
+}
+
 // Deleting temporary agents removes their sets.
 func TestTemporaryAgentDeleted_SetRemoved(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))

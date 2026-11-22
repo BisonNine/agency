@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
@@ -50,8 +52,9 @@ func gapConfig(base string) *config.Config {
 }
 
 // Between an adopting reload's commit and the adopt, a turn for an agent the
-// reload added, a turn for an existing agent and a clone created in the gap
-// all wait, then get exactly their new configuration's lists, with wire ids.
+// reload added and a turn for an existing agent wait (listsGate), then get
+// exactly their new configuration's lists, with wire ids; a clone created in
+// the gap is returned to its creator with its new lists stated.
 func TestReload_TurnsWaitForListsAfterCommit(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	base := t.TempDir()
@@ -171,6 +174,8 @@ func listsComplete(t *testing.T, al *AgentLoop, inst *AgentInstance, what string
 
 // Creations and turns racing reloads that add an agent and adopt find the
 // lists complete when the creator receives the id and at each turn start.
+// A turn starts only on an agent whose id is known: a configured one or a
+// clone its creator has received.
 func TestReload_RaceListsCompleteAtEveryTurn(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	base := t.TempDir()
@@ -180,6 +185,9 @@ func TestReload_RaceListsCompleteAtEveryTurn(t *testing.T) {
 	}
 	al := mustNewAgentLoop(t, cfgs[0](), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
 	var stop atomic.Bool
+	var known sync.Map // ids a turn may start on
+	known.Store("main", true)
+	known.Store("bob", true)
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for !stop.Load() {
@@ -191,12 +199,22 @@ func TestReload_RaceListsCompleteAtEveryTurn(t *testing.T) {
 			if inst, ok := al.GetRegistry().Get(id); ok {
 				listsComplete(t, al, inst, "at creation")
 			}
+			known.Store(id, true)
 		}
 	})
 	wg.Go(func() {
 		for !stop.Load() {
 			for _, inst := range registryInstances(al.GetRegistry()) {
+				if _, ok := known.Load(inst.ID); !ok {
+					continue
+				}
+				// As a turn does: the agent stays until the turn ends.
+				end, ok := al.GetRegistry().BeginTurn(inst.ID, inst)
+				if !ok {
+					continue
+				}
 				listsComplete(t, al, inst, "at a turn")
+				end()
 			}
 		}
 	})
@@ -208,4 +226,59 @@ func TestReload_RaceListsCompleteAtEveryTurn(t *testing.T) {
 	stop.Store(true)
 	wg.Wait()
 	checkAllAssigned(t, al)
+}
+
+// closedWriteStore records model choices saved through it after Close.
+type closedWriteStore struct {
+	session.SessionStore
+	state  compactionStateStore
+	closed atomic.Bool
+	late   atomic.Int32
+}
+
+func (s *closedWriteStore) Close() error {
+	s.closed.Store(true)
+	return s.SessionStore.Close()
+}
+
+func (s *closedWriteStore) GetCompactionState(key string) (memory.CompactionState, error) {
+	return s.state.GetCompactionState(key)
+}
+
+func (s *closedWriteStore) SetCompactionState(key string, st memory.CompactionState) error {
+	if s.closed.Load() {
+		s.late.Add(1)
+	}
+	return s.state.SetCompactionState(key, st)
+}
+
+// A reload that moves a session's chosen model re-saves the choice through
+// the new instance, never the replaced (closed) one.
+func TestReload_ChoiceSavedThroughNewInstance(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	al := mustNewAgentLoop(t, abcConfig(base, "a", "b", "c"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	main := al.GetRegistry().Default()
+	selectModel(t, al, main, "s", "c")
+	state, ok := main.Sessions.(compactionStateStore)
+	if !ok {
+		t.Fatal("no compaction state store")
+	}
+	old := &closedWriteStore{SessionStore: main.Sessions, state: state}
+	main.Sessions = old
+	al.selectionAgents.Store(main.ID, main)
+
+	if err := al.ReloadConfig(context.Background(), abcConfig(base, "b", "c", "a")); err != nil {
+		t.Fatal(err)
+	}
+	if n := old.late.Load(); n != 0 {
+		t.Fatalf("%d choice(s) saved through the replaced instance after it was closed", n)
+	}
+	now := al.GetRegistry().Default()
+	if now == main {
+		t.Fatal("the reload did not replace main")
+	}
+	if got := storedIndex(t, now, "s"); got != 1 {
+		t.Fatalf("stored index = %d, want 1 (c in [b c a])", got)
+	}
 }

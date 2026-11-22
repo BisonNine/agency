@@ -25,7 +25,8 @@ func RegisterProvider(p ToolProvider) {
 }
 
 // UnregisterProvider removes the provider with namespace from the global
-// registry; a namespace not registered is ignored.
+// registry; a namespace not registered is ignored. Test support: lets a test
+// scope a provider it registered.
 func UnregisterProvider(namespace string) {
 	providerMu.Lock()
 	defer providerMu.Unlock()

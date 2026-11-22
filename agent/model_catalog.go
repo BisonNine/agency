@@ -41,7 +41,7 @@ func taskPurpose(use config.TaskUse) models.Purpose { return models.Purpose(use)
 // conversation. A model c does not have (disabled, or refused when the
 // catalogue was built) is left out. Every purpose is given, empty or not, so
 // ReplaceAll leaves nothing stale.
-func agentModelLists(c *models.Catalog, cfg *config.Config, inst *AgentInstance) map[models.Purpose][]models.Assignment {
+func agentModelLists(c *models.Catalog, cfg, current *config.Config, inst *AgentInstance) map[models.Purpose][]models.Assignment {
 	have := func(name string) bool { _, ok := c.Get(name); return ok }
 	list := func(names []string, settings []any) []models.Assignment {
 		out := make([]models.Assignment, 0, len(names))
@@ -65,7 +65,7 @@ func agentModelLists(c *models.Catalog, cfg *config.Config, inst *AgentInstance)
 	}
 	if inst.HumanModel == "" {
 		lists[models.Worker] = list(inst.workerModels, nil)
-		summarize := list(summarizationNames(c, cfg, inst), nil)
+		summarize := list(summarizationNames(c, cfg, current, inst), nil)
 		lists[models.Summarize], lists[models.Memory] = summarize, summarize
 	}
 	for _, use := range taskUses {
@@ -87,7 +87,14 @@ func agentModelLists(c *models.Catalog, cfg *config.Config, inst *AgentInstance)
 // session's /model choice is kept while its model is still listed. Lists
 // that did not change are left as they are.
 func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstance) {
-	if _, err := c.Set(inst.ID).ReplaceAll(agentModelLists(c, cfg, inst)); err != nil {
+	assignAgentModelsIn(c, cfg, cfg, inst)
+}
+
+// assignAgentModelsIn is assignAgentModels with the lists from cfg (the
+// agent's own configuration) and any derived summarization model it adds
+// defined by current (the configuration in force).
+func assignAgentModelsIn(c *models.Catalog, cfg, current *config.Config, inst *AgentInstance) {
+	if _, err := c.Set(inst.ID).ReplaceAll(agentModelLists(c, cfg, current, inst)); err != nil {
 		// The lists hold only models c has, each once; a spent catalogue is
 		// the only way left to fail.
 		logger.WarnCF("agent", "agent's models not assigned",
@@ -104,8 +111,9 @@ func (al *AgentLoop) assignOne(inst *AgentInstance) {
 	defer al.listsGate.RUnlock()
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
-	assignAgentModels(al.catalog, inst.builtWith, inst)
+	// Before the lists: ReplaceAll saves kept choices through it.
 	al.selectionAgents.Store(inst.ID, inst)
+	assignAgentModelsIn(al.catalog, inst.builtWith, al.GetConfig(), inst)
 }
 
 // stateListsAfterCommit states every agent's lists after a reload
@@ -128,8 +136,10 @@ func (al *AgentLoop) reconcileAll(registry *AgentRegistry, cfg *config.Config) {
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
 	instances := registryInstances(registry)
-	assignAll(al.catalog, cfg, instances)
+	// Before the lists: ReplaceAll saves kept choices through the new
+	// instances, not the replaced (closed) ones.
 	al.noteSelectionAgents(instances)
+	assignAll(al.catalog, cfg, instances)
 }
 
 // noteSelectionAgents records instances as the ones their sets' choices are
@@ -145,14 +155,14 @@ func (al *AgentLoop) noteSelectionAgents(instances []*AgentInstance) {
 // configuration in force) makes them and none left that no list names.
 func assignAll(c *models.Catalog, cfg *config.Config, instances []*AgentInstance) {
 	for _, inst := range instances {
-		assignAgentModels(c, inst.builtWith, inst)
+		assignAgentModelsIn(c, inst.builtWith, cfg, inst)
 	}
-	// An agent built with an older configuration may have added a derived
-	// model as that one made it: bring them in line, which drops a replaced
-	// one from the lists, and state the lists again.
+	// A derived model added while an older configuration was in force is
+	// defined as that one made it: bring them in line, which drops a
+	// replaced one from the lists, and state the lists again.
 	if syncDerived(c, cfg) {
 		for _, inst := range instances {
-			assignAgentModels(c, inst.builtWith, inst)
+			assignAgentModelsIn(c, inst.builtWith, cfg, inst)
 		}
 	}
 	pruneDerived(c, instances)
@@ -175,8 +185,8 @@ func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, diges
 	defer al.assignMu.Unlock()
 	next := al.catalogs.Build(cfg)
 	instances := registryInstances(registry)
-	assignAll(next, cfg, instances)
 	al.noteSelectionAgents(instances)
+	assignAll(next, cfg, instances)
 	al.adoptCatalog(next, digest)
 }
 
@@ -209,8 +219,9 @@ func registryInstances(registry *AgentRegistry) []*AgentInstance {
 // then its primary model unless already listed. A name that resolves to no
 // enabled model is served as it always was, by the agents' default model
 // with that name as its model id: a derived model (DerivedSummaryModel),
-// added to c on first use. Without a default model it is left out.
-func summarizationNames(c *models.Catalog, cfg *config.Config, inst *AgentInstance) []string {
+// added to c on first use, defined by current (the configuration in force).
+// Without a default model it is left out.
+func summarizationNames(c *models.Catalog, cfg, current *config.Config, inst *AgentInstance) []string {
 	var agentModels, globalModels []string
 	if inst.Config != nil {
 		agentModels = inst.Config.SummarizationModels
@@ -224,7 +235,7 @@ func summarizationNames(c *models.Catalog, cfg *config.Config, inst *AgentInstan
 		switch alias, _, ok := resolveCompressModelTarget(cfg, raw); {
 		case ok:
 			name = alias
-		case raw != "" && ensureDerived(c, cfg, raw):
+		case raw != "" && current != nil && ensureDerived(c, current, raw):
 			name = providers.DerivedSummaryName(raw)
 		default:
 			continue

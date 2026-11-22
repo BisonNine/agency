@@ -78,11 +78,20 @@ type AgentLoop struct {
 	// are visible but their lists are not yet stated: the reload write-locks
 	// it in its commit and releases it once the adopt or reconcile is done;
 	// selectTurnModel, setActiveModelIndex and agentInserted read-lock it.
-	// Lock order: reload lock → registry lock → listsGate → assignMu. A
-	// reader takes no registry lock while it holds listsGate (the selection
-	// store reads selectionAgents, not the registry), and no model call is
-	// made under it. The reload may read the registry while it holds the
-	// write lock: only that reload commits, and it has committed.
+	// Lock order: registry reload lock → registry lock → listsGate →
+	// assignMu. A reader takes no registry lock while it holds listsGate
+	// (the selection store reads selectionAgents, not the registry), and no
+	// model call is made under it. assignMu's holders (reconcileAll,
+	// adoptFor, removeSet) do read the registry: safe because the commit,
+	// the only holder of the registry lock that waits on either, is kept
+	// from them by the reload serialisation and, for agentInserted, by the
+	// registry reload lock its creation holds. The gate stays held over the
+	// registry's post-commit teardown, so turn starts wait for that too.
+	// Only chat selection is gated: a summary that starts while a derived
+	// summarization model is being replaced may run without it once. A
+	// configured agent dropped by an adopting reload while in a turn keeps
+	// no set in the new catalogue: a model it then selects is chosen as for
+	// an agent with no chat model.
 	listsGate sync.RWMutex
 	// selectionAgents is the instance each set was last stated for, by
 	// agent id: what the selection store reads and writes choices through.
@@ -626,6 +635,9 @@ func (al *AgentLoop) ReloadConfig(ctx context.Context, cfg *config.Config) error
 
 	al.reloading.Lock()
 	defer al.reloading.Unlock()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled before registry creation: %w", err)
+	}
 	registry := al.GetRegistry()
 
 	// A reload that changes what the catalogue is built from (catalogDigest)
