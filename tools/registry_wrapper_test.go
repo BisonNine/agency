@@ -333,10 +333,8 @@ func TestWrapper_GateChecksTheToolThatRuns(t *testing.T) {
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; ; i++ {
+	wg.Go(func() {
+		for {
 			select {
 			case <-stop:
 				return
@@ -345,17 +343,17 @@ func TestWrapper_GateChecksTheToolThatRuns(t *testing.T) {
 			r.ReplaceByPrefix("mcp_s_", []ToolEntry{{Tool: exemptTool, IsCore: true, SuiteExempt: true}})
 			r.ReplaceByPrefix("mcp_s_", []ToolEntry{{Tool: plainTool, IsCore: true}})
 		}
-	}()
+	})
 	var callers sync.WaitGroup
 	for range 4 {
-		callers.Add(1)
-		go func() {
-			defer callers.Done()
+		callers.Go(func() {
 			for range 500 {
 				r.ExecuteWithContext(ctx, "mcp_s_x", nil, "", "", nil)
-				_, _ = r.ExecuteUnattended(ctx, "mcp_s_x", nil)
+				if out, err := r.ExecuteUnattended(ctx, "mcp_s_x", nil); err == nil && out != "ran" {
+					t.Errorf("unattended call = %q", out)
+				}
 			}
-		}()
+		})
 	}
 	callers.Wait()
 	close(stop)
