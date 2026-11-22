@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agent/clock"
 )
 
 // fakeTools is the agent's tool registry: handlers by tool name, and a log of

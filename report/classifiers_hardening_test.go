@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/clock"
+
 	"go.bison9.com/agency/classifier"
 	"go.bison9.com/agency/classifier/classifierfs"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/internal/clock"
 )
 
 // reportTools lists one item per source tool: a_list "fail-item", b_list

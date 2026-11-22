@@ -3,9 +3,8 @@ package channels
 import (
 	"time"
 
+	"go.bison9.com/agent/clock"
 	"golang.org/x/time/rate"
-
-	"go.bison9.com/agency/internal/clock"
 )
 
 // SetConnClock sets the clock c's connection-down alert is timed on, for

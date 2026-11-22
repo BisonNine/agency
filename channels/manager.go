@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/clock"
 	"golang.org/x/time/rate"
 
 	"go.bison9.com/agency/alerts"
@@ -23,7 +24,6 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/health"
-	"go.bison9.com/agency/internal/clock"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
 )

@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/clock"
 	"golang.org/x/time/rate"
 
 	"go.bison9.com/agency/alerts"
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/internal/clock"
 )
 
 // rejected is the alert a channel raises on every retry of a rejected token.

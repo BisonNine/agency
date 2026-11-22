@@ -14,8 +14,7 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
-
-	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agent/clock"
 )
 
 type alertRecorder struct {

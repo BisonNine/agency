@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agent/clock"
 )
 
 // Test helpers of the controller tests, prefixed ctl so they cannot collide with the

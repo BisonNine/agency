@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/clock"
 	"golang.org/x/time/rate"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/internal/clock"
 )
 
 // heldChat is a manager on a fake clock with one editing channel, "test", and

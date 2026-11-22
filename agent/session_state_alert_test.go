@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/alerts"
-	"go.bison9.com/agency/internal/clock"
 )
 
 type alertRecorder struct {

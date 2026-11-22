@@ -15,11 +15,11 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
+	"go.bison9.com/agent/clock"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/internal/clock"
 )
 
 // newCommandChannel is a running Slack channel on a fake Slack API that

@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agent/clock"
 )
 
 // recordingClock is a fake clock that records every wait asked of After.

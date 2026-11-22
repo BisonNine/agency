@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/clock"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
-	"go.bison9.com/agency/internal/clock"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )

@@ -892,7 +892,7 @@ shortcoming in the module, never here.
   sentence). `subagents.allow_agents` is matched only by
   `SubagentsConfig.Allows` (nil-safe; runtime and Check Up); an agent is named to people
   and in logs only by `AgentConfig.DisplayName` / `AgentInstance.DisplayName` (name, else id).
-- **Clocks** (`internal/clock`): timing code that tests must control takes a
+- **Clocks** (the SDK's `go.bison9.com/agent/clock`): timing code that tests must control takes a
   `clock.Clock` field or option and reads it through `clock.Or` (nil = `clock.Real`,
   so production wiring names none); tests use `clock.Fake` (`Advance`, and
   `BlockUntil(ctx, n)` to wait until code is waiting on it), never real sleeps for

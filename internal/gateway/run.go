@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/clock"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/alerts"
@@ -20,7 +21,6 @@ import (
 	"go.bison9.com/agency/dump"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal"
-	"go.bison9.com/agency/internal/clock"
 	"go.bison9.com/agency/internal/layout"
 	"go.bison9.com/agency/internal/perms"
 	"go.bison9.com/agency/internal/pidfile"

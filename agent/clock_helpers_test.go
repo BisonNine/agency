@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agency/internal/clock"
+	"go.bison9.com/agent/clock"
 )
 
 // fakeClock puts a fake clock, reading the current time, on al and returns

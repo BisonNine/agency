@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/clock"
+
 	"go.bison9.com/agency/agentreg"
-	"go.bison9.com/agency/internal/clock"
 	"go.bison9.com/agency/logger"
 )
 

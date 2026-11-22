@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/clock"
 	"golang.org/x/time/rate"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/internal/clock"
 )
 
 // countingMediaMock is a MediaSender safe for concurrent use.

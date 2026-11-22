@@ -12,11 +12,11 @@ import (
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
+	"go.bison9.com/agent/clock"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/internal/clock"
 )
 
 // newNamingChannel is a running Slack channel whose fake API answers

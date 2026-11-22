@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/clock"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/internal/clock"
 )
 
 // TestProxyWatch records a forwarded request from an untrusted loopback peer
