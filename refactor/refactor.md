@@ -1553,7 +1553,23 @@ next session must know.
     the branch `refactor`; `main` stays empty until the refactoring is
     done. ClawEh `main` (ee944b3) was merged into `refactor` with its
     history (fa4f1ed). This plan lives in `refactor/`, not the root.
-  - Version, SDK versioning, releases, dev instance: not answered yet.
+  - Version: 0.6.6 (answered). Product name: "Agency" for people,
+    `agency` where it is derived; fixed identifiers unchanged (answered).
+  - Maestro and MCPFusion move to Bison9 too (answered): modules
+    `go.bison9.com/maestro` and `go.bison9.com/mcpfusion`, checkouts in
+    `~/source/b9/`. Maestro is pushed (`dev/0.5.11`). MCPFusion
+    (`dev/0.4.13`) is committed locally but its push is blocked by
+    GitHub secret scanning on old commits; waiting for the maintainer.
+  - SDK versioning (assumed, not confirmed): pseudo-versions of
+    `dev/0.0.1` during the refactoring; no tags, no committed `replace`.
+  - Releases (assumed): release locations stay on the old repository
+    until decided. Dev instance (assumed): the existing `claw-dev`.
+  - The maintainer does not want work stopped for small reversible
+    decisions: assume, say what was assumed, carry on.
+  - More input: `~/source/b9/agent/private/claw-migration.md` (identity
+    on every call, accounting, project codes). Project codes,
+    `accounting.log` and the pricing file are not designed yet and need
+    the maintainer's confirmation before they are built.
 - [x] Baseline `make test` recorded for both repositories
   - SDK (`dev/0.0.1`, 5bbfa3a): passes, 0 failed, 1 skipped.
   - Host (fa4f1ed, same tree as ClawEh ee944b3): 96 Go packages pass
@@ -1566,9 +1582,21 @@ next session must know.
     first, with `pnpm` on the PATH.
   - 0.8, checked: neither Maestro nor MCPFusion imports `spawnllm`, so
     deleting `spawnllm.Worker` affects neither.
+- [x] Move: lint fix, version 0.6.6, module `go.bison9.com/agency`,
+      product name Agency (ffeaf07)
 - [ ] Phase 0: adopt the module
-- [ ] Standards: `slog`, file-permission type
+  - SDK half done: identity widened, friendly name (SDK eb27b0c).
+  - Host half in progress in a worktree (`phase0`), on SDK 9d6114e.
+    It also switches Maestro and MCPFusion to their new paths.
+- [x] Standards: `slog`, file-permission type (SDK ba24346, 74981c0,
+      review fixes 9d6114e). The `logger` package is gone;
+      `accounting.SetLogger` is package-level (one sink per process).
 - [ ] Phase 1: `modelspec`
+  - SDK half done (SDK 05010d6). Host aliasing not started. Notes for
+    it: `CooldownConfig` keeps its `CLAW_COOLDOWN_*` tags in the host
+    and converts to `modelspec.Cooldown`; the host registers the
+    `human` protocol as keyless; `modelspec.CLIArgs` returns the
+    ignored flags and the host logs them.
 - [ ] Phase 2: `models`
 - [ ] Phase 3: `toolkit`
 - [ ] Phase 4: `discovery`
@@ -1578,4 +1606,7 @@ next session must know.
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
 - [ ] Background shell (`docs/bash.md`)
+  - SDK half done: `toolbox/shell` and `toolbox/shell/proc` (SDK
+    2d85433). Host mount, config keys, task-list wiring, golden file and
+    removal of the old tool not started.
 - [ ] Alias cleanup
