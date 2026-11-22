@@ -26,6 +26,22 @@ const sessionIdleTTL = time.Hour
 // the turn's failure renders as a cancellation rather than a timeout.
 var errCancelledByUser error = &turnCauseError{text: "cancelled by /cancel", kind: hook.ErrInterrupted}
 
+// userCancelError is the cause one /cancel gives what it stops: errCancelledByUser,
+// with the chat it was typed in (queuedChat), which gets the one reply.
+type userCancelError struct{ chat string }
+
+func (c *userCancelError) Error() string { return errCancelledByUser.Error() }
+func (c *userCancelError) Unwrap() error { return errCancelledByUser }
+
+// cancelChat is the chat of the /cancel behind cause; empty for any other
+// cause.
+func cancelChat(cause error) string {
+	if c, ok := errors.AsType[*userCancelError](cause); ok {
+		return c.chat
+	}
+	return ""
+}
+
 // sessionState is one session's dispatch state. The first message to arrive
 // while the session is idle makes its goroutine the owner: it runs turns until
 // pending is empty, so at most one goroutine per session is ever running or
@@ -108,7 +124,7 @@ func (al *AgentLoop) pruneSessions() {
 // cancel stops the session's running turn, if any, and drops everything queued
 // behind it, recording both for the /cancel reply. It returns the dropped
 // messages.
-func (ss *sessionState) cancel(ctx context.Context) []bus.InboundMessage {
+func (ss *sessionState) cancel(ctx context.Context, cause error) []bus.InboundMessage {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	dropped := ss.pending
@@ -119,9 +135,9 @@ func (ss *sessionState) cancel(ctx context.Context) []bus.InboundMessage {
 		// the host's cause), the turn's context with it: a turn still
 		// waiting for its slot, or past its engine turn, ends too.
 		if h := ss.handles.current(); h != nil {
-			h.cancelFrom(ctx, errCancelledByUser)
+			h.cancelFrom(ctx, cause)
 		}
-		ss.turnCancel(errCancelledByUser)
+		ss.turnCancel(cause)
 		ss.turnCancel = nil
 		ss.handles = nil
 		ss.cancelledRunning = true
@@ -321,8 +337,9 @@ func (al *AgentLoop) processSessionMessage(ctx context.Context, msg bus.InboundM
 	defer al.releaseSession(ss)
 
 	if al.isCancelCommand(msg.Content) {
-		dropped := ss.cancel(ctx)
-		al.publishCancelledReplies(ctx, dropped)
+		cause := &userCancelError{chat: queuedChat(msg)}
+		dropped := ss.cancel(ctx, cause)
+		al.publishCancelledReplies(ctx, dropped, cause)
 		al.runTurn(ctx, ctx, msg)
 		return
 	}
@@ -412,8 +429,8 @@ func (al *AgentLoop) runQueuedTurn(ctx, turnCtx context.Context, batch bus.Inbou
 		al.runTurn(ctx, withTurnSlot(turnCtx, slot), batch)
 		return
 	}
-	if errors.Is(context.Cause(turnCtx), errCancelledByUser) {
+	if cause := context.Cause(turnCtx); errors.Is(cause, errCancelledByUser) {
 		// Cancelled while waiting for a turn slot: it never ran.
-		al.publishCancelledReplies(ctx, []bus.InboundMessage{batch})
+		al.publishCancelledReplies(ctx, []bus.InboundMessage{batch}, cause)
 	}
 }

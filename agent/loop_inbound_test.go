@@ -228,8 +228,8 @@ func TestInbound_MaxConcurrentTurnsLimitsConcurrency(t *testing.T) {
 
 // TestInbound_CancelStopsRunningTurn: /cancel bypasses the session queue,
 // cancels the running turn (the provider sees its context end), drops the
-// queued message, and reports both; the cancelled turn says it was cancelled,
-// not that it timed out.
+// queued message, and says both in one reply: the stopped message, from the
+// same chat, gets no reply of its own.
 func TestInbound_CancelStopsRunningTurn(t *testing.T) {
 	al, msgBus, p := newBlockingLoop(t, newTestConfig(t))
 
@@ -238,24 +238,47 @@ func TestInbound_CancelStopsRunningTurn(t *testing.T) {
 	dispatch(al, inbound("c1", "id2", "m2"))
 	dispatch(al, inbound("c1", "id3", "/cancel")) // runs without waiting for the turn
 
-	replies := make([]string, 0, 2)
-	for range 2 {
-		replies = append(replies, nextOutbound(t, msgBus).Content)
-	}
+	out := nextOutbound(t, msgBus)
 	al.activeRequests.Wait()
+	noOutbound(t, msgBus)
 
-	if !slices.Contains(replies, "Cancelled the current request and 1 pending message(s).") {
-		t.Fatalf("no /cancel report in %q", replies)
-	}
-	i := slices.IndexFunc(replies, func(s string) bool { return strings.Contains(s, "Cancelled by /cancel") })
-	if i < 0 {
-		t.Fatalf("cancelled turn not rendered as cancelled: %q", replies)
-	}
-	if strings.Contains(replies[i], "time limit") {
-		t.Fatalf("cancelled turn rendered as a timeout: %q", replies[i])
+	if out.OriginalMessageID != "id3" || out.Content != "Main: stopped, and skipped 1 queued message." {
+		t.Fatalf("reply = %+v, want the one /cancel report", out)
 	}
 	if n := p.callCount(); n != 1 {
 		t.Fatalf("provider calls = %d, want 1 (m2 dropped)", n)
+	}
+}
+
+// TestInbound_CancelSameChatRequiredReplies: a stopped message and a
+// dropped one that require a reply are closed with the cancelled outcome
+// and no text of their own when the /cancel was typed in their chat.
+func TestInbound_CancelSameChatRequiredReplies(t *testing.T) {
+	restore := logger.RedirectForTest(&safeBufLoop{})
+	defer restore()
+	al, msgBus, p := newBlockingLoop(t, newTestConfig(t))
+
+	go dispatch(al, required(inbound("c1", "id1", "m1")))
+	p.waitStarted(t)
+	dispatch(al, required(inbound("c1", "id2", "m2")))
+	dispatch(al, inbound("c1", "id3", "m3"))
+	dispatch(al, inbound("c1", "id4", "/cancel"))
+
+	got := map[string]bus.OutboundMessage{}
+	for range 3 {
+		out := nextOutbound(t, msgBus)
+		got[out.OriginalMessageID] = out
+	}
+	al.activeRequests.Wait()
+	noOutbound(t, msgBus)
+
+	for _, id := range []string{"id1", "id2"} {
+		if out := got[id]; out.Outcome != bus.OutcomeCancelled || out.Content != "" {
+			t.Fatalf("%s = %+v, want a cancelled close without text", id, out)
+		}
+	}
+	if out := got["id4"]; out.Content != "Main: stopped, and skipped 2 queued messages." {
+		t.Fatalf("/cancel reply = %+v", out)
 	}
 }
 

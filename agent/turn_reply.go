@@ -63,6 +63,7 @@ func (al *AgentLoop) runTurn(ctx, turnParent context.Context, msg bus.InboundMes
 		replyRequired: msg.ReplyRequired(),
 		fromPerson:    fromPerson(msg),
 		agentID:       inboundMetadata(msg, metadataKeyPreresolvedAgentID),
+		cancelledHere: cancelChat(context.Cause(turnCtx)) == queuedChat(msg),
 	})
 	switch action {
 	case replyDrop:
@@ -93,6 +94,13 @@ func (al *AgentLoop) runTurn(ctx, turnParent context.Context, msg bus.InboundMes
 	// A system message's turn sent its reply to the chat it answers itself
 	// (processSystemMessage); the system channel reaches no chat.
 	if msg.Channel == "system" {
+		return
+	}
+	if text == "" && outcome == bus.OutcomeCancelled && !msg.ReplyRequired() {
+		// Stopped by a /cancel typed in this chat, whose reply says so: this
+		// message gets none of its own, so what the chat shows for it is
+		// cleared.
+		al.dismissInbound(ctx, msg)
 		return
 	}
 	al.publishInboundReply(ctx, turnCtx, msg, text, outcome, roundSent.Load())
@@ -224,6 +232,9 @@ type turnEnd struct {
 	replyRequired bool
 	fromPerson    bool
 	agentID       string // the agent the message was addressed to, if any
+	// cancelledHere: a /cancel typed in the message's own chat stopped the
+	// turn; its reply speaks for this one.
+	cancelledHere bool
 }
 
 // replyAction is what runTurn does with a turn's end.
@@ -276,8 +287,11 @@ func decideTurnReply(end turnEnd) (replyAction, string, string) {
 	case errors.As(err, new(humanUnreachableError)):
 		// The request never reached the person's chat (logged in askHuman).
 		return replySend, err.Error(), bus.OutcomeError
+	case err != nil && errors.Is(end.cause, errCancelledByUser) && end.cancelledHere && !end.ask:
+		// The /cancel's own reply, in the same chat, says what was stopped.
+		return replySend, "", bus.OutcomeCancelled
 	case err != nil && errors.Is(end.cause, errCancelledByUser):
-		return replySend, "⚠️ Cancelled by /cancel. Some steps may have completed — ask me to continue if needed.", bus.OutcomeCancelled
+		return replySend, cancelledText, bus.OutcomeCancelled
 	case err != nil:
 		return replyTurnError, end.response, bus.OutcomeError
 	case (end.response == "" && end.outcome != bus.OutcomeOK) || end.outcome == bus.OutcomeEmpty:
@@ -308,10 +322,18 @@ func askReplyOutcome(err error, outcome string) string {
 	}
 }
 
+// cancelledText is the reply of a turn a /cancel typed in another chat
+// stopped.
+const cancelledText = "⚠️ Cancelled by /cancel. Some steps may have completed — ask me to continue if needed."
+
 // publishCancelledReplies sends the final "cancelled" reply for each message
-// that requires one (bus.MetaReplyRequired) and was dropped by /cancel before
-// its turn ran. Messages without the flag get nothing.
-func (al *AgentLoop) publishCancelledReplies(ctx context.Context, msgs []bus.InboundMessage) {
+// that requires one (bus.MetaReplyRequired) and was dropped by the /cancel
+// behind cause before its turn ran. Messages without the flag get nothing. A
+// waiting asker and a message from another chat are told it was cancelled; a
+// message from the chat the /cancel was typed in is closed without text, the
+// /cancel's own reply saying what was dropped.
+func (al *AgentLoop) publishCancelledReplies(ctx context.Context, msgs []bus.InboundMessage, cause error) {
+	here := cancelChat(cause)
 	for _, m := range msgs {
 		if !m.ReplyRequired() {
 			continue
@@ -320,10 +342,14 @@ func (al *AgentLoop) publishCancelledReplies(ctx context.Context, msgs []bus.Inb
 			al.deliverAskReply(m, "Cancelled by /cancel before it started.", bus.OutcomeCancelled)
 			continue
 		}
+		text := "⚠️ Cancelled by /cancel before it started."
+		if queuedChat(m) == here {
+			text = ""
+		}
 		if err := al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel:           m.Channel,
 			ChatID:            m.ChatID,
-			Content:           "⚠️ Cancelled by /cancel before it started.",
+			Content:           text,
 			OriginalMessageID: m.MessageID,
 			Outcome:           bus.OutcomeCancelled,
 		}); err != nil {
@@ -331,4 +357,16 @@ func (al *AgentLoop) publishCancelledReplies(ctx context.Context, msgs []bus.Inb
 				map[string]any{"channel": m.Channel, "chat_id": m.ChatID, "error": err.Error()})
 		}
 	}
+}
+
+// dismissInbound clears what msg's chat shows for it (typing, a reaction,
+// a placeholder) when it gets no reply of its own.
+func (al *AgentLoop) dismissInbound(ctx context.Context, msg bus.InboundMessage) {
+	d := al.dismisser
+	if d == nil || msg.ChatID == "" {
+		return
+	}
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dismissTimeout)
+	defer cancel()
+	d.DismissInbound(dctx, msg.Channel, msg.ChatID, msg.MessageID)
 }

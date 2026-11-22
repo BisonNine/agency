@@ -896,7 +896,7 @@ func TestAsk_CancelledBeforeStart(t *testing.T) {
 	al.publishCancelledReplies(context.Background(), []bus.InboundMessage{{
 		Channel: constants.AgentMessageChannel, ChatID: "ask-1",
 		Metadata: map[string]string{bus.MetaReplyRequired: "1"},
-	}})
+	}}, errCancelledByUser)
 	select {
 	case r := <-replies:
 		if r.Outcome != bus.OutcomeCancelled {

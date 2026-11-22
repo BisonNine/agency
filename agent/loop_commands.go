@@ -273,8 +273,16 @@ func (al *AgentLoop) addHistoryHooks(rt *commands.Runtime, agent *AgentInstance,
 	}
 	if opts != nil {
 		sessionKey := opts.SessionKey
-		rt.CancelPending = func() (bool, int) {
-			return al.takeCancelResult(sessionKey)
+		rt.CancelPending = func(all bool) commands.CancelOutcome {
+			running, skipped := al.takeCancelResult(sessionKey)
+			o := commands.CancelOutcome{Agent: agent.Identity().Name, Running: running, Skipped: skipped, All: all}
+			owner := agent.toolIdentity()
+			if all {
+				o.Cancelled = al.cancelBackground(owner)
+			} else {
+				o.StillRunning = al.backgroundRunning(owner)
+			}
+			return o
 		}
 	}
 	rt.RetriggerLastMessage = func(ctx context.Context) error {

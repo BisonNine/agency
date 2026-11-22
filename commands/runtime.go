@@ -45,10 +45,11 @@ type Runtime struct {
 	// clear (informational, not an error).
 	ClearCooldown        func(provider, model string) bool
 	RetriggerLastMessage func(ctx context.Context) error
-	// CancelPending reports what the last /cancel did for this session — whether
-	// it stopped a running turn and how many queued messages it dropped — and
-	// resets both counters.
-	CancelPending func() (running bool, skipped int)
+	// CancelPending reports what the last /cancel did for this session (the
+	// running turn stopped, the queued messages dropped) and resets it; with
+	// all it first cancels every background task of the agent. It also
+	// counts the background tasks still running.
+	CancelPending func(all bool) CancelOutcome
 
 	// ListCooldowns returns the process-wide snapshot of models that are
 	// currently in cooldown or billing-disabled. Returns nil on no

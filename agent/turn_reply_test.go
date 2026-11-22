@@ -112,8 +112,21 @@ func TestDecideTurnReply(t *testing.T) {
 			wantOutcome: bus.OutcomeError,
 		},
 		{
-			name:        "cancelled by /cancel",
+			name:        "cancelled by /cancel in another chat",
 			end:         turnEnd{err: failure, cause: errCancelledByUser},
+			wantAction:  replySend,
+			wantText:    "⚠️ Cancelled by /cancel. Some steps may have completed — ask me to continue if needed.",
+			wantOutcome: bus.OutcomeCancelled,
+		},
+		{
+			name:        "cancelled by /cancel in its own chat: closed without text",
+			end:         turnEnd{err: failure, cause: errCancelledByUser, cancelledHere: true},
+			wantAction:  replySend,
+			wantOutcome: bus.OutcomeCancelled,
+		},
+		{
+			name:        "an asker is always told",
+			end:         turnEnd{err: failure, cause: errCancelledByUser, cancelledHere: true, ask: true},
 			wantAction:  replySend,
 			wantText:    "⚠️ Cancelled by /cancel. Some steps may have completed — ask me to continue if needed.",
 			wantOutcome: bus.OutcomeCancelled,

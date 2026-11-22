@@ -283,9 +283,10 @@ func TestRunTurn_MsgSendSuppressesUnlessRequired(t *testing.T) {
 	}
 }
 
-// TestInbound_CancelOutcomes: /cancel gives the cancelled running turn a
-// cancelled outcome, and a queued message that requires a reply gets its own
-// cancelled reply; a queued message without the flag still gets nothing.
+// TestInbound_CancelOutcomes: a /cancel typed in another chat gives the
+// cancelled running turn its own cancelled reply, and a queued message from
+// another chat that requires a reply gets its own; a queued message without
+// the flag still gets nothing.
 func TestInbound_CancelOutcomes(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
@@ -312,7 +313,7 @@ func TestInbound_CancelOutcomes(t *testing.T) {
 	if out := got["id2"]; out.Outcome != bus.OutcomeCancelled || out.ChatID != "c2" {
 		t.Fatalf("queued required reply = %+v, want cancelled in c2", out)
 	}
-	if out := got["id4"]; out.Outcome != bus.OutcomeOK || !strings.Contains(out.Content, "Cancelled the current request") {
+	if out := got["id4"]; out.Outcome != bus.OutcomeOK || out.Content != "Main: stopped, and skipped 2 queued messages." {
 		t.Fatalf("/cancel reply = %+v, want its ok report", out)
 	}
 	if _, ok := got["id3"]; ok {

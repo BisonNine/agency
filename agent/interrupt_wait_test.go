@@ -60,6 +60,11 @@ func TestInterrupt_WaitTaskFinishesAndReports(t *testing.T) {
 		t.Fatal("the sub-agent did not start")
 	}
 	publishIn(t, msgBus, bus.InboundMessage{Channel: "test", ChatID: "c1", SenderID: "u1", MessageID: "m2", Content: "/cancel"})
+	// One reply, naming the task still running.
+	if out := nextOutbound(t, msgBus); out.OriginalMessageID != "m2" ||
+		out.Content != "Alice: stopped. 1 background task is still running — /cancel all stops it too." {
+		t.Fatalf("cancel reply = %+v", out)
+	}
 	// The turn stops waiting: the task is now a background one.
 	deadline := time.Now().Add(30 * time.Second)
 	for {
