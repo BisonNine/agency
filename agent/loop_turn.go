@@ -460,7 +460,7 @@ func (al *AgentLoop) reportSessionSave(agent *AgentInstance, sessionKey string, 
 	if f.Stored == "" {
 		return
 	}
-	if se, ok := errors.AsType[*hook.SessionStoreError](f.SaveErr); ok && f.SaveErr != f.Err {
+	if se, ok := errors.AsType[*hook.SessionStoreError](f.SaveErr); ok && f.Err == nil {
 		logger.WarnCF("agent", "Failed to save session",
 			map[string]any{"error": se.Err.Error(), "session": sessionKey})
 		al.alertStoreFault(agent, alerter.Alert{
@@ -725,17 +725,6 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	}
 	// 2.5 chars per token = totalChars * 2 / 5
 	return totalChars * 2 / 5
-}
-
-// sessionStoreWriteFailed handles a message the session store refused to
-// record: it logs at error level, raises the operator alert, and returns the
-// error that fails the turn. The turn is abandoned rather than continued,
-// because a reply built on a history the store did not accept would be
-// invisible to the next turn and to a restart replay. what names the message
-// kind for the log, the alert and the error text.
-func (al *AgentLoop) sessionStoreWriteFailed(agent *AgentInstance, sessionKey, what string, err error) error {
-	al.storeWriteFailed(agent, sessionKey, what, err)
-	return storeRefusalError(what, err)
 }
 
 // reportStoreRefusal logs and alerts a turn that ended because the session

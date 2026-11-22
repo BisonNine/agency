@@ -96,7 +96,7 @@ func (e *engineTurn) requestModel(ctx context.Context, d *llmDispatch) (*spawnll
 	var err error
 	for retry := 0; retry <= e.spec.retries; retry++ {
 		info := e.modelInfo(d)
-		answer, berr, perr := e.hooks.callBeforeModel(ctx, info)
+		answer, perr, berr := e.hooks.callBeforeModel(ctx, info)
 		if perr != nil {
 			return nil, perr
 		}
@@ -141,7 +141,7 @@ func (e *engineTurn) requestModel(ctx context.Context, d *llmDispatch) (*spawnll
 		break
 	}
 	if ctx.Err() == nil {
-		answer, left, perr := e.hooks.callOnModelError(ctx, e.modelInfo(d), err)
+		answer, perr, left := e.hooks.callOnModelError(ctx, e.modelInfo(d), err)
 		if perr != nil {
 			return nil, perr
 		}

@@ -603,7 +603,7 @@ func TestEngine_StoreRefusalEndsTurn(t *testing.T) {
 	f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
 	_, _, err := f.run(t)
 	se, ok := errors.AsType[*hook.SessionStoreError](err)
-	if !ok || se.What != "tool call message" || se.Err != f.cm.failAdd || !errors.Is(err, hook.ErrSessionStore) {
+	if !ok || se.What != "tool call message" || !errors.Is(se.Err, f.cm.failAdd) || !errors.Is(err, hook.ErrSessionStore) {
 		t.Fatalf("err = %v, want the store's refusal of the tool call message", err)
 	}
 }
@@ -708,7 +708,7 @@ func TestEngine_StepPanicEndsTheTurn(t *testing.T) {
 			kinds := f.rec.kinds()
 			evs := f.rec.all()
 			fin, isFin := evs[len(evs)-1].(hook.TurnFinished)
-			if countOf(kinds, "TurnFinished") != 1 || !isFin || fin.Outcome != hook.OutcomeError || fin.Err != perr {
+			if countOf(kinds, "TurnFinished") != 1 || !isFin || fin.Outcome != hook.OutcomeError || !errors.Is(fin.Err, perr) {
 				t.Fatalf("events = %v, last = %+v", kinds, evs[len(evs)-1])
 			}
 		})
@@ -891,12 +891,14 @@ func TestEngine_LogLinesNameTheirCallSite(t *testing.T) {
 func TestEngine_CompactionReachesTheTurnsHooks(t *testing.T) {
 	var seen []string
 	h := &turnHooks{}
-	h.add(hook.Plugin{Name: "tap", OnCompaction: func(context.Context, hook.Compaction) { seen = append(seen, "callback") },
+	h.add(hook.Plugin{
+		Name: "tap", OnCompaction: func(context.Context, hook.Compaction) { seen = append(seen, "callback") },
 		OnEvent: func(_ context.Context, ev hook.Event) {
 			if c, ok := ev.(hook.Compaction); ok && c.Phase == hook.CompactionStarted {
 				seen = append(seen, "event")
 			}
-		}})
+		},
+	})
 	ctx := beginTurnContext(context.Background(), hook.Scope{AgentID: "alice", Session: "s"}, h, newFake())
 	start := ctxengine.CompactionStart{SessionKey: "s", Blocking: true}
 	engineCompactionStart(ctx, start)

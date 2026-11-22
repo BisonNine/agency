@@ -45,7 +45,7 @@ var errHumanCancelled = errors.New("the person cancelled the request")
 // errAskerStopped ends a request to a person whose asker stopped waiting (it
 // gave up, or its deadline passed): no reply is handed back, the asker has
 // its own outcome.
-var errAskerStopped error = &turnCause{text: "the asker stopped waiting", kind: hook.ErrSuperseded}
+var errAskerStopped error = &turnCauseError{text: "the asker stopped waiting", kind: hook.ErrSuperseded}
 
 // humanNotAskedError marks a turn routed to a human agent that is not an ask:
 // it is dropped, never posted to the person. Its text is for the sender.

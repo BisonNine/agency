@@ -77,7 +77,8 @@ func TestEngine_TurnSpan(t *testing.T) {
 	f := newSpanFixture(t, modelstest.Reply("done"))
 	f.spec.options = hook.RunOptions{Depth: 1}
 	var log stepLog
-	f.spec.hooks.add(hook.Plugin{Name: "watch",
+	f.spec.hooks.add(hook.Plugin{
+		Name: "watch",
 		BeforeTurn: func(context.Context, *hook.Turn) (*hook.TurnResult, error) {
 			log.add(fmt.Sprintf("BeforeTurn after %v", f.rec.kinds()))
 			log.add(fmt.Sprintf("stored %d", len(f.cm.stored)))
@@ -104,8 +105,8 @@ func TestEngine_TurnSpan(t *testing.T) {
 	if got := log.all(); !slices.Equal(got, want) {
 		t.Fatalf("steps = %q, want %q", got, want)
 	}
-	started := f.rec.all()[0].(hook.TurnStarted)
-	if started.Options != f.spec.options || started.Message.Text != "hello" {
+	started, ok := f.rec.all()[0].(hook.TurnStarted)
+	if !ok || started.Options != f.spec.options || started.Message.Text != "hello" {
 		t.Fatalf("TurnStarted = %+v", started)
 	}
 	if f.cm.stored[0].Role != "user" || f.cm.stored[1].Content != "done" {
@@ -148,33 +149,44 @@ func TestEngine_BeforeTurnAnswersRefusesOrPanics(t *testing.T) {
 		{"answer", func(context.Context, *hook.Turn) (*hook.TurnResult, error) {
 			return &hook.TurnResult{Outcome: hook.OutcomeOK, Reply: "Alice answered", Stored: "kept?"}, nil
 		}, func(t *testing.T, fin hook.TurnFinished) {
+			t.Helper()
 			if !fin.Skipped || fin.Reply != "Alice answered" || fin.Outcome != hook.OutcomeOK {
 				t.Fatalf("result = %+v", fin.TurnResult)
 			}
 		}},
-		{"refusal", func(context.Context, *hook.Turn) (*hook.TurnResult, error) { return nil, refused },
+		{
+			"refusal", func(context.Context, *hook.Turn) (*hook.TurnResult, error) { return nil, refused },
 			func(t *testing.T, fin hook.TurnFinished) {
-				if fin.Err != refused || fin.Outcome != hook.OutcomeError {
+				t.Helper()
+				if !errors.Is(fin.Err, refused) || fin.Outcome != hook.OutcomeError {
 					t.Fatalf("result = %+v", fin.TurnResult)
 				}
-			}},
-		{"panic", func(context.Context, *hook.Turn) (*hook.TurnResult, error) { panic("Bob's bug") },
+			},
+		},
+		{
+			"panic", func(context.Context, *hook.Turn) (*hook.TurnResult, error) { panic("Bob's bug") },
 			func(t *testing.T, fin hook.TurnFinished) {
+				t.Helper()
 				if perr, ok := errors.AsType[*hook.PanicError](fin.Err); !ok || perr.Callback != "BeforeTurn" || fin.Outcome != hook.OutcomeError {
 					t.Fatalf("result = %+v", fin.TurnResult)
 				}
-			}},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newSpanFixture(t, modelstest.Reply("done"))
 			var later, after bool
 			f.spec.hooks.add(hook.Plugin{Name: "first", BeforeTurn: tt.fn})
-			f.spec.hooks.add(hook.Plugin{Name: "later",
+			f.spec.hooks.add(hook.Plugin{
+				Name:       "later",
 				BeforeTurn: func(context.Context, *hook.Turn) (*hook.TurnResult, error) { later = true; return nil, nil },
 				AfterTurn:  func(context.Context, *hook.Turn, *hook.TurnResult) { after = true },
 			})
-			_, _, _ = f.run(t)
+			_, _, err := f.run(t)
+			if (err == nil) != (tt.name == "answer") {
+				t.Fatalf("err = %v", err)
+			}
 			if later || !after {
 				t.Fatalf("later BeforeTurn ran: %v, AfterTurn ran: %v", later, after)
 			}
@@ -269,10 +281,14 @@ func TestEngine_CauseOutcome(t *testing.T) {
 			f.spec.hooks.add(hook.Plugin{Name: "tap", OnInterrupt: func(_ context.Context, ev hook.Interrupted) { interrupted = append(interrupted, ev) }})
 			turn := newEngineTurn(f.spec, nil)
 			done := make(chan struct{})
-			go func() { defer close(done); _, _ = turn.run(context.Background()) }()
+			var runErr error
+			go func() { defer close(done); _, runErr = turn.run(context.Background()) }()
 			<-started
 			turn.handle.Cancel(tt.cause)
 			<-done
+			if runErr == nil {
+				t.Fatal("the stopped turn reported no error")
+			}
 			fin := f.finished(t)
 			if fin.Outcome != tt.outcome || !errors.Is(fin.Cause, tt.cause) {
 				t.Fatalf("finished = %+v", fin.TurnResult)
@@ -280,7 +296,7 @@ func TestEngine_CauseOutcome(t *testing.T) {
 			if got := slices.Contains(f.store.events(), "cleared"); got != tt.cleared {
 				t.Fatalf("store = %v, want cleared %v", f.store.events(), tt.cleared)
 			}
-			if len(interrupted) != 1 || interrupted[0].Cause != tt.cause || !interrupted[0].Running || interrupted[0].Scope != f.spec.scope {
+			if len(interrupted) != 1 || !errors.Is(interrupted[0].Cause, tt.cause) || !interrupted[0].Running || interrupted[0].Scope != f.spec.scope {
 				t.Fatalf("OnInterrupt = %+v", interrupted)
 			}
 		})
@@ -446,8 +462,10 @@ func TestEngine_OnModelError(t *testing.T) {
 // is stored.
 func TestEngine_ToolBatchEvents(t *testing.T) {
 	f := newSpanFixture(t,
-		modelstest.Step{Response: &spawnllm.LLMResponse{Content: "Checking, Alice.", FinishReason: "tool_calls",
-			ToolCalls: []spawnllm.ToolCall{toolCall("slow", "slow", nil), toolCall("fast", "fast", nil)}}},
+		modelstest.Step{Response: &spawnllm.LLMResponse{
+			Content: "Checking, Alice.", FinishReason: "tool_calls",
+			ToolCalls: []spawnllm.ToolCall{toolCall("slow", "slow", nil), toolCall("fast", "fast", nil)},
+		}},
 		modelstest.Reply("done"))
 	f.spec.options = hook.RunOptions{AlreadyStored: true}
 	fastDone := make(chan struct{})
@@ -485,8 +503,10 @@ func TestEngine_ToolBatchEvents(t *testing.T) {
 			got = append(got, "stored "+e.Call.ID)
 		}
 	}
-	want := []string{`batch "Checking, Alice." 2`, "started slow", "started fast", "finished fast", "finished slow",
-		"batch finished 2", "stored slow", "stored fast"}
+	want := []string{
+		`batch "Checking, Alice." 2`, "started slow", "started fast", "finished fast", "finished slow",
+		"batch finished 2", "stored slow", "stored fast",
+	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("events = %q, want %q", got, want)
 	}
@@ -514,7 +534,8 @@ func TestEngine_ToolCallbacks(t *testing.T) {
 	var order []string
 	var mu sync.Mutex
 	note := func(s string) { mu.Lock(); order = append(order, s); mu.Unlock() }
-	f.spec.hooks.add(hook.Plugin{Name: "alice",
+	f.spec.hooks.add(hook.Plugin{
+		Name: "alice",
 		BeforeTool: func(_ context.Context, call *hook.ToolCall) (*toolkit.Result, error) {
 			switch call.ID {
 			case "c1":

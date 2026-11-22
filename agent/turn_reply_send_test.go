@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ type storeThenSendContextManager struct {
 }
 
 func (m *storeThenSendContextManager) AddAssistantMessage(ctx context.Context, msg providers.Message) (int64, error) {
-	peek, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	peek, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Millisecond)
 	defer cancel()
 	if _, ok := m.msgBus.SubscribeOutbound(peek); ok {
 		m.sentEarly.Store(true)
@@ -79,8 +80,10 @@ func TestSendModelReply_OnlyForTheDecidedOutcome(t *testing.T) {
 		return ok
 	}
 
-	failed := hook.TurnResult{Outcome: hook.OutcomeError, Reply: "Hi Alice",
-		Err: &hook.SessionStoreError{What: "assistant reply", Err: errors.New("disk full")}}
+	failed := hook.TurnResult{
+		Outcome: hook.OutcomeError, Reply: "Hi Alice",
+		Err: &hook.SessionStoreError{What: "assistant reply", Err: errors.New("disk full")},
+	}
 	tl.al.sendModelReply(context.Background(), agent, opts, st, failed)
 	if sent() {
 		t.Fatal("a reply was sent for a turn whose reply was not stored")
@@ -106,7 +109,9 @@ func TestTurnFinished_RaisesStoreFaultAlert(t *testing.T) {
 	if len(rec.alerts) != 0 {
 		t.Fatal("alerted before TurnFinished")
 	}
-	h.emit(context.Background(), hook.TurnFinished{TurnResult: hook.TurnResult{Outcome: hook.OutcomeError, Err: refused}})
+	var fin hook.TurnFinished
+	fin.Outcome, fin.Err = hook.OutcomeError, refused
+	h.emit(context.Background(), fin)
 	if len(rec.alerts) != 1 || rec.alerts[0].Title != alertSessionWriteFailed || rec.alerts[0].EventID != sessionStoreAlertID {
 		t.Fatalf("alerts = %+v", rec.alerts)
 	}
@@ -132,23 +137,15 @@ func TestLoopPlugins_ReadPerChatSettingsAtLoopStart(t *testing.T) {
 		t.Fatal("per-chat plugins registered before the loop starts")
 	}
 	al.setShowToolActivity(agent, opts.SessionKey, true)
-	var names []string
-	for _, p := range al.loopPlugins(context.Background(), agent, opts, st)(context.Background()) {
+	plugins := al.loopPlugins(context.Background(), agent, opts, st)(context.Background())
+	names := make([]string, 0, len(plugins))
+	for _, p := range plugins {
 		names = append(names, p.Name)
 	}
 	if st.stopProgress != nil {
 		st.stopProgress()
 	}
-	if !containsString(names, "breadcrumbs") || !containsString(names, "fallback-notice") {
+	if !slices.Contains(names, "breadcrumbs") || !slices.Contains(names, "fallback-notice") {
 		t.Fatalf("plugins at loop start = %v", names)
 	}
-}
-
-func containsString(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }

@@ -264,24 +264,17 @@ func (c registryClock) WithDeadline(parent context.Context, deadline time.Time) 
 // errShuttingDown is the cause Stop gives the turn context. A turn ended by it
 // is an interrupted turn: no reply is sent and its pending-turn flag is kept,
 // so it is replayed when the gateway starts again.
-var errShuttingDown error = &turnCause{text: "the service is shutting down", kind: hook.ErrShutdown}
+var errShuttingDown error = &turnCauseError{text: "the service is shutting down", kind: hook.ErrShutdown}
 
 // turnCause is one of the host's cancel causes: its own text, and the hook
 // cause it is (errors.Is), which decides how the turn engine ends the turn.
-type turnCause struct {
+type turnCauseError struct {
 	text string
 	kind error
 }
 
-func (c *turnCause) Error() string { return c.text }
-func (c *turnCause) Unwrap() error { return c.kind }
-
-// stoppedOnPurpose reports whether ctx was cancelled on purpose: by /cancel,
-// or because the asker of the turn stopped waiting for it.
-func stoppedOnPurpose(ctx context.Context) bool {
-	cause := context.Cause(ctx)
-	return errors.Is(cause, errCancelledByUser) || errors.Is(cause, errAskerStopped)
-}
+func (c *turnCauseError) Error() string { return c.text }
+func (c *turnCauseError) Unwrap() error { return c.kind }
 
 // shuttingDown reports whether ctx was cancelled by Stop.
 func shuttingDown(ctx context.Context) bool {

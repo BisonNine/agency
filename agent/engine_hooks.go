@@ -146,13 +146,13 @@ func (h *turnHooks) callAfterTurn(ctx context.Context, turn *hook.Turn, result *
 
 // callBeforeModel runs the BeforeModel callbacks until one answers or fails
 // the dispatch. A panic is returned as panicked: it ends the turn.
-func (h *turnHooks) callBeforeModel(ctx context.Context, info *hook.ModelInfo) (resp *spawnllm.LLMResponse, err error, panicked *hook.PanicError) {
+func (h *turnHooks) callBeforeModel(ctx context.Context, info *hook.ModelInfo) (resp *spawnllm.LLMResponse, panicked *hook.PanicError, err error) {
 	for _, c := range h.beforeModel {
 		if perr := protect("BeforeModel", c.plugin, func() { resp, err = c.fn(ctx, info) }); perr != nil {
-			return nil, nil, perr
+			return nil, perr, nil
 		}
 		if err != nil || resp != nil {
-			return resp, err, nil
+			return resp, nil, err
 		}
 	}
 	return nil, nil, nil
@@ -177,12 +177,12 @@ func (h *turnHooks) callAfterModel(ctx context.Context, call *hook.ModelInfo, re
 // callOnModelError runs the OnModelError callbacks on a dispatch that failed
 // for good: a response answers it, an error replaces err. A panic is
 // returned: it ends the turn.
-func (h *turnHooks) callOnModelError(ctx context.Context, info *hook.ModelInfo, err error) (*spawnllm.LLMResponse, error, *hook.PanicError) {
+func (h *turnHooks) callOnModelError(ctx context.Context, info *hook.ModelInfo, err error) (*spawnllm.LLMResponse, *hook.PanicError, error) {
 	for _, c := range h.onModelError {
 		var resp *spawnllm.LLMResponse
 		var replaced error
 		if perr := protect("OnModelError", c.plugin, func() { resp, replaced = c.fn(ctx, info, err) }); perr != nil {
-			return nil, err, perr
+			return nil, perr, err
 		}
 		if resp != nil {
 			return resp, nil, nil
@@ -191,7 +191,7 @@ func (h *turnHooks) callOnModelError(ctx context.Context, info *hook.ModelInfo, 
 			err = replaced
 		}
 	}
-	return nil, err, nil
+	return nil, nil, err
 }
 
 // callDescribeImages runs the DescribeImages callbacks until one returns ok.
@@ -284,12 +284,8 @@ func engineCompactionStart(ctx context.Context, info ctxengine.CompactionStart) 
 	}
 	scope, _ := hook.ScopeOf(ctx)
 	scope.Session = info.SessionKey
-	ev := hook.Compaction{
-		EventHeader: hook.EventHeader{Scope: scope, At: t.clock.Now()},
-		Phase:       hook.CompactionStarted,
-		Reason:      string(info.Reason),
-		Blocking:    info.Blocking,
-	}
+	ev := hook.Compaction{Phase: hook.CompactionStarted, Reason: string(info.Reason), Blocking: info.Blocking}
+	ev.Scope, ev.At = scope, t.clock.Now()
 	t.hooks.callOnCompaction(ctx, ev)
 	t.hooks.emit(ctx, ev)
 }

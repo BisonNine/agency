@@ -24,7 +24,7 @@ const sessionIdleTTL = time.Hour
 
 // errCancelledByUser is the cause /cancel gives the running turn's context, so
 // the turn's failure renders as a cancellation rather than a timeout.
-var errCancelledByUser error = &turnCause{text: "cancelled by /cancel", kind: hook.ErrInterrupted}
+var errCancelledByUser error = &turnCauseError{text: "cancelled by /cancel", kind: hook.ErrInterrupted}
 
 // sessionState is one session's dispatch state. The first message to arrive
 // while the session is idle makes its goroutine the owner: it runs turns until

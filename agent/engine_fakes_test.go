@@ -145,6 +145,7 @@ func (e *fakeEnv) responseLogFields() map[string]any { return nil }
 func (e *fakeEnv) directClient(string) (spawnllm.LLMProvider, func(), error) {
 	return nil, nil, errNoDirectModel
 }
+
 func (e *fakeEnv) formatRequest([]spawnllm.Message, []spawnllm.ToolDefinition) (string, string) {
 	return "", ""
 }

@@ -162,12 +162,14 @@ func (e *engineTurn) execute(ctx context.Context, name string, args map[string]a
 func (e *engineTurn) beforeTool(ctx context.Context, call *hook.ToolCall) (*toolkit.Result, *hook.PanicError) {
 	for _, c := range e.hooks.beforeTool {
 		var result *toolkit.Result
-		var err error
-		if perr := toolStep("BeforeTool", c.plugin, func() { result, err = c.fn(ctx, call) }); perr != nil {
+		perr := toolStep("BeforeTool", c.plugin, func() {
+			var refusal error
+			if result, refusal = c.fn(ctx, call); refusal != nil {
+				result = toolkit.ErrorResult(refusal.Error()).WithError(refusal)
+			}
+		})
+		if perr != nil {
 			return nil, perr
-		}
-		if err != nil {
-			return toolkit.ErrorResult(err.Error()).WithError(err), nil
 		}
 		if result != nil {
 			return result, nil
