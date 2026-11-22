@@ -22,9 +22,10 @@ type SubagentManager struct {
 	ownerAgentID string
 	live         *LiveSet
 	tasks        *TaskRegistry
-	// recMu serialises the supervisor's relaunch decisions with the cancel
-	// of a record no worker runs (cancelRecord).
-	recMu sync.Mutex
+	// shuttingDown reports that the process is stopping (never nil).
+	shuttingDown func() bool
+	// hooks are test seams; zero in production.
+	hooks managerHooks
 
 	// Worker model candidates: selfResolver's for self-spawns, or the target
 	// agent's (resolved via candidateResolver). Used to validate a spawn.
@@ -81,6 +82,22 @@ type SubagentManagerConfig struct {
 	Alerter alerter.Alerter
 	// TaskRunner runs task-model calls (agent_spawn with a kind).
 	TaskRunner TaskModelRunner
+	// ShuttingDown reports that the process is stopping: a wait task whose
+	// turn stops waiting then is cancelled, not detached (the turn is
+	// replayed on restart). Nil: never.
+	ShuttingDown func() bool
+}
+
+// managerHooks are test seams at the points where a cancel and the
+// supervisor interleave.
+type managerHooks struct {
+	// settled runs once a cancel has settled a running task's record.
+	settled func(id string)
+	// listed runs once the supervisor has listed a task's run marker.
+	listed func(id string)
+	// beforeRecordCancel runs when agent_cancel found no running task for
+	// id and is about to settle its record.
+	beforeRecordCancel func(id string)
 }
 
 func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
@@ -92,12 +109,21 @@ func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
 	if tasks == nil {
 		tasks = NewTaskRegistry()
 	}
+	live := cfg.Live
+	if live == nil {
+		live = NewLiveSet()
+	}
+	shuttingDown := cfg.ShuttingDown
+	if shuttingDown == nil {
+		shuttingDown = func() bool { return false }
+	}
 	return &SubagentManager{
 		tasks:             tasks,
 		alerter:           a,
 		workspace:         cfg.Workspace,
 		ownerAgentID:      cfg.CallerAgentID,
-		live:              cfg.Live,
+		live:              live,
+		shuttingDown:      shuttingDown,
 		selfResolver:      cfg.SelfResolver,
 		callerAgentID:     cfg.CallerAgentID,
 		candidateResolver: cfg.CandidateResolver,
@@ -421,46 +447,56 @@ func (sm *SubagentManager) alertRecordNotWritten(uuid string, err error) {
 // (the agent layer wires it to publish a pointer to the task's origin channel).
 // now is unix seconds.
 func (sm *SubagentManager) SuperviseOnce(now int64, cbFor func(rec *TaskRecord) tools.AsyncCallback) {
-	sm.recMu.Lock()
-	defer sm.recMu.Unlock()
 	dir := sm.tasksDir()
 	for _, id := range listRunUUIDs(dir) {
-		if sm.live.Has(id) {
-			continue // actually running in this process
+		if sm.hooks.listed != nil {
+			sm.hooks.listed(id)
 		}
-		rec, err := readStatus(dir, id)
-		if err != nil {
-			clearRun(dir, id) // orphan marker with no readable status
-			continue
-		}
-		if rec.Status == StatusDone || rec.Status == StatusError || rec.Status == StatusCancelled {
-			clearRun(dir, id) // stale marker for an already-terminal task
-			continue
-		}
-		if rec.Restarts >= global.TaskMaxRestarts {
-			rec.Status = StatusError
-			rec.Error = fmt.Sprintf("gave up after %d interrupted restarts", rec.Restarts)
-			rec.FinishedAt = nowRFC()
-			sm.persistResults(dir, errResults(rec, rec.Error))
-			sm.persistStatus(dir, rec)
-			clearRun(dir, id)
-			continue
-		}
-		if now < rec.RetryAfter {
-			continue // cooling down
-		}
-		// Eligible: relaunch.
-		rec.Restarts++
-		rec.RetryAfter = now + retryDelaySecs()
-		rec.Status = StatusRunning
-		sm.persistStatus(dir, rec)
-		sm.live.Add(id)
-		var cb tools.AsyncCallback
-		if cbFor != nil {
-			cb = cbFor(rec)
-		}
-		sm.launch(context.Background(), rec, cb, true, false, nil)
+		sm.superviseOne(dir, id, now, cbFor)
 	}
+}
+
+// superviseOne relaunches task id when its record still says running and
+// nothing runs it, deciding under the process's settle lock so a cancel
+// settling the record is never overtaken.
+func (sm *SubagentManager) superviseOne(dir, id string, now int64, cbFor func(rec *TaskRecord) tools.AsyncCallback) {
+	sm.live.settle.Lock()
+	defer sm.live.settle.Unlock()
+	if sm.live.Has(id) {
+		return // actually running in this process
+	}
+	rec, err := readStatus(dir, id)
+	if err != nil {
+		clearRun(dir, id) // orphan marker with no readable status
+		return
+	}
+	if rec.Status == StatusDone || rec.Status == StatusError || rec.Status == StatusCancelled {
+		clearRun(dir, id) // stale marker for an already-terminal task
+		return
+	}
+	if rec.Restarts >= global.TaskMaxRestarts {
+		rec.Status = StatusError
+		rec.Error = fmt.Sprintf("gave up after %d interrupted restarts", rec.Restarts)
+		rec.FinishedAt = nowRFC()
+		sm.persistResults(dir, errResults(rec, rec.Error))
+		sm.persistStatus(dir, rec)
+		clearRun(dir, id)
+		return
+	}
+	if now < rec.RetryAfter {
+		return // cooling down
+	}
+	// Eligible: relaunch.
+	rec.Restarts++
+	rec.RetryAfter = now + retryDelaySecs()
+	rec.Status = StatusRunning
+	sm.persistStatus(dir, rec)
+	sm.live.Add(id)
+	var cb tools.AsyncCallback
+	if cbFor != nil {
+		cb = cbFor(rec)
+	}
+	sm.launch(context.Background(), rec, cb, true, false, nil)
 }
 
 // TaskStatus returns the task with the given uuid, or status "unknown".

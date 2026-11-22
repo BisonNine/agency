@@ -13,6 +13,10 @@ import "sync"
 type LiveSet struct {
 	mu sync.Mutex
 	m  map[string]struct{}
+	// settle serialises, across every manager of the process, the
+	// supervisor's relaunch decisions with the cancels that settle a record
+	// (cancelRun, cancelRecord).
+	settle sync.Mutex
 }
 
 // NewLiveSet returns an empty LiveSet.

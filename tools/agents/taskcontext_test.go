@@ -52,19 +52,8 @@ func newBlockingManager(t *testing.T, w *blockingWorker) (*SubagentManager, *Tas
 	return mgr, reg, ws
 }
 
-// interrupted is a cause like the one /cancel gives a turn.
+// errInterrupted is a cause like the one /cancel gives a turn.
 var errInterrupted = errors.New("interrupted by user")
-
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
 
 // A wait task runs on a context of its own: ending the turn's context stops
 // the waiting, not the task. The task becomes a callback task (record and
@@ -126,7 +115,10 @@ func TestRun_WaitTaskDetachesWhenTheTurnStopsWaiting(t *testing.T) {
 	if ids := listRunUUIDs(tasksDirFor(ws)); len(ids) != 0 {
 		t.Fatalf("run markers left: %v", ids)
 	}
-	waitFor(t, "the registry to empty", func() bool { return len(reg.Running("alice")) == 0 })
+	// The task left the registry before its result was delivered.
+	if n := len(reg.Running("alice")); n != 0 {
+		t.Fatalf("%d tasks still registered", n)
+	}
 }
 
 // A turn shutdown stops does not detach its wait task: the task is
@@ -230,9 +222,52 @@ func TestTaskRegistry_RunningByOwner(t *testing.T) {
 	if reg.Owns("alice", "t2") || !reg.Owns("bob", "t2") {
 		t.Fatal("ownership is by owner")
 	}
-	a.finished()
-	b.finished()
+	a.finished(hook.TaskDone)
+	b.finished(hook.TaskDone)
 	if n := len(reg.Running("alice")) + len(reg.Running("bob")); n != 0 {
 		t.Fatalf("%d tasks left", n)
+	}
+}
+
+// A waited spawn whose turn has no single chat (several turns of the
+// session run) cannot report later, as a callback spawn could not start
+// there: when its turn stops waiting it is cancelled, and the model is told
+// so, never that a result will arrive.
+func TestSpawnTool_WaitInAmbiguousChatIsCancelledNotDetached(t *testing.T) {
+	w := newBlockingWorker()
+	mgr, _, ws := newBlockingManager(t, w)
+	var spawn global.ToolDefinition
+	for _, d := range GlobalProvider.RegisterTools(global.Deps{Spawn: NewSpawner(mgr)}) {
+		if d.Name == "spawn" {
+			spawn = d
+		}
+	}
+	ctx, cancel := context.WithCancel(tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true}))
+	notified := make(chan struct{}, 1)
+	done := make(chan *global.Result, 1)
+	go func() {
+		res, err := spawn.Handler(&global.ToolCall{
+			Ctx: ctx, Args: map[string]any{"task": "work", "mode": "wait"},
+			Notify: func(*global.Result) { notified <- struct{}{} },
+		})
+		if err != nil {
+			t.Errorf("handler: %v", err)
+		}
+		done <- res
+	}()
+	taskCtx := <-w.started
+	cancel()
+	res := <-done
+	if !res.IsError || !strings.Contains(res.ForLLM, "was cancelled") || strings.Contains(res.ForLLM, "background result") {
+		t.Fatalf("result = %+v, want cancelled", res)
+	}
+	<-w.released
+	select {
+	case <-notified:
+		t.Fatal("a background result was sent")
+	default:
+	}
+	if rec, err := readStatus(tasksDirFor(ws), TaskID(taskCtx)); err != nil || rec.Status != StatusCancelled {
+		t.Fatalf("record = %+v (%v)", rec, err)
 	}
 }

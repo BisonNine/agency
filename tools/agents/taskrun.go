@@ -149,7 +149,7 @@ func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record fun
 			sm.persistResults(sm.tasksDir(), cancelledResults(tr.rec, partial))
 		}
 		release()
-		tr.task.finished()
+		tr.task.finished(hook.TaskCancelled)
 		return
 	}
 	tr.ended = true
@@ -161,7 +161,11 @@ func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record fun
 	tr.waiting = false
 	status := tr.rec.Status
 	tr.mu.Unlock()
-	tr.task.finished()
+	state := hook.TaskDone
+	if status != StatusDone {
+		state = hook.TaskError
+	}
+	tr.task.finished(state)
 
 	// A waiting turn gets its result once the clone is gone; a callback is
 	// delivered first, then the clone is released.
@@ -204,13 +208,21 @@ func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) bool {
 	rec := tr.rec
 	rec.Status, rec.Error, rec.FinishedAt = StatusCancelled, cancelledTaskError, nowRFC()
 	dir := sm.tasksDir()
-	clearRun(dir, rec.UUID)
-	sm.live.Remove(rec.UUID)
+	// The record says cancelled before the marker goes and the task leaves
+	// the live set, all under the settle lock: the supervisor never sees it
+	// unmarked-live yet running.
+	sm.live.settle.Lock()
 	sm.persistStatus(dir, rec)
 	sm.persistResults(dir, cancelledResults(rec, ""))
+	clearRun(dir, rec.UUID)
+	sm.live.Remove(rec.UUID)
+	sm.live.settle.Unlock()
 	waiting := tr.waiting
 	tr.waiting = false
 	tr.mu.Unlock()
+	if sm.hooks.settled != nil {
+		sm.hooks.settled(rec.UUID)
+	}
 
 	logger.InfoCF("subagent", "Task cancelled", map[string]any{
 		"uuid": rec.UUID, "name": rec.Name, "owner": sm.ownerAgentID, "kind": taskKind(rec),
@@ -253,9 +265,10 @@ func (sm *SubagentManager) detach(tr *taskRun, cb tools.AsyncCallback) bool {
 }
 
 // await waits for a wait task's result. When ctx ends first the task is not
-// stopped: it is detached and its result is delivered later to onDetach,
-// unless ctx ended for a shutdown, which cancels it (the turn is replayed
-// on restart and starts it again).
+// stopped: it is detached and its result is delivered later to onDetach. It
+// is cancelled instead when the process is shutting down (the turn is
+// replayed on restart and starts it again), and when there is no onDetach
+// (no chat for a later result).
 func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tools.AsyncCallback) *tools.ToolResult {
 	select {
 	case res := <-tr.result:
@@ -263,8 +276,18 @@ func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tool
 	case <-ctx.Done():
 	}
 	cause := context.Cause(ctx)
+	if sm.shuttingDown() {
+		cause = hook.ErrShutdown
+	}
 	if isShutdown(cause) {
 		tr.task.stop(cause)
+		return <-tr.result
+	}
+	if onDetach == nil {
+		// Nowhere to deliver a later result (no chat to answer in, as for a
+		// callback spawn, which is refused there): the task is cancelled
+		// rather than left to report to no one.
+		tr.task.stop(errNoRoute)
 		return <-tr.result
 	}
 	if !sm.detach(tr, onDetach) {
@@ -272,6 +295,10 @@ func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tool
 	}
 	return &tools.ToolResult{ForLLM: fmt.Sprintf(detachedText, tr.rec.Name, tr.rec.UUID, tr.rec.UUID)}
 }
+
+// errNoRoute cancels a wait task whose turn stopped waiting when its result
+// would have nowhere to go.
+var errNoRoute = &cancelCauseError{text: "its turn stopped waiting and its result has nowhere to go"}
 
 // detachedText is the tool result of a wait spawn whose turn stopped
 // waiting (an interrupt, or the turn's time ran out).

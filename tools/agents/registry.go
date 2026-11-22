@@ -26,11 +26,48 @@ import (
 type TaskRegistry struct {
 	mu    sync.Mutex
 	tasks map[string]*Task
+	// observers are told of every change of a task (Observe).
+	observers []func(hook.TaskInfo)
+	// stopped are the ids of the last maxStopped tasks cancelled: a task
+	// started under one of them is cancelled at once, so none escapes a
+	// cascade.
+	stopped []string
 }
+
+// maxStopped bounds the cancelled task ids the registry remembers.
+const maxStopped = 1024
 
 // NewTaskRegistry returns an empty registry.
 func NewTaskRegistry() *TaskRegistry {
 	return &TaskRegistry{tasks: make(map[string]*Task)}
+}
+
+// Observe registers fn, told of each task as it starts, changes mode and
+// ends (State says how), on the goroutine of the change.
+func (r *TaskRegistry) Observe(fn func(hook.TaskInfo)) {
+	r.mu.Lock()
+	r.observers = append(r.observers, fn)
+	r.mu.Unlock()
+}
+
+// notify tells the observers of info.
+func (r *TaskRegistry) notify(info hook.TaskInfo) {
+	r.mu.Lock()
+	obs := slices.Clone(r.observers)
+	r.mu.Unlock()
+	for _, fn := range obs {
+		fn(info)
+	}
+}
+
+// markStopped remembers that id was cancelled.
+func (r *TaskRegistry) markStopped(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stopped = append(r.stopped, id)
+	if n := len(r.stopped); n > maxStopped {
+		r.stopped = slices.Delete(r.stopped, 0, n-maxStopped)
+	}
 }
 
 // Task is one registered task.
@@ -58,7 +95,9 @@ func (t *Task) Info() hook.TaskInfo {
 func (t *Task) setMode(m hook.TaskMode) {
 	t.mu.Lock()
 	t.info.Mode = m
+	info := t.info
 	t.mu.Unlock()
+	t.reg.notify(info)
 }
 
 // stop cancels the task with cause, once: its record is settled first
@@ -68,6 +107,7 @@ func (t *Task) setMode(m hook.TaskMode) {
 func (t *Task) stop(cause error) (hook.TaskInfo, bool) {
 	stopped := false
 	t.once.Do(func() {
+		t.reg.markStopped(t.info.ID)
 		stopped = t.beforeCancel == nil || t.beforeCancel(cause)
 		if stopped {
 			t.mu.Lock()
@@ -76,15 +116,21 @@ func (t *Task) stop(cause error) (hook.TaskInfo, bool) {
 		}
 		t.reg.remove(t.info.ID)
 		t.cancel(cause)
+		t.reg.notify(t.Info())
 	})
 	return t.Info(), stopped
 }
 
-// finished takes an ended task out of the registry and releases its context.
-func (t *Task) finished() {
+// finished takes a task that ended in state out of the registry and
+// releases its context.
+func (t *Task) finished(state hook.TaskState) {
 	t.once.Do(func() {
+		t.mu.Lock()
+		t.info.State, t.info.Ended = state, time.Now()
+		t.mu.Unlock()
 		t.reg.remove(t.info.ID)
 		t.cancel(nil)
+		t.reg.notify(t.Info())
 	})
 }
 
@@ -130,8 +176,28 @@ func (r *TaskRegistry) start(parent context.Context, info hook.TaskInfo, depth i
 	t := &Task{reg: r, cancel: cancel, beforeCancel: beforeCancel, info: info}
 	r.mu.Lock()
 	r.tasks[info.ID] = t
+	orphan := info.Parent != "" && slices.Contains(r.stopped, info.Parent)
 	r.mu.Unlock()
+	r.notify(t.Info())
+	if orphan {
+		// Started under a task being cancelled: cancelled with it.
+		t.stop(errParentCancelled)
+	}
 	return ctx, t
+}
+
+// errParentCancelled is the cause of a task started under a cancelled one.
+var errParentCancelled = &cancelCauseError{text: "the task it was started in was cancelled"}
+
+// CancelChildren cancels every running task started under id (whatever
+// owns it), children first, and returns them.
+func (r *TaskRegistry) CancelChildren(id string, cause error) []hook.TaskInfo {
+	if r == nil {
+		return nil
+	}
+	r.markStopped(id)
+	list := slices.DeleteFunc(r.subtree([]string{id}), func(t *Task) bool { return t.info.ID == id })
+	return r.stopAll(list, cause)
 }
 
 func (r *TaskRegistry) remove(id string) {

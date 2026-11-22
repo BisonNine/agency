@@ -39,6 +39,10 @@ type AgentLoop struct {
 	cfg      *config.Config
 	registry *AgentRegistry
 	running  atomic.Bool
+	// stopping is set by Stop, before the turns are cancelled: work a
+	// stopped turn leaves behind is not carried on (a wait task is
+	// cancelled, not detached).
+	stopping atomic.Bool
 	// started is closed once Run has begun serving (see Started).
 	started         chan struct{}
 	startedOnce     sync.Once
@@ -522,6 +526,7 @@ func (al *AgentLoop) dispatchInbound(ctx context.Context, msg bus.InboundMessage
 // Stop ends Run and cancels the turns in flight. A cancelled turn is left
 // pending, so it is replayed on the next start.
 func (al *AgentLoop) Stop() {
+	al.stopping.Store(true)
 	al.running.Store(false)
 	al.runMu.Lock()
 	stopRun := al.stopRun

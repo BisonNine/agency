@@ -195,8 +195,8 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 					if mode == global.SpawnCallback {
 						return &global.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: tools.Refusal(errSpawnAmbiguous)}, nil
 					}
-					// A waited task whose turn stops waiting has no chat to
-					// report to either: its result stays in its record.
+					// A waited task whose turn stops waiting would have no
+					// chat to report to either: it is cancelled then.
 					onResult = nil
 				}
 				return sp.Spawn(call.Ctx, global.SpawnRequest{

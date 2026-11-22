@@ -104,16 +104,13 @@ func TestCancelTask_SettlesBeforeCancelling(t *testing.T) {
 	if !errors.Is(context.Cause(wctx), hook.ErrInterrupted) {
 		t.Fatalf("cause = %v, want an interrupt", context.Cause(wctx))
 	}
-	waitFor(t, "the partial output", func() bool {
-		r, err := readResults(tasksDirFor(f.ws), id)
-		return err == nil && r.Content == "half of it"
-	})
-	r, err := readResults(tasksDirFor(f.ws), id)
-	if err != nil || r.Status != StatusCancelled || !r.Incomplete {
-		t.Fatalf("results = %+v, want cancelled and incomplete", r)
-	}
-	// Once the worker is gone, nothing more can be delivered.
+	// Once the worker is gone its partial output is recorded, and nothing
+	// more can be delivered.
 	<-f.released
+	r, err := readResults(tasksDirFor(f.ws), id)
+	if err != nil || r.Status != StatusCancelled || !r.Incomplete || r.Content != "half of it" {
+		t.Fatalf("results = %+v (%v), want the partial output, cancelled and incomplete", r, err)
+	}
 	select {
 	case <-fired:
 		t.Fatal("a cancelled task's callback fired")
@@ -321,5 +318,143 @@ func TestRun_WaitTaskEndingAtOnce(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("the waiting turn never got the result")
 		}
+	}
+}
+
+// leftRecord writes a running record with its marker that no worker runs,
+// as a restart leaves it for the supervisor.
+func leftRecord(t *testing.T, ws, id string) {
+	t.Helper()
+	dir := tasksDirFor(ws)
+	rec := &TaskRecord{UUID: id, Name: id, OwnerAgentID: "alice", Mode: "callback", Task: "work", Status: StatusRunning, ResultsPath: relResultsPath(id)}
+	if err := writeStatus(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := markRun(dir, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A cancel and the supervisor never let a cancelled task run again: not
+// when the supervisor listed the task's marker before the cancel, nor when
+// it looks right after the cancel settled the task.
+func TestCancel_SupervisorDoesNotRelaunchACancelledTask(t *testing.T) {
+	future := time.Now().Unix() + 3600
+	for _, order := range []string{"listed first", "settled first"} {
+		t.Run(order, func(t *testing.T) {
+			f := newCancelFixture(t)
+			id, _ := f.spawn(t, context.Background(), nil)
+			if order == "listed first" {
+				f.mgr.hooks.listed = func(listed string) {
+					if listed == id {
+						f.mgr.CancelTask(id)
+					}
+				}
+				f.mgr.SuperviseOnce(future, nil)
+			} else {
+				f.mgr.hooks.settled = func(string) { f.mgr.SuperviseOnce(future, nil) }
+				f.mgr.CancelTask(id)
+			}
+			<-f.atCancel
+			select {
+			case <-f.started:
+				t.Fatal("the cancelled task was relaunched")
+			default:
+			}
+			if f.live.Has(id) || len(f.reg.Running("alice")) != 0 {
+				t.Fatal("the cancelled task is running again")
+			}
+			if rec, err := readStatus(tasksDirFor(f.ws), id); err != nil || rec.Status != StatusCancelled {
+				t.Fatalf("record = %+v (%v)", rec, err)
+			}
+		})
+	}
+}
+
+// A relaunch, by another manager of the same agent, landing between
+// agent_cancel's two looks does not make it report a running task as
+// finished: the relaunched task is cancelled.
+func TestCancelTask_RelaunchedMeanwhileIsCancelled(t *testing.T) {
+	f := newCancelFixture(t)
+	leftRecord(t, f.ws, "left")
+	other := NewSubagentManager(SubagentManagerConfig{
+		Workspace: f.ws, Live: f.live, Tasks: f.reg, CallerAgentID: "alice", RunFull: f.mgr.runFull,
+	})
+	f.mgr.hooks.beforeRecordCancel = func(string) {
+		other.SuperviseOnce(time.Now().Unix()+3600, nil)
+		<-f.started
+	}
+	res := f.mgr.CancelTask("left")
+	if res.Cancelled != 1 || len(res.AlreadyFinished) != 0 {
+		t.Fatalf("result = %+v, want the relaunched task cancelled", res)
+	}
+	<-f.atCancel
+	if rec, err := readStatus(tasksDirFor(f.ws), "left"); err != nil || rec.Status != StatusCancelled {
+		t.Fatalf("record = %+v (%v)", rec, err)
+	}
+}
+
+// Cancelling a task a restart left behind cancels the tasks it started,
+// which were relaunched, first.
+func TestCancelTask_LeftBehindCascades(t *testing.T) {
+	f := newCancelFixture(t)
+	leftRecord(t, f.ws, "left")
+	child, cctx := f.spawn(t, WithTaskID(context.Background(), "left"), nil)
+	res := f.mgr.CancelTask("left")
+	if res.Cancelled != 2 || res.Tasks[0].UUID != child || res.Tasks[1].UUID != "left" {
+		t.Fatalf("result = %+v, want the child then the task", res)
+	}
+	if cctx.Err() == nil {
+		t.Fatal("the child is still running")
+	}
+}
+
+// A task started under a task being cancelled does not escape the cascade.
+func TestCancelTask_ChildStartedLateIsCancelled(t *testing.T) {
+	f := newCancelFixture(t)
+	parent, pctx := f.spawn(t, context.Background(), nil)
+	f.mgr.CancelTask(parent)
+	<-f.atCancel
+	id, cctx := f.spawn(t, pctx, nil)
+	if cctx.Err() == nil {
+		t.Fatal("a task started under a cancelled task runs")
+	}
+	if rec, err := readStatus(tasksDirFor(f.ws), id); err != nil || rec.Status != StatusCancelled {
+		t.Fatalf("record = %+v (%v)", rec, err)
+	}
+}
+
+// A wait task whose turn stops waiting while the process shuts down is
+// cancelled, whatever the turn's context's cause (a CLI's MCP request
+// ends with a plain cancel), so it is not relaunched beside the replayed
+// turn.
+func TestRun_WaitTaskCancelledWhileShuttingDown(t *testing.T) {
+	w := newBlockingWorker()
+	ws := t.TempDir()
+	mgr := NewSubagentManager(SubagentManagerConfig{
+		Workspace: ws, Live: NewLiveSet(), CallerAgentID: "alice", RunFull: w.run,
+		ShuttingDown: func() bool { return true },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan *tools.ToolResult, 1)
+	go func() {
+		res, err := mgr.Run(ctx, "do work", "job", "", "cli", "direct", "", "", nil, func(context.Context, *tools.ToolResult) {
+			t.Error("a background result was delivered")
+		})
+		if err != nil {
+			t.Errorf("Run: %v", err)
+		}
+		done <- res
+	}()
+	taskCtx := <-w.started
+	cancel()
+	if res := <-done; !res.IsError || !strings.Contains(res.ForLLM, "cancelled") {
+		t.Fatalf("result = %+v, want cancelled", res)
+	}
+	if ids := listRunUUIDs(tasksDirFor(ws)); len(ids) != 0 {
+		t.Fatalf("run markers = %v, want none", ids)
+	}
+	if rec, err := readStatus(tasksDirFor(ws), TaskID(taskCtx)); err != nil || rec.Status != StatusCancelled {
+		t.Fatalf("record = %+v (%v)", rec, err)
 	}
 }

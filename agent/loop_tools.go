@@ -198,6 +198,7 @@ func (al *AgentLoop) newSpawner(
 		Workspace:         currentAgent.Workspace,
 		Live:              al.taskLive,
 		Tasks:             al.tasks,
+		ShuttingDown:      al.stopping.Load,
 		SelfResolver:      func() []providers.FallbackCandidate { return al.workerCandidates(currentAgent) },
 		CallerAgentID:     agentID,
 		CandidateResolver: candidateResolver,

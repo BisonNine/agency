@@ -28,21 +28,36 @@ func (e *cancelCauseError) Unwrap() error { return hook.ErrInterrupted }
 // relaunched is settled as cancelled.
 func (sm *SubagentManager) CancelTask(id string) *global.TaskCancelResult {
 	res := &global.TaskCancelResult{}
-	if infos := sm.tasks.Cancel(sm.ownerAgentID, id, errCancelledByAgent); len(infos) > 0 {
+	// A task relaunched between the two looks is caught by the next round.
+	for range 3 {
+		if infos := sm.tasks.Cancel(sm.ownerAgentID, id, errCancelledByAgent); len(infos) > 0 {
+			sm.addCancelled(res, infos)
+			return res
+		}
+		rec, err := readStatus(sm.tasksDir(), id)
+		if err != nil || !config.SameAgentID(rec.OwnerAgentID, sm.ownerAgentID) {
+			res.Unknown = append(res.Unknown, id)
+			return res
+		}
+		if rec.Status != StatusRunning {
+			res.AlreadyFinished = append(res.AlreadyFinished, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: rec.Status})
+			return res
+		}
+		if sm.hooks.beforeRecordCancel != nil {
+			sm.hooks.beforeRecordCancel(id)
+		}
+		infos, ok := sm.cancelRecord(rec, errCancelledByAgent)
 		sm.addCancelled(res, infos)
-		return res
+		if ok {
+			res.Cancelled++
+			res.Tasks = append(res.Tasks, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: StatusCancelled})
+			return res
+		}
 	}
 	rec, err := readStatus(sm.tasksDir(), id)
-	if err != nil || !config.SameAgentID(rec.OwnerAgentID, sm.ownerAgentID) {
-		res.Unknown = append(res.Unknown, id)
-		return res
+	if err == nil {
+		res.AlreadyFinished = append(res.AlreadyFinished, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: rec.Status})
 	}
-	if rec.Status == StatusRunning && sm.cancelRecord(rec, errCancelledByAgent) {
-		res.Cancelled++
-		res.Tasks = append(res.Tasks, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: StatusCancelled})
-		return res
-	}
-	res.AlreadyFinished = append(res.AlreadyFinished, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: rec.Status})
 	return res
 }
 
@@ -58,9 +73,17 @@ func (sm *SubagentManager) CancelAllWith(cause error) *global.TaskCancelResult {
 	res := &global.TaskCancelResult{}
 	sm.addCancelled(res, sm.tasks.CancelAll(sm.ownerAgentID, cause))
 	for _, rec := range listStatusRecords(sm.tasksDir()) {
-		if rec.Status == StatusRunning && config.SameAgentID(rec.OwnerAgentID, sm.ownerAgentID) && sm.cancelRecord(rec, cause) {
+		if rec.Status != StatusRunning || !config.SameAgentID(rec.OwnerAgentID, sm.ownerAgentID) {
+			continue
+		}
+		infos, ok := sm.cancelRecord(rec, cause)
+		sm.addCancelled(res, infos)
+		if ok {
 			res.Cancelled++
 			res.Tasks = append(res.Tasks, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: StatusCancelled})
+		} else {
+			// Relaunched meanwhile: it is in the registry now.
+			sm.addCancelled(res, sm.tasks.Cancel(sm.ownerAgentID, rec.UUID, cause))
 		}
 	}
 	return res
@@ -76,31 +99,34 @@ func (sm *SubagentManager) addCancelled(res *global.TaskCancelResult, infos []ho
 
 // cancelRecord settles as cancelled a task whose record says running but
 // that runs nowhere in this process (a restart left it for the supervisor
-// to relaunch): its marker is cleared so it is never relaunched. A task
-// running or relaunched meanwhile is left alone.
-func (sm *SubagentManager) cancelRecord(rec *TaskRecord, cause error) bool {
-	sm.recMu.Lock()
-	defer sm.recMu.Unlock()
+// to relaunch), after the tasks it started, which may have been relaunched
+// (they are returned): its marker is cleared so it is never relaunched. It
+// decides under the process's settle lock, so a relaunch is never
+// overtaken: a task running or relaunched meanwhile is left alone (false).
+func (sm *SubagentManager) cancelRecord(rec *TaskRecord, cause error) ([]hook.TaskInfo, bool) {
+	children := sm.tasks.CancelChildren(rec.UUID, cause)
+	sm.live.settle.Lock()
+	defer sm.live.settle.Unlock()
 	if sm.live.Has(rec.UUID) || sm.tasks.Owns(sm.ownerAgentID, rec.UUID) {
-		return false
+		return children, false
 	}
 	// Read again now that nothing runs it: a worker that has just ended
 	// wrote its final status before leaving the live set.
 	dir := sm.tasksDir()
 	cur, err := readStatus(dir, rec.UUID)
 	if err != nil || cur.Status != StatusRunning {
-		return false
+		return children, false
 	}
 	rec = cur
-	clearRun(dir, rec.UUID)
 	rec.Status, rec.Error, rec.FinishedAt = StatusCancelled, cancelledTaskError, nowRFC()
 	sm.persistStatus(dir, rec)
 	sm.persistResults(dir, cancelledResults(rec, ""))
+	clearRun(dir, rec.UUID)
 	logger.InfoCF("subagent", "Task cancelled", map[string]any{
 		"uuid": rec.UUID, "name": rec.Name, "owner": sm.ownerAgentID, "kind": taskKind(rec),
 		"cause": cause.Error(),
 	})
-	return true
+	return children, true
 }
 
 // CancelTask implements global.TaskCanceller.
