@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -108,7 +109,8 @@ func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
 //     store-fault alert, then the reply sent, then its "Response" line;
 //   - each finished tool call: its statistics, then its audit row, after
 //     the call (recordToolCall); nothing is audited before a call runs;
-//   - AfterModel: generated images are saved and delivered before the
+//   - AfterModel: the "LLM response" line is logged first, from the answer
+//     as the model gave it; then generated images are saved and delivered before the
 //     reasoning may stand in for an empty reply, and both run before the
 //     engine stores the assistant message (the notes are in it);
 //   - BeforeModel: the session's pins follow a request built from the
@@ -148,6 +150,8 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 	}})
 	h.add(al.compactionNoticePlugin(o))
 
+	// First among AfterModel: the answer is logged as the model gave it.
+	h.add(hook.Plugin{Name: "response-log", AfterModel: al.logModelResponse(agent, opts)})
 	images := &turnImages{al: al, agent: agent, opts: o, model: model}
 	h.add(hook.Plugin{Name: "images", AfterModel: images.afterModel})
 	h.add(hook.Plugin{Name: "reasoning-as-content", AfterModel: al.reasoningAsContent})
@@ -292,6 +296,35 @@ func (al *AgentLoop) requestMediaPlugin() hook.BeforeModelFunc {
 		maxMediaSize := al.GetConfig().Agents.Defaults.GetMaxMediaSize()
 		call.Request.Messages = resolveMediaRefs(call.Request.Messages, al.mediaStore, maxMediaSize)
 		return nil, nil
+	}
+}
+
+// logModelResponse logs a dispatch's answer (AfterModel, registered before
+// every other one, so it sees the answer unchanged): the "LLM response" line,
+// with the reasoning only when content may be logged. It changes nothing.
+// opts are the turn's options as BeforeTurn leaves them.
+func (al *AgentLoop) logModelResponse(agent *AgentInstance, opts *processOptions) hook.AfterModelFunc {
+	return func(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) {
+		log := logger.SDK()
+		if !log.Enabled(ctx, slog.LevelDebug) {
+			return
+		}
+		r := resp.Response
+		args := []any{
+			"component", "agent",
+			"agent_id", agent.ID,
+			"iteration", call.Iteration,
+			"content_chars", len(r.Content),
+			"tool_calls", len(r.ToolCalls),
+			"reasoning_chars", len(r.Reasoning),
+			"target_channel", al.targetReasoningChannelID(opts.Channel),
+			"channel", opts.Channel,
+		}
+		// Reasoning text is response body content.
+		if logger.GetLogMessageContent() {
+			args = append(args, "reasoning", r.Reasoning)
+		}
+		log.DebugContext(ctx, "LLM response", args...)
 	}
 }
 
@@ -527,13 +560,6 @@ func (e *llmTurnEnv) sessionSummary() string {
 
 func (e *llmTurnEnv) directClient(name string) (spawnllm.LLMProvider, func(), error) {
 	return e.al.catalog.Client(name)
-}
-
-func (e *llmTurnEnv) responseLogFields() map[string]any {
-	return map[string]any{
-		"target_channel": e.al.targetReasoningChannelID(e.opts.Channel),
-		"channel":        e.opts.Channel,
-	}
 }
 
 // directModel is the model a turn of agent on a direct chain (tm.direct)

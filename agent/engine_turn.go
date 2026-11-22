@@ -125,9 +125,6 @@ type turnStore interface {
 // turnHost are host decisions with no hook type (interim).
 type turnHost interface {
 	directClients
-	// responseLogFields are the host's fields of the "LLM response" line
-	// (interim: moving them to a line of the host's own would split it).
-	responseLogFields() map[string]any
 }
 
 // engineSpec is everything one turn of the engine runs with.
@@ -662,7 +659,6 @@ func (e *engineTurn) iterate(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	e.logResponse(response)
 
 	// AfterModel works on a copy, so the ModelCall event keeps the
 	// provider's response; it may change it and adds the notes and reply
@@ -838,23 +834,6 @@ func (e *engineTurn) logRequest(d *llmDispatch) {
 				"tools_json":    formatToolsForLog(defs, e.spec.truncate),
 			})
 	}
-}
-
-// logResponse logs the answer to a dispatch.
-func (e *engineTurn) logResponse(response *spawnllm.LLMResponse) {
-	respFields := map[string]any{
-		"agent_id":        e.spec.agentID,
-		"iteration":       e.iteration,
-		"content_chars":   len(response.Content),
-		"tool_calls":      len(response.ToolCalls),
-		"reasoning_chars": len(response.Reasoning),
-	}
-	maps.Copy(respFields, e.spec.env.responseLogFields())
-	// Reasoning text is response body content.
-	if e.spec.logContent() {
-		respFields["reasoning"] = response.Reasoning
-	}
-	e.logAt(slog.LevelDebug, "LLM response", respFields)
 }
 
 // directAnswer takes a response without tool calls as the turn's answer. A
