@@ -1022,3 +1022,69 @@ func TestEngine_RebuiltOnStoreRequests(t *testing.T) {
 		})
 	}
 }
+
+// A turn that reaches its model loop has one LoopStarted, after the pending
+// marker was set and before its first ModelCallStarted; a turn BeforeTurn
+// answered, or whose message the store refused, has none.
+func TestEngine_LoopStarted(t *testing.T) {
+	loopStarts := func(f *engineFixture) (n int, firstCall int, at int) {
+		firstCall, at = -1, -1
+		for i, ev := range f.rec.all() {
+			switch ev.(type) {
+			case hook.LoopStarted:
+				n++
+				at = i
+			case hook.ModelCallStarted:
+				if firstCall < 0 {
+					firstCall = i
+				}
+			}
+		}
+		return n, firstCall, at
+	}
+	t.Run("loop", func(t *testing.T) {
+		p := modelstest.New().Script("alice-wire", modelstest.Reply("done"))
+		clk := newFake()
+		_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+		f := newEngineFixture(t, chain, clk)
+		var pendingAtStart []string
+		f.spec.hooks.add(hook.Plugin{Name: "tap", OnEvent: func(_ context.Context, ev hook.Event) {
+			if _, ok := ev.(hook.LoopStarted); ok {
+				pendingAtStart = f.store.events()
+			}
+		}})
+		if _, _, err := f.run(t); err != nil {
+			t.Fatal(err)
+		}
+		n, firstCall, at := loopStarts(f)
+		if n != 1 || firstCall < 0 || at > firstCall {
+			t.Fatalf("LoopStarted %d times at %d, first ModelCallStarted at %d", n, at, firstCall)
+		}
+		if !slices.Equal(pendingAtStart, []string{"pending"}) {
+			t.Fatalf("store at LoopStarted = %v, want the marker set", pendingAtStart)
+		}
+	})
+	t.Run("answered", func(t *testing.T) {
+		f := newEngineFixture(t, nil, newFake())
+		f.spec.hooks.add(hook.Plugin{Name: "person", BeforeTurn: func(context.Context, *hook.Turn) (*hook.TurnResult, error) {
+			return &hook.TurnResult{Outcome: hook.OutcomeOK, Reply: "hi"}, nil
+		}})
+		if _, _, err := f.run(t); err != nil {
+			t.Fatal(err)
+		}
+		if n, _, _ := loopStarts(f); n != 0 {
+			t.Fatalf("LoopStarted %d times for a turn BeforeTurn answered", n)
+		}
+	})
+	t.Run("refused", func(t *testing.T) {
+		f := newEngineFixture(t, nil, newFake())
+		f.spec.options.AlreadyStored = false
+		f.cm.failAdd = errors.New("disk full")
+		if _, _, err := f.run(t); err == nil {
+			t.Fatal("the store's refusal did not end the turn")
+		}
+		if n, _, _ := loopStarts(f); n != 0 {
+			t.Fatalf("LoopStarted %d times for a turn whose message was refused", n)
+		}
+	})
+}

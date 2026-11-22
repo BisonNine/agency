@@ -422,8 +422,8 @@ func (e *engineTurn) finish(ctx context.Context, tr hook.TurnResult) {
 }
 
 // begin readies the session for the model loop: reset when the run asks,
-// the message stored unless it already is, the pending-turn marker set, the
-// first request assembled.
+// the message stored unless it already is, the first request assembled, the
+// pending-turn marker set; then LoopStarted.
 func (e *engineTurn) begin(ctx context.Context, turn *hook.Turn) error {
 	if e.spec.cm == nil || e.spec.store == nil {
 		return errEngineIncomplete
@@ -460,6 +460,7 @@ func (e *engineTurn) begin(ctx context.Context, turn *hook.Turn) error {
 			e.hooks.add(p)
 		}
 	}
+	e.hooks.emit(ctx, hook.LoopStarted{EventHeader: e.header()})
 	return nil
 }
 
