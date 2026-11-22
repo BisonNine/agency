@@ -36,8 +36,9 @@ func engineImportAllowed(path string) bool {
 	return strings.HasPrefix(path, "go.bison9.com/agent/")
 }
 
-// engineFiles returns the engine's non-test files, parsed.
-func engineFiles(t *testing.T, fset *token.FileSet) []*ast.File {
+// engineFiles returns the engine's files, parsed: its non-test files, and
+// its tests too with tests set.
+func engineFiles(t *testing.T, fset *token.FileSet, tests bool) []*ast.File {
 	t.Helper()
 	names, err := filepath.Glob(engineFilePrefix + "*.go")
 	if err != nil {
@@ -45,7 +46,7 @@ func engineFiles(t *testing.T, fset *token.FileSet) []*ast.File {
 	}
 	var files []*ast.File
 	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
+		if strings.HasSuffix(name, "_test.go") && !tests {
 			continue
 		}
 		f, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
@@ -63,7 +64,7 @@ func engineFiles(t *testing.T, fset *token.FileSet) []*ast.File {
 // The engine imports only the standard library and the SDK.
 func TestEngineImportsOnlySDK(t *testing.T) {
 	fset := token.NewFileSet()
-	for _, f := range engineFiles(t, fset) {
+	for _, f := range engineFiles(t, fset, true) {
 		for _, imp := range f.Imports {
 			path, err := strconv.Unquote(imp.Path.Value)
 			if err != nil {
@@ -77,15 +78,15 @@ func TestEngineImportsOnlySDK(t *testing.T) {
 	}
 }
 
-// The engine files type-check on their own, as a package of just them: they
-// use no identifier the host files of this package declare, so they can be
-// moved to a package of their own unchanged.
+// The engine files, and with them their tests, type-check on their own, as a
+// package of just them: they use no identifier the host files of this
+// package declare, so they can be moved to a package of their own unchanged.
 func TestEngineStandsAlone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the SDK's export data")
 	}
 	fset := token.NewFileSet()
-	files := engineFiles(t, fset)
+	files := engineFiles(t, fset, true)
 
 	var imports []string
 	for _, f := range files {
