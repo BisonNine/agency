@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,7 +78,7 @@ func TestCatalogue_CLIModelWiring(t *testing.T) {
 	if err := callCLI(t, cliScript(t, dir, "hello"), true); err != nil {
 		t.Fatalf("call with bypass: %v", err)
 	}
-	if args := readLines(t, filepath.Join(dir, "args")); !contains(args, "--dangerously-skip-permissions") {
+	if args := readLines(t, filepath.Join(dir, "args")); !slices.Contains(args, "--dangerously-skip-permissions") {
 		t.Errorf("bypass on: args %v lack the bypass flag", args)
 	}
 	env := strings.Join(readLines(t, filepath.Join(dir, "env")), "\n")
@@ -92,7 +93,7 @@ func TestCatalogue_CLIModelWiring(t *testing.T) {
 
 	dir = t.TempDir()
 	err := callCLI(t, cliScript(t, dir, ""), false)
-	if args := readLines(t, filepath.Join(dir, "args")); contains(args, "--dangerously-skip-permissions") {
+	if args := readLines(t, filepath.Join(dir, "args")); slices.Contains(args, "--dangerously-skip-permissions") {
 		t.Errorf("bypass off: args %v carry the bypass flag", args)
 	}
 	declined, ok := errors.AsType[*CLIDeclinedError](err)
@@ -100,13 +101,4 @@ func TestCatalogue_CLIModelWiring(t *testing.T) {
 	if !ok || declined.Error() != want {
 		t.Fatalf("empty answer without bypass: err = %v, want %q", err, want)
 	}
-}
-
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }

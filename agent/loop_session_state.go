@@ -128,7 +128,8 @@ func (s sessionSelections) LoadSelection(set string, p models.Purpose, scope mod
 	}
 	inst, store, ok := s.selectionAgent(set)
 	if !ok {
-		return "", nil
+		// Not read yet, not "none": the catalogue reads it again next time.
+		return "", fmt.Errorf("agent %q is not running yet", set)
 	}
 	st, err := store.GetCompactionState(string(scope))
 	if err != nil {

@@ -157,33 +157,15 @@ func summarizationNames(cfg *config.Config, inst *AgentInstance) []string {
 	return out
 }
 
-// catalogAssignments is the part of a configuration the agents' model
-// assignments are made from, for the catalogue digest: the agents' chat
-// models, what their sets are built from. A reload that changes none of it,
-// nor the providers and models, keeps the running catalogue and its
-// cooldowns.
-type catalogAssignments struct {
-	DefaultModels []string           `json:"default_models"`
-	Agents        []agentAssignments `json:"agents"`
-}
-
-type agentAssignments struct {
-	ID     string   `json:"id"`
-	Models []string `json:"models"`
-}
-
-func assignmentsOf(cfg *config.Config) catalogAssignments {
-	a := catalogAssignments{DefaultModels: cfg.Agents.Defaults.Models}
-	for i := range cfg.Agents.List {
-		ac := &cfg.Agents.List[i]
-		a.Agents = append(a.Agents, agentAssignments{ID: ac.ID, Models: ac.Models})
-	}
-	return a
-}
-
-// catalogDigest is the digest of the catalogue cfg builds (providers.Digest).
+// catalogDigest is the digest of the catalogue cfg builds (providers.Digest):
+// the providers, the model definitions, the cooldown policy and the client
+// options, file modes included. A reload that changes it adopts a new
+// catalogue, which clears every cooldown. The agents' lists (chat, worker,
+// summarize, memory, task models) are not in it: a change to them alone
+// replaces the lists in the running catalogue (ReplaceAll), and cooldowns
+// stay.
 func catalogDigest(cfg *config.Config) string {
-	return providers.Digest(cfg, assignmentsOf(cfg))
+	return providers.Digest(cfg)
 }
 
 // adoptCatalog hands next to the running catalogue and logs what changed.

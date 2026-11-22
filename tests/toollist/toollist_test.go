@@ -10,7 +10,6 @@
 package toollist
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -219,12 +218,3 @@ func copyTree(t *testing.T, src, dst string) {
 		t.Fatal(err)
 	}
 }
-
-// nopProvider is the loop's default provider; no model is called.
-type nopProvider struct{}
-
-func (nopProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{Content: "unused"}, nil
-}
-
-func (nopProvider) GetDefaultModel() string { return "test" }

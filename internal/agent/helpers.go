@@ -53,8 +53,8 @@ func agentCmd(message, model string, debug bool) error {
 	}
 	pruneHumanProblems(cfg)
 
-	if err := providers.DefaultModelProblem(cfg, providers.NewCatalogBuilder(nil, nil).Build(cfg)); err != nil {
-		return fmt.Errorf("error creating provider: %w", err)
+	if problem := providers.DefaultModelProblem(cfg, providers.NewCatalogBuilder(nil, nil).Build(cfg)); problem != nil {
+		return fmt.Errorf("error creating provider: %w", problem)
 	}
 	providers.LogBypassEnabled(cfg)
 

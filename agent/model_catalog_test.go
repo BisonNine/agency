@@ -63,6 +63,21 @@ func TestReload_CooldownsKeptUnlessModelsChange(t *testing.T) {
 		t.Fatalf("after the reload the agent's chain is %+v, want alpha", tm.candidates)
 	}
 
+	// A change to the lists alone replaces them in the running catalogue:
+	// cooldowns stay.
+	withSummary := catalogReloadConfig(base, "Alice Smith")
+	withSummary.Summarization.Models = []string{"alpha"}
+	withSummary.Agents.List[0].Models = []string{"alpha"}
+	if err := al.ReloadConfig(context.Background(), withSummary); err != nil {
+		t.Fatal(err)
+	}
+	if !parked() {
+		t.Fatal("a save that changes only the lists cleared the cooldown")
+	}
+	if got := entryNames(al.catalog.Set("alice").List(models.Summarize)); !slices.Equal(got, []string{"alpha"}) {
+		t.Fatalf("summarize list after a list-only save = %v, want [alpha]", got)
+	}
+
 	// A changed model setting is a new catalogue: cooldowns are cleared.
 	changed := catalogReloadConfig(base, "Alice Smith")
 	changed.Models[0].RequestTimeout = 90
@@ -108,7 +123,9 @@ func TestCatalogDigest(t *testing.T) {
 		"channel setting":       {func(c *config.Config) { c.Agents.Defaults.MaxToolIterations = 3 }, true},
 		"model setting":         {func(c *config.Config) { c.Models[0].ReasoningEffort = "high" }, false},
 		"provider key":          {func(c *config.Config) { c.Providers[0].APIKey = "other" }, false},
-		"agent models":          {func(c *config.Config) { c.Agents.List[0].Models = []string{"alpha"} }, false},
+		"agent models":          {func(c *config.Config) { c.Agents.List[0].Models = []string{"alpha"} }, true},
+		"summarization models":  {func(c *config.Config) { c.Summarization.Models = []string{"alpha"} }, true},
+		"model enabled":         {func(c *config.Config) { c.Models[0].Enabled = false }, false},
 		"cooldown policy":       {func(c *config.Config) { c.Cooldown.RateLimitMinutes = 3 }, false},
 		"log content":           {func(c *config.Config) { c.Logging.LogMessageContent = true }, false},
 		"agents' request limit": {func(c *config.Config) { c.Agents.Defaults.RequestTimeout = 30 }, false},
@@ -254,4 +271,25 @@ func TestForgetSessionCaches_ForgetsSelection(t *testing.T) {
 func imageAPIIs(settings any, api string) bool {
 	e, ok := settings.(config.TaskModelEntry)
 	return ok && e.ImageAPI == api
+}
+
+// The default agent runs on the model the defaults name, also when another
+// enabled model, listed first, has the same wire model id. (Until this
+// change the gateway rewrote agents.defaults.models[0] to the wire id at
+// start and on reload, so such an agent ran on the first model with that id.)
+func TestDefaultModel_AliasSharingWireID(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	cfg := catalogReloadConfig(t.TempDir(), "Alice")
+	cfg.Models = []config.ModelConfig{
+		{ModelName: "low", Model: "shared-wire", Provider: "p", ReasoningEffort: "low", Enabled: true},
+		{ModelName: "high", Model: "shared-wire", Provider: "p", ReasoningEffort: "high", Enabled: true},
+	}
+	cfg.Agents.Defaults.Models = []string{"high"}
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
+	if got := al.GetConfig().Agents.Defaults.Models; !slices.Equal(got, []string{"high"}) {
+		t.Fatalf("defaults.models = %v, want it as configured", got)
+	}
+	if tm := al.selectTurnModel(al.GetRegistry().Default(), "s"); tm.model != "high" {
+		t.Fatalf("the default agent runs on %q, want high", tm.model)
+	}
 }

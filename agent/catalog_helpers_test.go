@@ -249,8 +249,9 @@ func setTestProvider(inst *AgentInstance, p providers.LLMProvider) {
 // testProvider is the client attached to inst, or nil.
 func testProvider(inst *AgentInstance) providers.LLMProvider {
 	if v, ok := testProviders.Load(inst); ok {
-		p, _ := v.(providers.LLMProvider)
-		return p
+		if p, ok := v.(providers.LLMProvider); ok {
+			return p
+		}
 	}
 	return nil
 }

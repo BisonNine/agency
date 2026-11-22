@@ -105,7 +105,6 @@ var (
 	NewCursorCliProviderWithTimeout      = spawnllm.NewCursorCliProviderWithTimeout
 
 	ModelKey                = spawnllm.ModelKey
-	splitModelKey           = spawnllm.SplitModelKey
 	ClassifyError           = spawnllm.ClassifyError
 	ReasonText              = spawnllm.ReasonText
 	NormalizeToolCall       = spawnllm.NormalizeToolCall

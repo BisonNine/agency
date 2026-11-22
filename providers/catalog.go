@@ -190,16 +190,15 @@ type catalogDigest struct {
 	LogContent    bool                    `json:"log_content"`
 	LimitDefaults modelspec.LimitDefaults `json:"limit_defaults"`
 	BaseEnv       []string                `json:"base_env"`
-	Assignments   any                     `json:"assignments"`
 }
 
 // Digest summarizes everything the catalogue built from cfg depends on: the
 // providers, the models as the catalogue gets them, the modes of their
-// response log files, the cooldown policy, the client options and the
-// assignments (what assignments returns). Two configurations with the same
-// digest build the same catalogue, so a reload whose digest is unchanged
-// keeps the running one, and with it the cooldowns.
-func Digest(cfg *config.Config, assignments any) string {
+// response log files, the cooldown policy and the client options. Two
+// configurations with the same digest build the same catalogue, so a reload
+// whose digest is unchanged keeps the running one, and with it the
+// cooldowns; the agents' lists are replaced in it (Set.ReplaceAll).
+func Digest(cfg *config.Config) string {
 	ms := catalogModels(cfg)
 	modes := make(map[string]fsmode.Modes)
 	for i := range ms {
@@ -215,7 +214,6 @@ func Digest(cfg *config.Config, assignments any) string {
 		LogContent:    cfg.Logging.LogMessageContent,
 		LimitDefaults: limitDefaults(cfg),
 		BaseEnv:       childenv.CLI(),
-		Assignments:   assignments,
 	}
 	data, err := json.Marshal(d)
 	if err != nil {
@@ -286,12 +284,12 @@ func DefaultModelProblem(cfg *config.Config, c *models.Catalog) error {
 	if err != nil {
 		return fmt.Errorf("model %q not found in models: %w", model, err)
 	}
-	if _, err := cfg.GetProvider(modelCfg.Provider); err != nil {
-		return fmt.Errorf("model %q: %w", model, err)
+	if _, provErr := cfg.GetProvider(modelCfg.Provider); provErr != nil {
+		return fmt.Errorf("model %q: %w", model, provErr)
 	}
-	_, release, err := c.Client(modelCfg.ModelName)
-	if err != nil {
-		return fmt.Errorf("failed to create provider for model %q: %w", model, err)
+	_, release, clientErr := c.Client(modelCfg.ModelName)
+	if clientErr != nil {
+		return fmt.Errorf("failed to create provider for model %q: %w", model, clientErr)
 	}
 	release()
 	return nil
