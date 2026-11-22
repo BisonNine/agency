@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -66,11 +65,6 @@ func (c CooldownConfig) ServerError() time.Duration { return modelspec.Cooldown(
 // models by provider.
 type Provider = modelspec.Provider
 
-// ModelConfig represents a model-centric provider configuration.
-// It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
-// The model field uses protocol prefix format: [protocol/]model-identifier
-// Supported protocols: openai, anthropic, claude-cli, codex-cli, antigravity-cli
-// Default protocol is "openai" if no prefix is specified.
 // Vision passthrough modes for ModelConfig.Vision.
 const (
 	VisionOff          = modelspec.VisionOff
@@ -78,100 +72,23 @@ const (
 	VisionToolResponse = modelspec.VisionToolResponse
 )
 
-type ModelConfig struct {
-	// Required fields
-	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Raw model id the endpoint expects (no claw protocol prefix)
-	Provider  string `json:"provider"`   // Name of the Provider this model is reached through
+// ModelConfig is one configured model (modelspec.Model). Check one with
+// ValidateModel, not its own Validate, so the operator sees the host's
+// wording.
+type ModelConfig = modelspec.Model
 
-	// Special providers (CLI-based, OAuth, etc.)
-	Workspace string `json:"workspace,omitempty"` // Workspace path for CLI-based providers
-
-	// Optional optimizations
-	MaxTokens      int    `json:"max_tokens,omitempty"`       // Maximum tokens per response; overrides agent defaults
-	ContextWindow  int    `json:"context_window,omitempty"`   // Actual model context window size in tokens
-	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-	RequestTimeout int    `json:"request_timeout,omitempty"`
-	ThinkingLevel  string `json:"thinking_level,omitempty"` // Extended thinking: off|adaptive|low|medium|high|xhigh|max
-	NoTools        bool   `json:"no_tools,omitempty"`       // When true, tools are not passed to this model
-	// Vision controls how images returned by tools (e.g. MCP screenshots) reach
-	// this model: "off"/"" (default) drops them; "user_message" injects them as a
-	// follow-up user turn (works on any chat endpoint); "tool_response" attaches
-	// them to the tool result itself (the OpenAI Responses API and xAI accept
-	// it; plain OpenAI chat, whose tool messages are text-only, does not).
-	Vision    string            `json:"vision,omitempty"`
-	ExtraArgs []string          `json:"extra_args,omitempty"` // Additional CLI arguments appended after required flags
-	Env       map[string]string `json:"env,omitempty"`        // Environment variables for CLI-based providers (merged with os.Environ)
-	Enabled   bool              `json:"enabled"`              // If false, model is skipped in all operations
-
-	// ResponseLogFile, when non-empty, causes every raw HTTP response body from
-	// the openai_compat provider to be appended to the given path. Diagnostic
-	// feature only; no rotation, no expansion of ~ or env vars. Ignored by
-	// providers other than openai_compat.
-	ResponseLogFile string `json:"response_log_file,omitempty"`
-
-	// ReasoningEffort sets the OpenAI-style reasoning_effort request field for
-	// models that natively accept it (notably Grok). Valid values are "none",
-	// "low", "medium", "high", or empty. Empty omits the field entirely; "none"
-	// is sent explicitly (e.g. to disable reasoning on models that support it).
-	// Providers that don't understand the field will silently ignore it.
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-
-	// ExtraBody is a free-form passthrough map merged into the JSON request
-	// body for OpenAI-compatible providers. Use it for per-provider knobs that
-	// claw does not model natively. Keys colliding with claw-managed fields
-	// (see modelspec.ReservedBodyKeys) are rejected at config load.
-	ExtraBody map[string]any `json:"extra_body,omitempty"`
-
-	// DropParams lists top-level request-body fields to strip before sending to
-	// OpenAI-compatible providers. Use it to suppress a parameter a model or
-	// upstream rejects — e.g. "temperature" for OpenRouter reasoning models that
-	// don't advertise it and would 404 under provider.require_parameters.
-	// Stripping is applied last (after extra_body), so it always wins. It is a
-	// literal filter: listing structural fields like "messages" or "model" will
-	// break the request. Ignored by providers other than openai_compat.
-	DropParams []string `json:"drop_params,omitempty"`
-
-	// StrictAlternation rewrites the outbound message list for chat-only models
-	// that require strict user/assistant alternation and reject system/tool roles
-	// (e.g. Gemma on some gateways): the system prompt is folded into the first
-	// user turn, tool results become user turns, and consecutive same-role
-	// messages are merged. It is model-scoped because models on the same endpoint
-	// differ (Gemma needs it; Claude/Nova don't). Pair with no_tools, since
-	// tool_calls are dropped. Ignored by providers other than openai_compat.
-	StrictAlternation bool `json:"strict_alternation,omitempty"`
-}
-
-// Validate checks if the ModelConfig has all required fields.
-func (c *ModelConfig) Validate() error {
-	if c.ModelName == "" {
-		return errors.New("model_name is required")
+// ValidateModel checks one model's own fields (modelspec's rules). It is the
+// one place model validation reaches the operator: every path that validates
+// a model (the WebUI's model endpoints, a config save or reload, and the
+// startup prune) goes through it, so the reserved extra_body key error names
+// the product as it always has.
+func ValidateModel(m *ModelConfig) error {
+	err := m.Validate()
+	if rk, ok := errors.AsType[*modelspec.ReservedBodyKeyError](err); ok {
+		return fmt.Errorf("model %q: extra_body key %q collides with a request field %s manages",
+			rk.Model, rk.Key, app.ShortName())
 	}
-	if c.Model == "" {
-		return errors.New("model is required")
-	}
-	if c.Provider == "" {
-		return fmt.Errorf("model %q: provider is required", c.ModelName)
-	}
-	switch c.ReasoningEffort {
-	case "", "none", "low", "medium", "high":
-		// ok
-	default:
-		return fmt.Errorf(
-			"model %q: invalid reasoning_effort %q (valid: none, low, medium, high, or omit)",
-			c.ModelName, c.ReasoningEffort,
-		)
-	}
-	reserved := modelspec.ReservedBodyKeys()
-	for k := range c.ExtraBody {
-		if slices.Contains(reserved, k) {
-			return fmt.Errorf(
-				"model %q: extra_body key %q collides with a request field %s manages",
-				c.ModelName, k, app.ShortName(),
-			)
-		}
-	}
-	return nil
+	return err
 }
 
 // HasCLIProvider reports whether any enabled model in ModelList uses a
@@ -293,7 +210,7 @@ func (c *Config) ValidateProviders() error {
 // balancing.
 func (c *Config) ValidateModels() error {
 	for i := range c.Models {
-		if err := c.Models[i].Validate(); err != nil {
+		if err := ValidateModel(&c.Models[i]); err != nil {
 			return fmt.Errorf("models[%d]: %w", i, err)
 		}
 		if _, err := c.GetProvider(c.Models[i].Provider); err != nil {
@@ -398,7 +315,7 @@ func (c *Config) PruneInvalid() (droppedProviders, droppedModels int) {
 	keptModels := make([]ModelConfig, 0, len(c.Models))
 	for i := range c.Models {
 		m := c.Models[i]
-		if err := m.Validate(); err != nil {
+		if err := ValidateModel(&m); err != nil {
 			logger.WarnCF("config", "ignoring invalid model", map[string]any{
 				"model":  m.ModelName,
 				"reason": err.Error(),

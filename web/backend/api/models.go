@@ -131,7 +131,7 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = mc.Validate(); err != nil {
+	if err = config.ValidateModel(&mc); err != nil {
 		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -190,7 +190,7 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 			return badRequest("Invalid JSON: %v", decErr)
 		}
 
-		if verr := mc.Validate(); verr != nil {
+		if verr := config.ValidateModel(&mc); verr != nil {
 			return badRequest("Validation error: %v", verr)
 		}
 		if _, perr := cfg.GetProvider(mc.Provider); perr != nil {

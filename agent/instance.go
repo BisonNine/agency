@@ -463,9 +463,9 @@ func resolveRunLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConf
 
 	// The model's own limits: modelspec's rules over the agent defaults. A
 	// model that is not configured gets the defaults and no thinking.
-	var mc *modelspec.Model
+	var mc *config.ModelConfig
 	if m, err := cfg.GetModelConfig(model); err == nil {
-		mc = (*modelspec.Model)(m)
+		mc = m
 	}
 	ml := modelspec.ResolveLimits(mc, modelspec.LimitDefaults{
 		MaxTokens:     defaults.MaxTokens,

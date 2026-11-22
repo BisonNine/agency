@@ -158,8 +158,8 @@ github.com/xeipuuv/gojsonschema v1.2.0 h1:LhYJRs+L4fBtjZUfuSZIKGeVu0QRy8e5Xi7D17
 github.com/xeipuuv/gojsonschema v1.2.0/go.mod h1:anYRn/JVcOK2ZgGU+IjEV4nwlhoK5sQluxsYJ78Id3Y=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
-go.bison9.com/agent v0.0.0-20261122132843-2d85433bd4c6 h1:jz5rSp3U5Q0PEi5UQPBnvfFUWT1nO0NB8+jC1bf/W6k=
-go.bison9.com/agent v0.0.0-20261122132843-2d85433bd4c6/go.mod h1:zNd1mUhQoeEnjyMtW4CZJbGJTuHBJBWmqTSrgpa1zSs=
+go.bison9.com/agent v0.0.0-20261122135245-5cf35a70b7cf h1:p+eT3hp6wqKRi+kDzBnzb2k6QhXVVN5jRaL0BgbPBNA=
+go.bison9.com/agent v0.0.0-20261122135245-5cf35a70b7cf/go.mod h1:zNd1mUhQoeEnjyMtW4CZJbGJTuHBJBWmqTSrgpa1zSs=
 go.bison9.com/maestro v0.0.0-20261122130256-6f5d7b9a99cd h1:m7/TuMLkUAguQEK4D1izofsdHcG5oFjwRVxcyi6ZDmQ=
 go.bison9.com/maestro v0.0.0-20261122130256-6f5d7b9a99cd/go.mod h1:EOKR73W4MiUhtehHAyb0ib8uYlHJF1twAEP+8zmr3k4=
 go.bison9.com/mcpfusion v0.0.0-20261122132946-c0a928bec113 h1:gVlmM/Jj2eDzWxRZF66P/Mm+msRaNO2pwux7tA0CpRc=
