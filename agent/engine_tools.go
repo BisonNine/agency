@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"maps"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -43,11 +44,16 @@ func (e *toolPanicError) Error() string { return fmt.Sprintf("tool %s panicked: 
 // executeToolCalls runs a batch of tool calls in parallel and returns their
 // results in call order. ToolCallStarted is emitted for every call, in call
 // order, before the first call runs; each call's ToolCallFinished as it
-// ends; ToolBatchFinished once all have ended.
+// ends; ToolBatchFinished once all have ended. When the turn's context ends
+// (an interrupt or a cancel) the calls still running get cancelled contexts
+// and spec.cancelGrace to return; after that each is abandoned: it ends with
+// hook.InterruptedResult (ToolCallFinished.Interrupted), so the stored
+// transcript never holds a call without a result, and what it returns later
+// is dropped.
 func (e *engineTurn) executeToolCalls(ctx context.Context, calls []spawnllm.ToolCall) []toolCallResult {
-	results := make([]toolCallResult, len(calls))
+	b := &toolBatch{results: make([]toolCallResult, len(calls)), ended: make([]bool, len(calls))}
 	for i, tc := range calls {
-		results[i].tc = tc
+		b.results[i].tc = tc
 		e.hooks.emit(ctx, hook.ToolCallStarted{EventHeader: e.header(), Call: e.hookCall(tc)})
 	}
 	// Per-tool budget: a tool's context is cancelled at the deadline so a
@@ -60,24 +66,78 @@ func (e *engineTurn) executeToolCalls(ctx context.Context, calls []spawnllm.Tool
 	}
 	var wg sync.WaitGroup
 	for i := range calls {
-		wg.Go(func() { e.runToolCall(ctx, &results[i], toolTimeout) })
+		wg.Go(func() { e.runToolCall(ctx, b, i, toolTimeout) })
 	}
-	// Every call is waited for, however the turn's context ended, so each
-	// has its result and its ToolCallFinished before the batch is stored.
-	// Abandoning calls on an interrupt (hook.Limits.CancelGrace, then
-	// hook.InterruptedResult) belongs here.
-	wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		grace := e.spec.clock.NewTimer(e.cancelGrace())
+		select {
+		case <-done:
+			grace.Stop()
+		case <-grace.C():
+			e.abandon(ctx, b)
+		}
+	}
 	e.hooks.emit(ctx, hook.ToolBatchFinished{EventHeader: e.header(), Iteration: e.iteration, Calls: len(calls)})
-	return results
+	return b.take()
 }
 
-// runToolCall runs one tool call through the tool callbacks and stores its
-// result in slot. A panicking tool, or a panicking tool callback, becomes an
-// error result for that call only, so it neither crashes the process nor
-// wedges the batch. Every call ends with one ToolCallFinished, carrying the
-// arguments as BeforeTool left them.
-func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, toolTimeout time.Duration) {
-	tc := slot.tc
+// cancelGrace is how long a stopped turn waits for its tools.
+func (e *engineTurn) cancelGrace() time.Duration {
+	if e.spec.cancelGrace > 0 {
+		return e.spec.cancelGrace
+	}
+	return hook.DefaultCancelGrace
+}
+
+// toolBatch is a batch's results while its calls run: a call's result is
+// written once, by the call or by abandon, whichever comes first.
+type toolBatch struct {
+	mu      sync.Mutex
+	results []toolCallResult
+	ended   []bool
+}
+
+// take returns the batch's results, each set.
+func (b *toolBatch) take() []toolCallResult {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.results)
+}
+
+// abandon ends every call of b still running with hook.InterruptedResult.
+func (e *engineTurn) abandon(ctx context.Context, b *toolBatch) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := range b.results {
+		if b.ended[i] {
+			continue
+		}
+		b.ended[i] = true
+		r := &b.results[i]
+		r.result = hook.InterruptedResult()
+		e.logAt(slog.LevelWarn, "Tool call abandoned: it did not return after the turn was stopped",
+			e.turnFields(map[string]any{"agent_id": e.spec.agentID, "tool": r.tc.Name, "grace": e.cancelGrace().String()}))
+		snapshot := *r.result
+		call := e.hookCall(r.tc)
+		e.hooks.emit(ctx, hook.ToolCallFinished{EventHeader: e.header(), Call: call, Result: &snapshot, Interrupted: true})
+	}
+}
+
+// runToolCall runs call i of b through the tool callbacks and records its
+// result. A panicking tool, or a panicking tool callback, becomes an error
+// result for that call only, so it neither crashes the process nor wedges
+// the batch. Every call ends with one ToolCallFinished, carrying the
+// arguments as BeforeTool left them; a call abandoned meanwhile gets no
+// AfterTool and its result is dropped.
+func (e *engineTurn) runToolCall(ctx context.Context, b *toolBatch, i int, toolTimeout time.Duration) {
+	tc := b.results[i].tc
 	call := e.hookCall(tc)
 	answered := false
 	start := time.Now()
@@ -85,9 +145,17 @@ func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, tool
 	if toolTimeout > 0 {
 		execCtx, cancelExec = context.WithTimeout(ctx, toolTimeout)
 	}
+	slot := &toolCallResult{tc: tc}
 	defer func() {
 		// The call's context is live until its ToolCallFinished is emitted.
 		defer cancelExec()
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.ended[i] {
+			return
+		}
+		b.ended[i] = true
+		b.results[i].result = slot.result
 		ev := hook.ToolCallFinished{
 			EventHeader: e.header(),
 			Call:        hook.ToolCall{ID: call.ID, Name: call.Name, Arguments: maps.Clone(call.Arguments), Iteration: call.Iteration},
@@ -120,9 +188,19 @@ func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, tool
 		result = e.execute(execCtx, tc.Name, call.Arguments)
 	}
 	slot.result = result
+	if b.abandoned(i) {
+		return
+	}
 	if perr := e.afterTool(execCtx, &call, slot); perr != nil {
 		slot.result = e.toolCallbackFailed(tc.Name, perr)
 	}
+}
+
+// abandoned reports whether call i was abandoned.
+func (b *toolBatch) abandoned(i int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.ended[i]
 }
 
 // toolCallbackFailed logs a tool callback's panic and returns the result

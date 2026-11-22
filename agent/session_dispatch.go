@@ -41,6 +41,9 @@ type sessionState struct {
 	busy       bool                    // an owner goroutine is draining pending
 	pending    []bus.InboundMessage    // arrived while busy, in arrival order
 	turnCancel context.CancelCauseFunc // cancels the running turn; nil when idle
+	// handles holds the running turn's engine handle once its engine turn
+	// has started; nil when idle.
+	handles *turnHandles
 	// cancelledRunning and skipCount record what /cancel did, for its reply.
 	cancelledRunning bool
 	skipCount        int
@@ -105,18 +108,72 @@ func (al *AgentLoop) pruneSessions() {
 // cancel stops the session's running turn, if any, and drops everything queued
 // behind it, recording both for the /cancel reply. It returns the dropped
 // messages.
-func (ss *sessionState) cancel() []bus.InboundMessage {
+func (ss *sessionState) cancel(ctx context.Context) []bus.InboundMessage {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	dropped := ss.pending
 	ss.skipCount += len(ss.pending)
 	ss.pending = nil
 	if ss.turnCancel != nil {
+		// The engine turn is stopped through its handle (Interrupt, with
+		// the host's cause), the turn's context with it: a turn still
+		// waiting for its slot, or past its engine turn, ends too.
+		if h := ss.handles.current(); h != nil {
+			h.cancelFrom(ctx, errCancelledByUser)
+		}
 		ss.turnCancel(errCancelledByUser)
 		ss.turnCancel = nil
+		ss.handles = nil
 		ss.cancelledRunning = true
 	}
 	return dropped
+}
+
+// turnHandles records the engine handle of a queued turn: the first engine
+// turn started on its context (the turn's own; a nested one never claims
+// it).
+type turnHandles struct {
+	mu      sync.Mutex
+	h       *turnHandle
+	claimed bool
+}
+
+type turnHandlesKey struct{}
+
+// withTurnHandles returns ctx on which the first engine turn records its
+// handle in hs.
+func withTurnHandles(ctx context.Context, hs *turnHandles) context.Context {
+	return context.WithValue(ctx, turnHandlesKey{}, hs)
+}
+
+// claimTurnHandle is the onHandle of the first engine turn on ctx; nil for
+// any other.
+func claimTurnHandle(ctx context.Context) func(*turnHandle) {
+	hs, ok := ctx.Value(turnHandlesKey{}).(*turnHandles)
+	if !ok || hs == nil {
+		return nil
+	}
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	if hs.claimed {
+		return nil
+	}
+	hs.claimed = true
+	return func(h *turnHandle) {
+		hs.mu.Lock()
+		hs.h = h
+		hs.mu.Unlock()
+	}
+}
+
+// current is the recorded handle; nil before the engine turn started.
+func (hs *turnHandles) current() *turnHandle {
+	if hs == nil {
+		return nil
+	}
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	return hs.h
 }
 
 // takeCancelResult reads and resets what /cancel recorded for the session:
@@ -264,7 +321,7 @@ func (al *AgentLoop) processSessionMessage(ctx context.Context, msg bus.InboundM
 	defer al.releaseSession(ss)
 
 	if al.isCancelCommand(msg.Content) {
-		dropped := ss.cancel()
+		dropped := ss.cancel(ctx)
 		al.publishCancelledReplies(ctx, dropped)
 		al.runTurn(ctx, ctx, msg)
 		return
@@ -313,13 +370,17 @@ func (al *AgentLoop) drainSession(ctx context.Context, ss *sessionState, singleS
 		// Registered in the same critical section as the take, so a /cancel
 		// always sees the message either queued or running.
 		turnCtx, cancelTurn := context.WithCancelCause(ctx)
+		handles := &turnHandles{}
+		turnCtx = withTurnHandles(turnCtx, handles)
 		ss.turnCancel = cancelTurn
+		ss.handles = handles
 		ss.mu.Unlock()
 
 		al.runQueuedTurn(ctx, turnCtx, batch)
 
 		ss.mu.Lock()
 		ss.turnCancel = nil
+		ss.handles = nil
 		ss.mu.Unlock()
 		cancelTurn(nil)
 	}

@@ -156,6 +156,13 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 		}
 	}})
 	h.add(al.compactionNoticePlugin(o))
+	// An interrupted turn on a CLI model: its MCP session token is replaced,
+	// so nothing the killed CLI started can still call tools with it.
+	h.add(hook.Plugin{Name: "session-token", OnInterrupt: func(_ context.Context, ev hook.Interrupted) {
+		if ev.Running && al.isCLIModel(model) {
+			al.reissueSessionToken(agent, o.SessionKey)
+		}
+	}})
 
 	// First among AfterModel: the answer is logged as the model gave it.
 	h.add(hook.Plugin{Name: "response-log", AfterModel: al.logModelResponse(agent, opts)})
@@ -500,6 +507,7 @@ func (al *AgentLoop) newHostEngineTurn(
 	if agent.Sessions != nil {
 		spec.store = agent.Sessions
 	}
+	spec.onHandle = claimTurnHandle(ctx)
 	return newEngineTurn(spec, messages), ctx
 }
 
@@ -790,4 +798,15 @@ func (al *AgentLoop) describeToolImages(ctx context.Context, agent *AgentInstanc
 	logger.InfoCF("agent", "injected vision description for non-vision model",
 		map[string]any{"agent_id": agent.ID, "model": model, "images": len(images.Images), "described": ok})
 	return content, true
+}
+
+// isCLIModel reports whether the model named name runs on a CLI provider.
+func (al *AgentLoop) isCLIModel(name string) bool {
+	cfg := al.GetConfig()
+	mc, err := cfg.GetModelConfig(name)
+	if err != nil || mc == nil {
+		return false
+	}
+	prov, err := cfg.GetProvider(mc.Provider)
+	return err == nil && prov != nil && config.IsCLIProtocol(prov.Protocol)
 }

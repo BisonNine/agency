@@ -123,6 +123,12 @@ type engineSpec struct {
 	options hook.RunOptions
 
 	maxIterations int
+	// onHandle, when set, is given the turn's handle as the turn starts,
+	// before TurnStarted: the means to stop it.
+	onHandle func(*turnHandle)
+	// cancelGrace is how long a stopped turn waits for its tools before
+	// abandoning them; 0 means hook.DefaultCancelGrace.
+	cancelGrace time.Duration
 	// toolTimeout is each tool call's budget, read for each batch; 0 means
 	// none.
 	toolTimeout  func() time.Duration
@@ -251,9 +257,11 @@ func newEngineTurn(spec engineSpec, messages []spawnllm.Message) *engineTurn {
 }
 
 // turnHandle is a running turn's handle: the means to stop it with a cause,
-// and its end. The host does not call it: it stops a turn by cancelling
-// the context it passes in, which reaches the turn's context the same way.
+// and its end. The run hands it to spec.onHandle as the turn starts.
 type turnHandle struct {
+	// ctx is the turn's context; OnInterrupt observers get it without its
+	// cancellation.
+	ctx    context.Context
 	cancel context.CancelCauseFunc
 	done   chan struct{}
 	result hook.TurnResult
@@ -266,8 +274,13 @@ type turnHandle struct {
 func (h *turnHandle) Interrupt() { h.Cancel(hook.ErrInterrupted) }
 
 // Cancel stops the turn with cause (nil means hook.ErrInterrupted), then
-// tells the OnInterrupt observers, on a context that is never cancelled.
-func (h *turnHandle) Cancel(cause error) {
+// tells the OnInterrupt observers, on the turn's context without its
+// cancellation.
+func (h *turnHandle) Cancel(cause error) { h.cancelFrom(h.ctx, cause) }
+
+// cancelFrom is Cancel for a caller with a context of its own: the
+// OnInterrupt observers get ctx, without its cancellation.
+func (h *turnHandle) cancelFrom(ctx context.Context, cause error) {
 	if cause == nil {
 		cause = hook.ErrInterrupted
 	}
@@ -278,7 +291,7 @@ func (h *turnHandle) Cancel(cause error) {
 	default:
 	}
 	h.cancel(cause)
-	h.hooks.callOnInterrupt(hook.WithScope(context.Background(), h.scope),
+	h.hooks.callOnInterrupt(hook.WithScope(context.WithoutCancel(ctx), h.scope),
 		hook.Interrupted{Scope: h.scope, Cause: cause, Running: running})
 }
 
@@ -320,8 +333,11 @@ func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 		return engineResult{}, errEngineIncomplete
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
-	e.handle = &turnHandle{cancel: cancel, done: make(chan struct{}), hooks: e.hooks, scope: e.spec.scope}
+	e.handle = &turnHandle{ctx: ctx, cancel: cancel, done: make(chan struct{}), hooks: e.hooks, scope: e.spec.scope}
 	defer cancel(nil)
+	if e.spec.onHandle != nil {
+		e.spec.onHandle(e.handle)
+	}
 
 	e.hooks.emit(ctx, hook.TurnStarted{EventHeader: e.header(), Message: e.spec.message, Options: e.spec.options})
 	turn := &hook.Turn{Message: e.spec.message, Options: e.spec.options}
