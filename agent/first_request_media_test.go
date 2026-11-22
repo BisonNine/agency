@@ -166,3 +166,29 @@ func TestSessionClear_ResetFirst(t *testing.T) {
 		t.Fatalf("released %v, token changed %v", store.released, al.sessionToken(agent, "s") != token)
 	}
 }
+
+// resetCounter is a context manager that counts its resets.
+type resetCounter struct {
+	capturingContextManager
+	resets int
+}
+
+func (c *resetCounter) Reset(context.Context) error { c.resets++; return nil }
+
+// A session_clear turn resets the session once.
+func TestSessionClear_ResetsOnce(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	al := mustNewAgentLoop(t, newTestConfig(t), bus.NewMessageBus(), &mockProvider{}, nil)
+	agent := al.registry.Default()
+	setTestProvider(agent, &messagesProvider{})
+	cm := &resetCounter{}
+	entry := &cmEntry{cm: cm, sessionKey: "s"}
+	entry.touch()
+	al.contextManagers.Store(agent.ID+":s", entry)
+	if _, err := al.runAgentLoop(context.Background(), agent, processOptions{SessionKey: "s", Channel: "cli", ChatID: "direct", UserMessage: "hi", ResetSession: true}); err != nil {
+		t.Fatal(err)
+	}
+	if cm.resets != 1 {
+		t.Fatalf("reset %d times, want once", cm.resets)
+	}
+}

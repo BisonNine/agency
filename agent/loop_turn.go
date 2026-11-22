@@ -226,9 +226,8 @@ func (al *AgentLoop) scopeSessionToken(ctx context.Context, agent *AgentInstance
 // *opts and turn.Message: a session_clear handoff resets the session, then
 // releases its pins and reissues its token (the host's order, so a reset
 // that panics leaves both as they were; the run asks the engine for no
-// reset), a
-// single-shot turn starts blank, whispers held for the agent open its
-// message, and the inbound media are described and pinned.
+// reset), a single-shot turn starts blank, whispers held for the agent
+// open its message, and the inbound media are described and pinned.
 func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, cm ctxengine.ContextManager, opts *processOptions, turn *hook.Turn) error {
 	// session_clear publishes an inbound tagged metaSessionReset. The reset
 	// happens at a clean turn boundary, before the notice is saved, so this

@@ -411,10 +411,10 @@ const (
 
 // finish emits TurnFinished and closes the handle.
 func (e *engineTurn) finish(ctx context.Context, tr hook.TurnResult) {
-	e.hooks.emit(ctx, hook.TurnFinished{EventHeader: e.header(), TurnResult: tr})
 	if t, ok := turnOf(ctx); ok && t.hooks == e.hooks {
 		t.finished.Store(true)
 	}
+	e.hooks.emit(ctx, hook.TurnFinished{EventHeader: e.header(), TurnResult: tr})
 	e.handle.result = tr
 	close(e.handle.done)
 }

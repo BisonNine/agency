@@ -722,7 +722,7 @@ func TestEngine_NoEventAfterTurnFinished(t *testing.T) {
 	}
 	engineCompactionStart(ctx, ctxengine.CompactionStart{SessionKey: "s", Blocking: true})
 	kinds := f.rec.kinds()
-	if kinds[len(kinds)-1] != "TurnFinished" || notices != 1 {
+	if len(kinds) == 0 || kinds[len(kinds)-1] != "TurnFinished" || notices != 1 {
 		t.Fatalf("events = %v, notices = %d", kinds, notices)
 	}
 }
