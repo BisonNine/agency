@@ -3,9 +3,12 @@ package config
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/logger"
@@ -34,99 +37,34 @@ type CooldownConfig struct {
 	ServerErrorMinutes int `json:"server_error_minutes,omitempty" env:"CLAW_COOLDOWN_SERVER_ERROR_MINUTES"`
 }
 
-// Cooldown category defaults (minutes). Billing/auth is the longest because the
-// operator usually has to top up or rotate a key, but it is still bounded at 30
-// minutes: it doubles as the recheck interval, so a longer value means a
-// resolved billing problem goes unnoticed for that much longer. A rejected 402
-// costs a round trip and no inference, so probing more often is cheap.
+// Cooldown category defaults (minutes): modelspec's.
 const (
-	DefaultCooldownBillingAuthMinutes = 30
-	DefaultCooldownRateLimitMinutes   = 10
-	// DefaultCooldownBadRequestMinutes is 0 (never cool): a bad request is a
-	// request-shape rejection, so the fallback should try the next candidate
-	// (including a sibling config of the same provider+model, e.g. thinking-off)
-	// instead of parking the model.
-	DefaultCooldownBadRequestMinutes  = 0
-	DefaultCooldownClientErrorMinutes = 10
-	DefaultCooldownServerErrorMinutes = 10
+	DefaultCooldownBillingAuthMinutes = modelspec.DefaultCooldownBillingAuthMinutes
+	DefaultCooldownRateLimitMinutes   = modelspec.DefaultCooldownRateLimitMinutes
+	DefaultCooldownBadRequestMinutes  = modelspec.DefaultCooldownBadRequestMinutes
+	DefaultCooldownClientErrorMinutes = modelspec.DefaultCooldownClientErrorMinutes
+	DefaultCooldownServerErrorMinutes = modelspec.DefaultCooldownServerErrorMinutes
 )
 
-// minutesOrDefault maps a config value to a duration: 0 → def, <0 → 0 (disabled).
-func minutesOrDefault(v, def int) time.Duration {
-	if v < 0 {
-		return 0
-	}
-	if v == 0 {
-		return time.Duration(def) * time.Minute
-	}
-	return time.Duration(v) * time.Minute
-}
+// BillingAuth is the cooldown for HTTP 401, 402 and 403; 0 means never.
+func (c CooldownConfig) BillingAuth() time.Duration { return modelspec.Cooldown(c).BillingAuth() }
 
-func (c CooldownConfig) BillingAuth() time.Duration {
-	return minutesOrDefault(c.BillingAuthMinutes, DefaultCooldownBillingAuthMinutes)
-}
+// RateLimit is the cooldown for HTTP 429; 0 means never.
+func (c CooldownConfig) RateLimit() time.Duration { return modelspec.Cooldown(c).RateLimit() }
 
-func (c CooldownConfig) RateLimit() time.Duration {
-	return minutesOrDefault(c.RateLimitMinutes, DefaultCooldownRateLimitMinutes)
-}
+// BadRequest is the cooldown for HTTP 400; 0 means never.
+func (c CooldownConfig) BadRequest() time.Duration { return modelspec.Cooldown(c).BadRequest() }
 
-func (c CooldownConfig) BadRequest() time.Duration {
-	return minutesOrDefault(c.BadRequestMinutes, DefaultCooldownBadRequestMinutes)
-}
+// ClientError is the cooldown for the other 4xx statuses; 0 means never.
+func (c CooldownConfig) ClientError() time.Duration { return modelspec.Cooldown(c).ClientError() }
 
-func (c CooldownConfig) ClientError() time.Duration {
-	return minutesOrDefault(c.ClientErrorMinutes, DefaultCooldownClientErrorMinutes)
-}
+// ServerError is the cooldown for 5xx statuses; 0 means never.
+func (c CooldownConfig) ServerError() time.Duration { return modelspec.Cooldown(c).ServerError() }
 
-func (c CooldownConfig) ServerError() time.Duration {
-	return minutesOrDefault(c.ServerErrorMinutes, DefaultCooldownServerErrorMinutes)
-}
-
-// Provider is a named endpoint a model is reached through. It owns the wire
-// protocol, the base URL, the credentials, and endpoint-scoped quirks. Models
-// reference a provider by Name; the WebUI groups models by provider.
-type Provider struct {
-	Name string `json:"name"` // Unique identifier referenced by ModelConfig.Provider
-	// Protocol is the wire format: openai-chat, openai-responses, azure,
-	// anthropic, anthropic-messages, claude-cli, codex-cli, antigravity-cli,
-	// cursor-cli, human, gemini, elevenlabs. "anthropic" and
-	// "anthropic-messages" are the same thing — Anthropic speaks one wire
-	// format — and both reach the Messages adapter. "gemini" and
-	// "elevenlabs" serve task models only (speech; see TaskOnlyProtocol).
-	Protocol string `json:"protocol"`
-	BaseURL  string `json:"base_url,omitempty"`
-	APIKey   string `json:"api_key,omitempty"`
-	Proxy    string `json:"proxy,omitempty"`
-	// Endpoint-scoped openai-compat knobs.
-	StrictCompat bool `json:"strict_compat,omitempty"`
-	// RequireReasoningContent backfills a placeholder into reasoning_content on
-	// assistant messages that carry none, for endpoints that reject history
-	// missing the field. It is the exact opposite of StrictCompat, which strips
-	// the field for endpoints that reject its presence — set one or the other,
-	// never both.
-	//
-	// The case this exists for is DeepSeek V4 thinking mode: when a request
-	// includes tools, DeepSeek requires reasoning_content on every assistant
-	// message in history and answers 400 otherwise, even for turns that made no
-	// tool call. Without the backfill, switching an agent from a CLI model (which
-	// records no reasoning) to DeepSeek wedges the session — every turn replays
-	// the same reasoning-less history and every turn is rejected.
-	//
-	// Only ever ADDS a placeholder where the field is empty; real reasoning is
-	// passed through untouched.
-	RequireReasoningContent bool `json:"require_reasoning_content,omitempty"`
-	NoParallelToolCalls     bool `json:"no_parallel_tool_calls,omitempty"`
-	ResponseFormatJSON      bool `json:"response_format_json,omitempty"`
-	// Command overrides the binary path for CLI protocols (claude-cli, etc.).
-	Command string `json:"command,omitempty"`
-	// BypassRestrictions ("Allow CLI to bypass restrictions" in the WebUI) passes the
-	// CLI's skip-permissions / sandbox-bypass flag on every invocation, so it
-	// can run commands and edit files anywhere the service user can, without
-	// asking. Off by default: the CLI then runs under its own permission
-	// settings, and a tool call it cannot approve is refused. One setting per
-	// CLI provider, shared by all of its models.
-	BypassRestrictions bool `json:"bypass_restrictions,omitempty"`
-}
+// Provider is a named endpoint a model is reached through
+// (modelspec.Provider). Models reference a provider by Name; the WebUI groups
+// models by provider.
+type Provider = modelspec.Provider
 
 // ModelConfig represents a model-centric provider configuration.
 // It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
@@ -135,9 +73,9 @@ type Provider struct {
 // Default protocol is "openai" if no prefix is specified.
 // Vision passthrough modes for ModelConfig.Vision.
 const (
-	VisionOff          = "off"           // default: tool images are not sent to the model
-	VisionUserMessage  = "user_message"  // inject images as a follow-up user turn (any chat endpoint)
-	VisionToolResponse = "tool_response" // attach images to the tool result (OpenAI Responses API, xAI)
+	VisionOff          = modelspec.VisionOff
+	VisionUserMessage  = modelspec.VisionUserMessage
+	VisionToolResponse = modelspec.VisionToolResponse
 )
 
 type ModelConfig struct {
@@ -182,7 +120,7 @@ type ModelConfig struct {
 	// ExtraBody is a free-form passthrough map merged into the JSON request
 	// body for OpenAI-compatible providers. Use it for per-provider knobs that
 	// claw does not model natively. Keys colliding with claw-managed fields
-	// (see reservedRequestBodyKeys) are rejected at config load.
+	// (see modelspec.ReservedBodyKeys) are rejected at config load.
 	ExtraBody map[string]any `json:"extra_body,omitempty"`
 
 	// DropParams lists top-level request-body fields to strip before sending to
@@ -202,30 +140,6 @@ type ModelConfig struct {
 	// differ (Gemma needs it; Claude/Nova don't). Pair with no_tools, since
 	// tool_calls are dropped. Ignored by providers other than openai_compat.
 	StrictAlternation bool `json:"strict_alternation,omitempty"`
-}
-
-// reservedRequestBodyKeys lists the JSON request fields owned by claw's own
-// request builder, and the ones spawnllm sets itself on OpenRouter requests
-// (session_id from the agent id, cache_control for Claude models), which it
-// would otherwise skip with only a log warning. ExtraBody entries colliding
-// with these keys are rejected at config load — the collision guard there is
-// what guarantees the merge step in the request builder cannot overwrite a
-// claw-managed field.
-var reservedRequestBodyKeys = map[string]struct{}{
-	"model":                 {},
-	"messages":              {},
-	"stream":                {},
-	"tools":                 {},
-	"tool_choice":           {},
-	"parallel_tool_calls":   {},
-	"reasoning_effort":      {},
-	"temperature":           {},
-	"max_tokens":            {},
-	"max_completion_tokens": {},
-	"top_p":                 {},
-	"n":                     {},
-	"session_id":            {},
-	"cache_control":         {},
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -248,8 +162,9 @@ func (c *ModelConfig) Validate() error {
 			c.ModelName, c.ReasoningEffort,
 		)
 	}
+	reserved := modelspec.ReservedBodyKeys()
 	for k := range c.ExtraBody {
-		if _, reserved := reservedRequestBodyKeys[k]; reserved {
+		if slices.Contains(reserved, k) {
 			return fmt.Errorf(
 				"model %q: extra_body key %q collides with a request field %s manages",
 				c.ModelName, k, app.ShortName(),
@@ -306,64 +221,17 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 	return matches
 }
 
-// validProtocols is the set of wire protocols a Provider may declare. Each maps
-// to an internal provider implementation in providers.
-var validProtocols = map[string]struct{}{
-	"openai-chat":        {},
-	"openai-responses":   {},
-	"azure":              {},
-	"anthropic":          {},
-	"anthropic-messages": {},
-	"claude-cli":         {},
-	"codex-cli":          {},
-	"antigravity-cli":    {},
-	// Retained alias: Google deprecated the Gemini CLI in favour of
-	// Antigravity, and a released config naming this must keep validating.
-	"gemini-cli": {},
-	"cursor-cli": {},
-	// A model on it represents a person: see human.go.
-	HumanProtocol: {},
-	// Task models only (TaskOnlyProtocol).
-	GeminiProtocol:     {},
-	ElevenLabsProtocol: {},
-}
-
 // The protocols of the vendors whose speech APIs are not OpenAI-style. A
 // model on one serves task models only: it has no chat client.
 const (
-	GeminiProtocol     = "gemini"
-	ElevenLabsProtocol = "elevenlabs"
+	GeminiProtocol     = modelspec.GeminiProtocol
+	ElevenLabsProtocol = modelspec.ElevenLabsProtocol
 )
 
 // TaskOnlyProtocol reports whether a provider protocol serves task models
 // only (Gemini's and ElevenLabs' own APIs). Its base_url is optional (the
 // vendor's default) and its api_key is required.
-func TaskOnlyProtocol(protocol string) bool {
-	return protocol == GeminiProtocol || protocol == ElevenLabsProtocol
-}
-
-// protocolProblem is why a provider's protocol settings are not valid, or "".
-func protocolProblem(p *Provider) string {
-	if _, ok := validProtocols[p.Protocol]; !ok {
-		return fmt.Sprintf("unknown protocol %q", p.Protocol)
-	}
-	if _, http := httpProtocols[p.Protocol]; http && p.BaseURL == "" {
-		return fmt.Sprintf("base_url is required for protocol %q", p.Protocol)
-	}
-	if TaskOnlyProtocol(p.Protocol) && strings.TrimSpace(p.APIKey) == "" {
-		return fmt.Sprintf("api_key is required for protocol %q", p.Protocol)
-	}
-	return ""
-}
-
-// httpProtocols are the protocols that require a base_url.
-var httpProtocols = map[string]struct{}{
-	"openai-chat":        {},
-	"openai-responses":   {},
-	"azure":              {},
-	"anthropic":          {},
-	"anthropic-messages": {},
-}
+func TaskOnlyProtocol(protocol string) bool { return modelspec.TaskOnlyProtocol(protocol) }
 
 // dropOtherProtocolFields clears the fields a provider's protocol never
 // uses, so a value left over from another protocol is not written back on
@@ -383,29 +251,10 @@ func (c *Config) dropOtherProtocolFields() {
 }
 
 // IsCLIProtocol reports whether the protocol is a subprocess CLI provider,
-// which authenticates out-of-band and needs no API key.
-func IsCLIProtocol(protocol string) bool {
-	switch protocol {
-	// "gemini-cli" is retained as an alias for "antigravity-cli": Google
-	// deprecated the Gemini CLI, and a config still naming it must keep
-	// starting the MCP host, or its CLI would silently lose every claw tool.
-	case "claude-cli", "codex-cli", "antigravity-cli", "gemini-cli", "cursor-cli":
-		return true
-	default:
-		return false
-	}
-}
-
-// HasCredentials reports whether this provider carries enough to authenticate:
-// CLI providers always qualify (they auth out-of-band), and so does the human
-// protocol, which reaches a person and needs none; HTTP providers need an API
-// key.
-func (p *Provider) HasCredentials() bool {
-	if IsCLIProtocol(p.Protocol) || IsHumanProtocol(p.Protocol) {
-		return true
-	}
-	return p.APIKey != ""
-}
+// which authenticates out-of-band and needs no API key. "gemini-cli" is
+// retained as an alias for "antigravity-cli": a config still naming it must
+// keep starting the MCP host, or its CLI would silently lose every claw tool.
+func IsCLIProtocol(protocol string) bool { return modelspec.IsCLIProtocol(protocol) }
 
 // GetProvider resolves a provider by name. The lookup is case-sensitive on the
 // configured Name.
@@ -431,8 +280,8 @@ func (c *Config) ValidateProviders() error {
 			return fmt.Errorf("providers[%d]: duplicate provider name %q", i, p.Name)
 		}
 		seen[p.Name] = struct{}{}
-		if problem := protocolProblem(p); problem != "" {
-			return fmt.Errorf("provider %q: %s", p.Name, problem)
+		if err := p.ValidateProtocol(); err != nil {
+			return fmt.Errorf("provider %q: %w", p.Name, err)
 		}
 	}
 	return nil
@@ -506,8 +355,8 @@ func (c *Config) ValidateProvider(idx int) error {
 			return fmt.Errorf("duplicate provider name %q", p.Name)
 		}
 	}
-	if problem := protocolProblem(p); problem != "" {
-		return fmt.Errorf("provider %q: %s", p.Name, problem)
+	if err := p.ValidateProtocol(); err != nil {
+		return fmt.Errorf("provider %q: %w", p.Name, err)
 	}
 	return nil
 }
@@ -529,8 +378,8 @@ func (c *Config) PruneInvalid() (droppedProviders, droppedModels int) {
 			reason = "name is required"
 		} else if _, dup := seen[p.Name]; dup {
 			reason = "duplicate provider name"
-		} else {
-			reason = protocolProblem(&p)
+		} else if err := p.ValidateProtocol(); err != nil {
+			reason = err.Error()
 		}
 		if reason != "" {
 			logger.WarnCF("config", "ignoring invalid provider", map[string]any{

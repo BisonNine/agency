@@ -8,12 +8,23 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // HumanProtocol is the provider protocol of a model that represents a person.
 // An agent whose model is on it is a human agent: it runs no model, and its
 // turns are answered by the person in the chat its default binding names.
 const HumanProtocol = "human"
+
+// The SDK does not know the human protocol: register it here, so every binary
+// and test that loads config validates a provider on it. It authenticates
+// nothing, so it has credentials without an api_key.
+func init() {
+	if err := modelspec.RegisterProtocol(HumanProtocol, modelspec.ProtocolSpec{Keyless: true}); err != nil {
+		panic(err)
+	}
+}
 
 // IsHumanProtocol reports whether protocol is the human protocol.
 func IsHumanProtocol(protocol string) bool { return protocol == HumanProtocol }

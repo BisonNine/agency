@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // TaskModelsConfig is the Task models page: the models ClawEh and its agents
@@ -353,7 +355,7 @@ func TaskUseSupportFor(protocol string, use TaskUse) TaskUseSupport {
 		}
 		return TaskUseNo
 	case TaskUseVision:
-		if _, http := httpProtocols[protocol]; http {
+		if spec, _ := modelspec.LookupProtocol(protocol); spec.BaseURLRequired {
 			return TaskUseYes
 		}
 		return TaskUseUnknown

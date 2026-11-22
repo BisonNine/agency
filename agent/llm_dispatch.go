@@ -352,7 +352,7 @@ func (t *llmTurn) requestOptions(d *llmDispatch, hasTools bool, provider provide
 	opts := make(map[string]any, len(d.llmOpts)+3)
 	maps.Copy(opts, d.llmOpts)
 	opts["max_tokens"] = d.maxTokens(limits.maxTokens)
-	// parseThinkingLevel guarantees ThinkingOff for empty/unknown values.
+	// modelspec.ParseThinkingLevel guarantees ThinkingOff for empty/unknown values.
 	if limits.thinkingLevel != ThinkingOff {
 		if tc, ok := provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
 			opts["thinking_level"] = string(limits.thinkingLevel)

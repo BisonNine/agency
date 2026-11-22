@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // Secret references.
@@ -32,14 +34,12 @@ import (
 
 // SecretRefEnvPrefix and SecretRefFilePrefix introduce the two reference forms.
 const (
-	SecretRefEnvPrefix  = "env:"
-	SecretRefFilePrefix = "file:"
+	SecretRefEnvPrefix  = modelspec.SecretRefEnvPrefix
+	SecretRefFilePrefix = modelspec.SecretRefFilePrefix
 )
 
 // IsSecretRef reports whether s is a secret reference rather than a literal.
-func IsSecretRef(s string) bool {
-	return strings.HasPrefix(s, SecretRefEnvPrefix) || strings.HasPrefix(s, SecretRefFilePrefix)
-}
+func IsSecretRef(s string) bool { return modelspec.IsSecretRef(s) }
 
 // IsSecretKey reports whether a JSON field name denotes a credential
 // ("api_key", "…_token", "…_secret", "…password", "password_hash").

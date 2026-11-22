@@ -5,10 +5,11 @@ package config
 
 import (
 	"encoding/json"
-	"maps"
 	"os"
 	"slices"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // testdata/provider_protocols.json lists the protocols a provider may
@@ -28,12 +29,12 @@ func TestProviderProtocolsFixture(t *testing.T) {
 	if err = json.Unmarshal(b, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	want := slices.Sorted(maps.Keys(validProtocols))
+	want := modelspec.Protocols()
 	if !slices.Equal(fixture.Protocols, want) {
 		t.Fatalf("provider_protocols.json protocols = %v, want %v", fixture.Protocols, want)
 	}
 	p := Provider{Name: "Alice", Protocol: fixture.DefaultProtocol, BaseURL: "https://api.example.com/v1"}
-	if problem := protocolProblem(&p); problem != "" {
-		t.Fatalf("default protocol %q is refused: %s", fixture.DefaultProtocol, problem)
+	if err := p.ValidateProtocol(); err != nil {
+		t.Fatalf("default protocol %q is refused: %v", fixture.DefaultProtocol, err)
 	}
 }

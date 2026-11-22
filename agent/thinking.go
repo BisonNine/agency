@@ -1,42 +1,18 @@
 package agent
 
-import "strings"
+import "go.bison9.com/agent/modelspec"
 
-// ThinkingLevel controls how the provider sends thinking parameters.
-//
-//   - "adaptive": adaptive thinking at the model's default effort
-//   - "low"/"medium"/"high"/"xhigh"/"max": adaptive thinking with that effort
-//   - "off": no thinking
-type ThinkingLevel string
+// ThinkingLevel controls how the provider sends thinking parameters
+// (modelspec.ThinkingLevel).
+type ThinkingLevel = modelspec.ThinkingLevel
 
+// Thinking levels.
 const (
-	ThinkingOff      ThinkingLevel = "off"
-	ThinkingLow      ThinkingLevel = "low"
-	ThinkingMedium   ThinkingLevel = "medium"
-	ThinkingHigh     ThinkingLevel = "high"
-	ThinkingXHigh    ThinkingLevel = "xhigh"
-	ThinkingMax      ThinkingLevel = "max"
-	ThinkingAdaptive ThinkingLevel = "adaptive"
+	ThinkingOff      = modelspec.ThinkingOff
+	ThinkingLow      = modelspec.ThinkingLow
+	ThinkingMedium   = modelspec.ThinkingMedium
+	ThinkingHigh     = modelspec.ThinkingHigh
+	ThinkingXHigh    = modelspec.ThinkingXHigh
+	ThinkingMax      = modelspec.ThinkingMax
+	ThinkingAdaptive = modelspec.ThinkingAdaptive
 )
-
-// parseThinkingLevel normalizes a config string to a ThinkingLevel.
-// Case-insensitive and whitespace-tolerant for user-facing config values.
-// Returns ThinkingOff for unknown or empty values.
-func parseThinkingLevel(level string) ThinkingLevel {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "adaptive":
-		return ThinkingAdaptive
-	case "low":
-		return ThinkingLow
-	case "medium":
-		return ThinkingMedium
-	case "high":
-		return ThinkingHigh
-	case "xhigh":
-		return ThinkingXHigh
-	case "max":
-		return ThinkingMax
-	default:
-		return ThinkingOff
-	}
-}

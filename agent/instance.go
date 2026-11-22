@@ -10,6 +10,7 @@ import (
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/fsmode"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/app"
@@ -444,19 +445,12 @@ type runLimits struct {
 // built-in fallbacks (20 iterations, 8192 tokens, a 128000-token context
 // window).
 func resolveRunLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConfig, cfg *config.Config, model string) runLimits {
-	l := runLimits{
-		maxIterations: defaults.MaxToolIterations,
-		maxTokens:     defaults.MaxTokens,
-		contextWindow: defaults.ContextWindow,
-	}
+	l := runLimits{maxIterations: defaults.MaxToolIterations}
 	if agentCfg != nil && agentCfg.MaxToolIterations != nil && *agentCfg.MaxToolIterations > 0 {
 		l.maxIterations = *agentCfg.MaxToolIterations
 	}
 	if l.maxIterations == 0 {
 		l.maxIterations = 20
-	}
-	if l.maxTokens == 0 {
-		l.maxTokens = 8192
 	}
 	if defaults.Temperature != nil {
 		t := *defaults.Temperature
@@ -466,22 +460,21 @@ func resolveRunLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConf
 		t := *agentCfg.Temperature
 		l.temperature = &t
 	}
-	if l.contextWindow == 0 {
-		l.contextWindow = 128000
-	}
 
-	var thinkingLevelStr string
-	if mc, err := cfg.GetModelConfig(model); err == nil {
-		thinkingLevelStr = mc.ThinkingLevel
-		l.noTools = mc.NoTools
-		if mc.ContextWindow > 0 {
-			l.contextWindow = mc.ContextWindow
-		}
-		if mc.MaxTokens > 0 {
-			l.maxTokens = mc.MaxTokens
-		}
+	// The model's own limits: modelspec's rules over the agent defaults. A
+	// model that is not configured gets the defaults and no thinking.
+	var mc *modelspec.Model
+	if m, err := cfg.GetModelConfig(model); err == nil {
+		mc = (*modelspec.Model)(m)
 	}
-	l.thinkingLevel = parseThinkingLevel(thinkingLevelStr)
+	ml := modelspec.ResolveLimits(mc, modelspec.LimitDefaults{
+		MaxTokens:     defaults.MaxTokens,
+		ContextWindow: defaults.ContextWindow,
+	})
+	l.maxTokens = ml.MaxTokens
+	l.contextWindow = ml.ContextWindow
+	l.thinkingLevel = ml.ThinkingLevel
+	l.noTools = ml.NoTools
 	return l
 }
 
