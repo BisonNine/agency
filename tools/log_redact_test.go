@@ -367,7 +367,9 @@ func TestRegistry_ExecuteWithContext_NoTruncateKeepsErrorForLLM(t *testing.T) {
 			continue
 		}
 		if msg, ok := ev["message"].(string); ok && msg == "Tool execution failed" {
-			errField, _ = ev["error"].(string)
+			if field, fieldOK := ev["error"].(string); fieldOK {
+				errField = field
+			}
 			break
 		}
 	}
