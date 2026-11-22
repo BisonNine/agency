@@ -1,0 +1,957 @@
+package mcp
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/internal/childenv"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+// loadEnvFile loads environment variables from a file in .env format
+// Each line should be in the format: KEY=value
+// Lines starting with # are comments
+// Empty lines are ignored
+func loadEnvFile(path string) (map[string]string, error) {
+	file, err := os.Open(path) //nolint:gosec // env_file path from the MCP server config
+	if err != nil {
+		return nil, fmt.Errorf("failed to open env file: %w", err)
+	}
+	defer utils.CloseQuietly(file)
+
+	envVars := make(map[string]string)
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse KEY=value
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid format at line %d", lineNum)
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		if key == "" {
+			return nil, fmt.Errorf("invalid format at line %d: empty key", lineNum)
+		}
+
+		// Remove surrounding quotes if present
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+
+		envVars[key] = value
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading env file: %w", err)
+	}
+
+	return envVars, nil
+}
+
+// ServerConnection represents a connection to an MCP server
+type ServerConnection struct {
+	Name   string
+	Client *client.Client
+	// Tools is the server's tool list as of the last listing. It is never
+	// mutated in place: a refresh (probe, notification) installs a copy of the
+	// connection carrying the new list, so a holder of this pointer always sees
+	// a consistent snapshot.
+	Tools []mcp.Tool
+	// cfg is the resolved config this connection was established with. Sync
+	// compares it against the reloaded config to decide whether a server actually
+	// changed (reconnect) or was left untouched (keep the live process running).
+	cfg config.MCPServerConfig
+	// cmd is the child process for stdio transports (nil for sse/http). Held so a
+	// disconnect can kill the whole process group, not just the direct child.
+	cmd *exec.Cmd
+	// probeStop closes to stop this connection's liveness-probe goroutine (nil when
+	// probing is disabled). Closed exactly once by disconnect or Close.
+	probeStop chan struct{}
+	// stopListen ends the subscriptions/listen stream that carries the server's
+	// tools/list_changed notifications (nil when none was opened). Called after
+	// the client is closed by disconnect or Close.
+	stopListen func()
+	// stderr keeps the tail of a stdio child's stderr (nil for sse/http).
+	stderr *stderrTail
+}
+
+// Manager manages multiple MCP server connections
+type Manager struct {
+	servers map[string]*ServerConnection
+	mu      sync.RWMutex
+	closed  atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
+	wg      sync.WaitGroup // tracks in-flight CallTool calls
+	// shuttingDown is set by BeginShutdown: probes stop and no server is
+	// (re)connected, while live sessions keep serving calls until Close.
+	shuttingDown atomic.Bool
+
+	// inflight counts the CallTool calls running per server, so a Close that
+	// runs out of time can say which servers were still busy. Guarded by
+	// inflightMu.
+	inflightMu sync.Mutex
+	inflight   map[string]int
+
+	// Resilience tuning (see MCPConfig). Defaults set in NewManager; overridden
+	// from config by applyTuning on load/sync.
+	reconnectCooldown time.Duration
+	callTimeout       time.Duration
+	probeInterval     time.Duration // 0 disables liveness probing
+
+	// cooldownUntil tracks, per server, the time before which a reconnect must not
+	// be re-attempted after a failed connect. reconnecting tracks servers with a
+	// reconnect in flight (for Status). health holds each failing server's
+	// backoff, alert and last-error state. All guarded by cooldownMu.
+	cooldownMu    sync.Mutex
+	cooldownUntil map[string]time.Time
+	reconnecting  map[string]bool
+	health        map[string]*serverHealth
+	probeWg       sync.WaitGroup // tracks liveness-probe goroutines
+
+	// desired is the set of servers that should be connected (enabled, envFile
+	// resolved), refreshed on every load/sync. RetryDisconnected uses it to
+	// reconnect servers whose initial connect failed, without a restart.
+	desiredMu sync.Mutex
+	desired   map[string]config.MCPServerConfig
+
+	// toolsChanged is invoked (on its own goroutine) with the server name when a
+	// connection's tool list is replaced by a different one; see
+	// SetToolsChangedHandler. Guarded by toolsChangedMu.
+	toolsChangedMu sync.Mutex
+	toolsChanged   func(server string)
+
+	// alerter, when set, is told when a server goes down or comes back.
+	// Guarded by mu like the connections.
+	alerter alerter.Alerter
+
+	// nowFn is the clock; tests replace it.
+	nowFn func() time.Time
+}
+
+// Default resilience tuning, used when config leaves a value at 0.
+const (
+	defaultReconnectCooldown = 30 * time.Second
+	defaultCallTimeout       = 5 * time.Minute
+)
+
+// NewManager creates a new MCP manager
+func NewManager() *Manager {
+	return &Manager{
+		servers:           make(map[string]*ServerConnection),
+		cooldownUntil:     make(map[string]time.Time),
+		reconnecting:      make(map[string]bool),
+		health:            make(map[string]*serverHealth),
+		desired:           make(map[string]config.MCPServerConfig),
+		inflight:          make(map[string]int),
+		reconnectCooldown: defaultReconnectCooldown,
+		callTimeout:       defaultCallTimeout,
+		nowFn:             time.Now,
+	}
+}
+
+// applyTuning updates the resilience knobs from config. A zero value keeps the
+// existing default; probeInterval mirrors the config directly so a value of 0
+// disables probing. Called before (re)connecting so new connections pick up the
+// current settings.
+func (m *Manager) applyTuning(mcpCfg config.MCPConfig) {
+	if mcpCfg.ReconnectCooldownSeconds > 0 {
+		m.reconnectCooldown = time.Duration(mcpCfg.ReconnectCooldownSeconds) * time.Second
+	}
+	if mcpCfg.CallTimeoutSeconds > 0 {
+		m.callTimeout = time.Duration(mcpCfg.CallTimeoutSeconds) * time.Second
+	}
+	m.probeInterval = time.Duration(mcpCfg.LivenessProbeSeconds) * time.Second
+}
+
+// LoadFromConfig loads MCP servers from configuration
+func (m *Manager) LoadFromConfig(ctx context.Context, cfg *config.Config) error {
+	return m.LoadFromMCPConfig(ctx, cfg.Tools.MCP, cfg.DataDir())
+}
+
+// LoadFromMCPConfig loads MCP servers from MCP configuration; a relative envFile resolves against baseDir (the data directory).
+// This is the minimal dependency version that doesn't require the full Config object.
+func (m *Manager) LoadFromMCPConfig(
+	ctx context.Context,
+	mcpCfg config.MCPConfig,
+	baseDir string,
+) error {
+	m.applyTuning(mcpCfg)
+	// Record the desired set up front so the background retry loop can recover any
+	// server that fails its initial connect below, without a restart.
+	m.setDesired(resolveDesired(mcpCfg, baseDir))
+
+	if len(mcpCfg.Servers) == 0 {
+		logger.InfoCF("mcp", "No MCP servers configured", nil)
+		return nil
+	}
+
+	logger.InfoCF("mcp", "Initializing MCP servers",
+		map[string]any{
+			"count": len(mcpCfg.Servers),
+		})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, len(mcpCfg.Servers))
+	enabledCount := 0
+
+	for name, serverCfg := range mcpCfg.Servers {
+		if !serverCfg.Enabled {
+			logger.DebugCF("mcp", "Skipping disabled server",
+				map[string]any{
+					"server": name,
+				})
+			continue
+		}
+
+		enabledCount++
+		wg.Add(1)
+		go func(name string, serverCfg config.MCPServerConfig, baseDir string) {
+			defer wg.Done()
+
+			// Resolve relative envFile paths against the data directory
+			resolved, err := resolveServerEnvFile(name, serverCfg, baseDir)
+			if err != nil {
+				logger.ErrorCF("mcp", "Invalid MCP server configuration",
+					map[string]any{
+						"server":   name,
+						"env_file": serverCfg.EnvFile,
+						"error":    err.Error(),
+					})
+				errs <- err
+				return
+			}
+			serverCfg = resolved
+
+			if err := m.ConnectServer(ctx, name, serverCfg); err != nil {
+				logger.ErrorCF("mcp", "Failed to connect to MCP server",
+					map[string]any{
+						"server": name,
+						"error":  err.Error(),
+					})
+				errs <- fmt.Errorf("failed to connect to server %s: %w", name, err)
+			}
+		}(name, serverCfg, baseDir)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	// Collect errors
+	var allErrors []error
+	for err := range errs {
+		allErrors = append(allErrors, err)
+	}
+
+	connectedCount := len(m.GetServers())
+
+	// If all enabled servers failed to connect, return aggregated error
+	if enabledCount > 0 && connectedCount == 0 {
+		logger.ErrorCF("mcp", "All MCP servers failed to connect",
+			map[string]any{
+				"failed": len(allErrors),
+				"total":  enabledCount,
+			})
+		return errors.Join(allErrors...)
+	}
+
+	if len(allErrors) > 0 {
+		logger.WarnCF("mcp", "Some MCP servers failed to connect",
+			map[string]any{
+				"failed":    len(allErrors),
+				"connected": connectedCount,
+				"total":     enabledCount,
+			})
+		// Don't fail completely if some servers successfully connected
+	}
+
+	logger.InfoCF("mcp", "MCP server initialization complete",
+		map[string]any{
+			"connected": connectedCount,
+			"total":     enabledCount,
+		})
+
+	return nil
+}
+
+// resolveServerEnvFile returns a copy of cfg with a relative EnvFile made
+// absolute against baseDir (the data directory), so stdio servers load env identically
+// regardless of process CWD. The input is not mutated.
+func resolveServerEnvFile(
+	name string,
+	cfg config.MCPServerConfig,
+	baseDir string,
+) (config.MCPServerConfig, error) {
+	if cfg.EnvFile == "" || filepath.IsAbs(cfg.EnvFile) {
+		return cfg, nil
+	}
+	if baseDir == "" {
+		return cfg, fmt.Errorf(
+			"data directory is empty while resolving relative envFile %q for server %s",
+			cfg.EnvFile,
+			name,
+		)
+	}
+	cfg.EnvFile = filepath.Join(baseDir, cfg.EnvFile)
+	return cfg, nil
+}
+
+// buildStdioEnv assembles the child environment for a stdio server: the
+// allowlisted parent environment (childenv.Base — never CLAW_* or ALERTER_*),
+// overlaid by an optional env file, overlaid by the server's explicit Env map
+// (config wins over file wins over parent).
+func buildStdioEnv(cfg config.MCPServerConfig) ([]string, error) {
+	overlay := make(map[string]string, len(cfg.Env))
+
+	// Load environment variables from file if specified
+	if cfg.EnvFile != "" {
+		envVars, err := loadEnvFile(cfg.EnvFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load env file %s: %w", cfg.EnvFile, err)
+		}
+		maps.Copy(overlay, envVars)
+	}
+
+	// Environment variables from config override those from file
+	maps.Copy(overlay, cfg.Env)
+
+	return childenv.Merge(childenv.Base(), overlay), nil
+}
+
+// ConnectServer connects to a single MCP server. A failure extends the
+// server's retry backoff and may alert (see recordFailure); a success resets
+// both and alerts a recovery when the server was reported down.
+func (m *Manager) ConnectServer(
+	ctx context.Context,
+	name string,
+	cfg config.MCPServerConfig,
+) error {
+	err := m.connectServer(ctx, name, cfg)
+	switch {
+	case errors.Is(err, errManagerStopping) || m.stopping():
+	case err != nil:
+		m.recordFailure(name, err)
+	default:
+		m.recordSuccess(name)
+	}
+	return err
+}
+
+// connectServer establishes the connection for ConnectServer.
+func (m *Manager) connectServer(
+	ctx context.Context,
+	name string,
+	cfg config.MCPServerConfig,
+) error {
+	logger.InfoCF("mcp", "Connecting to MCP server",
+		map[string]any{
+			"server":     name,
+			"command":    cfg.Command,
+			"args_count": len(cfg.Args),
+		})
+
+	// Auto-detect transport when not set: a URL means streamable HTTP (the modern
+	// remote default; a genuine SSE server must be typed "sse" explicitly), a
+	// command means stdio.
+	transportType := cfg.Type
+	if transportType == "" {
+		if cfg.URL != "" {
+			transportType = "http"
+		} else if cfg.Command != "" {
+			transportType = "stdio"
+		} else {
+			return errors.New("either URL or command must be provided")
+		}
+	}
+
+	var c *client.Client
+	// stdioCmd is captured (via the stdio CommandFunc) so teardown can kill the
+	// whole child process group; it stays nil for sse/http transports.
+	var stdioCmd *exec.Cmd
+	// stderr collects the stdio child's stderr, so a failure can say what the
+	// child itself reported; nil for sse/http transports.
+	var stderr *stderrTail
+	var err error
+
+	switch transportType {
+	case "http":
+		if cfg.URL == "" {
+			return errors.New("URL is required for http transport")
+		}
+		logger.DebugCF("mcp", "Using streamable HTTP transport",
+			map[string]any{"server": name, "url": cfg.URL})
+		var opts []transport.StreamableHTTPCOption
+		if len(cfg.Headers) > 0 {
+			opts = append(opts, transport.WithHTTPHeaders(cfg.Headers))
+		}
+		c, err = client.NewStreamableHttpClient(cfg.URL, opts...)
+		if err != nil {
+			return fmt.Errorf("failed to create HTTP client: %w", err)
+		}
+	case "sse":
+		if cfg.URL == "" {
+			return errors.New("URL is required for sse transport")
+		}
+		logger.DebugCF("mcp", "Using SSE transport",
+			map[string]any{"server": name, "url": cfg.URL})
+		var opts []transport.ClientOption
+		if len(cfg.Headers) > 0 {
+			opts = append(opts, client.WithHeaders(cfg.Headers))
+		}
+		c, err = client.NewSSEMCPClient(cfg.URL, opts...)
+		if err != nil {
+			return fmt.Errorf("failed to create SSE client: %w", err)
+		}
+	case "stdio":
+		if cfg.Command == "" {
+			return errors.New("command is required for stdio transport")
+		}
+		logger.DebugCF("mcp", "Using stdio transport",
+			map[string]any{"server": name, "command": cfg.Command})
+		env, envErr := buildStdioEnv(cfg)
+		if envErr != nil {
+			return envErr
+		}
+		// A custom CommandFunc lets us build the subprocess ourselves: own its
+		// process group (so a teardown kills npx -> node -> browser as a unit) and
+		// retain the *exec.Cmd for terminateStdioProcessTree. mark3labs' own Close
+		// only signals the direct child, which would orphan chromium and hold the
+		// profile lock. Its stderr goes to a bounded tail buffer; WaitDelay keeps
+		// a grandchild holding stderr open from blocking Wait after the child exits.
+		stderr = &stderrTail{}
+		cmdFunc := func(ctx context.Context, command string, env []string, args []string) (*exec.Cmd, error) {
+			cmd := exec.CommandContext(ctx, command, args...) //nolint:gosec // stdio MCP server command comes from the operator's config
+			cmd.Env = env
+			cmd.Stderr = stderr
+			cmd.WaitDelay = time.Second
+			prepareStdioCommand(cmd)
+			stdioCmd = cmd
+			return cmd, nil
+		}
+		st := transport.NewStdioWithOptions(cfg.Command, env, cfg.Args, transport.WithCommandFunc(cmdFunc))
+		c = client.NewClient(st)
+	default:
+		return fmt.Errorf(
+			"unsupported transport type: %s (supported: stdio, http, sse)",
+			transportType,
+		)
+	}
+
+	// Start the transport (spawns the stdio subprocess / opens the SSE stream),
+	// then run the MCP initialize handshake. On any failure, close the client and
+	// reap any stdio child so a failed connect leaves nothing running.
+	if err = c.Start(ctx); err != nil {
+		utils.CloseQuietly(c)
+		terminateStdioProcessTree(stdioCmd)
+		return withStderr(fmt.Errorf("failed to start transport: %w", err), stderr)
+	}
+
+	initReq := mcp.InitializeRequest{}
+	initReq.Params.ClientInfo = clientInfo()
+	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initReq.Params.Capabilities = mcp.ClientCapabilities{}
+
+	initResult, err := c.Initialize(ctx, initReq)
+	if err != nil {
+		utils.CloseQuietly(c)
+		terminateStdioProcessTree(stdioCmd)
+		return withStderr(fmt.Errorf("failed to connect: %w", err), stderr)
+	}
+	logger.InfoCF("mcp", "Connected to MCP server",
+		map[string]any{
+			"server":        name,
+			"serverName":    initResult.ServerInfo.Name,
+			"serverVersion": initResult.ServerInfo.Version,
+			"protocol":      initResult.ProtocolVersion,
+		})
+
+	// List available tools. A listing failure is non-fatal: the server is
+	// connected, it simply exposes no callable tools to us this session.
+	var tools []mcp.Tool
+	toolsResult, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	if err != nil {
+		logger.WarnCF("mcp", "Failed to list tools from MCP server",
+			map[string]any{"server": name, "error": err.Error()})
+	} else {
+		tools = toolsResult.Tools
+		logger.InfoCF("mcp", "Listed tools from MCP server",
+			map[string]any{"server": name, "toolCount": len(tools)})
+	}
+
+	// Hear about later changes to that list (see subscribeToolsChanged).
+	stopListen := m.subscribeToolsChanged(name, c, transportType) //nolint:contextcheck // the notification stream and its re-lists live as long as the connection, not the connect call; ended by disconnect/Close
+
+	// Store connection. Guard against a concurrent Close so a reconnect racing
+	// shutdown can't resurrect a server on a closed manager (and leak a probe).
+	m.mu.Lock()
+	if m.stopping() {
+		m.mu.Unlock()
+		utils.CloseQuietly(c)
+		if stopListen != nil {
+			stopListen()
+		}
+		terminateStdioProcessTree(stdioCmd)
+		return errManagerStopping
+	}
+	conn := &ServerConnection{
+		Name:       name,
+		Client:     c,
+		Tools:      tools,
+		cfg:        cfg,
+		cmd:        stdioCmd,
+		stopListen: stopListen,
+		stderr:     stderr,
+	}
+	if m.probeInterval > 0 {
+		conn.probeStop = m.startProbe(name) //nolint:contextcheck // liveness probe is a background goroutine whose lifetime is probeStop/Close, not the connect context
+	}
+	m.servers[name] = conn
+	m.mu.Unlock()
+
+	return nil
+}
+
+// RevealTogether reports whether this server's tools should reveal as a group
+// under progressive discovery (from its config).
+func (c *ServerConnection) RevealTogether() bool { return c.cfg.RevealTogether }
+
+// GetServers returns all connected servers
+func (m *Manager) GetServers() map[string]*ServerConnection {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[string]*ServerConnection, len(m.servers))
+	maps.Copy(result, m.servers)
+	return result
+}
+
+// GetServer returns a specific server connection
+func (m *Manager) GetServer(name string) (*ServerConnection, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	conn, ok := m.servers[name]
+	return conn, ok
+}
+
+// disconnect closes a single server connection and removes it from the manager,
+// killing the child process group for stdio servers so no grandchild survives to
+// hold a resource lock. Callers must not hold m.mu.
+func (m *Manager) disconnect(name string) {
+	m.mu.Lock()
+	conn, ok := m.servers[name]
+	if ok {
+		delete(m.servers, name)
+	}
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	if conn.probeStop != nil {
+		close(conn.probeStop)
+	}
+	if err := conn.Client.Close(); err != nil {
+		logger.WarnCF("mcp", "Failed to close MCP server connection",
+			map[string]any{"server": name, "error": err.Error()})
+	}
+	if conn.stopListen != nil {
+		conn.stopListen()
+	}
+	terminateStdioProcessTree(conn.cmd)
+}
+
+// resolveDesired computes the set of servers that should be connected: enabled
+// servers with their envFile resolved the same way the initial load resolves it,
+// so change-detection and reconnection compare like with like. Servers with an
+// invalid config are logged and skipped (they can never connect).
+func resolveDesired(mcpCfg config.MCPConfig, baseDir string) map[string]config.MCPServerConfig {
+	desired := make(map[string]config.MCPServerConfig, len(mcpCfg.Servers))
+	for name, serverCfg := range mcpCfg.Servers {
+		if !serverCfg.Enabled {
+			continue
+		}
+		resolved, err := resolveServerEnvFile(name, serverCfg, baseDir)
+		if err != nil {
+			logger.ErrorCF("mcp", "Invalid MCP server configuration",
+				map[string]any{"server": name, "error": err.Error()})
+			continue
+		}
+		desired[name] = resolved
+	}
+	return desired
+}
+
+// setDesired records the current desired-server set for RetryDisconnected.
+func (m *Manager) setDesired(desired map[string]config.MCPServerConfig) {
+	m.desiredMu.Lock()
+	m.desired = desired
+	m.desiredMu.Unlock()
+}
+
+// RetryDisconnected attempts to connect any desired (enabled) server that is not
+// currently connected and not in reconnect cooldown, returning the names that
+// newly connected so the caller can register their tools. It exists so a server
+// whose *initial* connect failed (upstream briefly down, or a config saved
+// mid-edit) recovers automatically without a restart — the initial-connect
+// analogue of the probe-driven reconnect that already covers drop-after-connect.
+func (m *Manager) RetryDisconnected(ctx context.Context) []string {
+	if m.stopping() {
+		return nil
+	}
+	m.desiredMu.Lock()
+	desired := make(map[string]config.MCPServerConfig, len(m.desired))
+	maps.Copy(desired, m.desired)
+	m.desiredMu.Unlock()
+
+	var connected []string
+	for name, serverCfg := range desired {
+		if _, ok := m.GetServer(name); ok {
+			continue // already connected
+		}
+		if _, cooling := m.reconnectCooldownUntil(name); cooling {
+			continue // still in post-failure cooldown
+		}
+		m.setReconnecting(name, true)
+		cctx, cancel := context.WithTimeout(ctx, m.callTimeout)
+		err := m.ConnectServer(cctx, name, serverCfg)
+		cancel()
+		m.setReconnecting(name, false)
+		if err != nil {
+			until, _ := m.reconnectCooldownUntil(name)
+			logger.WarnCF("mcp", "MCP background connect failed; server in cooldown",
+				map[string]any{
+					"server":         name,
+					"error":          err.Error(),
+					"cooldown_until": until.Format(time.RFC3339),
+				})
+			continue
+		}
+		logger.InfoCF("mcp", "MCP server connected on retry", map[string]any{"server": name})
+		connected = append(connected, name)
+	}
+	return connected
+}
+
+// Sync reconciles live connections to match mcpCfg without disturbing servers
+// whose configuration is unchanged. On config reload this keeps long-lived stdio
+// servers (e.g. a playwright browser holding a persistent profile) running rather
+// than tearing every server down and relaunching it — the relaunch races the old
+// child's resource locks ("Browser is already in use"). Servers that were removed,
+// disabled, or reconfigured are disconnected; new or changed servers are
+// (re)connected. Returns the joined errors of any failed reconnects.
+func (m *Manager) Sync(
+	ctx context.Context,
+	mcpCfg config.MCPConfig,
+	baseDir string,
+) error {
+	m.applyTuning(mcpCfg)
+
+	// Desired = enabled servers, envFile resolved the same way the initial load
+	// resolves it so change-detection compares like with like.
+	desired := resolveDesired(mcpCfg, baseDir)
+	m.setDesired(desired)
+	keep := make(map[string]bool, len(desired))
+	for name := range desired {
+		keep[name] = true
+	}
+	m.forgetHealth(keep)
+
+	// Drop connections that are gone, disabled, or reconfigured.
+	for name, conn := range m.GetServers() {
+		want, keep := desired[name]
+		if keep && reflect.DeepEqual(conn.cfg, want) {
+			continue
+		}
+		reason := "config-changed"
+		if !keep {
+			reason = "removed-or-disabled"
+		}
+		logger.InfoCF("mcp", "Reconciling MCP server (disconnect)",
+			map[string]any{"server": name, "reason": reason})
+		m.disconnect(name)
+	}
+
+	// (Re)connect servers that are newly desired or were just dropped for a change.
+	var errs []error
+	for name, serverCfg := range desired {
+		if _, ok := m.GetServer(name); ok {
+			continue // unchanged and still connected
+		}
+		if err := m.ConnectServer(ctx, name, serverCfg); err != nil {
+			logger.ErrorCF("mcp", "Failed to connect to MCP server",
+				map[string]any{"server": name, "error": err.Error()})
+			errs = append(errs, fmt.Errorf("server %s: %w", name, err))
+		}
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+// CallTool calls a tool on a specific server
+func (m *Manager) CallTool(
+	ctx context.Context,
+	serverName, toolName string,
+	arguments map[string]any,
+) (*mcp.CallToolResult, error) {
+	// Check if closed before acquiring lock (fast path)
+	if m.closed.Load() {
+		return nil, errors.New("manager is closed")
+	}
+
+	m.mu.RLock()
+	// Double-check after acquiring lock to prevent TOCTOU race
+	if m.closed.Load() {
+		m.mu.RUnlock()
+		return nil, errors.New("manager is closed")
+	}
+	conn, ok := m.servers[serverName]
+	if ok {
+		m.wg.Add(1) // Add to WaitGroup while holding the lock
+	}
+	m.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("server %s not found", serverName)
+	}
+	defer m.wg.Done()
+	m.trackInflight(serverName, 1)
+	defer m.trackInflight(serverName, -1)
+
+	// Backstop: if the caller supplied no deadline, cap the call so a hung server
+	// cannot block forever. A caller-provided deadline is always honored as-is.
+	callCtx := ctx
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline && m.callTimeout > 0 {
+		var cancel context.CancelFunc
+		callCtx, cancel = context.WithTimeout(ctx, m.callTimeout)
+		defer cancel()
+	}
+
+	req := mcp.CallToolRequest{}
+	req.Params.Name = toolName
+	req.Params.Arguments = arguments
+
+	result, err := conn.Client.CallTool(callCtx, req)
+	if err == nil {
+		return result, nil
+	}
+
+	// Only a connection-level failure (the session dropped) is retried — a normal
+	// tool error is returned as-is so a side-effecting call is never re-run after
+	// the server may already have processed it.
+	if !isConnectionError(err) {
+		return nil, fmt.Errorf("failed to call tool: %w", err)
+	}
+
+	logger.WarnCF("mcp", "MCP tool call failed on a dropped connection; reconnecting and retrying once",
+		map[string]any{"server": serverName, "tool": toolName, "error": err.Error(), "stderr": conn.stderr.last()})
+
+	if rerr := m.reconnect(callCtx, serverName, conn.cfg); rerr != nil {
+		return nil, fmt.Errorf("failed to call tool (reconnect failed): %w", errors.Join(err, rerr))
+	}
+
+	m.mu.RLock()
+	newConn, ok := m.servers[serverName]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("failed to call tool: server %s unavailable after reconnect", serverName)
+	}
+
+	result, err = newConn.Client.CallTool(callCtx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call tool (after reconnect): %w", err)
+	}
+	return result, nil
+}
+
+// errManagerStopping is returned when a connect or reconnect is refused
+// because the manager is shutting down or closed.
+var errManagerStopping = errors.New("manager is shutting down")
+
+// stopping reports whether BeginShutdown or Close has been called.
+func (m *Manager) stopping() bool {
+	return m.shuttingDown.Load() || m.closed.Load()
+}
+
+// BeginShutdown is the first step of a gateway shutdown: it stops every
+// liveness probe and refuses any further connect or reconnect, so a child the
+// stop signal killed is not respawned. Live sessions keep serving calls until
+// Close. It does not wait for a probe already mid-reconnect; Close does.
+func (m *Manager) BeginShutdown() {
+	if m.shuttingDown.Swap(true) {
+		return
+	}
+	m.stopProbes()
+}
+
+// stopProbes signals every connection's liveness probe to exit.
+func (m *Manager) stopProbes() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, conn := range m.servers {
+		if conn.probeStop != nil {
+			close(conn.probeStop)
+			conn.probeStop = nil
+		}
+	}
+}
+
+// trackInflight adjusts the running CallTool count for server by delta.
+func (m *Manager) trackInflight(server string, delta int) {
+	m.inflightMu.Lock()
+	defer m.inflightMu.Unlock()
+	m.inflight[server] += delta
+	if m.inflight[server] <= 0 {
+		delete(m.inflight, server)
+	}
+}
+
+// busyServers names the servers with a tool call or a reconnect in flight,
+// sorted, for the warning logged when Close runs out of time.
+func (m *Manager) busyServers() []string {
+	busy := make(map[string]bool)
+	m.inflightMu.Lock()
+	for name := range m.inflight {
+		busy[name] = true
+	}
+	m.inflightMu.Unlock()
+	m.cooldownMu.Lock()
+	for name := range m.reconnecting {
+		busy[name] = true
+	}
+	m.cooldownMu.Unlock()
+	return slices.Sorted(maps.Keys(busy))
+}
+
+// waitCtx waits for wg, or until ctx ends; it reports whether wg finished.
+func waitCtx(ctx context.Context, wg *sync.WaitGroup) bool {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// Close closes all server connections. It first waits, until ctx ends, for
+// in-flight tool calls and liveness probes to finish; when ctx ends first it
+// logs the servers still busy and closes every connection anyway, killing the
+// stdio children, so a hung call cannot hold up the process exit.
+func (m *Manager) Close(ctx context.Context) error {
+	// Use Swap to atomically set closed=true and get the previous value
+	// This prevents TOCTOU race with CallTool's closed check
+	if m.closed.Swap(true) {
+		return nil // already closed
+	}
+
+	// No new CallTool can start once closed is set (they check it first). Stop
+	// the liveness probes, then wait for in-flight calls and probes before
+	// tearing down clients. A probe mid-reconnect sees the manager closed and
+	// bails (ConnectServer/reconnect both check it), so no server is
+	// resurrected here.
+	m.stopProbes()
+	if !waitCtx(ctx, &m.wg) || !waitCtx(ctx, &m.probeWg) {
+		logger.WarnCF("mcp", "MCP servers still busy at shutdown; closing them anyway",
+			map[string]any{"servers": m.busyServers()})
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	logger.InfoCF("mcp", "Closing all MCP server connections",
+		map[string]any{
+			"count": len(m.servers),
+		})
+
+	var errs []error
+	for name, conn := range m.servers {
+		if err := conn.Client.Close(); err != nil {
+			logger.ErrorCF("mcp", "Failed to close server connection",
+				map[string]any{
+					"server": name,
+					"error":  err.Error(),
+				})
+			errs = append(errs, fmt.Errorf("server %s: %w", name, err))
+		}
+		if conn.stopListen != nil {
+			conn.stopListen()
+		}
+		// Safety net: kill any stdio grandchildren (e.g. chromium) the transport's
+		// direct-child shutdown leaves orphaned, so no profile lock survives.
+		terminateStdioProcessTree(conn.cmd)
+	}
+
+	m.servers = make(map[string]*ServerConnection)
+
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to close %d server(s): %w", len(errs), errors.Join(errs...))
+	}
+
+	return nil
+}
+
+// GetAllTools returns all tools from all connected servers
+func (m *Manager) GetAllTools() map[string][]mcp.Tool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[string][]mcp.Tool)
+	for name, conn := range m.servers {
+		if len(conn.Tools) > 0 {
+			result[name] = conn.Tools
+		}
+	}
+	return result
+}
+
+// SetAlerter routes server down and recovery alerts to an alerter.
+func (m *Manager) SetAlerter(a alerter.Alerter) {
+	m.mu.Lock()
+	m.alerter = a
+	m.mu.Unlock()
+}
+
+// clientInfo is how this host introduces itself to an MCP server: the product
+// name and its release number, the parseable form a server may compare.
+func clientInfo() mcp.Implementation {
+	return mcp.Implementation{Name: app.Name(), Version: app.SemVer()}
+}

@@ -1,0 +1,104 @@
+// API client for named-provider management.
+import { errorMessage } from "./error-message"
+
+export interface ProviderInfo {
+  index: number
+  name: string
+  protocol: string
+  base_url?: string
+  api_key: string
+  proxy?: string
+  strict_compat?: boolean
+  require_reasoning_content?: boolean
+  no_parallel_tool_calls?: boolean
+  response_format_json?: boolean
+  command?: string
+  // ready is whether the provider is usable as configured — an API key for HTTP
+  // providers, a binary that actually resolves for CLI ones. The backend decides
+  // this: only it knows the PATH its CLI subprocesses are launched with.
+  ready: boolean
+  // resolved_command is where a CLI provider's binary was found, so a blank
+  // command can still show which one it will run.
+  resolved_command?: string
+  // model_count is how many models reference this provider.
+  model_count: number
+}
+
+interface ProvidersListResponse {
+  providers: ProviderInfo[]
+  total: number
+}
+
+interface ProviderActionResponse {
+  status: string
+  index?: number
+}
+
+const BASE_URL = ""
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, options)
+  if (!res.ok) {
+    throw new Error(await errorMessage(res))
+  }
+  return res.json() as Promise<T>
+}
+
+// getProviders normalises the list at the boundary: Go encodes an empty slice
+// as null, and every consumer spreads `providers` as an array.
+export async function getProviders(): Promise<ProvidersListResponse> {
+  const data = await request<Partial<ProvidersListResponse>>("/api/providers")
+  const providers = data.providers ?? []
+  return { providers, total: data.total ?? providers.length }
+}
+
+export async function addProvider(
+  provider: Partial<ProviderInfo>,
+): Promise<ProviderActionResponse> {
+  return request<ProviderActionResponse>("/api/providers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(provider),
+  })
+}
+
+export async function updateProvider(
+  index: number,
+  provider: Partial<ProviderInfo>,
+): Promise<ProviderActionResponse> {
+  return request<ProviderActionResponse>(`/api/providers/${index}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(provider),
+  })
+}
+
+export async function deleteProvider(
+  index: number,
+): Promise<ProviderActionResponse> {
+  return request<ProviderActionResponse>(`/api/providers/${index}`, {
+    method: "DELETE",
+  })
+}
+
+export interface ProviderTestResult {
+  ok: boolean
+  message: string
+}
+
+// testProvider runs a live connectivity/auth probe against a provider's
+// (possibly not-yet-saved) settings, so the setup wizard can catch a bad key or
+// base URL before persisting it.
+export async function testProvider(req: {
+  protocol: string
+  base_url?: string
+  api_key?: string
+}): Promise<ProviderTestResult> {
+  return request<ProviderTestResult>("/api/providers/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  })
+}
+
+export type { ProvidersListResponse, ProviderActionResponse }

@@ -1,0 +1,66 @@
+# Release description for a private release management system.
+# It is not needed to build this product.
+
+name:   ClawEh
+module: github.com/PivotLLM/ClawEh
+github: PivotLLM/ClawEh
+
+version:
+  file:    app/app.go
+  pattern: 'version\s*=\s*"([^"]+)"'
+  format:  '{1}'
+
+go_min:      "1.26"
+govulncheck:
+  enabled: true
+  ignore:
+    - id: GO-2026-6911
+      reason: github.com/mark3labs/mcp-go has no fixed release yet
+      until: 20261231
+
+licenses:
+  enabled:  true
+  template: license.tmpl
+  ignore:   github.com/PivotLLM/ClawEh
+  out:      OPEN-SOURCE-LICENSES.txt
+
+build:
+  clean_once: true
+  command: 'make build PLATFORM={os} ARCH={arch}'
+  # No Windows: a dependency does not compile for it.
+  targets:
+    - darwin/amd64
+    - darwin/arm64
+    - linux/386
+    - linux/amd64
+    - linux/arm64
+
+# Must be one of the keys in app/keys.go.
+signing:
+  minisign:
+    enabled:    true
+    public_key: RWS4LMzQBg4PUnmdFHlaHFkUt+mm9PLPGvkE812t8Ew4YK5fL8zWqbuN
+
+artifacts:
+  - name: claw
+    from: 'build/claw-{os}-{arch}'
+    macos_bundle_id: com.tenebris.claweh
+  - name: claw-auth
+    from: 'build/claw-auth-{os}-{arch}'
+    macos_bundle_id: com.tenebris.claweh
+
+package:
+  extra_files:
+    - {from: LICENSE, as: LICENSE.txt}
+    - {from: '{staging}/OPEN-SOURCE-LICENSES.txt', as: OPEN-SOURCE-LICENSES.txt}
+  per_platform:
+    enabled: true
+    # CONTRACT: the install script fetches exactly these names.
+    asset: 'claw-{os}-{arch}.tar.gz'
+  bundle:
+    enabled: false
+
+release:
+  tag:   '{version}'
+  title: 'v{tag}'
+  notes: 'Linux and macOS binaries (macOS binaries are signed)'

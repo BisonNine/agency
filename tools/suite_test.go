@@ -1,0 +1,134 @@
+// ClawEh
+// License: MIT
+
+package tools
+
+import (
+	"context"
+	"testing"
+
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/global"
+)
+
+type fakeSuiteProvider struct{ suite string }
+
+func (f fakeSuiteProvider) RegisterTools(global.Deps) []global.ToolDefinition {
+	// Tools outside the default set (no DefaultAllow): a suite registers them
+	// as a unit.
+	return []global.ToolDefinition{{Name: "alpha"}, {Name: "beta"}}
+}
+func (f fakeSuiteProvider) Suite() string { return f.suite }
+
+func cfgWithAgent(a config.AgentConfig) *config.Config {
+	return &config.Config{Agents: config.AgentsConfig{List: []config.AgentConfig{a}}}
+}
+
+func TestNamespacedProvider_SuiteGating(t *testing.T) {
+	p := NamespacedProvider("maestro", fakeSuiteProvider{suite: "maestro"})
+
+	// Suite off (maestro default off) → no tools: the gate is the flag.
+	off := cfgWithAgent(config.AgentConfig{ID: "alice", Maestro: &config.MaestroConfig{Enabled: false}})
+	if got := p.Build(ToolDeps{Cfg: off, AgentID: "alice"}); len(got) != 0 {
+		t.Errorf("disabled suite should yield no tools, got %d", len(got))
+	}
+	// Suite on → ALL tools.
+	on := cfgWithAgent(config.AgentConfig{ID: "alice", Maestro: &config.MaestroConfig{Enabled: true}})
+	if got := p.Build(ToolDeps{Cfg: on, AgentID: "alice"}); len(got) != 2 {
+		t.Errorf("enabled suite should register all tools, got %d", len(got))
+	}
+	// Describe collapses the whole suite to one catalog entry, marked.
+	d := p.Describe()
+	if len(d) != 1 || d[0].Suite != "maestro" || d[0].Name != "maestro" {
+		t.Errorf("suite should describe as a single marked entry, got %+v", d)
+	}
+}
+
+func TestSuiteDefaults(t *testing.T) {
+	c := cfgWithAgent(config.AgentConfig{ID: "alice"}) // no flags set
+	// cogmem defaults ON; maestro defaults OFF.
+	if !c.AgentSuiteEnabled("alice", "cogmem") {
+		t.Error("cogmem should default on")
+	}
+	if c.AgentSuiteEnabled("alice", "maestro") {
+		t.Error("maestro should default off")
+	}
+	// Unknown agent: cogmem still on, others off.
+	if !c.AgentSuiteEnabled("ghost", "cogmem") || c.AgentSuiteEnabled("ghost", "maestro") {
+		t.Error("unknown-agent suite defaults wrong")
+	}
+	// cogmem explicitly disabled.
+	no := false
+	c2 := cfgWithAgent(config.AgentConfig{ID: "alice", Cogmem: &no})
+	if c2.AgentSuiteEnabled("alice", "cogmem") {
+		t.Error("cogmem:false should disable")
+	}
+}
+
+// denyAllChecker refuses every per-tool allowlist query, modelling an agent
+// whose allowlist does not list the suite's tools.
+type denyAllChecker struct{}
+
+func (denyAllChecker) IsToolAllowed(string) bool { return false }
+func (denyAllChecker) IsToolDenied(string) bool  { return false }
+
+// TestRegisterSuite_DenyListStillApplies verifies the deny half of the checker
+// reaches a suite-registered tool: the allow-side exemption stands, but an
+// explicit deny_tools entry refuses the call.
+func TestRegisterSuite_DenyListStillApplies(t *testing.T) {
+	r := NewToolRegistry()
+	denied := &mockContextAwareTool{mockRegistryTool: *newMockTool("google_calendar_event_delete", "suite tool")}
+	kept := &mockContextAwareTool{mockRegistryTool: *newMockTool("google_calendar_events_list", "suite tool")}
+	r.RegisterSuite(denied)
+	r.RegisterSuite(kept)
+
+	ctx := WithToolAllowChecker(context.Background(), mockAllowChecker{
+		denied: map[string]bool{"google_calendar_event_delete": true},
+	})
+
+	res := r.ExecuteWithContext(ctx, "google_calendar_event_delete", nil, "", "", nil)
+	if res == nil || !res.IsError {
+		t.Fatalf("denied suite tool should be refused, got %+v", res)
+	}
+	if denied.lastCtx != nil {
+		t.Error("denied suite tool ran despite deny_tools")
+	}
+
+	ok := r.ExecuteWithContext(ctx, "google_calendar_events_list", nil, "", "", nil)
+	if ok == nil || ok.IsError {
+		t.Fatalf("undenied suite tool should still bypass the allow list, got %+v", ok)
+	}
+	if kept.lastCtx == nil {
+		t.Error("undenied suite tool was not executed")
+	}
+}
+
+// TestRegisterSuite_BypassesExecutionAllowlist verifies a suite-registered tool
+// executes even when the context allowlist denies it, while a normally-registered
+// tool is still blocked by the same checker. This guards the bug where maestro
+// tools were visible but "denied by agent allowlist" at execution.
+func TestRegisterSuite_BypassesExecutionAllowlist(t *testing.T) {
+	r := NewToolRegistry()
+	suiteTool := &mockContextAwareTool{mockRegistryTool: *newMockTool("maestro_health", "suite tool")}
+	plainTool := &mockContextAwareTool{mockRegistryTool: *newMockTool("web_fetch", "ordinary tool")}
+	r.RegisterSuite(suiteTool)
+	r.Register(plainTool)
+
+	ctx := WithToolAllowChecker(context.Background(), denyAllChecker{})
+
+	res := r.ExecuteWithContext(ctx, "maestro_health", nil, "", "", nil)
+	if res == nil || res.IsError {
+		t.Fatalf("suite tool should bypass the allowlist, got %+v", res)
+	}
+	if suiteTool.lastCtx == nil {
+		t.Error("suite tool was not executed")
+	}
+
+	blocked := r.ExecuteWithContext(ctx, "web_fetch", nil, "", "", nil)
+	if blocked == nil || !blocked.IsError {
+		t.Fatalf("ordinary tool should be denied by the allowlist, got %+v", blocked)
+	}
+	if plainTool.lastCtx != nil {
+		t.Error("ordinary tool ran despite allowlist deny")
+	}
+}

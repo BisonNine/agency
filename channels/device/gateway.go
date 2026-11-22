@@ -1,0 +1,570 @@
+package device
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/channels"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
+	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/identity"
+	"github.com/PivotLLM/ClawEh/internal/perms"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/media"
+	"github.com/PivotLLM/ClawEh/routing"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+// DefaultDevicePort is the device gateway's own listen port when unset. It sits
+// next to the default WebUI/admin port (18790) so a default install runs both on
+// adjacent ports.
+const DefaultDevicePort = 18791
+
+// DeviceChannel is the external-device gateway channel. It runs its OWN HTTP
+// listener (Host:Port) — independent of the WebUI/admin port — serving the
+// OpenClaw Gateway WebSocket protocol so hardware devices (e.g. the Rabbit R1)
+// can connect, pair, and converse with an agent. Keeping it on a separate,
+// authenticated listener lets it be exposed to the network without exposing the
+// unauthenticated WebUI.
+type DeviceChannel struct {
+	*channels.BaseChannel
+	server       *Server
+	store        *Store
+	host         string
+	port         int
+	allowedCIDRs []string
+	allowedHosts hostAllowlist
+	// trusted is gateway.trusted_proxies; the channel is rebuilt on every
+	// config reload, so it is fixed for the channel's life.
+	trusted *config.TrustedProxySet
+	// useTLS is channels.device.tls; tlsConfig is the gateway certificate
+	// manager's configuration, injected by SetTLSConfig before Start.
+	useTLS    bool
+	tlsConfig *tls.Config
+	// defaultUser names the person speaking on a device with no user of its
+	// own (operator.name, else the admin account's username), injected by
+	// SetDefaultUser before Start; nil or "" falls back to the device's
+	// display name.
+	defaultUser func() string
+	loopDone    chan struct{}
+	ctx         context.Context
+	cancel      context.CancelFunc
+}
+
+// NewDeviceChannel opens the pairing store under <dataDir>/internal and builds the
+// gateway protocol server. logMessages enables full inbound/outbound content logs.
+// The listener answers only to Host names it is known by: localhost, its bind
+// host, the hosts of cfg.ExternalURL and gatewayExternalURL, any IP literal,
+// and extraHosts (reserved for TLS certificate names).
+func NewDeviceChannel(cfg config.DeviceChannelConfig, dataDir string, logMessages bool, b *bus.MessageBus, gatewayExternalURL string, extraHosts []string) (*DeviceChannel, error) {
+	stateDir := filepath.Join(dataDir, global.InternalDir)
+	if err := os.MkdirAll(stateDir, perms.SecretModes().Dir); err != nil {
+		return nil, fmt.Errorf("device: create state dir: %w", err)
+	}
+	store, err := OpenStore(context.Background(), filepath.Join(stateDir, "gateway.db"))
+	if err != nil {
+		return nil, err
+	}
+	srv := NewServer(store, ServerOptions{
+		SharedToken: cfg.Token,
+		WordToken:   cfg.WordToken,
+		// Protocol handshake: bare semver. Paired devices (the R1, the Android
+		// app) read this field; a build suffix could break a version comparison.
+		ServerVersion: app.SemVer(),
+		AutoApprove:   cfg.AutoApprove,
+		AllowOrigins:  cfg.AllowOrigins,
+		LogMessages:   logMessages,
+	})
+	host := cfg.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := cfg.Port
+	if port == 0 {
+		port = DefaultDevicePort
+	}
+	// The device gateway already authenticates every connection (shared/device
+	// token + Ed25519 pairing approval + optional CIDR allowlist), so an unset
+	// sender allow-list means "allow any paired device" rather than "deny all" —
+	// otherwise a correctly paired device (e.g. the R1) is silently dropped at
+	// HandleMessage. Set allow_from explicitly to restrict which paired devices
+	// may talk to an agent.
+	allowFrom := cfg.AllowFrom
+	if len(allowFrom) == 0 {
+		allowFrom = []string{"*"}
+	}
+	dc := &DeviceChannel{
+		BaseChannel:  channels.NewBaseChannel("device", cfg, b, allowFrom),
+		server:       srv,
+		store:        store,
+		host:         host,
+		port:         port,
+		allowedCIDRs: cfg.AllowedCIDRs,
+		useTLS:       cfg.TLS,
+		allowedHosts: newHostAllowlist(host, []string{cfg.ExternalURL, gatewayExternalURL}, extraHosts),
+	}
+	srv.SetAlerter(dc.Alert)
+	// Bridge each device utterance into the message bus. The agent's reply returns
+	// via Send -> server.DeliverReply.
+	srv.SetInbound(func(deviceID, chatID, content, idempotencyKey, sessionKey string, attachments []InboundAttachment) {
+		ctx := dc.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		peer := bus.Peer{Kind: "direct", ID: deviceID}
+		sender := bus.SenderInfo{
+			Platform:    "device",
+			PlatformID:  deviceID,
+			CanonicalID: identity.BuildCanonicalID("device", deviceID),
+			DisplayName: dc.senderName(ctx, deviceID),
+		}
+		metadata := map[string]string{"platform": "device", "device_id": deviceID}
+		// Pin the conversation session (the selected agent's main conversation,
+		// the key chat.history reads). The agent is the session key's 2nd segment,
+		// which sessionScopeKeyFor has already resolved to an existing agent; the
+		// loop drops a turn preresolved to an agent that is gone.
+		if sessionKey != "" {
+			metadata["session_key"] = sessionKey
+			if agentID := routing.AgentIDFromSessionKey(sessionKey); agentID != "" {
+				metadata["preresolved_agent_id"] = agentID
+			}
+		}
+		// Persist inline attachments (photos) to the media store; the agent loop
+		// materializes the refs and its vision-describe path handles non-vision models.
+		mediaRefs := dc.storeInboundAttachments(chatID, idempotencyKey, attachments)
+		logger.InfoCF("device", "inbound → bus", map[string]any{
+			"deviceId": deviceID, "chatId": chatID, "sessionKey": sessionKey,
+			"preresolvedAgent": metadata["preresolved_agent_id"], "chars": len(content), "media": len(mediaRefs),
+		})
+		dc.HandleMessage(ctx, peer, idempotencyKey, deviceID, chatID, content, mediaRefs, metadata, sender)
+	})
+	return dc, nil
+}
+
+// senderName is the name the model is told a device's sender has: the paired
+// device's user name when set, else the default user (operator.name, else the
+// admin account), else the device's display name. When the record cannot be
+// read, only the default user is left, and without it the sender has no name.
+func (c *DeviceChannel) senderName(ctx context.Context, deviceID string) string {
+	dev, ok, err := c.store.GetPaired(ctx, deviceID)
+	if err != nil {
+		logger.WarnCF("device", "paired device lookup failed; using the default user", map[string]any{
+			"deviceId": deviceID, "error": err.Error(),
+		})
+		ok = false
+	}
+	if ok && dev.UserName != "" {
+		return dev.UserName
+	}
+	if name := c.DefaultUser(); name != "" {
+		return name
+	}
+	if ok {
+		return dev.DisplayName
+	}
+	return ""
+}
+
+// SetDefaultUser sets the function naming the person speaking on a device
+// that has no user of its own (operator.name, else the admin account's
+// username). It is called per inbound message, so a changed name is seen at
+// once. Call before Start.
+func (c *DeviceChannel) SetDefaultUser(fn func() string) { c.defaultUser = fn }
+
+// DefaultUser returns the current default user SetDefaultUser installed, or "".
+func (c *DeviceChannel) DefaultUser() string {
+	if c.defaultUser == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.defaultUser())
+}
+
+// storeInboundAttachments writes each decoded attachment to the media staging
+// dir and registers it in the media store, returning the resulting "media://"
+// refs (scoped to this turn so they're cleaned up with it). Best-effort: a
+// missing store or a failed write drops that attachment with a warning.
+func (c *DeviceChannel) storeInboundAttachments(chatID, messageID string, atts []InboundAttachment) []string {
+	if len(atts) == 0 {
+		return nil
+	}
+	store := c.GetMediaStore()
+	if store == nil {
+		logger.WarnCF("device", "media store unavailable; dropping attachments", map[string]any{"chatId": chatID, "count": len(atts)})
+		return nil
+	}
+	mediaDir := utils.MediaTempDir()
+	dirMode, fileMode := utils.MediaModes()
+	if err := fileutil.MkdirAllExact(mediaDir, dirMode); err != nil {
+		logger.WarnCF("device", "create media dir failed; dropping attachments", map[string]any{"dir": mediaDir, "error": err.Error()})
+		return nil
+	}
+	scope := channels.BuildMediaScope("device", chatID, messageID)
+	refs := make([]string, 0, len(atts))
+	for i, a := range atts {
+		ext := attachmentExt(a.MimeType, a.Name)
+		data := repairWAVSizes(a.Data)
+		f, err := os.CreateTemp(mediaDir, "device-media-*"+ext)
+		if err != nil {
+			logger.WarnCF("device", "attachment temp file failed", map[string]any{"error": err.Error()})
+			continue
+		}
+		_, werr := f.Write(data)
+		if werr == nil { // exactly the media file mode, whatever CreateTemp gave
+			werr = f.Chmod(fileMode)
+		}
+		if closeErr := f.Close(); closeErr != nil && werr == nil {
+			werr = closeErr
+		}
+		if werr != nil {
+			if rmErr := os.Remove(f.Name()); rmErr != nil {
+				logger.WarnCF("device", "attachment temp file remove failed", map[string]any{"path": f.Name(), "error": rmErr.Error()})
+			}
+			logger.WarnCF("device", "attachment write failed", map[string]any{"error": werr.Error()})
+			continue
+		}
+		name := a.Name
+		if name == "" {
+			name = "attachment-" + strconv.Itoa(i) + ext
+		}
+		ref, serr := store.Store(f.Name(), media.MediaMeta{Filename: name, ContentType: a.MimeType, Source: "device"}, scope)
+		if serr != nil {
+			logger.WarnCF("device", "media store failed for attachment", map[string]any{"error": serr.Error()})
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+// attachmentExt picks the stored file's extension: from the MIME type when it
+// is one we know, otherwise from the attachment's name (a device may label a
+// "clip.wav" as application/octet-stream), otherwise ".bin".
+func attachmentExt(mime, name string) string {
+	if ext := extForMIME(mime); ext != ".bin" {
+		return ext
+	}
+	if ext := strings.ToLower(strings.TrimSpace(filepath.Ext(name))); len(ext) > 1 {
+		return ext
+	}
+	return ".bin"
+}
+
+// extForMIME maps a few common attachment MIME types to a file extension so the
+// stored file (and downstream MIME sniffing) behaves. Audio types map to the
+// extensions voice transcription recognises, since speech-to-text backends pick
+// the decoder from the file name. MIME parameters ("audio/wav; rate=16000") are
+// ignored. Defaults to ".bin".
+func extForMIME(mime string) string {
+	if i := strings.IndexByte(mime, ';'); i >= 0 {
+		mime = mime[:i]
+	}
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "image/heic":
+		return ".heic"
+	case "audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave":
+		return ".wav"
+	case "audio/ogg", "application/ogg", "audio/opus":
+		return ".ogg"
+	case "audio/mpeg", "audio/mp3":
+		return ".mp3"
+	case "audio/mp4", "audio/x-m4a", "audio/m4a":
+		return ".m4a"
+	case "audio/flac", "audio/x-flac":
+		return ".flac"
+	case "audio/aac", "audio/x-aac":
+		return ".aac"
+	case "audio/webm":
+		return ".webm"
+	default:
+		return ".bin"
+	}
+}
+
+// SetAgentQuerier wires the read-only agent/session accessor into the protocol
+// server so operator clients can call agents.list / chat.history. Injected from
+// internal/gateway (which owns the agent loop) after the channel is built.
+func (c *DeviceChannel) SetAgentQuerier(q AgentQuerier) { c.server.SetQuerier(q) }
+
+// AgentQuerier returns the accessor SetAgentQuerier installed, or nil.
+func (c *DeviceChannel) AgentQuerier() AgentQuerier { return c.server.querier }
+
+// errNoCertificate is Start's refusal when channels.device.tls is on but the
+// gateway has no certificate manager to lend (HTTPS was off at start).
+var errNoCertificate = errors.New("device: channels.device.tls is on but there is no TLS certificate " +
+	"(gateway.tls.mode was \"off\" when " + app.ShortName() + " started); restart " + app.ShortName() + " after turning HTTPS on")
+
+// SetTLSConfig hands the channel the gateway certificate manager's TLS
+// configuration (tlscert.Manager.TLSConfig), so the device listener serves
+// the same certificate as the WebUI HTTPS listener and follows its reloads.
+// Used only when channels.device.tls is on; call before Start.
+func (c *DeviceChannel) SetTLSConfig(cfg *tls.Config) {
+	if cfg == nil {
+		c.tlsConfig = nil
+		return
+	}
+	cfg = cfg.Clone()
+	// gorilla/websocket upgrades HTTP/1.1 only; never negotiate h2.
+	cfg.NextProtos = []string{"http/1.1"}
+	c.tlsConfig = cfg
+}
+
+// Start launches the device gateway's own HTTP listener.
+func (c *DeviceChannel) Start(ctx context.Context) error {
+	if c.useTLS && c.tlsConfig == nil {
+		return errNoCertificate
+	}
+	c.ctx, c.cancel = context.WithCancel(ctx)
+
+	// WebSocket upgrade at any path (devices connect to ws://host:port/, or
+	// wss:// with channels.device.tls, with no path).
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !websocket.IsWebSocketUpgrade(r) {
+			http.NotFound(w, r)
+			return
+		}
+		c.server.HandleWS(w, r)
+	})
+	allowlisted, err := ipAllowlistHandler(c.allowedCIDRs, hostCheckHandler(c.allowedHosts, handler))
+	if err != nil {
+		return fmt.Errorf("device: %w", err)
+	}
+	wrapped := trustedProxyHandler(c.trusted, allowlisted)
+
+	addr := net.JoinHostPort(c.host, strconv.Itoa(c.port))
+	ln, err := c.listen(addr)
+	if err != nil {
+		return fmt.Errorf("device: listen %s: %w", addr, err)
+	}
+	c.loopDone = make(chan struct{})
+	c.SetRunning(true)
+	go c.serveLoop(ln, addr, wrapped)
+	logger.InfoCF("device", "Device channel listening", map[string]any{"addr": addr, "tls": c.useTLS})
+	return nil
+}
+
+// listen binds addr, wrapped in TLS when channels.device.tls is on.
+func (c *DeviceChannel) listen(addr string) (net.Listener, error) {
+	ln, err := listenTCP(addr)
+	if err != nil || !c.useTLS {
+		return ln, err
+	}
+	return tls.NewListener(ln, c.tlsConfig), nil
+}
+
+// Test seams: listenTCP binds the listener and retryAfter waits between
+// re-listen attempts.
+var (
+	listenTCP  = func(addr string) (net.Listener, error) { return net.Listen("tcp", addr) }
+	retryAfter = time.After
+)
+
+// serveLoop serves ln until the channel's context is cancelled. If Serve fails
+// it re-listens on addr with channels.NextConnRetry backoff (a failed re-bind,
+// such as the port being in use, waits the same way), raising "Channel receive
+// loop stopped" once per outage and logging when the listener is back.
+func (c *DeviceChannel) serveLoop(ln net.Listener, addr string, handler http.Handler) {
+	defer close(c.loopDone)
+	var backoff time.Duration
+	for {
+		err := c.serve(ln, addr, handler)
+		if c.ctx.Err() != nil {
+			return
+		}
+		// Each Serve failure opens an outage: alert once here, not on the
+		// re-bind attempts that follow.
+		backoff = channels.NextConnRetry(backoff)
+		logger.ErrorCF("device", "Device channel listener error; re-listening", map[string]any{
+			"addr": addr, "error": err.Error(), "retry_in": backoff.String(),
+		})
+		c.Alert(alerter.Alert{
+			Title:       "Channel receive loop stopped",
+			Description: c.Name() + ": device listener error; re-listening on " + addr + " with backoff until it is back",
+			Details:     err.Error(),
+		})
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-retryAfter(backoff):
+			}
+			ln, err = c.listen(addr)
+			if err == nil {
+				break
+			}
+			backoff = channels.NextConnRetry(backoff)
+			logger.WarnCF("device", "Device channel re-listen failed", map[string]any{
+				"addr": addr, "error": err.Error(), "retry_in": backoff.String(),
+			})
+		}
+		logger.InfoCF("device", "Device channel listener restored", map[string]any{"addr": addr})
+		backoff = 0
+	}
+}
+
+// serve runs one http.Server on ln until it fails or the channel's context is
+// cancelled, which closes the server (and ln) so Serve returns. It always
+// returns a non-nil error; the caller decides whether it was a stop or a fault.
+func (c *DeviceChannel) serve(ln net.Listener, addr string, handler http.Handler) error {
+	srv := newDeviceServer(addr, handler)
+	// Close immediately rather than graceful Shutdown: a live device WebSocket
+	// would otherwise block the shutdown (and a config reload) for seconds. The
+	// device reconnects after the listener re-binds.
+	stop := context.AfterFunc(c.ctx, func() { utils.CloseQuietly(srv) })
+	defer stop()
+	return srv.Serve(ln)
+}
+
+// newDeviceServer builds the listener's http.Server. No Read/WriteTimeout:
+// long-lived WebSocket connections manage their own deadlines after the
+// gorilla upgrade hijacks the conn. The idle timeout and header cap apply to
+// the plain HTTP side only (the handshake and anything that is not a
+// WebSocket), where an unauthenticated client could otherwise park
+// connections forever.
+func newDeviceServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       channels.DeviceIdleTimeout,
+		MaxHeaderBytes:    channels.DeviceMaxHeaderBytes,
+	}
+}
+
+// Stop shuts down the device listener, closes every open device connection
+// (http.Server.Close does not track the hijacked WebSockets, so they would
+// otherwise stay attached to a dead channel) and closes the store. It returns
+// once the serve loop has exited, so the port is free for a restarted channel
+// to bind.
+func (c *DeviceChannel) Stop(_ context.Context) error {
+	c.SetRunning(false)
+	if c.cancel != nil {
+		c.cancel()
+	}
+	if c.loopDone != nil {
+		<-c.loopDone
+	}
+	c.server.CloseAll()
+	if c.store != nil {
+		utils.CloseQuietly(c.store)
+	}
+	logger.InfoC("device", "Device channel stopped")
+	return nil
+}
+
+// SetTrustedProxies sets gateway.trusted_proxies: peers whose X-Real-IP /
+// X-Forwarded-For headers name the client. Call before Start.
+func (c *DeviceChannel) SetTrustedProxies(set *config.TrustedProxySet) { c.trusted = set }
+
+// DisconnectDevice closes every open connection of deviceID, at once. The
+// WebUI calls it when the device is removed.
+func (c *DeviceChannel) DisconnectDevice(deviceID string) { c.server.DisconnectDevice(deviceID) }
+
+// StreamDelta implements channels.StreamCapable — forwards a partial-assistant-
+// text delta to the connected device as incremental chat/agent stream events.
+// Best-effort: a missing connection is a no-op (the terminal Send remains
+// authoritative).
+func (c *DeviceChannel) StreamDelta(_ context.Context, chatID, delta string) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+	c.server.StreamDelta(chatID, delta)
+	return nil
+}
+
+// Send implements channels.Channel — routes an agent reply to the device WS as a
+// terminal chat event, keyed by the inbound chatID ("device:<deviceID>").
+// It says why a reply was not delivered (see Server.DeliverReply).
+func (c *DeviceChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+	err := c.server.DeliverReply(ctx, msg.ChatID, msg.Content)
+	if err != nil && ctx.Err() != nil {
+		// Shutting down: not a delivery fault, and never an alert.
+		return ctx.Err()
+	}
+	return err
+}
+
+// trustedProxyHandler attributes a request from a trusted proxy to the client
+// named by its X-Real-IP (else first X-Forwarded-For) header by rewriting
+// r.RemoteAddr, so the allowlist, the auth lockout, lockout_exempt, the
+// pending-pairing address and logs all see that client. Headers from any other
+// peer are ignored. It must be the outermost handler.
+func trustedProxyHandler(trusted *config.TrustedProxySet, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		addr := trusted.ClientAddr(r.RemoteAddr, r.Header.Get("X-Real-IP"), r.Header.Get("X-Forwarded-For"))
+		if addr != remoteHost(r) {
+			r.RemoteAddr = addr
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ipAllowlistHandler restricts the device listener to the given CIDRs (loopback
+// always allowed). An empty list allows any client IP — the gateway is itself
+// authenticated, so the allowlist is optional defense-in-depth.
+func ipAllowlistHandler(cidrs []string, next http.Handler) (http.Handler, error) {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			return nil, fmt.Errorf("invalid allowed_cidrs entry %q: %w", c, err)
+		}
+		nets = append(nets, n)
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(nets) == 0 || clientIPAllowed(r.RemoteAddr, nets) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}), nil
+}
+
+func clientIPAllowed(remoteAddr string, nets []*net.IPNet) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}

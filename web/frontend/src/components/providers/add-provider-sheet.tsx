@@ -1,0 +1,340 @@
+import { IconLoader2 } from "@tabler/icons-react"
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
+
+import { addProvider } from "@/api/providers"
+import {
+  DEFAULT_PROTOCOL,
+  PROTOCOL_OPTIONS,
+  isCliProtocol,
+  isHumanProtocol,
+  requiresBaseURL,
+} from "@/components/providers/provider-config-fields"
+import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
+import {
+  AdvancedSection,
+  Field,
+  KeyInput,
+  SwitchCardField,
+} from "@/components/shared-form"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+
+interface AddForm {
+  name: string
+  protocol: string
+  baseURL: string
+  apiKey: string
+  proxy: string
+  command: string
+  strictCompat: boolean
+  requireReasoningContent: boolean
+  noParallelToolCalls: boolean
+  responseFormatJSON: boolean
+}
+
+const EMPTY_ADD_FORM: AddForm = {
+  name: "",
+  protocol: DEFAULT_PROTOCOL,
+  baseURL: "",
+  apiKey: "",
+  proxy: "",
+  command: "",
+  strictCompat: false,
+  requireReasoningContent: false,
+  noParallelToolCalls: false,
+  responseFormatJSON: false,
+}
+
+interface AddProviderSheetProps {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+  existingNames: string[]
+}
+
+export function AddProviderSheet({
+  open,
+  onClose,
+  onSaved,
+  existingNames,
+}: AddProviderSheetProps) {
+  const { t } = useTranslation()
+  const [form, setForm] = useState<AddForm>(EMPTY_ADD_FORM)
+  const [saving, setSaving] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<keyof AddForm, string>>
+  >({})
+  const [serverError, setServerError] = useState("")
+  const apiKeyPlaceholder = maskedSecretPlaceholder(
+    form.apiKey,
+    t("providers.field.apiKeyPlaceholder"),
+  )
+  const cli = isCliProtocol(form.protocol)
+  const human = isHumanProtocol(form.protocol)
+
+  // Start from an empty form each time the sheet is opened. Adjusted during
+  // render rather than in an effect so the previous attempt's values and errors
+  // are never visible on reopen.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) {
+      setForm(EMPTY_ADD_FORM)
+      setFieldErrors({})
+      setServerError("")
+    }
+  }
+
+  const validate = (): boolean => {
+    const errors: Partial<Record<keyof AddForm, string>> = {}
+    const name = form.name.trim()
+    if (!name) {
+      errors.name = t("providers.add.errorRequired")
+    } else if (existingNames.some((n) => n.trim() === name)) {
+      errors.name = t("providers.add.errorDuplicateName")
+    }
+    // A CLI provider needs no command: left blank, the backend runs the
+    // protocol's default binary off PATH, which survives a CLI being upgraded
+    // out from under a hard-coded path.
+    if (
+      !isCliProtocol(form.protocol) &&
+      requiresBaseURL(form.protocol) &&
+      !form.baseURL.trim()
+    ) {
+      errors.baseURL = t("providers.add.errorRequired")
+    }
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const setField =
+    (key: keyof AddForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      setForm((f) => ({ ...f, [key]: e.target.value }))
+      if (fieldErrors[key]) {
+        setFieldErrors((prev) => ({ ...prev, [key]: undefined }))
+      }
+    }
+
+  const handleSave = async () => {
+    if (!validate()) return
+    setSaving(true)
+    setServerError("")
+    try {
+      const cliProto = isCliProtocol(form.protocol)
+      // A human provider reaches a person: no endpoint, no key.
+      const noEndpoint = cliProto || isHumanProtocol(form.protocol)
+      await addProvider({
+        name: form.name.trim(),
+        protocol: form.protocol,
+        base_url: noEndpoint ? undefined : form.baseURL.trim() || undefined,
+        api_key: noEndpoint ? undefined : form.apiKey.trim() || undefined,
+        proxy: form.proxy.trim() || undefined,
+        command: cliProto ? form.command.trim() || undefined : undefined,
+        strict_compat: form.strictCompat,
+        require_reasoning_content: form.requireReasoningContent,
+        no_parallel_tool_calls: form.noParallelToolCalls,
+        response_format_json: form.responseFormatJSON,
+      })
+      onSaved()
+      onClose()
+    } catch (e) {
+      setServerError(
+        e instanceof Error ? e.message : t("providers.add.saveError"),
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <SheetContent
+        side="right"
+        className="flex flex-col gap-0 p-0 data-[side=right]:!w-full data-[side=right]:sm:!w-[560px] data-[side=right]:sm:!max-w-[560px]"
+      >
+        <SheetHeader className="border-b-muted border-b px-6 py-5">
+          <SheetTitle className="text-base">
+            {t("providers.add.title")}
+          </SheetTitle>
+          <SheetDescription className="text-xs">
+            {t("providers.add.description")}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="space-y-5 px-6 py-5">
+            <Field
+              label={t("providers.field.name")}
+              hint={t("providers.field.nameHint")}
+            >
+              <Input
+                value={form.name}
+                onChange={setField("name")}
+                placeholder={t("providers.field.namePlaceholder")}
+                aria-invalid={!!fieldErrors.name}
+              />
+              {fieldErrors.name && (
+                <p className="text-destructive text-xs">{fieldErrors.name}</p>
+              )}
+            </Field>
+
+            <Field
+              label={t("providers.field.protocol")}
+              hint={t("providers.field.protocolHint")}
+            >
+              <Select
+                value={form.protocol}
+                onValueChange={(v) => setForm((f) => ({ ...f, protocol: v }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* CLI protocols are absent on purpose: the Local CLI agents
+                      section owns them, and adding a second provider for a CLI
+                      here would produce one the section does not show and the
+                      grid filters out. The edit sheet still lists them, so an
+                      existing CLI provider stays editable. */}
+                  {PROTOCOL_OPTIONS.filter((opt) => !isCliProtocol(opt))
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            {cli ? (
+              <Field
+                label={t("providers.field.command")}
+                hint={t("providers.field.commandHint")}
+              >
+                <Input
+                  value={form.command}
+                  onChange={setField("command")}
+                  className="font-mono text-sm"
+                />
+              </Field>
+            ) : human ? (
+              <p className="text-muted-foreground text-xs">
+                {t("providers.field.humanHint")}
+              </p>
+            ) : (
+              <>
+                <Field label={t("providers.field.baseURL")}>
+                  <Input
+                    value={form.baseURL}
+                    onChange={setField("baseURL")}
+                    placeholder="https://api.example.com/v1"
+                    aria-invalid={!!fieldErrors.baseURL}
+                  />
+                  {fieldErrors.baseURL && (
+                    <p className="text-destructive text-xs">
+                      {fieldErrors.baseURL}
+                    </p>
+                  )}
+                </Field>
+
+                <Field label={t("providers.field.apiKey")}>
+                  <KeyInput
+                    value={form.apiKey}
+                    onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
+                    placeholder={apiKeyPlaceholder}
+                  />
+                </Field>
+              </>
+            )}
+
+            {/* HTTP wire knobs only; the CLI factory reads none of them. The
+                picker offers no CLI protocols, so this is unreachable today —
+                guarded so it stays correct if one is ever added back. */}
+            {!cli && !human && (
+              <AdvancedSection>
+                <Field
+                  label={t("providers.field.proxy")}
+                  hint={t("providers.field.proxyHint")}
+                >
+                  <Input
+                    value={form.proxy}
+                    onChange={setField("proxy")}
+                    placeholder="http://127.0.0.1:7890"
+                  />
+                </Field>
+
+                <SwitchCardField
+                  label={t("providers.field.strictCompat")}
+                  hint={t("providers.field.strictCompatHint")}
+                  checked={form.strictCompat}
+                  onCheckedChange={(v) =>
+                    setForm((f) => ({ ...f, strictCompat: v }))
+                  }
+                />
+
+                <SwitchCardField
+                  label={t("providers.field.requireReasoningContent")}
+                  hint={t("providers.field.requireReasoningContentHint")}
+                  checked={form.requireReasoningContent}
+                  onCheckedChange={(v) =>
+                    setForm((f) => ({ ...f, requireReasoningContent: v }))
+                  }
+                />
+
+                <SwitchCardField
+                  label={t("providers.field.noParallelToolCalls")}
+                  hint={t("providers.field.noParallelToolCallsHint")}
+                  checked={form.noParallelToolCalls}
+                  onCheckedChange={(v) =>
+                    setForm((f) => ({ ...f, noParallelToolCalls: v }))
+                  }
+                />
+
+                <SwitchCardField
+                  label={t("providers.field.responseFormatJSON")}
+                  hint={t("providers.field.responseFormatJSONHint")}
+                  checked={form.responseFormatJSON}
+                  onCheckedChange={(v) =>
+                    setForm((f) => ({ ...f, responseFormatJSON: v }))
+                  }
+                />
+              </AdvancedSection>
+            )}
+
+            {serverError && (
+              <p className="text-destructive bg-destructive/10 rounded-md px-3 py-2 text-sm">
+                {serverError}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <SheetFooter className="border-t-muted border-t px-6 py-4">
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            {t("common.cancel")}
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <IconLoader2 className="size-4 animate-spin" />}
+            {t("providers.add.confirm")}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  )
+}

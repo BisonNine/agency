@@ -1,0 +1,318 @@
+// ClawEh
+// License: MIT
+
+package report
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/PivotLLM/ClawEh/ccv3"
+)
+
+func agentSub(t *testing.T, s Section, id string) Section {
+	t.Helper()
+	for _, sub := range s.Subsections {
+		if strings.HasPrefix(sub.Title, id) {
+			return sub
+		}
+	}
+	t.Fatalf("agent subsection %q not found", id)
+	return Section{}
+}
+
+func TestCollectAgents_FolderAccessResolved(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	s := collectAgents(t.Context(), cfg, env)
+	alice := agentSub(t, s, "alice")
+	fa := findTable(t, alice, "Folder access")
+
+	realWS := filepath.Join(env.DataDir, "real-workspace")
+	link := filepath.Join(env.DataDir, "link-workspace")
+	// The write area is files/ under the symlinked workspace: shown resolved
+	// with the configured form in brackets.
+	_, files := findRow(t, fa, filepath.Join(realWS, "files")+" ["+filepath.Join(link, "files")+"]")
+	if files[1] != "[read/write]" {
+		t.Errorf("files access = %q", files[1])
+	}
+	// Read-only workspace areas.
+	_, tasks := findRow(t, fa, filepath.Join(link, "tasks"))
+	if tasks[1] != "[read]" || !strings.Contains(tasks[2], "does not exist") {
+		t.Errorf("tasks row = %v", tasks)
+	}
+	_, forums := findRow(t, fa, filepath.Join(link, "forums"))
+	if forums[1] != "[read]" || !strings.Contains(forums[2], "forums (always readable)") {
+		t.Errorf("forums row = %v", forums)
+	}
+	// Allow-list patterns are shown verbatim.
+	_, rp := findRow(t, fa, "^/srv/shared/")
+	if rp[1] != "[read]" || !strings.Contains(rp[2], "pattern") {
+		t.Errorf("read pattern row = %v", rp)
+	}
+	_, wp := findRow(t, fa, "^/srv/out/")
+	if wp[1] != "[write]" {
+		t.Errorf("write pattern row = %v", wp)
+	}
+	_, skills := findRow(t, fa, cfg.SkillsPath())
+	if skills[1] != "[read]" {
+		t.Errorf("skills row = %v", skills)
+	}
+	_, mem := findRow(t, fa, filepath.Join(link, "cogmem"))
+	if mem[1] != "[write]" {
+		t.Errorf("memory row = %v", mem)
+	}
+	if len(fa.Highlight) != 0 {
+		t.Errorf("confined agent must have no highlighted row, got %v", fa.Highlight)
+	}
+
+	bob := agentSub(t, s, "bob")
+	ofa := findTable(t, bob, "Folder access")
+	_, docs := findRow(t, ofa, filepath.Join(env.DataDir, "docs"))
+	if docs[1] != "[read/write]" || !strings.Contains(docs[2], "allowed folder; write access follows file permissions, notify") {
+		t.Errorf("allowed folder row = %v", docs)
+	}
+	opsWS := filepath.Join(cfg.BaseDir(), "bob")
+	_, maestro := findRow(t, ofa, filepath.Join(opsWS, "maestro"))
+	if maestro[1] != "[read/write]" || !strings.Contains(maestro[2], "Maestro data") {
+		t.Errorf("maestro row = %v", maestro)
+	}
+}
+
+func TestCollectAgents_UnrestrictedIsHighlighted(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Agents.Defaults.RestrictToWorkspace = false
+	fa := findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "alice"), "Folder access")
+	if len(fa.Rows) == 0 || fa.Rows[0][0] != "anything user admin can access" {
+		t.Fatalf("first row = %v", fa.Rows)
+	}
+	if fa.Rows[0][1] != "[read/write]" || !strings.Contains(fa.Rows[0][2], "restrict_to_workspace is off") {
+		t.Errorf("unrestricted row = %v", fa.Rows[0])
+	}
+	if !isHighlighted(fa, 0) {
+		t.Error("unrestricted row must be highlighted")
+	}
+	if strings.Contains(tableText(fa), "^/srv/") {
+		t.Error("patterns are moot when unrestricted and must not be listed")
+	}
+}
+
+func TestCollectAgents_ReadOutsideWorkspace(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Agents.Defaults.AllowReadOutsideWorkspace = true
+	fa := findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "alice"), "Folder access")
+	if fa.Rows[0][0] != "anything user admin can read" || fa.Rows[0][1] != "[read]" {
+		t.Errorf("first row = %v", fa.Rows[0])
+	}
+	if !isHighlighted(fa, 0) {
+		t.Error("read-anywhere row must be highlighted")
+	}
+}
+
+func TestCollectAgents_ToolsAndSensitivity(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+
+	// alice has no tools key: she has no tools.
+	aliceTable := findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "alice"), "Internal tools")
+	if len(aliceTable.Rows) != 1 || aliceTable.Rows[0][0] != "(none)" {
+		t.Errorf("no tools key rows = %v", aliceTable.Rows)
+	}
+
+	// With "*", every sensitive tool but shell_exec is admitted by the
+	// pattern (shell_exec is granted only by name).
+	cfg.Agents.List[0].Tools = []string{"*"}
+	s := collectAgents(t.Context(), cfg, env)
+	alice := toolMarkers(findTable(t, agentSub(t, s, "alice"), "Internal tools"))
+	if alice["*"] != "no" {
+		t.Errorf("* marker = %q", alice["*"])
+	}
+	if alice["file_write"] != "yes (by pattern)" {
+		t.Errorf("file_write marker = %q", alice["file_write"])
+	}
+	if m, ok := alice["shell_exec"]; ok {
+		t.Errorf(`shell_exec listed for "*" (marker %q): "*" does not include it`, m)
+	}
+
+	// bob lists two tools explicitly: one row holding both pairs.
+	bobTable := findTable(t, agentSub(t, s, "bob"), "Internal tools")
+	bob := toolMarkers(bobTable)
+	if bob["file_read"] != "no" || bob["shell_exec"] != "yes" {
+		t.Errorf("bob markers = %v", bob)
+	}
+	if len(bobTable.Rows) != 1 {
+		t.Errorf("bob tools rows = %v", bobTable.Rows)
+	}
+
+	// An empty tools list means no tools.
+	empty := []string{}
+	cfg.Agents.List[1].Tools = empty
+	bobTable = findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "bob"), "Internal tools")
+	if len(bobTable.Rows) != 1 || !strings.HasPrefix(bobTable.Rows[0][0], "(none") {
+		t.Errorf("empty tools rows = %v", bobTable.Rows)
+	}
+}
+
+func TestCollectAgents_MCPAccess(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	s := collectAgents(t.Context(), cfg, env)
+	mcp := findTable(t, agentSub(t, s, "alice"), "MCP access")
+	_, fusion := findRow(t, mcp, "fusion")
+	if fusion[1] != "fusion (all tools)" {
+		t.Errorf("fusion reach = %q", fusion[1])
+	}
+	i, nothing := findRow(t, mcp, "nothing")
+	if nothing[1] != "matches no configured server" || !isHighlighted(mcp, i) {
+		t.Errorf("unmatched entry row = %v highlighted=%v", nothing, isHighlighted(mcp, i))
+	}
+
+	cfg.Agents.List[0].MCPTools = []string{"fusion_gcwx"}
+	mcp = findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "alice"), "MCP access")
+	_, sub := findRow(t, mcp, "fusion_gcwx")
+	if sub[1] != "fusion (tools starting with gcwx)" {
+		t.Errorf("prefixed reach = %q", sub[1])
+	}
+
+	bob := findTable(t, agentSub(t, s, "bob"), "MCP access")
+	if bob.Rows[0][0] != none {
+		t.Errorf("bob mcp rows = %v", bob.Rows)
+	}
+}
+
+func TestCollectAgents_Settings(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	s := collectAgents(t.Context(), cfg, env)
+	st := findTable(t, agentSub(t, s, "bob"), "Settings")
+	_, ws := findRow(t, st, "Workspace")
+	if ws[1] != filepath.Join(cfg.BaseDir(), "bob") {
+		t.Errorf("bob workspace = %q", ws[1])
+	}
+	_, models := findRow(t, st, "Models")
+	if models[1] != "GPT\nClaude CLI\n(from defaults)" {
+		t.Errorf("bob models = %q", models[1])
+	}
+	_, suites := findRow(t, st, "Suites")
+	if suites[1] != "Maestro on, Fusion off" {
+		t.Errorf("suites = %q", suites[1])
+	}
+	_, cron := findRow(t, st, "Global cron")
+	if cron[1] != "on" {
+		t.Errorf("global cron = %q", cron[1])
+	}
+	if _, fr := findRow(t, st, "Forum"); fr[1] != "off" {
+		t.Errorf("bob forum = %q, want off (the default)", fr[1])
+	}
+	if markers := toolMarkers(findTable(t, agentSub(t, s, "bob"), "Internal tools")); markers["forum_launch"] != "" {
+		t.Errorf("bob (forum off) lists forum_launch as %q", markers["forum_launch"])
+	}
+	cfg.Agents.List[1].Forum = true
+	on := collectAgents(t.Context(), cfg, env)
+	bobOn := findTable(t, agentSub(t, on, "bob"), "Settings")
+	if _, fr := findRow(t, bobOn, "Forum"); fr[1] != "on" {
+		t.Errorf("bob forum with the switch on = %q, want on", fr[1])
+	}
+	if m := toolMarkers(findTable(t, agentSub(t, on, "bob"), "Internal tools"))["forum_launch"]; m != "yes (Allow forum)" {
+		t.Errorf("bob (forum on) forum_launch marker = %q, want sensitive by Allow forum", m)
+	}
+	_, def := findRow(t, st, "Routing default")
+	if def[1] != "no" {
+		t.Errorf("bob routing default = %q", def[1])
+	}
+	_, def = findRow(t, findTable(t, agentSub(t, s, "alice"), "Settings"), "Routing default")
+	if def[1] != "yes" {
+		t.Errorf("alice routing default = %q", def[1])
+	}
+}
+
+// toolMarkers flattens the two-tools-per-row Internal tools table into
+// tool -> sensitive marker.
+func toolMarkers(tb Table) map[string]string {
+	out := map[string]string{}
+	for _, r := range tb.Rows {
+		for c := 0; c+1 < len(r); c += 2 {
+			if r[c] != "" {
+				out[r[c]] = r[c+1]
+			}
+		}
+	}
+	return out
+}
+
+// With Fusion on, an mcp_tools entry that reaches no MCP server may name a
+// Fusion service, so it is described, not flagged; and an empty list says that
+// the switch alone grants no Fusion tools.
+func TestCollectAgents_MCPAccess_Fusion(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Agents.List[0].Fusion = true
+	mcp := findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "alice"), "MCP access")
+	i, nothing := findRow(t, mcp, "nothing")
+	if !strings.Contains(nothing[1], "Fusion tools named nothing") || isHighlighted(mcp, i) {
+		t.Errorf("fusion entry row = %v highlighted=%v", nothing, isHighlighted(mcp, i))
+	}
+
+	cfg.Agents.List[0].MCPTools = nil
+	mcp = findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "alice"), "MCP access")
+	if len(mcp.Rows) != 1 || !strings.Contains(mcp.Rows[0][1], "no Fusion tools") {
+		t.Errorf("empty list with Fusion on = %v", mcp.Rows)
+	}
+}
+
+// The character card rows: the card id, marked when it is missing from the
+// library or ignored on a human agent, and the tool switch.
+func TestCollectAgents_CharacterCard(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	store, err := ccv3.Open(cfg.CardsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("watson", json.RawMessage(`{"name":"Watson"}`)); err != nil {
+		t.Fatal(err)
+	}
+	bob := &cfg.Agents.List[1]
+	bob.CharacterCard, bob.CCv3 = "Watson", true
+	cfg.Agents.List[0].CharacterCard = "nobody"
+
+	s := collectAgents(t.Context(), cfg, env)
+	if _, r := findRow(t, findTable(t, agentSub(t, s, "bob"), "Settings"), "Character card tools"); r[1] != "on" {
+		t.Errorf("bob card tools = %q, want on", r[1])
+	}
+	if _, r := findRow(t, findTable(t, agentSub(t, s, "bob"), "Settings"), "Character card"); r[1] != "Watson" {
+		t.Errorf("bob card = %q, want Watson", r[1])
+	}
+	alice := findTable(t, agentSub(t, s, "alice"), "Settings")
+	if _, r := findRow(t, alice, "Character card"); r[1] != "nobody (missing: no such card in the library)" {
+		t.Errorf("alice card = %q", r[1])
+	}
+	if _, r := findRow(t, alice, "Character card tools"); r[1] != "off" {
+		t.Errorf("alice card tools = %q, want off", r[1])
+	}
+
+	bob.CharacterCard = ""
+	if _, r := findRow(t, findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "bob"), "Settings"), "Character card"); r[1] != none {
+		t.Errorf("bob without a card = %q", r[1])
+	}
+}
+
+func TestCollectData_CharacterCards(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	tb := findTable(t, collectData(t.Context(), cfg, env), "Storage")
+	_, r := findRow(t, tb, "Character cards")
+	if r[1] != cfg.CardsPath() || r[2] != "0 cards" {
+		t.Errorf("cards row = %v", r)
+	}
+	store, err := ccv3.Open(cfg.CardsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create("watson", json.RawMessage(`{"name":"Watson"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.CardsPath(), "junk.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, r = findRow(t, findTable(t, collectData(t.Context(), cfg, env), "Storage"), "Character cards")
+	if r[2] != "1 cards, 1 invalid files" {
+		t.Errorf("cards row = %v", r)
+	}
+}

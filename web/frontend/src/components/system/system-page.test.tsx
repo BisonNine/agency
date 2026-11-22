@@ -1,0 +1,523 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+import { patchAppConfig } from "@/api/channels"
+import { SidebarProvider } from "@/components/ui/sidebar"
+
+import { SystemPage } from "./system-page"
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+
+vi.mock("@/api/channels", () => ({
+  patchAppConfig: vi.fn().mockResolvedValue({ status: "ok" }),
+  HUMAN_AGENTS_QUERY_KEY: ["agents-human-problems"],
+  getHumanAgents: vi.fn().mockResolvedValue({ problems: [], human_agents: [] }),
+}))
+
+// The page links to /config/raw; the router is not mounted here.
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
+}))
+
+const patched = vi.mocked(patchAppConfig)
+
+const sample: Record<string, unknown> = {
+  agents: {
+    list: [{ id: "alice", name: "Alice" }],
+    defaults: { max_tokens: 4096 },
+  },
+  backup: { enabled: true, at: "02:30", retain_days: 14, dest: "/mnt/backup" },
+  operator: { name: "Alice" },
+}
+
+// Renders the page and returns the fetch mock. `qc` lets a test start from a
+// cache that already holds the config.
+function renderPage(
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
+  // The page loads /api/config; the model-default sections also load
+  // /api/models through useChatModels and index into its `models` array.
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    const body = url.includes("/api/models")
+      ? { models: [], default_model: "" }
+      : sample
+    return { ok: true, json: async () => body }
+  })
+  vi.stubGlobal("fetch", fetchMock)
+  // SidebarProvider because PageHeader reads the sidebar context.
+  render(
+    <QueryClientProvider client={qc}>
+      <SidebarProvider>
+        <SystemPage />
+      </SidebarProvider>
+    </QueryClientProvider>,
+  )
+  return fetchMock
+}
+
+// A client whose cache already holds the config, as when the page is reached
+// from another page that fetched the same key.
+function cachedClient() {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  })
+  qc.setQueryData(["config"], sample)
+  return qc
+}
+
+/** The `backup` block of the most recent PATCH. */
+function lastBackupPatch() {
+  const patch = patched.mock.calls.at(-1)?.[0] as
+    { backup?: Record<string, unknown> } | undefined
+  return patch?.backup
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  patched.mockClear()
+})
+
+describe("SystemPage operator name", () => {
+  // operator.name is the sender's name for the operator's own messages when a
+  // device has no User of its own. Shown as configured; an edit is saved under
+  // operator.name, trimmed.
+  it("shows the configured name and saves an edit", async () => {
+    renderPage()
+    const name = (await screen.findByTestId(
+      "operator-name",
+    )) as HTMLInputElement
+    expect(name.value).toBe("Alice")
+
+    fireEvent.change(name, { target: { value: " Bob " } })
+
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    const patch = patched.mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(patch).toMatchObject({ operator: { name: "Bob" } })
+    await screen.findByText("Saved ✓")
+  })
+
+  // The server's one-sentence refusal is what the operator sees.
+  it("shows the server's refusal of a bad name", async () => {
+    const why =
+      "Your name must be at most 64 characters, with no control characters."
+    patched.mockRejectedValueOnce(new Error(why))
+    renderPage()
+    const name = await screen.findByTestId("operator-name")
+    fireEvent.change(name, { target: { value: "x".repeat(65) } })
+    expect(
+      await screen.findByText(why, undefined, { timeout: 3000 }),
+    ).toBeTruthy()
+  })
+})
+
+describe("SystemPage backup block", () => {
+  // The page rebuilds `backup` from its form fields on every save. A field the
+  // form does not carry is silently dropped from the config the moment any
+  // other field is edited — which is what happened to backup.dest.
+  it("keeps backup.dest in the saved block", async () => {
+    renderPage()
+    const dest = await screen.findByTestId("backup-dest")
+    expect((dest as HTMLInputElement).value).toBe("/mnt/backup")
+
+    fireEvent.change(dest, { target: { value: "/mnt/other" } })
+
+    // The save is debounced (600 ms); wait on the call rather than the clock.
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    expect(lastBackupPatch()).toEqual({
+      enabled: true,
+      at: "02:30",
+      retain_days: 14,
+      dest: "/mnt/other",
+    })
+    await screen.findByText("Saved ✓")
+  })
+
+  // Clearing the field must reach the server: the PATCH is a merge, so a key
+  // left out is a key left alone.
+  // The listeners belong to the Network page; a patch from here that carried
+  // gateway.* would overwrite what was saved there.
+  it("never writes gateway settings", async () => {
+    renderPage()
+    const dest = await screen.findByTestId("backup-dest")
+    fireEvent.change(dest, { target: { value: "/mnt/other" } })
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    const patch = patched.mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(patch).not.toHaveProperty("gateway")
+    expect(patch).not.toHaveProperty("channels")
+  })
+
+  it("sends an empty dest so the field can be cleared", async () => {
+    renderPage()
+    const dest = await screen.findByTestId("backup-dest")
+
+    fireEvent.change(dest, { target: { value: "  " } })
+
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    expect(lastBackupPatch()).toMatchObject({ dest: "" })
+    await screen.findByText("Saved ✓")
+  })
+})
+
+describe("SystemPage with the config already cached", () => {
+  // The page used to seed its form only when the query returned a new object.
+  // With the config already cached that never happened, the page showed the
+  // defaults, and the next edit saved those defaults over the configuration.
+  it("shows the configuration, not the defaults", async () => {
+    const fetchMock = renderPage(cachedClient())
+    const dest = await screen.findByTestId("backup-dest")
+    expect((dest as HTMLInputElement).value).toBe("/mnt/backup")
+    expect(screen.getByDisplayValue("4096")).toBeTruthy()
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(urls.some((u) => u.includes("/api/config"))).toBe(false)
+  })
+
+  it("an edit saves the configured values with the change", async () => {
+    renderPage(cachedClient())
+    const dest = await screen.findByTestId("backup-dest")
+    fireEvent.change(dest, { target: { value: "/mnt/other" } })
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    expect(lastBackupPatch()).toEqual({
+      enabled: true,
+      at: "02:30",
+      retain_days: 14,
+      dest: "/mnt/other",
+    })
+    const patch = patched.mock.calls.at(-1)?.[0] as {
+      agents: { defaults: { max_tokens: number } }
+    }
+    expect(patch.agents.defaults.max_tokens).toBe(4096)
+  })
+})
+
+/** The `forum` block of the most recent PATCH. */
+function lastForumPatch() {
+  const patch = patched.mock.calls.at(-1)?.[0] as
+    { forum?: Record<string, unknown> } | undefined
+  return patch?.forum
+}
+
+describe("SystemPage forum maximums", () => {
+  // A field left blank shows the default and is saved as null (the key is
+  // removed, so the default applies); a value set in the config is shown
+  // and saved as a number.
+  it("shows set values and defaults, and saves them", async () => {
+    sample.forum = { limits: { max_calls: 300 } }
+    try {
+      renderPage()
+      const maxCalls = (await screen.findByTestId(
+        "forum-max_calls",
+      )) as HTMLInputElement
+      expect(maxCalls.value).toBe("300")
+      const timeout = screen.getByTestId(
+        "forum-call_timeout_seconds",
+      ) as HTMLInputElement
+      expect(timeout.value).toBe("")
+      expect(timeout.placeholder).toBe("1800")
+      expect(
+        (screen.getByTestId("forum-max_duration_seconds") as HTMLInputElement)
+          .placeholder,
+      ).toBe("7200")
+      expect(
+        (screen.getByTestId("forum-max_parallel_calls") as HTMLInputElement)
+          .placeholder,
+      ).toBe("8")
+
+      fireEvent.change(timeout, { target: { value: "600" } })
+      await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+        timeout: 3000,
+      })
+      expect(lastForumPatch()).toEqual({
+        limits: {
+          max_calls: 300,
+          max_duration_seconds: null,
+          call_timeout_seconds: 600,
+          max_parallel_calls: null,
+        },
+      })
+    } finally {
+      delete sample.forum
+    }
+  })
+
+  // 0 means "use the default", as in the config, so the inputs allow it and
+  // it is saved.
+  it("allows 0 (the default) in every field and saves it", async () => {
+    renderPage()
+    await screen.findByTestId("forum-max_calls")
+    for (const key of [
+      "max_calls",
+      "max_duration_seconds",
+      "call_timeout_seconds",
+      "max_parallel_calls",
+    ]) {
+      expect((screen.getByTestId(`forum-${key}`) as HTMLInputElement).min).toBe(
+        "0",
+      )
+    }
+    fireEvent.change(screen.getByTestId("forum-max_parallel_calls"), {
+      target: { value: "0" },
+    })
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    expect(
+      (lastForumPatch() as { limits: Record<string, unknown> }).limits
+        .max_parallel_calls,
+    ).toBe(0)
+  })
+
+  it("refuses a negative value without saving", async () => {
+    renderPage()
+    const maxCalls = await screen.findByTestId("forum-max_calls")
+    fireEvent.change(maxCalls, { target: { value: "-1" } })
+    // The label is the field's en.json entry (t returns the key here).
+    await screen.findByText(
+      "pages.config.forum_max_calls must be >= 0.",
+      undefined,
+      { timeout: 3000 },
+    )
+    expect(patched).not.toHaveBeenCalled()
+  })
+})
+
+/** The `classifiers` block of the most recent PATCH. */
+function lastClassifiersPatch() {
+  const patch = patched.mock.calls.at(-1)?.[0] as
+    { classifiers?: Record<string, unknown> } | undefined
+  return patch?.classifiers
+}
+
+describe("SystemPage classifier settings", () => {
+  // A field left blank shows the default and is saved as null (the key is
+  // removed, so the default applies); a value set in the config is shown
+  // and saved as a number.
+  it("shows set values and defaults, and saves them", async () => {
+    sample.classifiers = { processed_days: 10, limits: { max_rules: 40 } }
+    try {
+      renderPage()
+      const maxRules = (await screen.findByTestId(
+        "classifiers-max_rules",
+      )) as HTMLInputElement
+      expect(maxRules.value).toBe("40")
+      expect(
+        (screen.getByTestId("classifiers-processed_days") as HTMLInputElement)
+          .value,
+      ).toBe("10")
+      const interval = screen.getByTestId(
+        "classifiers-min_every_seconds",
+      ) as HTMLInputElement
+      expect(interval.value).toBe("")
+      expect(interval.placeholder).toBe("15")
+      expect(
+        (screen.getByTestId("classifiers-max_item_chars") as HTMLInputElement)
+          .placeholder,
+      ).toBe("50000")
+
+      fireEvent.change(interval, { target: { value: "60" } })
+      await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+        timeout: 3000,
+      })
+      expect(lastClassifiersPatch()).toEqual({
+        processed_days: 10,
+        limits: {
+          max_rules: 40,
+          max_prompt_chars: null,
+          max_item_chars: null,
+          max_items_per_run: null,
+          max_parallel: null,
+          max_activity_hours: null,
+          max_source_pages: null,
+          min_every_seconds: 60,
+        },
+      })
+    } finally {
+      delete sample.classifiers
+    }
+  })
+
+  it("saves each field under its own key", async () => {
+    renderPage()
+    const values: Record<string, string> = {
+      processed_days: "11",
+      max_rules: "12",
+      max_prompt_chars: "13",
+      max_item_chars: "14",
+      max_items_per_run: "15",
+      max_parallel: "16",
+      max_activity_hours: "17",
+      max_source_pages: "19",
+      min_every_seconds: "18",
+    }
+    await screen.findByTestId("classifiers-max_rules")
+    for (const [key, value] of Object.entries(values)) {
+      fireEvent.change(screen.getByTestId(`classifiers-${key}`), {
+        target: { value },
+      })
+    }
+    await waitFor(
+      () =>
+        expect(lastClassifiersPatch()).toEqual({
+          processed_days: 11,
+          limits: {
+            max_rules: 12,
+            max_prompt_chars: 13,
+            max_item_chars: 14,
+            max_items_per_run: 15,
+            max_parallel: 16,
+            max_activity_hours: 17,
+            max_source_pages: 19,
+            min_every_seconds: 18,
+          },
+        }),
+      { timeout: 3000 },
+    )
+  })
+
+  it("clearing a value that was set saves null, so the default applies", async () => {
+    sample.classifiers = { processed_days: 10, limits: { max_parallel: 4 } }
+    try {
+      renderPage()
+      const days = (await screen.findByTestId(
+        "classifiers-processed_days",
+      )) as HTMLInputElement
+      expect(days.value).toBe("10")
+      fireEvent.change(days, { target: { value: "" } })
+      await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+        timeout: 3000,
+      })
+      const patch = lastClassifiersPatch() as {
+        processed_days: unknown
+        limits: Record<string, unknown>
+      }
+      expect(patch.processed_days).toBeNull()
+      expect(patch.limits.max_parallel).toBe(4)
+    } finally {
+      delete sample.classifiers
+    }
+  })
+
+  it("refuses a value that is not a whole number without saving", async () => {
+    renderPage()
+    const days = await screen.findByTestId("classifiers-processed_days")
+    fireEvent.change(days, { target: { value: "1.5" } })
+    await screen.findByText(
+      "pages.config.classifiers_processed_days must be an integer.",
+      undefined,
+      { timeout: 3000 },
+    )
+    expect(patched).not.toHaveBeenCalled()
+  })
+
+  // 0 means "use the default", as in the config, so the inputs allow it and
+  // it is saved.
+  it("allows 0 (the default) in every field and saves it", async () => {
+    renderPage()
+    await screen.findByTestId("classifiers-max_rules")
+    for (const key of [
+      "processed_days",
+      "max_rules",
+      "max_prompt_chars",
+      "max_item_chars",
+      "max_items_per_run",
+      "max_parallel",
+      "max_activity_hours",
+      "max_source_pages",
+      "min_every_seconds",
+    ]) {
+      expect(
+        (screen.getByTestId(`classifiers-${key}`) as HTMLInputElement).min,
+      ).toBe("0")
+    }
+    fireEvent.change(screen.getByTestId("classifiers-max_parallel"), {
+      target: { value: "0" },
+    })
+    await waitFor(() => expect(patched).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    })
+    expect(
+      (lastClassifiersPatch() as { limits: Record<string, unknown> }).limits
+        .max_parallel,
+    ).toBe(0)
+  })
+
+  it("refuses a negative value without saving", async () => {
+    renderPage()
+    const interval = await screen.findByTestId("classifiers-min_every_seconds")
+    fireEvent.change(interval, { target: { value: "-1" } })
+    await screen.findByText(
+      "pages.config.classifiers_min_every_seconds must be >= 0.",
+      undefined,
+      { timeout: 3000 },
+    )
+    expect(patched).not.toHaveBeenCalled()
+  })
+})
+
+describe("SystemPage refused save", () => {
+  // The server's sentence is what the operator sees, not a status code.
+  it("shows why the save was refused", async () => {
+    const why =
+      "Bob (human) represents a person and can't be a summarization model."
+    patched.mockRejectedValueOnce(new Error(why))
+    renderPage()
+    const dest = await screen.findByTestId("backup-dest")
+    fireEvent.change(dest, { target: { value: "/mnt/other" } })
+    expect(
+      await screen.findByText(why, undefined, { timeout: 3000 }),
+    ).toBeTruthy()
+  })
+})
+
+describe("SystemPage link to a field", () => {
+  // The Models page links /system#turn-timeout. The link lands before the
+  // form has loaded, so the page scrolls to the field itself once it is there.
+  it("scrolls to #turn-timeout once the form has loaded", async () => {
+    const scrolled: Element[] = []
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this)
+    }
+    window.history.replaceState(null, "", "/system#turn-timeout")
+    try {
+      renderPage()
+      await screen.findByTestId("backup-dest")
+      const field = document.getElementById("turn-timeout")
+      expect(field).not.toBeNull()
+      expect(field?.tagName).toBe("INPUT")
+      await waitFor(() => expect(scrolled).toEqual([field]))
+    } finally {
+      window.history.replaceState(null, "", "/")
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
+  it("does not scroll without a hash", async () => {
+    const scroll = vi.fn()
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      renderPage()
+      await screen.findByTestId("backup-dest")
+      expect(document.getElementById("turn-timeout")).not.toBeNull()
+      expect(scroll).not.toHaveBeenCalled()
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+})

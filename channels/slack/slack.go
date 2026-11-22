@@ -1,0 +1,953 @@
+package slack
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
+	"github.com/slack-go/slack/socketmode"
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/channels"
+	"github.com/PivotLLM/ClawEh/commands"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/identity"
+	"github.com/PivotLLM/ClawEh/internal/clock"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/mdhelper"
+	"github.com/PivotLLM/ClawEh/media"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+type SlackChannel struct {
+	*channels.BaseChannel
+	config        config.SlackConfig
+	api           *slack.Client
+	socketClient  *socketmode.Client
+	botUserID     string
+	teamID        string
+	ctx           context.Context
+	cancel        context.CancelFunc
+	pendingAcks   sync.Map
+	userNameCache sync.Map // userID → slackUserName
+	// slashResponses maps a slash command's trigger id to its slashResponse.
+	slashResponses sync.Map
+	// clock dates slash command response URLs; nil means clock.Real.
+	clock clock.Clock
+}
+
+type slackMessageRef struct {
+	ChannelID string
+	Timestamp string
+}
+
+func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*SlackChannel, error) {
+	if cfg.BotToken == "" || cfg.AppToken == "" {
+		return nil, errors.New("slack bot_token and app_token are required")
+	}
+
+	api := slack.New(
+		cfg.BotToken,
+		slack.OptionAppLevelToken(cfg.AppToken),
+	)
+
+	socketClient := socketmode.New(api)
+
+	base := channels.NewBaseChannel("slack", cfg, messageBus, cfg.AllowFrom,
+		channels.WithMaxMessageLength(40000),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+	)
+
+	return &SlackChannel{
+		BaseChannel:  base,
+		config:       cfg,
+		api:          api,
+		socketClient: socketClient,
+	}, nil
+}
+
+func (c *SlackChannel) Start(ctx context.Context) error {
+	logger.InfoC("slack", "Starting Slack channel (Socket Mode)")
+
+	c.ctx, c.cancel = context.WithCancel(ctx)
+
+	authResp, err := c.api.AuthTestContext(ctx)
+	if err != nil {
+		return fmt.Errorf("slack auth test failed: %w", err)
+	}
+	c.botUserID = authResp.UserID
+	c.teamID = authResp.TeamID
+
+	logger.InfoCF("slack", "Slack bot connected", map[string]any{
+		"bot_user_id": c.botUserID,
+		"team":        authResp.Team,
+	})
+
+	go c.eventLoop()
+	go c.runSocket()
+
+	c.SetRunning(true)
+	logger.InfoC("slack", "Slack channel started (Socket Mode)")
+	return nil
+}
+
+// runSocket keeps Socket Mode connected until the channel stops. slack-go
+// retries a failing connect itself, but RunContext returns when an established
+// connection drops or the token is rejected and leaves retrying that to the
+// caller, so it is re-run here with backoff. A rejected token cannot be fixed
+// by retrying: it alerts at once, then once a day while it stays rejected, and
+// the loop keeps retrying at its slowest rate in case the token is restored.
+func (c *SlackChannel) runSocket() {
+	var backoff time.Duration
+	for {
+		// RunContext only ever returns an error.
+		err := c.socketClient.RunContext(c.ctx)
+		if c.ctx.Err() != nil {
+			return
+		}
+		if isSlackAuthError(err) {
+			backoff = channels.ConnRetryMax
+			logger.ErrorCF("slack", "Slack rejected the app token", map[string]any{
+				"error": err.Error(),
+			})
+			c.AlertLasting(alerter.Alert{
+				Title:       "Channel credentials rejected",
+				Description: c.Name() + ": Slack rejected the app token; no messages are received until it is replaced",
+				Details:     err.Error(),
+			})
+		} else {
+			if c.ConnDownSince().IsZero() {
+				backoff = 0 // it was working until now: retry fast
+			}
+			backoff = channels.NextConnRetry(backoff)
+			c.ReportConnFailure(err)
+			logger.WarnCF("slack", "Socket Mode connection lost; reconnecting", map[string]any{
+				"error": err.Error(),
+				"retry": backoff.String(),
+			})
+		}
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+	}
+}
+
+// isSlackAuthError reports whether a Socket Mode connect failed because Slack
+// rejected the token — the errors slack-go itself treats as fatal.
+func isSlackAuthError(err error) bool {
+	switch err.Error() {
+	case "invalid_auth", "account_inactive", "not_authed", "token_revoked":
+		return true
+	}
+	var status slack.StatusCodeError
+	return errors.As(err, &status) && status.Code == http.StatusNotFound
+}
+
+// userLookupTimeout bounds the users.info call that names a sender. It runs
+// once per user, on the inbound path, so a slow Slack API delays only that
+// user's first message.
+const userLookupTimeout = 5 * time.Second
+
+// userLookupRetry is how long a failed users.info lookup is remembered before
+// the next message from that user tries again.
+const userLookupRetry = 5 * time.Minute
+
+// slackUserName is what users.info says about a user: the name to show and
+// the Slack handle. failedAt is set when the lookup failed and the name is
+// empty until it is retried.
+type slackUserName struct {
+	displayName string
+	username    string
+	failedAt    time.Time
+}
+
+// withSenderName fills the sender's DisplayName (the profile display name,
+// else the real name) and Username (the Slack handle) from users.info. A
+// found name is kept for the life of the process; a failed lookup is logged,
+// leaves the sender unnamed, and is retried after userLookupRetry.
+func (c *SlackChannel) withSenderName(ctx context.Context, s bus.SenderInfo) bus.SenderInfo {
+	name := c.lookupUserName(ctx, s.PlatformID)
+	s.DisplayName = name.displayName
+	s.Username = name.username
+	return s
+}
+
+func (c *SlackChannel) lookupUserName(ctx context.Context, userID string) slackUserName {
+	now := clock.Or(c.clock).Now()
+	if v, ok := c.userNameCache.Load(userID); ok {
+		if cached, ok := v.(slackUserName); ok &&
+			(cached.failedAt.IsZero() || now.Sub(cached.failedAt) < userLookupRetry) {
+			return cached
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, userLookupTimeout)
+	defer cancel()
+	user, err := c.api.GetUserInfoContext(ctx, userID)
+	if err != nil {
+		logger.DebugCF("slack", "Failed to resolve user name", map[string]any{
+			"user_id": userID,
+			"error":   err.Error(),
+		})
+		failed := slackUserName{failedAt: now}
+		c.userNameCache.Store(userID, failed)
+		return failed
+	}
+	name := slackUserName{displayName: user.Profile.DisplayName, username: user.Name}
+	if name.displayName == "" {
+		name.displayName = user.RealName
+	}
+	c.userNameCache.Store(userID, name)
+	return name
+}
+
+func (c *SlackChannel) Stop(ctx context.Context) error {
+	logger.InfoC("slack", "Stopping Slack channel")
+
+	if c.cancel != nil {
+		c.cancel()
+	}
+
+	c.SetRunning(false)
+	logger.InfoC("slack", "Slack channel stopped")
+	return nil
+}
+
+func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	channelID, threadTS := parseSlackChatID(msg.ChatID)
+	if channelID == "" {
+		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
+	}
+
+	opts := []slack.MsgOption{
+		slack.MsgOptionText(mdhelper.FormatTables(markdownToMrkdwn(msg.Content)), false),
+	}
+
+	if msg.ReplyToMessageID != "" && threadTS == "" {
+		// Answer to the message by creating a Thread under it
+		opts = append(opts, slack.MsgOptionTS(msg.ReplyToMessageID))
+	} else if threadTS != "" {
+		// If we are already in a thread, continue in the thread
+		opts = append(opts, slack.MsgOptionTS(threadTS))
+	}
+
+	_, _, err := c.api.PostMessageContext(ctx, channelID, opts...)
+	if err != nil {
+		sendErr := classifySendErr("slack send", err)
+		if url, ok := c.slashResponseURL(msg.OriginalMessageID); ok && errors.Is(sendErr, channels.ErrRecipientNotFound) {
+			return c.sendSlashResponse(ctx, url, msg.Content, channelID, sendErr)
+		}
+		return sendErr
+	}
+
+	c.acknowledge(msg.OriginalMessageID)
+
+	logger.DebugCF("slack", "Message sent", map[string]any{
+		"channel_id": channelID,
+		"thread_ts":  threadTS,
+	})
+
+	return nil
+}
+
+// acknowledge marks the inbound message a reply answered with a check mark,
+// once.
+func (c *SlackChannel) acknowledge(originalMessageID string) {
+	ref, _ := c.pendingAcks.LoadAndDelete(originalMessageID)
+	msgRef, ok := ref.(slackMessageRef)
+	if !ok {
+		return
+	}
+	go func() {
+		if err := c.api.AddReaction("white_check_mark", slack.ItemRef{
+			Channel:   msgRef.ChannelID,
+			Timestamp: msgRef.Timestamp,
+		}); err != nil {
+			logger.DebugCF("slack", "Failed to add reaction", map[string]any{
+				"channel_id": msgRef.ChannelID, "error": err.Error(),
+			})
+		}
+	}()
+}
+
+// defaultPlaceholderText is the placeholder shown when the config sets none.
+const defaultPlaceholderText = "Thinking... 💭"
+
+// SendPlaceholder implements channels.PlaceholderCapable. It posts the
+// placeholder where the reply will go (the thread, when the chat is one), to
+// be edited into progress updates and then the reply.
+func (c *SlackChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	if !c.config.Placeholder.Enabled {
+		return "", nil
+	}
+	text := c.config.Placeholder.Text
+	if text == "" {
+		text = defaultPlaceholderText
+	}
+	channelID, threadTS := parseSlackChatID(chatID)
+	if channelID == "" {
+		return "", fmt.Errorf("invalid slack chat ID: %s", chatID)
+	}
+	opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+	if threadTS != "" {
+		opts = append(opts, slack.MsgOptionTS(threadTS))
+	}
+	_, ts, err := c.api.PostMessageContext(ctx, channelID, opts...)
+	if err != nil {
+		return "", classifySendErr("slack placeholder", err)
+	}
+	return ts, nil
+}
+
+// EditMessage implements channels.MessageEditor: it replaces the text of a
+// message the app posted (a placeholder) with content.
+func (c *SlackChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
+	channelID, _ := parseSlackChatID(chatID)
+	if channelID == "" {
+		return fmt.Errorf("invalid slack chat ID: %s", chatID)
+	}
+	text := slack.MsgOptionText(mdhelper.FormatTables(markdownToMrkdwn(content)), false)
+	if _, _, _, err := c.api.UpdateMessageContext(ctx, channelID, messageID, text); err != nil {
+		return classifySendErr("slack edit", err)
+	}
+	return nil
+}
+
+// ReplacePlaceholder implements channels.PlaceholderReplacer: the reply
+// replaces the placeholder and acknowledges the inbound message, as Send does.
+func (c *SlackChannel) ReplacePlaceholder(ctx context.Context, placeholderID string, msg bus.OutboundMessage) error {
+	if err := c.EditMessage(ctx, msg.ChatID, placeholderID, msg.Content); err != nil {
+		return err
+	}
+	c.acknowledge(msg.OriginalMessageID)
+	return nil
+}
+
+// DeleteMessage implements channels.MessageDeleter: it removes a message the
+// app posted (a placeholder whose turn sent no reply).
+func (c *SlackChannel) DeleteMessage(ctx context.Context, chatID, messageID string) error {
+	channelID, _ := parseSlackChatID(chatID)
+	if channelID == "" {
+		return fmt.Errorf("invalid slack chat ID: %s", chatID)
+	}
+	if _, _, err := c.api.DeleteMessageContext(ctx, channelID, messageID); err != nil {
+		return classifySendErr("slack delete", err)
+	}
+	return nil
+}
+
+// sendSlashResponse delivers a slash command's reply through its
+// response_url, visible only to the user who ran it, when the app cannot post
+// in the conversation (it is not a member, or the command came from a DM the
+// app is not part of). If that fails too, the original send error stands.
+func (c *SlackChannel) sendSlashResponse(ctx context.Context, url, content, channelID string, sendErr error) error {
+	err := slack.PostWebhookContext(ctx, url, &slack.WebhookMessage{
+		Text:         mdhelper.FormatTables(markdownToMrkdwn(content)),
+		ResponseType: slack.ResponseTypeEphemeral,
+	})
+	if err != nil {
+		logger.WarnCF("slack", "Slash command reply failed through its response URL", map[string]any{
+			"channel_id": channelID,
+			"error":      err.Error(),
+		})
+		return sendErr
+	}
+	logger.InfoCF("slack", "Slash command reply sent privately: the app cannot post in this conversation", map[string]any{
+		"channel_id": channelID,
+		"reason":     sendErr.Error(),
+	})
+	return nil
+}
+
+// SendMedia implements the channels.MediaSender interface.
+func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	// Files go where the text reply goes: into the thread, when the chat is one.
+	channelID, threadTS := parseSlackChatID(msg.ChatID)
+	if channelID == "" {
+		return fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	for _, part := range msg.Parts {
+		filename := part.Filename
+		if filename == "" {
+			filename = "file"
+		}
+
+		localPath, err := store.Resolve(part.Ref)
+		if err != nil {
+			logger.ErrorCF("slack", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			return fmt.Errorf("slack send media: %w: %s is no longer available", channels.ErrSendFailed, filename)
+		}
+
+		title := part.Caption
+		if title == "" {
+			title = filename
+		}
+
+		fi, statErr := os.Stat(localPath)
+		if statErr != nil {
+			logger.DebugCF("slack", "Failed to stat media file", map[string]any{
+				"filename": filename,
+				"error":    statErr.Error(),
+			})
+			return fmt.Errorf("slack send media: %w: %s is no longer available", channels.ErrSendFailed, filename)
+		}
+		urlResp, uploadErr := c.api.GetUploadURLExternalContext(ctx, slack.GetUploadURLExternalParameters{
+			FileName: filename,
+			FileSize: int(fi.Size()),
+		})
+		if uploadErr != nil {
+			logger.DebugCF("slack", "Failed to get upload URL", map[string]any{
+				"filename": filename,
+				"error":    uploadErr.Error(),
+			})
+			return classifyMediaErr(uploadErr)
+		}
+		if uploadErr = c.api.UploadToURL(ctx, slack.UploadToURLParameters{
+			UploadURL: urlResp.UploadURL,
+			File:      localPath,
+			Filename:  filename,
+		}); uploadErr != nil {
+			logger.DebugCF("slack", "Failed to upload media to URL", map[string]any{
+				"filename": filename,
+				"error":    uploadErr.Error(),
+			})
+			return classifyMediaErr(uploadErr)
+		}
+		if _, uploadErr = c.api.CompleteUploadExternalContext(ctx, slack.CompleteUploadExternalParameters{
+			Files:           []slack.FileSummary{{ID: urlResp.FileID, Title: title}},
+			Channel:         channelID,
+			ThreadTimestamp: threadTS,
+		}); uploadErr != nil {
+			logger.DebugCF("slack", "Failed to complete media upload", map[string]any{
+				"filename": filename,
+				"error":    uploadErr.Error(),
+			})
+			return classifyMediaErr(uploadErr)
+		}
+	}
+
+	return nil
+}
+
+// missingFilesScopeErrors are the Slack API errors of a Bot Token that may
+// not upload files: it lacks the files:write scope.
+var missingFilesScopeErrors = map[string]bool{
+	"missing_scope":          true,
+	"not_allowed_token_type": true,
+}
+
+// classifyMediaErr is classifySendErr for a file upload, with a missing
+// files:write scope named, since the operator has to add it.
+func classifyMediaErr(err error) error {
+	if apiErr, ok := errors.AsType[slack.SlackErrorResponse](err); ok && missingFilesScopeErrors[apiErr.Err] {
+		return fmt.Errorf("the Slack bot is missing the files:write permission: %w: %w", channels.ErrSendFailed, err)
+	}
+	return classifySendErr("slack send media", err)
+}
+
+// recipientNotFoundErrors are the Slack API error codes of a conversation the
+// app cannot post to at all: it does not exist, the app is not in it, or it
+// is archived.
+var recipientNotFoundErrors = map[string]bool{
+	"channel_not_found": true,
+	"not_in_channel":    true,
+	"is_archived":       true,
+	"user_not_found":    true,
+}
+
+// invalidRequestErrors are Slack API errors that say the request itself was
+// wrong (empty text, a message too long, bad blocks or arguments): the same
+// message fails the same way on every attempt, so it is not retried and not
+// an outage.
+var invalidRequestErrors = map[string]bool{
+	"no_text":           true,
+	"msg_too_long":      true,
+	"invalid_blocks":    true,
+	"invalid_arguments": true,
+}
+
+// classifySendErr maps a failed Slack send to a channel sentinel: a
+// conversation the app cannot post to is ErrRecipientNotFound, a request
+// Slack rejects as invalid is ErrSendFailed (permanent), anything else
+// ErrTemporary (retried). The error is kept so logs and alerts say why; Slack
+// errors carry no token (it travels in a header).
+func classifySendErr(op string, err error) error {
+	if apiErr, ok := errors.AsType[slack.SlackErrorResponse](err); ok {
+		switch {
+		case recipientNotFoundErrors[apiErr.Err]:
+			return fmt.Errorf("%s: %w: %w", op, channels.ErrRecipientNotFound, err)
+		case invalidRequestErrors[apiErr.Err]:
+			return fmt.Errorf("%s: %w: %w", op, channels.ErrSendFailed, err)
+		}
+	}
+	return fmt.Errorf("%s: %w: %w", op, channels.ErrTemporary, err)
+}
+
+// ReactToMessage implements channels.ReactionCapable.
+// It adds an "eyes" (👀) reaction to the inbound message and returns an undo function
+// that removes the reaction. The add is synchronous (with a short timeout) so the
+// reaction appears immediately and triggers a Slack notification for the sender.
+// The undo is fire-and-forget since it is not time-critical.
+func (c *SlackChannel) ReactToMessage(ctx context.Context, chatID, messageID string) (func(), error) {
+	channelID, _ := parseSlackChatID(chatID)
+	if channelID == "" {
+		return func() {}, nil
+	}
+	// A slash command has no message to react to.
+	if _, ok := c.slashResponses.Load(messageID); ok {
+		return func() {}, nil
+	}
+
+	reactionCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := c.api.AddReactionContext(reactionCtx, "eyes", slack.ItemRef{
+		Channel:   channelID,
+		Timestamp: messageID,
+	}); err != nil {
+		logger.WarnCF("slack", "Failed to add eyes reaction", map[string]any{
+			"channel_id": channelID,
+			"message_ts": messageID,
+			"error":      err.Error(),
+		})
+	}
+
+	return func() {
+		go func() {
+			if err := c.api.RemoveReaction("eyes", slack.ItemRef{
+				Channel:   channelID,
+				Timestamp: messageID,
+			}); err != nil {
+				logger.DebugCF("slack", "Failed to remove reaction", map[string]any{
+					"channel_id": channelID, "error": err.Error(),
+				})
+			}
+		}()
+	}, nil
+}
+
+func (c *SlackChannel) eventLoop() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case event, ok := <-c.socketClient.Events:
+			if !ok {
+				return
+			}
+			switch event.Type { //nolint:exhaustive // only the event types this channel acts on
+			case socketmode.EventTypeConnected:
+				c.ReportConnected()
+			case socketmode.EventTypeConnectionError:
+				var err error
+				if ev, ok := event.Data.(*slack.ConnectionErrorEvent); ok {
+					err = ev.ErrorObj
+				}
+				c.ReportConnFailure(err)
+			case socketmode.EventTypeEventsAPI:
+				c.handleEventsAPI(event)
+			case socketmode.EventTypeSlashCommand:
+				c.handleSlashCommand(event)
+			case socketmode.EventTypeInteractive:
+				if event.Request != nil {
+					c.ack(*event.Request)
+				}
+			}
+		}
+	}
+}
+
+// ack acknowledges a Socket Mode request; Slack redelivers unacknowledged
+// requests, so a failure is worth a warning but nothing more.
+func (c *SlackChannel) ack(req socketmode.Request) {
+	if err := c.socketClient.Ack(req); err != nil {
+		logger.WarnCF("slack", "Failed to ack Socket Mode request", map[string]any{
+			"error": err.Error(),
+		})
+	}
+}
+
+func (c *SlackChannel) handleEventsAPI(event socketmode.Event) {
+	if event.Request != nil {
+		c.ack(*event.Request)
+	}
+
+	eventsAPIEvent, ok := event.Data.(slackevents.EventsAPIEvent)
+	if !ok {
+		return
+	}
+
+	switch ev := eventsAPIEvent.InnerEvent.Data.(type) {
+	case *slackevents.MessageEvent:
+		c.handleMessageEvent(ev)
+	case *slackevents.AppMentionEvent:
+		c.handleAppMention(ev)
+	}
+}
+
+func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
+	if ev.User == c.botUserID || ev.User == "" {
+		return
+	}
+	if ev.BotID != "" {
+		return
+	}
+	if ev.SubType != "" && ev.SubType != "file_share" {
+		return
+	}
+
+	// check allowlist to avoid downloading attachments for rejected users
+	sender := bus.SenderInfo{
+		Platform:    "slack",
+		PlatformID:  ev.User,
+		CanonicalID: identity.BuildCanonicalID("slack", ev.User),
+	}
+	if !c.IsAllowedSender(sender) {
+		logger.DebugCF("slack", "Message rejected by allowlist", map[string]any{
+			"user_id": ev.User,
+		})
+		return
+	}
+	sender = c.withSenderName(c.ctx, sender)
+
+	senderID := ev.User
+	channelID := ev.Channel
+	threadTS := ev.ThreadTimeStamp
+	messageTS := ev.TimeStamp
+
+	chatID := channelID
+	if threadTS != "" {
+		chatID = channelID + "/" + threadTS
+	}
+
+	c.pendingAcks.Store(messageTS, slackMessageRef{
+		ChannelID: channelID,
+		Timestamp: messageTS,
+	})
+
+	content := ev.Text
+	content = c.stripBotMention(content)
+
+	// In non-DM channels, apply group trigger filtering
+	if !strings.HasPrefix(channelID, "D") {
+		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		if !respond {
+			return
+		}
+		content = cleaned
+	}
+
+	var mediaPaths []string
+
+	scope := channels.BuildMediaScope("slack", chatID, messageTS)
+
+	// Helper to register a local file with the media store
+	storeMedia := func(localPath, filename string) string {
+		if store := c.GetMediaStore(); store != nil {
+			ref, err := store.Store(localPath, media.MediaMeta{
+				Filename: filename,
+				Source:   "slack",
+			}, scope)
+			if err == nil {
+				return ref
+			}
+		}
+		return localPath // fallback
+	}
+
+	if ev.Message != nil && len(ev.Message.Files) > 0 {
+		var contentSb414 strings.Builder
+		for _, file := range ev.Message.Files {
+			localPath := c.downloadSlackFile(file)
+			if localPath == "" {
+				continue
+			}
+			mediaPaths = append(mediaPaths, storeMedia(localPath, file.Name))
+			fmt.Fprintf(&contentSb414, "\n[file: %s]", file.Name)
+		}
+		content += contentSb414.String()
+	}
+
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+
+	peer := slackPeer(channelID, senderID)
+
+	metadata := map[string]string{
+		"message_ts": messageTS,
+		"channel_id": channelID,
+		"thread_ts":  threadTS,
+		"platform":   "slack",
+		"team_id":    c.teamID,
+	}
+
+	logger.DebugCF("slack", "Received message", map[string]any{
+		"sender_id":  senderID,
+		"chat_id":    chatID,
+		"message_ts": messageTS,
+		"preview":    utils.Truncate(content, 50),
+		"has_thread": threadTS != "",
+	})
+
+	c.HandleMessage(c.ctx, peer, messageTS, senderID, chatID, content, mediaPaths, metadata, sender)
+}
+
+func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
+	if ev.User == c.botUserID {
+		return
+	}
+
+	senderID := ev.User
+	mentionSender := bus.SenderInfo{
+		Platform:    "slack",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("slack", senderID),
+	}
+	if !c.IsAllowedSender(mentionSender) {
+		logger.DebugCF("slack", "Mention rejected by allowlist", map[string]any{
+			"user_id": ev.User,
+		})
+		return
+	}
+	mentionSender = c.withSenderName(c.ctx, mentionSender)
+	channelID := ev.Channel
+	threadTS := ev.ThreadTimeStamp
+	messageTS := ev.TimeStamp
+
+	var chatID string
+	if threadTS != "" {
+		chatID = channelID + "/" + threadTS
+	} else {
+		chatID = channelID + "/" + messageTS
+	}
+
+	c.pendingAcks.Store(messageTS, slackMessageRef{
+		ChannelID: channelID,
+		Timestamp: messageTS,
+	})
+
+	content := c.stripBotMention(ev.Text)
+
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+
+	mentionPeer := slackPeer(channelID, senderID)
+
+	metadata := map[string]string{
+		"message_ts": messageTS,
+		"channel_id": channelID,
+		"thread_ts":  threadTS,
+		"platform":   "slack",
+		"is_mention": "true",
+		"team_id":    c.teamID,
+	}
+
+	c.HandleMessage(c.ctx, mentionPeer, messageTS, senderID, chatID, content, nil, metadata, mentionSender)
+}
+
+// slashResponseTTL is how long Slack accepts posts to a slash command's
+// response_url.
+const slashResponseTTL = 30 * time.Minute
+
+// slashResponse is a slash command's response_url, kept so its replies can
+// still reach the user when the app cannot post in the conversation.
+type slashResponse struct {
+	url string
+	at  time.Time
+}
+
+// builtinCommands is ClawEh's command registry, used to tell a Slack slash
+// command that is a ClawEh command ("/model") from a launcher ("/claw").
+var builtinCommands = commands.NewRegistry(commands.BuiltinDefinitions())
+
+// isBuiltinCommand reports whether name ("model", "/model") is a ClawEh
+// command or one of its aliases.
+func isBuiltinCommand(name string) bool {
+	_, ok := builtinCommands.Lookup(strings.TrimLeft(name, "/!"))
+	return ok
+}
+
+// slashCommandText turns a Slack slash command into the text ClawEh handles.
+// A command named after a ClawEh command runs it with its text as arguments:
+// "/model 0" is "/model 0". Any other name ("/claw") is a launcher: its first
+// word is the command ("/claw model 0" is "/model 0", with or without a "/"
+// or "!" typed before it), a bare launcher is "/help", and text that does not
+// start with a command reaches the agent as an ordinary message.
+func slashCommandText(command, text string) string {
+	text = strings.TrimSpace(text)
+	if name := strings.TrimPrefix(strings.TrimSpace(command), "/"); isBuiltinCommand(name) {
+		if text == "" {
+			return "/" + name
+		}
+		return "/" + name + " " + text
+	}
+	if text == "" {
+		return "/help"
+	}
+	body := strings.TrimLeft(text, "/!")
+	if first, _, _ := strings.Cut(body, " "); isBuiltinCommand(first) {
+		return "/" + body
+	}
+	return text
+}
+
+// slackPeer is the routing peer of a conversation: a DM is the sender's
+// direct peer, anything else the channel, so bindings apply alike to
+// messages and slash commands.
+func slackPeer(channelID, senderID string) bus.Peer {
+	if strings.HasPrefix(channelID, "D") {
+		return bus.Peer{Kind: "direct", ID: senderID}
+	}
+	return bus.Peer{Kind: "channel", ID: channelID}
+}
+
+func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
+	cmd, ok := event.Data.(slack.SlashCommand)
+	if !ok {
+		return
+	}
+
+	if event.Request != nil {
+		c.ack(*event.Request)
+	}
+
+	cmdSender := bus.SenderInfo{
+		Platform:    "slack",
+		PlatformID:  cmd.UserID,
+		CanonicalID: identity.BuildCanonicalID("slack", cmd.UserID),
+	}
+	if !c.IsAllowedSender(cmdSender) {
+		logger.DebugCF("slack", "Slash command rejected by allowlist", map[string]any{
+			"user_id": cmd.UserID,
+		})
+		return
+	}
+	cmdSender = c.withSenderName(c.ctx, cmdSender)
+
+	senderID := cmd.UserID
+	channelID := cmd.ChannelID
+	content := slashCommandText(cmd.Command, cmd.Text)
+
+	// The trigger id names this command's turn: replies carry it back as
+	// OriginalMessageID, which finds the response_url when the app cannot
+	// post in the conversation.
+	messageID := cmd.TriggerID
+	if messageID != "" && cmd.ResponseURL != "" {
+		c.rememberSlashResponse(messageID, cmd.ResponseURL)
+	}
+
+	metadata := map[string]string{
+		"channel_id": channelID,
+		"platform":   "slack",
+		"team_id":    c.teamID,
+	}
+
+	logger.DebugCF("slack", "Slash command received", map[string]any{
+		"sender_id": senderID,
+		"command":   cmd.Command,
+		"text":      utils.Truncate(content, 50),
+	})
+
+	c.HandleMessage(
+		c.ctx,
+		slackPeer(channelID, senderID),
+		messageID,
+		senderID,
+		channelID,
+		content,
+		nil,
+		metadata,
+		cmdSender,
+	)
+}
+
+// rememberSlashResponse keeps a command's response_url for its lifetime and
+// drops the expired ones.
+func (c *SlackChannel) rememberSlashResponse(triggerID, url string) {
+	now := clock.Or(c.clock).Now()
+	c.slashResponses.Range(func(k, v any) bool {
+		if r, ok := v.(slashResponse); ok && now.Sub(r.at) >= slashResponseTTL {
+			c.slashResponses.Delete(k)
+		}
+		return true
+	})
+	c.slashResponses.Store(triggerID, slashResponse{url: url, at: now})
+}
+
+// slashResponseURL returns the live response_url of the slash command a
+// reply answers, if any.
+func (c *SlackChannel) slashResponseURL(originalMessageID string) (string, bool) {
+	if originalMessageID == "" {
+		return "", false
+	}
+	v, ok := c.slashResponses.Load(originalMessageID)
+	if !ok {
+		return "", false
+	}
+	r, ok := v.(slashResponse)
+	if !ok || clock.Or(c.clock).Since(r.at) >= slashResponseTTL {
+		return "", false
+	}
+	return r.url, true
+}
+
+func (c *SlackChannel) downloadSlackFile(file slack.File) string {
+	downloadURL := file.URLPrivateDownload
+	if downloadURL == "" {
+		downloadURL = file.URLPrivate
+	}
+	if downloadURL == "" {
+		logger.ErrorCF("slack", "No download URL for file", map[string]any{"file_id": file.ID})
+		return ""
+	}
+
+	return utils.DownloadFile(downloadURL, file.Name, utils.DownloadOptions{
+		LoggerPrefix: "slack",
+		ExtraHeaders: map[string]string{
+			"Authorization": "Bearer " + c.config.BotToken,
+		},
+	})
+}
+
+func (c *SlackChannel) stripBotMention(text string) string {
+	mention := fmt.Sprintf("<@%s>", c.botUserID)
+	text = strings.ReplaceAll(text, mention, "")
+	return strings.TrimSpace(text)
+}
+
+func parseSlackChatID(chatID string) (channelID, threadTS string) {
+	parts := strings.SplitN(chatID, "/", 2)
+	channelID = parts[0]
+	if len(parts) > 1 {
+		threadTS = parts[1]
+	}
+	return channelID, threadTS
+}

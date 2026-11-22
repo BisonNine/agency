@@ -1,0 +1,54 @@
+package utils
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+)
+
+// CreateHTTPClient creates an HTTP client with optional proxy support.
+// If proxyURL is empty, it uses the system environment proxy settings.
+// Supported proxy schemes: http, https, socks5, socks5h.
+func CreateHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        10,
+			IdleConnTimeout:     30 * time.Second,
+			DisableCompression:  false,
+			TLSHandshakeTimeout: 15 * time.Second,
+		},
+	}
+
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("unexpected transport type %T", client.Transport)
+	}
+
+	if proxyURL != "" {
+		proxy, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		scheme := strings.ToLower(proxy.Scheme)
+		switch scheme {
+		case "http", "https", "socks5", "socks5h":
+		default:
+			return nil, fmt.Errorf(
+				"unsupported proxy scheme %q (supported: http, https, socks5, socks5h)",
+				proxy.Scheme,
+			)
+		}
+		if proxy.Host == "" {
+			return nil, errors.New("invalid proxy URL: missing host")
+		}
+		transport.Proxy = http.ProxyURL(proxy)
+	} else {
+		transport.Proxy = http.ProxyFromEnvironment
+	}
+
+	return client, nil
+}

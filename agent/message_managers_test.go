@@ -1,0 +1,64 @@
+package agent
+
+import (
+	"testing"
+
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/msgtoken"
+)
+
+// stopManagers stops ms's rotation goroutines when the test ends, as the loop
+// does on reload and Close, so none logs into a later test.
+func stopManagers(t *testing.T, ms map[string]*msgtoken.Manager) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, m := range ms {
+			m.Stop()
+		}
+	})
+}
+
+// TestBuildMessageManagers_TracksConfig guards the reload fix: a manager exists
+// only for agents whose message-token window is > 0, and rebuilding against a changed
+// config follows the new config (an agent disabled in the new config loses its
+// manager, so its old token no longer validates and none is injected).
+func TestBuildMessageManagers_TracksConfig(t *testing.T) {
+	mk := func(agents []config.AgentConfig) *config.Config {
+		return &config.Config{Agents: config.AgentsConfig{
+			BaseDir: t.TempDir(),
+			Defaults: config.AgentDefaults{
+				Models: []string{"gpt-4"}, MaxTokens: 8192, MaxToolIterations: 10,
+			},
+			List: agents,
+		}}
+	}
+
+	cfg := mk([]config.AgentConfig{
+		{ID: "alice", Default: true, Message: &config.MessageConfig{WindowMinutes: 5, WindowCount: 3}},
+		{ID: "bob"}, // no message config → disabled
+	})
+	reg := mustNewAgentRegistry(t, cfg, &mockRegistryProvider{})
+	m := buildMessageManagers(reg, cfg)
+	stopManagers(t, m)
+	if _, ok := m["alice"]; !ok {
+		t.Error("alice (window>0) should have a message-token manager")
+	}
+	if _, ok := m["bob"]; ok {
+		t.Error("bob (no message config) must not have a manager")
+	}
+
+	// Config change: alice disabled, bob enabled. A rebuild must follow it.
+	cfg2 := mk([]config.AgentConfig{
+		{ID: "alice", Default: true},
+		{ID: "bob", Message: &config.MessageConfig{WindowMinutes: 5, WindowCount: 3}},
+	})
+	reg2 := mustNewAgentRegistry(t, cfg2, &mockRegistryProvider{})
+	m2 := buildMessageManagers(reg2, cfg2)
+	stopManagers(t, m2)
+	if _, ok := m2["alice"]; ok {
+		t.Error("alice must lose its manager after the message endpoint is disabled")
+	}
+	if _, ok := m2["bob"]; !ok {
+		t.Error("bob should gain a manager after the message endpoint is enabled")
+	}
+}

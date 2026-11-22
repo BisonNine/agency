@@ -1,0 +1,136 @@
+package channels
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/config"
+)
+
+// withDiscovery swaps in a fake SecMsg discovery function for the duration of a
+// test, restoring the previous registration afterward.
+func withDiscovery(t *testing.T, f SecMsgDiscovery) {
+	t.Helper()
+	secmsgDiscoveryMu.Lock()
+	prev := secmsgDiscovery
+	secmsgDiscoveryMu.Unlock()
+	RegisterSecMsgDiscovery(f)
+	t.Cleanup(func() {
+		secmsgDiscoveryMu.Lock()
+		secmsgDiscovery = prev
+		secmsgDiscoveryMu.Unlock()
+	})
+}
+
+func TestResolveSecMsgAccounts_Discovery(t *testing.T) {
+	withDiscovery(t, func(_ context.Context, addr string) ([]string, error) {
+		if addr != "127.0.0.1:9600" {
+			t.Errorf("unexpected address %q", addr)
+		}
+		return []string{"droid1", "droid2"}, nil
+	})
+
+	m := &Manager{}
+	cfg := config.SecMsgConfig{
+		Name:      "signal",
+		Address:   "127.0.0.1:9600",
+		AllowFrom: config.FlexibleStringSlice{"+15551112222"},
+	}
+
+	got, _ := m.resolveSecMsgAccounts(cfg)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 discovered accounts, got %d: %+v", len(got), got)
+	}
+	for i, want := range []string{"droid1", "droid2"} {
+		if got[i].Account != want {
+			t.Errorf("account[%d] = %q, want %q", i, got[i].Account, want)
+		}
+		if len(got[i].AllowFrom) != 1 || got[i].AllowFrom[0] != "+15551112222" {
+			t.Errorf("account[%d] did not inherit daemon allow_from: %+v", i, got[i].AllowFrom)
+		}
+	}
+}
+
+func TestResolveSecMsgAccounts_DiscoveryFailureAlertsOncePerStreak(t *testing.T) {
+	withDiscovery(t, func(_ context.Context, _ string) ([]string, error) {
+		return nil, errors.New("dial: connection refused")
+	})
+
+	m := &Manager{}
+	rec := &alertRecorder{}
+	m.SetAlerter(rec)
+	daemon := config.SecMsgConfig{Name: "signal", Address: "127.0.0.1:9600"}
+	for range 2 {
+		if got, ok := m.resolveSecMsgAccounts(daemon); ok || got != nil {
+			t.Fatalf("discovery failure: got %+v ok=%v, want none and not ok", got, ok)
+		}
+	}
+	if len(rec.alerts) != 1 || rec.alerts[0].Priority != alerter.Normal ||
+		rec.alerts[0].Title != "SecMsg account discovery failed" ||
+		rec.alerts[0].EventID != "SecMsg (signal)" ||
+		rec.alerts[0].Details != "dial: connection refused" {
+		t.Fatalf("a streak of discovery failures must raise one alert, got %+v", rec.alerts)
+	}
+
+	// A success ends the streak; the next failure alerts again.
+	withDiscovery(t, func(context.Context, string) ([]string, error) { return []string{"droid1"}, nil })
+	if _, ok := m.resolveSecMsgAccounts(daemon); !ok {
+		t.Fatal("discovery succeeded but reported failure")
+	}
+	withDiscovery(t, func(context.Context, string) ([]string, error) { return nil, errors.New("down") })
+	m.resolveSecMsgAccounts(daemon)
+	if len(rec.alerts) != 2 {
+		t.Fatalf("a new streak must alert again, got %d alerts", len(rec.alerts))
+	}
+}
+
+func TestResolveSecMsgAccounts_NoLinkedAccountsBindsNothing(t *testing.T) {
+	withDiscovery(t, func(_ context.Context, _ string) ([]string, error) {
+		return nil, nil
+	})
+
+	m := &Manager{}
+	rec := &alertRecorder{}
+	m.SetAlerter(rec)
+	got, ok := m.resolveSecMsgAccounts(config.SecMsgConfig{Name: "signal", Address: "127.0.0.1:9600"})
+	if !ok || got != nil {
+		t.Fatalf("no linked accounts should bind nothing, got %+v", got)
+	}
+	if len(rec.alerts) != 1 || rec.alerts[0].Priority != alerter.Normal ||
+		rec.alerts[0].Title != "SecMsg has no linked accounts" ||
+		rec.alerts[0].EventID != "SecMsg (signal)" {
+		t.Fatalf("no linked accounts must raise one high alert, got %+v", rec.alerts)
+	}
+}
+
+func TestResolveSecMsgAccounts_ExplicitAccountsSkipDiscovery(t *testing.T) {
+	withDiscovery(t, func(_ context.Context, _ string) ([]string, error) {
+		t.Fatal("discovery must not run when accounts are pinned")
+		return nil, nil
+	})
+
+	m := &Manager{}
+	cfg := config.SecMsgConfig{
+		Name:      "signal",
+		Address:   "127.0.0.1:9600",
+		AllowFrom: config.FlexibleStringSlice{"+15551112222"},
+		Accounts: []config.SecMsgAccountConfig{
+			{Account: "droid1"}, // inherits daemon allow_from
+			{Account: "droid2", AllowFrom: config.FlexibleStringSlice{"+9"}}, // overrides
+		},
+	}
+
+	got, _ := m.resolveSecMsgAccounts(cfg)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 pinned accounts, got %d", len(got))
+	}
+	if got[0].AllowFrom[0] != "+15551112222" {
+		t.Errorf("pinned account[0] should inherit daemon allow_from, got %+v", got[0].AllowFrom)
+	}
+	if got[1].AllowFrom[0] != "+9" {
+		t.Errorf("pinned account[1] should keep its own allow_from, got %+v", got[1].AllowFrom)
+	}
+}

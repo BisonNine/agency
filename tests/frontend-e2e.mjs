@@ -1,0 +1,3874 @@
+#!/usr/bin/env node
+// ClawEh WebUI regression suite.
+//
+// Executes docs/webui-test-plan.md. Every check here maps to a numbered step
+// in that document; keep the two in step.
+//
+//   node tests/frontend-e2e.mjs                     # against http://127.0.0.1:8077
+//   node tests/frontend-e2e.mjs --base http://host:port
+//   node tests/frontend-e2e.mjs --only C,F          # run selected groups
+//
+// The WebUI and /api/* sit behind the admin login, so the suite signs in first
+// and every page and API probe carries that session. Create the account on the
+// dev instance with `claw admin` and export CLAW_E2E_USER / CLAW_E2E_PASSWORD.
+//
+// Requires Playwright and a Chromium build. Both come with the playwright-mcp
+// install: Playwright is looked up in the npx cache under the home directory
+// (~/.npm/_npx/*/node_modules/playwright). Set PLAYWRIGHT_MODULE / CHROME_PATH
+// if they live elsewhere.
+//
+// SAFETY: this mutates configuration, so point it at a DEV instance. Every
+// mutation is reverted — the agent it creates is deleted, every field it edits
+// is restored to the value read beforehand, and the certificate it regenerates
+// (group R, only when the instance already uses a self-signed one) is replaced
+// by another self-signed one. It refuses to run against the production port
+// (18790) unless --allow-prod is passed.
+
+import { existsSync, readdirSync } from "node:fs"
+import { homedir } from "node:os"
+
+const args = process.argv.slice(2)
+const arg = (name, fallback) => {
+  const i = args.indexOf(name)
+  return i >= 0 && args[i + 1] ? args[i + 1] : fallback
+}
+const BASE = arg("--base", "http://127.0.0.1:8077").replace(/\/$/, "")
+const ONLY = arg("--only", "")
+  .split(",")
+  .filter(Boolean)
+  .map((s) => s.toUpperCase())
+
+if (BASE.includes(":18790") && !args.includes("--allow-prod")) {
+  console.error(
+    `Refusing to run against ${BASE}: that is the production port.\n` +
+      `This suite writes configuration. Point it at claw-dev, or pass --allow-prod.`,
+  )
+  process.exit(2)
+}
+
+// findPlaywright returns the first Playwright module in the npx cache under
+// the home directory, or "" when there is none.
+const findPlaywright = () => {
+  const cache = `${homedir()}/.npm/_npx`
+  let entries = []
+  try {
+    entries = readdirSync(cache)
+  } catch {
+    return ""
+  }
+  for (const dir of entries) {
+    const mod = `${cache}/${dir}/node_modules/playwright/index.mjs`
+    if (existsSync(mod)) return mod
+  }
+  return ""
+}
+const PW = process.env.PLAYWRIGHT_MODULE || findPlaywright()
+if (!PW || !existsSync(PW)) {
+  console.error(
+    `Playwright not found${PW ? ` at ${PW}` : " in ~/.npm/_npx"}. ` +
+      "Set PLAYWRIGHT_MODULE to its index.mjs (for example .../node_modules/playwright/index.mjs).",
+  )
+  process.exit(2)
+}
+const CHROME =
+  process.env.CHROME_PATH ??
+  `${homedir()}/.cache/ms-playwright/chromium-1200/chrome-linux64/chrome`
+
+if (!existsSync(CHROME)) {
+  console.error(`Chromium not found at ${CHROME}. Set CHROME_PATH.`)
+  process.exit(2)
+}
+
+const USER = process.env.CLAW_E2E_USER ?? ""
+const PASSWORD = process.env.CLAW_E2E_PASSWORD ?? ""
+if (!USER || !PASSWORD) {
+  console.error(
+    "CLAW_E2E_USER and CLAW_E2E_PASSWORD are not set.\n" +
+      "The WebUI requires an admin login. On the dev instance run `claw admin` to create\n" +
+      "the account, then export CLAW_E2E_USER and CLAW_E2E_PASSWORD before running this suite.",
+  )
+  process.exit(2)
+}
+const { chromium } = await import(PW)
+
+// ---------------------------------------------------------------- harness ---
+
+const results = []
+let browser
+// The one signed-in BrowserContext. Every page the suite opens and every API
+// probe it makes goes through it, so the session cookie from the login carries
+// to both — the same way a browser tab and its fetches share one session.
+let ctx
+let group = ""
+
+function useGroup(id, title) {
+  group = id
+  if (ONLY.length && !ONLY.includes(id)) return false
+  console.log(`\n── ${id}. ${title}`)
+  return true
+}
+
+async function check(id, what, fn) {
+  const label = `${group}${id}`
+  try {
+    const detail = await fn()
+    results.push({ label, what, ok: true })
+    console.log(`   PASS ${label}  ${what}${detail ? ` — ${detail}` : ""}`)
+  } catch (e) {
+    results.push({ label, what, ok: false, error: e.message })
+    console.log(`   FAIL ${label}  ${what}`)
+    console.log(`        ${e.message.split("\n")[0]}`)
+  }
+}
+
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg)
+}
+
+// api calls the gateway as the signed-in operator. It goes through the browser
+// context's request client, which shares the session cookie with the pages, so
+// a probe here sees exactly what the page's own fetch would. `using` selects
+// another context (a second login, for the sign-out check).
+async function api(path, init = {}, using = ctx) {
+  const res = await using.request.fetch(BASE + path, {
+    method: init.method ?? "GET",
+    headers: init.headers,
+    data: init.body,
+  })
+  const text = await res.text()
+  let json
+  try {
+    json = JSON.parse(text)
+  } catch {
+    /* not json */
+  }
+  return { status: res.status(), text, json, headers: res.headers() }
+}
+
+// apiAnonymous calls the gateway with no session at all — for the probes and
+// the login-page checks that must see what an unauthenticated peer sees.
+async function apiAnonymous(path, init) {
+  const res = await fetch(BASE + path, init)
+  const text = await res.text()
+  let json
+  try {
+    json = JSON.parse(text)
+  } catch {
+    /* not json */
+  }
+  return { status: res.status, text, json }
+}
+
+// login opens a session in `context` with the operator credentials. Returns the
+// login response so the caller can decide what a refusal means.
+async function login(context, username = USER, password = PASSWORD) {
+  return api(
+    "/api/auth/login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    },
+    context,
+  )
+}
+
+// signIn is the harness prerequisite: wait for the gateway, then log the shared
+// context in. Fails fast with what the operator has to do — every check after
+// this needs the session, so running on without it would fail them all for the
+// same reason.
+async function signIn() {
+  const deadline = Date.now() + 30000
+  for (;;) {
+    const r = await apiAnonymous("/ready")
+    if (r.status === 200) break
+    if (Date.now() > deadline) {
+      console.error(`Gateway at ${BASE} is not ready (/ready = ${r.status}); cannot sign in.`)
+      await browser.close()
+      process.exit(2)
+    }
+    await new Promise((res) => setTimeout(res, 500))
+  }
+  const r = await login(ctx)
+  if (r.status === 204) return
+  const hint =
+    r.json?.error === "no admin account"
+      ? "The dev instance has no admin account. Run `claw admin` on it, then export CLAW_E2E_USER / CLAW_E2E_PASSWORD."
+      : r.status === 401
+        ? `The gateway refused CLAW_E2E_USER=${JSON.stringify(USER)}. Run \`claw admin\` on the dev instance and export the credentials it creates.`
+        : r.status === 429
+          ? `Login is locked out (${r.json?.error ?? "too many failures"}). Wait, then retry.`
+          : r.text.slice(0, 200)
+  console.error(`Sign-in failed: POST /api/auth/login → ${r.status}\n${hint}`)
+  await browser.close()
+  process.exit(2)
+}
+
+async function config() {
+  const { json } = await api("/api/config")
+  return json
+}
+
+// Groups F, G, R and T write configuration, which the gateway picks up on a debounced
+// reload (~15s later) that briefly stops the channels. Anything loading a page
+// during that window sees the chat WebSocket handshake fail with 503 and logs a
+// console error — a real effect of a reload, not a defect, but it makes later
+// groups fail for the wrong reason.
+//
+// So force the reload now rather than letting it fire unpredictably later, and
+// wait for readiness. POST /api/gateway/reload applies immediately and blocks
+// until the reload completes; /ready then confirms the channels are back.
+async function settleAfterConfigWrites() {
+  await api("/api/gateway/reload", { method: "POST" })
+  const deadline = Date.now() + 60000
+  for (;;) {
+    const r = await api("/ready")
+    if (r.status === 200) return
+    if (Date.now() > deadline) throw new Error("gateway did not become ready after reload")
+    await new Promise((res) => setTimeout(res, 500))
+  }
+}
+
+// Opens a page in the signed-in context with console/error capture attached.
+// `context` swaps in another BrowserContext (a fresh one for the login-page
+// checks). close() closes the page only; the context lives for the whole run.
+async function open(path, { wait = "networkidle", context = ctx } = {}) {
+  const page = await context.newPage()
+  const problems = []
+  page.on("console", (m) => {
+    if (m.type() === "error") problems.push(m.text())
+  })
+  page.on("pageerror", (e) => problems.push("pageerror: " + e.message))
+  await page.goto(BASE + path, { waitUntil: wait, timeout: 20000 })
+  await page.waitForTimeout(500)
+  return {
+    close: () => page.close(),
+    page,
+    problems,
+    text: () => page.locator("body").innerText(),
+  }
+}
+
+const ROUTES = [
+  "/",
+  "/agents",
+  "/audit",
+  "/agent/bindings",
+  "/agent/skills",
+  "/agent/cards",
+  "/channels",
+  "/config",
+  "/config/raw",
+  "/devices",
+  "/logs",
+  "/mcp",
+  "/mcp/servers",
+  "/memory",
+  "/models",
+  "/network",
+  "/providers",
+  "/report",
+  "/system",
+  "/task-models",
+  "/setup",
+  "/status",
+]
+
+// A leaked i18n key: i18next renders the key verbatim when lookup fails.
+const I18N_KEY =
+  /\b(navigation|pages|setup|channels|labels|agents|models|providers|common)\.[a-z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)*\b/g
+
+// ------------------------------------------------------------------ suite ---
+
+browser = await chromium.launch({ executablePath: CHROME })
+ctx = await browser.newContext()
+// The product's names come from the server (GET /api/auth/status, answered
+// before login); checks compare against them rather than a hard-coded name.
+const PRODUCT = (await apiAnonymous("/api/auth/status")).json ?? {}
+if (!PRODUCT.name) {
+  console.error(`${BASE}/api/auth/status carries no product name; is this build older than the suite?`)
+  process.exit(2)
+}
+// escapeRegExp makes a literal string safe to embed in a RegExp.
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+console.log(`${PRODUCT.name} WebUI regression suite — ${BASE}`)
+await signIn()
+console.log(`   signed in as ${USER}`)
+
+// A. Preconditions
+if (useGroup("A", "Preconditions")) {
+  await check(1, "gateway is up and READY", async () => {
+    // /health answers as soon as the listener binds; /ready only once the
+    // channels have started. Poll the latter, or every step below races boot.
+    const deadline = Date.now() + 30000
+    let last = 0
+    for (;;) {
+      const r = await api("/ready")
+      last = r.status
+      if (r.status === 200) return "ready"
+      if (Date.now() > deadline) break
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    const h = await api("/health")
+    assert(false, `/ready still ${last} after 30s (/health = ${h.status})`)
+  })
+  await check(2, "version reports release, commit and build number", async () => {
+    const r = await api("/api/system/version")
+    const v = r.json?.version ?? ""
+    assert(/^\d+\.\d+\.\d+/.test(v), `version malformed: ${v}`)
+    assert(/\+[0-9a-f]{8}/.test(v), `no commit stamp: ${v}`)
+    assert(/\[\d{14}\]/.test(v), `no build number: ${v}`)
+    return v
+  })
+  await check(3, "config API returns an agent list", async () => {
+    const c = await config()
+    assert(Array.isArray(c?.agents?.list), "agents.list missing")
+    assert(c.agents.list.length > 0, "no agents configured — seed the dev instance")
+    return `${c.agents.list.length} agents`
+  })
+}
+
+// P. Authentication — the login page, the refusals, the session, sign-out.
+// These run in contexts of their own: the shared one stays signed in for the
+// rest of the suite.
+if (useGroup("P", "Authentication")) {
+  const anon = await browser.newContext()
+
+  await check(1, "a visitor without a session lands on the login page", async () => {
+    const { close, page, problems } = await open("/agents", { context: anon })
+    await page.locator("[data-testid=login-form]").waitFor({ state: "visible", timeout: 10000 })
+    const url = new URL(page.url())
+    const fields = await page.locator("#login-username, #login-password").count()
+    const submit = await page.getByRole("button", { name: "Sign in" }).count()
+    const heading = (await page.locator("h1").first().innerText()).trim()
+    const body = await page.locator("body").innerText()
+    const title = await page.title()
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    // The server fills the title into index.html as it serves it.
+    assert(title === PRODUCT.name, `tab title reads ${JSON.stringify(title)}, want ${PRODUCT.name}`)
+    // The frontend gate sends the visitor to /login and remembers where they
+    // were going, so a bookmark still works after signing in.
+    assert(url.pathname === "/login", `landed on ${url.pathname}, want /login`)
+    assert(url.searchParams.get("next") === "/agents", `next = ${url.searchParams.get("next")}`)
+    assert(fields === 2, `${fields} of 2 credential fields rendered`)
+    assert(submit === 1, "no Sign in button")
+    // The card is headed by the product name; the button still says Sign in.
+    assert(heading === PRODUCT.name, `heading reads ${JSON.stringify(heading)}, want ${PRODUCT.name}`)
+    assert(
+      !/Use the admin account created on the server/.test(body),
+      "the removed 'Use the admin account…' line is back",
+    )
+    return url.pathname + url.search
+  })
+
+  await check(2, "a wrong password shows the generic error and opens no session", async () => {
+    const { close, page } = await open("/login", { context: anon })
+    await page.locator("[data-testid=login-form]").waitFor({ state: "visible", timeout: 10000 })
+    await page.locator("#login-username").fill(USER)
+    await page.locator("#login-password").fill(`${PASSWORD}-wrong-${Date.now()}`)
+    await page.getByRole("button", { name: "Sign in" }).click()
+    const error = page.locator("[data-testid=login-error]")
+    await error.waitFor({ state: "visible", timeout: 10000 })
+    const message = (await error.innerText()).trim()
+    const path = new URL(page.url()).pathname
+    await close()
+    // One message for a bad username and a bad password alike, so the form
+    // never confirms which half was right.
+    assert(message === "Invalid username or password.", `error reads ${JSON.stringify(message)}`)
+    assert(path === "/login", `left the login page for ${path}`)
+    const st = await api("/api/auth/status", {}, anon)
+    assert(st.json?.authenticated === false, `status after refusal: ${st.text}`)
+  })
+
+  await check(3, "GET /api/config without a session is 401", async () => {
+    const r = await apiAnonymous("/api/config")
+    assert(r.status === 401, `status = ${r.status}, want 401`)
+    assert(typeof r.json?.error === "string", `body = ${r.text.slice(0, 120)}`)
+    assert(!r.text.includes("agents"), "the refusal leaked configuration")
+    return r.json.error
+  })
+
+  await check(4, "the signed-in session is reported by /api/auth/status", async () => {
+    const r = await api("/api/auth/status")
+    assert(r.status === 200, `status = ${r.status}`)
+    assert(r.json?.configured === true, "configured should be true")
+    assert(r.json?.authenticated === true, `authenticated = ${r.json?.authenticated}`)
+    assert(r.json?.username === USER, `username = ${r.json?.username}, want ${USER}`)
+    return r.json.username
+  })
+
+  await check(5, "Sign out ends the session and returns to the login page", async () => {
+    // A second login of its own: signing the shared context out would take the
+    // rest of the suite down with it.
+    const other = await browser.newContext()
+    const l = await login(other)
+    assert(l.status === 204, `second login: ${l.status} ${l.text}`)
+    const { close, page, problems } = await open("/agents", { context: other })
+    const button = page.locator("[data-testid=nav-logout]")
+    await button.waitFor({ state: "visible", timeout: 10000 })
+    await button.click()
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 10000 })
+    await page.locator("[data-testid=login-form]").waitFor({ state: "visible", timeout: 10000 })
+    await close()
+    const st = await api("/api/auth/status", {}, other)
+    const cfg = await api("/api/config", {}, other)
+    await other.close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    // Ended on the server, not just forgotten by the browser.
+    assert(st.json?.authenticated === false, `still authenticated after sign-out: ${st.text}`)
+    assert(cfg.status === 401, `GET /api/config after sign-out = ${cfg.status}, want 401`)
+  })
+
+  // Sessions live in memory on the server, so a gateway restart forgets them
+  // all. Deleting the cookie in the browser context is the same thing seen from
+  // the page: its next request finds no session.
+  await check(6, "a session removed on the server sends the page to login, not an error", async () => {
+    const other = await browser.newContext()
+    const l = await login(other)
+    assert(l.status === 204, `login: ${l.status} ${l.text}`)
+    const { close, page, problems } = await open("/agents", { context: other })
+    await other.clearCookies()
+    // Navigate within the SPA: the route gate asks the server and must send
+    // the visitor to login with where they were going, not render an error.
+    await page.getByRole("button", { name: "Models", exact: true }).click()
+    await page.locator('a[href="/models"]').first().click()
+    await page.waitForURL(/\/login\?/, { timeout: 10000 })
+    await page.locator("[data-testid=login-form]").waitFor({ state: "visible", timeout: 10000 })
+    const url = new URL(page.url())
+    const errors = await page.locator("[data-testid=route-error]").count()
+    await close()
+    await other.close()
+    // The dead session is refused with 401 by design; the browser itself
+    // reports that refused request in the console. Anything else is a defect.
+    const unexpected = problems.filter((p) => !/Failed to load resource: .*401/.test(p))
+    assert(unexpected.length === 0, `console: ${unexpected[0]}`)
+    assert(url.pathname === "/login", `landed on ${url.pathname}, want /login`)
+    assert(url.searchParams.get("next") === "/models", `next = ${url.searchParams.get("next")}`)
+    assert(errors === 0, "an error state was rendered instead of the login page")
+    return url.pathname + url.search
+  })
+
+  await check(7, "a lost session stops the chat reconnect loop at the login page", async () => {
+    const other = await browser.newContext()
+    const l = await login(other)
+    assert(l.status === 204, `login: ${l.status} ${l.text}`)
+    const page = await other.newPage()
+    const problems = []
+    page.on("console", (m) => {
+      if (m.type() === "error") problems.push(m.text())
+    })
+    page.on("pageerror", (e) => problems.push("pageerror: " + e.message))
+    let attempts = 0
+    page.on("websocket", () => {
+      attempts += 1
+    })
+    // Keep a handle on the live socket so the test can drop it, the way a
+    // restarting gateway does.
+    await page.addInitScript(() => {
+      const Real = window.WebSocket
+      window.__live = []
+      // @ts-ignore
+      window.WebSocket = function (url, protocols) {
+        const s = protocols === undefined ? new Real(url) : new Real(url, protocols)
+        window.__live.push(s)
+        return s
+      }
+      window.WebSocket.prototype = Real.prototype
+      Object.assign(window.WebSocket, Real)
+    })
+    await page.goto(BASE + "/", { waitUntil: "networkidle", timeout: 20000 })
+    await page.waitForTimeout(1500)
+    assert(attempts >= 1, "chat opened no WebSocket")
+    await other.clearCookies()
+    await page.evaluate(() => window.__live.forEach((s) => s.close()))
+    // The controller asks /api/auth/status once, learns the session is gone
+    // and leaves for the login page instead of retrying for ever.
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 10000 })
+    const atRedirect = attempts
+    await page.waitForTimeout(3000)
+    const path = new URL(page.url()).pathname
+    const after = attempts
+    await page.close()
+    await other.close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(path === "/login", `left the login page for ${path}`)
+    assert(after - atRedirect <= 1, `${after - atRedirect} more socket attempts after the redirect`)
+    return `${after} socket attempt(s) in all`
+  })
+
+  await anon.close()
+}
+
+// B. Every route renders
+if (useGroup("B", "Route smoke — every page renders, console clean")) {
+  for (const route of ROUTES) {
+    await check(
+      ROUTES.indexOf(route) + 1,
+      `GET ${route}`,
+      async () => {
+        const { close, problems, text } = await open(route)
+        const body = await text()
+        await close()
+        assert(body.trim().length > 40, `page nearly empty (${body.length} chars)`)
+        assert(problems.length === 0, `console errors: ${problems[0]}`)
+        return `${body.length} chars`
+      },
+    )
+  }
+}
+
+// C. Shell and navigation
+if (useGroup("C", "Shell and navigation")) {
+  await check(1, "sidebar exposes the primary sections", async () => {
+    const { close, page, text } = await open("/agents")
+    const body = await text()
+    // Chat is a single page: a direct link, not a disclosure group.
+    const chatLinks = await page.locator('a[href="/"]', { hasText: "Chat" }).count()
+    const chatButtons = await page.getByRole("button", { name: "Chat", exact: true }).count()
+    await close()
+    for (const item of ["Chat", "Agents", "Models", "Channels", "Services"]) {
+      assert(body.includes(item), `sidebar missing "${item}"`)
+    }
+    assert(chatLinks === 1, `Chat links to "/": ${chatLinks}`)
+    assert(chatButtons === 0, "Chat is a disclosure button, not a link")
+  })
+  await check(2, "sidebar shows the running version", async () => {
+    const { close, text } = await open("/agents")
+    const body = await text()
+    await close()
+    assert(new RegExp(`${escapeRegExp(PRODUCT.name)} v\\d+\\.\\d+\\.\\d+`).test(body), "version not shown in sidebar")
+  })
+  await check(3, "sidebar groups expand and their links navigate client-side", async () => {
+    // The top-level sidebar entries are collapsible GROUPS (aria-expanded),
+    // not links — clicking one reveals the routes beneath it.
+    const { close, page } = await open("/agents")
+    const group = page.getByRole("button", { name: "Models", exact: true })
+    assert(
+      (await group.getAttribute("aria-expanded")) !== null,
+      "sidebar entry is not a disclosure control",
+    )
+    await group.click()
+    await page.waitForTimeout(400)
+    assert(
+      (await group.getAttribute("aria-expanded")) === "true",
+      "group did not expand",
+    )
+    await page.locator('a[href="/models"]').first().click()
+    await page.waitForTimeout(800)
+    const url = page.url()
+    await close()
+    assert(url.endsWith("/models"), `expected /models, got ${url}`)
+  })
+  await check(4, "unknown route renders the app, not a server error", async () => {
+    const r = await api("/no-such-route")
+    assert(r.status === 200, `expected SPA fallback 200, got ${r.status}`)
+  })
+  // Playwright scrolls an element into view before it acts on it, so no other
+  // check notices content a person cannot scroll to. The layout's <main> clips
+  // (overflow hidden): every page must fit it and scroll inside its own area.
+  await check(5, "every page: in a short window nothing is cut off below the frame", async () => {
+    const bad = []
+    for (const route of ROUTES) {
+      const { close, page } = await open(route)
+      try {
+        await page.setViewportSize({ width: 1100, height: 420 })
+        await page.waitForTimeout(300)
+        const cut = await page.evaluate(() =>
+          [...document.querySelectorAll("main")]
+            .filter((m) => ["hidden", "clip"].includes(getComputedStyle(m).overflowY))
+            .map((m) => m.scrollHeight - m.clientHeight)
+            .filter((d) => d > 2),
+        )
+        if (cut.length) bad.push(`${route} (${Math.max(...cut)}px cut off)`)
+      } finally {
+        await close()
+      }
+    }
+    assert(bad.length === 0, `content that cannot be scrolled to: ${bad.join(", ")}`)
+    return `${ROUTES.length} pages`
+  })
+}
+
+// D. i18n integrity
+if (useGroup("D", "i18n integrity")) {
+  await check(1, "no untranslated keys on any route", async () => {
+    const leaked = []
+    for (const route of ROUTES) {
+      const { close, page } = await open(route)
+      // The log viewer (role="log") shows raw log lines, and those name
+      // config keys such as agents.defaults.models that share a prefix with
+      // the locale namespaces. Only the UI around it is scanned.
+      const body = await page.evaluate(() => {
+        const clone = document.body.cloneNode(true)
+        for (const el of clone.querySelectorAll('[role="log"]')) el.remove()
+        // Accessible names and hover text are text too: a leaked key there is
+        // what a screen reader announces.
+        const attrs = [...clone.querySelectorAll("[aria-label],[title],[placeholder]")]
+          .map((el) => [el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("placeholder")].filter(Boolean).join(" "))
+        return (clone.innerText ?? clone.textContent ?? "") + "\n" + attrs.join("\n")
+      })
+      await close()
+      const hits = [...new Set(body.match(I18N_KEY) || [])]
+      if (hits.length) leaked.push(`${route}: ${hits.join(", ")}`)
+    }
+    assert(leaked.length === 0, `untranslated keys — ${leaked.join(" | ")}`)
+    return `${ROUTES.length} routes clean`
+  })
+}
+
+// E. Chat and the WebSocket session
+if (useGroup("E", "Chat and WebSocket auth")) {
+  await check(1, "the WebUI token endpoint is gone", async () => {
+    // GET /api/webui/token handed the chat token to any peer inside the CIDR
+    // allowlist, which made the /webui/ws gate no gate at all. The socket now
+    // rides the login session cookie; the endpoint must not come back.
+    const r = await api("/api/webui/token")
+    assert(r.status === 404, `expected 404, got ${r.status}`)
+  })
+  await check(2, "chat opens its socket on the page origin with the session cookie, no token", async () => {
+    const page = await ctx.newPage()
+    await page.addInitScript(() => {
+      const Real = window.WebSocket
+      window.__sockets = []
+      // @ts-ignore
+      window.WebSocket = function (url, protocols) {
+        window.__sockets.push({ url: String(url), protocols })
+        return protocols === undefined ? new Real(url) : new Real(url, protocols)
+      }
+      window.WebSocket.prototype = Real.prototype
+      Object.assign(window.WebSocket, Real)
+    })
+    await page.goto(BASE + "/", { waitUntil: "networkidle", timeout: 20000 })
+    await page.waitForTimeout(2500)
+    const sockets = await page.evaluate(() => window.__sockets ?? [])
+    await page.close()
+    assert(sockets.length > 0, "chat opened no WebSocket")
+    const s = sockets[0]
+    const host = new URL(BASE).host.replace(/[.]/g, "\\.")
+    assert(
+      new RegExp(`^wss?://${host}/webui/ws\\?session_id=`).test(s.url),
+      `unexpected socket url: ${s.url}`,
+    )
+    // A token in a query string is recorded by proxies, access logs, Referer
+    // headers and browser history; the cookie is HttpOnly and never in a URL.
+    assert(!/[?&]token=/.test(s.url), `token found in URL: ${s.url}`)
+    assert(
+      s.protocols === undefined || s.protocols === null || s.protocols.length === 0,
+      `expected no subprotocols, got ${JSON.stringify(s.protocols)}`,
+    )
+    // The cookie is the gate: the same path with no session is refused.
+    const anon = await apiAnonymous("/webui/ws")
+    assert(anon.status === 401, `anonymous GET /webui/ws = ${anon.status}, want 401`)
+    return s.url.replace(/session_id=.*$/, "session_id=…")
+  })
+  await check(3, "chat reaches connected state", async () => {
+    const { close, page, text } = await open("/")
+    await page.waitForTimeout(2500)
+    const body = await text()
+    await close()
+    assert(!/disconnected|connection error/i.test(body), "chat reports disconnected")
+  })
+}
+
+// F. Agents: create, edit, autosave, index realignment, delete
+if (useGroup("F", "Agents — autosave and list realignment")) {
+  const PROBE = "e2e-probe"
+  let created = false
+
+  await check(1, "create an agent through the UI", async () => {
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: "Add Agent" }).click()
+    await page.waitForTimeout(400)
+    await page.getByRole("textbox", { name: /Agent ID/i }).fill(PROBE)
+    await page.getByRole("button", { name: "Add", exact: true }).click()
+    await page.waitForTimeout(1500)
+    await close()
+    const c = await config()
+    created = (c.agents.list ?? []).some((a) => a.id === PROBE)
+    assert(created, `${PROBE} not present in config after Add`)
+  })
+
+  await check(2, "edit a field and confirm the debounced autosave persists it", async () => {
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(400)
+    await page.locator('input[type=number][placeholder="default"]').first().fill("0.77")
+    await page.waitForTimeout(2000)
+    await close()
+    const c = await config()
+    const a = (c.agents.list ?? []).find((x) => x.id === PROBE)
+    assert(a?.temperature === 0.77, `temperature = ${a?.temperature}, expected 0.77`)
+  })
+
+  await check(3, "a second field on the same agent also persists (no clobber)", async () => {
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(400)
+    // A second, unrelated field on the same card: the time_now internal tool.
+    const box = page.getByLabel("time_now", { exact: true }).first()
+    const was = await box.isChecked()
+    await box.click()
+    await page.waitForTimeout(2000)
+    await close()
+    const c = await config()
+    const a = (c.agents.list ?? []).find((x) => x.id === PROBE)
+    // time_now must have flipped; an absent tools list means none.
+    const tools = a?.tools ?? []
+    const has = tools.includes("time_now")
+    assert(has === !was, `tools = ${JSON.stringify(a?.tools)}; time_now should be ${was ? "removed" : "added"}`)
+    assert(a?.temperature === 0.77, "the earlier edit was clobbered by the second save")
+  })
+
+  await check(4, "edit buffers follow the list when indices shift", async () => {
+    // The probe sorts among the existing agents; selecting each in turn must
+    // show that agent's own values, not its neighbour's.
+    const c = await config()
+    // The rail renders `agent.name || agent.id`, so an agent with a display
+    // name is NOT clickable by its id — selecting "claw" misses the button
+    // labelled "Claw".
+    const rail = (c.agents.list ?? []).map((a) => a.name || a.id)
+    assert(rail.length >= 2, "need at least two agents for this check")
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(500)
+    const probeTemp = await page
+      .locator('input[type=number][placeholder="default"]')
+      .first()
+      .inputValue()
+    const other = rail.find((n) => n !== PROBE)
+    await page.getByRole("button", { name: other, exact: true }).click()
+    await page.waitForTimeout(500)
+    const otherTemp = await page
+      .locator('input[type=number][placeholder="default"]')
+      .first()
+      .inputValue()
+    await close()
+    assert(probeTemp === "0.77", `probe showed ${probeTemp}`)
+    assert(otherTemp !== "0.77", `"${other}" showed the probe's value (${otherTemp})`)
+    return `${PROBE}=0.77, ${other}=${otherTemp || "unset"}`
+  })
+
+  await check(5, "ticking a Fusion service adds it to mcp_tools and unticking removes it", async () => {
+    if (!created) return "skipped, never created"
+    const catalog = await api("/api/agents/tools")
+    const service = catalog.json?.fusion_services?.[0]
+    if (!service) return "skipped, no Fusion service defined on this instance"
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(400)
+    const box = page.getByLabel(service, { exact: true }).first()
+    assert((await box.count()) > 0, `no "${service}" checkbox under Fusion services`)
+    assert(!(await box.isChecked()), `"${service}" already ticked on a new agent`)
+    await box.click()
+    await page.waitForTimeout(2000)
+    let c = await config()
+    let a = (c.agents.list ?? []).find((x) => x.id === PROBE)
+    assert((a?.mcp_tools ?? []).includes(service), `mcp_tools = ${JSON.stringify(a?.mcp_tools)}; expected ${service}`)
+    await box.click()
+    await page.waitForTimeout(2000)
+    await close()
+    c = await config()
+    a = (c.agents.list ?? []).find((x) => x.id === PROBE)
+    assert(!(a?.mcp_tools ?? []).includes(service), `mcp_tools = ${JSON.stringify(a?.mcp_tools)}; ${service} should be gone`)
+    assert(a?.temperature === 0.77, "the earlier edit was clobbered by the Fusion toggle")
+  })
+
+  await check(6, "the shell_exec box adds and removes only its own entry, with its warning", async () => {
+    if (!created) return "skipped, never created"
+    const before = (await config()).agents.list.find((x) => x.id === PROBE)
+    const others = (before?.tools ?? []).filter((t) => t !== "shell_exec")
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(400)
+    assert((await page.getByRole("switch", { name: /shell/i }).count()) === 0, "a separate shell switch is still on the card")
+    const box = page.getByRole("checkbox", { name: "shell_exec", exact: true }).first()
+    assert((await box.count()) > 0, "no shell_exec box under Internal tools")
+    assert(!(await box.isChecked()), "shell_exec already ticked on a new agent")
+    const warning = page.getByTestId("shell-warning").first()
+    assert((await warning.getAttribute("title")) === "Full access to this app's account", "the shell_exec row has no warning hover text")
+    await box.click()
+    await page.waitForTimeout(2000)
+    let a = (await config()).agents.list.find((x) => x.id === PROBE)
+    assert((a?.tools ?? []).includes("shell_exec"), `tools = ${JSON.stringify(a?.tools)}; expected shell_exec`)
+    assert(
+      JSON.stringify(a.tools.filter((t) => t !== "shell_exec")) === JSON.stringify(others),
+      `tools = ${JSON.stringify(a.tools)}; the other entries changed (were ${JSON.stringify(others)})`,
+    )
+    await box.click()
+    await page.waitForTimeout(2000)
+    await close()
+    a = (await config()).agents.list.find((x) => x.id === PROBE)
+    assert(!(a?.tools ?? []).includes("shell_exec"), `tools = ${JSON.stringify(a?.tools)}; shell_exec should be gone`)
+    assert(JSON.stringify(a?.tools ?? []) === JSON.stringify(others), `tools = ${JSON.stringify(a?.tools)}; expected ${JSON.stringify(others)}`)
+    assert(a?.temperature === 0.77, "the earlier edit was clobbered by the shell box")
+  })
+
+  await check(7, "returning to the Agents page through the sidebar shows the agents", async () => {
+    // A return visit mounts the page with its query already cached. It used to
+    // seed the editable list only when a new fetch landed, so the cached list
+    // never showed and the page said "No agents yet" until a browser reload.
+    const { close, page } = await open("/agents")
+    const c = await config()
+    const rail = (c.agents.list ?? []).map((a) => a.name || a.id)
+    assert(rail.length >= 1, "need at least one agent for this check")
+    await page.locator('a[href="/report"]').first().click()
+    await page.waitForTimeout(700)
+    const link = page.locator('a[href="/agents"]').first()
+    if (!(await link.isVisible().catch(() => false))) {
+      await page.getByRole("button", { name: "Agents", exact: true }).first().click()
+      await page.waitForTimeout(300)
+    }
+    await link.click()
+    await page.waitForTimeout(700)
+    const text = await page.locator("main").innerText()
+    const shown = await page.getByRole("button", { name: rail[0], exact: true }).count()
+    await close()
+    assert(!/No agents yet/.test(text), "the page says 'No agents yet' on a return visit")
+    assert(shown > 0, `the rail does not list "${rail[0]}" on a return visit`)
+  })
+
+  await check(8, "a model whose bypass flag is ignored is flagged on the agent card", async () => {
+    if (!created) return "skipped, never created"
+    const clis = (await api("/api/system/clis")).json ?? []
+    const c = await config()
+    const byName = Object.fromEntries((c.providers ?? []).map((p) => [p.name, p]))
+    const model = (c.models ?? []).find((m) => {
+      const p = byName[m.provider]
+      const cli = p && clis.find((x) => x.protocol === p.protocol)
+      return cli && !p.bypass_restrictions && (m.extra_args ?? []).some((a) => (cli.bypass_args ?? []).includes(a))
+    })
+    if (!model) return "skipped, no CLI model carries an ignored bypass flag on this instance"
+    const list = (c.agents.list ?? []).map((a) => (a.id === PROBE ? { ...a, models: [model.model_name] } : a))
+    const r = await api("/api/config", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agents: { list } }) })
+    assert(r.status === 200, `setting the model = ${r.status}`)
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(500)
+    const text = await page.locator("main").innerText()
+    const link = await page.getByRole("link", { name: "Allow it" }).count()
+    await close()
+    const provider = model.provider.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    assert(new RegExp(`${provider} is not allowed to bypass its restrictions\\.`).test(text), `no warning for ${model.provider}:\n${text.slice(0, 400)}`)
+    assert(link > 0, 'the warning has no "Allow it" link to the Providers page')
+  })
+
+  await check(9, "a long dropdown keeps its size and scroll position while scrolling", async () => {
+    // Radix Select's item-aligned mode grows the popup and rewrites the scroll
+    // position on every scroll event; on a phone the list flickers and snaps
+    // back to the top on release. The wheel goes through the same code, so this
+    // desktop check catches a return to that mode. The list is made long with
+    // twenty temporary models, removed again afterwards.
+    const c = await config()
+    const origModels = c.models ?? []
+    const base = origModels.find((m) => m.enabled)
+    if (!base) return "skipped, no enabled model to clone"
+    const rail = (c.agents.list ?? []).map((a) => a.name || a.id).filter((n) => n !== PROBE)
+    assert(rail.length >= 1, "need an agent")
+    const extra = Array.from({ length: 20 }, (_, i) => ({ ...base, model_name: `zz-e2e-scroll-${String(i + 1).padStart(2, "0")}`, enabled: true }))
+    const added = await api("/api/config", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models: [...origModels, ...extra] }) })
+    assert(added.status === 200, `adding models = ${added.status}`)
+    try {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: rail[0], exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.getByRole("combobox").filter({ hasText: /Add model/ }).first().click()
+      await page.waitForTimeout(400)
+      const viewport = page.locator("[data-radix-select-viewport]").first()
+      const content = page.locator("[data-slot=select-content]").first()
+      const size = async () => (await content.boundingBox())?.height ?? 0
+      const top = () => viewport.evaluate((v) => Math.round(v.scrollTop))
+      const before = await size()
+      const scrollbar = await viewport.evaluate((v) => getComputedStyle(v).scrollbarWidth)
+      assert(scrollbar !== "none", "the list hides its scrollbar, so a long list looks cut off")
+      const box = await viewport.boundingBox()
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.wheel(0, 240)
+      await page.waitForTimeout(150)
+      const during = await top()
+      await page.mouse.wheel(0, 240)
+      await page.waitForTimeout(600)
+      const after = await top()
+      const afterSize = await size()
+      await page.keyboard.press("Escape")
+      await close()
+      assert(during > 0, "the list did not scroll")
+      assert(after >= during, `the list jumped back: ${during} then ${after}`)
+      assert(Math.abs(afterSize - before) < 2, `the popup resized while scrolling: ${Math.round(before)} -> ${Math.round(afterSize)}`)
+      return `scrolled to ${after}px, popup ${Math.round(before)}px throughout`
+    } finally {
+      await api("/api/config", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models: origModels }) })
+    }
+  })
+
+  await check(10, "Cancel in the delete confirmation keeps the agent", async () => {
+    if (!created) return "skipped, never created"
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(400)
+    await page.getByRole("button", { name: new RegExp(`Delete agent ${PROBE}`, "i") }).click()
+    const dialog = page.getByRole("alertdialog")
+    await dialog.waitFor({ timeout: 5000 })
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click()
+    await dialog.waitFor({ state: "hidden", timeout: 5000 })
+    // Long enough for any save the dialog might have started to land.
+    await page.waitForTimeout(1500)
+    const rail = await page.getByRole("button", { name: PROBE, exact: true }).count()
+    await close()
+    const a = (await config()).agents.list.find((x) => x.id === PROBE)
+    assert(a, `${PROBE} is gone from the config after Cancel`)
+    assert(a.temperature === 0.77, `temperature = ${a.temperature} after Cancel; the agent changed`)
+    assert(rail > 0, `${PROBE} is gone from the rail after Cancel`)
+  })
+
+  await check(11, "May message: ticking an agent saves subagents.allow_agents and keeps subagents.models", async () => {
+    const ID = "e2e-msg"
+    const before = await config()
+    const others = (before.agents.list ?? []).filter((a) => a.id !== ID && a.id !== PROBE)
+    if (others.length === 0) return "skipped, no other agent to tick"
+    const model = (before.models ?? []).find((m) => m.enabled)?.model_name
+    if (!model) return "skipped, no enabled model for subagents.models"
+    const target = others[0]
+    const label = target.name || target.id
+    const subagents = { models: [model] }
+    const list = [...(before.agents.list ?? []), { id: ID, name: ID, tools: [], subagents }]
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `creating ${ID} = ${r.status}`)
+    try {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      const box = page.getByRole("checkbox", { name: label, exact: true }).first()
+      assert((await box.count()) > 0, `no "${label}" box under May message`)
+      assert((await box.getAttribute("aria-checked")) === "false", `"${label}" already ticked on a new agent`)
+      await box.click()
+      await page.waitForTimeout(2000)
+      await close()
+      const a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(
+        JSON.stringify(a?.subagents?.allow_agents) === JSON.stringify([target.id]),
+        `subagents.allow_agents = ${JSON.stringify(a?.subagents?.allow_agents)}; expected ${JSON.stringify([target.id])}`,
+      )
+      assert(
+        JSON.stringify(a?.subagents?.models) === JSON.stringify(subagents.models),
+        `subagents.models = ${JSON.stringify(a?.subagents?.models)}; the save dropped it`,
+      )
+      return `${ID} may message ${target.id}`
+    } finally {
+      const c = await config()
+      c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== ID)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: c.agents.list } }),
+      })
+    }
+  })
+
+  await check(12, "Sub-Agent models: adding a model saves subagents.models, removing it drops the key, allow_agents kept", async () => {
+    const ID = "e2e-wrk"
+    const before = await config()
+    const model = (before.models ?? []).find((m) => m.enabled)?.model_name
+    if (!model) return "skipped, no enabled model to add"
+    const subagents = { allow_agents: [ID] }
+    const list = [...(before.agents.list ?? []), { id: ID, name: ID, tools: [], subagents }]
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `creating ${ID} = ${r.status}`)
+    try {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      const section = page.locator("div", { has: page.getByText("Sub-Agent models (tried in order)", { exact: true }) }).last()
+      const add = section.getByRole("combobox").filter({ hasText: /Add sub-agent model/ })
+      assert((await add.count()) > 0, "no Add sub-agent model… control under Sub-Agent models")
+      await add.click()
+      await page.waitForTimeout(400)
+      await page.locator(`[role=option]:has-text("${model}")`).first().click()
+      await page.waitForTimeout(2000)
+      let a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(
+        JSON.stringify(a?.subagents?.models) === JSON.stringify([model]),
+        `subagents.models = ${JSON.stringify(a?.subagents?.models)} after the add; expected ${JSON.stringify([model])}`,
+      )
+      assert(
+        JSON.stringify(a?.subagents?.allow_agents) === JSON.stringify(subagents.allow_agents),
+        `subagents.allow_agents = ${JSON.stringify(a?.subagents?.allow_agents)} after the add; the save changed it`,
+      )
+      await section.locator('button[title="Remove"]').first().click()
+      await page.waitForTimeout(2000)
+      await close()
+      a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(
+        a?.subagents?.models === undefined,
+        `subagents.models = ${JSON.stringify(a?.subagents?.models)} after the remove; expected the key to be absent`,
+      )
+      assert(
+        JSON.stringify(a?.subagents?.allow_agents) === JSON.stringify(subagents.allow_agents),
+        `subagents.allow_agents = ${JSON.stringify(a?.subagents?.allow_agents)} after the remove; the save changed it`,
+      )
+      return `${ID}: subagents.models saved as [${model}], then removed; allow_agents kept`
+    } finally {
+      const c = await config()
+      c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== ID)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: c.agents.list } }),
+      })
+    }
+  })
+
+  await check(13, "delete the agent and confirm it is gone", async () => {
+    if (!created) return "skipped, never created"
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: PROBE, exact: true }).click()
+    await page.waitForTimeout(400)
+    // By accessible name. It used to be an icon-only button with no name at
+    // all, which meant a screen reader announced nothing and this step had to
+    // guess at CSS classes — `[class*="destructive"]` matches every shadcn
+    // button, since they all carry aria-invalid:*destructive* utilities.
+    const trash = page.getByRole("button", { name: new RegExp(`Delete agent ${PROBE}`, "i") })
+    assert((await trash.count()) > 0, "no labelled delete control on the agent card")
+    await trash.click()
+    // The trash button only opens the confirmation dialog; nothing is deleted
+    // until its Delete button is clicked.
+    const confirm = page.getByRole("alertdialog").getByRole("button", { name: "Delete", exact: true })
+    await confirm.waitFor({ timeout: 5000 })
+    await confirm.click()
+    await page.waitForTimeout(1500)
+    await close()
+    const c = await config()
+    const still = (c.agents.list ?? []).some((a) => a.id === PROBE)
+    if (still) {
+      // Fall back to the API so the suite never leaves debris behind.
+      const cfg = await config()
+      cfg.agents.list = (cfg.agents.list ?? []).filter((a) => a.id !== PROBE)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: cfg.agents.list } }),
+      })
+      throw new Error("UI delete did not remove the agent (cleaned up via API)")
+    }
+  })
+
+  await check(14, "Allow classifiers writes the first model in Classification, turning it off drops the block", async () => {
+    const ID = "e2e-cls"
+    const before = await config()
+    // A person's model would hide the switch: pick a model on any other protocol.
+    const human = new Set((before.providers ?? []).filter((p) => p.protocol === "human").map((p) => p.name))
+    const model = (before.models ?? []).find((m) => m.enabled && !human.has(m.provider))?.model_name
+    if (!model) return "skipped, no enabled model for the agent"
+    const classify = (before.task_models?.classify ?? [])[0]?.model
+    if (!classify) return "skipped, Classification is empty on the Task models page"
+    const list = [...(before.agents.list ?? []), { id: ID, name: ID, models: [model], tools: [] }]
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `creating ${ID} = ${r.status}`)
+    const toggle = async () => {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.getByRole("switch", { name: "Allow classifiers", exact: true }).click()
+      await page.waitForTimeout(2000)
+      const selector = await page.getByRole("combobox", { name: "Classifier model", exact: true }).count()
+      await close()
+      return selector
+    }
+    try {
+      const shownOn = await toggle()
+      let a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(a?.classifiers?.enabled === true, `classifiers = ${JSON.stringify(a?.classifiers)} after turning it on`)
+      assert(a.classifiers.model === classify, `classifiers.model = ${JSON.stringify(a.classifiers.model)}; expected the first Classify model ${classify}`)
+      assert(shownOn > 0, "no Classifier model selector with the switch on")
+      const shownOff = await toggle()
+      a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(a && a.classifiers === undefined, `classifiers = ${JSON.stringify(a?.classifiers)} after turning it off, want absent`)
+      assert(shownOff === 0, "the Classifier model selector is still shown with the switch off")
+      assert(JSON.stringify(a.models) === JSON.stringify([model]), "models changed with the toggle")
+      return `${ID}: classifiers on with model ${classify}, then removed`
+    } finally {
+      const c = await config()
+      c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== ID)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: c.agents.list } }),
+      })
+    }
+  })
+
+  await check(15, "Allow task models: a kind's box writes the grant, unticking it drops the block", async () => {
+    const ID = "e2e-tm"
+    const before = await config()
+    const human = new Set((before.providers ?? []).filter((p) => p.protocol === "human").map((p) => p.name))
+    const model = (before.models ?? []).find((m) => m.enabled && !human.has(m.provider))?.model_name
+    if (!model) return "skipped, no enabled model for the agent"
+    const list = [...(before.agents.list ?? []), { id: ID, name: ID, models: [model], tools: [] }]
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `creating ${ID} = ${r.status}`)
+    const click = async () => {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      const box = page.getByRole("checkbox", { name: "Allow task models: Images", exact: true })
+      await box.click()
+      await page.waitForTimeout(2000)
+      const state = await box.getAttribute("data-state")
+      await close()
+      return state
+    }
+    try {
+      const on = await click()
+      let a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(on === "checked", `box state after ticking = ${on}`)
+      assert(JSON.stringify(a?.task_models) === JSON.stringify({ image: true }), `task_models = ${JSON.stringify(a?.task_models)} after ticking Images`)
+      const off = await click()
+      a = (await config()).agents.list.find((x) => x.id === ID)
+      assert(off === "unchecked", `box state after unticking = ${off}`)
+      assert(a && a.task_models === undefined, `task_models = ${JSON.stringify(a?.task_models)} after unticking, want absent`)
+      return `${ID}: images granted, then the block removed`
+    } finally {
+      const c = await config()
+      c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== ID)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: c.agents.list } }),
+      })
+    }
+  })
+
+  // removeAgent drops a throwaway agent through the API.
+  const removeAgent = async (id) => {
+    const c = await config()
+    c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== id)
+    await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list: c.agents.list } }),
+    })
+  }
+  // addAgent creates a throwaway agent through the API.
+  const addAgent = async (agent) => {
+    const before = await config()
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list: [...(before.agents.list ?? []), agent] } }),
+    })
+    assert(r.status === 200, `creating ${agent.id} = ${r.status}`)
+  }
+
+  await check(16, "an allowed folder's note is saved and shown after a reload", async () => {
+    const ID = "e2e-note"
+    const NOTE = "inbound audio notes"
+    await addAgent({ id: ID, name: ID, tools: [], allowed_folders: [{ path: "/tmp" }] })
+    try {
+      let { close, page } = await open("/agents")
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.getByRole("textbox", { name: "Note", exact: true }).first().fill(NOTE)
+      await page.waitForTimeout(2000)
+      await close()
+      const a = (await config()).agents.list.find((x) => x.id === ID)
+      const folders = a?.allowed_folders ?? []
+      assert(
+        folders.length === 1 && folders[0].path === "/tmp" && folders[0].note === NOTE && !folders[0].notify,
+        `allowed_folders = ${JSON.stringify(a?.allowed_folders)}`,
+      )
+      ;({ close, page } = await open("/agents"))
+      await page.getByRole("button", { name: ID, exact: true }).click()
+      await page.waitForTimeout(400)
+      const shown = await page.getByRole("textbox", { name: "Note", exact: true }).first().inputValue()
+      await close()
+      assert(shown === NOTE, `note after reload = ${JSON.stringify(shown)}`)
+      return `${ID}: note saved and shown`
+    } finally {
+      await removeAgent(ID)
+    }
+  })
+
+  // F17-F20 share one throwaway agent, e2e-code, removed after F20 whatever
+  // the outcome.
+  const CODE = "e2e-code"
+  const CODING = [
+    "file_list", "file_glob", "file_read_lines", "file_search_lines", "file_edit_lines",
+    "file_insert_lines", "file_delete_lines", "file_edit", "file_write", "shell_exec", "agent_spawn",
+  ]
+  let codeCreated = false
+  // codeTools is e2e-code's saved tools list.
+  const codeTools = async () => (await config()).agents.list.find((x) => x.id === CODE)?.tools ?? []
+  // setCodeTools writes e2e-code's tools list through the API.
+  const setCodeTools = async (tools) => {
+    const c = await config()
+    const list = (c.agents.list ?? []).map((a) => (a.id === CODE ? { ...a, tools } : a))
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `setting ${CODE}'s tools = ${r.status}`)
+  }
+  // onCodeCard opens /agents with e2e-code selected, runs act, waits for the
+  // save and returns the saved tools list.
+  const onCodeCard = async (act) => {
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: CODE, exact: true }).click()
+    await page.waitForTimeout(400)
+    await act(page)
+    await page.waitForTimeout(2000)
+    await close()
+    return codeTools()
+  }
+  const clickButton = (name) => (page) => page.getByRole("button", { name, exact: true }).first().click()
+  const counts = (tools) => tools.reduce((m, t) => m.set(t, (m.get(t) ?? 0) + 1), new Map())
+
+  await check(17, "Coding tools grants the eleven tools and saves them", async () => {
+    await addAgent({ id: CODE, name: CODE, tools: ["time_now"] })
+    codeCreated = true
+    const tools = await onCodeCard(clickButton("Coding tools"))
+    for (const t of CODING) assert(tools.includes(t), `tools = ${JSON.stringify(tools)}; ${t} missing`)
+    assert(tools.includes("time_now"), `tools = ${JSON.stringify(tools)}; time_now was dropped`)
+    assert(tools.length === CODING.length + 1, `tools = ${JSON.stringify(tools)}; expected time_now and the eleven`)
+    return `${CODE}: ${tools.length} tools`
+  })
+
+  await check(18, "Coding tools only adds: nothing set is removed or repeated", async () => {
+    if (!codeCreated) return "skipped, never created"
+    await setCodeTools(["time_now", "web_fetch", "file_*", "agent_spawn"])
+    const tools = await onCodeCard(clickButton("Coding tools"))
+    const want = ["time_now", "web_fetch", "file_*", "agent_spawn", "shell_exec"]
+    assert(JSON.stringify(tools) === JSON.stringify(want), `tools = ${JSON.stringify(tools)}, want ${JSON.stringify(want)}`)
+    const again = await onCodeCard(clickButton("Coding tools"))
+    assert(JSON.stringify(again) === JSON.stringify(want), `a second click changed tools to ${JSON.stringify(again)}`)
+    for (const [t, n] of counts(again)) assert(n === 1, `${t} is listed ${n} times`)
+  })
+
+  await check(19, "the shell_exec box can be unticked and ticked like any tool and persists", async () => {
+    if (!codeCreated) return "skipped, never created"
+    let tools = await onCodeCard((page) => page.getByRole("checkbox", { name: "shell_exec", exact: true }).first().click())
+    assert(!tools.includes("shell_exec"), `tools = ${JSON.stringify(tools)}; shell_exec should be gone`)
+    assert(tools.includes("file_*") && tools.includes("web_fetch"), `tools = ${JSON.stringify(tools)}; other entries changed`)
+    // After a reload the box shows the saved state, and ticking it saves it.
+    tools = await onCodeCard(async (page) => {
+      const box = page.getByRole("checkbox", { name: "shell_exec", exact: true }).first()
+      assert(!(await box.isChecked()), "shell_exec box ticked after it was saved off")
+      await box.click()
+    })
+    assert(tools.includes("shell_exec"), `tools = ${JSON.stringify(tools)}; shell_exec missing after ticking`)
+  })
+
+  await check(20, "Default tools does not add shell_exec", async () => {
+    try {
+      if (!codeCreated) return "skipped, never created"
+      await setCodeTools(["time_now"])
+      const tools = await onCodeCard(clickButton("Default tools"))
+      assert(tools.length > 0, "Default tools saved an empty list")
+      assert(!tools.includes("shell_exec"), `tools = ${JSON.stringify(tools)}; Default tools added shell_exec`)
+    } finally {
+      if (codeCreated) await removeAgent(CODE)
+    }
+  })
+}
+
+// G. System page (the old Config page minus the listeners, which are group R)
+if (useGroup("G", "System page — load, edit, persist, restore, redirect, classifiers, task models")) {
+  let original
+  await check(1, "system page renders the moved sections", async () => {
+    const { close, text, problems } = await open("/system")
+    const body = await text()
+    await close()
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    for (const s of ["Agent defaults", "Context management", "Runtime", "Backup", "Devices"]) {
+      assert(body.includes(s), `missing section "${s}"`)
+    }
+    // operator.name: the sender's name for the operator's own messages.
+    assert(body.includes("Your name"), 'missing the "Your name" field')
+    // The listeners moved to /network; a Service card here would be a second
+    // writer of gateway.* fighting the Network page.
+    assert(!body.includes("Allowed network CIDRs"), "the listener settings are still on /system")
+  })
+  await check(2, "an edited field autosaves", async () => {
+    const c = await config()
+    original = c?.backup?.dest ?? ""
+    const { close, page } = await open("/system")
+    const field = page.locator("[data-testid=backup-dest]")
+    await field.fill("/tmp/e2e-probe-backup")
+    await page.waitForTimeout(2000)
+    await close()
+    const after = await config()
+    assert(
+      after?.backup?.dest === "/tmp/e2e-probe-backup",
+      `backup.dest = ${after?.backup?.dest}`,
+    )
+  })
+  await check(3, "restore the original value", async () => {
+    const { close, page } = await open("/system")
+    const field = page.locator("[data-testid=backup-dest]")
+    await field.fill(original)
+    await page.waitForTimeout(2000)
+    await close()
+    const after = await config()
+    assert(
+      (after?.backup?.dest ?? "") === original,
+      `backup.dest = ${after?.backup?.dest}, expected ${original}`,
+    )
+    return `restored to "${original}"`
+  })
+  await check(4, "raw config view returns the document", async () => {
+    const { close, text } = await open("/config/raw")
+    const body = await text()
+    await close()
+    assert(body.length > 100, "raw config appears empty")
+  })
+  await check(5, "/config redirects to /system", async () => {
+    const { close, page, problems, text } = await open("/config")
+    await page.waitForURL(/\/system$/, { timeout: 10000 })
+    const body = await text()
+    await close()
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    assert(body.includes("Backup"), "the System page did not render after the redirect")
+  })
+  await check(6, "a classifier setting saves and reverts", async () => {
+    const before = (await config())?.classifiers?.limits?.min_every_seconds
+    const original = before ? String(before) : ""
+    const { close, page } = await open("/system")
+    try {
+      const field = page.locator("[data-testid=classifiers-min_every_seconds]")
+      const placeholder = await field.getAttribute("placeholder")
+      assert(placeholder === "15", `placeholder = ${placeholder}, expected 15`)
+      await field.fill("77")
+      await page.waitForTimeout(2000)
+      const saved = (await config())?.classifiers?.limits?.min_every_seconds
+      assert(saved === 77, `min_every_seconds = ${saved}, expected 77`)
+      await field.fill(original)
+      await page.waitForTimeout(2000)
+    } finally {
+      await close()
+    }
+    const after = (await config())?.classifiers?.limits?.min_every_seconds
+    assert(
+      (after ? String(after) : "") === original,
+      `min_every_seconds = ${after}, expected ${original || "absent"}`,
+    )
+    return `restored to ${original || "absent"}`
+  })
+  await check(7, "Echo transcription on the Task models page saves and reverts", async () => {
+    const original = (await config())?.task_models?.echo_transcription === true
+    const { close, page } = await open("/task-models")
+    try {
+      const echo = page.getByRole("switch", { name: "Echo transcription", exact: true })
+      await echo.waitFor({ timeout: 10000 })
+      await echo.click()
+      await page.waitForTimeout(2000)
+      const saved = (await config())?.task_models?.echo_transcription === true
+      assert(saved === !original, `echo_transcription = ${saved}, expected ${!original}`)
+      await echo.click()
+      await page.waitForTimeout(2000)
+    } finally {
+      await close()
+    }
+    const after = (await config())?.task_models?.echo_transcription === true
+    assert(after === original, `echo_transcription = ${after}, expected ${original}`)
+    return `restored to ${original ? "on" : "off"}`
+  })
+
+  await check(8, "Images through on a Generate images row saves on that entry and reverts", async () => {
+    const tmBlock = async () => (await api("/api/task-models")).json?.task_models ?? {}
+    const put = (block) => api("/api/task-models", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(block) })
+    const before = await tmBlock()
+    const original = before.image ?? []
+    let name = original[0]?.model
+    let addedHere = false
+    const { close, page } = await open("/task-models")
+    try {
+      if (!name) {
+        const add = page.getByRole("combobox", { name: "Model to add to Generate images", exact: true })
+        if ((await add.count()) === 0) return "skipped, no enabled model to add"
+        name = await add.inputValue()
+        await page.getByRole("button", { name: "Add model to Generate images", exact: true }).click()
+        await page.waitForTimeout(2000)
+        addedHere = true
+      }
+      const entry = async () => ((await tmBlock()).image ?? []).find((m) => m.model === name) ?? {}
+      const apiBefore = (await entry()).image_api === "images" ? "images" : "chat"
+      const other = apiBefore === "images" ? "chat" : "images"
+      const select = page.getByLabel(`Images through for ${name}`, { exact: true })
+      await select.waitFor({ timeout: 10000 })
+      await select.selectOption(other)
+      await page.waitForTimeout(2000)
+      const got = (await entry()).image_api ?? "chat"
+      assert(got === other, `image_api = ${got}, expected ${other}`)
+      const now = await tmBlock()
+      for (const k of ["text", "tts", "stt", "vision", "classify"]) {
+        assert(JSON.stringify(now[k] ?? []) === JSON.stringify(before[k] ?? []), `task_models.${k} changed`)
+      }
+      await select.selectOption(apiBefore)
+      await page.waitForTimeout(2000)
+      if (addedHere) {
+        await page.getByRole("button", { name: `Remove ${name} from Generate images`, exact: true }).click()
+        await page.waitForTimeout(2000)
+      }
+      const after = (await tmBlock()).image ?? []
+      if (JSON.stringify(after) !== JSON.stringify(original)) {
+        await put({ ...(await tmBlock()), image: original })
+      }
+      assert(JSON.stringify(after) === JSON.stringify(original), `task_models.image = ${JSON.stringify(after)}, expected ${JSON.stringify(original)}`)
+      return `${name}: ${other}, restored to ${apiBefore}${addedHere ? " and removed" : ""}`
+    } finally {
+      await close()
+    }
+  })
+}
+
+// U. Task models page. Writes: every check edits task_models (and U8 creates
+// a throwaway agent); the group reads the block first and puts it back at the
+// end, then waits for the reload. A model is only ever added to Transcription
+// when its provider serves speech and has an API key, so no check can raise
+// the "Speech backend not usable" alert.
+if (useGroup("U", "Task models page — six lists: add, reorder, list settings, limit, leave, remove, Agents and Check Up")) {
+  const JSON_HDR = { "Content-Type": "application/json" }
+  const TITLES = {
+    text: "Generate text",
+    image: "Generate images",
+    tts: "Text to speech",
+    stt: "Transcription",
+    vision: "Describe images",
+    classify: "Classification",
+  }
+  const USES = Object.keys(TITLES)
+  const tmGet = async () => (await api("/api/task-models")).json
+  const tmPut = (block) => api("/api/task-models", { method: "PUT", headers: JSON_HDR, body: JSON.stringify(block) })
+  const saved = async () => (await tmGet())?.task_models ?? {}
+  const namesIn = (block, use) => (block[use] ?? []).map((m) => m.model)
+  const entryOf = async (use, name) => ((await saved())[use] ?? []).find((m) => m.model === name)
+  const settle = (page) => page.waitForTimeout(1800)
+  // addTo adds name to a list on the open page.
+  const addTo = async (page, use, name) => {
+    await page.getByRole("combobox", { name: `Model to add to ${TITLES[use]}`, exact: true }).selectOption(name)
+    await page.getByRole("button", { name: `Add model to ${TITLES[use]}`, exact: true }).click()
+    await settle(page)
+  }
+  const offered = (page, use) =>
+    page.getByRole("combobox", { name: `Model to add to ${TITLES[use]}`, exact: true }).locator("option").allTextContents().catch(() => [])
+  const shownRows = (page, use) =>
+    page.getByTestId(`task-list-${use}`).locator(`[data-testid^="task-model-${use}-"]`).evaluateAll((els, u) => els.map((e) => e.dataset.testid.slice(`task-model-${u}-`.length)), use)
+
+  const initial = await tmGet()
+  const snapshot = initial?.task_models ?? {}
+  const cfg0 = await config()
+  const keyed = new Set((cfg0.providers ?? []).filter((p) => p.api_key).map((p) => p.name))
+  const providerOf = Object.fromEntries((cfg0.models ?? []).map((m) => [m.model_name, m.provider]))
+  const enabled = (initial?.models ?? []).filter((o) => o.enabled)
+  const notIn = (use) => enabled.filter((o) => !namesIn(snapshot, use).includes(o.name))
+  // A: a model not in Generate text, one that can do speech when there is one
+  // (so it may be added to Transcription safely). B: another model not in
+  // Generate images.
+  const isSpeech = (o) => o?.support?.stt === "yes" && keyed.has(providerOf[o.name])
+  const A = (notIn("text").find(isSpeech) ?? notIn("text")[0])?.name
+  const B = notIn("image").find((o) => o.name !== A)?.name
+  const added = {} // use -> names added by the page, removed again in U10
+
+  try {
+    await check(1, "Add model appends to its own list only, in order", async () => {
+      if (!A) return "skipped, every enabled model is already in Generate text"
+      const { close, page, problems } = await open("/task-models")
+      try {
+        await addTo(page, "text", A)
+        added.text = [A]
+        assert(!(await offered(page, "text")).includes(A), `${A} is still offered in Generate text`)
+        assert((await offered(page, "image")).includes(A) || namesIn(snapshot, "image").includes(A), `${A} is not offered in Generate images`)
+        added.image = []
+        for (const name of [A, B].filter((n) => n && !namesIn(snapshot, "image").includes(n))) {
+          await addTo(page, "image", name)
+          added.image.push(name)
+          assert(!(await offered(page, "image")).includes(name), `${name} is still offered in Generate images`)
+        }
+        assert(JSON.stringify(await shownRows(page, "text")) === JSON.stringify([...namesIn(snapshot, "text"), A]), "Generate text rows on the page")
+      } finally {
+        await close()
+      }
+      assert(problems.length === 0, `console errors: ${problems[0]}`)
+      const s = await saved()
+      assert(JSON.stringify(namesIn(s, "text")) === JSON.stringify([...namesIn(snapshot, "text"), A]), `text ${JSON.stringify(namesIn(s, "text"))}`)
+      assert(JSON.stringify(namesIn(s, "image")) === JSON.stringify([...namesIn(snapshot, "image"), ...added.image]), `image ${JSON.stringify(namesIn(s, "image"))}`)
+      assert(JSON.stringify(await entryOf("text", A)) === JSON.stringify({ model: A }), `${A} saved in text as ${JSON.stringify(await entryOf("text", A))}`)
+      for (const name of added.image) {
+        assert(JSON.stringify(await entryOf("image", name)) === JSON.stringify({ model: name }), `${name} saved in image as ${JSON.stringify(await entryOf("image", name))}`)
+      }
+      for (const u of ["tts", "stt", "vision", "classify"]) {
+        assert(JSON.stringify(s[u] ?? []) === JSON.stringify(snapshot[u] ?? []), `task_models.${u} changed`)
+      }
+      return `text +${A}; image +${added.image.join(", +") || "nothing"}`
+    })
+
+    await check(2, "Move up and down reorder one list and its saved order; the ends are disabled", async () => {
+      const names = namesIn(await saved(), "image")
+      if (names.length < 2) return "skipped, fewer than two models in Generate images"
+      const textBefore = namesIn(await saved(), "text")
+      const last = names[names.length - 1]
+      const t = TITLES.image
+      const { close, page } = await open("/task-models")
+      try {
+        assert(await page.getByRole("button", { name: `Move ${names[0]} up in ${t}`, exact: true }).isDisabled(), "the first row's Move up is enabled")
+        assert(await page.getByRole("button", { name: `Move ${last} down in ${t}`, exact: true }).isDisabled(), "the last row's Move down is enabled")
+        await page.getByRole("button", { name: `Move ${last} up in ${t}`, exact: true }).click()
+        await settle(page)
+        const want = [...names.slice(0, -2), last, names[names.length - 2]]
+        const s = await saved()
+        assert(JSON.stringify(namesIn(s, "image")) === JSON.stringify(want), `after Move up: ${JSON.stringify(namesIn(s, "image"))}`)
+        assert(JSON.stringify(namesIn(s, "text")) === JSON.stringify(textBefore), "Generate text changed with Generate images")
+        assert(JSON.stringify(await shownRows(page, "image")) === JSON.stringify(want), "page order after Move up")
+        await page.getByRole("button", { name: `Move ${last} down in ${t}`, exact: true }).click()
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const back = namesIn(await saved(), "image")
+      assert(JSON.stringify(back) === JSON.stringify(names), `after Move down: ${JSON.stringify(back)}`)
+      return `${last} up and back`
+    })
+
+    await check(3, "Images through is on Generate images rows only and saves on the image entry", async () => {
+      if (!added.image?.includes(A)) return "skipped, A was not added to Generate images"
+      const { close, page } = await open("/task-models")
+      try {
+        const rows = (await saved()).image ?? []
+        assert((await page.getByLabel(/^Images through for /).count()) === rows.length, "Images through is not on every Generate images row alone")
+        const select = page.getByLabel(`Images through for ${A}`, { exact: true })
+        await select.selectOption("images")
+        await settle(page)
+        let e = await entryOf("image", A)
+        assert(JSON.stringify(e) === JSON.stringify({ model: A, image_api: "images" }), `image entry ${JSON.stringify(e)}`)
+        assert(JSON.stringify(await entryOf("text", A)) === JSON.stringify({ model: A }), "the text entry took image_api")
+        await select.selectOption("chat")
+        await settle(page)
+        e = await entryOf("image", A)
+        assert(JSON.stringify(e) === JSON.stringify({ model: A }), `after chat: ${JSON.stringify(e)}`)
+      } finally {
+        await close()
+      }
+      return `${A}: images, then chat`
+    })
+
+    await check(4, "Voice and Format on Text to speech save as that entry's tts_defaults", async () => {
+      if (!A) return "skipped, no model A"
+      const ttsBefore = (await saved()).tts ?? []
+      if (namesIn({ tts: ttsBefore }, "tts").includes(A)) return `skipped, ${A} is already in Text to speech`
+      const { close, page } = await open("/task-models")
+      try {
+        await addTo(page, "tts", A)
+        assert((await page.getByLabel(`Voice for ${A}`, { exact: true }).count()) === 1, "Voice is not on A's Text to speech row alone")
+        assert((await page.getByLabel(/^Voice for /).count()) === ttsBefore.length + 1, "Voice is shown outside Text to speech")
+        await page.getByLabel(`Voice for ${A}`, { exact: true }).fill("alloy")
+        await page.getByLabel(`Format for ${A}`, { exact: true }).fill("mp3")
+        await settle(page)
+        let e = await entryOf("tts", A)
+        assert(JSON.stringify(e?.tts_defaults) === JSON.stringify({ voice: "alloy", format: "mp3" }), `saved ${JSON.stringify(e)}`)
+        await page.getByLabel(`Format for ${A}`, { exact: true }).fill("")
+        await settle(page)
+        e = await entryOf("tts", A)
+        assert(JSON.stringify(e?.tts_defaults) === JSON.stringify({ voice: "alloy" }), `a blank Format saved ${JSON.stringify(e?.tts_defaults)}`)
+        await page.getByRole("button", { name: `Remove ${A} from ${TITLES.tts}`, exact: true }).click()
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const after = (await saved()).tts ?? []
+      assert(JSON.stringify(after) === JSON.stringify(ttsBefore), `task_models.tts = ${JSON.stringify(after)} after the removal`)
+      return `${A}: voice alloy, format mp3, then removed`
+    })
+
+    await check(5, "Text in results: the default as placeholder, a bad value refused, a number saved, blank saves the default", async () => {
+      const def = initial?.defaults?.result_text_chars
+      const { close, page } = await open("/task-models")
+      try {
+        const field = page.getByLabel("Text in results (characters)", { exact: true })
+        assert((await field.getAttribute("placeholder")) === String(def), `placeholder ${await field.getAttribute("placeholder")}, default ${def}`)
+        await field.fill("1234")
+        await settle(page)
+        assert((await saved()).result_text_chars === 1234, `after 1234: ${(await saved()).result_text_chars}`)
+        await field.fill("12a")
+        await settle(page)
+        assert((await page.getByText("Enter a whole number, or leave it blank.", { exact: true }).count()) === 1, "no message for 12a")
+        assert((await saved()).result_text_chars === 1234, `12a was saved as ${(await saved()).result_text_chars}`)
+        await field.fill("")
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const after = (await saved()).result_text_chars
+      assert(after === undefined || after === 0, `blank saved as ${after}`)
+      return `default ${def}`
+    })
+
+    await check(6, "an edit made just before leaving the page is saved", async () => {
+      const { close, page } = await open("/task-models")
+      try {
+        await page.getByLabel("Text in results (characters)", { exact: true }).fill("4321")
+        await page.getByRole("link", { name: "Models", exact: true }).first().click()
+        await page.waitForURL(/\/models$/, { timeout: 10000 })
+        await settle(page)
+      } finally {
+        await close()
+      }
+      const got = (await saved()).result_text_chars
+      assert(got === 4321, `result_text_chars = ${got}, expected 4321`)
+      const r = await tmPut({ ...(await saved()), result_text_chars: snapshot.result_text_chars ?? 0 })
+      assert(r.status === 200, `restoring the limit = ${r.status}`)
+      return "4321 saved on leaving"
+    })
+
+    await check(7, "Echo transcription warns while Transcription is empty", async () => {
+      const speechA = isSpeech(enabled.find((o) => o.name === A)) ? A : null
+      const empty = async () => ((await saved()).stt ?? []).length === 0
+      const warn = "No model in Transcription, so nothing is transcribed."
+      const { close, page } = await open("/task-models")
+      try {
+        const echo = page.getByRole("switch", { name: "Echo transcription", exact: true })
+        if ((await echo.getAttribute("aria-checked")) !== "true") {
+          await echo.click()
+          await settle(page)
+        }
+        const shown = await page.getByText(warn, { exact: true }).count()
+        assert(shown === ((await empty()) ? 1 : 0), `warning shown ${shown} times with Transcription empty ${await empty()}`)
+        const emptyLine = await page.getByTestId("task-list-empty-stt").count()
+        assert(emptyLine === ((await empty()) ? 1 : 0), `empty Transcription line shown ${emptyLine} times`)
+        if (speechA && (await empty())) {
+          assert((await page.getByTestId("task-list-empty-stt").textContent()) === "No models. Voice messages are not transcribed.", "empty Transcription line text")
+          await addTo(page, "stt", speechA)
+          assert((await page.getByText(warn, { exact: true }).count()) === 0, "warning still shown with a model in Transcription")
+          await page.getByRole("button", { name: `Remove ${speechA} from ${TITLES.stt}`, exact: true }).click()
+          await settle(page)
+          assert((await page.getByText(warn, { exact: true }).count()) === 1, "warning not back after emptying Transcription")
+        }
+      } finally {
+        await close()
+      }
+      const r = await tmPut({ ...(await saved()), echo_transcription: snapshot.echo_transcription === true })
+      assert(r.status === 200, `restoring echo = ${r.status}`)
+      return speechA && (await empty()) ? `added and removed ${speechA} in Transcription` : "Transcription not empty or A is no speech model; warning state checked"
+    })
+
+    await check(8, "Agents page: Allow task models names each empty list and a missing agent_spawn; all four boxes save", async () => {
+      const ID = "e2e-tmk"
+      const human = new Set((cfg0.providers ?? []).filter((p) => p.protocol === "human").map((p) => p.name))
+      const model = (cfg0.models ?? []).find((m) => m.enabled && !human.has(m.provider))?.model_name
+      if (!model) return "skipped, no enabled model for the agent"
+      const c = await config()
+      let r = await api("/api/config", { method: "PATCH", headers: JSON_HDR, body: JSON.stringify({ agents: { list: [...(c.agents.list ?? []), { id: ID, name: ID, models: [model], tools: [] }] } }) })
+      assert(r.status === 200, `creating ${ID} = ${r.status}`)
+      const grants = ["text", "image", "tts", "stt"]
+      const boxes = { text: "Text", image: "Images", tts: "Speech (TTS)", stt: "Transcription (STT)" }
+      const notes = async (page) => {
+        const out = {}
+        for (const k of grants) {
+          const note = page.getByTestId(`task-grant-no-model-${k}`)
+          out[k] = (await note.count()) === 1 ? await note.textContent() : null
+        }
+        return out
+      }
+      const select = async (page) => {
+        await page.getByRole("button", { name: ID, exact: true }).click()
+        await page.waitForTimeout(500)
+      }
+      try {
+        let { close, page } = await open("/agents")
+        await select(page)
+        const s = await saved()
+        const want = Object.fromEntries(grants.map((k) => [k, (s[k] ?? []).length === 0 ? `No model in ${TITLES[k]}. Add one on Task models.` : null]))
+        const got = await notes(page)
+        const noSpawn = await page.getByTestId("task-models-no-spawn").count()
+        const noClassify = await page.getByTestId("classifier-no-classify-models").count()
+        const links = await page.getByTestId("task-model-grants").getByRole("link", { name: "Task models" }).evaluateAll((els) => els.map((e) => e.getAttribute("href")))
+        for (const k of grants) {
+          await page.getByRole("checkbox", { name: `Allow task models: ${boxes[k]}`, exact: true }).click()
+          await page.waitForTimeout(1500)
+        }
+        await close()
+        assert(JSON.stringify(got) === JSON.stringify(want), `no-model notes ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`)
+        assert(links.every((h) => h === "/task-models"), `note links ${JSON.stringify(links)}`)
+        assert(noSpawn === 1, "no 'Needs the agent_spawn tool.' note for an agent without it")
+        assert(noClassify === ((s.classify ?? []).length > 0 ? 0 : 1), `Classification note shown ${noClassify} times`)
+        const a = (await config()).agents.list.find((x) => x.id === ID)
+        const tm = a?.task_models ?? {}
+        assert(Object.keys(tm).length === 4 && grants.every((k) => tm[k] === true), `task_models = ${JSON.stringify(a?.task_models)}`)
+
+        // Adding a model to an empty list clears that kind's note. Transcription
+        // only takes a speech model.
+        const kind = grants.find((k) => want[k] && A && (k !== "stt" || isSpeech(enabled.find((o) => o.name === A))))
+        if (kind) {
+          r = await tmPut({ ...s, [kind]: [{ model: A }] })
+          assert(r.status === 200, `adding ${A} to ${kind} = ${r.status}`)
+          ;({ close, page } = await open("/agents"))
+          await select(page)
+          const after = await notes(page)
+          await close()
+          r = await tmPut(s)
+          assert(r.status === 200, `taking ${A} off ${kind} = ${r.status}`)
+          assert(after[kind] === null, `the ${TITLES[kind]} note is still shown with a model in it`)
+        }
+      } finally {
+        const c2 = await config()
+        await api("/api/config", { method: "PATCH", headers: JSON_HDR, body: JSON.stringify({ agents: { list: (c2.agents.list ?? []).filter((a) => a.id !== ID) } }) })
+      }
+      return `${ID}: all four granted`
+    })
+
+    await check(9, "Check Up names the empty Transcription and Describe images lists, each from its own list", async () => {
+      const rowsFor = async () => {
+        const j = (await api("/api/report/assessment")).json
+        return (j?.assessment ?? []).filter((r) => r.item === "Speech to text" || r.item === "Vision")
+      }
+      const status = { "Speech to text": "No model in Transcription.", Vision: "No model in Describe images." }
+      const says = (rows, item) => rows.some((r) => r.item === item && r.status === status[item])
+      const s = await saved()
+      const rows = await rowsFor()
+      for (const [item, use] of [["Speech to text", "stt"], ["Vision", "vision"]]) {
+        const none = (s[use] ?? []).length === 0
+        assert(says(rows, item) === none, `${item}: "${status[item]}" ${says(rows, item)}, list empty ${none}`)
+      }
+      if (A && (s.vision ?? []).length === 0) {
+        let r = await tmPut({ ...s, vision: [{ model: A }] })
+        assert(r.status === 200, `adding ${A} to Describe images = ${r.status}`)
+        const withVision = await rowsFor()
+        r = await tmPut(s)
+        assert(r.status === 200, `taking ${A} off Describe images = ${r.status}`)
+        assert(!says(withVision, "Vision"), "Vision still names the empty list with a model in it")
+        assert(says(withVision, "Speech to text") === ((s.stt ?? []).length === 0), "Speech to text followed Describe images")
+        assert(says(await rowsFor(), "Vision"), "Vision does not name the empty list again")
+      }
+      const { close, text, problems } = await open("/report")
+      const body = await text()
+      await close()
+      assert(problems.length === 0, `console errors: ${problems[0]}`)
+      for (const r of rows) assert(body.includes(r.item), `Check Up page lacks the ${r.item} row`)
+      return rows.map((r) => `${r.item}: ${r.status}`).join("; ") || "both lists have a usable model"
+    })
+
+    await check(10, "Remove drops each added row from its own list", async () => {
+      const pairs = Object.entries(added).flatMap(([use, names]) => names.map((n) => [use, n]))
+      if (!pairs.length) return "skipped, nothing added"
+      const { close, page } = await open("/task-models")
+      try {
+        for (const [use, name] of pairs) {
+          await page.getByRole("button", { name: `Remove ${name} from ${TITLES[use]}`, exact: true }).click()
+          await settle(page)
+          assert((await page.getByTestId(`task-model-${use}-${name}`).count()) === 0, `${name} still shown in ${TITLES[use]}`)
+          added[use].splice(added[use].indexOf(name), 1)
+        }
+      } finally {
+        await close()
+      }
+      const s = await saved()
+      for (const u of USES) {
+        assert(JSON.stringify(namesIn(s, u)) === JSON.stringify(namesIn(snapshot, u)), `${u}: ${JSON.stringify(namesIn(s, u))}`)
+      }
+      return pairs.map(([u, n]) => `${n} from ${TITLES[u]}`).join(", ")
+    })
+
+    await check(11, "the page scrolls in a short window and its cards keep clear of the sidebar", async () => {
+      const { close, page } = await open("/task-models")
+      try {
+        await page.setViewportSize({ width: 1100, height: 420 })
+        await page.waitForTimeout(300)
+        const r = await page.evaluate(() => {
+          const title = [...document.querySelectorAll("*")].find(
+            (el) => el.children.length === 0 && el.textContent?.trim() === "Settings",
+          )
+          if (!title) return { error: "no Settings card" }
+          let scroller = title.parentElement
+          while (scroller && !(["auto", "scroll"].includes(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) {
+            scroller = scroller.parentElement
+          }
+          if (!scroller) return { error: "no scrollable area holds the cards" }
+          scroller.scrollTop = scroller.scrollHeight
+          const t = title.getBoundingClientRect()
+          const sidebar = document.querySelector('[data-sidebar="sidebar"]')
+          const card = title.closest('[data-slot="card"]') ?? title.parentElement
+          return {
+            visible: t.top >= 0 && t.bottom <= window.innerHeight,
+            gap: sidebar ? Math.round(card.getBoundingClientRect().left - sidebar.getBoundingClientRect().right) : null,
+          }
+        })
+        assert(!r.error, r.error)
+        assert(r.visible, "the Settings card cannot be scrolled into view")
+        assert(r.gap === null || r.gap >= 8, `cards are ${r.gap}px from the sidebar`)
+        return r.gap === null ? "scrolls" : `scrolls; cards ${r.gap}px from the sidebar`
+      } finally {
+        await close()
+      }
+    })
+  } finally {
+    const r = await tmPut(snapshot)
+    if (r.status !== 200) console.log(`   WARN could not restore task_models: ${r.status} ${r.text.slice(0, 200)}`)
+    const now = await saved()
+    if (JSON.stringify(now) !== JSON.stringify(snapshot)) console.log(`   WARN task_models differs from before: ${JSON.stringify(now)}`)
+    await settleAfterConfigWrites()
+  }
+}
+
+// R. Network page — listeners, HTTPS and the certificate. Writes: R10 changes
+// the HTTPS port and puts it back; R8 regenerates the self-signed certificate
+// (a new self-signed one replaces it — nothing to restore, and it is skipped
+// when the instance uses its own certificate or has HTTPS off).
+if (useGroup("R", "Network page — listeners, HTTPS and certificate")) {
+  const radioChecked = async (page, id) =>
+    (await page.locator(`#${id}`).getAttribute("aria-checked")) === "true"
+
+  await check(1, "every listener control is present", async () => {
+    const { close, page, problems, text } = await open("/network")
+    await page.locator("[data-testid=network-mcp-listen]").waitFor({ state: "visible", timeout: 10000 })
+    const body = await text()
+    const ids = [
+      "network-http-port",
+      "network-http-scope",
+      "network-https-mode",
+      "network-tls-port",
+      "network-external-url",
+      "network-extra-names",
+      "cert-current",
+      "cert-source",
+      "network-allowed-cidrs",
+      "network-lockout-exempt",
+      "network-trusted-proxies",
+      "network-device-scope",
+      "network-device-port",
+      "network-device-tls",
+      "network-device-external-url",
+      "network-device-cidrs",
+      "network-mcp-listen",
+      "network-urls",
+    ]
+    const missing = []
+    for (const id of ids) {
+      if ((await page.locator(`[data-testid=${id}]`).count()) !== 1) missing.push(id)
+    }
+    // Fields autosave; a Save button here would be the old page.
+    const saveButtons = await page.locator("[data-testid=network-save]").count()
+    const radios = await page.getByRole("radio").count()
+    await close()
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    assert(missing.length === 0, `controls missing: ${missing.join(", ")}`)
+    assert(saveButtons === 0, "a Save button is present; the page autosaves")
+    for (const label of [
+      "Localhost only (default)",
+      "Network",
+      "All interfaces (default)",
+      "Off",
+      "Self-signed (default)",
+      "External certificate",
+      "Never locked out",
+      "ws (unencrypted)",
+      "wss (HTTPS)",
+      "Auto-approve pairings",
+    ]) {
+      assert(body.includes(label), `missing label "${label}"`)
+    }
+    // HTTP scope (2) + HTTPS mode (3) + certificate source (2) + device
+    // protocol (2) + device scope (2).
+    assert(radios === 11, `${radios} radios, want 11`)
+    return `${ids.length} controls, ${radios} radios`
+  })
+
+  await check(2, "the HTTP scope radio reflects gateway.host", async () => {
+    const c = await config()
+    const host = (c?.gateway?.host ?? "").toLowerCase()
+    const loopback = host === "" || host === "127.0.0.1" || host === "localhost" || host === "::1"
+    const { close, page } = await open("/network")
+    await page.locator("[data-testid=network-http-scope]").waitFor({ timeout: 10000 })
+    const localhostOn = await radioChecked(page, "network-http-scope-localhost")
+    const networkOn = await radioChecked(page, "network-http-scope-network")
+    const port = await page.locator("[data-testid=network-http-port]").inputValue()
+    await close()
+    assert(localhostOn === loopback && networkOn === !loopback, `host=${JSON.stringify(host)} but localhost=${localhostOn} network=${networkOn}`)
+    assert(port === String(c?.gateway?.port ?? 18790), `HTTP port field = ${port}`)
+    return `${loopback ? "Localhost only" : "Network"}, port ${port}`
+  })
+
+  await check(3, "the HTTPS mode and port reflect gateway.tls", async () => {
+    const c = await config()
+    const mode = c?.gateway?.tls?.mode ?? "all"
+    const tlsPort = String(c?.gateway?.tls_port ?? 18443)
+    const { close, page } = await open("/network")
+    await page.locator("[data-testid=network-https-mode]").waitFor({ timeout: 10000 })
+    const on = {}
+    for (const m of ["all", "localhost", "off"]) on[m] = await radioChecked(page, `network-https-mode-${m}`)
+    const port = await page.locator("[data-testid=network-tls-port]").inputValue()
+    await close()
+    for (const m of ["all", "localhost", "off"]) {
+      assert(on[m] === (m === mode), `mode ${mode}: radio ${m} checked=${on[m]}`)
+    }
+    assert(port === tlsPort, `HTTPS port field = ${port}, config ${tlsPort}`)
+    return `${mode}, port ${port}`
+  })
+
+  await check(4, "the hostname field reflects gateway.external_url", async () => {
+    const c = await config()
+    const { close, page } = await open("/network")
+    const field = page.locator("[data-testid=network-external-url]")
+    await field.waitFor({ timeout: 10000 })
+    const v = await field.inputValue()
+    await close()
+    assert(v === (c?.gateway?.external_url ?? ""), `field = ${JSON.stringify(v)}, config ${JSON.stringify(c?.gateway?.external_url)}`)
+    return v || "(blank)"
+  })
+
+  await check(5, "the certificate card shows the fingerprint, or says none is generated", async () => {
+    const t = await api("/api/tls")
+    assert(t.status === 200, `GET /api/tls = ${t.status}`)
+    const { close, page } = await open("/network")
+    await page.locator("[data-testid=cert-current]").waitFor({ timeout: 10000 })
+    const fp = await page.locator("[data-testid=cert-fingerprint]").count()
+    const none = await page.locator("[data-testid=cert-none]").count()
+    const shown = fp ? (await page.locator("[data-testid=cert-fingerprint]").innerText()).trim() : ""
+    await close()
+    const cert = t.json?.certificate
+    if (cert?.present) {
+      assert(fp === 1 && none === 0, `certificate present but fingerprint=${fp} none=${none}`)
+      assert(shown === cert.fingerprint, `page shows ${shown}, API says ${cert.fingerprint}`)
+      return shown
+    }
+    assert(fp === 0 && none === 1, `no certificate but fingerprint=${fp} none=${none}`)
+    return "not generated"
+  })
+
+  await check(6, "Self-signed ↔ External reveals the path inputs only under External", async () => {
+    const { close, page } = await open("/network")
+    await page.locator("[data-testid=cert-source]").waitFor({ timeout: 10000 })
+    await page.locator("#cert-source-self-signed").click()
+    await page.waitForTimeout(200)
+    const selfPaths = await page.locator("[data-testid=cert-file], [data-testid=cert-key-file]").count()
+    const selfRegen = await page.locator("[data-testid=cert-regenerate]").count()
+    await page.locator("#cert-source-file").click()
+    await page.waitForTimeout(200)
+    const filePaths = await page.locator("[data-testid=cert-file], [data-testid=cert-key-file]").count()
+    const fileRegen = await page.locator("[data-testid=cert-regenerate]").count()
+    const saveBtn = await page.locator("[data-testid=cert-save]").count()
+    await close()
+    assert(selfPaths === 0 && selfRegen === 1, `self-signed: ${selfPaths} path inputs, ${selfRegen} regenerate`)
+    assert(filePaths === 2 && fileRegen === 0 && saveBtn === 1, `external: ${filePaths} path inputs, ${fileRegen} regenerate, ${saveBtn} save`)
+  })
+
+  await check(7, "Save certificate with a bogus path is refused and changes nothing", async () => {
+    const before = await config()
+    const { close, page } = await open("/network")
+    await page.locator("[data-testid=cert-source]").waitFor({ timeout: 10000 })
+    await page.locator("#cert-source-file").click()
+    await page.locator("[data-testid=cert-file]").fill("/nonexistent/e2e-probe/fullchain.pem")
+    await page.locator("[data-testid=cert-key-file]").fill("/nonexistent/e2e-probe/privkey.pem")
+    await page.locator("[data-testid=cert-save]").click()
+    const err = page.locator("[data-testid=cert-error]")
+    await err.waitFor({ state: "visible", timeout: 10000 })
+    const message = (await err.innerText()).trim()
+    await close()
+    const after = await config()
+    assert(message.length > 0, "the validation error is empty")
+    assert(
+      JSON.stringify(after?.gateway) === JSON.stringify(before?.gateway),
+      `gateway config changed: ${JSON.stringify(after?.gateway?.tls)}`,
+    )
+    return message
+  })
+
+  await check(8, "Regenerate changes the self-signed certificate's fingerprint", async () => {
+    const t = (await api("/api/tls")).json ?? {}
+    if (t.source !== "self-signed") return "skipped: the instance uses its own certificate"
+    if (t.mode === "off") return "skipped: HTTPS is off (gateway.tls.mode)"
+    if (!t.certificate?.present) return "skipped: no certificate yet (enable HTTPS and restart)"
+    const before = t.certificate.fingerprint
+    const { close, page } = await open("/network")
+    await page.locator("[data-testid=cert-regenerate]").waitFor({ timeout: 10000 })
+    await page.locator("[data-testid=cert-regenerate]").click()
+    await page.waitForFunction(
+      (prev) => document.querySelector("[data-testid=cert-fingerprint]")?.textContent?.trim() !== prev,
+      before,
+      { timeout: 15000 },
+    )
+    const shown = (await page.locator("[data-testid=cert-fingerprint]").innerText()).trim()
+    await close()
+    const after = (await api("/api/tls")).json?.certificate?.fingerprint
+    assert(after && after !== before, `API fingerprint unchanged: ${after}`)
+    assert(shown === after, `page shows ${shown}, API says ${after}`)
+    return `${before.slice(0, 11)}… → ${after.slice(0, 11)}…`
+  })
+
+  await check(9, "the address list shows what to open", async () => {
+    const t = (await api("/api/tls")).json ?? {}
+    const { close, page } = await open("/network")
+    const urls = page.locator("[data-testid=network-urls]")
+    await urls.waitFor({ timeout: 10000 })
+    const body = await urls.innerText()
+    const marks = await urls.locator("[data-testid=network-http-warning]").count()
+    await close()
+    assert(t.urls?.localhost, `GET /api/tls has no urls.localhost: ${JSON.stringify(t.urls)}`)
+    assert(body.includes(t.urls.localhost), `localhost URL ${t.urls.localhost} not listed: ${body}`)
+    for (const u of t.urls.http ?? []) assert(body.includes(u), `HTTP URL ${u} not listed: ${body}`)
+    for (const u of t.urls.https ?? []) assert(body.includes(u), `HTTPS URL ${u} not listed: ${body}`)
+    const http = t.urls.http ?? []
+    // Behind a proxy (TLS ends there) plain HTTP is not marked.
+    const want = t.behind_proxy ? 0 : http.length
+    assert(marks === want, `${marks} warning marks for ${http.length} plain-HTTP network addresses (behind proxy: ${!!t.behind_proxy})`)
+    for (const u of [...http, ...(t.urls.https ?? [])]) {
+      const host = new URL(u).hostname
+      assert(!/^172\.(1[7-9]|2\d|3[01])\.0\.1$/.test(host), `Docker bridge address advertised: ${u}`)
+    }
+    return [t.urls.localhost, ...http, ...(t.urls.https ?? [])].join(" ") + ` (${marks} HTTP marked${t.behind_proxy ? ", behind proxy" : ""})`
+  })
+
+  await check(10, "changing the HTTPS port autosaves and shows the restart banner; then restore it", async () => {
+    const c = await config()
+    const original = c?.gateway?.tls_port ?? 18443
+    const httpPort = c?.gateway?.port ?? 18790
+    let probe = original + 1
+    if (probe === httpPort) probe += 1
+    const { close, page } = await open("/network")
+    const field = page.locator("[data-testid=network-tls-port]")
+    await field.waitFor({ timeout: 10000 })
+    assert(
+      (await page.locator("[data-testid=network-restart-banner]").count()) === 0,
+      "the restart banner is already showing before any change (restart the dev instance)",
+    )
+    // Autosave: the field is committed ~0.6 s after the last keystroke.
+    await field.fill(String(probe))
+    const banner = page.locator("[data-testid=network-restart-banner]")
+    await banner.waitFor({ state: "visible", timeout: 10000 })
+    const bannerText = (await banner.innerText()).trim()
+    const restartButtons = await page.locator("[data-testid=network-restart]").count()
+    const mid = await config()
+    assert(mid?.gateway?.tls_port === probe, `tls_port after save = ${mid?.gateway?.tls_port}, want ${probe}`)
+    assert(
+      bannerText.startsWith("Restart required to apply changes."),
+      `banner reads ${JSON.stringify(bannerText)}`,
+    )
+    assert(restartButtons === 1, `${restartButtons} Restart now buttons, want 1`)
+    // Restore on the same page. The button is never clicked: the suite must
+    // not restart the instance it is driving.
+    await field.fill(String(original))
+    let after
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(500)
+      after = await config()
+      if ((after?.gateway?.tls_port ?? 18443) === original) break
+    }
+    await close()
+    assert(
+      (after?.gateway?.tls_port ?? 18443) === original,
+      `tls_port = ${after?.gateway?.tls_port}, expected ${original}`,
+    )
+    return `18443-style probe ${probe}, restored ${original}; banner + Restart now present`
+  })
+
+  await check(11, "the allowed-networks editor reflects gateway.allowed_cidrs", async () => {
+    const c = await config()
+    const { close, page } = await open("/network")
+    const field = page.locator("[data-testid=network-allowed-cidrs]")
+    await field.waitFor({ timeout: 10000 })
+    const v = await field.inputValue()
+    await close()
+    const want = (c?.gateway?.allowed_cidrs ?? []).join("\n")
+    assert(v === want, `editor = ${JSON.stringify(v)}, config ${JSON.stringify(want)}`)
+    return want || "(loopback only)"
+  })
+
+  await check(12, "the device listener section reflects channels.device", async () => {
+    const c = await config()
+    const d = c?.channels?.device ?? {}
+    const host = (d.host ?? "").toLowerCase()
+    const loopback = host === "" || host === "127.0.0.1" || host === "localhost" || host === "::1"
+    const { close, page } = await open("/network")
+    await page.locator("[data-testid=network-device-scope]").waitFor({ timeout: 10000 })
+    // The ws/wss choice is the first control of the section: it precedes
+    // every other device control in the document.
+    const tlsFirst = await page.evaluate(() => {
+      const tls = document.querySelector("[data-testid=network-device-tls]")
+      return ["scope", "port", "external-url", "cidrs"].every((k) => {
+        const other = document.querySelector(`[data-testid=network-device-${k}]`)
+        return !!tls && !!other && !!(tls.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING)
+      })
+    })
+    const wssOn = await radioChecked(page, "network-device-tls-wss")
+    const wsOn = await radioChecked(page, "network-device-tls-ws")
+    const localhostOn = await radioChecked(page, "network-device-scope-localhost")
+    const port = await page.locator("[data-testid=network-device-port]").inputValue()
+    const ext = await page.locator("[data-testid=network-device-external-url]").inputValue()
+    await close()
+    assert(tlsFirst, "the ws/wss radio is not the first control of the device section")
+    const tls = d.tls === true
+    assert(wssOn === tls && wsOn === !tls, `tls=${JSON.stringify(d.tls)} but ws=${wsOn} wss=${wssOn}`)
+    assert(localhostOn === loopback, `device host=${JSON.stringify(host)} but localhost radio=${localhostOn}`)
+    assert(port === String(d.port || 18791), `device port field = ${port}`)
+    const wantExt = String(d.external_url ?? "").trim().replace(/^(https?|wss?):\/\//i, "").replace(/\/+$/, "")
+    assert(ext === wantExt, `device external address field = ${JSON.stringify(ext)}, want ${JSON.stringify(wantExt)}`)
+    return `${tls ? "wss" : "ws"}, ${loopback ? "Localhost only" : "Network"}, port ${port}`
+  })
+
+  await check(13, "the MCP host address is shown read-only", async () => {
+    const c = await config()
+    const want = c?.mcp_host?.listen || "127.0.0.1:5911"
+    const { close, page } = await open("/network")
+    const el = page.locator("[data-testid=network-mcp-listen]")
+    await el.waitFor({ timeout: 10000 })
+    const shown = (await el.innerText()).trim()
+    const tag = await el.evaluate((n) => n.tagName.toLowerCase())
+    await close()
+    assert(shown === want, `shows ${shown}, config ${want}`)
+    assert(tag !== "input" && tag !== "textarea", `rendered as an editable <${tag}>`)
+    return shown
+  })
+
+  await check(14, "the device ws/wss radio reflects channels.device.tls", async () => {
+    const c = await config()
+    const want = c?.channels?.device?.tls === true
+    const { close, page, text } = await open("/network")
+    await page.locator("[data-testid=network-device-tls]").waitFor({ timeout: 10000 })
+    const wssOn = await radioChecked(page, "network-device-tls-wss")
+    const wsOn = await radioChecked(page, "network-device-tls-ws")
+    const radios = await page.locator("[data-testid=network-device-tls]").getByRole("radio").count()
+    const body = await text()
+    await close()
+    assert(radios === 2, `${radios} protocol radios, want 2`)
+    assert(wssOn === want && wsOn === !want, `ws=${wsOn} wss=${wssOn}, config tls=${JSON.stringify(c?.channels?.device?.tls)}`)
+    assert(
+      body.includes("Devices connect to one port, plain or with the WebUI certificate."),
+      "the one-sentence hint is missing",
+    )
+    return want ? "wss (HTTPS)" : "ws (unencrypted)"
+  })
+
+  await check(15, "the device external address is shown without its scheme and refuses one", async () => {
+    const before = await config()
+    const stored = String(before?.channels?.device?.external_url ?? "")
+    const { close, page, text } = await open("/network")
+    const field = page.locator("[data-testid=network-device-external-url]")
+    await field.waitFor({ timeout: 10000 })
+    const shown = await field.inputValue()
+    // Type a URL: the page refuses it under the field and sends nothing. The
+    // page is closed without a save, so nothing needs restoring.
+    await field.fill("wss://e2e-probe.invalid:18791")
+    await page.waitForTimeout(1200)
+    const body = await text()
+    await close()
+    const after = await config()
+    assert(!/^(https?|wss?):\/\//i.test(shown), `field shows a scheme: ${JSON.stringify(shown)}`)
+    assert(
+      shown === stored.trim().replace(/^(https?|wss?):\/\//i, "").replace(/\/+$/, ""),
+      `field = ${JSON.stringify(shown)}, config ${JSON.stringify(stored)}`,
+    )
+    assert(
+      body.includes("Enter a host name or IP address, with an optional :port."),
+      "no validation message under the field",
+    )
+    assert(
+      (after?.channels?.device?.external_url ?? "") === (before?.channels?.device?.external_url ?? ""),
+      `external_url changed to ${JSON.stringify(after?.channels?.device?.external_url)}`,
+    )
+    return `${shown || "(blank)"}; wss:// refused`
+  })
+
+  await check(16, "the Never locked out editor reflects gateway.lockout_exempt", async () => {
+    const c = await config()
+    const { close, page } = await open("/network")
+    const field = page.locator("[data-testid=network-lockout-exempt]")
+    await field.waitFor({ timeout: 10000 })
+    const v = await field.inputValue()
+    await close()
+    const want = (c?.gateway?.lockout_exempt ?? []).join("\n")
+    assert(v === want, `editor = ${JSON.stringify(v)}, config ${JSON.stringify(want)}`)
+    return want || "(none)"
+  })
+
+  await check(17, "the Trusted proxies editor reflects gateway.trusted_proxies", async () => {
+    const c = await config()
+    const { close, page } = await open("/network")
+    const field = page.locator("[data-testid=network-trusted-proxies]")
+    await field.waitFor({ timeout: 10000 })
+    const v = await field.inputValue()
+    await close()
+    const want = (c?.gateway?.trusted_proxies ?? []).join("\n")
+    assert(v === want, `editor = ${JSON.stringify(v)}, config ${JSON.stringify(want)}`)
+    return want || "(none)"
+  })
+}
+
+// Settle the reload caused by F, G and R before the read-only groups below.
+if (!ONLY.length || ONLY.includes("F") || ONLY.includes("G") || ONLY.includes("R")) {
+  await settleAfterConfigWrites()
+}
+
+// H. Channels
+if (useGroup("H", "Channels — config form and allow_from typing")) {
+  await check(1, "channel list renders the known channels", async () => {
+    const { close, text } = await open("/channels")
+    const body = await text()
+    await close()
+    assert(/web/i.test(body), "channel list looks empty")
+  })
+  await check(2, "a channel config page loads for its param", async () => {
+    const { close, text } = await open("/channels/slack")
+    const body = await text()
+    await close()
+    assert(/slack/i.test(body), "slack page did not render its channel")
+    assert(!/not found/i.test(body), "slack page reported not found")
+  })
+  await check(3, "a different param renders a different channel", async () => {
+    const { close, text } = await open("/channels/telegram")
+    const body = await text()
+    await close()
+    assert(/telegram/i.test(body), "telegram page did not render")
+    assert(!/slack/i.test(body), "telegram page leaked slack content")
+  })
+  await check(4, "typing a trailing separator in allow_from is not eaten", async () => {
+    const { close, page } = await open("/channels/discord")
+    const field = page.locator('input').filter({ hasNot: page.locator('[type=number]') })
+    const allow = page
+      .locator("input")
+      .filter({ has: page.locator(":scope") })
+      .nth(0)
+    void field
+    void allow
+    // Find the allow_from input by its neighbouring label text.
+    const inputs = await page.locator("input[type=text], input:not([type])").all()
+    let target = null
+    for (const i of inputs) {
+      const ph = (await i.getAttribute("placeholder")) ?? ""
+      if (/allow|user id|\*/i.test(ph)) target = i
+    }
+    if (!target) {
+      await close()
+      return "skipped: allow_from field not found on this channel"
+    }
+    const before = await target.inputValue()
+    await target.fill("111,")
+    await page.waitForTimeout(900)
+    const after = await target.inputValue()
+    await target.fill(before)
+    await page.waitForTimeout(900)
+    await close()
+    assert(after === "111,", `trailing comma was eaten: field shows "${after}"`)
+  })
+}
+
+// I. Models and providers
+if (useGroup("I", "Models and providers")) {
+  // A page that threw during render shows the route error boundary, whose
+  // only fixed text is its "Show error" button.
+  const noBoundary = (body, route) =>
+    assert(!/Show error/i.test(body), `${route} rendered the error boundary`)
+
+  await check(1, "models page lists configured models", async () => {
+    const { close, text, problems } = await open("/models")
+    const body = await text()
+    await close()
+    noBoundary(body, "/models")
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    const r = await api("/api/models")
+    const first = r.json?.models?.[0]?.model_name
+    if (first) assert(body.includes(first), `"${first}" not shown on the page`)
+  })
+  await check(2, "providers page lists configured providers", async () => {
+    const { close, text, problems } = await open("/providers")
+    const body = await text()
+    await close()
+    noBoundary(body, "/providers")
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    const r = await api("/api/providers")
+    const first = r.json?.providers?.[0]?.name
+    if (first) assert(body.includes(first), `"${first}" not shown on the page`)
+  })
+  await check(3, "the add-model sheet opens and closes without error", async () => {
+    const { close, page, problems } = await open("/models")
+    await page.getByRole("button", { name: /Add Model/i }).click()
+    await page.waitForTimeout(700)
+    const open1 = await page.locator("text=/Provider/i").count()
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(400)
+    await close()
+    assert(open1 > 0, "sheet did not open")
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+  })
+  await check(4, "every provider card says whether it is configured", async () => {
+    const { close, page, problems } = await open("/providers")
+    await page.getByText(/Configured|Not configured/).first().waitFor({
+      state: "visible",
+      timeout: 10000,
+    })
+    const labels = await page.getByText(/^(Configured|Not configured)$/).count()
+    const cards = await page.locator("[data-testid=provider-card]").count()
+    await close()
+
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    // Every card says what it is. The label is the backend's `ready`, so it
+    // means the API key is set or the CLI binary actually resolves — not merely
+    // that some string was filled in.
+    assert(cards > 0, "no provider cards rendered")
+    assert(labels === cards, `${labels} configured/not-configured labels for ${cards} cards`)
+    return `${labels} labelled`
+  })
+  await check(5, "the wire-protocol picker leaves CLIs to their own section", async () => {
+    const { close, page, problems } = await open("/providers")
+    await page.getByRole("button", { name: /Add Provider/i }).first().click()
+    await page.waitForTimeout(700)
+    // Radix renders the options into a portal only once the trigger is opened.
+    await page.locator("[data-slot=select-trigger]").first().click()
+    await page.waitForTimeout(500)
+    const options = await page.locator("[role=option]").allInnerTexts()
+    await page.keyboard.press("Escape")
+    await close()
+
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    assert(options.length > 0, "the protocol picker is empty")
+    // A CLI is added by its switch, not by building a provider by hand. Adding
+    // a second CLI provider here would produce one the section does not show
+    // and the grid filters out.
+    const cli = options.filter((o) => o.endsWith("-cli"))
+    assert(cli.length === 0, `the picker still offers CLI protocols: ${cli.join(", ")}`)
+    return options.join(", ")
+  })
+
+  await check(6, "every supported CLI has a row, installed or not", async () => {
+    const clis = (await api("/api/system/clis")).json ?? []
+    const { close, page, problems } = await open("/providers")
+    await page.locator("[data-testid=cli-agents]").waitFor({ state: "visible", timeout: 10000 })
+    const rows = await page.locator("[data-testid^=cli-row-]").count()
+    const switches = await page.locator("[data-testid^=cli-switch-]").count()
+
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    assert(clis.length >= 4, `only ${clis.length} CLIs in the catalogue`)
+    // A CLI the host lacks is still listed, greyed: hiding it would look like
+    // ClawEh does not support it.
+    assert(rows === clis.length, `${rows} rows for ${clis.length} supported CLIs`)
+    assert(switches === clis.length, `${switches} switches for ${rows} rows`)
+    // Every configured row carries its model count, not only one governing
+    // several models: printing it for some CLIs and not others read as a fault.
+    for (const c of clis.filter((x) => x.configured)) {
+      const row = await page.locator(`[data-testid=cli-row-${c.protocol}]`).innerText()
+      assert(
+        new RegExp(`${c.models_enabled} of ${c.models} models? on`).test(row),
+        `${c.protocol} row shows no model count: ${JSON.stringify(row)}`,
+      )
+    }
+    await close()
+    return `${rows} CLIs, ${clis.filter((c) => c.installed).length} installed`
+  })
+
+  await check(7, "CLI providers appear in the section, not in the grid", async () => {
+    const providers = (await api("/api/providers")).json?.providers ?? []
+    const cliProviders = providers.filter((p) => p.protocol.endsWith("-cli"))
+    const { close, page, problems } = await open("/providers")
+    await page.locator("[data-testid=cli-agents]").waitFor({ state: "visible", timeout: 10000 })
+    await page.waitForTimeout(500)
+    const cards = await page.locator("[data-testid=provider-card]").count()
+    await close()
+
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    // One CLI is one thing to the person using it; showing it twice under two
+    // different controls is what made it confusing.
+    assert(
+      cards === providers.length - cliProviders.length,
+      `${cards} cards for ${providers.length} providers minus ${cliProviders.length} CLI ones`,
+    )
+    return `${cards} API cards, ${cliProviders.length} CLI providers in the section`
+  })
+
+  await check(8, "a CLI row shows the whole command line", async () => {
+    const clis = (await api("/api/system/clis")).json ?? []
+    const withArgs = clis.find((c) => (c.required_args ?? []).length > 0)
+    const { close, page, problems } = await open("/providers")
+    await page.locator("[data-testid=cli-agents]").waitFor({ state: "visible", timeout: 10000 })
+    const row = await page
+      .locator(`[data-testid=cli-row-${withArgs.protocol}]`)
+      .innerText()
+    await close()
+
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    // The provider's own flags as well as the configured ones: an operator
+    // asking what runs on their machine is owed the whole command line, not
+    // the part that happens to live in config. Some of it auto-approves tool
+    // use, which is the part worth reading before switching a CLI on.
+    const all = [
+      ...withArgs.base_args,
+      ...withArgs.required_args,
+      ...(withArgs.extra_args ?? []),
+      ...(withArgs.trailing_args ?? []),
+    ]
+    assert(withArgs.base_args.length > 0, `${withArgs.protocol} publishes no base args`)
+    for (const arg of all) {
+      assert(row.includes(arg), `${withArgs.protocol} row does not show ${arg}: ${row}`)
+    }
+    assert(row.includes(all.join(" ")), `row does not show them in invocation order: ${row}`)
+    return all.join(" ")
+  })
+
+  await check(9, "a CLI provider is not offered HTTP-only switches", async () => {
+    const clis = (await api("/api/system/clis")).json ?? []
+    const configured = clis.find((c) => c.configured)
+    if (!configured) return "skipped: no CLI provider configured on this instance"
+    const { close, page, problems } = await open("/providers")
+    await page.locator("[data-testid=cli-agents]").waitFor({ state: "visible", timeout: 10000 })
+    await page.locator(`[data-testid=cli-edit-${configured.protocol}]`).click()
+    await page.waitForTimeout(700)
+    const sheet = await page.locator("[data-slot=sheet-content]").innerText()
+    await page.keyboard.press("Escape")
+    await close()
+
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    // strict_compat, require_reasoning_content, no_parallel_tool_calls,
+    // response_format_json and proxy are HTTP wire knobs the CLI factory never
+    // reads. Rendered here they were controls that did nothing, and an off
+    // switch reads as a feature available but disabled — which is how
+    // response_format_json came to look like the reason a CLI was not
+    // returning JSON. (It always does: --output-format json is in the argv.)
+    for (const gone of ["Strict", "Reasoning", "Parallel", "JSON", "Proxy"]) {
+      assert(!sheet.includes(gone), `the CLI edit sheet still offers ${gone}: ${sheet}`)
+    }
+    assert(/Command/i.test(sheet), "the CLI edit sheet lost its Command field")
+    return configured.protocol
+  })
+
+  await check(10, "both pages render with a CLI provider present, no error boundary", async () => {
+    // A CLI row carries argument lists the server encodes as null when empty
+    // (no bypass flags, no extra_args); spreading one of those threw straight
+    // into the error boundary. The page must survive whatever the API returns.
+    const clis = (await api("/api/system/clis")).json ?? []
+    const cli = clis.find((c) => c.configured)
+    if (!cli) return "skipped: no CLI provider configured on this instance"
+    for (const route of ["/providers", "/models"]) {
+      const { close, page, text, problems } = await open(route)
+      if (route === "/providers") {
+        await page.locator(`[data-testid=cli-row-${cli.protocol}]`).waitFor({ timeout: 10000 })
+      }
+      const body = await text()
+      await close()
+      noBoundary(body, route)
+      assert(problems.length === 0, `${route} console: ${problems[0]}`)
+    }
+    return cli.protocol
+  })
+  await check(11, "a configured CLI offers Allow CLI to bypass restrictions, reflecting the provider", async () => {
+    // The checkbox is the only way to grant a CLI its permission-bypass flag.
+    // It must be there for every configured CLI, and what it shows must be
+    // what the provider actually has (off unless the operator turned it on).
+    const clis = (await api("/api/system/clis")).json ?? []
+    const configured = clis.filter((c) => c.configured)
+    if (configured.length === 0) return "skipped: no CLI provider configured on this instance"
+    const { close, page } = await open("/providers")
+    const seen = []
+    for (const cli of configured) {
+      const box = page.locator(`[data-testid=cli-bypass-${cli.protocol}]`)
+      await box.waitFor({ timeout: 10000 })
+      const state = await box.getAttribute("aria-checked")
+      const want = cli.bypass_restrictions ? "true" : "false"
+      assert(state === want, `${cli.protocol}: checkbox ${state}, provider bypass_restrictions=${cli.bypass_restrictions}`)
+      seen.push(`${cli.protocol}=${cli.bypass_restrictions ? "on" : "off"}`)
+    }
+    await close()
+    return seen.join(", ")
+  })
+
+  await check(12, "a model whose Request timeout exceeds the Turn timeout links to it", async () => {
+    // The note sits at the model's Request timeout field and links to the
+    // System page field that decides. Read-only when the instance has such a
+    // model; otherwise a temporary one is added and removed again.
+    const listed = (await api("/api/models")).json ?? {}
+    const turn = listed.turn_timeout ?? 0
+    if (turn <= 0) return "skipped, the server reports no turn timeout"
+    let model = (listed.models ?? []).find((m) => (m.request_timeout ?? 0) > turn)
+    let origModels
+    if (!model) {
+      const c = await config()
+      origModels = c.models ?? []
+      const base = origModels[0]
+      if (!base) return "skipped, no model to clone"
+      const probe = { ...base, model_name: "zz-e2e-turn-timeout", enabled: false, request_timeout: turn + 60 }
+      const r = await api("/api/config", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models: [...origModels, probe] }) })
+      assert(r.status === 200, `adding the probe model = ${r.status}`)
+      model = probe
+    }
+    try {
+      const { close, page, problems } = await open("/models")
+      const card = page
+        .getByText(model.model_name, { exact: true })
+        .first()
+        .locator("xpath=ancestor::div[contains(@class,'group/card')][1]")
+      await card.getByTitle("Edit model").click()
+      // Request timeout is under the sheet's advanced options.
+      await page.getByRole("button", { name: "Advanced options" }).click()
+      const note = page.getByText(/Limited to .* by the/)
+      await note.waitFor({ timeout: 5000 })
+      await page.getByRole("link", { name: "Turn timeout", exact: true }).click()
+      await page.waitForURL(/\/system#turn-timeout$/, { timeout: 10000 })
+      const field = page.locator("#turn-timeout")
+      await field.waitFor({ timeout: 10000 })
+      await page.waitForTimeout(700)
+      const inView = await field.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        return r.top >= 0 && r.bottom <= window.innerHeight
+      })
+      const value = await field.inputValue()
+      await close()
+      assert(problems.length === 0, `console errors: ${problems[0]}`)
+      assert(inView, "the Turn timeout field is not scrolled into view")
+      assert(value === String(turn), `the Turn timeout field shows ${value}, the server ${turn}`)
+      return `${model.model_name}: ${model.request_timeout}s > ${turn}s${origModels ? " (temporary model)" : ""}`
+    } finally {
+      if (origModels) {
+        await api("/api/config", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ models: origModels }) })
+      }
+    }
+  })
+}
+
+// J. Devices — the store-open regression
+if (useGroup("J", "Devices")) {
+  await check(1, "devices page renders, shows the connect URL and User and Assistants controls per paired device", async () => {
+    const pair = await api("/api/devices/pair")
+    assert(pair.status === 200, `/api/devices/pair ${pair.status}`)
+    const connectURL = pair.json?.connect_url
+    assert(typeof connectURL === "string" && /^wss?:\/\/.+:\d+$/.test(connectURL), `connect_url = ${JSON.stringify(connectURL)}`)
+    const devices = await api("/api/devices")
+    assert(devices.status === 200, `/api/devices ${devices.status}`)
+    const paired = devices.json?.devices ?? []
+    const { close, page, text, problems } = await open("/devices")
+    const body = await text()
+    const shown = await page.locator("[data-testid=devices-connect-url]").innerText()
+    // One User field per paired row, each showing the stored name or, when
+    // empty, what will be used instead (the admin's username, then the
+    // device's name); an empty field with an empty placeholder is a defect.
+    const users = page.locator("[data-testid=device-user]")
+    const userCount = await users.count()
+    const blank = []
+    for (const d of paired) {
+      const field = page.locator(`#device-user-${d.device_id}`)
+      if ((await field.count()) !== 1) {
+        blank.push(`${d.device_id.slice(0, 12)}: no User field`)
+        continue
+      }
+      const value = await field.inputValue()
+      const placeholder = (await field.getAttribute("placeholder")) ?? ""
+      if (!value && !placeholder) blank.push(`${d.device_id.slice(0, 12)}: empty with no placeholder`)
+      // The Assistants control: an All and a Selected radio per row, with the
+      // one the stored list implies checked. Read-only; nothing is clicked.
+      const all = page.locator(`#device-agents-all-${d.device_id}`)
+      const selected = page.locator(`#device-agents-selected-${d.device_id}`)
+      if ((await all.count()) !== 1 || (await selected.count()) !== 1) {
+        blank.push(`${d.device_id.slice(0, 12)}: no Assistants control`)
+        continue
+      }
+      const want = (d.allowed_agents ?? []).length > 0 ? selected : all
+      if ((await want.getAttribute("aria-checked")) !== "true") {
+        blank.push(`${d.device_id.slice(0, 12)}: Assistants radio does not match allowed_agents`)
+      }
+    }
+    await close()
+    assert(/device/i.test(body), "devices page looks empty")
+    assert(body.includes("Devices will connect to"), "no 'Devices will connect to' line")
+    assert(shown === connectURL, `page shows ${shown}, API says ${connectURL}`)
+    assert(userCount === paired.length, `${userCount} User fields for ${paired.length} paired devices`)
+    assert(blank.length === 0, blank[0])
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    return `${connectURL}; ${paired.length} paired device(s)` + (paired.length ? "" : " (User and Assistants controls not exercised)")
+  })
+  await check(2, "/api/devices does not fail under concurrent load", async () => {
+    // Regression: the handler opened its own SQLite handle per request and lost
+    // a race converting the DB to WAL, giving an intermittent 500.
+    const rounds = 12
+    const bad = []
+    for (let i = 0; i < rounds; i++) {
+      const [a, b, c] = await Promise.all([
+        api("/api/devices"),
+        api("/api/devices/pending"),
+        api("/api/devices/pair"),
+      ])
+      for (const r of [a, b, c]) if (r.status >= 500) bad.push(r.status + " " + r.text.slice(0, 60))
+    }
+    assert(bad.length === 0, `${bad.length}/${rounds * 3} failed — ${bad[0]}`)
+    return `${rounds * 3} requests, 0 failures`
+  })
+}
+
+// K. Remaining pages with live data
+if (useGroup("K", "Logs, MCP, memory, task models, report")) {
+  await check(1, "logs page shows log lines", async () => {
+    const { close, text } = await open("/logs")
+    const body = await text()
+    await close()
+    assert(body.length > 500, `logs page thin (${body.length} chars)`)
+  })
+  await check(2, "mcp config and servers pages render", async () => {
+    for (const p of ["/mcp", "/mcp/servers"]) {
+      const { close, text, problems } = await open(p)
+      const body = await text()
+      await close()
+      assert(body.length > 80, `${p} nearly empty`)
+      assert(problems.length === 0, `${p} console: ${problems[0]}`)
+    }
+  })
+  await check(3, "memory and task models pages render", async () => {
+    for (const p of ["/memory", "/task-models"]) {
+      const { close, text, problems } = await open(p)
+      const body = await text()
+      await close()
+      assert(body.length > 80, `${p} nearly empty`)
+      assert(problems.length === 0, `${p} console: ${problems[0]}`)
+    }
+  })
+
+  await check(4, "the Check Up page shows the identity line, the assessment table and the PDF button", async () => {
+    const { close, page, problems } = await open("/agents")
+    const nav = page.getByTestId("nav-report")
+    const navLabel = (await nav.innerText()).trim()
+    await nav.click()
+    await page.waitForURL(/\/report$/)
+    const download = page.getByTestId("report-download")
+    await download.waitFor()
+    const heading = (await page.locator("h2").first().innerText()).trim()
+    const identity = (await page.getByTestId("report-identity").innerText()).trim()
+    const headers = await page.locator('[data-testid="report-table"] thead th').allInnerTexts()
+    const rows = await page.getByTestId("report-row").count()
+    const href = await download.getAttribute("href")
+    const label = (await download.innerText()).trim()
+    await close()
+    assert(navLabel === "Check Up", `sidebar label = ${JSON.stringify(navLabel)}`)
+    assert(heading === "Check Up", `page heading = ${JSON.stringify(heading)}`)
+    assert(new RegExp(`^${escapeRegExp(PRODUCT.name)} \\d+\\.\\d+\\.\\d+`).test(identity), `identity line = ${JSON.stringify(identity)}`)
+    assert(identity.includes(" on "), `identity line names no platform: ${identity}`)
+    assert(headers.join("|") === "Action|Item|Status", `table headers = ${headers.join("|")}`)
+    assert(rows > 0, "the assessment table has no rows")
+    assert(href === "/api/report/pdf", `download href = ${href}`)
+    assert(label === "Full report", `download label = ${JSON.stringify(label)}`)
+    assert(problems.length === 0, `/report console: ${problems[0]}`)
+    return `${rows} rows`
+  })
+
+  await check(5, "the configuration report is a PDF served inline", async () => {
+    const res = await ctx.request.get(BASE + "/api/report/pdf")
+    assert(res.status() === 200, `status = ${res.status()}`)
+    const ct = res.headers()["content-type"] ?? ""
+    assert(ct.startsWith("application/pdf"), `content-type = ${ct}`)
+    const cd = res.headers()["content-disposition"] ?? ""
+    assert(cd.startsWith("inline;"), `content-disposition = ${cd}`)
+    const head = (await res.body()).subarray(0, 5).toString()
+    assert(head === "%PDF-", `body starts with ${JSON.stringify(head)}`)
+  })
+
+  await check(6, "reconnecting an unknown MCP server is a 404", async () => {
+    const { status, json } = await api("/api/mcp/servers/no-such-server/reconnect", { method: "POST" })
+    assert(status === 404, `status = ${status}`)
+    assert(typeof json?.error === "string", `body = ${JSON.stringify(json)}`)
+  })
+
+  await check(7, "the operator alerts log is served", async () => {
+    const { status, json } = await api("/api/gateway/alerts?lines=10")
+    assert(status === 200, `status = ${status}`)
+    assert(Array.isArray(json?.logs), `body = ${JSON.stringify(json)}`)
+  })
+
+  await check(8, "the assessment JSON carries the identity and the PDF's rows, and no secret", async () => {
+    const { status, json, text, headers } = await api("/api/report/assessment")
+    assert(status === 200, `status = ${status}`)
+    assert(headers["cache-control"] === "no-store", `cache-control = ${headers["cache-control"]}`)
+    const id = json?.identity ?? {}
+    for (const k of ["name", "version", "build", "platform", "generated_at"]) {
+      assert(k in id, `identity.${k} missing: ${JSON.stringify(id)}`)
+    }
+    assert(id.name === PRODUCT.name, `identity.name = ${id.name}, want ${PRODUCT.name}`)
+    assert(Array.isArray(json.assessment) && json.assessment.length > 0, "no assessment rows")
+    for (const row of json.assessment) {
+      assert(typeof row.action === "boolean", `row.action = ${JSON.stringify(row)}`)
+      assert(typeof row.item === "string" && row.item, `row.item = ${JSON.stringify(row)}`)
+      assert(typeof row.status === "string" && row.status, `row.status = ${JSON.stringify(row)}`)
+    }
+    // Tokens are reported as set/not set; a credential-shaped value is a leak.
+    assert(!/sk-[A-Za-z0-9]{8}|xoxb-|xapp-/.test(text), "credential-shaped value in the assessment JSON")
+    return `${json.assessment.length} rows`
+  })
+
+  await check(9, "the Task models page shows each configured list on first load", async () => {
+    // Before any click: the rows must come from the saved block, never an
+    // empty list that the first edit would save over the configuration.
+    const data = (await api("/api/task-models")).json ?? {}
+    const tm = data.task_models ?? {}
+    const options = data.models ?? []
+    const uses = ["text", "image", "tts", "stt", "vision", "classify"]
+    const titles = ["Generate text", "Generate images", "Text to speech", "Transcription", "Describe images", "Classification"]
+    const { close, page, problems } = await open("/task-models")
+    await page.getByText("Text in results (characters)").waitFor({ timeout: 10000 })
+    const shownTitles = await page.locator('[data-testid^="task-list-"]:not([data-testid^="task-list-empty-"])').evaluateAll((els) =>
+      els.map((e) => e.querySelector('[data-slot="card-title"]')?.textContent),
+    )
+    const mismatches = []
+    for (const use of uses) {
+      const want = (tm[use] ?? []).map((m) => m.model)
+      const section = page.getByTestId(`task-list-${use}`)
+      const rows = await section.locator(`[data-testid^="task-model-${use}-"]`).evaluateAll((els, u) => els.map((e) => e.dataset.testid.slice(`task-model-${u}-`.length)), use)
+      if (JSON.stringify(rows) !== JSON.stringify(want)) mismatches.push(`${use}: rows ${JSON.stringify(rows)}, config ${JSON.stringify(want)}`)
+      const empty = await page.getByTestId(`task-list-empty-${use}`).count()
+      if (empty !== (want.length === 0 ? 1 : 0)) mismatches.push(`${use}: empty line shown ${empty} times with ${want.length} configured`)
+      const marked = await section.locator(`[data-testid^="task-model-unsupported-${use}-"]`).evaluateAll((els, u) => els.map((e) => e.dataset.testid.slice(`task-model-unsupported-${u}-`.length)), use)
+      const wantMarked = want.filter((m) => options.find((o) => o.name === m)?.support?.[use] === "no")
+      if (JSON.stringify(marked) !== JSON.stringify(wantMarked)) mismatches.push(`${use}: marked ${JSON.stringify(marked)}, expected ${JSON.stringify(wantMarked)}`)
+    }
+    await close()
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    assert(JSON.stringify(shownTitles) === JSON.stringify(titles), `sections ${JSON.stringify(shownTitles)}`)
+    assert(mismatches.length === 0, mismatches.join("; "))
+    return uses.map((u) => `${u} ${(tm[u] ?? []).length}`).join(", ")
+  })
+
+  await check(10, "the MCP Servers, MCP Config and System pages show the configuration when reached from another page", async () => {
+    // The three pages seed their form from the config query. Reached from a
+    // page that has already loaded it, the query is answered from the cache and
+    // they used to keep their empty defaults — which the next edit saved over
+    // the real configuration. Bindings shares the MCP pages' query and Network
+    // the System page's, so each is read with a warm cache.
+    const cfg = (await api("/api/config")).json ?? {}
+    const servers = Object.keys(cfg.tools?.mcp?.servers ?? {}).sort()
+    const listen = cfg.mcp_host?.listen || "127.0.0.1:5911"
+    const hostEnabled = cfg.mcp_host?.enabled === true
+    const backupDest = cfg.backup?.dest ?? ""
+    const maxTokens = String(cfg.agents?.defaults?.max_tokens ?? 32768)
+
+    const { close, page, problems } = await open("/agent/bindings")
+    const expand = async (name) => {
+      const group = page.getByRole("button", { name, exact: true })
+      if ((await group.getAttribute("aria-expanded")) !== "true") {
+        await group.click()
+        await page.waitForTimeout(400)
+      }
+    }
+    const go = async (href, pattern) => {
+      await page.locator(`a[href="${href}"]`).first().click()
+      await page.waitForURL(pattern, { timeout: 10000 })
+      await page.waitForTimeout(800)
+    }
+
+    await expand("Services")
+    await expand("MCP")
+    await go("/mcp/servers", /\/mcp\/servers$/)
+    const empty = await page.getByText("No external servers configured.").count()
+    const missing = []
+    for (const name of servers) {
+      if ((await page.getByRole("button", { name, exact: true }).count()) === 0) missing.push(name)
+    }
+
+    await go("/mcp/config", /\/mcp\/config$/)
+    const listenInput = page.getByPlaceholder("127.0.0.1:5911")
+    await listenInput.waitFor({ state: "visible", timeout: 10000 })
+    const shownListen = await listenInput.inputValue()
+    const shownEnabled = await page.getByRole("switch", { name: "Enabled", exact: true }).first().getAttribute("aria-checked")
+
+    await go("/network", /\/network$/)
+    await page.locator("[data-testid=network-mcp-listen]").waitFor({ state: "visible", timeout: 10000 })
+    await go("/system", /\/system$/)
+    const destInput = page.getByTestId("backup-dest")
+    await destInput.waitFor({ state: "visible", timeout: 10000 })
+    const shownDest = await destInput.inputValue()
+    const numbers = await page.getByRole("spinbutton").evaluateAll((els) => els.map((e) => e.value))
+    await close()
+
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    assert(missing.length === 0, `/mcp/servers does not list ${missing.join(", ")}`)
+    assert(empty === (servers.length === 0 ? 1 : 0), `/mcp/servers empty state shown ${empty} times with ${servers.length} configured`)
+    assert(shownListen === listen, `/mcp/config listen shows ${shownListen}, config ${listen}`)
+    assert(shownEnabled === String(hostEnabled), `/mcp/config enabled shows ${shownEnabled}, config ${hostEnabled}`)
+    assert(shownDest === backupDest, `/system backup dest shows ${JSON.stringify(shownDest)}, config ${JSON.stringify(backupDest)}`)
+    assert(numbers.includes(maxTokens), `/system shows no max tokens ${maxTokens} (${numbers.join(", ")})`)
+    return `${servers.length} servers, listen ${listen}, max tokens ${maxTokens}`
+  })
+}
+
+// Q. Audit page
+if (useGroup("Q", "Audit page")) {
+  const HEADERS = ["Time", "Kind", "Actor / agent", "Channel", "Tool / summary", "Outcome", "Duration"]
+
+  await check(1, "the sidebar links to the audit page under Services", async () => {
+    const { close, page, problems } = await open("/agents")
+    const group = page.getByRole("button", { name: "Services", exact: true })
+    if ((await group.getAttribute("aria-expanded")) !== "true") {
+      await group.click()
+      await page.waitForTimeout(400)
+    }
+    const link = page.locator('a[href="/audit"]').first()
+    assert((await link.count()) > 0, "no Audit entry under Services")
+    await link.click()
+    await page.waitForURL(/\/audit$/, { timeout: 10000 })
+    await page.waitForTimeout(800)
+    const path = new URL(page.url()).pathname
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(path === "/audit", `clicking Audit went to ${path}`)
+  })
+
+  await check(2, "the audit page renders the table and its headers", async () => {
+    const { close, page, problems, text } = await open("/audit")
+    // The suite's own login is an auth event, so the trail is never empty by
+    // the time this runs; an empty state here means events are not recorded.
+    const headers = page.locator("thead th")
+    await headers.first().waitFor({ state: "visible", timeout: 10000 }).catch(() => {})
+    const got = (await headers.allInnerTexts()).map((h) => h.trim())
+    const body = await text()
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(got.length > 0, `no table rendered — page reads: ${body.slice(0, 160)}`)
+    for (const h of HEADERS) assert(got.includes(h), `missing column ${JSON.stringify(h)} in ${JSON.stringify(got)}`)
+    return `${got.length} columns`
+  })
+
+  await check(3, "the kind filter is sent to the API and narrows the rows", async () => {
+    const page = await ctx.newPage()
+    const requests = []
+    page.on("request", (r) => {
+      if (r.url().includes("/api/audit")) requests.push(r.url())
+    })
+    await page.goto(BASE + "/audit", { waitUntil: "networkidle", timeout: 20000 })
+    await page.waitForTimeout(500)
+    const before = requests.length
+    // Radix renders the options into a portal only once the trigger is opened.
+    await page.locator('button[role=combobox][aria-label="Kind"]').click()
+    await page.locator('[role=option]:has-text("Auth")').first().click()
+    const isAuth = (u) => /[?&]kind=auth\b/.test(u)
+    const deadline = Date.now() + 10000
+    while (!requests.slice(before).some(isAuth) && Date.now() < deadline) {
+      await page.waitForTimeout(200)
+    }
+    await page.waitForTimeout(800)
+    const kinds = await page.locator("tbody tr td:nth-child(2)").allInnerTexts()
+    await page.close()
+    assert(
+      requests.slice(before).some(isAuth),
+      `no /api/audit request carried kind=auth; saw ${JSON.stringify(requests)}`,
+    )
+    // Every row shown is the kind asked for — the filter is applied by the
+    // server, not by hiding rows on the page.
+    assert(kinds.length > 0, "no rows after filtering to Auth (the suite's login is one)")
+    const other = kinds.map((k) => k.trim()).filter((k) => k !== "Auth")
+    assert(other.length === 0, `rows of other kinds shown: ${JSON.stringify(other)}`)
+    return `${kinds.length} auth rows`
+  })
+
+  await check(4, "Load more appears exactly when an older page exists", async () => {
+    // The page asks for 100 rows and offers Load more only when it got a full
+    // page and a cursor. next_before_id is 0 on a fresh instance, so the
+    // assertion is presence-or-absence against the API, not presence.
+    const r = await api("/api/audit?limit=100")
+    assert(r.status === 200, `GET /api/audit = ${r.status} ${r.text.slice(0, 120)}`)
+    const events = r.json?.events ?? []
+    const expectMore = events.length === 100 && r.json.next_before_id > 0
+    const { close, page, problems } = await open("/audit")
+    await page.locator("thead th").first().waitFor({ state: "visible", timeout: 10000 })
+    await page.waitForTimeout(500)
+    const buttons = await page.getByRole("button", { name: "Load more" }).count()
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(
+      (buttons > 0) === expectMore,
+      `Load more ${buttons > 0 ? "shown" : "absent"} with ${events.length} events and next_before_id=${r.json.next_before_id}`,
+    )
+    return `${events.length} events, next_before_id=${r.json.next_before_id}, Load more ${expectMore ? "shown" : "absent"}`
+  })
+}
+
+// O. Status page
+if (useGroup("O", "Status page")) {
+  await check(1, "the status API reports the running process", async () => {
+    const { status, json } = await api("/api/system/status")
+    assert(status === 200, `status = ${status}`)
+    for (const k of ["version", "uptime", "pid", "memory_bytes", "agents"]) {
+      assert(json[k] !== undefined, `field ${k} missing from the response`)
+    }
+    // Resident set size, not virtual: a Go process reserves over a gigabyte of
+    // address space, so a gigabyte-scale answer means VmSize was read instead.
+    assert(json.memory_bytes > 1e6, `memory_bytes = ${json.memory_bytes}, implausibly small`)
+    assert(json.memory_bytes < 2e9, `memory_bytes = ${json.memory_bytes} — that looks like VmSize`)
+    assert(json.pid > 0, `pid = ${json.pid}`)
+    return `${(json.memory_bytes / 1048576).toFixed(1)} MB, ${json.agents} assistants, up ${json.uptime}`
+  })
+
+  await check(2, "counts match the configuration", async () => {
+    const { json: st } = await api("/api/system/status")
+    const cfg = await config()
+    assert(
+      st.agents === (cfg.agents?.list?.length ?? 0),
+      `agents = ${st.agents}, config lists ${cfg.agents?.list?.length}`,
+    )
+    // Models are counted as *enabled*, and providers as *configured*, so
+    // neither is the length of its config list — a status page reporting 40
+    // models when 3 can run answers a question nobody asked. O6 checks the
+    // provider figure against the rule the Providers page draws its dot from.
+    const enabled = (cfg.models ?? []).filter((m) => m.enabled).length
+    assert(st.models === enabled, `models = ${st.models}, config enables ${enabled}`)
+    assert(
+      st.providers <= (cfg.providers?.length ?? 0),
+      `providers configured = ${st.providers}, more than the ${cfg.providers?.length} configured`,
+    )
+    return `${st.agents} assistants, ${st.models} models, ${st.providers} providers, ${st.channels} channels`
+  })
+
+  await check(3, "the sidebar links to it from the bottom", async () => {
+    const { close, page, problems } = await open("/")
+    const link = page.locator("[data-testid=nav-status]")
+    await link.waitFor({ state: "visible", timeout: 10000 });
+    // It sits in the footer, below the collapsible groups — reachable without
+    // opening a disclosure, which is the point of putting it there.
+    const inFooter = await link.evaluate((el) =>
+      Boolean(el.closest("[data-slot=sidebar-footer]")),
+    )
+    await link.click()
+    await page.waitForTimeout(1500)
+    const path = new URL(page.url()).pathname
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(inFooter, "the Status link is not in the sidebar footer")
+    assert(path === "/status", `clicking Status went to ${path}`)
+  })
+
+  await check(4, "the page renders live figures", async () => {
+    const { close, page, problems } = await open("/status")
+    await page.locator("[data-testid=status-grid]").waitFor({ state: "visible", timeout: 10000 })
+    const read = async (id) =>
+      (await page.locator(`[data-testid=${id}]`).innerText()).trim()
+    const memory = await read("status-memory")
+    const assistants = await read("status-assistants")
+    const uptime = await read("status-uptime")
+    await close()
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(/\d+(\.\d+)?\s*(KB|MB|GB)/.test(memory), `memory tile reads ${JSON.stringify(memory)}`)
+    assert(/\d/.test(assistants), `assistants tile reads ${JSON.stringify(assistants)}`)
+    assert(/\d/.test(uptime), `uptime tile reads ${JSON.stringify(uptime)}`)
+    return memory.replace(/\s+/g, " ")
+  })
+
+  await check(5, "the detail box identifies the build and the host", async () => {
+    const { close, page, problems } = await open("/status")
+    const detail = page.locator("[data-testid=status-detail]")
+    await detail.waitFor({ state: "visible", timeout: 10000 })
+    const text = (await detail.innerText()).replace(/\s+/g, " ").trim()
+    const memory = (await page
+      .locator("[data-testid=status-memory]")
+      .innerText()).trim()
+    await close()
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    // "Compiler go1.27.1" and "Environment Ubuntu 24.04.4 LTS on amd64" — the
+    // two lines anyone filing a bug is asked for first.
+    assert(/go1\.\d+/.test(text), `no Go version in the detail box: ${text}`)
+    assert(/ on (amd64|arm64|386|arm)\b/.test(text), `no environment line: ${text}`)
+    // The Go heap is a subset of RSS and a diagnostic detail; this page reports
+    // how big the process is, so the memory tile carries one figure only.
+    assert(!/heap/i.test(memory), `the memory tile still shows a heap figure: ${memory}`)
+    return text.slice(0, 120)
+  })
+
+  await check(6, "providers configured agrees with the Providers page", async () => {
+    const status = (await api("/api/system/status")).json
+    const providers = (await api("/api/providers")).json?.providers ?? []
+    const ready = providers.filter((p) => p.ready).length
+    // Both surfaces read the same backend rule, so a mismatch means one of them
+    // went back to guessing from the config — which is exactly the bug that
+    // showed a green dot for a CLI path that no longer existed.
+    assert(
+      status.providers === ready,
+      `status says ${status.providers} providers configured, /api/providers says ${ready}`,
+    )
+    // A CLI provider with no command must still resolve, or the seeded config
+    // would report itself as unusable out of the box.
+    for (const p of providers) {
+      if (p.ready && !p.command) {
+        assert(
+          p.protocol.endsWith("-cli") ? Boolean(p.resolved_command) : true,
+          `${p.name} is ready with no command and no resolved binary`,
+        )
+      }
+    }
+    return `${ready} of ${providers.length} configured`
+  })
+}
+
+// N. Memory curation
+//
+// Writes to a memory store: it creates a domain called `e2e-probe`, adds
+// memories to it, retypes and retires them, and deletes the domain at the end.
+// It never touches a domain it did not create, so an agent's real memory is not
+// at risk — but it is still a write, which is why this runner refuses
+// production.
+if (useGroup("N", "Memory curation")) {
+  // Pick a store to work in. Any will do; the probe domain is self-contained.
+  const stores = (await api("/api/memory")).json?.sessions ?? []
+  const store = stores[0]?.id
+  const domainURL = store ? `/api/memory/${store}/domains` : null
+  let probeDomain = null
+  const probeMemories = []
+
+  await check(1, "a memory store is available to curate", async () => {
+    assert(store, "no cognitive-memory databases found; N is skipped downstream")
+    return store
+  })
+
+  await check(2, "create a domain through the API the page uses", async () => {
+    assert(store, "no store")
+    const res = await api(domainURL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "e2e-probe", summary: "created by the e2e run" }),
+    })
+    assert(res.status === 201, `create domain: ${res.status} ${res.text}`)
+    probeDomain = res.json.id
+    return probeDomain
+  })
+
+  await check(3, "a hand-written memory is recorded with origin=user", async () => {
+    assert(probeDomain, "no probe domain")
+    // origin=user is the one piece of provenance that is verifiable rather than
+    // self-reported, and nothing could write it before this change.
+    const res = await api(`/api/memory/${store}/domains/${probeDomain}/memories`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "fact", text: "e2e probe fact" }),
+    })
+    assert(res.status === 201, `create memory: ${res.status} ${res.text}`)
+    assert(res.json.origin === "user", `origin = ${res.json.origin}, want user`)
+    assert(res.json.confidence === 1, `confidence = ${res.json.confidence}, want 1`)
+    probeMemories.push(res.json.id)
+    return `${res.json.id} origin=${res.json.origin}`
+  })
+
+  await check(4, "an unknown memory type is rejected", async () => {
+    const res = await api(`/api/memory/${store}/domains/${probeDomain}/memories`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "observation", text: "nope" }),
+    })
+    assert(res.status === 400, `status = ${res.status}, want 400`)
+  })
+
+  await check(5, "retype a memory to event", async () => {
+    const id = probeMemories[0]
+    const res = await api(`/api/memory/${store}/memories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "event" }),
+    })
+    assert(res.status === 200, `patch: ${res.status} ${res.text}`)
+    assert(res.json.type === "event", `type = ${res.json.type}`)
+  })
+
+  await check(6, "retire a memory, and see it only with include_retired", async () => {
+    const id = probeMemories[0]
+    const res = await api(`/api/memory/${store}/memories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "retired" }),
+    })
+    assert(res.status === 200, `retire: ${res.status} ${res.text}`)
+
+    const find = (doc) =>
+      (doc.json.domains ?? [])
+        .find((d) => d.id === probeDomain)
+        ?.memories.some((m) => m.id === id) ?? false
+
+    assert(!find(await api(`/api/memory/${store}`)), "retired memory still listed by default")
+    assert(
+      find(await api(`/api/memory/${store}?include_retired=1`)),
+      "retired memory unreachable even with include_retired — it could never be restored",
+    )
+  })
+
+  await check(7, "restore it", async () => {
+    const id = probeMemories[0]
+    const res = await api(`/api/memory/${store}/memories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "active" }),
+    })
+    assert(res.status === 200, `restore: ${res.status} ${res.text}`)
+    assert(res.json.status === "active", `status = ${res.json.status}`)
+  })
+
+  await check(8, "bulk retype applies to every selected id", async () => {
+    // Add two more so the bulk action has something to work over.
+    for (const text of ["e2e probe two", "e2e probe three"]) {
+      const r = await api(`/api/memory/${store}/domains/${probeDomain}/memories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "fact", text }),
+      })
+      assert(r.status === 201, `seed: ${r.status} ${r.text}`)
+      probeMemories.push(r.json.id)
+    }
+    const res = await api(`/api/memory/${store}/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "retype", type: "operational", ids: probeMemories }),
+    })
+    assert(res.status === 200, `bulk: ${res.status} ${res.text}`)
+    assert(res.json.changed === probeMemories.length,
+      `changed = ${res.json.changed}, want ${probeMemories.length}`)
+    return `${res.json.changed} retyped`
+  })
+
+  await check(9, "a bad id fails on its own without aborting the batch", async () => {
+    const res = await api(`/api/memory/${store}/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "retire", ids: [probeMemories[0], "hNOPE"] }),
+    })
+    assert(res.status === 200, `bulk: ${res.status} ${res.text}`)
+    assert(res.json.changed === 1, `changed = ${res.json.changed}, want 1`)
+    assert(res.json.failed?.hNOPE, "the bad id was not reported")
+    // Put it back for the export check below.
+    await api(`/api/memory/${store}/memories/${probeMemories[0]}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "active" }),
+    })
+  })
+
+  await check(10, "export downloads a YAML document that import can read", async () => {
+    const res = await ctx.request.get(`${BASE}/api/memory/${store}/export`)
+    assert(res.status() === 200, `export: ${res.status()}`)
+    const ct = res.headers()["content-type"] ?? ""
+    assert(ct.includes("yaml"), `content-type = ${ct}`)
+    const body = await res.text()
+    assert(body.includes("format_version"), "no format_version in the export")
+    assert(body.includes("e2e probe fact"), "the export is missing a memory that exists")
+
+    // Merge-importing what was just exported must change nothing.
+    const back = await api(`/api/memory/${store}/import?mode=merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/yaml" },
+      body,
+    })
+    assert(back.status === 200, `import: ${back.status}`)
+    const result = back.json
+    assert(result.memories_created === 0,
+      `re-importing created ${result.memories_created} duplicates, want none`)
+    return `${body.length} bytes, ${result.memories_skipped} already present`
+  })
+
+  // Steps 2-10 drive the API the page calls. 11-15 drive the PAGE, because a
+  // control can be wired correctly and still not work: the type picker is a
+  // portalled listbox, and the bulk bar only exists once something is selected.
+  // Unit tests render these in jsdom, which is not the same as clicking them.
+
+  /** Opens /memory on the probe's store and returns its domain card. */
+  async function openProbe() {
+    const o = await open("/memory")
+    await o.page.locator(`[data-store-id="${store}"]`).click()
+    const card = o.page.locator(
+      `[data-testid=memory-domain][data-domain-name="e2e-probe"]`,
+    )
+    await card.waitFor({ state: "visible", timeout: 10000 })
+    return { ...o, card }
+  }
+
+  /** Reads a memory's type back from the API, so the assertion is against what
+   *  was stored rather than what the page is showing. */
+  async function typeOf(id) {
+    const doc = await api(`/api/memory/${store}?include_retired=1`)
+    for (const d of doc.json.domains ?? []) {
+      for (const m of d.memories) if (m.id === id) return m.type
+    }
+    return null
+  }
+
+  await check(11, "the memory page renders the probe domain", async () => {
+    const { close, page, problems, card } = await openProbe()
+    const rows = await card.locator("[data-testid=memory-row]").count()
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(rows === 3, `${rows} rows in the probe domain, want 3`)
+    return `${rows} rows`
+  })
+
+  await check(12, "retype a memory from the dropdown on its row", async () => {
+    const { close, page, problems, card } = await openProbe()
+    const row = card.locator("[data-testid=memory-row]").first()
+    const id = await row.getAttribute("data-memory-id")
+
+    await row.locator("button[role=combobox]").click()
+    await page.locator('[role=option]:has-text("preference")').first().click()
+    // The row re-renders from the refetch, so wait on the stored value.
+    await page.waitForTimeout(1500)
+    await close()
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    const got = await typeOf(id)
+    assert(got === "preference", `stored type = ${got}, want preference`)
+    return `${id} -> preference`
+  })
+
+  await check(13, "select the whole domain from its header, then retype it", async () => {
+    const { close, page, problems, card } = await openProbe()
+    assert(
+      (await page.locator("[data-testid=bulk-bar]").count()) === 0,
+      "the bulk bar is visible with nothing selected",
+    )
+
+    const rows = card.locator("[data-testid=memory-row]")
+    const ids = []
+    for (let i = 0; i < (await rows.count()); i++) {
+      ids.push(await rows.nth(i).getAttribute("data-memory-id"))
+    }
+    // The domain header selects the lot. Retyping a domain of several hundred
+    // entries one row at a time is not a job anyone starts, which is what made
+    // the bulk actions much less useful than they looked.
+    await card.locator("button[role=checkbox]").first().click()
+
+    const bar = page.locator("[data-testid=bulk-bar]")
+    await bar.waitFor({ state: "visible", timeout: 5000 })
+
+    await bar.locator("button[role=combobox]").click()
+    await page.locator('[role=option]:has-text("event")').first().click()
+    await page.waitForTimeout(1500)
+    await close()
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    for (const id of ids) {
+      const got = await typeOf(id)
+      assert(got === "event", `${id} stored as ${got}, want event`)
+    }
+    return `${ids.length} rows selected from the header and retyped`
+  })
+
+  await check(14, "add a memory through the page, tagged origin=user", async () => {
+    const { close, page, problems, card } = await openProbe()
+    await card.getByRole("button", { name: /Add a memory to e2e-probe/i }).click()
+    const form = page.locator("[data-testid=add-memory-form]")
+    await form.waitFor({ state: "visible", timeout: 5000 })
+
+    await form.locator("textarea").fill("written from the browser")
+    await form.getByRole("button", { name: "Add", exact: true }).click()
+    await page.waitForTimeout(1500)
+    await close()
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    const doc = await api(`/api/memory/${store}`)
+    const probe = (doc.json.domains ?? []).find((d) => d.name === "e2e-probe")
+    const added = probe?.memories.find((m) => m.text === "written from the browser")
+    assert(added, "the memory added through the page is not in the store")
+    assert(added.origin === "user", `origin = ${added.origin}, want user`)
+    return `${added.id} origin=user`
+  })
+
+  await check(15, "retire from the row, then reveal it with show-retired", async () => {
+    const { close, page, problems, card } = await openProbe()
+    const row = card.locator("[data-testid=memory-row]").first()
+    const id = await row.getAttribute("data-memory-id")
+    await row.getByRole("button", { name: /Retire this memory/i }).click()
+    await page.waitForTimeout(1500)
+
+    // Gone from the default view — and reachable again behind the toggle,
+    // without which a retired memory could never be restored.
+    let visible = await card
+      .locator(`[data-memory-id="${id}"]`)
+      .count()
+    assert(visible === 0, "the retired memory is still listed by default")
+
+    await page.getByRole("button", { name: /Show retired/i }).click()
+    await page.waitForTimeout(1500)
+    visible = await page.locator(`[data-memory-id="${id}"]`).count()
+    await close()
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(visible === 1, "show-retired did not reveal the retired memory")
+    return `${id} retired and recovered`
+  })
+
+  await check(16, "clean up the probe domain", async () => {
+    assert(probeDomain, "no probe domain to remove")
+    const res = await api(`/api/memory/${store}/domains/${probeDomain}`, {
+      method: "DELETE",
+    })
+    assert(res.status === 204, `delete: ${res.status} ${res.text}`)
+    const after = await api(`/api/memory/${store}?include_retired=1`)
+    assert(
+      !(after.json.domains ?? []).some((d) => d.id === probeDomain),
+      "the probe domain survived cleanup",
+    )
+  })
+
+  await check(17, "keyword lists are shown apart and read-only", async () => {
+    assert(store, "no store")
+    // A domain carrying all three lists can only be written by import (the
+    // automatic list is consolidation's), so merge one in and remove it after.
+    const name = "e2e-keywords"
+    const doc = [
+      "format_version: 1",
+      "domains:",
+      `  - name: ${name}`,
+      "    status: active",
+      "    keyword_triggers: e2e agent phrase",
+      "    auto_keywords: e2e automatic phrase",
+      "    blocked_keywords: e2e blocked phrase",
+      "    memories:",
+      "      - type: fact",
+      "        status: active",
+      "        confidence: 1",
+      "        origin: user",
+      "        text: e2e keyword probe",
+      "",
+    ].join("\n")
+    const imp = await api(`/api/memory/${store}/import?mode=merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/yaml" },
+      body: doc,
+    })
+    assert(imp.status === 200, `import: ${imp.status} ${imp.text}`)
+    const domainId = ((await api(`/api/memory/${store}`)).json.domains ?? [])
+      .find((d) => d.name === name)?.id
+    assert(domainId, "the imported domain is not in the store")
+
+    let lines, inputs, problems
+    try {
+      const o = await open("/memory")
+      problems = o.problems
+      await o.page.locator(`[data-store-id="${store}"]`).click()
+      const card = o.page.locator(
+        `[data-testid=memory-domain][data-domain-name="${name}"]`,
+      )
+      await card.waitFor({ state: "visible", timeout: 10000 })
+      const text = async (id) =>
+        (await card.locator(`[data-testid=${id}]`).innerText()).trim()
+      lines = {
+        agent: await text("domain-keywords"),
+        auto: await text("domain-auto-keywords"),
+        blocked: await text("domain-blocked-keywords"),
+      }
+      inputs = await card.locator("input[type=text], textarea").count()
+      await o.close()
+    } finally {
+      await api(`/api/memory/${store}/domains/${domainId}`, { method: "DELETE" })
+    }
+
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(lines.agent === "Keywords: e2e agent phrase", `agent line: ${lines.agent}`)
+    assert(
+      lines.auto === "Keywords added automatically: e2e automatic phrase",
+      `automatic line: ${lines.auto}`,
+    )
+    assert(
+      lines.blocked === "Blocked keywords: e2e blocked phrase",
+      `blocked line: ${lines.blocked}`,
+    )
+    assert(inputs === 0, `${inputs} editable fields on the domain card`)
+    return "3 labelled lines, no fields"
+  })
+}
+
+// L. Setup wizard
+if (useGroup("L", "Setup wizard")) {
+  await check(1, "wizard walks all six steps and reflects the choices", async () => {
+    const { close, page } = await open("/setup")
+    const body0 = await page.locator("body").innerText()
+    assert(/Welcome/i.test(body0), "welcome step not shown")
+
+    const next = () => page.getByRole("button", { name: /^Next$/ }).click()
+    await next() // network
+    await page.waitForTimeout(400)
+    const port = page.locator("input[type=number]").first()
+    await port.fill("19999")
+    await next() // provider
+    await page.waitForTimeout(600)
+
+    // Pick the first CLI provider — no API key needed.
+    await page.getByRole("combobox").first().click()
+    await page.waitForTimeout(400)
+    const picked = await page.evaluate(() => {
+      const o = [...document.querySelectorAll("[role=option]")].find((x) =>
+        /CLI/i.test(x.textContent ?? ""),
+      )
+      if (o) o.click()
+      return o?.textContent?.trim() ?? null
+    })
+    assert(picked, "no CLI provider offered")
+    await page.waitForTimeout(500)
+
+    await next() // model
+    await page.waitForTimeout(500)
+    await next() // agent
+    await page.waitForTimeout(500)
+    await page.evaluate(() => {
+      const i = document.querySelector("input[type=text], input:not([type])")
+      if (i) {
+        const set = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set
+        set.call(i, "Alice")
+        i.dispatchEvent(new Event("input", { bubbles: true }))
+      }
+    })
+    await next() // review
+    await page.waitForTimeout(600)
+
+    const review = await page.locator("body").innerText()
+    await close()
+    assert(/Review/i.test(review), "review step not reached")
+    assert(review.includes("Alice"), "review did not carry the agent name")
+    assert(/CLI/i.test(review), "review did not carry the provider")
+    return `provider "${picked}", agent "Alice"`
+  })
+  await check(2, "the wizard is not finished (no config was changed)", async () => {
+    const c = await config()
+    assert(
+      !(c.agents.list ?? []).some((a) => a.id === "alice" || a.name === "Alice"),
+      "the wizard appears to have been submitted",
+    )
+  })
+}
+
+// M. API surface
+if (useGroup("M", "API surface (curl-equivalent)")) {
+  const endpoints = [
+    ["/api/system/version", 200],
+    ["/api/config", 200],
+    ["/api/models", 200],
+    ["/api/providers", 200],
+    ["/api/agents/tools", 200],
+    ["/api/skills", 200],
+    ["/api/devices", 200],
+    ["/api/devices/pending", 200],
+    ["/api/auth/status", 200],
+    ["/health", 200],
+    ["/ready", 200],
+  ]
+  for (const [path, want] of endpoints) {
+    await check(endpoints.findIndex((e) => e[0] === path) + 1, `GET ${path}`, async () => {
+      // /ready is legitimately 503 while a config reload restarts the channels,
+      // and groups F and G write config, so a single sample here races that
+      // window. Poll briefly: a permanent 503 still fails, a transient one does
+      // not. Every other endpoint is checked once.
+      if (path === "/ready") {
+        const deadline = Date.now() + 20000
+        let last = 0
+        for (;;) {
+          const r = await api(path)
+          last = r.status
+          if (r.status === 200) return
+          if (Date.now() > deadline) break
+          await new Promise((res) => setTimeout(res, 500))
+        }
+        assert(false, `/ready stuck at ${last} for 20s`)
+        return
+      }
+      const r = await api(path)
+      assert(r.status === want, `expected ${want}, got ${r.status}`)
+    })
+  }
+  await check(90, "GET /api/config masks credentials", async () => {
+    const r = await api("/api/config")
+    const raw = r.text
+    const leaked = (raw.match(/"api_key":\s*"(?!\*|""|null)[^"]{12,}"/g) ?? []).filter(
+      (m) => !/\*{2,}/.test(m),
+    )
+    assert(leaked.length === 0, `unmasked credential in /api/config: ${leaked[0]}`)
+  })
+}
+
+// ------------------------------------------------------- character cards ---
+
+if (useGroup("T", "Character cards")) {
+  const CARD = "e2e-card"
+  const AGENT = "e2e-card-agent"
+  const cardJSON = JSON.stringify({
+    spec: "chara_card_v3",
+    spec_version: "3.0",
+    data: { name: "E2E Card", description: "A probe card.", tags: [] },
+  })
+  const cards = async () => (await api("/api/cards")).json?.cards ?? []
+  const agentOf = async () => ((await config()).agents.list ?? []).find((a) => a.id === AGENT)
+  const saveAgents = (list) =>
+    api("/api/config", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agents: { list } }) })
+  const auditHas = async (kind) => {
+    const { json } = await api(`/api/audit?kind=${kind}&limit=20`)
+    return (json?.events ?? []).some((e) => e.summary === CARD)
+  }
+  // Open the Character card selector of AGENT on /agents and pick an option.
+  const pickCard = async (optionText) => {
+    const { close, page } = await open("/agents")
+    await page.getByRole("button", { name: AGENT, exact: true }).click()
+    await page.waitForTimeout(400)
+    await page.locator('button[role=combobox][aria-label="Character card"]').click()
+    await page.locator(`[role=option]:has-text("${optionText}")`).first().click()
+    await page.waitForTimeout(2000)
+    await close()
+  }
+
+  await check(1, "the sidebar links to the Character cards page under Agents", async () => {
+    const { close, page, problems } = await open("/agents")
+    let link = page.locator('a[href="/agent/cards"]')
+    if ((await link.count()) === 0) {
+      await page.getByRole("button", { name: "Agents", exact: true }).first().click()
+      await page.waitForTimeout(400)
+      link = page.locator('a[href="/agent/cards"]')
+    }
+    assert((await link.count()) > 0, "no Character cards entry in the sidebar")
+    await link.first().click()
+    await page.waitForURL(/\/agent\/cards$/, { timeout: 10000 })
+    await page.waitForTimeout(800)
+    const path = new URL(page.url()).pathname
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    assert(path === "/agent/cards", `clicking Character cards went to ${path}`)
+  })
+
+  await check(2, "import a V3 card through the dialog", async () => {
+    const { close, page, problems } = await open("/agent/cards")
+    await page.getByRole("button", { name: "Import", exact: true }).first().click()
+    const dialog = page.getByRole("alertdialog")
+    await dialog.waitFor({ timeout: 5000 })
+    await page.locator("#card-import-file").setInputFiles({
+      name: `${CARD}.json`,
+      mimeType: "application/json",
+      buffer: Buffer.from(cardJSON),
+    })
+    await page.waitForTimeout(300)
+    const id = await page.locator("#card-import-id").inputValue()
+    assert(id === CARD, `the id field was prefilled with ${JSON.stringify(id)}, want ${CARD} (from the file name)`)
+    await dialog.getByRole("button", { name: "Import", exact: true }).click()
+    await page.waitForTimeout(1500)
+    const row = page.locator("[data-testid=card-row]").filter({ hasText: CARD })
+    assert((await row.count()) === 1, "the imported card is not listed")
+    assert((await row.innerText()).includes("E2E Card"), "the row does not show the card's name")
+    await close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    const c = (await cards()).find((x) => x.id === CARD)
+    assert(c, `${CARD} not in GET /api/cards`)
+    assert(Array.isArray(c.attached_to) && c.attached_to.length === 0, `attached_to = ${JSON.stringify(c.attached_to)}`)
+    assert(await auditHas("card_import"), "no card_import audit event for the import")
+  })
+
+  await check(3, "attach the card to an agent from the Agents page", async () => {
+    const before = await config()
+    const r = await saveAgents([...(before.agents.list ?? []), { id: AGENT, name: AGENT, tools: [] }])
+    assert(r.status === 200, `creating ${AGENT} = ${r.status}: ${r.text}`)
+    await pickCard("E2E Card")
+    const a = await agentOf()
+    assert(a?.character_card === CARD, `character_card = ${JSON.stringify(a?.character_card)}, want ${CARD}`)
+    const c = (await cards()).find((x) => x.id === CARD)
+    assert(c?.attached_to.includes(AGENT), `attached_to = ${JSON.stringify(c?.attached_to)} lacks ${AGENT}`)
+  })
+
+  await check(4, "deleting a card an agent uses is refused with the server's sentence", async () => {
+    const { close, page } = await open("/agent/cards")
+    const row = page.locator("[data-testid=card-row]").filter({ hasText: CARD })
+    await row.getByRole("button", { name: "Delete", exact: true }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete", exact: true }).click()
+    const want = `Card "${CARD}" is attached to agent ${AGENT}; detach it first.`
+    await page.getByText(want).first().waitFor({ timeout: 5000 })
+    await page.waitForTimeout(500)
+    const still = await page.locator("[data-testid=card-row]").filter({ hasText: CARD }).count()
+    await close()
+    assert(still === 1, "the attached card disappeared from the list")
+    assert((await cards()).some((x) => x.id === CARD), "the attached card was deleted")
+  })
+
+  await check(5, "detach the card, then delete it", async () => {
+    await pickCard("None")
+    const a = await agentOf()
+    assert(a && a.character_card === undefined, `character_card = ${JSON.stringify(a?.character_card)}, want absent`)
+    const { close, page } = await open("/agent/cards")
+    const row = page.locator("[data-testid=card-row]").filter({ hasText: CARD })
+    await row.getByRole("button", { name: "Delete", exact: true }).click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete", exact: true }).click()
+    await page.waitForTimeout(1500)
+    const left = await page.locator("[data-testid=card-row]").filter({ hasText: CARD }).count()
+    await close()
+    assert(left === 0, "the detached card is still listed after Delete")
+    assert(!(await cards()).some((x) => x.id === CARD), `${CARD} still in GET /api/cards`)
+    assert(await auditHas("card_delete"), "no card_delete audit event for the delete")
+  })
+
+  await check(6, "Allow character card tools writes and clears ccv3", async () => {
+    const before = await agentOf()
+    assert(before, `${AGENT} is gone`)
+    const toggle = async () => {
+      const { close, page } = await open("/agents")
+      await page.getByRole("button", { name: AGENT, exact: true }).click()
+      await page.waitForTimeout(400)
+      await page.getByRole("switch", { name: "Allow character card tools", exact: true }).click()
+      await page.waitForTimeout(2000)
+      await close()
+    }
+    await toggle()
+    let a = await agentOf()
+    assert(a?.ccv3 === true, `ccv3 = ${JSON.stringify(a?.ccv3)} after turning it on`)
+    assert(a.name === before.name && JSON.stringify(a.tools) === JSON.stringify(before.tools), "other fields changed with the toggle")
+    await toggle()
+    a = await agentOf()
+    assert(a && a.ccv3 === undefined, `ccv3 = ${JSON.stringify(a?.ccv3)} after turning it off, want absent`)
+  })
+
+  // Leave nothing behind, whatever the checks above reached.
+  if ((await cards()).some((x) => x.id === CARD)) {
+    await saveAgents(((await config()).agents.list ?? []).filter((a) => a.id !== AGENT))
+    await api(`/api/cards/${CARD}`, { method: "DELETE" })
+  } else {
+    await saveAgents(((await config()).agents.list ?? []).filter((a) => a.id !== AGENT))
+  }
+}
+
+// ----------------------------------------------------------------- report ---
+
+
+// S. Keyboard — every check below drives the page with the keyboard only.
+if (useGroup("S", "Keyboard")) {
+  // focused() describes document.activeElement: an accessible name (aria-label,
+  // aria-labelledby, an associated <label>, an image's alt, text, title or
+  // placeholder), whether a focus ring is painted (outline or box-shadow), and
+  // a per-element id so a walk can tell a repeat from a new stop.
+  const focused = async (page) => {
+    const f = await describeFocus(page)
+    // A control that fades in on focus (transition-opacity) reads as opacity 0
+    // for the first frames; give the transition a moment before judging it.
+    if (!f.body && f.opacity === "0") {
+      await page.waitForTimeout(300)
+      return describeFocus(page)
+    }
+    return f
+  }
+  const describeFocus = (page) =>
+    page.evaluate(() => {
+      const el = document.activeElement
+      if (!el || el === document.body) return { body: true }
+      if (!el.dataset.e2eStop) {
+        window.__e2eStop = (window.__e2eStop || 0) + 1
+        el.dataset.e2eStop = String(window.__e2eStop)
+      }
+      const byId = el.getAttribute("aria-labelledby")
+      const label =
+        el.getAttribute("aria-label") ||
+        (byId && document.getElementById(byId)?.textContent) ||
+        (el.labels && el.labels[0]?.textContent) ||
+        el.querySelector("img[alt]")?.getAttribute("alt") ||
+        el.textContent ||
+        el.getAttribute("title") ||
+        el.getAttribute("placeholder") ||
+        ""
+      const cs = getComputedStyle(el)
+      return {
+        id: el.dataset.e2eStop,
+        tag: el.tagName.toLowerCase(),
+        name: label.trim().replace(/\s+/g, " ").slice(0, 60),
+        ring: (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || (cs.boxShadow && cs.boxShadow !== "none"),
+        opacity: cs.opacity,
+        html: el.outerHTML.slice(0, 120).replace(/\s+/g, " "),
+      }
+    })
+
+  // tabUntil presses Tab until pred(stop) holds; null when the tab order
+  // wrapped without a match.
+  const tabUntil = async (page, pred, max = 200) => {
+    let first = null
+    for (let i = 0; i < max; i++) {
+      await page.keyboard.press("Tab")
+      const f = await focused(page)
+      if (f.body) continue
+      if (first === null) first = f.id
+      else if (f.id === first) return null
+      if (pred(f)) return f
+    }
+    return null
+  }
+
+  await check(1, "log in with the keyboard only", async () => {
+    const fresh = await browser.newContext()
+    const page = await fresh.newPage()
+    await page.goto(BASE + "/login", { waitUntil: "networkidle" })
+    let f = await focused(page)
+    for (let i = 0; i < 8 && (f.body || f.tag !== "input"); i++) {
+      await page.keyboard.press("Tab")
+      f = await focused(page)
+    }
+    assert(f.tag === "input", "Tab does not reach the username field")
+    await page.keyboard.type(USER)
+    await page.keyboard.press("Tab")
+    f = await focused(page)
+    assert(f.tag === "input", `Tab from the username lands on ${f.tag} "${f.name}", not the password field`)
+    await page.keyboard.type(PASSWORD)
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(1500)
+    const path = new URL(page.url()).pathname
+    await fresh.close()
+    assert(path !== "/login", "Enter in the password field did not submit the login form")
+  })
+
+  await check(2, "navigate to the Agents page with the keyboard only", async () => {
+    const { close, page } = await open("/")
+    const group = await tabUntil(page, (f) => f.name === "Agents")
+    assert(group, "Tab never reaches the Agents entry in the sidebar")
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(500)
+    if (new URL(page.url()).pathname !== "/agents") {
+      // A disclosure: the first link inside it is the next stop.
+      await page.keyboard.press("Tab")
+      await page.keyboard.press("Enter")
+      await page.waitForTimeout(700)
+    }
+    const path = new URL(page.url()).pathname
+    await close()
+    assert(path === "/agents", `keyboard navigation from the sidebar ended at ${path}`)
+  })
+
+  await check(3, "every page: Tab cycles through all controls with no trap and a focus ring on each", async () => {
+    const problems = []
+    for (const route of ROUTES) {
+      const { close, page } = await open(route)
+      const seen = new Set()
+      let first = null
+      let last = null
+      let noRing = 0
+      let invisible = 0
+      for (let i = 0; i < 260; i++) {
+        await page.keyboard.press("Tab")
+        const f = await focused(page)
+        if (f.body) continue
+        // A date or time input keeps the element focused while Tab moves
+        // between its own parts, so a consecutive repeat is not a trap.
+        if (f.id === last) continue
+        last = f.id
+        if (first === null) first = f.id
+        else if (f.id === first) break
+        if (seen.has(f.id)) {
+          problems.push(`${route}: focus trap at ${f.tag} "${f.name}"`)
+          break
+        }
+        seen.add(f.id)
+        if (!f.ring) noRing++
+        if (f.opacity === "0") invisible++
+      }
+      await close()
+      if (noRing) problems.push(`${route}: ${noRing} focus stop(s) without a focus ring`)
+      if (invisible) problems.push(`${route}: ${invisible} focus stop(s) invisible (opacity 0) while focused`)
+      if (seen.size === 0) problems.push(`${route}: nothing takes focus`)
+    }
+    assert(problems.length === 0, problems.join("; "))
+    return `${ROUTES.length} pages`
+  })
+
+  await check(4, "every focus stop has an accessible name", async () => {
+    const problems = []
+    for (const route of ROUTES) {
+      const { close, page } = await open(route)
+      let first = null
+      let last = null
+      const unnamed = []
+      for (let i = 0; i < 260; i++) {
+        await page.keyboard.press("Tab")
+        const f = await focused(page)
+        if (f.body) continue
+        if (f.id === last) continue
+        last = f.id
+        if (first === null) first = f.id
+        else if (f.id === first) break
+        // A text field is named by its label or placeholder; textContent is
+        // not a name for it, so an unlabelled one is reported too.
+        if (!f.name) unnamed.push(f.html)
+      }
+      await close()
+      if (unnamed.length) problems.push(`${route}: ${unnamed.length} unnamed: ${[...new Set(unnamed)].slice(0, 3).join(" | ")}`)
+    }
+    assert(problems.length === 0, problems.join("\n"))
+    return `${ROUTES.length} pages`
+  })
+
+  await check(5, "Space on a tool checkbox persists the change and keeps unshown agent fields", async () => {
+    const ID = "e2e-kbd"
+    const before = await config()
+    // subagents and archive_days are not on the Agents page; a save from it
+    // must write them back. PATCH replaces agents.list wholesale.
+    const list = [
+      ...(before.agents.list ?? []),
+      { id: ID, name: ID, tools: [], subagents: { allow_agents: [ID] }, archive_days: 30 },
+    ]
+    const r = await api("/api/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: { list } }),
+    })
+    assert(r.status === 200, `creating ${ID} = ${r.status}`)
+    try {
+      const { close, page } = await open("/agents")
+      const rail = await tabUntil(page, (f) => f.name === ID)
+      assert(rail, `Tab never reaches the ${ID} entry in the rail`)
+      await page.keyboard.press("Enter")
+      await page.waitForTimeout(400)
+      const box = await tabUntil(page, (f) => f.name === "time_now" || (f.tag === "button" && /time_now/.test(f.name)))
+      assert(box, "Tab never reaches the time_now checkbox")
+      await page.keyboard.press("Space")
+      await page.waitForTimeout(2000)
+      await close()
+      const c = await config()
+      const a = (c.agents.list ?? []).find((x) => x.id === ID)
+      assert(a && Array.isArray(a.tools) && a.tools.includes("time_now"), `tools = ${JSON.stringify(a?.tools)}; Space did not add time_now`)
+      assert(
+        JSON.stringify(a.subagents) === JSON.stringify({ allow_agents: [ID] }) && a.archive_days === 30,
+        `the save dropped fields the page does not show: subagents = ${JSON.stringify(a.subagents)}, archive_days = ${a.archive_days}`,
+      )
+      // Every other agent keeps its fields too: the save re-sends the whole list.
+      for (const old of before.agents.list ?? []) {
+        const now = (c.agents.list ?? []).find((x) => x.id === old.id)
+        for (const k of ["workspace", "subagents", "memory", "compression", "context_eviction"]) {
+          assert(
+            JSON.stringify(now?.[k]) === JSON.stringify(old[k]),
+            `${old.id}.${k} changed from ${JSON.stringify(old[k])} to ${JSON.stringify(now?.[k])}`,
+          )
+        }
+      }
+    } finally {
+      const c = await config()
+      c.agents.list = (c.agents.list ?? []).filter((a) => a.id !== ID)
+      await api("/api/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agents: { list: c.agents.list } }),
+      })
+    }
+  })
+
+  await check(6, "Add Agent by keyboard: Enter focuses the ID field, Escape cancels", async () => {
+    const { close, page } = await open("/agents")
+    const add = await tabUntil(page, (f) => /Add Agent/i.test(f.name))
+    assert(add, "Tab never reaches the Add Agent button")
+    await page.keyboard.press("Enter")
+    await page.waitForTimeout(400)
+    const f = await focused(page)
+    const idField = !f.body && f.tag === "input" && /Agent ID/i.test(f.name)
+    await page.keyboard.press("Escape")
+    await page.waitForTimeout(400)
+    const still = await page.getByRole("textbox", { name: /Agent ID/i }).count()
+    await close()
+    assert(idField, `after Enter on Add Agent, focus is on ${f.body ? "the page body" : `${f.tag} "${f.name}"`}, not the Agent ID field`)
+    assert(still === 0, "Escape does not close the Add Agent form")
+  })
+}
+
+await browser.close()
+
+const failed = results.filter((r) => !r.ok)
+console.log(`\n${"=".repeat(64)}`)
+console.log(`  ${results.length - failed.length}/${results.length} checks passed`)
+if (failed.length) {
+  console.log(`\n  Failures:`)
+  for (const f of failed) console.log(`    ${f.label}  ${f.what}\n      ${f.error}`)
+}
+console.log(`${"=".repeat(64)}`)
+process.exit(failed.length ? 1 : 0)

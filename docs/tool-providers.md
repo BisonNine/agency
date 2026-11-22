@@ -1,0 +1,348 @@
+# Tool Provider Layer — Developer Guide
+
+This document explains how ClawEh's tool-provider layer works and gives a spec
+for adding a new tool module (a package of related tools). Registering a module
+once makes its tools available to **both** transports:
+
+- **Internal tool calling** — the agent loop builds a per-agent tool registry and
+  passes the tools to the LLM.
+- **The MCP server** — `mcpserver` is handed the same per-agent registries,
+  so every tool is also exposed over MCP (`/mcp`).
+
+It also feeds the WebUI tool catalogue. You write a module once; all three get it.
+
+---
+
+## 1. Architecture
+
+```
+your package (tools/<ns>/)        ← implements global.ToolProvider, BARE tool names
+        │  RegisterTools(deps) []ToolDefinition
+        ▼
+toolspec, aliased as global  (transport-neutral, stdlib-only)
+        │  ToolProvider / ToolDefinition / Parameter / ToolCall / Result / Deps
+        ▼
+tools.NamespacedProvider("<ns>", pkg.GlobalProvider)   ← applies the "<ns>_" prefix
+        │  bridges global.* into the legacy tools.Tool / tools.ToolProvider world
+        ▼
+tools registry  (RegisterProvider / GetProviders)
+        ├──► agent loop  → per-agent *tools.ToolRegistry  → LLM tool calling
+        ├──► mcpserver (WithAgentRegistries)               → MCP /mcp
+        └──► web/backend/api/agents.go (Describe)          → WebUI catalogue
+```
+
+Key idea: a tool package is **transport-neutral and dependency-free** (it imports
+only `global`, which itself imports only the standard library). The package
+returns tools with **bare names** (`"read_bytes"`). The *aggregator* mounts the package
+under a **namespace** (`"file"`), and the published tool name is
+`"<namespace>_<bare>"` (`"file_read_bytes"`). Namespacing lives in the aggregator, not
+the package, so packages never collide and can be remounted under a new namespace
+without code changes.
+
+### The aggregator (where modules are wired in)
+
+`internal/gateway/tool_providers.go` is the **one file** that imports every tool
+package and registers it:
+
+```go
+func registerToolProviders() {
+    tools.RegisterProvider(tools.NamespacedProvider("file", files.GlobalProvider))
+    tools.RegisterProvider(tools.NamespacedProvider("web", toolsweb.GlobalProvider))
+    tools.RegisterProvider(tools.NamespacedProvider("session", session.GlobalProvider))
+    // … one line per module …
+}
+```
+
+To add an internal module you (a) add its import and (b) add one
+`RegisterProvider(NamespacedProvider("<ns>", pkg.GlobalProvider))` line here.
+
+---
+
+## 2. Core types (`github.com/PivotLLM/toolspec`)
+
+The types live in the standalone `toolspec` module; `global/tools.go` re-exports
+them as aliases under the historical `global.*` names. Abridged below: toolspec
+also has `Group`/`RevealTogether` on `ToolDefinition` and `ConfigDir`/`DB` on
+`Deps`.
+
+```go
+// A package implements this. deps is injected at build time.
+type ToolProvider interface {
+    RegisterTools(deps Deps) []ToolDefinition
+}
+
+// Everything needed to expose one tool. Name is BARE (no namespace).
+type ToolDefinition struct {
+    Name        string          // bare, e.g. "read"
+    Description string
+    Parameters  []Parameter     // declarative; the host derives JSON Schema
+    RawSchema   map[string]any  // optional: a pre-built JSON Schema, used verbatim
+    Hints       *ToolHints      // optional MCP annotations (read-only/destructive/…)
+    Handler     ToolHandler
+
+    SessionScoped bool          // needs ToolCall.Session populated
+    Async         bool          // may use ToolCall.Notify / return Result.Async
+    PrimaryOnly   bool          // vestigial: declared by toolspec, not enforced
+
+    DefaultAllow *bool          // Allow(true) ⇒ in the "Default tools" set
+    Category     string         // declared by toolspec, not read by ClawEh
+    ConfigKey    string         // declared by toolspec, not read by ClawEh
+}
+
+type ToolHandler func(call *ToolCall) (*Result, error)
+
+// Per-call bundle. Ctx lives on the call (net/http.Request precedent).
+type ToolCall struct {
+    Ctx     context.Context
+    Args    map[string]any
+    AgentID string
+    Session string                 // resolved session key ("" if none)
+    Channel string
+    ChatID  string
+    Notify  func(*Result)          // async late-delivery; nil ⇒ host has no async path
+}
+
+// Structured result. Hosts that only want text read ForLLM.
+type Result struct {
+    ForLLM  string   // required: model-facing content
+    ForUser string   // optional: routed to the human by the host
+    Silent  bool
+    IsError bool
+    Async   bool
+    Media   []string // media-store refs
+    Err     error    // internal detail; not the control-flow signal
+}
+
+// Dependency injection. Capabilities a host may not offer are nilable.
+type Deps struct {
+    Cfg       any    // *config.Config in Claw (type-assert)
+    AgentID   string
+    Workspace string
+    Spawn     any    // global.Spawner; nil ⇒ host cannot spawn sub-agents
+    Host      any    // host-specific strong deps; Claw passes tools.ToolDeps
+}
+
+// Optional metadata a host may use for gating/grouping.
+type HostMeta interface {
+    Namespace() string
+    Description() string
+    Available(cfg any) (ok bool, reason string)
+}
+```
+
+`Parameter` is the declarative source of truth for one input
+(`Name/Type/Required/Description/Enum/Default/Minimum/…`). `ParametersToSchema`
+renders `[]Parameter` into a JSON Schema object; you rarely call it yourself —
+the bridge does. Use `RawSchema` only when migrating a tool that already has a
+hand-written schema.
+
+### Default-allow
+
+An agent has only the tools its own `tools` list names; there is no install-wide
+per-tool switch. `DefaultAllow: global.Allow(true)` only puts the tool in the
+standard set the Agents page's **Default tools** button writes into a list
+(`tools.DefaultEnabledToolNames`). Omit it for tools few agents need. `shell_exec`
+is granted only by naming it: `"*"` and prefix entries never include it.
+
+### Sub-agents and the full toolset
+
+**A sub-agent inherits the parent's full toolset.** There is no per-tool
+sub-agent restriction: nothing is withheld from a worker because of what it is.
+
+**A sub-agent runs on the agent's worker models.** `subagents.models` on the
+agent, when set, is the chain a worker starts on and falls back along, and the
+only models `agent_spawn`'s `model` may name (`AgentInstance.WorkerCandidates`,
+resolved in `agent/instance.go`; the clone is created with
+`agentreg.CloneModels`). When it is empty the worker uses the agent's own
+`models`. Maestro dispatch goes through the same `RunSync` path.
+
+`ToolDefinition.PrimaryOnly` still exists in `toolspec` and is vestigial —
+**ClawEh does not read it**, so setting it has no effect. It once marked tools a
+spawned worker could not have, which was effectively a depth limit of one, and
+it was replaced by a real one: `agents.defaults.max_subagent_depth` (default 3,
+`tools/agents/depth.go`). A primary turn is depth 0, the sub-agents it spawns run
+at depth 1, and a spawn is refused once the spawning agent is already at the
+bound. Sub-agents may therefore spawn further sub-agents and re-enter Maestro,
+but a runaway chain cannot occur.
+
+Two things that used to be handled by withholding tools are now handled where
+they belong:
+
+- **Recursion** is bounded by depth, as above, rather than by denying
+  `agent_spawn`. Workers that legitimately need to fan out can.
+- **Memory** is isolated by *scope*, not by tool availability. At spawn time the
+  parent's cognitive memory is snapshotted onto the sub-agent's own private
+  database, and the worker gets the memory **write** tools as well as the read
+  ones — sub-agents specifically need them. The snapshot is a throwaway copy,
+  deleted with the session when the worker finishes, so anything it writes stays
+  on that copy and never reaches the parent's memory. See
+  [Sub-agents](../manual/agents/subagents.md).
+
+There is correspondingly no `tools.IsPrimaryOnly` helper: it was removed with
+the mechanism.
+
+---
+
+## 3. Spec: adding a new tool module
+
+### Step 1 — create the package
+
+`tools/<ns>/` (short namespace, e.g. `weather`). Implement
+`global.ToolProvider` on an exported zero-value, and optionally `global.HostMeta`:
+
+```go
+// tools/weather/global_provider.go
+package weather
+
+import (
+    "fmt"
+
+    "github.com/PivotLLM/ClawEh/global"
+)
+
+// GlobalProvider is the exported entry point the aggregator mounts.
+var GlobalProvider globalWeatherProvider
+
+type globalWeatherProvider struct{}
+
+// global.HostMeta (optional but recommended): drives WebUI grouping + gating.
+func (globalWeatherProvider) Namespace() string   { return "weather" }
+func (globalWeatherProvider) Description() string  { return "Weather lookups" }
+func (globalWeatherProvider) Available(cfg any) (bool, string) { return true, "" }
+
+func (globalWeatherProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+    return []global.ToolDefinition{
+        {
+            Name:         "forecast",                 // published as weather_forecast
+            Description:  "Return the forecast for a city.",
+            Category:     "weather",
+            DefaultAllow: global.Allow(true),         // omit/false ⇒ not in Default tools
+            Parameters: []global.Parameter{
+                {Name: "city", Type: "string", Required: true, Description: "City name."},
+                {Name: "days", Type: "integer", Description: "Days ahead (1-7).", Default: 1},
+            },
+            Handler: func(call *global.ToolCall) (*global.Result, error) {
+                city, _ := call.Args["city"].(string)
+                if city == "" {
+                    return &global.Result{IsError: true, ForLLM: "city is required"}, nil
+                }
+                text, err := fetchForecast(call.Ctx, city) // your logic
+                if err != nil {
+                    return nil, err                        // bridge marks IsError + ForLLM
+                }
+                return &global.Result{ForLLM: text}, nil
+            },
+        },
+    }
+}
+```
+
+### Step 2 — register it in the aggregator
+
+In `internal/gateway/tool_providers.go`:
+
+```go
+import "github.com/PivotLLM/ClawEh/tools/weather"
+
+func registerToolProviders() {
+    // … existing …
+    tools.RegisterProvider(tools.NamespacedProvider("weather", weather.GlobalProvider))
+}
+```
+
+That's it — `weather_forecast` is now available to agents (subject to the
+allowlist), over MCP, and in the WebUI catalogue.
+
+### Step 3 — add a test probe
+
+`test.sh` / `tests/test_mcpserver.sh` exercise every MCP tool with the external
+`probe` binary. Add your tool to ClawEh test config's exposed tool list and
+add a probe case — success for hermetic tools, a graceful-error probe for
+network/LLM tools.
+
+---
+
+## 4. Rules & contracts
+
+- **Enumeration must be deps-free.** `Describe()` (WebUI/MCP cataloguing) calls
+  `RegisterTools(global.Deps{})` with a zero `Deps`. Return your full tool set
+  and build handler **closures lazily** — never dereference `deps.Cfg`/`deps.Host`
+  at the top of `RegisterTools` in a way that panics on nil. Construct real
+  instances only when the dep is present (`c, _ := deps.Cfg.(*config.Config); if c != nil { … }`).
+- **Bare names only.** Never prefix the namespace yourself; the aggregator does.
+- **Return errors *and* set `Result`.** A returned `error` is for `errors.Is/As`;
+  `Result.IsError`/`Result.ForLLM` are the model-facing outcome. The bridge folds
+  a non-nil error into `IsError` + `ForLLM`, so returning `(nil, err)` is fine.
+- **Recover strong host deps when needed.** Claw passes its rich
+  `tools.ToolDeps` via `deps.Host`; recover it with
+  `cd, _ := deps.Host.(tools.ToolDeps)` (gives `Workspace`, `AgentCfg`,
+  `Dispatcher`, session closures, etc.). A pure module that needs none of that
+  imports only `global`.
+- **Session-scoped tools** set `SessionScoped: true` and read `call.Session`.
+- **Async tools** set `Async: true`, return `Result{Async: true}` immediately,
+  and deliver the late result via `call.Notify(...)` — but check `call.Notify != nil`
+  first and degrade gracefully when the host has no async path.
+- **Schema:** prefer `Parameters`; use `RawSchema` only to carry an existing
+  hand-written schema during migration.
+
+---
+
+## 5. Importing as an external module
+
+`toolspec` (re-exported as `global`) is intentionally dependency-free
+(standard library only), so the `ToolProvider`/`ToolDefinition` contract can be vendored or
+imported by another codebase (e.g. Maestro/MCPFusion) without pulling in Claw.
+A package written against `global` alone — no `tools`, `config`, etc.
+— is portable: any host that can adapt `global.ToolProvider` into its own
+registry can mount it. Claw's adapter is `tools.NamespacedProvider`; another host
+would supply its own equivalent.
+
+When a module needs Claw-specific dependencies, it reaches them through
+`deps.Host.(tools.ToolDeps)` — which keeps the *portable* part (the tool
+definitions and handlers' signatures) free of Claw imports while still letting
+the handler bodies use Claw internals when running inside Claw.
+
+### Spawning sub-agents from a module
+
+A tool can launch sub-agent workers through the portable `global.Spawner` the
+host injects into `Deps.Spawn`:
+
+```go
+sp, ok := deps.Spawn.(global.Spawner)
+if ok && sp != nil {
+    res, err := sp.Spawn(call.Ctx, global.SpawnRequest{
+        Mode:    global.SpawnAndWait, // or SpawnCallback / SpawnDetached
+        Task:    "summarize the attached log",
+        Channel: call.Channel,
+        ChatID:  call.ChatID,
+        OnResult: call.Notify, // for SpawnCallback: re-inject the result on the channel
+    })
+    _ = res
+    _ = err
+}
+```
+
+The three modes are: `SpawnDetached` (fire-and-forget, result discarded),
+`SpawnCallback` (fire-and-forget; the worker's result is delivered to
+`OnResult` when it finishes — wire it to `call.Notify` to surface it on the
+originating channel), and `SpawnAndWait` (run to completion and return the
+worker's `Result` synchronously). `Spawner` lives in `global` (stdlib-only),
+so an external module can depend on it without importing the rest of Claw; the
+host supplies the concrete implementation.
+
+---
+
+## 6. Quick reference
+
+| Thing | Location |
+|---|---|
+| Transport-neutral types | `github.com/PivotLLM/toolspec` (aliases in `global/tools.go`) |
+| Namespacing bridge | `tools/namespaced.go` (`NamespacedProvider`) |
+| Registry | `tools/providers.go` (`RegisterProvider` / `GetProviders`) |
+| **Aggregator (wire new modules here)** | `internal/gateway/tool_providers.go` |
+| Per-module entry points | `tools/<ns>/global_provider.go` (`var GlobalProvider`) |
+| Sub-agent recursion bound | `agents.defaults.max_subagent_depth` (`tools/agents/depth.go`) |
+| Host deps available to handlers | `tools` `ToolDeps` (via `deps.Host`) |
+| MCP exposure | `mcpserver` (`WithAgentRegistries`) |
+| WebUI catalogue | `web/backend/api/agents.go` (`GET /api/agents/tools`, `Describe`) |
+| Test probes | `test.sh`, `tests/test_mcpserver.sh` |

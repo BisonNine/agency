@@ -1,0 +1,170 @@
+package files
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"path/filepath"
+	"regexp"
+
+	"github.com/PivotLLM/ClawEh/tools"
+)
+
+// backupFilePattern matches the numbered backup siblings written by the `backup`
+// option (<name>.NNNN). file_delete refuses to remove these so the agent cannot
+// wipe the safety net. (A legitimate file ending in .NNNN is conservatively
+// protected too — rename it first if it genuinely must be deleted.)
+var backupFilePattern = regexp.MustCompile(`\.\d{4}$`)
+
+// linkRemovedMsg is the result of file_delete and file_rmdir removing a link.
+func linkRemovedMsg(path string) string {
+	return "Link removed: " + path + " (its target was not touched)"
+}
+
+// linkMoveRefusal is file_move's refusal for a link, as the source or inside a
+// source folder: a link cannot be recreated at the destination, and copying
+// what it points to would bring in content from elsewhere.
+func linkMoveRefusal(path string) error {
+	return tools.Refusal(errors.New("refusing to move: file_move cannot move a link: " + path))
+}
+
+// DeleteFileTool deletes a whole file. A required sure=true guards against
+// accidental deletion; it makes no backup and refuses to delete backup files.
+type DeleteFileTool struct {
+	sysFs fileSystem
+}
+
+func NewDeleteFileToolScoped(workspace string, restrict bool, writeSubdir string, allowPaths ...[]*regexp.Regexp) *DeleteFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
+	}
+	return &DeleteFileTool{sysFs: buildWriteFs(workspace, restrict, writeSubdir, patterns)}
+}
+
+func (t *DeleteFileTool) Name() string { return "file_delete" }
+
+func (t *DeleteFileTool) Description() string {
+	return "Delete a file (files only; remove folders with file_rmdir), or a link (the link itself is removed, its target is not touched). Requires sure=true. Makes no backup, and refuses to delete backup files (<name>.NNNN)."
+}
+
+func (t *DeleteFileTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{"type": "string", "description": "Path of the file to delete."},
+			"sure": map[string]any{"type": "boolean", "description": "Must be true to confirm deletion."},
+		},
+		"required": []string{"path", "sure"},
+	}
+}
+
+func (t *DeleteFileTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+	path, ok := args["path"].(string)
+	if !ok || path == "" {
+		return tools.ErrorResult("path is required")
+	}
+	if !getBoolArg(args, "sure", false) {
+		return errResult(tools.Refusal(errors.New("refusing to delete: pass sure=true to confirm deleting " + path)))
+	}
+	if backupFilePattern.MatchString(filepath.Base(path)) {
+		return errResult(tools.Refusal(errors.New("refusing to delete a backup file (<name>.NNNN): " + path)))
+	}
+	// A link is removed itself, whatever it points to (a file, a folder or
+	// nothing); its target is not touched.
+	if linkInfo, err := t.sysFs.Lstat(path); err == nil && linkInfo.Mode()&fs.ModeSymlink != 0 {
+		if err := t.sysFs.Remove(path); err != nil {
+			return errResult(err)
+		}
+		return tools.SilentResult(linkRemovedMsg(path))
+	}
+	info, err := t.sysFs.Stat(path)
+	if err != nil {
+		return errResult(err)
+	}
+	if info.IsDir() {
+		return errResult(tools.Refusal(errors.New("path is a directory; file_delete removes files only, use file_rmdir for folders: " + path)))
+	}
+	if err := t.sysFs.Remove(path); err != nil {
+		return errResult(err)
+	}
+	return tools.SilentResult("File deleted: " + path)
+}
+
+// MoveFileTool relocates a file so the agent can organize files without reading
+// them into context.
+//
+// DESIGN DECISION — move is implemented as copy-then-delete, NOT rename. A
+// rename(2) fails with EXDEV across filesystems, and external mounts (e.g. notes/)
+// commonly live on a different device than the workspace, so a rename-based move
+// would silently break cross-mount moves. The files handled here are small, so the
+// extra copy is not a concern. Do not "optimize" this into a rename.
+//
+// A folder is moved the same way, one file at a time (see moveDir in dir.go):
+// every file is copied and then its source removed, and the emptied source
+// folders are removed last. A rename of the folder would hit the same EXDEV.
+type MoveFileTool struct {
+	sysFs fileSystem
+}
+
+func NewMoveFileToolScoped(workspace string, restrict bool, writeSubdir string, allowPaths ...[]*regexp.Regexp) *MoveFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
+	}
+	return &MoveFileTool{sysFs: buildWriteFs(workspace, restrict, writeSubdir, patterns)}
+}
+
+func (t *MoveFileTool) Name() string { return "file_move" }
+
+func (t *MoveFileTool) Description() string {
+	return "Move a file or a folder from source_path to destination_path to organize files (parent directories created as needed; works across mount boundaries; no content enters context)."
+}
+
+func (t *MoveFileTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"source_path":      map[string]any{"type": "string", "description": "Path of the file or folder to move."},
+			"destination_path": map[string]any{"type": "string", "description": "New path for the file or folder."},
+			"overwrite":        map[string]any{"type": "boolean", "description": "Replace destination if it exists (default false). For a folder, its files are merged into the existing destination folder.", "default": false},
+		},
+		"required": []string{"source_path", "destination_path"},
+	}
+}
+
+func (t *MoveFileTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+	src, ok := args["source_path"].(string)
+	if !ok || src == "" {
+		return tools.ErrorResult("source_path is required")
+	}
+	dst, ok := args["destination_path"].(string)
+	if !ok || dst == "" {
+		return tools.ErrorResult("destination_path is required")
+	}
+	overwrite := getBoolArg(args, "overwrite", false)
+
+	// Checked before any copy: copying a link would copy what it points to.
+	if info, err := t.sysFs.Lstat(src); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+		return errResult(linkMoveRefusal(src))
+	}
+	if info, err := t.sysFs.Stat(src); err == nil && info.IsDir() {
+		return t.moveDir(src, dst, overwrite)
+	}
+
+	// The source must be removable: checked before copying, so a move out of a
+	// read-only area is refused and leaves no copy behind.
+	if err := checkWrite(t.sysFs, src); err != nil {
+		return errResult(err)
+	}
+	// Copy first; only remove the source once the copy has succeeded. See the
+	// type comment for why this is copy-then-delete rather than rename.
+	if _, err := copyFileViaFs(t.sysFs, src, dst, overwrite); err != nil {
+		return errResult(err)
+	}
+	if err := t.sysFs.Remove(src); err != nil {
+		return tools.ErrorResult(fmt.Sprintf("copied to %s but failed to remove source %s: %v", dst, src, err)).WithError(err)
+	}
+	return tools.SilentResult(fmt.Sprintf("File moved: %s -> %s", src, dst))
+}

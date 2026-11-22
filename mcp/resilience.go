@@ -1,0 +1,306 @@
+package mcp
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/mark3labs/mcp-go/client/transport"
+	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/logger"
+)
+
+// probeTimeoutCap bounds a single liveness probe regardless of the probe interval,
+// so a stalled server is declared dead promptly rather than after the full interval.
+const probeTimeoutCap = 10 * time.Second
+
+// Connection-state values reported by Status.
+const (
+	StateConnected    = "connected"
+	StateReconnecting = "reconnecting"
+	StateCooldown     = "cooldown"
+)
+
+// ServerStatus is a point-in-time snapshot of one server's connection health,
+// suitable for a status API. CooldownUntil is zero unless State is cooldown.
+// LastError is the latest connect failure (with the stdio child's last stderr
+// line), empty once the server connects; LastErrorAt is when it happened.
+type ServerStatus struct {
+	Name          string    `json:"name"`
+	State         string    `json:"state"`
+	Transport     string    `json:"transport,omitempty"`
+	ToolCount     int       `json:"tool_count"`
+	CooldownUntil time.Time `json:"cooldown_until,omitempty"`
+	LastError     string    `json:"last_error"`
+	LastErrorAt   time.Time `json:"last_error_at,omitzero"`
+}
+
+// Status returns the live connection state of every server the manager knows
+// about: connected servers, servers with a reconnect in flight, and servers in
+// post-failure cooldown. Callers that also want to show configured-but-never-
+// connected servers merge this against their config (absent name ⇒ disconnected).
+func (m *Manager) Status() []ServerStatus {
+	m.cooldownMu.Lock()
+	reconnecting := make(map[string]bool, len(m.reconnecting))
+	for k := range m.reconnecting {
+		reconnecting[k] = true
+	}
+	cooldown := make(map[string]time.Time, len(m.cooldownUntil))
+	for k, v := range m.cooldownUntil {
+		if m.now().Before(v) {
+			cooldown[k] = v
+		}
+	}
+	m.cooldownMu.Unlock()
+	withError := func(st ServerStatus) ServerStatus {
+		st.LastError, st.LastErrorAt = m.lastError(st.Name)
+		return st
+	}
+
+	out := make([]ServerStatus, 0)
+	seen := make(map[string]bool)
+
+	for name, conn := range m.GetServers() {
+		seen[name] = true
+		st := ServerStatus{
+			Name:      name,
+			State:     StateConnected,
+			Transport: effectiveTransport(conn.cfg),
+			ToolCount: len(conn.Tools),
+		}
+		if reconnecting[name] {
+			st.State = StateReconnecting
+		}
+		out = append(out, withError(st))
+	}
+
+	// Servers not currently connected: reconnecting takes precedence over cooldown.
+	for name := range reconnecting {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, withError(ServerStatus{Name: name, State: StateReconnecting}))
+	}
+	for name, until := range cooldown {
+		if seen[name] {
+			continue
+		}
+		out = append(out, withError(ServerStatus{Name: name, State: StateCooldown, CooldownUntil: until}))
+	}
+
+	return out
+}
+
+// effectiveTransport resolves the transport a server config uses, mirroring the
+// auto-detection in ConnectServer (URL ⇒ http, command ⇒ stdio).
+func effectiveTransport(cfg config.MCPServerConfig) string {
+	if cfg.Type != "" {
+		return cfg.Type
+	}
+	if cfg.URL != "" {
+		return "http"
+	}
+	if cfg.Command != "" {
+		return "stdio"
+	}
+	return ""
+}
+
+// isConnectionError reports whether err indicates the transport/session died
+// (rather than the server returning a normal tool error). Only these are retried:
+// a fresh connection is warranted and the request most likely never reached the
+// server, so a retry does not risk double-executing a side effect the server
+// already performed. This is intentionally connection-level only.
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, transport.ErrTransportClosed) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{
+		"transport closed",
+		"connection has been closed",
+		"connection refused",
+		"connection reset",
+		"broken pipe",
+		"use of closed network connection",
+		"server closed",
+		"eof",
+		"no such host",
+	} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// reconnect tears down a server's dead connection and re-establishes it, honoring
+// a per-server cooldown (backing off per failure, see recordFailure) so a
+// persistently-down upstream is not hammered on every call. Returns nil only when a live session is restored.
+func (m *Manager) reconnect(ctx context.Context, name string, cfg config.MCPServerConfig) error {
+	if m.stopping() {
+		return errManagerStopping
+	}
+	if until, ok := m.reconnectCooldownUntil(name); ok {
+		return errors.New("server " + name + " is in reconnect cooldown until " + until.Format(time.RFC3339))
+	}
+
+	m.setReconnecting(name, true)
+	defer m.setReconnecting(name, false)
+
+	// Remember what the agents were registered with, so a server that came back
+	// with a different tool list (renamed or removed tools after a restart) can
+	// be re-registered rather than called by its old names.
+	var oldTools []mcp.Tool
+	if old, ok := m.GetServer(name); ok {
+		oldTools = old.Tools
+	}
+
+	m.disconnect(name)
+	if err := m.ConnectServer(ctx, name, cfg); err != nil {
+		until, _ := m.reconnectCooldownUntil(name)
+		logger.ErrorCF("mcp", "MCP reconnect failed; server in cooldown",
+			map[string]any{
+				"server":         name,
+				"error":          err.Error(),
+				"cooldown_until": until.Format(time.RFC3339),
+			})
+		return err
+	}
+	logger.InfoCF("mcp", "MCP server reconnected", map[string]any{"server": name})
+
+	if fresh, ok := m.GetServer(name); ok && !toolsEqual(oldTools, fresh.Tools) {
+		logger.InfoCF("mcp", "MCP server tool list changed",
+			map[string]any{"server": name, "reason": "reconnect", "before": len(oldTools), "after": len(fresh.Tools)})
+		m.notifyToolsChanged(name)
+	}
+	return nil
+}
+
+// setReconnecting marks (or clears) an in-flight reconnect for name so Status can
+// report the transient "reconnecting" state.
+func (m *Manager) setReconnecting(name string, active bool) {
+	m.cooldownMu.Lock()
+	defer m.cooldownMu.Unlock()
+	if active {
+		m.reconnecting[name] = true
+	} else {
+		delete(m.reconnecting, name)
+	}
+}
+
+// now returns the current time from the manager's clock, the seam tests use
+// to drive the cooldown and alert cadence.
+func (m *Manager) now() time.Time { return m.nowFn() }
+
+// reconnectCooldownUntil reports the cooldown expiry for name if one is active.
+func (m *Manager) reconnectCooldownUntil(name string) (time.Time, bool) {
+	m.cooldownMu.Lock()
+	defer m.cooldownMu.Unlock()
+	until, ok := m.cooldownUntil[name]
+	if !ok || !m.now().Before(until) {
+		return time.Time{}, false
+	}
+	return until, true
+}
+
+// clearReconnectCooldown drops any cooldown for name, so the next attempt runs
+// now. The failure count (and so the backoff) is kept until a success.
+func (m *Manager) clearReconnectCooldown(name string) {
+	m.cooldownMu.Lock()
+	defer m.cooldownMu.Unlock()
+	delete(m.cooldownUntil, name)
+}
+
+// startProbe launches a liveness-probe goroutine for a server and returns its stop
+// channel. Caller holds m.mu. The goroutine is tracked by probeWg so Close can wait
+// for it to exit.
+func (m *Manager) startProbe(name string) chan struct{} {
+	stop := make(chan struct{})
+	interval := m.probeInterval
+	m.probeWg.Go(func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				if m.stopping() {
+					return
+				}
+				m.probeOnce(name)
+			}
+		}
+	})
+	return stop
+}
+
+// probeOnce asks a server for its tool list; on failure it proactively reconnects
+// so the next real call finds a live session. Cooldown gating inside reconnect
+// prevents a flapping server from being reconnected on every tick.
+//
+// ListTools rather than Ping, which is the obvious choice and is now the wrong
+// one. As of mark3labs/mcp-go v1.0.0, Client.Ping returns nil WITHOUT contacting
+// the server whenever the negotiated protocol is modern (>= 2026-07-28):
+//
+//	func (c *Client) Ping(ctx context.Context) error {
+//		if c.isModern() { return nil }
+//		...
+//	}
+//
+// Against a modern server that made this probe unconditionally report health, so
+// a dead session was never detected and never reconnected — the failure stayed
+// invisible until a real tool call hit it. ListTools is a genuine round trip on
+// every protocol version, and it is the same call ConnectServer already makes.
+// Since the answer is in hand anyway, it also refreshes the stored tool list
+// when it differs (a server that renamed or dropped tools without notifying),
+// which fires the tools-changed handler so the agents re-register.
+func (m *Manager) probeOnce(name string) {
+	m.mu.RLock()
+	conn, ok := m.servers[name]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+
+	timeout := m.probeInterval
+	if timeout <= 0 || timeout > probeTimeoutCap {
+		timeout = probeTimeoutCap
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	result, err := conn.Client.ListTools(probeCtx, mcp.ListToolsRequest{})
+	cancel()
+	if err == nil {
+		m.replaceToolsIfChanged(name, conn.Client, result.Tools, "probe")
+		return
+	}
+
+	logger.WarnCF("mcp", "MCP liveness probe failed; reconnecting",
+		map[string]any{"server": name, "error": err.Error(), "stderr": conn.stderr.last()})
+
+	rctx, rcancel := context.WithTimeout(context.Background(), m.callTimeout)
+	if rerr := m.reconnect(rctx, name, conn.cfg); rerr != nil {
+		// A connect failure is already logged (with cooldown) by reconnect
+		// itself; what reaches here unlogged is a skip (closed / in cooldown).
+		logger.DebugCF("mcp", "MCP reconnect not attempted",
+			map[string]any{"server": name, "error": rerr.Error()})
+	}
+	rcancel()
+}

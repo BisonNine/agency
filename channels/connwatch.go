@@ -1,0 +1,495 @@
+package channels
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/internal/clock"
+	"github.com/PivotLLM/ClawEh/logger"
+)
+
+// connWatch tracks one channel's connection outage. The zero value is ready:
+// no outage in progress.
+type connWatch struct {
+	mu sync.Mutex
+	// clock times the outage; nil means clock.Real (tests set a fake).
+	clock     clock.Clock
+	downSince time.Time // zero while the connection works
+	lastErr   string
+	timer     clock.Timer
+	alerted   bool // the outage has outlasted the alert threshold
+}
+
+// clk is the watch's clock.
+func (w *connWatch) clk() clock.Clock { return clock.Or(w.clock) }
+
+func (w *connWatch) resetLocked() {
+	if w.timer != nil {
+		w.timer.Stop()
+		w.timer = nil
+	}
+	w.downSince = time.Time{}
+	w.lastErr = ""
+	w.alerted = false
+}
+
+// ReportConnected records that the channel's connection to its service works,
+// ending any outage in progress. Channels call it on every successful poll,
+// connect or reconnect; it is cheap when nothing is wrong. When it is the last
+// channel of its platform to recover from an alerted outage, it raises the
+// "<Platform> up" alert. It also ends the faults raised with AlertLasting: a
+// connection that works has credentials that are accepted.
+func (c *BaseChannel) ReportConnected() {
+	c.lasting.ResolveAll()
+	w := &c.conn
+	w.mu.Lock()
+	if w.downSince.IsZero() {
+		w.mu.Unlock()
+		return
+	}
+	if w.alerted {
+		logger.InfoCF("channels", "Channel connection restored", map[string]any{
+			"channel":  c.name,
+			"down_for": w.clk().Since(w.downSince).Round(time.Second).String(),
+		})
+	}
+	w.resetLocked()
+	up := c.outages.connected(c)
+	w.mu.Unlock()
+	c.sendConnAlert(up)
+}
+
+// ReportConnFailure records a failed connection attempt that the channel is
+// retrying. The first failure of an outage starts the clock; if no
+// ReportConnected arrives within ConnDownAlertAfter, the channel joins its
+// platform's outage, and the first channel of the platform to get there raises
+// one "<Platform> down" alert. Faults that no retry can fix (a revoked token)
+// are alerted by the channel itself, at once.
+func (c *BaseChannel) ReportConnFailure(err error) {
+	w := &c.conn
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err != nil {
+		w.lastErr = err.Error()
+	}
+	if !w.downSince.IsZero() {
+		c.outages.failure(c, w.downSince, w.lastErr)
+		return
+	}
+	after := ConnDownAlertAfter
+	start := w.clk().Now()
+	w.downSince = start
+	c.outages.failure(c, start, w.lastErr)
+	w.timer = w.clk().AfterFunc(after, func() { c.connDownExpired(start, after) })
+}
+
+// ConnDownSince returns when the current connection outage began, or the zero
+// time while the connection works.
+func (c *BaseChannel) ConnDownSince() time.Time {
+	c.conn.mu.Lock()
+	defer c.conn.mu.Unlock()
+	return c.conn.downSince
+}
+
+// connDownExpired runs when an outage that began at start has lasted after.
+func (c *BaseChannel) connDownExpired(start time.Time, after time.Duration) {
+	w := &c.conn
+	w.mu.Lock()
+	if !w.downSince.Equal(start) || w.alerted {
+		w.mu.Unlock()
+		return
+	}
+	if !c.IsRunning() {
+		// Stopped mid-outage: nothing is retrying, so there is nothing to
+		// report. A later Start begins a fresh outage.
+		w.resetLocked()
+		a := c.outages.stopped(c)
+		w.mu.Unlock()
+		c.sendConnAlert(a)
+		return
+	}
+	w.alerted = true
+	w.timer = nil
+	down, affected := c.outages.expired(c, after)
+	w.mu.Unlock()
+	if down == nil {
+		return
+	}
+	addConnChecks(down, affected)
+	c.sendConnAlert(down)
+	c.sendConnAlert(c.outages.downSent(c))
+}
+
+// connStopped ends the outage of a channel that has stopped: it no longer
+// retries, so it leaves its platform's outage.
+func (c *BaseChannel) connStopped() {
+	w := &c.conn
+	w.mu.Lock()
+	if w.downSince.IsZero() {
+		w.mu.Unlock()
+		return
+	}
+	w.resetLocked()
+	a := c.outages.stopped(c)
+	w.mu.Unlock()
+	c.sendConnAlert(a)
+}
+
+func (c *BaseChannel) sendConnAlert(a *alerter.Alert) {
+	if a != nil {
+		c.Alert(*a)
+	}
+}
+
+// SetPlatform sets the platform the channel belongs to ("telegram", "slack"),
+// which groups its connection outages with the platform's other channels. The
+// Manager injects it; without it the platform is the channel name up to the
+// first "-".
+func (c *BaseChannel) SetPlatform(platform string) { c.platform = platform }
+
+func (c *BaseChannel) platformID() string {
+	if c.platform != "" {
+		return c.platform
+	}
+	p, _, _ := strings.Cut(c.name, "-")
+	return p
+}
+
+// connOutages is the process-wide outage aggregator. It is package-level so
+// an outage spanning a config reload keeps its alert state.
+var connOutages = newConnAggregator()
+
+// connAggregator groups channel connection outages by platform, so an outage
+// that takes down every bot of a platform raises one alert, not one per bot.
+type connAggregator struct {
+	mu        sync.Mutex
+	platforms map[string]*platformOutage
+}
+
+type platformOutage struct {
+	down     map[*BaseChannel]*channelOutage // channels with an outage in progress
+	affected map[*BaseChannel]struct{}       // channels counted in the active alert
+	alerted  bool
+	since    time.Time // start of the earliest affected outage
+	// recovered names the affected channels that reconnected, for the "up"
+	// alert's title; an outage whose channels all stopped instead (none
+	// recovered) ends without an "up" alert.
+	recovered []string
+	// preparing is set from when expired returns the down alert until downSent
+	// reports it sent; an "up" alert raised meanwhile is held in heldUp, so it
+	// never arrives before the down alert.
+	preparing bool
+	heldUp    *alerter.Alert
+}
+
+type channelOutage struct {
+	since   time.Time
+	lastErr string
+}
+
+func newConnAggregator() *connAggregator {
+	return &connAggregator{platforms: make(map[string]*platformOutage)}
+}
+
+func (g *connAggregator) platformLocked(id string) *platformOutage {
+	p := g.platforms[id]
+	if p == nil {
+		p = &platformOutage{
+			down:     make(map[*BaseChannel]*channelOutage),
+			affected: make(map[*BaseChannel]struct{}),
+		}
+		g.platforms[id] = p
+	}
+	return p
+}
+
+// failure records that c has been down since since, most recently with lastErr.
+func (g *connAggregator) failure(c *BaseChannel, since time.Time, lastErr string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.platformLocked(c.platformID()).down[c] = &channelOutage{since: since, lastErr: lastErr}
+}
+
+// expired records that c's outage has lasted after. The first channel of a
+// platform to get there returns the "<Platform> down" alert, which counts every
+// channel of the platform then down, and those channels sorted by name; later
+// ones join it silently.
+func (g *connAggregator) expired(c *BaseChannel, after time.Duration) (*alerter.Alert, []*BaseChannel) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	id := c.platformID()
+	p := g.platformLocked(id)
+	mine, ok := p.down[c]
+	if !ok {
+		return nil, nil
+	}
+	if p.alerted {
+		p.affected[c] = struct{}{}
+		return nil, nil
+	}
+	p.alerted = true
+	p.preparing = true
+	p.since = mine.since
+	affected := make([]*BaseChannel, 0, len(p.down))
+	for ch, o := range p.down {
+		p.affected[ch] = struct{}{}
+		affected = append(affected, ch)
+		if o.since.Before(p.since) {
+			p.since = o.since
+		}
+	}
+	slices.SortFunc(affected, func(a, b *BaseChannel) int { return strings.Compare(a.name, b.name) })
+	names := make([]string, len(affected))
+	for i, ch := range affected {
+		names[i] = ch.name
+	}
+	return &alerter.Alert{
+		Title:       platformDisplayName(id) + " down: " + nameList(names),
+		Description: fmt.Sprintf("%s, no working connection for %s", countNoun(id, len(names)), shortDuration(after)),
+		Details:     "Channels: " + strings.Join(names, ", ") + "\nLast error: " + mine.lastErr,
+		EventID:     id,
+	}, affected
+}
+
+// ConnChecker is implemented by a channel that can check its own connection
+// once, when its platform's "<Platform> down" alert is raised. The result is
+// added to the alert's details and logged.
+type ConnChecker interface {
+	// ConnCheck runs the check. It must be read-only and return when ctx ends.
+	ConnCheck(ctx context.Context) ConnCheckResult
+}
+
+// ConnCheckResult is the outcome of a ConnChecker's check.
+type ConnCheckResult struct {
+	Working bool
+	// Reason says why the check failed: an HTTP status ("502") or
+	// ConnCheckNoResponse.
+	Reason string
+	// Waiting is how many messages wait to be fetched, valid when WaitingKnown.
+	Waiting      int
+	WaitingKnown bool
+}
+
+// ConnCheckNoResponse is the failure reason of a check that got no answer.
+const ConnCheckNoResponse = "no response"
+
+// connCheckTimeout bounds all the checks run for one down alert. var (not
+// const) so tests can shorten it.
+var connCheckTimeout = 15 * time.Second
+
+// status is the check's label: "working" or "failing (502)".
+func (r ConnCheckResult) status() string {
+	if r.Working {
+		return "working"
+	}
+	reason := r.Reason
+	if reason == "" {
+		reason = ConnCheckNoResponse
+	}
+	return "failing (" + reason + ")"
+}
+
+// addConnChecks runs the connection check of every channel in affected that
+// has one, concurrently and within connCheckTimeout, and appends the results
+// to a's details and to the log. A check still running at the timeout counts
+// as "no response". It must not be called with a connection lock held.
+//
+//nolint:contextcheck,nolintlint // runs from the outage timer, not a caller's request; the checks get their own connCheckTimeout
+func addConnChecks(a *alerter.Alert, affected []*BaseChannel) {
+	type check struct {
+		name    string
+		checker ConnChecker
+	}
+	var checks []check
+	for _, ch := range affected {
+		if cc, ok := ch.owner.(ConnChecker); ok {
+			checks = append(checks, check{ch.name, cc})
+		}
+	}
+	if len(checks) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), connCheckTimeout)
+	defer cancel()
+	type done struct {
+		i int
+		r ConnCheckResult
+	}
+	finished := make(chan done, len(checks)) // buffered: a late check never blocks
+	for i, k := range checks {
+		go func() { finished <- done{i, k.checker.ConnCheck(ctx)} }()
+	}
+	results := make([]ConnCheckResult, len(checks)) // zero value: no response
+wait:
+	for range checks {
+		select {
+		case d := <-finished:
+			results[d.i] = d.r
+		case <-ctx.Done():
+			break wait
+		}
+	}
+
+	var lines strings.Builder
+	for i, k := range checks {
+		r := results[i]
+		fields := map[string]any{"channel": k.name, "check": r.status()}
+		if r.WaitingKnown {
+			fields["waiting"] = r.Waiting
+		}
+		if r.Working {
+			logger.InfoCF("channels", "Connection check", fields)
+		} else {
+			logger.WarnCF("channels", "Connection check", fields)
+		}
+
+		switch {
+		case len(affected) == 1:
+			lines.WriteString("\nBot check: " + r.status())
+			if r.WaitingKnown {
+				fmt.Fprintf(&lines, "\nWaiting messages: %d", r.Waiting)
+			}
+		case r.WaitingKnown:
+			fmt.Fprintf(&lines, "\nBot check %s: %s, %d waiting", k.name, r.status(), r.Waiting)
+		default:
+			fmt.Fprintf(&lines, "\nBot check %s: %s", k.name, r.status())
+		}
+	}
+	a.Details += lines.String()
+}
+
+// connected records that c's connection works again, returning the
+// "<Platform> up" alert when it was the last affected channel to recover.
+func (g *connAggregator) connected(c *BaseChannel) *alerter.Alert {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.leaveLocked(c, true)
+}
+
+// stopped records that c stopped and no longer retries.
+func (g *connAggregator) stopped(c *BaseChannel) *alerter.Alert {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.leaveLocked(c, false)
+}
+
+func (g *connAggregator) leaveLocked(c *BaseChannel, recovered bool) *alerter.Alert {
+	id := c.platformID()
+	p := g.platformLocked(id)
+	delete(p.down, c)
+	if _, ok := p.affected[c]; !ok {
+		return nil
+	}
+	delete(p.affected, c)
+	if recovered && !slices.Contains(p.recovered, c.name) {
+		p.recovered = append(p.recovered, c.name)
+	}
+	if len(p.affected) > 0 {
+		return nil
+	}
+	var up *alerter.Alert
+	if len(p.recovered) > 0 {
+		slices.Sort(p.recovered)
+		up = &alerter.Alert{
+			Title:       platformDisplayName(id) + " up: " + nameList(p.recovered),
+			Description: "back after " + shortDuration(c.conn.clk().Since(p.since)),
+			EventID:     id + "-up",
+		}
+	}
+	p.alerted, p.recovered, p.since = false, nil, time.Time{}
+	if p.preparing {
+		// The down alert is still being prepared: send this after it.
+		p.heldUp, up = up, nil
+	}
+	return up
+}
+
+// downSent records that the down alert expired returned for c's platform has
+// been sent, and returns the "up" alert held back while it was prepared, if
+// any.
+func (g *connAggregator) downSent(c *BaseChannel) *alerter.Alert {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	p := g.platformLocked(c.platformID())
+	up := p.heldUp
+	p.preparing, p.heldUp = false, nil
+	return up
+}
+
+// platformNames are the display names of the channel platforms.
+var platformNames = map[string]string{
+	"telegram": "Telegram",
+	"discord":  "Discord",
+	"slack":    "Slack",
+	"matrix":   "Matrix",
+	"secmsg":   "SecMsg",
+	"webui":    "WebUI",
+	"device":   "Device",
+}
+
+func platformDisplayName(id string) string {
+	if n, ok := platformNames[id]; ok {
+		return n
+	}
+	if id == "" {
+		return id
+	}
+	return strings.ToUpper(id[:1]) + id[1:]
+}
+
+// countNoun is "1 bot", "7 bots" for bot platforms and "1 connection",
+// "2 connections" for the others.
+func countNoun(platform string, n int) string {
+	noun := "connection"
+	switch platform {
+	case "telegram", "discord", "slack":
+		noun = "bot"
+	}
+	if n != 1 {
+		noun += "s"
+	}
+	return fmt.Sprintf("%d %s", n, noun)
+}
+
+// maxTitleNames is how many channels an alert title names before it says
+// how many more there are.
+const maxTitleNames = 3
+
+// nameList names the channels for an alert title: "telegram-alice" or
+// "telegram-alice, telegram-bob, +2 more".
+func nameList(names []string) string {
+	if len(names) <= maxTitleNames {
+		return strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("%s, +%d more", strings.Join(names[:maxTitleNames], ", "), len(names)-maxTitleNames)
+}
+
+// shortDuration formats d to the minute from a minute up ("10m", "1h5m",
+// "2h"), and to the second below.
+func shortDuration(d time.Duration) string {
+	if d < time.Minute {
+		return d.Round(time.Second).String()
+	}
+	s := strings.TrimSuffix(d.Round(time.Minute).String(), "0s")
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
+// NextConnRetry returns the wait before the next connection attempt after a
+// wait of cur: ConnRetryMin when cur is zero, otherwise double cur, capped at
+// ConnRetryMax.
+func NextConnRetry(cur time.Duration) time.Duration {
+	if cur <= 0 {
+		return ConnRetryMin
+	}
+	return min(cur*2, ConnRetryMax)
+}

@@ -1,0 +1,85 @@
+import { cleanup } from "@testing-library/react"
+import { afterEach, beforeEach, vi } from "vitest"
+
+// Unmount anything a test rendered.
+//
+// Testing Library registers this itself, but only when it can find the test
+// framework's globals — and this project imports describe/it/expect explicitly
+// rather than setting `globals: true`. Without it every render stacks up in the
+// same document and queries start finding two of everything, which reads as a
+// duplicate-element bug in the component rather than a leak in the harness.
+afterEach(cleanup)
+
+// jsdom implements no media queries, and window.matchMedia is simply absent.
+// Anything rendering the sidebar reaches for it through the mobile-breakpoint
+// hook and dies with "matchMedia is not a function" — a harness gap that reads
+// like a component bug. Stubbed here so each component test does not have to
+// rediscover it. Reports "does not match", i.e. the desktop layout.
+if (typeof window !== "undefined" && !window.matchMedia) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  })
+}
+
+// Fail a test on any console.error or console.warn.
+//
+// This is the guard against slow rot. React reports most of its real problems —
+// invalid hook usage, missing keys, state updates outside act(), updates to an
+// unmounted component, DOM nesting violations — as console.error or
+// console.warn and then carries on. Vitest passes regardless, so without this a
+// component test can be green while the component under test is complaining.
+//
+// The spies are installed in beforeEach, not at module scope: vitest is
+// configured with restoreMocks, which strips module-scope spies after the first
+// test and would leave every later test unguarded.
+const LEVELS = ["error", "warn"] as const
+type Level = (typeof LEVELS)[number]
+
+let seen: Array<{ level: Level; text: string }> = []
+let allowed: RegExp[] = []
+
+/**
+ * Allow one expected console message for the rest of the current test. Use it
+ * when the code under test is SUPPOSED to log — a caught network error, say —
+ * so the output is declared rather than silently tolerated.
+ */
+export function expectConsole(pattern: RegExp) {
+  allowed.push(pattern)
+}
+
+beforeEach(() => {
+  seen = []
+  allowed = []
+  for (const level of LEVELS) {
+    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+      const text = args
+        .map((a) => (a instanceof Error ? a.message : String(a)))
+        .join(" ")
+      if (!allowed.some((re) => re.test(text))) seen.push({ level, text })
+    })
+  }
+})
+
+afterEach(() => {
+  const unexpected = seen
+  seen = []
+  if (unexpected.length === 0) return
+  // Thrown rather than asserted with expect(): an expect() outside a test block
+  // is itself a lint warning, and throwing fails the test just as clearly.
+  throw new Error(
+    "unexpected console output during this test:\n" +
+      unexpected.map((m) => `  console.${m.level}: ${m.text}`).join("\n") +
+      "\n\nIf the output is expected, declare it with expectConsole(/…/).",
+  )
+})

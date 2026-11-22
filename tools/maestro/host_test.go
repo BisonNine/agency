@@ -1,0 +1,248 @@
+// ClawEh
+// License: MIT
+
+package maestro
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+
+	mconfig "github.com/PivotLLM/Maestro/config"
+	mmaestro "github.com/PivotLLM/Maestro/pkg/maestro"
+	mreference "github.com/PivotLLM/Maestro/reference"
+
+	"github.com/PivotLLM/ClawEh/config"
+)
+
+func TestRunnerConfig_Mapping(t *testing.T) {
+	if got := runnerConfig(nil); got != (mconfig.Runner{}) {
+		t.Errorf("nil block must map to zero runner (Maestro defaults), got %+v", got)
+	}
+	f := false
+	got := runnerConfig(&config.MaestroConfig{MaxConcurrent: 2, RateLimitRequests: 4, RateLimitPeriod: 30, AllowParallel: &f})
+	if got.MaxConcurrent != 2 || got.RateLimit.MaxRequests != 4 || got.RateLimit.PeriodSeconds != 30 || got.ParallelAllowed() {
+		t.Errorf("runner = %+v", got)
+	}
+}
+
+// Each allowed folder that exists is a reference directory named after its
+// last path component, reduced to one word; clashes (in any case) get -2, -3,
+// ... in config order; a missing folder is skipped without renaming the others
+// and is never created.
+func TestReferenceDirsFromAllowedFolders(t *testing.T) {
+	base := t.TempDir()
+	mk := func(rel string) string {
+		p := filepath.Join(base, rel)
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	audio := mk("opt/audio/in")
+	srcA := mk("a/src")
+	srcB := mk("b/SRC")
+	srcC := mk("c/src")
+	notes := mk("d/my notes.v2")
+	missing := filepath.Join(base, "e/src")
+	taken := mk("f/src-3")
+	a := &config.AgentConfig{ID: "alice", AllowedFolders: []config.AllowedFolderConfig{
+		{Path: audio},
+		{Path: srcA},
+		{Path: "relative/src"},
+		{Path: srcB},
+		{Path: missing},
+		{Path: srcC},
+		{Path: notes},
+		{Path: taken},
+		{Path: srcA + "/"},
+	}}
+	got := referenceDirsFromAllowedFolders(a)
+	want := []mconfig.ReferenceDir{
+		{Path: audio, Mount: "in"},
+		{Path: srcA, Mount: "src"},
+		{Path: srcB, Mount: "SRC-2"},
+		{Path: srcC, Mount: "src-4"}, // src-3 went to the missing folder
+		{Path: notes, Mount: "my-notes-v2"},
+		{Path: taken, Mount: "src-3-2"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("dirs = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("dir %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Error("a missing allowed folder must not be created")
+	}
+	if referenceDirsFromAllowedFolders(nil) != nil {
+		t.Error("nil agent must map to no dirs")
+	}
+}
+
+// Maestro's own top-level reference entries count as taken, in any case, so
+// a folder with such a name gets "-2" and never hides Maestro's guide.
+func TestReferenceDirsFromAllowedFolders_BuiltinNamesTaken(t *testing.T) {
+	builtins := mreference.BuiltinNames(mmaestro.EmbeddedReference)
+	for _, want := range []string{"phases", "templates", "start.md"} {
+		if !slices.Contains(builtins, want) {
+			t.Fatalf("BuiltinNames = %v, want it to hold %s", builtins, want)
+		}
+	}
+	base := t.TempDir()
+	folders := make([]config.AllowedFolderConfig, 0, 3)
+	var wantMounts []string
+	for i, name := range []string{"templates", "Phases", "src"} {
+		p := filepath.Join(base, strconv.Itoa(i), name)
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		folders = append(folders, config.AllowedFolderConfig{Path: p})
+	}
+	wantMounts = []string{"templates-2", "Phases-2", "src"}
+	got := referenceDirsFromAllowedFolders(&config.AgentConfig{ID: "alice", AllowedFolders: folders})
+	if len(got) != len(wantMounts) {
+		t.Fatalf("dirs = %+v", got)
+	}
+	for i, w := range wantMounts {
+		if got[i].Mount != w {
+			t.Errorf("dir %d named %q, want %q", i, got[i].Mount, w)
+		}
+	}
+	for _, d := range got {
+		for _, b := range builtins {
+			if strings.EqualFold(d.Mount, b) {
+				t.Errorf("%s takes the built-in name %s", d.Path, b)
+			}
+		}
+	}
+}
+
+func TestReferenceName(t *testing.T) {
+	for in, want := range map[string]string{
+		"/srv/src":         "src",
+		"/opt/audio/in":    "in",
+		"/srv/My Docs":     "My-Docs",
+		"/srv/notes.v2":    "notes-v2",
+		"/srv/under_score": "under_score",
+		"/srv/..hidden..":  "hidden",
+		"/":                "folder",
+		"/srv/...":         "folder",
+	} {
+		if got := referenceName(in); got != want {
+			t.Errorf("referenceName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// realTempDir is t.TempDir() with symlinks resolved. importAllowed compares
+// resolved paths (Maestro hands it the real path of every candidate), and on
+// macOS the temp root is a symlink (/var -> /private/var), so paths built from
+// a raw t.TempDir() would never match the resolved roots.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+	return dir
+}
+
+func TestImportAllowed_RestrictedAgent(t *testing.T) {
+	ws := realTempDir(t)
+	mount := realTempDir(t)
+	allowed := realTempDir(t)
+	cfg := &config.Config{}
+	cfg.Agents.Defaults.RestrictToWorkspace = true
+	cfg.Tools.AllowReadPaths = []string{"^" + allowed + "/"}
+	a := &config.AgentConfig{ID: "a", Maestro: &config.MaestroConfig{Enabled: true}, AllowedFolders: []config.AllowedFolderConfig{{Path: mount}}}
+	ok := importAllowed(cfg, a, ws)
+
+	for _, p := range []string{
+		filepath.Join(ws, "files", "x.md"),
+		filepath.Join(ws, "maestro", "projects", "p", "files", "y.md"),
+		filepath.Join(mount, "doc.pdf"),
+		filepath.Join(mount, "sub", "deep.txt"),
+		filepath.Join(allowed, "ref.md"),
+	} {
+		if !ok(p) {
+			t.Errorf("%s should be importable", p)
+		}
+	}
+	for _, p := range []string{
+		"/etc/passwd",
+		filepath.Join(t.TempDir(), "secret.txt"),
+		ws + "-sibling/x",
+		mount + "2/x",
+	} {
+		if ok(p) {
+			t.Errorf("%s must be refused", p)
+		}
+	}
+}
+
+func TestImportAllowed_UnrestrictedAgentReadsAnywhere(t *testing.T) {
+	cfg := &config.Config{} // RestrictToWorkspace false: the agent's file tools read host paths
+	ok := importAllowed(cfg, &config.AgentConfig{ID: "a"}, t.TempDir())
+	if !ok("/etc/hostname") {
+		t.Error("an unrestricted agent may import anywhere, matching its file tools")
+	}
+}
+
+func TestImportAllowed_ResolvesSymlinkedRoots(t *testing.T) {
+	realWS := realTempDir(t)
+	link := filepath.Join(t.TempDir(), "ws-link")
+	if err := os.Symlink(realWS, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Agents.Defaults.RestrictToWorkspace = true
+	ok := importAllowed(cfg, &config.AgentConfig{ID: "a"}, link)
+	// Maestro hands the predicate the resolved path; the root must resolve too.
+	if !ok(filepath.Join(realWS, "files", "a.txt")) {
+		t.Error("workspace given as a symlink must still permit its real path")
+	}
+}
+
+func TestLogWriter_ForwardsLevelsAndBuffersPartialLines(t *testing.T) {
+	var got []string
+	w := &logWriter{agent: "alice", emit: func(level, msg string, fields map[string]any) {
+		agentField, ok := fields["agent"].(string)
+		if !ok {
+			t.Fatalf("agent field is %T, want string", fields["agent"])
+		}
+		got = append(got, level+"|"+msg+"|"+agentField)
+	}}
+	if _, err := w.Write([]byte("2026-09-19 10:00:00 [INFO] [123] Task 1: started\n2026-09-19 10:00:01 [WARN] [123] retrying\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := w.Write([]byte("2026-09-19 10:00:02 [ERROR] [123] fai")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := w.Write([]byte("led hard\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := w.Write([]byte("2026-09-19 10:00:03 [DEBUG] [123] noisy\nunformatted line\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	want := []string{
+		"INFO|Task 1: started|alice",
+		"WARN|retrying|alice",
+		"ERROR|failed hard|alice",
+		"DEBUG|noisy|alice",
+		"INFO|unformatted line|alice",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("forwarded %d lines, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

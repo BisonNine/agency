@@ -1,0 +1,167 @@
+package gateway
+
+import (
+	"crypto/tls"
+	"io/fs"
+	"strings"
+
+	"github.com/PivotLLM/ClawEh/agent"
+	"github.com/PivotLLM/ClawEh/channels"
+	"github.com/PivotLLM/ClawEh/channels/device"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/internal/admin"
+	"github.com/PivotLLM/ClawEh/internal/tlscert"
+	"github.com/PivotLLM/ClawEh/routing"
+)
+
+// deviceAgentQuerier adapts the agent loop to the device channel's read-only
+// AgentQuerier. It lives here (not in channels/device) because agent
+// imports channels, so the device package cannot import agent.
+type deviceAgentQuerier struct{ al *agent.AgentLoop }
+
+// Agents lists configured agents (human agents left out: a device cannot
+// chat with a person) plus the default agent's id and main session key.
+func (q deviceAgentQuerier) Agents() ([]device.DeviceAgentInfo, string, string) {
+	reg := q.al.GetRegistry()
+	defaultID := reg.DefaultID()
+	ids := reg.List()
+	out := make([]device.DeviceAgentInfo, 0, len(ids))
+	for _, id := range ids {
+		info := device.DeviceAgentInfo{ID: id, Name: id}
+		inst, ok := reg.Get(id)
+		if ok && inst.HumanModel != "" {
+			continue // a person can't be chatted with, only asked by agents
+		}
+		if ok && inst.Name != "" {
+			info.Name = inst.Name
+		}
+		// Always carry a non-empty name: operator clients hide entries without a
+		// display label, so fall back to the id for agents with no configured name.
+		out = append(out, info)
+	}
+	return out, defaultID, routing.BuildAgentMainSessionKey(defaultID)
+}
+
+// DefaultAgentID returns the registry's default agent id.
+func (q deviceAgentQuerier) DefaultAgentID() string {
+	return q.al.GetRegistry().DefaultID()
+}
+
+// HasAgent reports whether id names a configured agent the loop runs, human
+// agents included.
+func (q deviceAgentQuerier) HasAgent(id string) bool {
+	_, ok := q.al.GetRegistry().GetConfigured(id)
+	return ok
+}
+
+// History returns the user/assistant text turns stored for a session key. A
+// key whose agent is not registered returns nothing: reading it would create a
+// session database in some other agent's store.
+func (q deviceAgentQuerier) History(sessionKey string) []device.DeviceHistoryMessage {
+	inst := agentForSessionKey(q.al.GetRegistry(), sessionKey)
+	if inst == nil || inst.Sessions == nil {
+		return nil
+	}
+	msgs := inst.Sessions.GetHistoryWithSeqs(sessionKey)
+	out := make([]device.DeviceHistoryMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role != "user" && m.Role != "assistant" {
+			continue
+		}
+		if strings.TrimSpace(m.Content) == "" {
+			continue
+		}
+		out = append(out, device.DeviceHistoryMessage{Role: m.Role, Content: m.Content, Timestamp: m.CreatedAt})
+	}
+	return out
+}
+
+// agentForSessionKey resolves the config agent that owns a session key of the
+// form "agent:<id>:...", or nil when there is none. A temporary agent is never
+// reachable from a device.
+func agentForSessionKey(reg *agent.AgentRegistry, sessionKey string) *agent.AgentInstance {
+	parts := strings.SplitN(sessionKey, ":", 3)
+	if len(parts) < 2 || parts[0] != "agent" {
+		return nil
+	}
+	inst, ok := reg.GetConfigured(parts[1])
+	if !ok {
+		return nil
+	}
+	return inst
+}
+
+// injectDeviceAgentQuerier wires the agent loop into the device channel ch
+// so it can serve agents.list / chat.history to operator clients.
+func injectDeviceAgentQuerier(ch channels.Channel, al *agent.AgentLoop) {
+	if setter, ok := ch.(interface{ SetAgentQuerier(q device.AgentQuerier) }); ok {
+		setter.SetAgentQuerier(deviceAgentQuerier{al: al})
+	}
+}
+
+// injectDeviceDefaultUser hands the device channel ch the default name of the
+// person speaking on a device: operator.name from the agent loop's current
+// config, else the admin account's username from the credentials file at
+// credentialsPath. Both are read on every call, so a config reload or a
+// `claw admin` change is seen at once. Neither gives "".
+func injectDeviceDefaultUser(ch channels.Channel, al *agent.AgentLoop, credentialsPath string) {
+	if setter, ok := ch.(interface{ SetDefaultUser(fn func() string) }); ok {
+		setter.SetDefaultUser(func() string {
+			if name := operatorName(al); name != "" {
+				return name
+			}
+			return adminUsername(credentialsPath, secretsFileMode(al))
+		})
+	}
+}
+
+// injectWebUIOperatorName hands the WebUI channel ch operator.name from the
+// agent loop's current config, read on every message, as the name of the
+// web chat's sender.
+func injectWebUIOperatorName(ch channels.Channel, al *agent.AgentLoop) {
+	if setter, ok := ch.(interface{ SetOperatorName(fn func() string) }); ok {
+		setter.SetOperatorName(func() string { return operatorName(al) })
+	}
+}
+
+// operatorName is operator.name in the agent loop's current config, or "".
+func operatorName(al *agent.AgentLoop) string {
+	if cfg := al.GetConfig(); cfg != nil {
+		return cfg.OperatorName()
+	}
+	return ""
+}
+
+// secretsFileMode is security.permissions.secrets.file_mode in the agent
+// loop's current config, or the built-in default without one.
+func secretsFileMode(al *agent.AgentLoop) fs.FileMode {
+	if cfg := al.GetConfig(); cfg != nil {
+		return cfg.PermissionModes(config.AreaSecrets).File
+	}
+	return config.DefaultFileMode
+}
+
+// adminUsername is the username in the credentials file at path, or "" when
+// there is no usable admin account (none, unreadable, or more open than
+// allowed, the secrets file mode, permits).
+func adminUsername(path string, allowed fs.FileMode) string {
+	creds, err := admin.Load(path, allowed)
+	if err != nil {
+		return ""
+	}
+	return creds.Username
+}
+
+// injectDeviceTLS lends the gateway certificate manager to the device channel
+// ch, so channels.device.tls serves the WebUI HTTPS certificate and follows
+// its reloads. certs is nil when HTTPS was off at start; the channel then
+// refuses to start with channels.device.tls on. Like the querier, it is
+// injected into every device channel the manager builds (channelBuildHook).
+func injectDeviceTLS(ch channels.Channel, certs *tlscert.Manager) {
+	if certs == nil {
+		return
+	}
+	if setter, ok := ch.(interface{ SetTLSConfig(cfg *tls.Config) }); ok {
+		setter.SetTLSConfig(certs.TLSConfig())
+	}
+}

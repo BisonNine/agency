@@ -1,0 +1,337 @@
+// ClawEh
+// License: MIT
+
+package msgtoken
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+	"time"
+)
+
+// TestNewNamedStore_TightensLoosePermissions: the file holds plaintext tokens
+// (the WebUI shows them again), so loading it must leave it owner-only.
+func TestNewNamedStore_TightensLoosePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits")
+	}
+	path := NamedTokenPath(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"alice":[{"id":"a1","name":"gps","token":"tok","created_at_ms":1}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewNamedStore(path)
+	if err != nil {
+		t.Fatalf("NewNamedStore: %v", err)
+	}
+	if got := s.List("alice"); len(got) != 1 || got[0].Token != "tok" {
+		t.Fatalf("List = %+v, want the one stored token", got)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("token store perm = %o after load, want 600", perm)
+	}
+}
+
+func TestNamedStore_CreateListValidateDelete_RoundTrip(t *testing.T) {
+	path := NamedTokenPath(t.TempDir())
+	s, err := NewNamedStore(path)
+	if err != nil {
+		t.Fatalf("NewNamedStore: %v", err)
+	}
+
+	tok, err := s.Create("alice", "gps")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if tok.ID == "" || tok.Token == "" || tok.Name != "gps" || tok.CreatedAtMS == 0 {
+		t.Fatalf("Create returned incomplete token: %+v", tok)
+	}
+
+	list := s.List("alice")
+	if len(list) != 1 || list[0].ID != tok.ID {
+		t.Fatalf("List = %+v, want the one created token", list)
+	}
+
+	// The token validates back to its agent.
+	if agentID, ok := s.Validate(tok.Token); !ok || agentID != "alice" {
+		t.Fatalf("Validate(created) = (%q,%v), want (alice,true)", agentID, ok)
+	}
+
+	// Unknown token does not validate.
+	if agentID, ok := s.Validate("nope"); ok || agentID != "" {
+		t.Fatalf("Validate(unknown) = (%q,%v), want (\"\",false)", agentID, ok)
+	}
+
+	// Delete removes it; a second delete is a no-op.
+	if !s.Delete("alice", tok.ID) {
+		t.Fatal("Delete(existing) = false, want true")
+	}
+	if s.Delete("alice", tok.ID) {
+		t.Fatal("Delete(already gone) = true, want false")
+	}
+	if _, ok := s.Validate(tok.Token); ok {
+		t.Fatal("Validate after delete still ok")
+	}
+
+	// State file is 0600.
+	if fi, err := os.Stat(path); err == nil {
+		if perm := fi.Mode().Perm(); perm != 0o600 {
+			t.Errorf("state file perm = %o, want 600", perm)
+		}
+	} else {
+		t.Fatalf("stat state file: %v", err)
+	}
+}
+
+func TestNamedStore_Persist(t *testing.T) {
+	path := NamedTokenPath(t.TempDir())
+	s1, err := NewNamedStore(path)
+	if err != nil {
+		t.Fatalf("NewNamedStore: %v", err)
+	}
+	created, err := s1.Create("bob", "alarm")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A fresh store loaded from the same path sees the persisted token.
+	s2, err := NewNamedStore(path)
+	if err != nil {
+		t.Fatalf("NewNamedStore(reload): %v", err)
+	}
+	if agentID, ok := s2.Validate(created.Token); !ok || agentID != "bob" {
+		t.Fatalf("reloaded Validate = (%q,%v), want (bob,true)", agentID, ok)
+	}
+}
+
+func TestNamedStore_MultiplePerAgent(t *testing.T) {
+	s, err := NewNamedStore(NamedTokenPath(t.TempDir()))
+	if err != nil {
+		t.Fatalf("NewNamedStore: %v", err)
+	}
+	a := mustCreate(t, s, "alice", "one")
+	b := mustCreate(t, s, "alice", "two")
+
+	if len(s.List("alice")) != 2 {
+		t.Fatalf("List(alice) len = %d, want 2", len(s.List("alice")))
+	}
+	// Both validate to the same agent.
+	if id, ok := s.Validate(a.Token); !ok || id != "alice" {
+		t.Fatalf("Validate(a) = (%q,%v)", id, ok)
+	}
+	if id, ok := s.Validate(b.Token); !ok || id != "alice" {
+		t.Fatalf("Validate(b) = (%q,%v)", id, ok)
+	}
+
+	// Deleting one leaves the other valid.
+	if !s.Delete("alice", a.ID) {
+		t.Fatal("Delete(a) = false")
+	}
+	if _, ok := s.Validate(a.Token); ok {
+		t.Fatal("deleted token a still validates")
+	}
+	if id, ok := s.Validate(b.Token); !ok || id != "alice" {
+		t.Fatalf("token b should still validate after deleting a: (%q,%v)", id, ok)
+	}
+	if len(s.List("alice")) != 1 {
+		t.Fatalf("List(alice) after delete = %d, want 1", len(s.List("alice")))
+	}
+}
+
+// clockedStore returns an in-memory store whose clock is driven by *now, so
+// tests can advance time deterministically.
+// mustCreate creates a named token or fails the test.
+func mustCreate(t *testing.T, s *NamedStore, agentID, name string) NamedToken {
+	t.Helper()
+	tok, err := s.Create(agentID, name)
+	if err != nil {
+		t.Fatalf("Create(%s, %s): %v", agentID, name, err)
+	}
+	return tok
+}
+
+// mustOpen opens a named store at path or fails the test.
+func mustOpen(t *testing.T, path string) *NamedStore {
+	t.Helper()
+	s, err := NewNamedStore(path)
+	if err != nil {
+		t.Fatalf("NewNamedStore: %v", err)
+	}
+	return s
+}
+
+func clockedStore(t *testing.T, now *time.Time) *NamedStore {
+	t.Helper()
+	s, err := NewNamedStore("")
+	if err != nil {
+		t.Fatalf("NewNamedStore: %v", err)
+	}
+	s.now = func() time.Time { return *now }
+	return s
+}
+
+func TestNamedStore_EffectiveDefaults(t *testing.T) {
+	// 0 → defaults; explicit values pass through.
+	zero := NamedToken{}
+	if zero.EffectiveRatePerMin() != DefaultRatePerMin || zero.EffectiveBlockMinutes() != DefaultBlockMinutes {
+		t.Fatalf("zero token = (%d,%d), want defaults (%d,%d)",
+			zero.EffectiveRatePerMin(), zero.EffectiveBlockMinutes(), DefaultRatePerMin, DefaultBlockMinutes)
+	}
+	set := NamedToken{RatePerMin: 5, BlockMinutes: 2}
+	if set.EffectiveRatePerMin() != 5 || set.EffectiveBlockMinutes() != 2 {
+		t.Fatalf("set token = (%d,%d), want (5,2)", set.EffectiveRatePerMin(), set.EffectiveBlockMinutes())
+	}
+}
+
+func TestNamedStore_Allow_TripsAndBlocks(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	s := clockedStore(t, &now)
+	tok := mustCreate(t, s, "alice", "gps")
+	if !s.Update("alice", tok.ID, 3, 15) {
+		t.Fatal("Update returned false")
+	}
+
+	// First 3 requests within the window are allowed.
+	for i := range 3 {
+		if allowed, _ := s.Allow("alice", tok.ID); !allowed {
+			t.Fatalf("request %d unexpectedly blocked", i+1)
+		}
+	}
+	// The 4th trips the limit → blocked, retryAfter ≈ 15m.
+	allowed, retry := s.Allow("alice", tok.ID)
+	if allowed {
+		t.Fatal("4th request should be blocked")
+	}
+	if retry < 14*time.Minute || retry > 15*time.Minute {
+		t.Fatalf("retryAfter = %v, want ~15m", retry)
+	}
+
+	// Still blocked before expiry, and the block is NOT extended: advance 5m and
+	// the remaining should shrink toward ~10m, not reset to 15m.
+	now = now.Add(5 * time.Minute)
+	allowed, retry = s.Allow("alice", tok.ID)
+	if allowed {
+		t.Fatal("still within block window, should be blocked")
+	}
+	if retry > 10*time.Minute {
+		t.Fatalf("retryAfter = %v after 5m, block must not extend (want <=10m)", retry)
+	}
+
+	// After the block expires, requests flow again (counters reset).
+	now = now.Add(11 * time.Minute)
+	if allowed, _ := s.Allow("alice", tok.ID); !allowed {
+		t.Fatal("request after block expiry should be allowed")
+	}
+}
+
+func TestNamedStore_Allow_WindowSlides(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	s := clockedStore(t, &now)
+	tok := mustCreate(t, s, "alice", "gps")
+	s.Update("alice", tok.ID, 2, 15)
+
+	if allowed, _ := s.Allow("alice", tok.ID); !allowed {
+		t.Fatal("req 1 blocked")
+	}
+	if allowed, _ := s.Allow("alice", tok.ID); !allowed {
+		t.Fatal("req 2 blocked")
+	}
+	// Move past the 60s window so the earlier hits prune out; new request is fine.
+	now = now.Add(61 * time.Second)
+	if allowed, _ := s.Allow("alice", tok.ID); !allowed {
+		t.Fatal("req after window slide should be allowed")
+	}
+}
+
+func TestNamedStore_ResetBlocks(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	s := clockedStore(t, &now)
+	a := mustCreate(t, s, "alice", "gps")
+	b := mustCreate(t, s, "alice", "alarm")
+	s.Update("alice", a.ID, 1, 15)
+	s.Update("alice", b.ID, 1, 15)
+
+	// Trip both into a block.
+	s.Allow("alice", a.ID)
+	s.Allow("alice", a.ID)
+	s.Allow("alice", b.ID)
+	s.Allow("alice", b.ID)
+
+	// Clear just "gps" by name.
+	if n := s.ResetBlocks("alice", "gps"); n != 1 {
+		t.Fatalf("ResetBlocks(gps) = %d, want 1", n)
+	}
+	if allowed, _ := s.Allow("alice", a.ID); !allowed {
+		t.Fatal("gps should be unblocked after reset")
+	}
+	// alarm is still blocked; clear-all removes it.
+	if n := s.ResetBlocks("alice", ""); n != 1 {
+		t.Fatalf("ResetBlocks(all) = %d, want 1", n)
+	}
+}
+
+func TestNamedStore_Quota(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	s := clockedStore(t, &now)
+	tok := mustCreate(t, s, "alice", "gps")
+	s.Update("alice", tok.ID, 3, 15)
+
+	s.Allow("alice", tok.ID)
+	s.Allow("alice", tok.ID)
+
+	q := s.Quota("alice")
+	if len(q) != 1 {
+		t.Fatalf("Quota len = %d, want 1", len(q))
+	}
+	if q[0].Name != "gps" || q[0].RatePerMin != 3 || q[0].HitsInWindow != 2 || q[0].Blocked {
+		t.Fatalf("Quota = %+v, want gps rate=3 hits=2 unblocked", q[0])
+	}
+
+	// Trip into a block; Quota reflects Blocked + remaining.
+	s.Allow("alice", tok.ID)
+	s.Allow("alice", tok.ID)
+	q = s.Quota("alice")
+	if !q[0].Blocked || q[0].BlockRemaining <= 0 {
+		t.Fatalf("Quota after trip = %+v, want blocked with remaining", q[0])
+	}
+}
+
+func TestNamedStore_UpdatePersists(t *testing.T) {
+	path := NamedTokenPath(t.TempDir())
+	s1 := mustOpen(t, path)
+	tok := mustCreate(t, s1, "alice", "gps")
+	if !s1.Update("alice", tok.ID, 12, 7) {
+		t.Fatal("Update returned false")
+	}
+	// A reload sees the persisted config.
+	s2 := mustOpen(t, path)
+	got := s2.List("alice")
+	if len(got) != 1 || got[0].RatePerMin != 12 || got[0].BlockMinutes != 7 {
+		t.Fatalf("reloaded config = %+v, want rate=12 block=7", got)
+	}
+	if s1.Update("alice", "nope", 1, 1) {
+		t.Fatal("Update(missing) should return false")
+	}
+}
+
+func TestNamedStore_EmptyPathInMemory(t *testing.T) {
+	s, err := NewNamedStore("")
+	if err != nil {
+		t.Fatalf("NewNamedStore(\"\"): %v", err)
+	}
+	tok, err := s.Create("alice", "x")
+	if err != nil {
+		t.Fatalf("Create on in-memory store: %v", err)
+	}
+	if id, ok := s.Validate(tok.Token); !ok || id != "alice" {
+		t.Fatalf("in-memory Validate = (%q,%v)", id, ok)
+	}
+}

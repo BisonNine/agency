@@ -1,0 +1,217 @@
+package tools
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+)
+
+// ToolResult represents the structured return value from tool execution.
+// It provides clear semantics for different types of results and supports
+// async operations, user-facing messages, and error handling.
+type ToolResult struct {
+	// ForLLM is the content sent to the LLM for context.
+	// Required for all results.
+	ForLLM string `json:"for_llm"`
+
+	// ForUser is the content sent directly to the user.
+	// If empty, no user message is sent.
+	// Silent=true overrides this field.
+	ForUser string `json:"for_user,omitempty"`
+
+	// Silent suppresses sending any message to the user.
+	// When true, ForUser is ignored even if set.
+	Silent bool `json:"silent"`
+
+	// IsError indicates whether the tool execution failed.
+	// When true, the result should be treated as an error.
+	IsError bool `json:"is_error"`
+
+	// Async indicates whether the tool is running asynchronously.
+	// When true, the tool will complete later and notify via callback.
+	Async bool `json:"async"`
+
+	// Err is the underlying error (not JSON serialized).
+	// Used for internal error handling and logging.
+	Err error `json:"-"`
+
+	// Media contains media store refs produced by this tool.
+	// When non-empty, the agent will publish these as OutboundMediaMessage.
+	Media []string `json:"media,omitempty"`
+
+	// Images holds base64 data URIs ("data:<mime>;base64,...") the tool returned
+	// for the MODEL to see (e.g. an MCP screenshot). Distinct from Media (which is
+	// sent to the user): when the active model has vision enabled, these are
+	// injected as a follow-up user turn so a vision model can read them. The
+	// OpenAI-compatible API rejects image content in tool messages, so they cannot
+	// ride on the tool result itself.
+	Images []string `json:"images,omitempty"`
+
+	// ToolReferences names the tools this result surfaces (search_tools hits,
+	// the tool get_tool_details describes), as offered in the tool list. It
+	// becomes the tool message's ToolReferences, from which spawnllm loads the
+	// deferred tools a message references.
+	ToolReferences []string `json:"tool_references,omitempty"`
+}
+
+// NewToolResult creates a basic ToolResult with content for the LLM.
+// Use this when you need a simple result with default behavior.
+//
+// Example:
+//
+//	result := NewToolResult("File updated successfully")
+func NewToolResult(forLLM string) *ToolResult {
+	return &ToolResult{
+		ForLLM: forLLM,
+	}
+}
+
+// SilentResult creates a ToolResult that is silent (no user message).
+// The content is only sent to the LLM for context.
+//
+// Use this for operations that should not spam the user, such as:
+// - File reads/writes
+// - Status updates
+// - Background operations
+//
+// Example:
+//
+//	result := SilentResult("Config file saved")
+func SilentResult(forLLM string) *ToolResult {
+	return &ToolResult{
+		ForLLM:  forLLM,
+		Silent:  true,
+		IsError: false,
+		Async:   false,
+	}
+}
+
+// AsyncResult creates a ToolResult for async operations.
+// The task will run in the background and complete later.
+//
+// Use this for long-running operations like:
+// - Subagent spawns
+// - Background processing
+// - External API calls with callbacks
+//
+// Example:
+//
+//	result := AsyncResult("Subagent spawned, will report back")
+func AsyncResult(forLLM string) *ToolResult {
+	return &ToolResult{
+		ForLLM:  forLLM,
+		Silent:  false,
+		IsError: false,
+		Async:   true,
+	}
+}
+
+// ErrorResult creates a ToolResult representing an error.
+// Sets IsError=true and includes the error message.
+//
+// Example:
+//
+//	result := ErrorResult("Failed to connect to database: connection refused")
+func ErrorResult(message string) *ToolResult {
+	return &ToolResult{
+		ForLLM:  message,
+		Silent:  false,
+		IsError: true,
+		Async:   false,
+	}
+}
+
+// restrictionNotice tells a model that a refusal is configuration, not a
+// fault, so it neither retries nor improvises a workaround.
+const restrictionNotice = "This is a configured access restriction, not a bug or an outage. " +
+	"Do not retry this call, and do not attempt to work around it by other means."
+
+// NotEnabledMessage is returned when the caller is authenticated but the
+// resolved agent may not use the tool — either it is absent from that agent's
+// registry or an ACL policy refused it. The wording is deliberately
+// instructive (mirroring mcpserver's invalidTokenMessage): tools/list publishes
+// the union of every agent's registry, so a model routinely sees tools it
+// cannot call and must read this refusal as a configuration decision rather
+// than a fault — otherwise it retries or improvises a workaround instead of
+// telling the user. It does not disclose which of the two causes applied.
+func NotEnabledMessage(name string) string {
+	return fmt.Sprintf("Permission denied: the tool %q is not enabled for this agent. ", name) +
+		restrictionNotice + " " +
+		"If this tool is needed, tell the user it must be enabled for this agent."
+}
+
+// UserResult creates a ToolResult with content for both LLM and user.
+// Both ForLLM and ForUser are set to the same content.
+//
+// Use this when the user needs to see the result directly:
+// - Command execution output
+// - Fetched web content
+// - Query results
+//
+// Example:
+//
+//	result := UserResult("Total files found: 42")
+func UserResult(content string) *ToolResult {
+	return &ToolResult{
+		ForLLM:  content,
+		ForUser: content,
+		Silent:  false,
+		IsError: false,
+		Async:   false,
+	}
+}
+
+// MediaResult creates a ToolResult with media refs for the user.
+// The agent will publish these refs as OutboundMediaMessage.
+//
+// Example:
+//
+//	result := MediaResult("Image generated successfully", []string{"media://abc123"})
+func MediaResult(forLLM string, mediaRefs []string) *ToolResult {
+	return &ToolResult{
+		ForLLM: forLLM,
+		Media:  mediaRefs,
+	}
+}
+
+// MarshalJSON implements custom JSON serialization.
+// The Err field is excluded from JSON output via the json:"-" tag.
+func (tr *ToolResult) MarshalJSON() ([]byte, error) {
+	type Alias ToolResult
+	return json.Marshal(&struct {
+		*Alias
+	}{
+		Alias: (*Alias)(tr),
+	})
+}
+
+// WithError sets the Err field and returns the result for chaining.
+// This preserves the error for logging while keeping it out of JSON.
+//
+// Example:
+//
+//	result := ErrorResult("Operation failed").WithError(err)
+func (tr *ToolResult) WithError(err error) *ToolResult {
+	tr.Err = err
+	return tr
+}
+
+// refusalError marks a tool error as an expected refusal: a configured
+// permission or limit said no, nothing failed. The registry logs such a
+// result at WARN instead of ERROR.
+type refusalError struct{ err error }
+
+func (e refusalError) Error() string { return e.err.Error() }
+func (e refusalError) Unwrap() error { return e.err }
+func (refusalError) Refusal() bool   { return true }
+
+// Refusal marks err as an expected refusal (see IsExpectedRefusal).
+func Refusal(err error) error { return refusalError{err: err} }
+
+// IsExpectedRefusal reports whether err, or an error it wraps, is an expected
+// refusal: one created by Refusal, or any error with a Refusal() bool method
+// that returns true (so packages that do not import tools can mark theirs).
+func IsExpectedRefusal(err error) bool {
+	var r interface{ Refusal() bool }
+	return errors.As(err, &r) && r.Refusal()
+}

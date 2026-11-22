@@ -1,0 +1,338 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+
+	"github.com/PivotLLM/ClawEh/config"
+)
+
+func TestHandleListSkills(t *testing.T) {
+	configPath := setupTestEnv(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	base := t.TempDir()
+	cfg.Agents.BaseDir = base
+	// A per-agent skill is not part of the shared view.
+	workspace := filepath.Join(base, "claw")
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(workspace, "skills", "workspace-skill"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(workspace skill) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(workspace, "skills", "workspace-skill", "SKILL.md"),
+		[]byte("---\nname: workspace-skill\ndescription: Workspace skill\n---\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(workspace skill) error = %v", err)
+	}
+
+	globalSkillDir := filepath.Join(os.Getenv("CLAW_HOME"), "skills", "global-skill")
+	if err := os.MkdirAll(globalSkillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(global skill) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(globalSkillDir, "SKILL.md"),
+		[]byte("---\nname: global-skill\ndescription: Global skill\n---\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(global skill) error = %v", err)
+	}
+
+	// A skills/ folder in the working directory is not a skill source.
+	wd := t.TempDir()
+	t.Chdir(wd)
+	cwdSkillDir := filepath.Join(wd, "skills", "cwd-skill")
+	if err := os.MkdirAll(cwdSkillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(cwd skill) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cwdSkillDir, "SKILL.md"),
+		[]byte("---\nname: cwd-skill\ndescription: Working directory skill\n---\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(cwd skill) error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp skillSupportResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Skills) != 1 {
+		t.Fatalf("skills count = %d, want 1: %#v", len(resp.Skills), resp.Skills)
+	}
+
+	gotSkills := make(map[string]string, len(resp.Skills))
+	for _, skill := range resp.Skills {
+		gotSkills[skill.Name] = skill.Source
+	}
+	if _, ok := gotSkills["workspace-skill"]; ok {
+		t.Fatal("workspace-skill from an agent workspace must not be listed")
+	}
+	if gotSkills["global-skill"] != "global" {
+		t.Fatalf("global-skill source = %q, want global", gotSkills["global-skill"])
+	}
+	if _, ok := gotSkills["cwd-skill"]; ok {
+		t.Fatal("cwd-skill from the working directory must not be listed")
+	}
+}
+
+func TestHandleGetSkill(t *testing.T) {
+	configPath := setupTestEnv(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	shared := filepath.Join(os.Getenv("CLAW_HOME"), "skills")
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	skillDir := filepath.Join(shared, "viewer-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte(
+			"---\nname: viewer-skill\ndescription: Viewable skill\n---\n# Viewer Skill\n\nThis is visible content.\n",
+		),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills/viewer-skill", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp skillDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.Name != "viewer-skill" || resp.Source != "global" || resp.Description != "Viewable skill" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if resp.Content != "# Viewer Skill\n\nThis is visible content.\n" {
+		t.Fatalf("content = %q", resp.Content)
+	}
+}
+
+func TestHandleGetSkillUsesResolvedPath(t *testing.T) {
+	configPath := setupTestEnv(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	shared := filepath.Join(os.Getenv("CLAW_HOME"), "skills")
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	skillDir := filepath.Join(shared, "folder-name")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: display-name\ndescription: Mismatched path skill\n---\n# Display Name\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills/display-name", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp skillDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.Name != "display-name" {
+		t.Fatalf("resp.Name = %q, want display-name", resp.Name)
+	}
+	if resp.Content != "# Display Name\n" {
+		t.Fatalf("content = %q", resp.Content)
+	}
+}
+
+func TestHandleImportSkill(t *testing.T) {
+	configPath := setupTestEnv(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	base := t.TempDir()
+	cfg.Agents.BaseDir = base
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "Plain Skill.md")
+	if err != nil {
+		t.Fatalf("CreateFormFile() error = %v", err)
+	}
+	_, err = io.WriteString(part, "# Plain Skill\n\nUse this skill to test imports.\n")
+	if err != nil {
+		t.Fatalf("WriteString() error = %v", err)
+	}
+	err = writer.Close()
+	if err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/skills/import", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	skillFile := filepath.Join(os.Getenv("CLAW_HOME"), "skills", "plain-skill", "SKILL.md")
+	content, err := os.ReadFile(skillFile)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	expected := "---\nname: plain-skill\ndescription: Plain Skill\n---\n\n# Plain Skill\n\nUse this skill to test imports.\n"
+	if string(content) != expected {
+		t.Fatalf("saved skill content mismatch:\n%s", string(content))
+	}
+	if runtime.GOOS != "windows" {
+		// Imported skills live under CLAW_HOME: directory and SKILL.md are owner-only.
+		di, err := os.Stat(filepath.Dir(skillFile))
+		if err != nil {
+			t.Fatalf("Stat(skill dir) error = %v", err)
+		}
+		if got := di.Mode().Perm(); got != 0o700 {
+			t.Errorf("skill dir mode = %04o, want 0700", got)
+		}
+		fi, err := os.Stat(skillFile)
+		if err != nil {
+			t.Fatalf("Stat(SKILL.md) error = %v", err)
+		}
+		if got := fi.Mode().Perm(); got != 0o600 {
+			t.Errorf("SKILL.md mode = %04o, want 0600", got)
+		}
+	}
+
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
+	mux.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body=%s", rec2.Code, http.StatusOK, rec2.Body.String())
+	}
+	var listResp skillSupportResponse
+	if err := json.Unmarshal(rec2.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("Unmarshal list response error = %v", err)
+	}
+	found := false
+	for _, skill := range listResp.Skills {
+		if skill.Name == "plain-skill" && skill.Description == "Plain Skill" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("plain-skill should be listed after import, got %#v", listResp.Skills)
+	}
+}
+
+func TestHandleDeleteSkill(t *testing.T) {
+	configPath := setupTestEnv(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	shared := filepath.Join(os.Getenv("CLAW_HOME"), "skills")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	skillDir := filepath.Join(shared, "delete-me")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: delete-me\ndescription: delete me\n---\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/skills/delete-me", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+		t.Fatalf("skill directory should be removed, stat err=%v", err)
+	}
+}

@@ -1,0 +1,337 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+// registerModelRoutes binds model list management endpoints to the ServeMux.
+func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/models", h.handleListModels)
+	mux.HandleFunc("POST /api/models", h.handleAddModel)
+	mux.HandleFunc("POST /api/models/default", h.handleSetDefaultModel)
+	mux.HandleFunc("PUT /api/models/{index}", h.handleUpdateModel)
+	mux.HandleFunc("DELETE /api/models/{index}", h.handleDeleteModel)
+}
+
+// modelResponse is the JSON structure returned for each model in the list.
+// All ModelConfig fields are included so the frontend can display and edit them.
+type modelResponse struct {
+	Index     int    `json:"index"`
+	ModelName string `json:"model_name"`
+	Model     string `json:"model"`
+	Provider  string `json:"provider"`
+	// Advanced fields
+	Workspace      string `json:"workspace,omitempty"`
+	MaxTokens      int    `json:"max_tokens,omitempty"`
+	ContextWindow  int    `json:"context_window,omitempty"` // tokens; 0 = use the agent default
+	MaxTokensField string `json:"max_tokens_field,omitempty"`
+	RequestTimeout int    `json:"request_timeout,omitempty"`
+	ThinkingLevel  string `json:"thinking_level,omitempty"`
+	NoTools        bool   `json:"no_tools,omitempty"`
+	Vision         string `json:"vision,omitempty"`
+	// Shape 3 per-LLM custom fields.
+	ReasoningEffort   string         `json:"reasoning_effort,omitempty"`
+	ExtraBody         map[string]any `json:"extra_body,omitempty"`
+	DropParams        []string       `json:"drop_params,omitempty"`
+	StrictAlternation bool           `json:"strict_alternation,omitempty"`
+	Enabled           bool           `json:"enabled"`
+	// Meta
+	Configured bool `json:"configured"`
+	IsDefault  bool `json:"is_default"`
+}
+
+// handleListModels returns all models entries with masked API keys.
+//
+//	GET /api/models
+func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
+	cfg, err := h.currentConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	defaultModel := cfg.Agents.Defaults.DefaultModelName()
+	configured := make([]bool, len(cfg.Models))
+
+	var wg sync.WaitGroup
+	wg.Add(len(cfg.Models))
+	for i, m := range cfg.Models {
+		go func(i int, m config.ModelConfig) {
+			defer wg.Done()
+			prov, err := cfg.GetProvider(m.Provider)
+			if err != nil {
+				configured[i] = false
+				return
+			}
+			configured[i] = isModelConfigured(prov, m)
+		}(i, m)
+	}
+	wg.Wait()
+
+	models := make([]modelResponse, 0, len(cfg.Models))
+	for i, m := range cfg.Models {
+		models = append(models, modelResponse{
+			Index:             i,
+			ModelName:         m.ModelName,
+			Model:             m.Model,
+			Provider:          m.Provider,
+			Workspace:         m.Workspace,
+			MaxTokens:         m.MaxTokens,
+			ContextWindow:     m.ContextWindow,
+			MaxTokensField:    m.MaxTokensField,
+			RequestTimeout:    m.RequestTimeout,
+			ThinkingLevel:     m.ThinkingLevel,
+			NoTools:           m.NoTools,
+			Vision:            m.Vision,
+			ReasoningEffort:   m.ReasoningEffort,
+			ExtraBody:         m.ExtraBody,
+			DropParams:        m.DropParams,
+			StrictAlternation: m.StrictAlternation,
+			Enabled:           m.Enabled,
+			Configured:        configured[i],
+			IsDefault:         m.ModelName == defaultModel,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]any{
+		"models":        models,
+		"total":         len(models),
+		"default_model": defaultModel,
+		// The effective turn budget in seconds, so the page can note a request
+		// timeout that a turn never lets run to its end.
+		"turn_timeout": int(cfg.Agents.Defaults.GetTurnTimeout() / time.Second),
+	})
+}
+
+// handleAddModel appends a new model configuration entry.
+//
+//	POST /api/models
+func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer utils.CloseQuietly(r.Body)
+
+	var mc config.ModelConfig
+	if err = json.Unmarshal(body, &mc); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if err = mc.Validate(); err != nil {
+		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	index := -1
+	err = h.updateConfig(r, func(cfg *config.Config) error {
+		if _, perr := cfg.GetProvider(mc.Provider); perr != nil {
+			return badRequest("Validation error: %v", perr)
+		}
+		cfg.Models = append(cfg.Models, mc)
+		index = len(cfg.Models) - 1
+		return nil
+	})
+	if err != nil {
+		writeUpdateError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]any{
+		"status": "ok",
+		"index":  index,
+	})
+}
+
+// handleUpdateModel replaces a model configuration entry at the given index.
+// If the request body omits api_key (or sends an empty string), the existing
+// stored key is preserved so callers can update only api_base / proxy without
+// exposing or clearing the secret.
+//
+//	PUT /api/models/{index}
+func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
+	idx, err := strconv.Atoi(r.PathValue("index"))
+	if err != nil {
+		http.Error(w, "Invalid index", http.StatusBadRequest)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer utils.CloseQuietly(r.Body)
+
+	err = h.updateConfig(r, func(cfg *config.Config) error {
+		if idx < 0 || idx >= len(cfg.Models) {
+			return notFound("Index %d out of range (0-%d)", idx, len(cfg.Models)-1)
+		}
+
+		// Start from the existing entry so fields not present in the request body
+		// (e.g. enabled, extra_args, strict_compat) keep their current values.
+		mc := cfg.Models[idx]
+		oldName := mc.ModelName
+		if decErr := json.Unmarshal(body, &mc); decErr != nil {
+			return badRequest("Invalid JSON: %v", decErr)
+		}
+
+		if verr := mc.Validate(); verr != nil {
+			return badRequest("Validation error: %v", verr)
+		}
+		if _, perr := cfg.GetProvider(mc.Provider); perr != nil {
+			return badRequest("Validation error: %v", perr)
+		}
+		// Reject a model_name that collides with a different model.
+		if mc.ModelName != oldName {
+			for i := range cfg.Models {
+				if i != idx && cfg.Models[i].ModelName == mc.ModelName {
+					return badRequest("Validation error: model name %q already in use", mc.ModelName)
+				}
+			}
+		}
+
+		cfg.Models[idx] = mc
+
+		// If the alias was renamed, repoint every reference (agent defaults,
+		// per-agent chains, routing, vision models, summarization) so nothing orphans.
+		if mc.ModelName != oldName {
+			cfg.RenameModelReferences(oldName, mc.ModelName)
+		}
+		return nil
+	})
+	if err != nil {
+		writeUpdateError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]string{"status": "ok"})
+}
+
+// handleDeleteModel removes a model configuration entry at the given index.
+//
+//	DELETE /api/models/{index}
+func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
+	idx, err := strconv.Atoi(r.PathValue("index"))
+	if err != nil {
+		http.Error(w, "Invalid index", http.StatusBadRequest)
+		return
+	}
+
+	err = h.updateConfig(r, func(cfg *config.Config) error {
+		if idx < 0 || idx >= len(cfg.Models) {
+			return notFound("Index %d out of range (0-%d)", idx, len(cfg.Models)-1)
+		}
+
+		deletedModelName := cfg.Models[idx].ModelName
+
+		// A referenced model cannot be deleted: silently dropping it would
+		// leave an agent sending the alias as a model id on every turn. The
+		// operator repoints the references first.
+		if refs := cfg.ModelReferences(deletedModelName); len(refs) > 0 {
+			return conflict("model %q is still referenced by: %s. Repoint those first.",
+				deletedModelName, strings.Join(refs, ", "))
+		}
+
+		cfg.Models = append(cfg.Models[:idx], cfg.Models[idx+1:]...)
+		return nil
+	})
+	if err != nil {
+		writeUpdateError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]string{"status": "ok"})
+}
+
+// handleSetDefaultModel sets the default model for all agents.
+//
+//	POST /api/models/default
+func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer utils.CloseQuietly(r.Body)
+
+	var req struct {
+		ModelName string `json:"model_name"`
+	}
+	if err = json.Unmarshal(body, &req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.ModelName == "" {
+		http.Error(w, "model_name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.ModelName) > 200 {
+		http.Error(w, "model_name too long", http.StatusBadRequest)
+		return
+	}
+
+	err = h.updateConfig(r, func(cfg *config.Config) error {
+		// Verify the model_name exists in models and is enabled
+		found := false
+		for _, m := range cfg.Models {
+			if m.ModelName == req.ModelName {
+				if !m.Enabled {
+					return badRequest("Model %q is disabled; enable it before setting as default", req.ModelName)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return notFound("Model %q not found in models", req.ModelName)
+		}
+
+		cfg.Agents.Defaults.SetDefaultModel(req.ModelName)
+		return nil
+	})
+	if err != nil {
+		writeUpdateError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]string{
+		"status":        "ok",
+		"default_model": req.ModelName,
+	})
+}
+
+// maskAPIKey returns a masked version of an API key for safe display.
+// Keys longer than 8 chars show prefix + last 4 chars: "sk-****abcd"
+// Shorter keys are fully masked as "****".
+// Empty keys return empty string.
+func maskAPIKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	// Anything shorter than 12 is masked whole: revealing 7 of 11 characters
+	// would leave too little hidden.
+	if len(key) < 12 {
+		return "****"
+	}
+	// Show first 3 chars and last 4 chars — never more than 7 in total.
+	return key[:3] + "****" + key[len(key)-4:]
+}

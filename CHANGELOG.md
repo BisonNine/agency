@@ -1,0 +1,3996 @@
+# Changelog
+
+## [0.6.5]
+
+### Added
+
+- **A classifier can list a source that returns its items in pages.** Until
+  now a classifier called its source tool once per run and never saw what
+  that call left out. With a tool that returns 50 or 100 items at a time,
+  everything past the first page was invisible, and once that page was full
+  of items that stay in the source (ones a rule leaves in place,
+  unclassified or failed ones, and in a dry run every item) nothing new was
+  handled, with no error. A definition can now set `source.paging`:
+  `{"mode": "offset", "offset_arg": "<argument>"}` for a tool that takes the
+  number of items to skip, or `{"mode": "cursor", "cursor_arg":
+  "<argument>", "next": "<path>"}` for a tool whose result names the next
+  page. Every page is listed before any item is handled, the listing stops
+  once the run has found `limits.items_per_run` items to handle, and
+  `classifier_status` shows the last run's `pages`, `listing` (`complete`,
+  `items_per_run` or `max_pages`) and `more_items`; Check Up's
+  **Classifiers** table shows the items and pages listed. Existing definitions are
+  unchanged: without `source.paging` the tool is still called once, so a
+  classifier whose source returns pages needs the block added (ask its agent
+  to update it). This is also what lets a classifier work through a backlog:
+  widen what the source lists and each run takes the next `items_per_run`
+  items.
+- **`classifiers.limits.max_source_pages`** (default 100; System page,
+  **Classifiers**, *Max pages listed per run*) is the most pages of a paged
+  source one run lists, and the maximum for a definition's
+  `source.paging.max_pages`. A run that reaches it with pages left handles
+  what it listed and then fails, saying that the rest were not seen; it is
+  reported like any failed run and marked on Check Up.
+- **`limits.max_attempts`** (default 5) in a classifier definition is how
+  often a failing item is tried; see Changed.
+- **A classifier keeps the rule names the model cited that are not rules.**
+  Only their number was stored (`unknown_rules`), so there was no way to see
+  what the model had written. Each decision in `classifier_activity`,
+  `classifier_test` and `classifier_status` now has `unknown_labels`, the
+  names as written (at most 10 per item, 120 characters each), and
+  `classifier_activity`'s `search` finds them. `rule_usage` in
+  `classifier_status` adds `unknown_labels` (the 20 most cited, with the
+  number of items) and `only_unknown` (the items that cited an unknown label
+  and no rule; `unknown` minus `only_unknown` cited a rule as well).
+  Decisions stored before this version have the count only.
+
+### Changed
+
+- **A Fusion tool result over 1 MB is shortened, not refused** (MCPFusion
+  0.4.11). A JSON result larger than the limit used to come back as the
+  text `Response too large (...)`, so one long value, such as the HTML body
+  of an e-mail, made the whole record unreadable to an agent or a classifier.
+  The longest text values are now cut, longest first, until the result fits.
+  The result is still valid JSON with every key, number, list element and
+  object intact; each cut value ends with ` ... [truncated: first N of M
+  characters]`, and an object result has a `_truncated` member naming the cut
+  values. No record is ever dropped: a result that is too large because it
+  lists too many records is still refused with `Response too large`.
+- **A classifier recognises a rule the model cites in a slightly different
+  shape.** A cited label was unknown unless it was the rule's label itself
+  (in any case, or without `.md`). It is now also accepted with a path
+  before it (`rules/050-domain-example.md`), with a note in parentheses
+  after it (`050-domain-example.md (client domain)`), and with its section
+  marker around it (`=== Rules from 050-domain-example.md ===`, `Rules from
+  …`), whenever that names exactly one rule. A number that is no numbered
+  rule (`rule 11`, `#11`, `11`) names the one rule file whose name starts
+  with it (`11-jira.md`). The model is also now asked to copy a rule's label
+  exactly as shown, and is told about `rule N` only when the classifier has
+  numbered `rules`; it was told about it always, so it sometimes cited a
+  rule file by number. The same replies therefore
+  count as fewer unknown citations in `classifier_status` `rule_usage` and
+  more per rule; where an item is filed never depended on the citation and
+  is unchanged.
+- **A classifier's tool arguments are checked when it is saved.**
+  `classifier_create`, `classifier_update` and `classifier_validate` now
+  check the arguments of the source, fetch and action tools against each
+  tool's own argument list, and refuse an argument the tool does not have, a
+  required one that is missing, a value of the wrong type or outside the
+  tool's listed values, and a `source.paging` argument the tool does not
+  have. Tools usually ignore an unknown argument silently, so a misspelt
+  filter or sort looked accepted and did nothing. The refusal names the
+  argument and lists the tool's arguments. A classifier saved earlier keeps
+  running unchanged; its next `classifier_update` is refused until the
+  arguments are corrected (remove or rename the one named). A tool that
+  publishes no argument list is not checked.
+- **A classifier stops retrying an item that keeps failing.** A failed item
+  was tried again on every run, for ever. It is now tried
+  `limits.max_attempts` times (5 by default) and then left alone;
+  `classifier_status` counts such items as `gave_up` (`dry_run_gave_up` for
+  a dry run). An attempt counts only in a run where at least one other item
+  was handled without failing, so an outage of a tool or the model uses up
+  no attempts. Any `classifier_update` of the classifier tries those items
+  again, and `classifier_rerun` tries one. Attempts counted before this
+  version are set to 0 on upgrade. To keep an item retried for longer, set
+  `limits.max_attempts` higher in the definition.
+- **A classifier run takes new items before failed ones.** A run handled its
+  items in the source's order, so with `stop_after_failures` items that keep
+  failing listed first, every run stopped before it reached anything new. A
+  run now takes the items whose action is still pending, then new items in
+  the source's order, then failed ones.
+- **A failed item of a dry run is recorded.** It still has no dry-run
+  decision and is tried again, but its attempts are counted like a live
+  item's.
+
+- **`/ready` answers 200 only once the MCP host is up.** It turned ready as
+  soon as the channels had started, before the MCP host was listening, at
+  start and after every configuration reload. Anything that waits for
+  `/ready` now waits a little longer; with external MCP servers configured,
+  that includes the time taken to connect to them.
+  When the MCP host cannot be restarted after a reload (for example
+  `mcp_host.listen` now names a port in use), `/ready` stays at 503 and the
+  "Config reload failed" alert is raised; it answers 200 again after a reload
+  that brings the host back. With the MCP host not enabled, `/ready` does not
+  wait for it.
+
+### Fixed
+
+- **A valid service token is no longer refused just after a start or a
+  configuration reload.** The MCP host opened its port before it had loaded
+  the tokens issued with the `token` command, so a client calling in that
+  moment got `401 invalid bearer token`. The tokens are now loaded first.
+
+## [0.6.4]
+
+### Security
+
+- **A mode in `security.permissions` that gives other users access is
+  reported.** Any configured mode with a non-zero last digit is marked on the
+  Check Up page (**Access for other users**, naming each setting and its mode)
+  and in the PDF report, and logged as a warning at every start. The
+  **Data directory permissions** row reports only paths more open than
+  their configured mode.
+- **Files read for an agent are opened inside its workspace or allowed
+  folder.** A forum source file was checked and then opened by its host
+  path, so a folder on that path replaced by a link in between could lead
+  the open outside what the agent may read. Forum sources,
+  `msg_send_file` and task-model files now open the file through the same
+  sandbox that checked it, and refuse it when it is not the file checked.
+  A host path (an agent not confined to its workspace, a path in
+  `tools.allow_read_paths`, the skills directory) is opened by its resolved
+  target without following a link, so a link swapped in at the last moment
+  is refused.
+
+### Added
+
+- **`GET /api/system/version` and `GET /api/auth/status` return the product's
+  names.** Both now carry `name` (the product name), `short_name` (the name
+  used in sentences) and `binary_name` (the name the program was started as);
+  `/api/system/version` still returns `version`. The WebUI takes the page
+  title, footer, chat speaker label, login page and every sentence naming the
+  product from them instead of holding the name itself.
+
+- **The Memory page shows a domain's automatic and blocked keywords.**
+  Beside **Keywords** (the agent's own), a domain shows **Keywords added
+  automatically** and, when there are any, **Blocked keywords**, read-only.
+  `GET /api/memory/{id}` returns them per domain as `auto_keywords` and
+  `blocked_keywords`.
+
+- **A classifier can keep its rules in Markdown files.** Two optional keys
+  in a definition's `classify`: `instructions_file`, one `.md` file, and
+  `instructions_dir`, a folder whose `.md` files (not sub-folders, not
+  hidden ones) are each added under their name, in alphabetical order of
+  the names. Both are paths in the agent's `files/` folder, read on every
+  run with the agent's own file permission, so the agent changes a rule by
+  editing a file and the change applies on the next run. `instructions` may
+  be empty when either is set. The text counts toward
+  `classifiers.limits.max_prompt_chars`; a missing or unreadable file, or
+  text over the limit, ends the run in error naming the
+  path, with nothing classified. `classifier_test` now also returns the
+  system prompt (`system_prompt`) with the files loaded.
+- **A classifier's model names the rules that decided each item.** Every
+  source of rules starts with a `=== Rules from <label> ===` line in the
+  prompt (`instructions`, the instructions file by its workspace path, each
+  rules-folder file by name; inline rules are `rule N`), and the model is
+  asked for a `Rules:` line after its reason, `Rules: none` when no rule
+  applied; answers without one are still accepted. Every decision with a
+  category keeps `rules`: the labels it cited, `["none"]` (written in any
+  case), or an empty list when the model cited nothing or only names that
+  are not rules (counted as `unknown_rules`). `classifier_activity` takes
+  `rule` to list what one rule decided; `classifier_status` shows
+  `rule_usage` (items per rule, each by its latest answer, rules never
+  cited, and the items that cited a rule, `none` or nothing:
+  `with_rules`, `none`, `no_citation`); `classifier_test` takes
+  `exclude_rules` to classify an item again without those rules and say
+  whether the category changed (two model calls).
+- **`file_glob` finds files by name pattern.** A new file tool: `pattern`
+  (`*` within one folder, `**` across folders, `?`, `{a,b}`) and an optional
+  `path`, the folder to search under (relative to the workspace or
+  absolute). Without `path` it searches every workspace folder the agent
+  may read (`files/`, `skills/`, `maestro/` when Maestro is on, and the
+  always-readable folders such as `tasks/`), not the allowed folders, and
+  matches the pattern from the workspace (`files/**/*.md`). It returns the matching file paths
+  newest first, at most 200 with a note when there are more, skips folders
+  whose name starts with a dot (`.git`), and reaches only what the other
+  file-reading tools reach (the workspace read scope and the allowed
+  folders). It is not in **Default tools**; grant it per agent, or with
+  the **Coding tools** button. A pattern longer than 512 characters or with more
+  than 10 `{…}` groups is refused.
+- **`file_search_lines` takes `include`, `context` and `output`, and skips
+  what `.gitignore` ignores.** `include` is a glob on file paths (one
+  without `/` matches the file name in any folder, so `*.go` finds Go files
+  everywhere); `context` shows that many lines before and after each match
+  (0 to 10; a result then shows at most 2,000 lines, with a note when cut);
+  `output` is `lines` (the default, as before), `files` (only the paths of
+  the files that match) or `count` (matching lines per file). `include`
+  follows `file_glob`'s pattern limits. Without `path` it searches the same
+  folders as `file_glob` does, and an `include` with `/` matches from the
+  workspace. The `.gitignore` files in the searched folder and below are
+  applied as git applies them (nested files, `!` patterns), and so are those
+  of its parent folders up to the repository root (the nearest folder above
+  holding `.git`), as far up as the agent may read; with no `.git` found,
+  parent folders are not read. A folder the agent names is searched even when
+  a parent `.gitignore` ignores it. A `.gitignore` that is a link or not a
+  regular file, or over 64 KiB, is not read. `file_search_bytes` is
+  unchanged.
+- **A note per allowed folder.** `agents.list[].allowed_folders[].note`, at
+  most 100 characters (a save with a longer one is refused, naming the agent
+  and the folder), is shown to the agent after the folder in its prompt:
+  `/opt/audio/in (read-only): inbound audio notes`, on one line (line breaks
+  and other control characters become spaces) and cut to 100 characters. On
+  the Agents page it is the **Note** box on each folder's row.
+- **A Coding tools button on the Agents page.** Beside **Default tools**
+  under Internal tools, **Coding tools** adds `file_list`, `file_glob`,
+  `file_read_lines`, `file_search_lines`, `file_edit_lines`,
+  `file_insert_lines`, `file_delete_lines`, `file_edit`, `file_write`,
+  `shell_exec` and `agent_spawn` to the agent's `tools` list. It only adds:
+  nothing is removed or unticked, and a tool already granted (also through
+  `"*"` or an entry such as `file_*`) is not added twice. A ticked tool that
+  **Denied tools** blocks says "Ignored: blocked by Denied tools." on its
+  row.
+- **Slack shows a "Thinking..." message and progress updates on long
+  turns, on by default.** The app posts the message where the reply will go,
+  edits it with progress on long turns, replaces it with the reply and
+  deletes it when a turn sends no reply, as Telegram does. It needs no new
+  Slack scope. To turn it off, set `channels.slack.placeholder.enabled` to
+  `false`; `placeholder.text` changes the message.
+- **Classifiers.** An agent can sort the items one of its tools lists
+  (email, files, tickets) with one model call per item: a classifier lists
+  the items, skips those already handled, reads each new one, asks the
+  agent's classifier model for one of a fixed set of categories, and runs
+  that category's action with the agent's own tools. The classifying model
+  never has tools. Turn it on per agent with **Allow classifiers** on the
+  Agents page (`agents.list[].classifiers.enabled`, off by default) and pick
+  the **Classifier model** (`agents.list[].classifiers.model`, one of the
+  models in the **Classification** list on the Task models page; turning the
+  switch on with no model sets the first model in that list, with an empty
+  list it is refused, a model not in the list is refused (one already in the
+  file is marked on
+  Check Up and its classifiers do not run), and a person's agent cannot run
+  classifiers). The
+  agent manages its classifiers with eleven tools: `classifier_readme`,
+  `classifier_list`, `classifier_get`, `classifier_create`,
+  `classifier_update`, `classifier_delete`, `classifier_validate`,
+  `classifier_status`, `classifier_test`, `classifier_rerun` and
+  `classifier_activity`. Definitions are JSON files in the agent's
+  `classifiers/` folder, readable and editable by hand, and the folder is
+  in the nightly backup. Install-wide limits are on the System page
+  (**Classifiers**) and in the `classifiers` section of `config.json`
+  (`processed_days`, default 30, and `limits`:
+  `max_rules` 100, `max_prompt_chars` 20000, `max_item_chars` 50000,
+  `max_items_per_run` 500, `max_parallel` 8, `max_activity_hours` 720, and
+  `min_every_seconds` 15, the shortest interval a classifier may run at; 0
+  or absent uses the default, a negative value is refused). Changes and
+  handled items are recorded in the audit log (**Classifier change**,
+  **Classification**). Check Up marks a missing or unusable classifier
+  model and an invalid definition, and the full report lists each agent's
+  classifiers. See the manual's Classifiers page.
+- **Images a model generates are saved and sent.** When a model returns an
+  image with its reply (OpenRouter image models, OpenAI image generation),
+  the image is saved in the agent's workspace under
+  `files/generated/<date>/` and sent to the chat the agent is answering. A
+  reply to another agent, a chat that can't receive files (the WebUI chat,
+  devices, `claw agent`) or an image larger than
+  `agents.defaults.max_media_size` gets the saved path in the reply instead;
+  a reply to another agent names whose workspace it is in ("Image saved in
+  Alice's workspace as …"), and a temporary agent made from scratch, whose
+  workspace is deleted with it, keeps no image when it answers another agent
+  or has no chat, and says so. An image the
+  model gives as a link is shown as "Image: <link>" (at most 500 characters)
+  and never downloaded. The agent is told where each image was saved, so it
+  can send it again with `msg_send_file`. A reply of images alone is a
+  complete reply; an empty, cut-off or failed final reply is still reported
+  as one even when an earlier step made an image.
+- **`security.permissions` areas `root`, `secrets`, `bin` and `default`.**
+  `root` sets the data directory itself and the files directly in it
+  (`config.json`); `secrets` sets `internal/`, `tls/`, `tokens/` and every
+  secret file (credentials, TLS files, token stores, files named for a token
+  or secret, `file:` secret references); `bin` is a new `<data dir>/bin`
+  folder, created at start, for your scripts and programs, whose files
+  default to `0700` and keep their execute bits; `default` is everything no
+  other area covers (`cli/`, `skills/`, `cards/`, …). Every folder defaults
+  to `0700` and every file to `0600`. See the manual's File permissions
+  section.
+- **Every `security.permissions` key is written to `config.json`.** New
+  installs get the full block. The first start after the upgrade adds the
+  block to `config.json`: any missing area or key is added with its default,
+  with one INFO log line listing the keys added. Only that block is written;
+  the rest of the file is left as it is. Deleting the block and restarting
+  writes the defaults back.
+
+- **Task models page.** A new page in the Models group, **Task models**
+  (`task_models` in `config.json`), lists the models ClawEh uses for single
+  calls without tools in six ordered lists, one per use: **Generate text**
+  (`task_models.text`), **Generate images** (`image`), **Text to speech**
+  (`tts`), **Transcription** (`stt`), **Describe images** (`vision`) and
+  **Classification** (`classify`). Each entry is `{"model": ...}`, a
+  `model_name` from the Models page; image entries may add `image_api`
+  (below) and speech entries `tts_defaults` with `voice` and `format`. A
+  list's order is that use's fallback order; a model may be in several
+  lists, at most once in each. Each list has its own **Model to add**
+  (enabled models not already in it, sorted by name) and **Move up** /
+  **Move down** / **Remove** per row. Incoming voice messages are transcribed with
+  the Transcription list, images are described for text-only models with
+  the Describe images list, and classifier models are chosen from the
+  Classification list; agents use Generate text, Generate images, Text to
+  speech and Transcription through `agent_spawn` (below). Check Up says when
+  a list has models but none can be used, naming each and why. The page
+  also holds **Text in results (characters)**
+  (`task_models.result_text_chars`, default 8000; 0 or absent uses the
+  default, negative is refused) and **Echo transcription**
+  (`task_models.echo_transcription`, environment variable
+  `CLAW_TASK_MODELS_ECHO_TRANSCRIPTION`). A model whose provider cannot
+  serve a list's use, judged from its protocol, is marked in that list.
+  Renaming a model follows it into every list, and a model in a list cannot
+  be deleted until it is taken off (the refusal names the list, such as
+  `task_models.tts[<model>]`). Check Up shows **Speech to text: No model in
+  Transcription.** and **Vision: No model in Describe images.** while those
+  lists are empty, marks a classifier model when Classification is empty,
+  and the full report has a Task models table with each list's models in
+  order. API: `GET /api/task-models`, `PUT /api/task-models`.
+- **Agents can use task models through `agent_spawn`.** A new `kind`
+  argument (`text`, `image`, `tts`, `stt`) makes the call one request to a
+  task model instead of a sub-agent: no tools, no agent, no depth level
+  (still refused at the maximum depth). `task` is the prompt, the text to
+  speak, or an optional transcription hint; `model` may name one task model
+  in that kind's list, otherwise the kind's list on the Task models page is
+  tried in order, skipping any in cooldown; `files` (new, up to 10
+  workspace paths, each checked like `msg_send_file`) and `media` are the
+  inputs; `voice` and `format` (new) set a speech call's voice and format,
+  else the model's `tts_defaults`. `agent_id` and `character_card` are refused
+  with `kind`. Output is saved in the agent's workspace (a clone's: its
+  source's) under `files/generated/<date>/`: text and transcripts as `.md`,
+  returned inline up to `task_models.result_text_chars` and cut after it with
+  the file named; images and audio are returned as paths, to send with
+  `msg_send_file`; words an image model writes beside its images are kept
+  like text. `wait` and `callback` modes, `agent_status` and `agent_list`
+  work as for sub-agents. Raw PCM speech (Gemini, ElevenLabs `pcm_*`, OpenAI
+  `pcm`) is saved as a WAV file, µ-law (`ulaw_*`) as a raw `.ulaw` file. A
+  transcription input must be an audio file (by its name or type); any file
+  that reads as text can be a text input. A model that fails because of the
+  request (a 400 or 404) is skipped for this call only; a rate limit, an
+  outage, a timeout or a key problem puts it in cooldown, as for chat. A reported cost counts toward
+  `agents.defaults.daily_spend_alert_usd`, every attempt is logged, and each
+  call is recorded in the audit log as **Task model** (`task_model`).
+- **Per-agent task-model grants.** `agents.list[].task_models` (`text`,
+  `image`, `tts`, `stt`; absent = all off) says which kinds an agent may use
+  through `agent_spawn`; any other is refused with a sentence naming the
+  agent and the kind ("Alice is not allowed to use task models for
+  images."). On the Agents page it is **Allow task models**, one box per
+  kind (**Text**, **Images**, **Speech (TTS)**, **Transcription (STT)**),
+  each noting when that kind's list on Task models is empty, and the card
+  says "Needs the agent_spawn tool." for an agent without it; Check Up lists
+  each agent's allowed kinds, marked "(ignored: no agent_spawn)" then.
+- **Images API for task models.** `task_models.image[].image_api` chooses
+  how a model in Generate images is called: `chat` (the default: image
+  output of a chat call) or `images` (OpenAI-style `/images/generations` and
+  `/images/edits`; OpenRouter's `/images`, which has no edits). On the Task
+  models page it is **Images through**, on each row of Generate images.
+- **Gemini and ElevenLabs speech.** Two provider protocols, `gemini` and
+  `elevenlabs`, reach Google's Gemini API and ElevenLabs for speech: a model
+  on one serves the Transcription and Text to speech lists on the Task
+  models page and nothing else (an agent can't chat with it). The base URL is optional
+  (the vendor's own) and the API key is required. Voice messages can now be
+  transcribed by Gemini and ElevenLabs Scribe as well as by OpenAI-style
+  endpoints (OpenAI, Groq, OpenRouter, local Whisper servers); the calls go
+  through spawnllm, and a transcription's reported cost counts toward
+  `agents.defaults.daily_spend_alert_usd`. A model in the Transcription
+  list that is disabled on the Models page raises no alert. Gemini's
+  answer to a bad key (a
+  400 with `API_KEY_INVALID`) raises **Voice transcription rejected** like a
+  401 does.
+
+- **A chat is told when a compaction makes its reply wait.** When the
+  conversation has to be summarised before the agent can answer a person,
+  the chat gets one message first, naming the agent: "Alice is summarising
+  the conversation so far; the reply may take a moment." The chat then shows
+  the agent is still working (typing indicator, placeholder) until the
+  reply. The message is sent at most once per reply, and never for
+  scheduled jobs, webhooks, questions from other agents, sub-agents,
+  background results or `/compact`.
+- **Per-agent step limit.** An agent can set its own
+  `max_tool_iterations` (`agents.list[].max_tool_iterations`), the number
+  of model and tool steps one turn may take; unset or 0 uses
+  `agents.defaults.max_tool_iterations`. On the Agents page it is
+  **Maximum tool steps per turn**.
+- **An agent is told when its turn is about to run out of steps.** On the
+  last four steps of a turn, each request to the model carries a short
+  note giving the tool steps left (one fewer than actually remain, so a
+  step is always spare) and asking it to reply with its findings and next
+  steps; on the last step it is told not to call tools, and the request
+  forbids tool calls so the model has to reply in text. Before, an agent
+  busy with tools could use every step and leave the user with the generic
+  "no response" message. The note is sent only with that request: it is
+  not stored in the conversation. Command-line models and requests without
+  tools do not get it.
+- **A "Model working again" alert.** When a model that was reported by
+  "Model authentication or billing failure" or "Model parked after repeated
+  failures" answers a request again, one alert (id `<provider>/<model>-up`)
+  names the model and since when it had been failing, so you know nothing is
+  left to do. A model nothing uses any more raises nothing: only a request
+  shows that it works.
+
+### Changed
+
+- **Messages call the program "Claw" consistently.** Log lines, alerts,
+  errors, CLI help, Check Up and report texts, the WebUI and the agents'
+  system prompt used "ClawEh", "claw" and "Claw" interchangeably; prose now
+  says "Claw" ("Claw is shutting down so the service manager can restart
+  it", "Claw started"), while version lines, titles and headers keep
+  "ClawEh". Alert titles and event IDs are unchanged.
+- **Commands the program tells you to type use the name it was started
+  as.** `run: claw admin`, `` `sudo claw install` ``, `claw devices approve`
+  and the other hints name the binary as it was run, so they stay right when
+  it is started through the `openclaw` link or renamed.
+- **The system prompt header reads `# Claw (<version>)`** instead of
+  `# claw (<version>)`.
+- **The forum and classifier guides name the host as "Claw"**
+  (`forum_readme`, `classifier_readme`).
+
+- **Memory domains load by keywords, not by word matches** (cogmem
+  v0.0.11). A topic domain no longer loads because a word of the message
+  appears in its memories, name or summary. It loads when a tool the agent
+  just used matches its tool triggers, when one of its keywords is in the
+  incoming message or in one of the three before it, or by recency. Each
+  domain now has the agent's keywords and keywords consolidation adds
+  automatically; a keyword the agent removes from the automatic list is
+  blocked and never added back, and common words or phrases already used by
+  three other domains are refused. After the upgrade, existing domains have no
+  automatic keywords until consolidation next runs for that agent, so until
+  then they load only by the triggers the agent already set or by recency.
+  Generic keywords already stored keep working until that domain's list is
+  next set. A consolidation run that left out proposed keywords says so in
+  its note on the **Memory** page (`keywords not added: …`), naming each
+  domain, and in the log line "consolidation run finished"
+  (`dropped_keywords`, `dropped_keyword_list`). Each agent's
+  memory database is upgraded on first open, after a one-time copy beside it
+  (`cogmem.db.pre-v8.db`). A memory export file now starts with the comment
+  `# cogmem export.`; files exported earlier still import.
+
+- **An alert about a problem that lasts is sent once, then at most once a
+  day.** A model out of credit was reported again every time its cooldown
+  ended and something tried it (every 30 minutes by default), a rejected
+  Telegram, Slack or Matrix token every ten minutes, an MCP server that
+  stayed down every hour. These are now reported when the problem starts and
+  then at most once every 24 hours while it lasts; the reminder ends with
+  since when and how many were held back ("ongoing since Nov 14 09:02, 47
+  more since the last alert"). When the problem is gone, the next one is new
+  and is reported at once (the same alert is still never sent twice within
+  ten minutes). It applies to: "Model authentication or billing
+  failure" and "Model parked after repeated failures" (per model, ended when
+  the model answers; `/cooldowns clear` and `/retry` let the next failure be
+  reported without waiting for the day to pass), "Telegram polling failed" and "Channel credentials
+  rejected" (per channel, ended by a working connection), "MCP `<name>`
+  down" (its "still down" reminder now carries the date), "Channel send
+  failed" (per channel, ended by a delivered message), "Scheduled job
+  failed" (per job, ended by a run that succeeds), "Voice transcription
+  rejected" (per model, ended by a transcription that works) and the three
+  session-store alerts (per agent, ended by a write that is stored). Every
+  occurrence is still in the ClawEh log; `alerts.log` and the configured
+  alert channels get only what is sent. The count starts with ClawEh, so a
+  problem still there after a restart is reported again. If you counted on
+  the repeats (a webhook that re-opens a ticket on every alert), expect one
+  alert a day for a problem that stays.
+
+- **A classifier run that fails is logged and reported in the chat and to
+  the agent, twice, then muted for 24 hours.** When a run fails outright
+  (its instructions files can't be read or are over the limit, the source
+  tool fails, the model can't be used), it is written to the activity log as
+  `run_failed` with its error (the same error in a row is one entry with a
+  count and the first and latest time), and `report.summary: on_problems`
+  now posts it to the agent's default chat, as `always` did: "Classifier
+  inbox: the run failed: <reason>." The agent also gets the same text in its
+  conversation, whatever `report.summary` says, with a request to fix the
+  classifier and check it with `classifier_test`; its answer goes to its
+  default chat. The second failed run in a row is reported too, saying that
+  further errors won't be reported for 24 hours and telling the agent to
+  call `classifier_update` with `{"report": {"errors": true}}` to report them
+  again; after that, failures are only logged until the 24 hours are over.
+  Any `classifier_update` of the classifier lifts the mute, a run that
+  succeeds starts the count again, and both survive a restart. The new
+  `report.errors: false` only logs failed runs. `classifier_activity` takes
+  an `outcome` filter and its search matches errors; `classifier_status`
+  shows `errors_reported`, `failed_runs` and `errors_muted_until`; Check Up's
+  Classifiers table has an **Error notices** column (on, off, or muted until
+  a time). A model in cooldown is not a failed run.
+- **A classifier's failure notice says what to do about its cause, in
+  ClawEh's own words.** The chat line is one sentence naming the cause
+  ("Classifier inbox: the run failed (source mail_list: the tool
+  failed)."). The agent gets the same sentence and advice that fits the
+  cause: fix the definition, check the tool or model itself (credentials or
+  an outage) before changing the classifier, a tool it names is no longer
+  available (naming its role: source, fetch, or the action for a category),
+  or only the operator can fix it (no usable model, state that can't be
+  opened) and to tell the user. What the tool, provider or item said
+  follows marked as external data, never as part of the notice; the same
+  marking covers what `classifier_activity`, `classifier_status`,
+  `classifier_list`, `classifier_test` and `classifier_rerun` return.
+  Errors name the tool once and no longer repeat the classifier's name.
+- **A classifier run stopped by `stop_after_failures` is a failed run.** It
+  names the cause the failed items share ("stopped after 5 consecutive item
+  failures: fetch mail_read: the tool failed"), so repeated runs fold into
+  one `run_failed` entry; the last item's error is the entry's `detail`. It
+  is logged and reported like any failed run, so an item failure that never
+  goes away reaches the agent. Failed runs are logged as warnings. A run
+  that was stopped (by you or by a shutdown) no longer resets the count of
+  failed runs.
+- **A classifier's activity shows what went wrong with an item.** An
+  `unclassified` item keeps the model's two replies (`replies`); entries
+  name fetch fields not in the fetch result (`missing_fields`) or cut to
+  `fetch.max_chars` (`shortened_fields`); a failed action keeps the
+  arguments it was called with (`action_args`); a failed fetch keeps the
+  listed item's own fields. A fetch field that is there but holds nothing
+  (an empty list along its path, such as a mail with no CC, `null` or an
+  empty string) is empty, not missing: the model sees it marked empty and
+  the entry shows it as `""`. `classifier_test` shows the same, with the
+  item's fields. An item all of whose fetch fields are missing now fails
+  instead of being classified blind.
+- **`classifier_status` shows a dry-run classifier's decisions.**
+  `dry_run_counts` gives the dry-run decisions by category (`unclassified`
+  for items the model could not place); `counts` stays live items only.
+- **A hand-edited classifier definition that is no longer valid is
+  reported to its agent** ("Classifier inbox is not run (...)") once per
+  broken version of the file, also across restarts, counted and muted like
+  a failed run.
+- **A classifier whose `state.db` can't be opened is reported.** Once a day
+  per agent while it lasts, it is logged as an error, raises the new alert
+  "Classifier state unavailable" and tells the agent and its chat; Check Up
+  marks it, also when the folder can't take a new one or when only the
+  running service met the error.
+- **The voice alerts are now Normal priority, like every other alert.**
+  "Voice message not transcribed" and "Speech backend not usable" (when no
+  speech model was usable) were sent as Urgent.
+
+- **An `/opt/claw` install puts the binary and the `openclaw` alias in
+  `/opt/claw/bin`.** `claw install` on a machine whose data directory is
+  `/opt/claw` now installs `/opt/claw/bin/claw` and the alias
+  `/opt/claw/bin/openclaw`, and the service starts `/opt/claw/bin/claw`,
+  also when an earlier install put them directly in `/opt/claw`. Re-run
+  `sudo claw install` to move an existing install. The old
+  `/opt/claw/claw` and `/opt/claw/openclaw` are left in place; the
+  installer names each one and says it can be removed.
+- **BREAKING: a link in the global skills folder or an `allow_read_paths`
+  folder that leads elsewhere on the host is no longer followed.** A skill
+  installed as a link to another folder (for example a git checkout) is
+  refused. To keep it, add the link's target folder to
+  `tools.allow_read_paths`.
+- **BREAKING: `msg_send_file` takes a list of files.** Its arguments are now
+  `files`, a list of 1 to 10 `{"path", "filename"}` entries sent in order;
+  the old `path` and `filename` arguments are refused. A file can be sent
+  only when the agent may read it with the file tools (workspace, allowed
+  folders, common and always-readable folders, `restrict_to_workspace`), and only by
+  an agent granted `file_read_lines` or `file_read_bytes`: add one of them to
+  `agents.list[].tools` for an agent that sends files. The tool's own path
+  rule is gone. Files go to the chat the turn's reply goes to, never
+  to another agent, and the agent is told, per file, whether each was sent or
+  why not. A chat that cannot receive files (WebUI, devices, SecMsg) is
+  refused with "This chat can't receive files."
+- **BREAKING: mounts are replaced by allowed folders.**
+  `agents.list[].mounts` is now `agents.list[].allowed_folders`, a list of
+  `{"path": "/srv/src", "notify": true}`: an absolute folder path (a save
+  with any other path is refused) and the optional new-file notice. The
+  agent uses a folder by its real path (`/srv/src/notes.md`), no longer as
+  `<name>/...`; tell agents whose prompts or skills name the old paths.
+  There is no name and no write switch: write access follows the folder's
+  file permissions for the account ClawEh runs as, and a write the account
+  cannot make returns "permission denied: <path> is read-only for this
+  app". The agent's prompt lists each folder by its path, marked read-only
+  when the account cannot write it. Old `mounts` entries are migrated when
+  the configuration loads (path and notify kept, name and write switch
+  dropped, one warning per entry naming the agent and the path), and the
+  next save writes only `allowed_folders`; make a folder read-only with
+  `chmod` where the old entry was not writable. The same rule applies to
+  every file the app reads for an agent: `msg_send_file`, memory
+  attachments, task-model files and forum sources, which may now be an
+  absolute path in an allowed folder. Maestro no longer gets an automatic
+  mount: with Maestro on, `maestro/` is part of the workspace the file tools
+  read and write, and Maestro's reference library lists the allowed folders
+  by name (see below). The
+  new-file notice now names the agent and the folder; the first scan after
+  the upgrade only records what each folder holds. The reserved folder names
+  for mounts are gone, and with them `GET /api/agents/mounts/ignored`, the
+  Agents page marking and the Check Up row. On the Agents page the editor is
+  **Allowed folders** (a path and **Notify on new files** per folder); a
+  saved folder that is not an absolute path or does not exist is marked
+  "Ignored" on its row and listed on Check Up (**Allowed folder**), and the
+  migration log warns for each formerly read-only mount the agent can now
+  write.
+- **The agent's prompt describes its workspace plainly.** "Your working
+  area is <workspace>/files" is replaced by: the workspace is the agent's
+  folder, relative paths start there, and work is written under `files/`.
+  The prompt lists every folder the file tools can reach, by absolute path:
+  `<workspace>/files` (read/write), `<workspace>/skills` (read-only),
+  `<workspace>/maestro` with Maestro on, and each allowed folder, marked
+  read-only when the account cannot write it and followed by its note. What
+  the tools can reach is unchanged.
+- **Maestro's reference library lists the allowed folders.** Each allowed
+  folder that exists is in the library under its last path component as one
+  word (letters, digits, `_` and `-`; any other run of characters becomes
+  `-`), with `-2`, `-3`, … added in config order when two folders share a
+  name: `/srv/src` is `src/…`, `/opt/audio/in` is `in/…`. The names of
+  Maestro's own reference entries count as taken, so a folder never hides
+  Maestro's guide (`/srv/templates` is `templates-2/…`). Maestro reads them
+  only.
+- **Maestro is updated to 0.5.9.** A link inside an allowed folder that
+  leads outside it is no longer listed, searched or read through Maestro's
+  reference library, matching what the file tools allow.
+- **BREAKING: an agent whose `tools` list has `"*"` also gets the new
+  `file_glob`.** To keep it from such an agent, add `file_glob` to its
+  `deny_tools`.
+- **The file tools and `shell_exec` say when to use them.** The
+  descriptions of `file_list`, `file_read_lines`, `file_search_lines`,
+  `file_edit_lines`, `file_insert_lines`, `file_delete_lines`, `file_edit`,
+  `file_write` and `shell_exec` now open with what each is for (find files
+  by name, find text, read the lines found, change text; `shell_exec` for
+  any command-line program, including grep, sed, awk and jq pipelines, with
+  the file tools named as usually better for finding, reading and editing),
+  so smaller models pick the right one. Names, arguments and behaviour are
+  unchanged.
+- **BREAKING: `shell_exec` no longer refuses commands by path.** The checks
+  for `..`, for absolute paths outside the working folder and for a
+  `working_dir` outside the workspace are gone: a command runs with the full
+  access of the account ClawEh runs as, as it always could by other means.
+  `working_dir` may be any folder (a relative one starts at the workspace,
+  the default). The deny patterns, allow patterns, custom allow patterns,
+  timeouts and output handling are unchanged, and
+  `agents.defaults.restrict_to_workspace` now applies to the file tools only.
+  On the Agents page `shell_exec` is an ordinary box under Internal tools,
+  off by default, with a warning icon whose hover text is "Full access to
+  this app's account"; the separate shell switch is gone, **Default tools**
+  never adds it, and Check Up's Shell access row reads "Shell commands
+  allowed: <agents>". To keep an agent away from files, do not give it
+  `shell_exec`.
+- **BREAKING: the data directory is set to exactly the configured modes at
+  every start.** Before, the startup check only removed group and other
+  access and only touched folders and secret files. Now every folder and
+  every regular file is set to its area's mode, which also adds access where
+  the mode allows more, and `logs/` and `media/` are walked too. A data
+  directory that is a symbolic link is now walked at its target; a file with
+  more than one hard link is left alone with a warning. Files
+  outside `bin/` lose execute bits their mode does not have: move scripts and
+  programs you keep in the data directory into `<data dir>/bin` before
+  upgrading (the running `claw` program is never changed, and a warning names
+  it when it is in the data directory outside `bin/`). Symbolic links are
+  never followed or changed. Each change is logged at INFO.
+- **BREAKING** The top-level `security.permissions.dir_mode` and `file_mode`
+  are no longer used and are ignored. Any permission setting not present in
+  `config.json` is set to its default at startup. If you customized
+  permissions, update them in the config file after upgrading.
+- **BREAKING: `config.json`, the credentials file and `file:` secret
+  references follow the configured modes instead of a fixed `0600`.**
+  `config.json` may allow no more than `root.file_mode` (ClawEh refuses to
+  start otherwise, naming the `chmod`), and one that allows less is set to
+  it; config saves write it with exactly that mode. The credentials file and
+  every `file:` reference may allow no more than `secrets.file_mode`. With the
+  defaults nothing changes. After a config reload these checks use the new
+  `secrets.file_mode` at once.
+- **BREAKING for API callers: `PATCH /api/config` refuses unknown keys.** A
+  body naming any key the configuration does not have, anywhere in the
+  document, now gets HTTP 400 with `Unknown config key: <path>` (or
+  `Unknown config keys: <path>, <path>` for several), and nothing is applied.
+  Before, such keys were dropped silently and the request succeeded. This
+  includes the removed `security.permissions.dir_mode` and `file_mode`, the
+  flat `compress_*` keys (in `agents.defaults` and on an agent; use the
+  `compression` block) and `channels.discord.mention_only` (use
+  `channels.discord.group_trigger.mention_only`). A `config.json` that still
+  holds those older keys loads and is migrated as before.
+  Free-form maps (an MCP server's `env` and `headers`, for example) still
+  take any key. Remove the named keys from the request.
+- **Mode validation is format plus an owner floor.** A mode must still be 3
+  or 4 octal digits with a leading `0` when there are four. Other-user write
+  is no longer refused; a mode that gives other users access is reported
+  instead (see Security). A mode without owner access is no longer refused
+  either: a folder mode lacking owner `rwx` (`r-x` for `bin`) or a file mode
+  lacking owner `rw` (`r` for `bin`) is used with those bits added, with a
+  warning naming the key and both values at each load; `config.json` keeps
+  what you wrote.
+- **Files and folders ClawEh creates take their area's mode at once,
+  exactly, whatever the umask**, instead of `0600`/`0700` until the next
+  start: agent files written by the file tools, workspaces and their prompt
+  files, task, state, forum and cron stores, installed and imported skills,
+  character cards, the common folder, log files (also when the logs roll),
+  the alerts log, dumps, downloaded media, backup archives, the folders
+  created at start, the self-signed TLS certificate and key (both now take
+  `secrets.file_mode`; the certificate was `0644`), and the token stores,
+  databases and other files in `internal/`. After a config reload, new files
+  take the new modes, except logs, dumps, downloaded media and an agent's
+  restart-recovery state, which keep the modes from start. Maestro's files
+  in an agent's `maestro/` folder (the agents area) and a model's
+  `response_log_file` (the area it lies in, `logs` under `logs/`) are now
+  created with their area's mode too, instead of fixed modes (Maestro's
+  were `0755`/`0644`).
+- Updated dependencies
+
+- **A compaction asked for only by its age runs after the reply.** When the
+  oldest message in view passes **Age compaction trigger (days)**
+  (`compression.trigger.days`), the conversation used to be
+  summarised before the agent answered, so the person waited for the memory
+  model too. Now the agent replies first and the summary is written right
+  after, in the background. A compaction for any other reason (the context
+  threshold, the message count, an emergency) still runs before the reply.
+
+### Removed
+
+- **BREAKING: `voice.stt` and `voice.echo_transcription` are removed, with
+  the Speech page.** Incoming voice messages are transcribed only with the
+  models in the **Transcription** list on the Task models page, and are not
+  transcribed while it is empty (Check Up: **Speech to text: No model in
+  Transcription.**). The old
+  keys are reported as unknown at start and ignored, and the first save of
+  any page rewrites `config.json` without them: **before saving anything
+  after the upgrade, copy the old `voice` block** (each `voice.stt` entry's
+  provider and model, in order, and `echo_transcription`). There is no
+  automatic migration. Then, for each old entry in order, add its model on
+  the Models page on that entry's provider (the provider gives the endpoint
+  and key, as before) and add it to **Transcription** on the Task models
+  page (`task_models.stt`), in the old order. An entry with a blank model used the provider host's
+  default, which is now written out: `api.openai.com` → `whisper-1`,
+  `api.groq.com` → `whisper-large-v3`, `openrouter.ai` →
+  `openai/whisper-large-v3`. Set **Echo transcription** there
+  (`task_models.echo_transcription`) in place of
+  `voice.echo_transcription`. The environment variable
+  `CLAW_VOICE_ECHO_TRANSCRIPTION` is now
+  `CLAW_TASK_MODELS_ECHO_TRANSCRIPTION`. `GET` and `PUT /api/voice/stt` are
+  removed.
+- **BREAKING: `agents.defaults.vision_model` and
+  `agents.defaults.vision_model_fallbacks` are removed.** Images are
+  described for text-only models only with the models in the **Describe
+  images** list on the Task models page, and are not described while it is
+  empty (Check Up: **Vision: No model in Describe images.**). The old keys
+  are reported as unknown at start and ignored, the vision fields are gone
+  from the System page, and the first save of any page rewrites
+  `config.json` without them: **before saving anything after the upgrade,
+  copy the values of `vision_model` and `vision_model_fallbacks`**. There is
+  no automatic migration. Then add the old `vision_model` and then each of
+  its fallbacks, in that order, to **Describe images** on the Task models
+  page (`task_models.vision`). The environment variable
+  `CLAW_AGENTS_DEFAULTS_VISION_MODEL` is removed.
+
+### Fixed
+
+- **On macOS, a `claw` binary in the system temporary folder is not taken
+  for an existing install.** `install`, `uninstall` and `upgrade` ignore a
+  binary in a build or temporary location when they look for an install, but
+  recognised a temporary location only by a `tmp` or `temp` folder name, which
+  the macOS temporary folder does not have. They now also ignore anything
+  inside the system temporary folder.
+
+- **`uninstall` names the system-wide data folder for the account that owns
+  it.** With no service detected, it said the data in `/opt/claw` was kept
+  only for root or one particular account name; any other account was told
+  `~/.claw`. It now names `/opt/claw` when the uninstall runs as root or for
+  the account that owns that folder.
+
+- **`status` and the sessions commands see a gateway started under another
+  name.** A running gateway was recognised by its process name, so one
+  started through the `openclaw` link or from a renamed binary was reported
+  as not running (and `sessions` would not refuse to touch its files). It is
+  now recognised by its executable on Linux.
+- **Upstream MCP servers are told the real client version.** The client
+  introduced itself as `claw` version `1.0.0`; it now sends `ClawEh` and the
+  release number (for example `0.6.4`).
+
+- **After `/model`, or on a fallback model, requests use that model's
+  `max_tokens` and `context_window`.** Both were taken from the agent's first
+  model for every request, so a switched-to model with a smaller limit was
+  sent the first model's `max_tokens` and its history was not trimmed to its
+  own context window (a local model loaded with a 32k context refused the
+  request). Each request now carries the `max_tokens` and `thinking_level` of
+  the model it is sent to, from its `model_list` entry, else
+  `agents.defaults` (a model that is not in `model_list` keeps the agent's
+  first model's values). The conversation, and tool results added to it, are
+  trimmed and compacted to the context window of the model `/model` selected,
+  from the next turn, and that model's `no_tools` decides whether tools are
+  sent: an agent whose first model has `no_tools` now sends tools after
+  `/model` to a model that takes them, and the reverse. Within one turn,
+  history is prepared for the selected model, so a fallback model with a
+  smaller context window may still need the context-window retry, and a
+  fallback model gets the selected model's tools.
+
+- **The device channel no longer warns that nobody can connect.** With
+  `channels.device.allow_from` empty, any paired device may talk to the
+  agents (devices are let in by token and pairing approval), so the start-up
+  warning "empty allow_from — nobody will be able to connect" was wrong for
+  it. Other channels still warn.
+
+- **The Task models page scrolls.** Its content had no scroll area of its
+  own, so anything below the window could not be reached, and the cards sat
+  against the sidebar.
+
+- **A model added on the Models page is enabled.** It used to be saved
+  disabled, so it had to be found and switched on before any page could use
+  it.
+
+- **An allowed folder whose path holds a line break is refused.** Such a
+  path never matched its list of seen files, so its new-file notices were
+  silently never sent. Saving one is refused ("Alice's allowed folder
+  "/srv/a\nb" contains a line break."); one
+  already in `config.json` is ignored by the file tools and marked on the
+  Agents page ("Ignored: path contains a line break") and on Check Up.
+  Other characters, such as a tab, are still allowed in a path.
+
+- **File tools no longer hang on a FIFO or read a device.** Reading,
+  editing, viewing, counting or attaching a path that is a FIFO (named
+  pipe), device or socket could wait forever for a writer. Every file read
+  now opens without waiting and refuses anything but a regular file:
+  "access denied: <path> is not a regular file". Searches skip such files
+  as before.
+
+- **A link in the workspace no longer reads what the agent may not
+  read.** With the workspace read folders set (the default: `files/`,
+  `skills/` and the always-readable folders), a link such as
+  `files/x -> ../sessions/...` or `files/a -> ../AGENTS.md` let every
+  reading file tool (read, list, search, glob, count, view image, copy)
+  read its target. The target is now checked too, and such a read is
+  refused: "access denied: <path> resolves outside the folders the agent
+  can read". A link to a folder the agent may read, such as `skills/`,
+  still works. Writes already followed this rule; agents allowed to read
+  the whole workspace are unaffected. Likewise, a link inside a folder
+  listed in `tools.allow_read_paths` (or the global skills folder) is
+  followed only to another allowed place; one leading anywhere else on the
+  host is refused the same way.
+
+- **The Providers page's add and edit forms start with a protocol the
+  server accepts.** They started with `openai`, which is not a protocol,
+  so saving without picking one was refused as an unknown protocol. They
+  now start with `openai-chat`.
+
+- **Emptying a provider's Base URL or proxy on the Providers page clears
+  it.** The edit form left an emptied field out of the save, and the
+  stored value was kept. It now saves the empty value. A protocol that
+  needs a base URL still refuses the save; an empty API key still keeps the
+  stored key.
+
+- **A provider switched away from a CLI no longer keeps its CLI
+  settings.** `command` and `bypass_restrictions` are read only for CLI
+  providers, but stayed in the configuration after a provider's protocol
+  was changed to an HTTP one. A save now removes them from any provider
+  that is not a CLI, and the Providers page clears the command when the
+  protocol is switched.
+
+- **A CLI provider no longer keeps a stray `base_url`.** CLI providers
+  (`claude-cli`, `codex-cli`, `antigravity-cli`, `cursor-cli`) never use
+  `base_url`, but a value could stay behind, for example after switching a
+  provider's protocol to a CLI on the Providers page, and showed up in
+  `/status` and `claw status`. Any save of the configuration now removes it
+  from CLI providers; nothing else changes.
+
+- **New-file notices work for read-only folders and for every agent
+  watching a folder.** The list of files already seen is now kept per agent
+  in the agent's workspace (`state/folderwatch/`), not in a `.claw` file
+  inside the watched folder. Before, two agents with **Notify on new files**
+  on the same folder shared one list, so only one of them was told about
+  each new file, and a folder ClawEh could not write was re-read every 10
+  seconds without notices while the alert "Allowed folder marker not
+  written" kept repeating. The first check after the upgrade records what
+  each folder holds and announces nothing. Old `.claw` files are left in
+  the folders and are no longer used; delete them if you like. The alert
+  is now "Allowed folder file list not saved" and is raised only when the
+  agent's workspace cannot hold the list; it names the agent and the
+  folder, and says whether notices for the folder are not sent at all (no
+  list could ever be saved) or the same files may be reported again (a
+  later save failed). A folder that is removed and added again, or whose
+  notices are turned off and on, starts with a new list instead of
+  announcing everything added meanwhile.
+
+- **A classifier run cut short by a shutdown says so.** Its last run was
+  sometimes recorded as "the classifier was stopped", as if the classifier
+  had been changed or deleted; it is now always "the service stopped".
+  A shutdown is never a failed run: a source call or state read cancelled
+  by it was reported to the agent as a failure ("the classifier's state
+  could not be read", "context canceled"), and an item it interrupted was
+  recorded as failed; neither is recorded or reported now, and the item is
+  taken again at the next start. A `classifier_rerun` cut short says so
+  instead of returning an empty decision.
+
+- **`classifier_test` and `classifier_rerun` show why the source failed.**
+  They answered "The operation failed because of an internal error." when
+  the source tool failed or did not return a list; they now give the
+  reason, as a failure notice does.
+
+- **Tools of external MCP servers and the web tools work as a classifier's
+  source and fetch.** Their results are marked as external content for the
+  model, so they never parsed as JSON and every run failed with "did not
+  return JSON". The classifier now reads the content inside the mark. That
+  error, when a tool really returns something else, now gives the parse
+  error and the first 200 characters of what came back.
+
+- **Classifier errors no longer carry secrets.** An API key or credential
+  in a model's or tool's error text is redacted before the error is stored,
+  logged, sent in a notice or returned by a classifier tool.
+
+- **A link out of the workspace is refused in plain words.** Reading,
+  listing, searching or globbing through a link in an agent's workspace that
+  leads outside it answered with the raw "openat files/x: path escapes from
+  parent" and was logged at ERROR as "Tool execution failed". It is now the
+  refusal "access denied: <path> resolves outside the workspace", logged at
+  WARN as "Tool call refused", like the same link inside an allowed folder.
+
+- **A write in a read-only allowed folder names the file.** `file_edit_lines`
+  and `file_delete_lines` (backup on by default), and `file_edit`,
+  `file_insert_lines`, `file_write` and `file_append` with `backup: true`,
+  answered with the backup's failure ("backup: failed to write
+  <file>.0001: … is read-only for this app"). Every write tool now refuses
+  before any backup with "permission denied: <file> is read-only for this
+  app", decided by whether the app's account can write the folder that would
+  change.
+
+- **Logging no longer races with a change to the logger.** A line logged
+  while the log files were being set up at start or rotated could read the
+  logger's settings mid-change; each line now reads them under the logger's
+  lock.
+
+- **The Models page's enable switch is named.** Screen readers announced
+  it as `models.action.enable`; it is now "Enable model" or "Disable model".
+
+- **A CLI agent's tool output no longer floods the chat.** Agents on a CLI
+  model (Claude CLI, Codex CLI, …) had every tool's own output, such as the
+  full output of each `shell_exec` command, posted to the chat as a separate
+  message. It now follows `agents.defaults.stream_tool_activity`, as it
+  already did for other models: off by default, so only the agent's reply is
+  sent. Set it to `true` to see tool output again.
+- **Every Telegram bot gets the typing indicator and placeholder by default.**
+  Only the first bot in `channels.telegram` had `typing.enabled` and
+  `placeholder.enabled` on when its config left them out; the others had them
+  off. An explicit `false` on any bot is kept.
+- **The System page accepts 0 in the Classifiers and Forums fields.** 0 means
+  "use the default", as in the config, but the inputs would not allow it.
+- **`claw install` no longer mistakes a folder next to `/opt/claw` for it.**
+  A binary or service in a folder such as `/opt/claw-old` or `/opt/clawdev`,
+  or a unit whose `PATH` lists one, was taken for an `/opt/claw` install, so
+  the installer chose `/opt/claw` as the data directory. Only `/opt/claw`
+  itself and what is inside it count now.
+- **Messages and notices from an agent on a CLI model go to the chat it is
+  answering.** `msg_send`, tool notices, `/tools on` progress lines and
+  background results from an agent on a Claude, Codex, Antigravity or Cursor
+  model went to the chat its conversation last heard from, so they could land
+  in the wrong chat while the agent answered another agent, ran from
+  `claw agent`, or handled a tool result. They now go where that turn's reply
+  goes, as for other models. When the agent is answering more than one
+  conversation at once, `msg_send` is refused ("Messages can't be sent now:
+  this agent is answering more than one conversation."), as are
+  `session_clear` and a background `agent_spawn`, and notices are not sent.
+  `msg_send` in a turn with no chat (`claw agent`, a service token) is now
+  refused instead of reporting the message queued.
+- **`msg_send_file` works.** It always answered "media store not
+  configured" and sent nothing; agents on CLI models (Claude, Codex,
+  Antigravity, Cursor) had their files dropped too. Both now send.
+- **Files sent to a Slack thread arrive in that thread**, where the reply
+  goes, not in the channel. Sending files needs the `files:write` scope; when
+  it is missing, the agent is told "the Slack bot is missing the files:write
+  permission".
+- **A file that could not be read for sending fails the send** on Telegram,
+  Slack, Discord and Matrix instead of being skipped silently, and Telegram
+  shows the file's own name.
+- **Progress updates, the typing indicator and the reaction no longer
+  disappear after 5–10 minutes on a long turn.** They stay until the turn
+  ends, on every channel, so a long turn no longer looks dead and its
+  "Thinking..." message keeps receiving progress updates.
+- **A placeholder switched off stays off.** `placeholder.enabled: false` on
+  a channel whose default is on (Matrix, Slack, a Telegram bot) was dropped
+  when the config was saved and read back as on at the next start. It is now
+  always written to `config.json`. The same applied to a Telegram bot's
+  `typing.enabled: false` and Matrix's `group_trigger.mention_only: false`,
+  which are now always written too.
+
+## [0.6.3]
+
+### Added
+
+- **Sub-agent models for an agent.** `subagents.models` on an agent (the
+  **Sub-Agent models (tried in order)** list on the Agents page) is now the model
+  chain its workers run on: every sub-agent it starts through `agent_spawn`
+  and every Maestro task it dispatches uses the first worker model, falling
+  back along the list, and a `model` given to `agent_spawn` must be one of
+  them. A worker started for another agent (`agent_id`) uses that agent's
+  worker models. Left empty, workers use the agent's own **Models** list as
+  before. Use it to keep a manager on a fast API model while its workers run
+  on command-line models that reach the source tree and the development tools.
+
+### Changed
+
+- **BREAKING for an install that already has `subagents.models` set.** The key
+  existed but nothing read it, though Check Up listed it. From this release an
+  agent with the key set runs its workers on that list only: a `model` given
+  to `agent_spawn`, or a Maestro `llm_model_id`, that is not in it is refused,
+  and when no model in it is enabled every spawn and dispatch of that agent is
+  refused with "no worker model is available". To restore the previous
+  behaviour clear **Sub-Agent models** on the agent's card, or remove
+  `subagents.models` from the agent in `config.json`.
+- Improved LLM use logging.
+- **`extra_body` may no longer set `session_id` or `cache_control`.** spawnllm
+  0.1.20 sets both itself on OpenRouter requests and would skip an operator's
+  value with only a log warning, so a model whose `extra_body` names either
+  key is now refused at load and on save, like the other reserved request
+  fields.
+- **Prompt caching on Anthropic API and OpenRouter Claude models.** Requests
+  to the Anthropic API, and to Claude models through an OpenRouter provider
+  on the `openai-chat` protocol (the "OpenRouter Chat" providers, not
+  "OpenRouter Responses"), now mark the prompt for caching, so repeated calls
+  in a conversation are billed at the cache-read rate instead of in full
+  (spawnllm 0.1.20). Those OpenRouter calls also report their cost on the
+  `LLM finish` log line, and that cost now counts toward the daily spend
+  alert, which previously saw only Claude CLI costs. Each OpenRouter request
+  carries the agent id as its `session_id` so OpenRouter can route repeated
+  calls to the same cache.
+- **`input_tokens` on the `LLM finish` line is the uncached input only**, on
+  every provider, and a new `prompt_tokens` field is the whole prompt
+  (`input_tokens + cache_read_tokens + cache_creation_tokens`). `input_tokens`
+  shrinks for the `openai-chat`, `openai-responses` and `azure` protocols and
+  the Codex CLI, which previously counted cached tokens in it. `cost` is `unknown` only when the provider
+  returned no cost; a reported 0 prints as 0.
+- **With tool discovery on, every tool is offered on every call.** Hidden
+  tools are marked for on-demand loading: Anthropic (Claude 4.5 and later)
+  and OpenAI Responses (gpt-5.4 and later) models load a hidden tool when
+  `search_tools` or `get_tool_details` names it; other providers receive it as
+  an ordinary tool from then on; command-line providers see the search text
+  only (spawnllm 0.1.21). A hidden tool may be called at any time. The tool list no longer
+  changes between calls, so prompt caching holds.
+
+### Removed
+
+- **`tools.discovery.ttl_max` and `tools.discovery.visible_budget`** (and the
+  older `ttl`) are gone, with their environment variables and the fields on
+  the MCP page. A value still in `config.json` is ignored.
+
+## [0.6.2]
+
+### Added
+
+- **Folder tools for agents.** `file_mkdir` creates a folder and any missing
+  parents (`path`), and succeeds if it already exists. `file_rmdir` removes a
+  folder (`path`, `sure` must be true); it removes only an empty folder unless
+  `recursive` is true. It refuses to remove a tree that holds a backup file
+  (`<name>.NNNN`), and never removes `files/` itself or a mount. Both are
+  allowed by default like the other file tools, so an agent granted `file_*`
+  has them; add `file_rmdir` to `deny_tools` to withhold it.
+- **The "Telegram down" alert says whether each bot still answers.** When it
+  fires, each bot it names is checked once with its own token: the details add
+  "Bot check: working" or "failing (502)" / "failing (no response)", and how
+  many messages are waiting. The results are also logged ("Connection check").
+  This tells a bot-specific fault apart from Telegram being unreachable. The
+  alert may arrive up to 15 seconds later while the check runs.
+
+### Changed
+
+- **`file_move` moves folders.** A folder as `source_path` is moved with
+  everything in it, also across mounts. The destination must not exist unless
+  `overwrite` is true, which merges into it. If a move stops part-way, the
+  error lists which files were moved and which are still at the source.
+- **`file_delete` on a folder points at `file_rmdir`**, and `file_copy` on a
+  folder points at `file_move`.
+
+### Fixed
+
+- **File tools refuse writes through a link that leaves the agent's writable
+  area.** Previously a link inside `files/` pointing elsewhere in the workspace
+  (e.g. `files/link -> ../skills`) let `file_write`, `file_delete`,
+  `file_rmdir`, `file_move` and the other write tools change files outside
+  `files/`. Links that stay inside `files/` still work. `file_delete` and
+  `file_rmdir` remove a link as a link, wherever it points (or if it points
+  nowhere), and never touch its target; `file_move` refuses a link, or a
+  folder that contains one.
+
+## [0.6.1]
+
+This release is about voice devices. Audio clips from a device are
+transcribed, a device can page through its assistant's history, the assistant
+knows who is speaking on a device, and a device can be limited to some
+assistants. Two changes are breaking: speech backends now name a provider, and
+the per-channel prompt files are renamed.
+
+### Added
+
+- **Devices: the assistant knows who is speaking.** Each paired device has a
+  **User** field on the Devices page, and the System page has **Your name**
+  (`operator.name`), used for devices with no User of their own and for the
+  web chat. A device's messages reach the assistant as `[From: <name>]`. The
+  name is the device's User, else Your name, else the admin login name, else
+  the device's own name. API: `POST /api/devices/{id}/user` with
+  `{"user_name": "..."}` (at most 64 characters, empty clears);
+  `GET /api/devices` adds `user_name` and `user_default`.
+- **Devices: limit a device to selected assistants.** **Assistants** on the
+  Devices page is **All**, or **Selected** with a checkbox per assistant. A
+  restricted device sees only those assistants, and a request for another is
+  refused (`INVALID_REQUEST` "agent not allowed for this device"; `UNAVAILABLE`
+  "no allowed assistant is available on this device" when none of them is
+  running). An assigned assistant outside the set is marked on the page and
+  not used. API: `POST /api/devices/{id}/agents` with
+  `{"allowed_agents": ["..."]}` (`[]` allows all); `GET /api/devices` adds
+  `allowed_agents` and `agent_allowed`.
+- **Devices: paged history with timestamps.** `chat.history` takes `limit`
+  (1 to 1000, default 200), `offset` and `maxChars` as the OpenClaw Gateway
+  protocol defines them, counted from the newest message, and answers with
+  `offset`, `totalMessages`, `hasMore` and `nextOffset`. Each message carries
+  `timestamp`, milliseconds since the Unix epoch. Without the fields the
+  response is as before, capped at 200 messages.
+- **Voice alerts.** "Speech backend not usable" fires at startup and on reload
+  for each enabled speech backend that cannot be used, urgent when none is
+  left. "Voice message not transcribed" fires when every backend failed on a
+  message.
+
+### Changed
+
+- **BREAKING: speech backends name a provider.** A `voice.stt` entry now names
+  a provider from the Providers page in `provider` and carries only `enabled`
+  and `model`; the endpoint and key are the provider's. `api_key` and
+  `base_url` are no longer read and are dropped on the next save of
+  `config.json`. Only `openai-chat` and `openai-responses` providers with a
+  base URL can transcribe. A blank model uses the default for Groq
+  (`whisper-large-v3`), OpenAI (`whisper-1`) and OpenRouter
+  (`openai/whisper-large-v3`). An unusable entry is skipped, logged and shown
+  as *Not used* on the Speech page. Deleting a provider a backend names is
+  refused; renaming one carries the backend along.
+  **To migrate:** if `config.json` is the only copy of the old key, copy it out
+  first. Add a provider with the endpoint and key on the Providers page (Groq:
+  protocol `openai-chat`, base URL `https://api.groq.com/openai/v1`), then
+  pick it on the Speech page. API: `GET /api/voice/stt` returns `providers`
+  (`name`, `default_model`, `ready`) in place of `presets` and no longer
+  returns keys; `PUT /api/voice/stt` refuses an unknown provider or one that
+  cannot transcribe.
+- **BREAKING: per-channel prompt files are named after the channel in
+  capitals**: `DEVICE.md`, `TELEGRAM.md`, `SLACK.md`, `DISCORD.md`,
+  `MATRIX.md`, `SECMSG.md` and `WEBUI.md` in the agent's directory, one per
+  channel shared by every bot or account of it, created with a short default
+  only for channels that are enabled. `channel-<channel>.md` is no longer
+  read. **To migrate:** nothing, in the common case; at the next start an
+  existing `channel-<channel>.md` is renamed. With two for one channel (two
+  Telegram bots), the first by name is renamed and the other is left in place
+  and logged; merge its text into the new file by hand.
+- Speech backends are named by provider and model, `Openrouter Chat
+  (openai/whisper-1)`, in the log, the full report and the voice alerts, so
+  two backends on one provider can be told apart.
+
+### Fixed
+
+- **Audio from a device is transcribed.** A clip sent with `chat.send` is
+  stored with its real extension (`.wav`, `.ogg`, `.mp3`, `.m4a`, `.flac`,
+  `.aac`, `.webm`, else the one in the attachment's name) instead of `.bin`,
+  and a WAV with placeholder lengths from a streaming device is repaired on
+  receipt. Before, the clip was never transcribed and the agent saw only
+  `[voice]`.
+- **WebUI and Slack messages carry the sender's name** like the other
+  channels: the logged-in account for the WebUI; the display name and handle
+  from `users.info` for Slack, looked up once per user and retried after five
+  minutes on failure.
+
+## [0.6.0]
+
+### Security
+
+- A provider's error shown in a chat reply or fallback notice, and in the log
+  lines for failed model and compression calls, no longer carries API keys
+  (including AWS access key ids), Bearer/Basic credentials, the values of
+  `api_key`, `x-api-key`, `token`, `secret` or `password` fields, or long
+  key-like strings; they are replaced by `[REDACTED]`. Model ids, UUIDs and
+  request ids (`req_…`) are kept.
+- **BREAKING: `tools.exec.allow_remote` is removed; `shell_exec` is only the
+  agent's own permission.** Whether an agent may run shell commands is now one
+  per-agent switch, off by default: *Allow shell commands* on the Agents page,
+  which is `shell_exec` named in the agent's own `tools` list (and not in its
+  `deny_tools`). A `"*"` or prefix entry in `tools` does **not** include it,
+  and there is no install-wide switch any more.
+  Migration: add `shell_exec` to the `tools` of each agent that should keep
+  running shell commands, or turn on *Allow shell commands* on its card.
+  Clones inherit the setting; fresh temporary and human agents never have it.
+  It applies on every channel and to everything acting as the agent:
+  sub-agents, Maestro workers, asks, forum turns and calls with its MCP
+  session or service tokens. Agents that have `shell_exec` turned on can now
+  run it when messaged from a chat such as Telegram or the WebUI chat, which
+  `allow_remote: false` used to block. To keep an agent from running shell
+  commands, turn `shell_exec` off for it (remove it from its `tools`, or add
+  it to its `deny_tools`). An agent whose `subagents.allow_agents` covers an
+  agent with `shell_exec` can have that agent (or its clone) run commands,
+  from any channel; narrowing its `allow_agents` removes that. An
+  `allow_remote` left in `config.json` is ignored and logged as an unknown
+  key, `CLAW_TOOLS_EXEC_ALLOW_REMOTE` is no longer read, and the WebUI setting
+  is gone. Check Up's Shell access row lists the agents allowed shell commands
+  and those that reach one through `allow_agents`. An agent without
+  `shell_exec` does not have the tool at all: it is not offered to its model,
+  and a call to it (over MCP too) is refused like any other tool the agent
+  does not have.
+
+- **Idle connections to the device listener time out.** A plain HTTP
+  keep-alive connection that sends nothing for 30 seconds is closed, and
+  request headers are capped at 64 KiB, so an unauthenticated client cannot hold
+  connections open indefinitely. Paired-device WebSockets are
+  unaffected: they keep their own ping cycle.
+
+- **Telegram bot tokens no longer appear in logs or alerts.** A failed
+  Telegram request's error text contains the request URL, which carries the bot
+  token (`https://api.telegram.org/bot<id>:<secret>/...`), and that text reached
+  `claw.log`, the connection-down alert details, send errors and
+  telego's own log lines. Every such token is now written as `bot<redacted>`.
+  Earlier logs and alerts may contain your tokens: rotate them with @BotFather
+  (`/revoke`) and update `channels.telegram[].token`.
+
+- **BREAKING: the WebUI and its HTTP API now require a login.** There is no
+  default account and no way to create one from the browser: run `claw admin`
+  on the server. It asks for a username and a password (twice, no echo, at
+  least 12 characters) and writes `<CLAW_HOME>/credentials.json` (mode 0600,
+  argon2id). Until that file exists the WebUI shows "No admin account. On the
+  server run: claw admin" and every `/api/*` request answers 401 `{"error":"no
+  admin account","hint":"run: claw admin"}`; channels keep working. A running
+  ClawEh notices the file within a minute and signs everyone out when it
+  changes. Sessions are cookies (`claw_session`, or `__Host-claw_session` over
+  HTTPS), idle 12 h, absolute 7 days, kept in memory (a restart signs everyone
+  out). 10 failed logins from one client address in 10 minutes lock that
+  address for 5 minutes, and 10 failed logins against one username (as typed,
+  existing or not) in 10 minutes lock that username for 10 minutes; every
+  attempt during a lock is refused with 429 and `Retry-After` and restarts the
+  lock at its full length. There is no global lock across all addresses, so no
+  one can lock every login at once. Running `claw admin` (or restarting
+  ClawEh) clears every lock, and the new account works at the next attempt.
+  Each lock start raises "WebUI login address locked out" (`auth-lockout-ip`)
+  or "WebUI login account locked out" (`auth-lockout-account`). See
+  "Authentication failures" in the README. Exempt from login: `/health`,
+  `/ready`, `/ping`, the MCPFusion OAuth API under `/api/v1/`, `POST
+  /api/message/{token}`, the signed LINE webhook, and the login endpoints
+  themselves. Loopback is **not** exempt. A credentials file readable by group
+  or others is ignored (logged with the `chmod 600` fix) and counts as no
+  account. See `manual/admin/login.md`.
+
+- **`claw install` and the one-line installer create the admin account and
+  will not start the service without one.** When
+  `<CLAW_HOME>/credentials.json` does not exist, the installer asks for the
+  username and password (twice, no echo, at least 12 characters) before it
+  registers and starts the service — on `/dev/tty` when stdin is not a
+  terminal, so `curl … | bash` prompts too. For an unattended install, export
+  the new `CLAW_ADMIN_USER` and `CLAW_ADMIN_PASSWORD` variables in the same
+  shell (not on the command line, where the password lands in shell history)
+  and unset them afterwards. With neither a terminal nor the variables the
+  install stops, without registering or starting the service, with: "no admin
+  account and no terminal to create one: export CLAW_ADMIN_USER and
+  CLAW_ADMIN_PASSWORD, or run `claw admin` on the server, then rerun the
+  installer". An existing account is never changed; a credentials file that
+  exists but cannot be used stops the install with the fix. `--yes` does not
+  skip the account. Run as root, the installer hands the file (and a
+  `CLAW_HOME` it created) to the service account. The summary ends with
+  `Admin account: <username> (<path>)`, and the one-line installer now lists
+  the WebUI URLs the install printed (loopback HTTP, network HTTP, HTTPS)
+  instead of assuming `http://localhost:18790`.
+
+- **HTTPS for the WebUI and API, on by default; new `gateway.tls` block.**
+  The WebUI/API is now served on two listeners that share one handler (login,
+  IP allowlist, Host check): plain HTTP on `gateway.host:gateway.port` as
+  before, and HTTPS on `gateway.tls_port` (new key, default `18443`) placed by
+  the new `gateway.tls.mode`: `"all"` (default; every interface, IPv4 and
+  IPv6), `"localhost"` (`127.0.0.1` and `[::1]` only) or `"off"`. An absent
+  key means `"all"`, so **after upgrading every install also listens on
+  `0.0.0.0:18443`**; off-box clients are still refused until their network is
+  in `gateway.allowed_cidrs` (empty by default = loopback only), and every
+  request needs the admin login. To keep the old footprint set
+  `"gateway": {"tls": {"mode": "off"}}` (or `"localhost"`). `gateway.host`
+  now places plain HTTP only: loopback (`127.0.0.1`, the default) binds
+  `127.0.0.1` and `[::1]`; a LAN address or `0.0.0.0` also serves the WebUI
+  over **unencrypted** HTTP on the network — allowed, and marked in the
+  configuration report; loopback is always bound, so
+  `http://127.0.0.1:<port>` keeps working. Reverse-proxy users point the proxy
+  at `http://127.0.0.1:18790` and set `gateway.external_url`.
+  `gateway.external_url` now defaults to `https://<hostname>:<tls_port>` with
+  mode `"all"`, `https://127.0.0.1:<tls_port>` with `"localhost"`, and the
+  plain-HTTP URL with `"off"`; set it to browse by a host name (its host joins
+  the certificate and the accepted Host names). `gateway.tls` also takes
+  `cert_file` + `key_file` (PEM, both or neither — one alone is a config
+  error) and `extra_names` (additional DNS names / IPs for the self-signed
+  certificate). Without a pair, a self-signed ECDSA P-256 certificate is
+  generated in `<CLAW_HOME>/tls/` (key 0600), valid ten years, for the host
+  name, its FQDN, every non-loopback interface address, the host of
+  `external_url`, `extra_names`, and `localhost`/`127.0.0.1`/`::1`; it is
+  regenerated when under 30 days from expiry or when those names change. Both
+  sources are hot-reloaded from disk within a minute; a pair that fails to
+  load keeps the previous certificate serving and raises an alert. TLS 1.2
+  minimum. HSTS is sent only with an operator-supplied certificate. An unknown
+  `gateway.tls.mode`, a port outside 1–65535, or `tls_port` equal to `port`
+  while HTTPS is on is a config error. New `claw tls` command prints the
+  certificate in use (source, names, expiry, SHA-256 fingerprint);
+  `claw tls --regenerate` replaces the self-signed pair. `mcp_host.listen` must
+  be a loopback address; ClawEh refuses to start otherwise. Changing
+  `gateway.host`, `port`, `tls_port`, `tls.mode` or the certificate files
+  needs a restart (ClawEh logs a warning on reload). See `manual/admin/https.md`.
+
+- **BREAKING:** the shared HTTP listener (WebUI, `/api/*`, `/webui/ws`,
+  `/health`, `/ready`, channel webhooks) now answers only to known host names
+  and rejects everything else with `421 Misdirected Request`. Allowed are
+  `localhost`, `127.0.0.1`, `::1`, every address the listeners bind (an
+  all-interfaces bind counts as each interface address), the certificate's
+  names and the host of the advertised external URL (`gateway.external_url`
+  when set; otherwise the host name, see above). This stops DNS-rebinding
+  attacks that reach a loopback listener through an attacker-controlled name.
+  **Migration:** if you reach ClawEh through any other hostname or IP (a
+  reverse proxy name, a second interface, an `/etc/hosts` alias, a monitoring
+  probe by hostname), set `gateway.external_url` to that URL and reload; the
+  change takes effect without a restart. The device listener applies the same
+  check (IP literals are always accepted there, since the pairing QR
+  advertises them).
+
+- Cross-site request forgery protection on the shared listener: state-changing
+  requests (POST/PUT/PATCH/DELETE) that a browser marks as coming from another
+  site are rejected with `403`, so a web page open in the same browser can no
+  longer drive `/api/*`. Same-origin requests, non-browser clients (curl,
+  scripts, claw-auth) and the origin of `gateway.external_url` are allowed. The
+  signed LINE webhook and the token-gated `POST /api/message/{token}` are
+  exempt because they authenticate each request themselves. Every response now
+  carries `Content-Security-Policy: frame-ancestors 'none'`,
+  `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`;
+  `/api/*` responses are `Cache-Control: no-store`.
+
+- **BREAKING:** `GET /api/webui/token` and `POST /api/webui/token` are removed,
+  and with them `channels.webui.allow_token_query` and
+  `channels.webui.allow_origins` — delete both keys from `config.json`. The
+  browser now opens `/webui/ws` with its login session cookie; the WebSocket
+  origin check is always same-origin. The WebUI channel token remains only for
+  non-browser clients (`Authorization: Bearer <token>` or the `claw-token`
+  subprotocol) and is never accepted from the URL. `POST /api/webui/setup` no
+  longer returns `token` or `ws_url`.
+
+- **Device listener hardening.** The device listener now enforces the payload
+  limits it advertises: an unauthenticated connection may send at most 64 KiB
+  before the handshake completes, and 25 MiB (`maxPayload`) after it; a larger
+  frame closes the connection. Repeated failed authentications from one client
+  address (5 within 10 minutes) lock that address out — `connect` is answered
+  `AUTH_RATE_LIMITED` with `retryAfterMs` — for 1 minute, doubling on each
+  further lockout up to 1 hour; the first lockout for an address raises the
+  "Device authentication locked out" alert. At most 32 connections may sit in
+  the handshake at once; further upgrades get 503 until one finishes. An
+  inbound WebUI socket message is capped at 1 MiB.
+
+- Device listener: hello-ok now echoes the device token the device connected
+  with; connecting on the shared `token`/`word_token` (including the first
+  connect after approval) issues fresh device tokens and revokes the device's
+  previous ones.
+
+- Service tokens (`internal/service-tokens.json`) and device listener tokens
+  (`gateway.db`) are now stored as SHA-256 hashes instead of plaintext; a
+  presented token is hashed for lookup. **On first start after upgrading, both
+  stores are rewritten in place once** (the JSON file atomically at 0600, the
+  SQLite rows in one transaction); existing issued tokens keep working, and
+  `claw token list`/the report are unaffected. Named message-API tokens stay
+  readable in the WebUI by design and their store is forced to 0600 on load.
+
+- `GET /api/config` now masks search-provider `api_keys` lists, every MCP
+  server `env` and `headers` value, every CLI model `env` value, and the
+  credentials embedded in `proxy` URLs (`scheme://****@host`);
+  `GET /api/providers` masks proxy credentials too. Masked values are never
+  shown as more than 7 characters, and values shorter than 12 are hidden
+  entirely. PUT/PATCH `/api/config` and `PUT /api/providers/{index}` restore
+  masked values from disk, so a read-edit-write round trip cannot overwrite a
+  secret with its mask.
+
+- ClawEh now enforces data-directory permissions at startup: `CLAW_HOME` is
+  made `0700`, and every database (`*.db`, `*.db-wal`, `*.db-shm`,
+  `*.sqlite*`), `credentials.json`, `internal/*.json`, `tokens/*`, `tls/*.key`
+  and any file whose name contains `token` or `secret` under it is tightened
+  to owner-only, with each change logged. Symlinks are left alone and the
+  `media/` and `logs/` trees are not scanned. **Startup now refuses to run
+  when `config.json` is readable by other users** (any group/other permission
+  bit), since it holds provider keys and tokens. The error names the fix:
+  `chmod 600 <path>`. Installs whose config was created by ClawEh are already
+  `0600`; a config copied or edited by hand may need the command once. The
+  device pairing database (`internal/gateway.db`) and the Fusion OAuth token
+  store (`internal/fusion-tokens.db`) are now created `0600` from the first
+  write, including their SQLite `-wal`/`-shm` side files. Directories and
+  files ClawEh creates under `CLAW_HOME` (agent workspaces, logs, dumps,
+  sub-agent task files, skills, common files, conversation archives, cognitive
+  memory, the alerts log) are now created owner-only (0700/0600) instead of
+  world-readable, and startup also tightens every folder under `CLAW_HOME` to
+  0700.
+
+- Child processes no longer inherit the service environment. `shell_exec`
+  commands and stdio MCP servers now start from an allowlisted environment
+  (PATH, HOME, USER, LOGNAME, SHELL, LANG, LC_*, TERM, TMPDIR, TZ, XDG_*,
+  SSL_CERT_FILE/SSL_CERT_DIR, proxy variables, and the Node/nvm/npm variables
+  `npx`-based servers need); everything else, in particular `CLAW_*`
+  configuration and `ALERTER_*` credentials, stays in the ClawEh process. An
+  MCP server that relied on a variable inherited from the service (an API
+  token, for example) must now receive it through that server's `env` or
+  `env_file`. CLI providers (claude-cli, codex-cli, antigravity-cli,
+  cursor-cli) receive the same allowlist plus their own login and API-key
+  variables (`ANTHROPIC_*`, `OPENAI_*`, `GOOGLE_*`, `GEMINI_*`, `CLAUDE_*`,
+  `CODEX_*`, `CURSOR_*`, `AGY_*`, `ANTIGRAVITY_*`).
+
+- `web_fetch`, `web_search`, and every external MCP tool now hand their output
+  to the model wrapped in untrusted-content markers: a one-line notice that the
+  text is data, not instructions, then `<<<UNTRUSTED_CONTENT id=…>>>` …
+  `<<<END_UNTRUSTED_CONTENT id=…>>>` with a random per-call id so retrieved
+  text cannot forge the end of the block. Model control tokens inside the
+  content (`<|im_start|>`, `<|endoftext|>`, `[INST]`, `<<SYS>>`, any `<|…|>`
+  token, and the markers themselves) are replaced with `[removed-token]`. What
+  is shown to the user is unchanged; the default AGENTS.md template explains
+  the markers.
+
+- `web_fetch` SSRF guard now also blocks 192.0.0.0/24, 198.18.0.0/15,
+  240.0.0.0/4, and the NAT64 prefix 64:ff9b::/96 (including IPv4-mapped forms).
+  When `proxy` is configured, the target hostname is resolved and checked
+  before the request is sent (and on each redirect), since the connect-time
+  guard only sees the proxy address in that mode.
+
+- The systemd unit written by `claw install` (system mode) and the shipped
+  `claw.service` now set `NoNewPrivileges=yes` and `PrivateTmp=yes`; the
+  user-mode unit sets `NoNewPrivileges=yes`. Existing installs pick this up by
+  running `claw install` again. Under `NoNewPrivileges`, commands the agent
+  runs cannot escalate via `sudo` or setuid binaries.
+
+- **BREAKING (release process):** `claw upgrade` now verifies releases with a
+  publisher signature. Every release must ship `checksums.txt` and
+  `checksums.txt.minisig` (minisign, signed with one of the two keys embedded
+  in the binary — a current key and a next key, so the signing key can be
+  rolled without stranding installed copies); a release without them, or with
+  a signature from any other key, is refused. The per-archive `.sha256` files
+  are no longer consulted by `claw upgrade` (they are still produced for the
+  install scripts). A build with no embedded key refuses to upgrade at all.
+  Release maintainers: b9 does this (`signing.minisign` in `b9.yaml`); for a
+  hand-built release, `make release-sign` (signs with
+  `~/.minisign/minisign.key`, or `MINISIGN_KEY=<path>`). The keys and the
+  rotation steps are in `app/keys.go`.
+  `make test` now runs `govulncheck` and fails on a known vulnerability
+  reachable from the code.
+
+- **Device listener: removing a device disconnects it.** Removing a paired
+  device in the WebUI closes its open connections at once, and every request on
+  an open connection now re-checks that the device is still paired and holds a
+  valid device token; a device that is not gets `NOT_PAIRED` and is
+  disconnected (close `1008`). Before, a removed device kept chatting on its
+  open socket until it chose to disconnect.
+
+- **Device listener: a device that stops reading no longer stalls replies.**
+  Frames to a device now go through a per-connection queue, and every write must
+  complete within 5 seconds; a device that misses that, or whose queue fills, is
+  disconnected. Before, one stalled device could block the agent's turn, other
+  devices' replies and eventually outbound delivery on every channel.
+
+- **Device listener: a config reload closes device connections.** When the
+  device channel stops (every config reload rebuilds it) it closes each open
+  connection with a normal close (`1001`), so devices reconnect to the new
+  listener at once. Before, they stayed attached to the stopped channel, which
+  acknowledged `chat.send` and dropped it.
+
+- **BREAKING: a device's session key only selects the agent.** `chat.send` and
+  `chat.history` always use the selected agent's one conversation,
+  `agent:<id>:main`, whatever the rest of the key says; before, the key was
+  honoured verbatim, so a device could read and write any conversation (another
+  device's, a Telegram chat's). A key naming an agent that does not exist is
+  refused with `INVALID_REQUEST` "unknown agent" instead of creating a session
+  database for it. Migration: nothing to change in a client; one that sent its
+  own key (a profile key such as `agent:<id>:clawtotalk:primary`) now shares the
+  agent's conversation and its history. For a separate conversation, pair the
+  device with a separate agent.
+
+- **BREAKING: an exposed device listener needs a secret and approval.** The
+  config is refused (at startup, on reload and on a WebUI save) when the
+  device channel is enabled on a network `channels.device.host` (anything but
+  loopback) with `channels.device.auto_approve` on, or with neither
+  `channels.device.token` nor `channels.device.word_token` set. Migration: turn
+  `auto_approve` off, set a token (the WebUI Devices page's **Pair a device**
+  does), or bind `host` to `127.0.0.1`.
+
+- **Device listener: pending pairings are capped and expire.** At most 20
+  pairing requests wait for approval (the oldest are dropped first) and each
+  expires after 10 minutes. `GET /api/devices/pending` `remote_ip` is now the
+  client address without the port (behind a trusted proxy, the forwarded
+  address), so the approval list shows who asked.
+
+- **BREAKING: an agent gets only the tools its configuration lists.** An
+  agent with no `tools` list, or an empty one, now has no tools; previously
+  an agent without a `tools` key got the install's default tool set. This
+  applies everywhere the agent acts: its own turns, clones and sub-agents,
+  asks, forum turns and its MCP session and service tokens. Tool suites
+  (`cogmem`, `maestro`, `fusion`, `forum`, `ccv3`) and `mcp_tools` keep their own
+  switches. `agents.defaults.default_tools` is removed (a config that still
+  has it gets an unknown-key warning at load). New agents, on the Agents page
+  and in the setup wizard, start with no tools, and the card shows "No tools".
+  Check Up lists every enabled agent that has no tools, and an agent with no
+  tools at all (native, suite or MCP) is told so in its prompt and asked to
+  point the user to the web interface. Migration: on the
+  Agents page click **Default tools** in the agent's tool list (the standard
+  set is written into the list and can then be edited), or list the tools in
+  the agent's `tools` in `config.json`. Saving no longer writes an empty
+  `"tools": []`; an absent key means the same.
+
+- **BREAKING: an agent gets only the skills its configuration lists.** An
+  agent with no `skills` list, or an empty one, now has no skills; previously
+  an agent without a `skills` key got every installed skill. Entries are skill
+  names or patterns (`"*"` is every skill, including ones installed later). New
+  agents start with no skills, and the Agents page shows "No skills". Saving no
+  longer writes an empty `"skills": []`; an absent key means the same.
+  Migration: on the Agents page click **All skills** or pick the agent's
+  skills (written as `["*"]` or the names), or list them in the agent's
+  `skills` in `config.json`.
+
+### Added
+
+- **`security.permissions`: modes for what ClawEh creates in the data
+  directory.** `dir_mode` and `file_mode` set the default (still `0700` and
+  `0600`), and `logs`, `agents`, `media`, `common` and `backup` can each set
+  their own pair, as 3 or 4 octal digits; the top-level `dir_mode` also sets
+  the data directory itself. For example `"dir_mode": "0750"` with
+  `"logs": {"dir_mode": "0750", "file_mode": "0640"}` and the same for
+  `agents` lets a second user in ClawEh's group read the logs and the agents'
+  folders, including their session archives and memory databases. Folders
+  must give the owner `7`, files `6`, and other users may never write; a
+  wrong value stops the start, naming the key. Secrets stay `600` whatever is
+  set: `config.json`, the credentials file, TLS keys, `internal/`, and files
+  named for a token or secret. The startup permission check now holds each
+  folder to its configured mode instead of owner-only; it still only removes
+  access, so after allowing more run `chmod -R g+rX` on the area once (the
+  agents' session archives and memory databases take the new mode when next
+  opened; see
+  *Startup permission checks* in the manual). Check Up's **Data directory
+  permissions** row now names the modes in force. With the block left out
+  nothing changes.
+
+- **Character cards.** An agent can be given a character to play from a
+  library of Character Card V3 documents (the format SillyTavern and RisuAI
+  use), kept in `<CLAW_HOME>/cards/` and included in the backup. The new
+  **Character cards** page (Agents group) imports V2/V3 cards as JSON or PNG,
+  downloads and deletes them; a card an agent uses cannot be deleted. The
+  page uses the new `GET /api/cards`, `GET /api/cards/{id}` (the card as a
+  V3 JSON document), `POST /api/cards/import` (a file of up to 8 MiB whose
+  card JSON is at most 1 MiB) and `DELETE /api/cards/{id}`. On the
+  Agents page, **Character card** attaches one (`agents.list[].character_card`);
+  a save that attaches a card the library does not have is refused:
+  it is rendered into the agent's instructions after its rules and before
+  `SOUL.md`, and an edit to the card reaches the agent on its next message. A
+  card that no longer exists is marked **(missing)** and the agent runs
+  without it. `agent_spawn` takes an optional `character_card` so a sub-agent
+  can run as a different character, and a forum participant of the `clone`
+  or `model` form takes `character_card` too (a fresh participant's
+  `system_prompt` then follows the card as instructions). **Allow character
+  card tools** (`agents.list[].ccv3`, off by default) grants the one `ccv3`
+  tool (list, get, create, update, rename, copy, delete), which validates
+  every write against the card format. Imports and deletions from the page
+  are recorded in the audit log as **Card import** and **Card delete**. The
+  full report lists each agent's card (a missing or ignored one marked) and
+  whether it has the card tools, and the cards folder under Data. See
+  the Character cards page of the manual.
+- **Encrypted Matrix rooms are reported.** ClawEh can't read end-to-end
+  encrypted rooms; it now logs one warning per room and Check Up lists them
+  under **Encrypted Matrix rooms** instead of ignoring them silently.
+- **Slack `/claw` slash command runs ClawEh commands.** `/claw model` runs
+  `/model`, and `/claw` alone shows the help. It is routed like a message from
+  the same conversation, so bindings for a channel or a person's direct
+  messages apply. If the app is not in the channel, the answer is shown only
+  to the person who ran it. Requires adding `/claw` under **Slash Commands**
+  in the Slack app and reinstalling it (`commands` scope); see the Slack page
+  of the manual. A slash command registered under a ClawEh command's own
+  name (`/model`, `/status`) runs that command with its text as arguments, so
+  `/model 0` is `/model 0`; under any other name, text that does not start
+  with a command reaches the agent as an ordinary message. Typing ` /model`
+  (leading space) or `!model` still works.
+
+- **May message on the Agents page.** Each agent card has a **May message**
+  checklist of the other agents, plus **All agents** (`"*"`), saved to the
+  agent's `subagents.allow_agents`, which until now could be set only in
+  `config.json`. The card notes when `agent_message` is granted but no agent is
+  ticked, and when the list has no effect.
+
+- **The Models page notes a request timeout the turn timeout cuts short.** A
+  model whose **Request Timeout** is longer than the System page's **Turn
+  timeout** (`agents.defaults.turn_timeout`) shows "Limited to 15 minutes by the
+  Turn timeout." at that field, linking to the turn timeout; `GET /api/models`
+  now also returns `turn_timeout`, the effective value in seconds.
+- **Check Up and the Network page flag a proxy that is not trusted.** When
+  requests reach ClawEh through a reverse proxy or tunnel on the same machine
+  that `gateway.trusted_proxies` does not list (a request from localhost
+  carried `X-Forwarded-For`, `X-Real-IP` or `Forwarded` headers since start),
+  every request looks like localhost, so the allowed networks and the sign-in lockout never apply.
+  Check Up shows a marked **Reverse proxy** row linking to **Trusted proxies**,
+  and the Network page shows the same note under that field. Request handling
+  is unchanged; add the proxy's address (usually `127.0.0.1`) to Trusted
+  proxies. `GET /api/tls` gains `untrusted_proxy`, and
+  `GET /api/report/assessment` rows may carry a `link`.
+- **Check Up names the proxy ClawEh is behind and no longer flags plain HTTP
+  there.** With `gateway.trusted_proxies` set, or an https/wss external address
+  (`gateway.external_url`, the device listener's External address) that
+  ClawEh's own HTTPS does not serve, the proxy does the encryption: the
+  WebUI/API HTTP, WebUI/API HTTPS (off) and Device HTTP rows are no longer
+  marked, a neutral **Proxy** row lists the proxies, and the Network page drops
+  its plain-HTTP warnings. `GET /api/tls` gains `behind_proxy`.
+
+- **A user manual, served by claw.** The WebUI sidebar has a *Manual* link
+  that opens the manual in a new tab at `/manual/`, behind the same login as
+  the WebUI. Its content is still to come. Building from source now also needs
+  the manual's dependencies (`make manual-deps`, Node.js and pnpm, as for the
+  WebUI).
+
+- **Agents can message each other: the `agent_message` tool.**
+  `agent_message(agent, message, wait_seconds)` with `wait_seconds` above 0
+  asks: the other agent gets a normal turn with the message, its own tools
+  included, and the reply comes back as the tool result, or "Bob did not reply
+  within N seconds." after `wait_seconds` or that agent's model
+  `request_timeout`, whichever is shorter. With `wait_seconds` 0 it whispers:
+  the message is added, marked private, to the start of the other agent's next
+  message, and no turn starts. The tool is not in **Default tools**, and an agent can message
+  only the agents in its `subagents.allow_agents` (`"*"` for all), so no
+  existing agent can message anyone until that is set. Each ask counts as one level of
+  `agents.defaults.max_subagent_depth`, shared with `agent_spawn`, and an
+  agent cannot ask one that is already waiting on it. The asked agent's reply
+  never reaches a chat; in the asked turn `msg_send` and `session_clear` are
+  refused. An asker lends its `agents.defaults.max_concurrent_turns` slot
+  while it waits and an asked turn needs none, so asks cannot deadlock on
+  slots; an ask that would close a wait cycle is refused, and an ask nobody
+  waits for any more is not answered. Background work an asked turn starts
+  reports to that agent's own main conversation and is not sent to any chat.
+  Whispers not yet delivered are lost on restart. A whisper tells the
+  recipient how to answer privately only when it can: it has `agent_message`
+  and the sender is in its `subagents.allow_agents`. See
+  `manual/agents/messaging.md`.
+
+- **`/ask` and `/whisper` commands.** From any chat, `/ask Bob <text>` asks
+  Bob and posts his reply to the chat as "Bob: <reply>" (waiting up to his
+  model's `request_timeout`); `/whisper Bob <text>` leaves him a private note
+  for his next message and answers "Whispered to Bob.". The sender must already
+  be allowed to talk to Bob from that chat: the chat routes to Bob, or a
+  binding matching the channel, account and chat names Bob as its agent or in
+  its `agent_mentions`. Otherwise the answer is "You don't have permission to
+  /ask Bob."; an unknown name gets "There is no agent named Bob.". A failure is
+  one sentence naming the agent ("Could not ask Bob.", "Could not whisper to
+  Bob.", with the reason when it is the depth limit or a wait cycle). Bob is told
+  the sender is a person and how they wrote ("Alice (a person, via /ask on
+  telegram)"; from the WebUI chat, "the WebUI user (a person, via /ask on
+  webui)"), so a person cannot pass for an agent of the same name. Both
+  commands appear in Telegram's command menu.
+
+- **Forums: an agent can run a structured discussion among other agents.** A
+  new per-agent switch, `forum` (Agents page: **Allow forum**; off by default,
+  so no existing agent gains anything), gives the agent fifteen tools:
+  `forum_readme`, `forum_models`, `forum_new`, `forum_config_template`,
+  `forum_config_import`, `forum_config_update`, `forum_config_export`,
+  `forum_validate`, `forum_launch`, `forum_status`, `forum_pause`,
+  `forum_resume`, `forum_cancel`, `forum_results` and `forum_delete`. A forum is
+  one JSON configuration: a brief, sources, and participants that are existing
+  agents, clones of agents, or fresh temporary agents on one of the launching
+  agent's models, taking turns in ordered layers with optional moderation and
+  JSON Schema checks. Existing and clone participants are limited to the
+  launcher's `subagents.allow_agents`. Each turn is an ask from the launching
+  agent run at the maximum sub-agent depth, so a participant cannot spawn, ask
+  further or use forum tools; each participant uses its own tools (a clone its
+  source's). Turning the switch off removes the tools; the agent's forums still
+  run, resume and are cleaned up. Check Up shows a Forum row per agent and
+  lists `forum_launch` among its sensitive tools when the switch is on. See
+  `docs/forum.md`, which also gives the tools' replies and refusals.
+
+- **Setting up a forum and running it.** `forum_readme` returns a one-page
+  guide for the agent and the built-in templates: `writing` (draft, two
+  critiques, revision, final edit; the topic is read from a file, so the next
+  topic is one path change) and `council` (three models answer, review each
+  other anonymously and rank, a chair decides). `forum_new` creates a forum
+  (status `new`); `forum_config_template` or `forum_config_import` fills its
+  configuration, `forum_config_update` changes it with a JSON merge patch
+  (RFC 7386), and both publish the configuration's full JSON Schema, so the
+  model sees every field. `forum_validate` reports every problem at once,
+  including any value still an unfilled `<...>` template placeholder. The
+  optional `name` (one line, at most 100 characters) labels the forum in
+  status, results and the transcript; replies and notices call it
+  "<name> (<id>)", or the ID without one. The configuration can be changed
+  whenever the forum is not running, and every `forum_launch` starts a new run
+  from the beginning, numbered 1, 2, 3, … in its own folder; earlier runs are
+  kept. `forum_status` and `forum_results` show the latest run, or an earlier
+  one with `run`; status also gives the number of runs and whether the
+  configuration changed since the latest. `forum_pause`, `forum_resume` and
+  `forum_cancel` act on the latest run; a paused run whose configuration has
+  changed is not resumed ("the configuration changed; launch to start a new
+  run"), and launching then cancels it without a notice.
+  Formatting, member order and number spelling are not changes. To run the
+  same forum on new material (a book, chapter by chapter), change only its
+  source and launch again; `forum_config_export` and `forum_config_import`
+  copy a configuration to another forum. `forum_delete` removes the forum with
+  all its runs; an unknown ID answers "Forum <id> was not found.". A layer input with `"anonymous": true` shows that layer's
+  outputs as "Response A", "Response B", … without authors and without the
+  reader's own, other readers of the layer see "Bob (Response A)", and
+  `forum_validate` refuses a setup where a reader could still learn the
+  authors. A source `file` is read exactly as the agent's file tools read that
+  path (the workspace, or a mount such as `maestro/`). A forum tool called with
+  an argument it does not take is refused, naming it.
+
+- **Forum results and limits.** `forum_results` returns each final output's
+  author, layer, round, size and file, with its text inline up to 4,000
+  characters (longer text is cut and names the file holding all of it) and
+  16,000 characters for all outputs together (later outputs are listed without
+  text), and the transcript's path once the transcript exists; when the result
+  layers have no output it lists the other layers'. Each output names its
+  attempt; one whose turn was sent again after a restart carries the note
+  "its turn was resent after a restart", and
+  `forum_status` counts them (`resent_after_restart`). The transcript quotes each
+  output in a code block and, for a layer read anonymously, shows the letter
+  next to the author. When a run stops waiting for a participant (the call
+  timeout, the run's `max_duration_seconds`, `forum_cancel`), the participant's
+  model call is aborted, and a call the deadline cuts ends the run incomplete
+  (`deadline`), even on the turn's last attempt. A turn whose participant's
+  models are all in cooldown waits for one to come back within
+  `call_timeout_seconds`, then a random 2 to 5 seconds so held turns do not all
+  resend at once: a cooldown that ends in time costs nothing, and one that
+  outlasts it is recorded as a timeout attempt (counted toward `max_calls`).
+
+- **Install-wide forum maximums.** A new config section, `forum.limits`, caps
+  what any forum may ask for: `max_calls` (default 200), `max_duration_seconds`
+  (default 7200), `call_timeout_seconds` (default 1800) and
+  `max_parallel_calls` (default 8). A value left out or set to 0 uses its
+  default; a negative value is refused. `forum_validate` and `forum_launch`
+  refuse a forum whose limit (or a layer's `max_calls`) is above the maximum,
+  one issue per limit, e.g. "limits.max_calls: 500 is more than this install
+  allows (200)". `forum_readme` lists the current maximums. Edit them on the
+  System page under **Forums**; a change applies to the next validation or
+  launch, and runs already started keep the limits they launched with.
+
+- **Where forums live, notices and cleanup.** Everything is kept under
+  `<workspace>/forums/<id>/`: `forum.json` (the configuration) and `runs/<n>/`
+  per run, with a live `transcript.md`. With the default workspace
+  restrictions the agent's file tools can read `forums/` but not write to it.
+  `forum_launch` tells the agent it will be notified when the run finishes,
+  and the guide tells it to wait for that notice rather than poll. The notice,
+  "Forum <name> (<id>) run <n> finished: <status>." with the reason when the
+  run did not complete ("finished: incomplete (deadline)."), goes to the
+  launching agent, and its answer to the chat the forum was launched from, the
+  WebUI chat included; when that chat is no longer known (the run ended after
+  a restart) or is offline or not found, it goes to the agent's default chat
+  if the forum was launched from a chat, and nowhere otherwise. Temporary
+  participants are deleted when the run ends. A notice that cannot be
+  delivered, or results that cannot be written, are tried again every hour,
+  up to five times per start of the service, then given up with a warning in
+  the log. The notice also says how many outputs came from turns resent after
+  a restart, the count `forum_status` gives. Runs survive a
+  restart and resume where they stopped; a turn the restart cut is resent once
+  for free as the same attempt, and a second restart during the same attempt
+  counts as a new attempt (`max_attempts_per_turn`); every send counts toward
+  `max_calls`. A run that stops on an error raises the "Forum
+  run stopped" alert. The nightly backup and `claw backup` include each
+  agent's `forums/` (without lock files or temporary files of a write in
+  progress), and `claw restore` puts them back.
+
+- **Messages to other agents are limited to 8,000 characters.** The
+  `agent_message` tool, `/ask` and `/whisper` refuse a longer message with
+  "Messages to other agents are limited to 8,000 characters."; put longer text
+  in a file the other agent can read.
+
+- **Check Up lists `agent_message` among each agent's sensitive tools**, beside
+  `agent_spawn`, since it gives other agents turns.
+
+- **Human agents: a person can take part as an agent.** Add a provider with
+  protocol `human` (no base URL or key), a model on it with a name of its own
+  (for example `"model_name": "Bob (human)"`, any placeholder `model`), and an
+  agent whose `models` is only that model. Give the agent exactly one binding:
+  its default, naming one chat used by that person alone (a Telegram DM, a
+  Slack channel). A question asked by an agent (`agent_message`, `/ask`, a
+  forum turn) is posted, with its sender header, to that chat, and the
+  person's next text message there is the answer; after the model's
+  `request_timeout`, or once the asker stops waiting if that is sooner, the
+  asker is told the person did not reply. A question that cannot be posted
+  to the chat ends at once, telling the asker why ("Bob's device is
+  offline."). A question whose asker gives up early is withdrawn in the
+  person's chat, and an answer that comes too late is told so, so no answer
+  is ever dropped without a word. In that chat `/cancel` cancels the waiting
+  question (the asker is told "Bob cancelled the request."), other commands
+  work as usual, and text that answers nothing is told so. A whisper to the
+  agent is shown to the person at the start of their next question. Questions
+  are answered one at a time and do not hold a `max_concurrent_turns` slot
+  while waiting. A human agent takes no other work: scheduling a job for it
+  and sending it an external message are refused, someone writing to it
+  directly (a mention, a device) is told "Bob only answers questions from
+  agents.", and claw's own messages to it (a forum notice, for example) are
+  dropped and never taken for the person's answer. A question still waiting
+  when the service stops is withdrawn and the asker is told "The request was
+  cancelled because the service is shutting down.". Devices do not list
+  human agents. It runs no model (no tools, memory, summarization or image
+  description), is never the default agent, and can never be cloned or
+  spawned. Its card on the Agents page shows only its models and its default
+  channel. A save that breaks these rules is refused; a human agent without a
+  default chat is saved but not run, and the Agents page says why.
+  `GET /api/agents/human` lists the human agents and any rule problems. See
+  `manual/agents/human-agents.md`, which also gives every message the person and the
+  asker see.
+
+- **Check Up rows for the two states that silently cost agents their tools.**
+  An agent with Fusion on and no service listed in `mcp_tools` is marked for
+  action ("Fusion on with no service"); each CLI provider with "Bypass CLI
+  restrictions" off gets an awareness row beside the existing one for
+  providers with it on. Neither raises an alert: both are configuration
+  states, not outages.
+
+- **A CLI that refuses tool calls is reported, not hidden.** With "Bypass CLI
+  restrictions" off, the Claude CLI still answers in prose when its permission
+  check refuses a call, so an agent's job could fail with only the model's own
+  apology as evidence. The refused calls now
+  turn the turn into the "declined to use tools" error, which names the tools
+  and the setting. It is a reply to the user, not an alert: the CLI applied
+  its own permission settings, as directed. A bypass flag left in a model's
+  `extra_args` is dropped with a log warning; the Agents page shows it under
+  the model chain (see below) and the Check Up page lists the provider setting.
+
+- **`GET /api/mcp/status` reports why a server is down.** Each server entry
+  gains `last_error` (the latest connect failure, empty once connected) and
+  `last_error_at` (RFC 3339, omitted when there is none). For a stdio server
+  the error ends with the child's last stderr line (`...: transport closed;
+  stderr: <line>`), so a missing config file or bad argument shows its own
+  message instead of only "transport closed"; the same line is added to the
+  connect-failure log entries. An `env_file` line that cannot be parsed is
+  now reported by line number only, without echoing its contents.
+
+- **`gateway.lockout_exempt`: addresses that are never locked out.** A list of
+  IP addresses and CIDRs (a bare IP means that one address) exempt from every
+  per-address lockout: the WebUI login address lock and the device listener's
+  auth-failure lockout. Use it for a reverse proxy, so failures from others
+  behind it cannot lock everyone out. Loopback is always exempt. Account
+  (username) locks still apply to attempts from these addresses. Default empty;
+  an invalid entry is a config error; a change applies on config reload
+  without a restart. The Network page edits it as **Never locked out** (IPs or
+  CIDRs, one per line or comma-separated).
+
+- **HTTPS for the device listener.** `channels.device.tls: true` serves the
+  device listener over TLS (`wss://`) on its usual port with the same
+  certificate as the WebUI HTTPS listener, self-signed or user-provided,
+  following its reloads. Default off, so paired devices keep connecting over
+  `ws://` until it is turned on. It needs `gateway.tls.mode` other than
+  `"off"`, and config validation says so. `claw status`, the pairing QR code,
+  the Devices page and `claw acp` switch to `wss://` with it. The report's
+  Device listener rows now read like the WebUI rows: plain WebSocket on the
+  network is "Enabled for network access (unencrypted)" and marked, and the
+  HTTPS row is "Disabled" or "Enabled …, self-signed certificate".
+
+- **Restart from the WebUI.** `POST /api/system/restart` restarts ClawEh
+  when it runs under a service manager (systemd sets `INVOCATION_ID`): it
+  answers 202 `{"status":"restarting"}`, shuts down cleanly and exits with
+  status 3 so `Restart=on-failure` starts it again, and the request is recorded
+  in the audit log as kind `restart` (username and client address). Run by hand
+  it answers 409 `{"error":"not running as a service; restart ClawEh by hand"}`
+  and changes nothing. The Network page's restart banner now has a **Restart
+  now** button that calls it, waits for `/ready` to answer again and reloads
+  the page. Changing the device listener's protocol (`channels.device.tls`)
+  on the Network page shows the banner too.
+
+- **Check Up page and configuration report.** A new **Check Up** page (in
+  the sidebar after Services; its URL is `/report`) shows the product
+  identification (name, version, build, platform) and the security assessment
+  table, with rows needing action marked, and a **Full report** button for the
+  PDF ClawEh Configuration Report: identity and the user ClawEh runs as, the
+  security assessment, a summary of what Claw can access, every listener and
+  bind address, providers and models (CLI providers with the exact command
+  line they are launched with), credentials as set or not set, channels and
+  who may use them, each agent's tools, MCP access and every folder it can
+  read or write, external services, devices, data at rest and scheduled
+  activity. The assessment opens with one row per listener — **WebUI/API
+  HTTP**, **WebUI/API HTTPS**, **Device HTTP**, **Device HTTPS**, **MCP host
+  (local tools)** and, when enabled, **LINE webhook** — each "Enabled for
+  localhost", "Enabled for network access" or "Disabled", with the
+  certificate on the HTTPS rows ("self-signed certificate" or "user-provided
+  certificate (expires …)") and the allowed networks where they apply. Only
+  two listener conditions are marked `*`: WebUI/API HTTP open to the network
+  (unencrypted), and WebUI/API HTTPS disabled; a self-signed certificate is
+  never marked. Further rows cover data directory permissions (files or
+  folders under `CLAW_HOME` readable by other users, with the first offender
+  and the `chmod` fix), device auto-approve (`channels.device.auto_approve`),
+  a user certificate expiring within 14 days, the audit log (flagged when
+  missing), a per-agent reminder that `shell_exec` is not confined by
+  `restrict_to_workspace`, and whether an admin account exists. Endpoints:
+  `GET /api/report/pdf`, and `GET /api/report/assessment`, the same rows as
+  JSON
+  (`{"identity":{name,version,build,platform,generated_at},"assessment":[{action,item,status}]}`).
+  Rows about an agent name it by its display name, and the `shell_exec` row
+  reads the same on the page and in the PDF. Secret values never appear. See
+  `manual/admin/checkup.md`.
+
+- **Operator alerts.** Conditions the operator should hear about are written
+  to `<CLAW_HOME>/logs/alerts.log` (or the file named by `ALERTER_LOG`), one
+  record per alert with its priority: a model parked for an
+  authentication or billing failure (a CLI logged out, a key revoked), a
+  model parked after repeated failures, an unreachable MCP server, a channel
+  that failed to start, could not deliver a message, had its token rejected
+  (Telegram, Slack, Matrix), has had no working connection for ten minutes
+  despite retrying (Telegram, Slack, Discord, Matrix, SecMsg) or whose device
+  listener stopped, SecMsg with no accounts, a scheduled job that failed or
+  could not be delivered, an
+  unreadable or unwritable cron store, a session that could not be saved,
+  service tokens that could not be loaded, an invalid config edit or a failed
+  reload, a failed nightly backup or log rotation, and the WebUI/API listener,
+  MCP host server or agent loop stopping; also the Fusion token store,
+  Maestro setup, cognitive-memory migration, message-token stores, session
+  state, sub-agent records, mount watching, voice transcription credentials
+  and device sources. Repeats of the same alert within
+  ten minutes are counted, not repeated. The Logs page shows the alerts log
+  through its new source selector, and `GET /api/gateway/alerts` returns it.
+  Every alert is listed in `ALERTS.md`; the record format is in
+  `manual/admin/alerts.md`. Alerts are also delivered to any channel configured
+  through `ALERTER_*` environment variables or `~/.alerter` (Pushover, SMS,
+  SMTP mail, webhook), and a channel's `ALERTER_<CHANNEL>_MIN_PRI` filter is
+  honoured. All ClawEh alerts are normal priority.
+
+- **Channel connection alerts are per platform.** When channels of one
+  platform lose their connection for ten minutes, one "`<Platform>` down"
+  alert is raised (alert id is the platform, e.g. `telegram`), saying how many
+  bots or connections are down, with the affected channel names and the last
+  error in the details; channels that fail later in the same outage join it
+  silently. When they have all reconnected, one "`<Platform>` up" alert (alert
+  id `<platform>-up`) says how long it lasted.
+
+- **MCP server alerts are sent once per outage.** A server that goes down (or
+  fails its first connect) raises "MCP `<name>` down" once, then at most one
+  reminder an hour ("still down since HH:MM"), and "MCP `<name>` up" (alert id
+  `<name>-up`) when it reconnects. The description is one short line suited to
+  SMS, preferring the server's own error message; the full error and its last
+  stderr lines are in the details. A config reload keeps this state, so it
+  does not re-alert a server already reported down.
+
+- `claw admin [username]`: create or replace the WebUI admin account. Writes
+  the credentials file in the service's `CLAW_HOME` (the `CLAW_HOME` variable,
+  else the installed unit's, else `~/.claw`) and, when run as root, hands it to
+  the service account. New endpoints `GET /api/auth/status`,
+  `POST /api/auth/login`, `POST /api/auth/logout`.
+
+- `claw admin` prompts on `/dev/tty` when stdin is not a terminal (a piped
+  script), and re-asks a prompted username or a password that is too short or
+  not repeated exactly, up to three times. It still never reads the password
+  from a pipe, and refuses when there is no terminal at all.
+
+- **Audit log.** ClawEh now keeps an append-only record of who did what in
+  `<CLAW_HOME>/internal/audit.db` (SQLite, mode 0600): every agent tool call
+  (agent, session, channel, sender, tool, redacted argument digest, outcome,
+  duration), every configuration save through the WebUI, from any page
+  (`config_write`: operator, client IP, and which top-level config sections
+  changed — never the values), and WebUI login/logout/lockout events. Rows are
+  kept for 90 days. Read it in the new **Audit** page (Services → Audit) or
+  via `GET /api/audit?since=&until=&kind=&agent=&session=&limit=&before_id=`.
+  Recording never blocks a turn: if the write queue is full the event is
+  dropped and counted, and the page shows the count. Every agent turn also
+  gets a short random `turn_id` (8 hex) carried on its inbound, routing,
+  tool-dispatch and outbound log lines and on its audit rows, so one turn's
+  activity can be pulled together across `claw.log` and the audit log. See
+  `manual/admin/audit.md`.
+
+- **Full backup and restore.** The nightly backup now writes one archive,
+  `claw-backup-<timestamp>.tar.gz` (0600, in a 0700 directory), containing
+  `config.json`, the cron jobs file, `internal/` (service and integration
+  tokens, the device pairing database, the fusion OAuth token store),
+  `credentials.json` and `tls/` when present, and every SQLite database under
+  `CLAW_HOME` — session archives and cognitive memory included. Databases are
+  checked with `PRAGMA quick_check` and copied with SQLite's `VACUUM INTO`, so
+  a live store is captured consistently, WAL included; a database that fails
+  the check is left out and raises the alert "Database failed integrity check"
+  while the rest of the backup completes. Media caches, logs and per-agent
+  `tmp/` are excluded. New config key `backup.dest` chooses the destination
+  directory (an off-host mount, for example); `retain_days` now prunes
+  archives and the old `YYYYMMDD` folders alike. New commands: `claw backup
+  [--dest DIR]` runs the same backup on demand and prints what was written;
+  `claw restore <archive> [--yes]` restores one, refusing while ClawEh runs,
+  listing every file it will replace, moving the current files to
+  `restore-backup-<timestamp>/` and aborting before any change if a restored
+  database fails its integrity check. `POST /api/backup` additionally returns
+  `archive`, `bytes` and `skipped`. See `manual/admin/backup.md`.
+
+- `agents.list[].deny_tools`: a per-agent list of tools the agent may never
+  call, evaluated after every grant and always winning — over `tools`, over
+  `mcp_tools`, and over the suite toggles (`fusion`, `maestro`, `cogmem`, the
+  discovery meta tools). Internal and suite tools match by case-insensitive
+  name or a `*`-suffixed prefix (`shell_exec`, `google_calendar_event_delete`,
+  `google_drive_*`); MCP-client tools match `<server>_<tool>` by equality or
+  prefix without the `mcp_` prefix (`google_drive_file_share`,
+  `google_calendar`). A denied tool is neither advertised to the model nor
+  executable, for interactive, cron and sub-agent turns alike. Editable on the
+  Agents page ("Denied tools") and listed in the configuration report.
+
+- **Inbound flood control.** Messages that arrive while a session is already
+  answering are no longer each given their own turn. They queue, and when the
+  running turn finishes all queued messages from the same chat run as one
+  turn, their texts joined in arrival order (newline-separated) with the reply
+  addressed to the last of them; messages from different chats that share a
+  session are never merged, and a command always runs on its own. New
+  `agents.defaults.max_concurrent_turns` (default 8; `0` = unlimited, read at
+  startup) caps how many turns run at once across all sessions; further turns
+  wait for a free slot.
+
+- **Daily spend alert.** New `agents.defaults.daily_spend_alert_usd` (default
+  `0` = off): the first time the day's (UTC) summed model cost, as reported by
+  the providers, reaches this amount an operator alert is raised (once per
+  day). Sub-agent worker turns and compaction calls are not counted.
+
+- `make sbom` (CycloneDX `build/sbom.json`), `make release-checksums` and
+  `make release-sign`.
+
+- **Secret references in `config.json`.** Any credential field (`api_key`,
+  `*_token`, `*_secret`, `*password`, `api_keys` entries, MCP/CLI `env` and
+  `headers` values, `proxy` URLs) may be written as `env:NAME` to read an
+  environment variable or `file:/absolute/path` to read a private (0600) file.
+  The value is resolved when the config loads and the reference is written back
+  on every save, so the WebUI can edit the config without the secret ever
+  landing in `config.json`. `GET /api/config` shows the reference as written. A
+  missing variable, an unreadable file or a file readable by group/other is a
+  load error naming the config key and the `chmod 600` fix.
+
+- `session.retention_days` (default `0`, keep forever): a nightly job (03:45
+  local) deletes any session archive whose last activity is older than that
+  many days. An agent's one conversation (`agent:<id>:main`), sessions with a
+  turn pending, and sessions the running loop still holds open are never
+  deleted; `archive_days` remains the per-message trim within the agent's
+  conversation. The same
+  job removes cogmem pre-migration snapshots (`cogmem.db.pre-vN.db`) older than
+  30 days. Failures raise the "Session retention failed" alert.
+
+- `claw sessions erase --channel <ch> --chat <id> [--all]` and `DELETE
+  /api/sessions?channel=&chat_id=[&all=true]` (login required) delete every
+  session belonging to one sender on one channel across all agents and print
+  exactly what was erased: the sessions earlier releases kept per sender. A
+  sender's messages now live in the agent's one conversation, which has no
+  per-sender column: it is reported and only deleted with `--all`. Cognitive
+  memories are not touched, because cogmem records no per-sender provenance.
+  The CLI refuses to run while ClawEh is up; use the API then.
+
+- Config page → Backup: a **Destination directory** field for `backup.dest`
+  (blank = `<CLAW_HOME>/backup`). Saving from the Config page previously
+  dropped an existing `backup.dest`.
+
+- TLS endpoints for the WebUI, behind the login: `GET /api/tls` returns the
+  saved listener settings (`mode`, `source`, `cert_file`, `key_file`,
+  `extra_names`, `tls_port`, `http_host`, `http_port`, `external_url`), the
+  URLs they give (`urls.localhost`, `urls.http`, `urls.https`), the
+  certificate (`present`, `subject`, `names`, `not_after`, `fingerprint`,
+  `self_signed`) and `restart_required` (saved listener settings differ from
+  the ones the running ClawEh bound). `POST /api/tls/validate`
+  `{"cert_file","key_file"}` checks a certificate pair without saving it —
+  absolute paths readable by the service user, key matching, currently valid
+  — and answers 200 with the certificate or 400 naming the problem.
+  `POST /api/tls/regenerate` replaces the self-signed certificate on the
+  running listener for the saved names (409 with your own certificate, 503
+  when no HTTPS listener runs). `PUT`/`PATCH /api/config` now refuse a change
+  of `gateway.tls.cert_file`/`key_file`/`mode` whose certificate pair fails
+  the same check, so the WebUI cannot save paths ClawEh would not start
+  on; an unchanged pair is not re-checked.
+
+- WebUI: the Config page is now two pages. **Network** (`/network`) holds
+  every listener setting — HTTP port and scope (`gateway.host`/`port`), HTTPS
+  mode and port (`gateway.tls.mode`, `gateway.tls_port`), hostname
+  (`gateway.external_url`), extra certificate names
+  (`gateway.tls.extra_names`), the allowlist (`gateway.allowed_cidrs`), the
+  device listener
+  (`channels.device.host/port/external_url/allowed_cidrs/auto_approve`, moved
+  from the Devices page) and the read-only MCP host address — with the current
+  certificate, the URLs to open and a "restart required" banner from `GET
+  /api/tls`. **System** (`/system`) holds the rest (agent defaults, context,
+  runtime, logging, backup, hardware devices); `/config` redirects to
+  `/system`.
+
+- WebUI: **Save certificate** on the Network page validates an operator
+  certificate/key pair through `POST /api/tls/validate` before the paths are
+  written to `gateway.tls.cert_file`/`key_file`; a pair the server cannot load
+  is reported inline and nothing is saved. **Regenerate certificate** calls
+  `POST /api/tls/regenerate`.
+
+- The Devices page's **Pair a device** card shows the address devices connect
+  to, and `GET /api/devices/pair` returns it as `connect_url`
+  (`ws://` or `wss://` host and port, from `channels.device.external_url` when
+  set, else `gateway.external_url`'s hostname or the first LAN address on the
+  device listener port). Without `channels.device.external_url`, the pairing QR
+  now lists `gateway.external_url`'s hostname before the LAN addresses.
+
+- **`gateway.trusted_proxies`: see the real client behind a reverse proxy.** A
+  list of IP addresses and CIDRs (same format as `gateway.lockout_exempt`;
+  default empty). A request whose TCP peer is listed is attributed to the
+  address in its `X-Real-IP` header, else the first `X-Forwarded-For` entry,
+  for the IP allowlists (`gateway.allowed_cidrs`,
+  `channels.device.allowed_cidrs`), the WebUI login and device listener address
+  lockouts, `gateway.lockout_exempt`, logs and the audit log. From any other
+  peer the headers are ignored, and loopback is trusted only when listed. With
+  a proxy listed the allowlists judge the forwarded clients, so a proxied WebUI
+  needs `gateway.allowed_cidrs` to cover them. An invalid entry is a config
+  error; a change applies on config reload without a restart. The Network
+  page edits it as **Trusted proxies**.
+
+- The MCP Servers page shows why a server is down: the failure reason and how
+  long ago it happened appear under the server's status (`last_error` and
+  `last_error_at` in `GET /api/mcp/status`).
+
+### Changed
+
+- **The "MCP `<name>` down" alert waits five minutes.** An MCP server that
+  fails to connect is now reported only once it has been unreachable for five
+  minutes, on the first failed attempt after that (about 7.5 minutes into an
+  outage, given the retry backoff), and "MCP `<name>` up" follows only a down
+  alert that was sent. A server that is slow to come up after a reboot, or
+  restarted for an upgrade, no longer produces a down alert at once and an
+  up alert a minute later. The hourly "still down" reminder is unchanged.
+- **A configuration save restarts only the channels whose settings changed,
+  and channels start in parallel**, so one slow channel no longer delays the
+  others (an unreachable Telegram bot used to hold up every channel started
+  after it). Matrix no longer drops messages sent during a restart of its
+  channel. When a save cannot reach a SecMsg daemon to list its accounts, the
+  accounts already running keep running instead of being stopped, and the
+  "SecMsg account discovery failed" alert is raised once until discovery
+  works again.
+
+- **The "<Platform> down" and "<Platform> up" alerts name the channels in
+  their title**, for example "Telegram down: telegram-alice" (up to three, then
+  "+N more"); the up alert names the channels that reconnected, not ones
+  that stopped during the outage. Before, the title said only "Telegram down"
+  and the bot was named in the details.
+
+- **The built-in Anthropic models are Claude Sonnet 5.5, Claude Opus 5.5 and
+  Claude Fable 5.1** (`claude-sonnet-5-5`, `claude-opus-5-5`,
+  `claude-fable-5-1`), all off until you enable them. They replace "Claude
+  Sonnet 4.6", whose model name `claude-sonnet-4.6` was wrong (Anthropic's is
+  `claude-sonnet-4-6`). This applies to new installs; an existing
+  `config.json` keeps its models.
+
+- **Thinking Level (`thinking_level`) adds `max`, and every level is now
+  adaptive thinking with that effort.** `low`, `medium`, `high`, `xhigh` and
+  `max` set how hard Claude thinks instead of a fixed token budget;
+  `adaptive` uses the model's default effort and `off` sends no thinking.
+  Newer Claude models always think adaptively, so `off` cannot turn their
+  thinking off entirely.
+
+- SearXNG search now goes through `tools.web.proxy` like the other search
+  providers; a SearXNG server on this machine is still reached directly.
+
+- `logging.dump_refusals` is now off by default. To keep writing a dump when a
+  model refuses, set `"logging": { "dump_refusals": true }` in `config.json`.
+
+- **Default tools** on the Agents page no longer includes `common_delete`;
+  grant it to an agent by hand if it should delete files in the common folder.
+
+- **Deleting an agent now asks first.** The trash button on the Agents page
+  opens a "Delete Alice? Its files stay on disk." dialog; nothing is removed
+  until **Delete** is clicked.
+
+- **Clearer WebUI wording.** The setup wizard says a new agent starts with no
+  tools; the Speech page labels backends **Primary** and **Fallback**; the
+  System page's directory and request timeout hints are shorter and correct;
+  Telegram bots are named by their id ("Default bot") instead of an internal
+  channel name; delete buttons on channel cards name what they delete; the
+  Devices page shows access as a label with a warning icon and a link to the
+  Network page; the device external address shows an example; the Rotating
+  Tokens hint points to Integration Tokens.
+
+- **BREAKING: a blank Default temperature no longer sends 0.2.** When neither
+  **Default temperature** (System page, `agents.defaults.temperature`) nor the
+  agent's `temperature` is set, ClawEh now sends no temperature and each HTTP
+  model uses its own default. A configured value is still sent. To keep the
+  old behaviour, set **Default temperature** to 0.2 on the System page.
+
+- **Anthropic models never receive a temperature.** The newest Claude models
+  (Fable 5.1, Opus 5.5, Sonnet 5.5, Haiku 5.5) do not use temperature, and a
+  configured one made every request to them fail and fall back to the next
+  model. The `anthropic` and `anthropic-messages` protocols now leave it out;
+  other providers still receive it.
+
+- **Backups now include each agent's Maestro data.** The nightly backup and
+  `claw backup` include every agent's `maestro/` folder (projects, playbooks
+  and the rest), and `claw restore` puts it back. Maestro's lock files
+  (`*.lock`), temporary files (`*.tmp`) and symbolic links are left out; file
+  modes are kept. Archives grow by the size of that folder, which can be
+  several hundred megabytes on an install with many projects.
+
+- **BREAKING (API): a configuration save the rules refuse answers 400 with
+  JSON `{"status": "validation_error", "errors": [...]}`, one sentence per
+  refusal, instead of plain text "Validation error: …".** The rules are a
+  model that does not exist, the human-agent rules, a reserved mount name, an
+  agent id, a listener setting, the forum limits and the checks the WebUI
+  makes before saving (a missing channel token, an invalid CIDR, ...); a
+  refused save lists every problem at once, and a `config.json` that does not
+  load names every problem too. This covers
+  `PUT`/`PATCH /api/config` and every other endpoint that saves the
+  configuration (models, providers, CLIs, tools, voice, devices, WebUI setup).
+  A failure found while applying the change keeps its status code (404, 409,
+  500) and also answers `{"errors": [...]}`; a request the endpoint cannot
+  read (bad JSON, a missing field) still answers plain text. An integrator
+  that parsed the old text must read the `errors` list.
+
+- **BREAKING: agent ids must be 1 to 64 characters of letters, digits, - and
+  _, starting with a letter or digit, and no two agents may share one, ignoring
+  case.** This applies to `agents.list[].id` and to every place that names an
+  agent: `bindings[].agent_id`, `bindings[].agent_mentions` and
+  `subagents.allow_agents` (`"*"` is still allowed). Upper case is accepted and
+  ids are case-insensitive: `Bob`, `bob` and `BOB` are the same agent
+  everywhere, and its folder, conversation, scheduled jobs, devices and tokens
+  stay under the lower-case form ClawEh already used, so an install whose ids
+  differ from that form only by case needs no change. ClawEh used to rewrite
+  any other id silently at run time; it now refuses it. A `config.json` with
+  such an id does not start (a live edit is not applied and raises "Config
+  file invalid"), and the WebUI and API refuse to save one, naming the id and
+  the fix: `Agent id "Alice.Smith" may use only letters, digits, - and _; use
+  "Alice-Smith".` Two agents whose ids differ only by case, or are the same
+  (only the later one ran, in the folder both shared), are refused the same
+  way: `Agent ids "Bob" and "bob" name the same agent; give each agent its own
+  id.` or `Agent id "alice" is used twice; give each agent its own id.` To
+  migrate, change the id to the form the message suggests in `agents.list` and
+  everywhere it is named (bindings, `agent_mentions`, other agents'
+  `allow_agents`).
+
+  For most ids the suggested form names the agent ClawEh already ran (case
+  aside), and the agent keeps everything. It does not when the id starts with
+  `_` (`_alice` ran as `_alice`, now `alice`), when it ended in `_` or `-`
+  after characters ClawEh replaced or after the cut to 64 characters
+  (`alice_!` ran as `alice_`, now `alice`), or when it holds a non-ASCII
+  letter whose lower case is an ASCII one, such as `İ` or the Kelvin sign
+  (`İnci` ran as `inci`, now `nci`). Everything kept under the id it ran
+  under stays with it, so for such an agent (`<old id>` is the id it ran
+  under, `<new id>` the new one in lower case):
+  - rename the folder `agents/<old id>` to `agents/<new id>`; its memory and
+    files move with it (an agent with its own `workspace` setting keeps that
+    folder and needs no rename);
+  - its conversation does not carry over: it is the file
+    `sessions/agent_<old id>_main.archive.db` in that folder, which records
+    the key `agent:<old id>:main` inside it, so the agent starts a new
+    conversation and the old file is no longer read;
+  - re-assign each device that used it on the Devices page (until then the
+    device talks to the default agent, and the page marks the assignment);
+  - its scheduled jobs are skipped until their `agentId` in
+    `cron/jobs.json` names `<new id>`, or the agent schedules them again;
+  - issue its message tokens again on the Agents page and its service tokens
+    again with `claw token`;
+  - sign in again to the Fusion services that keep a sign-in per agent.
+
+  Choosing an id that is not the suggested one (other than by case) needs the
+  same steps for any agent.
+
+- **Recalled memory is labelled as injected.** Memory that cogmem adds to a turn
+  now starts with "## Injected cogmem domain: <name> (<id>) — <reason>", so the
+  model can tell recalled memory from the conversation.
+
+- **New installs get an updated list of built-in providers and models (all
+  disabled).** Added Claude CLI Fable, Gemini 3.8 Flash, DeepSeek Flash,
+  Grok 4.7 (default, High, Medium, None), OpenRouter Fable/Kimi/Gemini Flash/
+  GLM/GPT Terra Latest, OpenRouter GPT 6 Astra/Sol/Luna, OpenRouter DeepSeek
+  Flash/Pro Latest (on a new "OpenRouter Chat DeepSeek" provider), Bedrock
+  Opus 5.5, Sonnet 5.5 and GPT 6 Astra; Claude CLI Opus now asks for "Opus".
+  Removed older entries (Grok 4.3, DeepSeek Chat, Gemini 3.5 Flash, OpenRouter
+  DeepSeek V4, Bedrock Opus 4.8/Sonnet 4.6, Moonshot v1 8k, Nemotron 4 340b,
+  Groq and Cerebras Llama 3.3 70b, Avian Kimi k2.5, OpenRouter GPT 5.4,
+  OpenRouter Elephant, Gemini 3.1 Flash Lite Preview). The DeepSeek provider
+  sets `require_reasoning_content` and NVIDIA sets `strict_compat`. The setup
+  wizard now recommends OpenRouter DeepSeek Flash Latest. Existing
+  configurations are not changed.
+
+- **A failed send says why, and an offline recipient raises no alert.** A send
+  now says why it failed: the channel is not configured, the channel is not
+  running, the recipient is offline, the recipient can't be reached, or the
+  send failed after its retries. The device, Telegram, Slack, Discord and
+  WebUI channels report the recipient reasons: offline is a paired device that
+  is not connected (or whose connection is closing) or a WebUI session with no
+  browser open; can't be reached is an unknown or unpaired device, a Telegram
+  chat that is not found, blocked the bot, was deactivated, never started a
+  conversation with the bot, is another bot or was upgraded to a supergroup, a
+  Slack conversation that is not found, archived or without the app, or a
+  Discord channel or user that is unknown or refuses the bot's messages. The
+  alert is raised only for a channel that reports itself not running or a send
+  that failed after its retries; an offline or unreachable recipient is logged
+  as a warning and not retried. A WebUI tab that closes while a reply is being
+  sent counts as offline. Files and attachments are retried and reported like
+  text, including the alert ("a file could not be delivered"), and the
+  Telegram, Slack and Discord alerts carry the platform's reason. Telegram
+  sends a reply as plain text only when Telegram cannot parse its formatting;
+  a 403 means the chat can't be reached (a warning, no alert), a 429 is a rate
+  limit (retried), and any other 4xx fails at once. A Telegram reply too long
+  for one message that is retried resends only the parts not yet delivered,
+  and a reply to a message that was deleted is sent without the reply link. A
+  human agent's question that cannot be posted
+  now tells the asker why (see the human agents entry under Added), and Check
+  Up marks a human agent whose chat is on a channel that is not set up.
+
+- **BREAKING: mounts can no longer be named after workspace folders.** The
+  names `files`, `skills`, `tasks`, `tmp`, `forums`, `maestro`, `sessions`,
+  `cogmem`, `state` and `common` (in any case) are reserved, so a mount can
+  never hide the folder of the same name from the agent's file tools. Saving
+  such a mount is refused ("Alice's mount "files" uses a reserved name;
+  choose another name."). A mount already in `config.json` with one of these
+  names is ignored until renamed: a warning names the agent and the mount at
+  load, the Agents page marks it "Ignored: "files" is a reserved name.", and
+  Check Up lists it. A mount named `maestro` no longer replaces the
+  automatic Maestro mount. Migration: rename the mount on the Agents page or
+  in `agents.list[].mounts[].name` in `config.json`, and update any path the
+  agent uses to reach it.
+
+- **Expected refusals are logged as warnings, not errors.** A call refused by
+  configuration or by a tool's own rules (a tool the agent is not allowed, an
+  `agent_message` target outside `subagents.allow_agents`, a message over the
+  8,000-character limit, an `agent_message` to an agent that does not exist,
+  a `/ask` or `/whisper` the sender may not send, any refused forum call, a
+  file tool's read or write outside the agent's permitted folders, a
+  `shell_exec` command blocked by the safety guard, a `file_delete` without
+  `sure=true` or of a backup file or a folder, `session_clear` while answering
+  another agent) is logged at WARN as "Tool call refused" (or "Agent message
+  refused"). A `msg_send` the channel could not deliver because the chat is
+  offline, unreachable, receive-only or not set up is logged once, as the
+  channel's warning, not again as a failed tool call. A turn stopped on
+  purpose (`/cancel`, or a forum that stopped waiting) logs its model call at
+  INFO. Genuine tool failures stay at ERROR, so `error.log` holds only faults.
+
+- **A sub-agent (`agent_spawn`, Maestro dispatch) now runs as a temporary
+  clone of its agent** instead of in a sub-agent session of the agent. What it
+  can do is unchanged: same workspace, tools, models, prompt, depth limit,
+  results and errors, and a throwaway snapshot of the agent's memory. What
+  you see changes: its conversation and memory live in
+  `<CLAW_HOME>/internal/temp/<uuid>/` (left out of backups) rather than in the
+  agent's `sessions/` and `cogmem/subagents/`; its session key is
+  `agent:<uuid>:main` instead of `agent:<id>:subagent:<uuid>`; log lines name
+  it `alice (clone 1a2b3c4d)`; and its audit rows, still recorded under
+  `alice`, carry `"clone": "1a2b3c4d"` in their details. It is deleted once its
+  result is delivered; one left by a stop or crash mid-run is removed at the
+  next start. Its late async results go to the agent's main conversation, and
+  a message for a temporary agent that no longer exists is dropped, never
+  handed to another agent (a sender waiting for a reply is told "Agent <id> no
+  longer exists."). Temporary agents never appear on the Agents page, in the
+  Check Up report or in a device's agent list. A saved temporary agent (a
+  forum participant) is deleted only when the configuration no longer allows
+  it (its model or source agent is gone), never because it failed to load;
+  when `internal/temp_agents.json` cannot be read, is damaged or was written
+  by a newer release, the saved temporary agents are kept and new ones are not
+  saved until the file is fixed.
+
+- **BREAKING: one conversation per agent; session modes are removed.** Every
+  message to an agent, from any chat, device, the WebUI chat, `claw agent` or
+  an MCP service token, goes to the agent's one conversation,
+  `agent:<id>:main`, with one history and one memory. The per-user,
+  per-platform and per-account modes are removed, with the `session.mode` and
+  `session.identity_links` settings (a config that still sets them loads with
+  an unknown-key warning), and service tokens no longer have a conversation of
+  their own (`agent:<id>:service`). The archives of those earlier
+  conversations are no longer used; with `session.retention_days` set they
+  are deleted once idle that long, like any session other than an agent's
+  main conversation, and `claw sessions erase` removes one sender's at once.
+  Migration: create a separate agent where a separate conversation is wanted
+  (with `cogmem` off if it should keep no memory).
+
+- **USB device notifications go to the default agent's default channel**
+  instead of the last channel used. Without a default binding for the default
+  agent they are not sent.
+
+- **A Maestro dispatch whose tool calls all failed is a failed attempt.** When
+  the sub-agent behind a Maestro dispatch made ClawEh tool calls and every one
+  of them failed, Maestro is now told the dispatch failed, and the task is
+  retried within its `max_worker` budget instead of the reply being accepted as
+  a completed result. The task error names the number of calls and the last
+  tool error ("sub-agent made 3 tool call(s) and every one failed; last error:
+  …"). A dispatch with at least one working tool call, or none at all, is
+  unaffected. Only ClawEh's own tools are counted, including calls it refuses
+  (a tool not enabled for the agent); a CLI's built-in tools are not, and
+  neither are calls rejected before their session token is verified.
+
+- **"Allow CLI to bypass restrictions" is the setting's name everywhere.** The
+  Providers page checkbox, the Check Up rows, the configuration report and the
+  "declined to use tools" reply all use it, so enabling the CLI's
+  skip-permissions flag reads as allowing something. The config key
+  `bypass_restrictions` is unchanged. The reply now starts with the
+  assistant's name ("Alice: The Claude CLI declined to use tools…"). The
+  Agents page shows one line under a model chain when a model's `extra_args`
+  still carries the CLI's bypass flag while the provider's setting is off
+  ("`<CLI>` is not allowed to bypass its restrictions."), with an **Allow it**
+  link to the Providers page.
+
+- **BREAKING: Fusion services are granted per agent through `mcp_tools`.**
+  The agent's `fusion` switch no longer grants every Fusion tool: an agent gets
+  the tools of a Fusion service only when `mcp_tools` names the service (or a
+  group within it, `microsoft365_calendar`), under the same equal-or-prefix rule
+  as MCP servers. An agent with `"fusion": true` and no matching entry now has
+  no Fusion tools. To restore an agent's access, add the service names to its
+  `mcp_tools` (in `config.json`, or tick them under **Fusion services** on the
+  Agents page, which now lists the defined services beside **MCP access**);
+  installs that already listed Fusion service names there, as the pre-July
+  configuration did, keep working unchanged. `GET /api/agents/tools` gains
+  `fusion_services`, the defined service names.
+
+- **Telegram uses HTTP/1.1.** During a network outage a dead HTTP/2
+  connection made every Telegram poll hang for 45 seconds before failing;
+  HTTP/1.1 fails fast and reconnects, as the earlier transport did.
+
+- **Failed MCP servers back off.** Retries of a server that keeps failing wait
+  `tools.mcp.reconnect_cooldown_seconds` (30 by default), then double per
+  failure up to 10 minutes; a successful connect resets the wait, and Reconnect
+  on the MCP servers page tries at once. A server whose first connect fails now
+  also waits the cooldown before the background retry.
+
+- **BREAKING: the data directory is laid out by purpose, and `agents/default`
+  is gone. There is no automatic migration.** claw's own files (`state.json`,
+  service and message tokens, the device pairing database, Fusion's OAuth
+  tokens, the ACP bridge identity, the audit log `audit.db`, `claw.pid` and
+  `claw.lock`) live in `<CLAW_HOME>/internal/`. The common directory defaults
+  to `<CLAW_HOME>/common` (`agents.common_dir` still overrides it).
+  `<CLAW_HOME>/skills` is the only shared skills folder: the Skills page,
+  `claw skills` and the report no longer show skills from
+  `agents/default/skills`, and the Skills page can now delete a shared skill.
+  CLI providers whose model sets no workspace run in `<CLAW_HOME>/cli/`, and a
+  relative MCP `env_file` path is relative to `<CLAW_HOME>` instead of the
+  default agent's workspace. `claw status` no longer prints a "Workspace:"
+  line, and a new install's first agent lives in `agents/claw`. claw creates
+  `internal/`, `common/`, `skills/` and `cli/` at start and starts fresh files
+  where none exist. An older data directory's `<CLAW_HOME>/state/`,
+  `agents/common`, `agents/default` and top-level `audit.db`, `claw.pid` and
+  `claw.lock` are no longer read; move anything you want to keep by hand, and
+  change MCP `env_file` paths and scripts that name the old locations. See
+  "File layout" in the README.
+
+- User-facing text no longer calls the process "the gateway": WebUI labels,
+  CLI help and output, log lines, alert descriptions, the report and the docs
+  now say ClawEh (or claw), and the device channel is "the device listener".
+  The report rows **Device Gateway HTTP** / **Device Gateway HTTPS** are now
+  **Device HTTP** / **Device HTTPS**; `claw status` and `claw network` print
+  **Device listener:** in place of **Device gateway:**. Config keys, the
+  `claw gateway` command, `/api/gateway/*` and `CLAW_GATEWAY_*` are unchanged.
+
+- WebUI sidebar: **Chat** is now a direct link to the chat page instead of a
+  group that opened to a single Chat entry.
+
+- The Devices page shows the requesting client address after each pending
+  pairing request's name (`remote_ip` from `GET /api/devices/pending`, as
+  "Rabbit R1 · from 203.0.113.5"), so a request that merely claims a device's
+  name can be told from the real one.
+
+- A device assigned to an agent the service does not run (deleted, disabled,
+  or a human agent set aside by the human-agent rules) talks to the default
+  agent. `GET /api/devices` marks it with `agent_missing` and says why in
+  `agent_state` (`not_found`, `disabled`, `set_aside`), and the Devices page
+  shows it at the device's assistant ("Ignored: Bob no longer exists; using
+  the default agent.").
+
+- The systemd unit `claw install` writes (and `claw.service`) now uses
+  `KillMode=mixed`: a stop sends SIGTERM to ClawEh alone, which shuts
+  down its channels, turns and MCP servers in order, and only what is left
+  afterwards is killed. Existing installs keep the old unit until
+  `claw install` is run again.
+
+- On shutdown the MCP liveness probes stop first and no MCP server is
+  reconnected, so a server the stop signal killed is no longer restarted
+  while ClawEh exits.
+
+- `claw network` grows `--http localhost|network`, `--https all|localhost|off`
+  and `--device localhost|network` to set where each listener binds from the
+  command line, and `--show` reports all of them with the allowlist, so an
+  operator locked out by a bad listener setting can recover on the server
+  without editing `config.json`. README gains an "If you are locked out"
+  section.
+
+- **Network page copy and saving.** Every hint on the Network page, and the
+  setup wizard's network step, is now one short sentence: no explanations of
+  what an attacker can do, plain HTTP on the network is "not recommended", the
+  regenerate hint no longer talks about browser warnings, and the wizard no
+  longer claims TLS is not built in (it is). The restart banner reads "Restart
+  required to apply changes." with the **Restart now** button beside it. The
+  Save button is gone: the page autosaves each changed field like the rest of
+  the WebUI (text about half a second after the last keystroke, a radio or
+  checkbox at once), sending only that field.
+
+- `claw status` no longer prints a "Model:" line: agents use their own model
+  lists, so a single name there was misleading.
+
+- **Device listener section of the Network page.** Its first control is a
+  two-option **Protocol** radio (*ws (unencrypted)* / *wss (HTTPS)*) bound to
+  `channels.device.tls`. The **External URL** field is now **External
+  address**: the operator enters only a host name or IP address,
+  with an optional `:port`; a value with a scheme or a path is refused under
+  the field and nothing is saved. The stored `channels.device.external_url`
+  becomes `https://<host[:port]>` (the pairing QR turns it into `wss://`). A
+  stored URL is shown without its scheme; one stored as `http://` or `ws://`
+  is rewritten to `https://` only when the field is edited.
+
+- The address lists on the Network page, in `claw status` and in `GET /api/tls`
+  no longer include Docker's bridge interfaces (`docker0`, `br-<id>`, `veth*`):
+  those addresses reach only containers on the machine, so they are not
+  addresses to open and listing them made a plain-HTTP listener look more
+  exposed than it is. The listener still binds them and the Host check still
+  accepts them, so a container can keep calling the API through its bridge.
+  On the Network page each plain-HTTP network address now carries a warning
+  triangle (hover: *Plain-text HTTP exposed to network.*) in place of the
+  sentence under the list.
+
+- **`make test` runs golangci-lint again**, with errcheck and gosec enabled.
+
+- **Errors that used to be swallowed are now reported.** A few tool and API
+  results change: a malformed `after_line`, `at_offset` or `start` in the
+  file range-edit tools is an error instead of silently 0; the cron add tool
+  reports a failed job update; the memory list API returns 500 when the
+  store fails instead of an empty list; device-store failures surface as
+  errors rather than "not found"; `claw status` shows "Cognitive memory
+  unavailable: <error>" instead of zero counts. The device listener, MCP host
+  and OAuth callback servers now time out a client that is slow to send its
+  request headers.
+
+- **MCP liveness probe on by default.** `tools.mcp.liveness_probe_seconds`
+  now defaults to 60 (was 0, off). Every connected external MCP server is
+  asked for its tool list once a minute; a failed probe reconnects it, and a
+  changed answer refreshes its tools within the interval. Set the key to `0`
+  in `config.json` to restore the old behaviour; an explicit `0` is kept on
+  save.
+
+- **A cancelled or timed-out turn stops publishing.** Progress placeholder
+  edits, stream deltas, tool breadcrumbs and fallback notices belong to their
+  turn, so none is sent after the turn ends. WebUI memory requests stop when
+  the browser disconnects.
+
+- **`--version` names only Tenebris Technologies.** Code inherited from the
+  original fork is replaced or removed; the original MIT notice stays in
+  `LICENSE`, and the project's origins are recorded in `docs/HISTORY.md`.
+
+- **MCP access is a checkbox list.** The agent card shows one checkbox per
+  configured MCP server instead of a comma-separated text field: checked
+  grants every tool the server publishes. An entry that names no configured
+  server (a server since removed, or a hand-typed partial grant from before)
+  stays visible, checked and flagged, so it can be removed; the WebUI no
+  longer offers finer-than-server grants. The saved `mcp_tools` list is
+  unchanged in shape. The card is
+  regrouped into Skills, Tools (MCP access first, then the native tool list,
+  now titled "Internal tools" rather than "Always-On Tools") and Mounts.
+
+- **BREAKING:** CLI providers no longer pass skip-permissions / sandbox-bypass
+  flags by default; tick *Allow CLI to bypass restrictions* on the CLI (or set
+  `bypass_restrictions: true` on its provider) to restore the previous
+  behaviour. A bypass flag left in a model's `extra_args` is ignored (with a
+  warning) unless the provider setting is on; with it off, a CLI that refuses
+  a tool call now returns a clear error naming the setting instead of an empty
+  reply, and that message survives a failed model fallback chain. `GET
+  /api/system/clis` reports `bypass_args` and `bypass_restrictions`; `PUT
+  /api/system/clis/{protocol}` accepts `bypass_restrictions`. The
+  configuration report shows the setting per CLI provider and lists each CLI
+  with it on in the security assessment.
+
+- **`/cancel` stops the running request.** It now cancels the turn in progress
+  for the session as well as dropping the messages queued behind it, without
+  waiting for the turn to finish. The reply says which it did: "Cancelled the
+  current request and N pending message(s).", "Cancelled the current
+  request.", "Cancelled N pending message(s).", or "No pending messages to
+  cancel."; the interrupted turn replies "⚠️ Cancelled by /cancel. Some steps
+  may have completed — ask me to continue if needed." rather than a time-limit
+  message. Messages sent after the `/cancel` are answered normally.
+
+- Tool results are capped before they enter the model's context: one result
+  may occupy at most 25% of the model's context window (4 chars/token, floor
+  16 KiB, ceiling 512 KiB). The head is kept and a marker
+  `[output truncated: kept N of M characters. Use the tool's paging/range
+  options or a narrower query to see more.]` is appended; error text is never
+  cut below 4 KiB. The cap also applies to async sub-agent (`agent_spawn`)
+  results that arrive later as a system message. Previously a multi-megabyte
+  tool result could not be compacted away and made the turn fail after
+  repeated `max_tokens` halving.
+
+- Context-overflow and timeout detection for the LLM retry loop now uses the
+  same error classification as the model fallback chain, so an HTTP 413 or
+  "payload too large" also triggers history compression, and transient
+  5xx/parse failures are retried with backoff instead of failing the turn
+  immediately. Retry backoffs (LLM timeout retries, channel start retries,
+  outbound send retries) now carry ±20% jitter so concurrent retries do not
+  hit a provider in lockstep.
+
+- Inbound messages redelivered by a platform (Slack event retries, repeated
+  updates) are dropped when the same chat + message id was seen in the last 30
+  minutes (1024 most recent per channel), so a redelivery no longer runs the
+  message twice. Messages without a platform id are never deduplicated.
+
+- Per-session dispatch state is released after an hour idle instead of being
+  kept for the life of the process.
+
+- Binaries are built with `-trimpath`; setting `SOURCE_DATE_EPOCH` makes a
+  rebuild of the same commit bit-identical.
+
+- ClawEh and the WebUI API now share one in-memory configuration. API
+  handlers read the running config instead of re-parsing `config.json` on every
+  request, and every save takes a lock, so two concurrent saves can no longer
+  overwrite each other. Saves through the API are validated with the same
+  listener checks ClawEh applies at startup (a certificate without its
+  key, or `mcp_host.listen` off loopback, is rejected with 400 instead of being
+  written and refused on the next start). Unknown keys in `config.json` are now
+  reported at startup as `unknown config key: <path>` (a typo previously took
+  effect silently); loading still succeeds.
+
+- ClawEh now exits with status 3 after a clean shutdown when a core
+  service dies after startup (the HTTP listener on any of its addresses, the
+  MCP host server, or the agent loop), instead of staying up half-dead;
+  systemd's `Restart=on-failure` restarts it. The existing "HTTP listener
+  stopped", "MCP host server stopped" and "Agent loop stopped" alerts are still
+  raised first. A shutdown that hangs is cut off after 20 s.
+
+- Every request body on the WebUI/API listener is capped: 1 MiB by default (413
+  when Content-Length exceeds it), 32 MiB under `/api/memory/` (memory import)
+  and 4 MiB for `POST /api/skills/import`.
+
+- A session-store write failure (user message, assistant reply, tool call or
+  result) now fails the turn with a clear error and raises the "Session store
+  write failed" alert, instead of continuing on a history the store did not
+  accept. Context compaction raises "Context compaction breaker tripped" when
+  three automatic compactions fail in a row.
+
+- Context handling: when the automatic-compaction breaker was
+  tripped, the emergency pass reported success without running, so an
+  oversized request could reach the provider — the safety net now bypasses the
+  breaker. A restart between an assistant's tool calls and their results no
+  longer hides that the tools ran: the unanswered calls get an "interrupted —
+  outcome unknown" result so the model does not re-run them. Compaction writes
+  the new window, summary and checkpoint in one SQLite transaction. Conversation
+  summaries can no longer carry instructions: tool output is delimited before
+  summarization, quoted instructions are accepted only from user messages, and
+  the summary is rendered as a marked data block at the end of the system
+  prompt. Token estimates carry a 15% safety margin and calibrate themselves
+  from the token counts providers report. Eviction runs in batches and per-turn
+  memory injections are appended as a trailing message, so the cached prompt
+  prefix survives between turns; eviction placeholders name the archive message
+  number and the `session_messages` tool. The session archive keeps up to 256 KB
+  of each tool result (was 4 KB).
+
+- CLI providers (claude-cli, codex-cli, antigravity-cli, cursor-cli) now run as
+  a process group: a timeout or cancel terminates the CLI and every process it
+  spawned (MCP servers, shells), and a lingering pipe can no longer hold the
+  turn past the timeout (+5 s). Captured CLI output is capped at 64 MiB.
+
+- `DELETE /api/models/{index}` now answers 409 Conflict while any agent model
+  list, `agents.defaults` chain (models, image, vision),
+  `summarization.models` or `subagents.models` still references the model; the
+  body names every referencing site, and the WebUI delete dialog shows it.
+  Repoint them first, then delete. Every configuration save (the Providers,
+  Models and Agents pages as well as `PUT`/`PATCH /api/config`) now refuses
+  one that introduces a reference to a model that does not exist in `models`,
+  naming the site (`agents.list[bob].models: model "ghost" does not exist`); a
+  reference that was already missing, for example left by a model deleted
+  before this guard existed, never blocks a save. Startup, forced reload and
+  config-file reload remove such a reference from `config.json` (atomically,
+  through the same save path) instead of refusing the config: the agent uses
+  the next model in its list, a `removed reference to unknown model from
+  config file` warning is logged, and one "Agent references a missing model"
+  alert is raised per reference (if the file cannot be written, the reference
+  is skipped in the running config only, the write error is logged, and
+  startup continues). Previously a reload refused the whole file over an old
+  missing reference, so an unrelated WebUI change never took effect. A
+  reference to a model that exists but is disabled is allowed and logged as a
+  warning. Note: a config that omits `agents.defaults.models` inherits the
+  default `Claude CLI` / `Codex CLI` aliases, so if those models were removed,
+  set a default model before the next save.
+
+- `claw status` gains an **Access** section: "WebUI (localhost)"
+  (`http://127.0.0.1:<port>/`), "WebUI (network)" for plain HTTP when
+  `gateway.host` is not loopback (marked unencrypted), the HTTPS URL(s) per
+  `gateway.tls.mode` (`https://<address>:<tls_port>/`, one per interface for
+  `"all"`; `https://127.0.0.1:<tls_port>/` for `"localhost"`; "off"),
+  the certificate in use with its expiry and SHA-256 fingerprint (so the
+  browser's warning can be checked), the external URL and device listener
+  address when set, and whether an admin account exists (with `claw admin` as
+  the fix). `claw install` prints the same URLs, how to restrict or turn off
+  HTTPS and browse by a host name, and the admin account it created or kept,
+  instead of the old "no WebUI authentication" note.
+
+### Removed
+
+- `tools.subagent.enabled` is removed; each agent's own tool list decides
+  whether it has the agent tools.
+- The Tools page and the install-wide per-tool switches (`tools.tool_overrides`)
+  are removed; they were redundant with each agent's own tool list, which alone
+  decides what an agent can use.
+- The model settings `rpm` and `connect_mode` are removed; they never had an
+  effect. A leftover key is ignored and logged as an unknown key.
+- `agents.defaults.image_model` and `image_model_fallbacks` are removed; nothing
+  used them. `vision_model` is the image setting.
+- The unused keys `tools.web.enabled`, `tools.exec.enabled`,
+  `tools.skills.local.enabled` and `tools.read_file.enabled` are removed, with
+  the full report's on/off for web tools and its "Local skills tool" row.
+
+- **BREAKING: the LINE channel is removed.** It received messages only
+  through a webhook that had to be reachable from the internet, which the rest
+  of ClawEh is built to avoid. The **Channels → LINE** page, the `line`
+  channel, its `/webhook/line` route and the LINE rows on the Check Up page and
+  in the configuration report are gone. Migration: remove `channels.line` from
+  `config.json`; until you do, it is ignored and logged as an unknown key at
+  startup. Bind the agent to another channel to keep reaching it.
+
+- **`launcher-config.json` is no longer read.** The retired launcher's
+  separate IP allowlist file was folded into `gateway.allowed_cidrs` on every
+  load. Nothing writes that file any more; if one is still present, startup
+  logs a warning naming it and the allowlist in `config.json` is what applies.
+
+- **BREAKING: the WebUI chat-history endpoints are removed.**
+  `GET /api/sessions` and `GET`/`DELETE /api/sessions/{id}` listed, read and
+  deleted the WebUI conversations that the removed session modes kept apart;
+  with one conversation per agent there are none (they already came back
+  empty under the default mode). Migration: read an agent's conversation with
+  its `session_messages` and `session_search` tools (an MCP client can call
+  them with the agent's service token), and delete one sender's leftover
+  sessions with `DELETE /api/sessions?channel=&chat_id=` or
+  `claw sessions erase`.
+
+- **BREAKING: `claw agent --session`/`-s` is removed.** `claw agent` always
+  talks to the default agent's one conversation, the one its chats use, so
+  the flag no longer selected anything; passing it is now an unknown-flag
+  error. Migration: drop it from scripts. A script that needs a conversation
+  of its own should message a separate agent, for example through that
+  agent's message token (`POST /api/message/{token}`).
+
+- **BREAKING: `claw skills list-builtin` and `claw skills install-builtin`
+  are removed.** ClawEh includes no built-in skills, so they never installed
+  anything. Migration: drop them from scripts; install skills with
+  `claw skills install`.
+
+- **BREAKING: skills are no longer loaded from a `skills/` folder in the
+  directory ClawEh was started from, and the `CLAW_BUILTIN_SKILLS`
+  environment variable is removed.** Skills now come only from the shared
+  skills folder (`<CLAW_HOME>/skills`) and each agent workspace's `skills/`
+  folder; the WebUI Skills page no longer lists a "builtin" source.
+  Migration: move any such skills into `<CLAW_HOME>/skills`.
+
+### Fixed
+
+- **Anthropic models failed on any conversation with earlier tool calls.** A
+  tool call reloaded from the saved conversation was sent with an empty name
+  and no input, and Anthropic refused the request (400 "tool_use.name: String
+  should have at least 1 character"), so the agent fell back to another
+  model. Saved tool calls now keep their name and input on every provider.
+
+- **Provider error messages are no longer lost.** When a model call failed,
+  the log showed the failure as `"Wrapped":{}` instead of the provider's
+  explanation, and the chat said only, for example, "Claude Fable 5.1 error
+  HTTP 400 (bad response format)". Errors are now logged with their full
+  text, and the reply and the "Trying …" notice end with the provider's own
+  message when it gave one (cut to 200 characters).
+- **OpenRouter routing preferences are kept when tools are used.** A model's
+  `extra_body.provider` (provider order, allow/deny lists, and so on) was
+  dropped, with a warning in the log, whenever tools were offered, because
+  ClawEh sets its own `provider` field to route tool calls only to providers
+  that support them. The two are now merged; your keys win.
+- **BREAKING: model names are sent exactly as configured.** ClawEh used to
+  strip a leading `groq/`, `deepseek/`, `google/`, `mistral/`, `moonshot/`,
+  `nvidia/`, `ollama/`, `litellm/` or `openrouter/` from a model name before
+  calling any endpoint other than OpenRouter, so Avian's
+  `deepseek/deepseek-v3.2` was sent under the wrong name. If a model of yours
+  relied on that (for example `deepseek/deepseek-chat` on DeepSeek's own API),
+  change its Model field to the name the provider expects
+  (`deepseek-chat`).
+- **Thinking Level now works for Anthropic models.** `thinking_level` on a
+  model using the `anthropic` or `anthropic-messages` protocol turns on
+  extended thinking (`low`, `medium`, `high`, `xhigh` or `adaptive`) instead
+  of being ignored with a warning, and tool calls keep working with it on.
+
+- **Slack slash commands reached the agent as plain text.** The command's
+  text was sent without a `/`, so no ClawEh command ever ran, and a command
+  in a direct message ignored bindings for that person.
+
+- A Telegram message refused for sending too fast is now retried after the
+  wait Telegram asks for plus 5 seconds, up to a minute, instead of being lost.
+- **A voice message that cannot be transcribed is no longer treated as an
+  empty message.** The agent is told a voice message arrived but could not be
+  transcribed, so it can tell the user; with `voice.echo_transcription` on,
+  the echo says "Alice couldn't understand your voice message." The reason
+  stays in the log.
+
+- **BREAKING: a `custom` speech backend no longer falls back to Groq.** A
+  `voice.stt` entry with provider `custom` (or any provider other than
+  `groq`, `openai` and `openrouter`) and a blank endpoint or model used to be
+  sent to Groq's endpoint and model. It is now skipped, and the Speech page
+  marks it **Not used**. To keep using Groq, choose the `groq` provider, or
+  fill in the endpoint and model.
+
+- **A "Direct messages" binding now routes every direct message on that
+  channel to its agent.** The Bindings page saves it as a peer with kind
+  `direct` and no id, which never matched, so direct messages went to the
+  default agent. A peer binding with a kind and no id now matches every chat
+  of that kind on its channel; a binding naming one specific chat still wins
+  over it, and it wins over whole-server, whole-workspace and whole-channel
+  bindings.
+
+- **Matrix Allow From accepts user IDs as written (`@bob:example.org`).** An
+  entry in the natural form never matched, because the part before the first
+  colon was read as a platform name; only `matrix:@bob:example.org` let the
+  user in. Both forms now match.
+
+- **MCP `/mcp`: `tools/list` offers only the tools the token's agent may
+  call.** It listed every agent's tools, and calling one the agent was not
+  allowed answered "not enabled for this agent". A service or session token
+  now sees its agent's own tools only. `/internal`, where the token is a
+  parameter of each call, still lists every tool and checks at the call.
+
+- **`msg_send` and `msg_send_file` without a chat to send to log a warning,
+  not an error.** A call with no target chat (a service-token MCP call) or
+  inside an asked turn is refused as before, but logs "Tool call refused" at
+  WARN instead of "Tool execution failed" at ERROR.
+
+- **The id suggested for an invalid agent id is one no other agent has.**
+  When the repaired id was already taken (`"alice smith"` while
+  `Alice-Smith` exists), following the suggestion led to a second refusal.
+  The suggestion now adds `-2`, `-3`, … until it is free, in the refusal at
+  load and save and on the Agents page alike.
+
+- **`claw token revoke` works for an agent no longer in the config.** It
+  refused with "no agent … in config", so the token of a removed agent stayed
+  in the store and worked again if an agent with that id came back. It now
+  revokes from the token store.
+
+- **The WebUI shows why a save was refused.** A save refused for a model that
+  does not exist, a human agent, a reserved mount name, an agent id or a
+  listener setting showed "API error: 400"; it now shows the reason.
+
+- **The "Agent references a missing model" alert names the agent by its
+  name.** It used the agent id, so an agent named "Alice" with id "alice" was
+  called "alice".
+
+- **The "model unavailable, using …" notice is posted once per turn.** A model
+  in cooldown repeated it on every step of a turn, because its "retry in" time
+  changed each time. The chat now hears of each change of model once per turn.
+
+- **Devices pairing at the same moment no longer fail with "pairing store
+  error".** Two first-time connects could collide in the pairing database and
+  one was refused (UNAVAILABLE, close 1011) until it retried. They now wait
+  for each other, and a pairing store failure is logged with its cause.
+
+- **Saving the configuration no longer leaves session databases open.** The
+  agents a save replaces are closed once they are idle.
+
+- **An agent added by a configuration reload has its interrupted turns
+  answered after a restart**, like an agent that was configured at startup.
+
+- **`msg_send` says what became of the message.** It used to answer
+  "Message sent to …" even when the channel dropped the message, so the agent
+  believed an offline device had received it. It now waits up to the
+  5 seconds it already allowed for the send and answers "Message delivered to
+  device:<id>.", or "Not sent: device:<id> is offline." (also "can't be
+  reached", "is not set up", "is unavailable", "is receive-only", "couldn't
+  reach"), or "Message queued for delivery to …" when the channel has not
+  reported by then. The chat is named once: `device:<id>`, not
+  `device:device:<id>`. A message that was not sent no longer counts as the
+  turn's reply, so the final reply is still sent.
+
+- **Saving the configuration in the WebUI reloads it once.** When applying
+  the saved configuration took longer than the config file watcher's quiet
+  period, the watcher reloaded the same change a second time afterwards,
+  restarting channels and interrupting an active chat again.
+
+- **An agent no longer briefly loses an MCP server's tools when the server
+  reconnects or changes its tool list.** The tools were removed and then
+  registered again, so a turn running at that moment could find them missing.
+  They are now replaced in one step. Also, when a server goes away, a server
+  whose name starts with its name (`alice` and `alice_docs`) keeps its tools.
+
+- Deleting every provider, model or agent in the WebUI no longer brings the
+  built-in list back after a restart.
+
+- **Tool arguments that take any JSON object are declared as such.** A tool
+  parameter that is an object with no listed members (such as
+  `forum_config_update`'s `changes`, `forum_config_import`'s `config` and
+  `cron_schedule`'s `watch_args`) is now published to models and MCP clients
+  with `"additionalProperties": true`. Some model providers filled such a
+  parameter with a blank string instead of an object.
+
+- **Each config warning is logged once at startup.** The configuration was
+  read twice when the service started, so every "unknown config key" (and
+  other load-time) warning appeared twice in the log.
+
+- **A file tool refused a write only after starting the work.** `file_move`
+  out of a folder the agent may read but not write (such as `forums/` or
+  `skills/`) copied the file and then failed to remove the source, leaving a
+  copy behind. `file_edit` matched the text first, so a non-unique match was
+  reported instead of the refusal, and `file_edit_lines` reported a failed
+  backup. `file_move`, `file_edit`, `file_append` and the line and byte edit
+  tools now check write permission first: the call is refused with "write
+  denied …" and nothing is copied, matched or backed up.
+
+- **Saving on the Agents page no longer erases agent settings it does not
+  show.** Any change on that page (a tool, a model, a toggle, adding or
+  deleting an agent) rewrote every agent from the fields the page edits, so
+  each agent lost its `workspace`, `subagents` (`allow_agents` and `models`),
+  `memory`, `compression`, `context_eviction`, `archive_message_count`,
+  `archive_days`, `summary_max_count`, `summary_retention_days` and
+  `archive_content_max_bytes`. These are now kept. If you set any of them by
+  hand and have since saved on the Agents page, check `agents.list` in
+  `config.json` and set them again.
+
+- **Every scheduled (cron) job fire now reaches the agent.** Repeated fires of
+  the same job were treated as duplicates when the conversation was compacted,
+  so a fire arriving while a compaction ran could be dropped and the agent
+  answered without the request (for example, a morning email job that ran but
+  did nothing). Each fire is now kept as its own message, and compaction
+  never removes the message the agent is answering and
+  treats a message as a repeat only when it directly follows an identical one.
+
+- **The sub-agent depth limit now applies to CLI-provider agents.**
+  `agents.defaults.max_subagent_depth` (and a message's `spawn_depth`) now
+  also bounds tool calls made by claude-cli, codex-cli, antigravity-cli and
+  cursor-cli agents, which could previously spawn sub-agents without that
+  limit.
+
+- **A sub-agent's memory tools no longer change the parent agent's long-term
+  memory.** `cogmem_memory_create`, `cogmem_memory_forget` and the other
+  `cogmem_*` tools now act only on the sub-agent's throwaway copy, which is
+  deleted when the run ends, and `cogmem_consolidate` is unavailable in a
+  sub-agent.
+
+- **A config reload no longer cuts off running turns and Maestro workers from
+  their tools.** Every reload rebuilt the MCP host with an empty session-token
+  store, so each worker or QA sub-agent launched before it, and any turn in
+  flight, got `invalid_token` on every later MCP call. The store now lives for
+  the whole process, and a session busy during a reload keeps its token until
+  the turn finishes; idle sessions pick up the new configuration on their next
+  message as before.
+
+- **A configuration reload no longer loses track of a Maestro run in
+  progress.** A run started with `maestro_task_run` kept going after a reload,
+  but `maestro_task_status` then reported no run in progress and a second
+  `maestro_task_run` on the same project was accepted, so two runs worked the
+  same task set at once. The run is now kept across a reload, so status shows
+  it and the second `maestro_task_run` is refused until it finishes, unless the
+  reload changed that agent's Maestro settings or mounts while no run was in
+  progress.
+
+- **A model that no longer exists fails over instead of failing the turn.** An
+  endpoint answering 404, or OpenRouter's "No endpoints found that support the
+  requested parameters" for a retired model or an unsupported parameter, was an
+  unclassified error that stopped the fallback chain. It is now classified as
+  the model being unavailable: the chain moves to the next
+  model, this one cools down under the normal escalation, and the reply reads
+  "model not available".
+
+- **Dropdowns no longer flicker and jump back to the top on phones.** Every
+  select opened in Radix Select's item-aligned mode, which centres the list on
+  the current value and then grows the popup and rewrites the scroll position on
+  every scroll event; a long list such as an agent's models could not be
+  scrolled by touch. Selects now open as ordinary dropdowns under their control
+  and scroll like any list, with a visible scrollbar: Radix hides it, which made
+  a long list look cut off at the bottom of the window.
+
+- **The Agents page no longer shows "No agents yet" on a return visit.** Coming
+  back to the page through the sidebar mounted it with its data already cached,
+  and the list was seeded only when a new fetch landed, so the cached agents
+  never showed until the browser was reloaded.
+
+- **Keyboard and screen-reader access.** Every setting's label is now associated
+  with its control (Config, System, MCP, Network, channel forms), so it is read
+  as the control's name and clicking it focuses the field. Icon-only controls
+  carry names: the header's GitHub link and theme toggle, the bindings page's
+  edit, cancel and delete buttons, the agent card's token-rotation fields and
+  default-channel radios, and the enable switches on channel, Telegram bot,
+  secure-messaging and speech pages. The bindings page's edit-mentions button,
+  shown only on hover, is now also shown while it has keyboard focus. Add
+  Agent opens with focus in the Agent ID field and Escape cancels the form.
+
+- Files downloaded from Telegram no longer get a second extension
+  (`file_3.oga.ogg`, `file_1.jpg.jpg`): the name keeps Telegram's own
+  extension and the type-based one is used only when there is none. Voice
+  notes (`.oga`, `.opus`) are recognised as audio for transcription.
+
+- `claw install` re-run against an existing install now follows the service it
+  finds instead of the caller's privileges: without sudo against a system
+  service it refuses and says to run `sudo claw install` (and the same the other
+  way round for a user service). It used to plan a second, user-level unit for
+  the same data directory and ports.
+
+- An open WebUI tab now copes with a restart of ClawEh. Sessions live in memory,
+  so a restart forgets them; the tab used to keep reopening its chat socket for
+  ever, refused each time, and pages showed an error. Now, when a request or
+  the chat socket finds the session gone, the tab returns to the login page
+  with the current page as `next`, and while ClawEh is down it shows
+  "Connection lost. Reconnecting…" at the top and keeps trying (every 5 seconds
+  at most) instead of an error page. This is the path after **Restart now** on
+  the Network page or a restart of the service by hand.
+
+- Stopping ClawEh no longer waits 10 seconds per Telegram bot with
+  "Timed out waiting for long-poll goroutine to exit": the pending long poll
+  is now aborted at once.
+
+- Shutdown can no longer hang until systemd kills it. Closing the sessions and
+  the MCP servers shares a 10 second budget; anything still busy after it is
+  named in a warning and left behind. Each shutdown step is logged with how
+  long it took ("Shutdown: channels stopped in 0.4s").
+
+- Turns still running at shutdown are cancelled instead of being waited for:
+  model requests, CLI subprocesses and MCP tool calls stop at once. The user
+  gets no error reply and no fallback or alert fires; the turn is replayed
+  when ClawEh starts again, like any interrupted turn.
+
+- `claw acp` reuses its device token across launches instead of
+  re-authenticating with the shared token and rotating the device's tokens
+  every time.
+
+- **The MCP Servers, MCP Config and System pages could save their defaults
+  over the real configuration.** Opened from another page that had already
+  loaded the configuration, they showed their empty defaults instead of the
+  saved values — the MCP Servers page said no external servers were configured
+  — and an edit on the MCP Config or System page then saved those defaults
+  over the real settings. They now show the configuration however they are
+  reached.
+
+- **An emptied default model list stays empty.** Saving `agents.defaults.models`
+  as an empty list used to drop the key from `config.json`, so the next load
+  brought back the `Claude CLI` / `Codex CLI` template aliases; the empty list
+  is now written out.
+
+- **Channels reconnect on their own instead of stopping.** A dropped Slack
+  Socket Mode connection, or a Matrix sync that ended, used to stop that
+  channel receiving until ClawEh was restarted. Both now restart with
+  backoff (2s doubling to 60s) for as long as the channel runs. Telegram, Slack,
+  Discord, Matrix and SecMsg report their connection state, and an operator is
+  alerted only when retrying cannot help: a rejected token (at once), or no
+  working connection for ten minutes ("`<Platform>` down").
+
+- **Telegram waits as long as Telegram asks.** On a `429 Too Many Requests`
+  the bot now waits the `retry_after` Telegram gives plus one second, instead
+  of retrying every two seconds, which could prolong the rate limit. Other poll
+  failures back off from 2s to 60s. A 429 or a 5xx no longer raises a
+  "Telegram polling failed" alert; that alert now means only that Telegram
+  rejected the bot token (401).
+
+- **The WebUI picks up a new deploy on the next reload.** The embedded
+  frontend was served with no cache headers, so a browser could keep an old
+  `index.html`, and the old page chunks it names, after an upgrade. The SPA
+  entry and other unhashed files are now sent with `Cache-Control: no-cache`
+  and the content-hashed `/assets/` files as immutable.
+
+- **Renamed or removed tools on an external MCP server are picked up without
+  restarting ClawEh.** The tool list of a server under `tools.mcp.servers` was
+  read once at connect time, so after the server was restarted with different
+  tools the agents kept calling the old names, and the MCP host kept publishing
+  them, until ClawEh was restarted. The list is now refreshed when the
+  server sends `tools/list_changed`, when a liveness probe
+  (`liveness_probe_seconds`) sees a different list, on any reconnect, and on
+  the new **Reconnect** action on the MCP servers page
+  (`POST /api/mcp/servers/{name}/reconnect`), which also forces a server out of
+  its post-failure cooldown. On each refresh the server's previous tools are
+  removed from every agent before the current list is registered, and the MCP
+  host catalogue follows, so stale names no longer linger in either place. See
+  `docs/mcp.md`, "Tool list refresh".
+
+- A turn interrupted by a restart is now replayed on the channel and chat it
+  came from, so the user receives the answer; previously the replay ran on an
+  internal channel whose reply was silently discarded (and tool side effects
+  ran with no visible result). The user first sees "I was restarted while
+  working on your last request — here is the result; resend it if anything is
+  missing." Recovery replays a given message at most twice; after that it
+  stops and sends "I was restarted while working on your last request and
+  could not finish it. Please resend it if it still matters.", so a message
+  that crashes the process can no longer crash-loop it. If the originating
+  channel has been removed from the config the interrupted turn is dropped and
+  logged. The source is kept in each agent's `state/state.json`
+  (`pending_turns`).
+
+- A channel whose start kept failing (bad token, service unreachable, port in
+  use) was abandoned after 10 retries until a restart of ClawEh or config
+  reload. The channel manager now keeps retrying indefinitely, backing off
+  from 5 seconds to a 5-minute ceiling; the "Channel failed to start" alert is
+  raised once, on the 10th failed retry, and the channel comes up on its own
+  when the cause clears.
+
+- The device listener was never restarted if it failed: devices could
+  not connect until ClawEh was restarted. It now re-listens with backoff
+  (2 seconds to 1 minute), including when the port is temporarily in use,
+  raises "Channel receive loop stopped" once per outage, and logs "Device
+  channel listener restored" when it is back.
+
+- LINE: a webhook message whose mention `index`/`length` values were out of
+  range or overflowed could crash ClawEh; such mentions are now ignored.
+
+- Two messages arriving for a brand-new session at the same moment could leave
+  the session with a revoked MCP session token (session-scoped tools then
+  failed until the session was cleared). Creation is now serialised per
+  session so exactly one token is issued.
+
+- `busy_timeout`, `synchronous` and `foreign_keys` were set on only the first
+  SQLite connection of the device pairing store and the Fusion token store;
+  connections the pool opened later under load ran without them and could fail
+  a contended write immediately with `database is locked` instead of waiting.
+  The settings now travel in the connection string so every connection gets
+  them.
+
+- Sub-agent task status/result files and imported SKILL.md files are written
+  atomically (temp file + fsync + rename), so a crash mid-write can no longer
+  leave a truncated file.
+
+- A context-window overflow reported by OpenAI-compatible endpoints as HTTP 400
+  `context_length_exceeded` (or by Anthropic as "prompt is too long") was
+  treated as a bad-request error and the turn failed with "All models failed";
+  it is now recognised as a context-limit error, so the history is compressed
+  and the request retried as it already was for HTTP 413.
+
+- The Backup section of the Config page no longer describes per-day folders or
+  configuration-only snapshots.
+
+- Deleting a model in the WebUI left agents still referencing it. Such an agent
+  then sent the alias itself as the model id on every turn and got a 400 (for
+  example OpenRouter's "is not a valid model ID") before falling back to the
+  next model; the visible sign was `/model` listing an entry with no provider.
+  Unresolvable aliases are now dropped from the fallback chain with a
+  `fallback alias dropped` log line, renaming a model also repoints
+  `subagents.models`, and clearing the default model removes the slot instead
+  of leaving an empty entry.
+
+- WebUI Speech page: revisiting the page showed "No transcription backends
+  configured" although backends were set, and the next "Add backend" saved
+  that empty list over the configuration.
+
+- WebUI Models and Providers pages crashed with "Spread syntax requires
+  …iterable" when a CLI provider was configured (the API's null argument
+  lists); empty model and provider lists are handled too. A page error is now
+  shown in the normal text colour and is selectable, instead of red on black.
+
+## [0.5.7]
+
+### Changed
+
+- **Fix for MacOS.** Fixed two tools/maestro tests that failed on macOS because they compared raw t.TempDir() paths against symlink-resolved roots (/var vs /private/var); the import gate itself was correct. test.sh now re-prints failing Go test output, lists each failed Go test and MCP integration check by name in the final summary with rerun commands, and saves details to .test-failures.log; a startup-template check that could not fail the run now does.
+- **Colour fix.** Fix colour on text produced by test.sh and
+  tests/test_mcpserver.sh: the scripts printed the escape codes literally
+  (`\033[...`), on macOS and Linux alike. Colours are now off when output is
+  not a terminal or `NO_COLOR` is set, and `./test.sh -n` also silences the
+  integration sub-script.
+
+### Fixed
+
+- **`claw.pid` is written before the gateway starts serving.** It was written
+  after all services were up, so for a brief window a gateway that was already
+  accepting connections was invisible to `claw status` and `claw sessions`.
+  The integration suite tripped over that window on macOS; it now also polls
+  for the file instead of checking once.
+
+## [0.5.6]
+
+### Changed
+
+- **Dependencies updated.** Maestro v0.5.3, whose QA prompt now defines the
+  `fail` and `escalate` verdicts the same way as its documentation and runner
+  (`fail` sends work back to the worker, `escalate` does not), plus the
+  Anthropic SDK, mautrix and other third-party libraries. No other behaviour
+  change intended.
+- **`make test` is the full gate and `make` builds only after it passes.**
+  `make test` runs the format check and `go vet`, then `test.sh`: the Go
+  suite with the race detector and coverage, the frontend typecheck and unit
+  tests, and the MCP integration suite, ending with a pass/fail summary and a
+  non-zero exit on any failure. golangci-lint is found on `PATH` or in the Go
+  bin directory, and a missing linter is reported with its install command.
+  Lint is temporarily excluded from the gate until the remaining non-critical
+  findings are addressed; `make lint` still runs it. `make check` now aliases
+  `make test`. `make test-maestro-host` and `make check-webui` stay separate
+  because they bind ports or need a running instance.
+
+## [0.5.5]
+
+### Security
+
+- **Maestro `file_import` now obeys the agent's read sandbox.** It used to
+  import any absolute path the claw process could read, regardless of
+  `tools.allow_read_paths`. It now accepts only what the agent's own file tools
+  can read: the workspace, every configured mount (read-only or read/write) and
+  `allow_read_paths`. Anything else is refused with an error naming the path.
+  Widen an agent's reach by adding a mount in the WebUI, not by configuring
+  Maestro.
+
+### Changed
+
+- **BREAKING: the per-agent `maestro` setting is now an object.** Replace
+  `"maestro": true` with `"maestro": {"enabled": true}`. The old boolean is not
+  honoured: the gateway still starts, logs a warning naming the agent, and runs
+  that agent without Maestro until it is re-enabled (the WebUI agent page has
+  the switch). The block also carries runner settings, editable in the WebUI:
+  `max_concurrent` (default 5), `rate_limit_requests` / `rate_limit_period`
+  (default 10 per 60 s) and `allow_parallel` (default true). Runs stay
+  sequential unless the LLM asks for a parallel run; `allow_parallel: false`
+  refuses such requests and runs sequentially, with a note in the project log.
+- **Maestro tasks can name a host model.** `llm_model_id` and `qa_llm_model_id`
+  on Maestro task tools are passed to ClawEh as one of the agent's model
+  aliases (the same names the spawn tool accepts). Leave them empty for the
+  agent's default model. An alias the agent is not configured for fails the
+  task immediately instead of retrying. The `maestro_start_here` guide now
+  describes this instead of the standalone `llm_*` tools.
+- **Agent mounts appear in Maestro's reference domain.** Every mount is
+  available to `maestro_file_*` with `source=reference` and to playbooks via
+  `instructions_file_source: "reference"`, under the mount's name, read-only.
+  The automatic `maestro` mount is not mapped.
+- **Maestro's operational log goes to the central logger** (component
+  `maestro`, tagged with the agent), so it appears in the WebUI log viewer and
+  rotates with `claw.log`. `<workspace>/maestro/maestro.log` is no longer
+  written. Maestro's per-project logs are unchanged.
+- **Maestro-enabled agents get a short system-prompt rule** saying what Maestro
+  is for and to call `maestro_start_here` first.
+- **Progressive discovery keeps `maestro_start_here` visible** for
+  Maestro-enabled agents, so the model can always reach the guide and search
+  for the rest. `always_shown_namespaces` entries are prefixes, so a full tool
+  name pins that one tool. The MCP host is unaffected and still serves the full
+  tool list to CLI providers.
+- **Maestro workers are bounded by `turn_timeout`.** Each Maestro worker, QA
+  and revision prompt runs as a sub-agent with the agent's turn timeout; a run
+  that exceeds it fails and is retried within the task set's limits.
+- **Maestro task results record usage.** Result files carry input/output/cache
+  tokens, cost, the model that answered and the number of LLM iterations for
+  each worker, QA and revision call.
+- **Maestro tools are withheld when no sub-agent runner is available** for the
+  agent (logged as a warning) instead of registering and failing every task.
+- **New `make test-maestro-host`** runs Maestro's full MCP regression suite
+  against a live gateway with a stub model. It needs `probe`, `jq` and `zip`
+  and binds local ports, so it is a separate target.
+
+### Fixed
+
+- **Maestro workers now respect `max_subagent_depth`.** A Maestro worker that
+  dispatched further Maestro tasks restarted the depth count at zero, so the
+  recursion bound did not apply. Depth is now carried through `task_run` and
+  `task_dispatch`; a worker at the bound fails the task without retry.
+
+## [0.5.3]
+
+### Changed
+
+- **Third-party dependencies updated** (Anthropic SDK 1.72, `golang.org/x`
+  libraries, fasthttp, gomarkdown and others). No behaviour change intended.
+
+### Fixed
+
+- **Cognitive-memory tools reject wrong-typed arguments instead of guessing.**
+  A string `"true"` for `set_sticky` used to clear stickiness; a non-integer
+  `limit` was silently rounded. Each `cogmem_*` tool now returns an error that
+  names the argument and the type it expects. `cogmem_domain_migrate` names the
+  destination when it is unknown, `cogmem_domain_list` rejects a status other
+  than `active` or `archived`, `cogmem_memory_forget` rejects an unknown domain
+  and retires every match rather than the first hundred, `cogmem_domain_update`
+  clears the summary on an empty `set_summary` and rejects an empty `set_name`,
+  and `cogmem_status` reports the domain and memory counts its description
+  promised.
+- **Memory import is idempotent and reaches archived domains.** Importing a
+  portable memory document a second time no longer re-creates domains that were
+  archived in the meantime; a matched domain takes the document's fields, and a
+  memory the document marks retired is retired in the store. The import result
+  gains `domains_updated` and `memories_retired` counts.
+- **Memory store connections all carry their settings.** Only the first pooled
+  SQLite connection used to receive the busy timeout and foreign-key setting,
+  so a contended write on another connection could fail at once with
+  `SQLITE_BUSY`. Every connection now gets them.
+- **A failed consolidation records no applied changes.** The run's transaction
+  rolled back, but the run record still claimed the operations it had tried.
+  Archiving a domain is logged as an `archive` audit event rather than
+  `update`, and an archived domain's `archived_at` follows a status change made
+  through `cogmem_domain_update`.
+
+## [0.5.2]
+
+Cognitive memory stands on its own. It keeps its own copy of the conversation
+until it has learned from it, so nothing else has to hold messages on its
+behalf, and an assistant is only told about memory when it actually has it.
+
+### Added
+
+- **Listen jobs: a persistent callback from a long-poll tool.** `cron_schedule
+  add` with `listen: true` and a `watch_tool` keeps the tool running in the
+  background: call it, wait for it to return (an event, a dropped connection,
+  or `watch_timeout_seconds`, default 300), and call it again at once. Whenever
+  the `watch_fields` are present, `message` is delivered to the agent followed
+  by the tool's full result, in an envelope that names the source (`The
+  following event was received by a continuous monitor at <time>:` then
+  `<tool> returned the following:`), distinct from the cron-fire envelope so
+  events are never deduplicated as repeated fires. Every result with the
+  fields present is delivered, identical or not; `suppress_repeats: true`
+  withholds a result identical to the last delivered event, for a source that
+  replays it on every reconnect. An absent field is "no data", not a change;
+  failures retry with backoff and are reported after five in a row. Jobs of
+  schedule kind `listen` have no next run and show as `listen (continuous)`.
+  See the scheduled jobs guide, "Listen jobs".
+
+### Changed
+
+- **Cognitive memory no longer reads the session archive.** Each message is
+  handed to memory as it is spoken and held in the memory store's own inbox
+  until the next background consolidation run covers it, then dropped. The
+  archive is no longer marked or guarded on memory's behalf. On the first turn
+  after upgrading, messages already archived but not yet consolidated are
+  copied into the inbox once, so nothing spoken before the upgrade is lost to
+  memory. Nothing to configure.
+- **Assistants without cognitive memory are no longer told how to use it.**
+  The memory rule in the system prompt is emitted only for agents that have
+  `cogmem` on. Agents with it on receive byte-identical prompt text.
+- **BREAKING: each assistant now has one memory, at `cogmem/cogmem.db` in its
+  workspace, shared by every session it holds.** Memory used to be one file
+  per session under `sessions/`, so under the isolating session modes
+  (`session.mode` of `per-user`, `per-platform`, `per-account`) an assistant
+  kept a separate memory per person or platform; it now keeps one, which is
+  what "isolation is a property of the agent" always meant. The `cogmem/`
+  directory is self-contained: it survives deleting the sessions, can be
+  backed up on its own, and can be copied to a new assistant. Migration is a
+  one-time step, with the service stopped, for each agent workspace:
+
+  ```
+  mkdir -p <workspace>/cogmem
+  mv <workspace>/sessions/agent_<id>_main.cogmem.db <workspace>/cogmem/cogmem.db
+  ```
+
+  (move the `-wal` and `-shm` siblings too if present). A workspace with no
+  such file needs nothing; memory starts empty on first use. Other per-session
+  memory files, if any, hold separate memories that cannot be merged
+  automatically; import them through the memory page if you want them. The
+  memory page's store ids are now agent names rather than session file names.
+- **BREAKING: each session's live window and state now live inside its
+  `<key>.archive.db`.** The `<key>.jsonl` window and `<key>.meta.json` state
+  files are no longer read or written; the archive DB a session already had
+  now holds them too, so there is one file per session under `sessions/`.
+  Migration is a one-time step, with the service stopped:
+
+  ```
+  claw sessions migrate
+  ```
+
+  It folds every `.jsonl` + `.meta.json` pair in each assistant's sessions
+  directory into that session's archive DB, prints one line per session, and
+  renames the sources to `*.migrated`; delete those once you have verified
+  the conversations. It refuses to run while the gateway is up and is safe
+  to re-run (already-migrated sessions are skipped). The gateway refuses to
+  start while unmigrated `.meta.json` files remain in any assistant's
+  sessions directory, naming the directory and this command, so a start
+  before the migration cannot strand the old history. Deleting a
+  conversation from the WebUI now removes the whole session store, archive
+  included, rather than only the live window.
+- **The context engine now lives in its own module, `github.com/PivotLLM/ctxengine`.**
+  Transcript, archive, assembly, eviction, compaction and the `session_*`
+  tools moved out of ClawEh unchanged; the assembled prompt is byte-identical
+  (held by a golden test) and nothing changes on disk, in tool names or in
+  the HTTP API. Compaction and cognitive-memory consolidation now share one
+  model caller, so the summarization chain, its fallbacks and cooldowns
+  behave the same for both.
+- **Cognitive memory now lives in its own module, `github.com/PivotLLM/cogmem`.**
+  ClawEh embeds it; nothing changes on disk, in the tools or in the API. The
+  `cogmem_consolidate` tool's reply when no background worker is running now
+  says so plainly instead of "queued (worker not yet running)".
+- **Safety-net compaction now measures the whole request on every dispatch.**
+  Between tool calls, the emergency compaction check considered stored history
+  alone; it now also counts the system prompt, memory blocks and tool schemas,
+  as the turn-start check always did. A turn that grows past the safety line
+  mid-way compacts before the request is sent instead of relying on the
+  provider's context-exceeded retry.
+
+### Removed
+
+- **Legacy `.json` session files are no longer read or migrated.** Sessions
+  from before the JSONL store (a single `<key>.json` per session) were being
+  converted on startup and read by the WebUI history as a fallback; both
+  paths are gone. Any such file still on disk is ignored.
+- **BREAKING: the config key `memory.retention.protect_unconsolidated` is
+  gone.** It guarded the session archive from retention pruning until memory
+  had consolidated a message. Memory now keeps its own copy of what it has not
+  yet consolidated, so there is nothing left to guard. Migration: delete the
+  key from `config.json`; leaving it in place is harmless, an unknown key is
+  ignored on load.
+
+### Fixed
+
+- **Per-session settings survive compaction.** `/model`, `/reasoning` and
+  `/tools` choices are stored in the same record as the compaction counters,
+  and every compaction, clean shutdown and `/clear` used to overwrite that
+  record wholesale, so a restart after a compaction forgot them. The context
+  engine now rewrites only the fields it owns.
+- **Repeated scheduled fires no longer count towards compaction after a
+  restart.** The store counted a repeated cron fire as noise, but the engine
+  kept its own count of every message and wrote it over the store's on
+  compaction and shutdown. The store's count is now the only one.
+- **Context-window recovery keeps message numbers and no longer strands
+  results.** When a provider rejected a request as too large, the recovery path
+  renumbered the retained messages past the archive, so `session_messages`
+  could not fetch what the live window showed and the next summary's
+  references were dropped as out of range. It also removed a tool-call turn
+  while leaving its results behind. Recovery now drops whole turn groups,
+  keeps their numbers, and truncates an oversized tool result in the current
+  turn instead of giving up, so the retry can succeed.
+- **A failed summarisation no longer duplicates the previous summary in the
+  archive's checkpoint log.** When every summarisation model fails, the engine
+  keeps the existing summary and trims the window; it used to record that
+  summary as a new checkpoint each time.
+- **Cross-agent session scoping and isolation fixes.** When mentioning an agent
+  on a channel bound to another agent, mention extraction now runs before route
+  resolution, preventing session key inheritance or cross-agent tool access.
+  Session key resolution rejects foreign-scoped agent keys. Supervised background
+  task restarts now preserve the originating owner agent ID and session key so
+  task results are not routed to the default agent. `msg_send_file` verifies
+  symlink resolution against the workspace to prevent sandbox escape.
+- **Session files for keys containing `/` or `\` now resolve in the WebUI.** A
+  Telegram forum thread or a Slack thread produces such a key. Every session
+  file is named by one shared rule; the WebUI session view carried its own copy
+  that only replaced `:`, so it looked for a file that did not exist.
+
+## [0.5.0]
+
+Cognitive memory redesign. The classification the model had to reason about at
+every write shrinks to one field, the confirmation gate that was never used is
+gone, and memory gains a type for things that happened — kept out of the prompt
+and reachable by search.
+
+### Removed
+
+- **BREAKING: the `cogmem_memory_confirm` tool is gone.** Memories were written
+  as `review` and waited for the assistant to ask you to confirm them. In
+  practice it never asked: across seven agents, 244 memories were pending, the
+  oldest 77 days, with zero confirmations. The gate is removed rather than left
+  as dead weight. Nothing to migrate — confirmation was the only thing the tool
+  did, and the memories it was gating are now active.
+- **BREAKING: the config keys `memory.prompt.pending_surface` and
+  `memory.prompt.pending_max` are gone.** They controlled the pending digest,
+  which no longer exists. Remove them from your config; an unknown key is
+  ignored, so nothing breaks if you leave them.
+- **BREAKING: memories no longer have a `source` field.** It recorded whether
+  the model believed a memory came from you or was inferred, gated nothing, and
+  never reached the prompt. `origin` (`chat`, `consolidation`, `user`) records
+  where a memory actually came from and is shown to both you and the assistant.
+  Dropped from the database, `GET /api/memory/{id}` and the memory page.
+- **BREAKING: memories no longer have a `priority` field.** It was stored and
+  returned by the API and never read by anything.
+
+### Added
+
+- **A Local CLI agents section on the Providers page, with one switch each.**
+  Claude, Codex, Antigravity and Cursor are listed whether or not their binary
+  is installed — a CLI ClawEh supports but the host lacks is a different thing
+  from one it does not support, so a missing one is greyed out and names the
+  binary it looked for. The switch is the whole setup:
+
+  - **On** creates the provider and a model if they are missing, with the
+    protocol's own request timeout and a model id that lets the CLI choose its
+    own model. An existing model is enabled in place, keeping whatever has been
+    set on it — a switch is not a reset.
+  - **Off** disables every model that runs through that CLI, not just one, so a
+    switch carrying the CLI's name means the CLI. Nothing is deleted either way,
+    so switching back on finds what it left behind.
+
+  Setting one up by hand previously meant creating a provider on one page and a
+  model on another, and knowing four values that appear in no form. One of them
+  could not be set through the Web UI at all (see the `extra_args` entry under
+  Fixed), so a CLI model created in the browser could not be made to work.
+
+  Each row shows the **whole command line**, in the order it is built: the
+  flags the provider always passes (`-p --output-format json`, and the stdin
+  marker), the permission flags (`--dangerously-skip-permissions`, `--yolo`),
+  and anything the CLI's models add in `extra_args`. Some of it auto-approves
+  tool use, and none of it appeared anywhere before — the transport flags are
+  not configurable and so were invisible. Someone asking what ClawEh runs on
+  their machine is owed all of it, not the part that happens to live in config.
+
+  CLI providers now appear only in this section, and the wire-protocol picker
+  under **Add Provider** no longer offers `*-cli` protocols. Editing one — to
+  pin an explicit binary path, say — is still available from its row.
+
+- **Two new memory types.** `event` for something observed at a point in time —
+  a trip, a delivery status, a scheduled run — and `operational` for the
+  assistant's own housekeeping, such as where it files things and how it works.
+  The full set is now `fact`, `preference`, `rule`, `event`, `operational`.
+- **`event` memories stay out of the prompt.** They go stale and accumulate
+  without bound, so they are never loaded automatically. Each domain reports how
+  many it holds and names the call that reads them, and `cogmem_memory_search`
+  reaches them with `include_events: true`.
+- **Consolidation can tell which of two conflicting memories is newer.** Each
+  memory it reviews now carries `age_days` — how long ago it was asserted — and
+  they are listed oldest first. Previously it saw no time at all, so the rule
+  that a newer instruction overrides an older one could not be applied to
+  anything already stored: asked to resolve a contradiction, an assistant would
+  correctly decline to guess which of two opposing instructions was current, and
+  both stayed in its prompt indefinitely. Days rather than a timestamp, because
+  the question is only which is newer.
+- **Consolidation now tidies the domains it touches.** Where two memories say
+  the same thing it retires the weaker one, and where a newer memory
+  contradicts an older one it retires the older and records it in the conflict
+  ledger — even when the conversation did not raise the topic. Nothing
+  previously revisited a memory once written: de-duplication only ever ran
+  against the current batch, so redundancy and stale contradictions
+  accumulated indefinitely. One production agent had two active rules giving
+  opposite instructions about the same notifications.
+
+  It retires rather than rewrites, on purpose: several specific facts that
+  merely share a topic are worth more than one vague paragraph, so only
+  memories that genuinely say the same thing are collapsed. Automatic
+  de-duplication by exact text match still runs as well.
+- **A Status page in the Web UI**, reached from a **Status** entry at the bottom
+  of the sidebar — outside the collapsible groups, since it describes the
+  running process rather than a section of the configuration, and it is what you
+  open when something feels wrong. It shows uptime, memory, and the number of
+  assistants, channels, enabled models, configured providers and goroutines,
+  over a detail box carrying the pid, version, build, Go toolchain, host OS and
+  architecture, and whether the MCP host is running. Backed by a new
+  `GET /api/system/status`, polled every five seconds so the figures stay live.
+
+  Models are counted as *enabled* and providers as *configured*, not as the
+  length of their config lists: an install carrying 40 model definitions of
+  which 3 can run is described by the 3.
+- **`/status` in chat now reports memory.** The command runs inside the process,
+  so it reports on itself — which also means you can ask an assistant how much
+  RAM it is using without shell access to the host.
+- **`claw status` reports whether ClawEh is running, and its RAM.** It could
+  previously answer neither: it reads configuration from disk and never looked
+  at the process, so it described an installation rather than a running system.
+
+  ```
+  ClawEh:          running (pid 1690872), 40.4 MB RAM
+  ```
+
+  ClawEh writes `claw.pid` into its data directory at startup and removes
+  it on clean shutdown. The data directory is the scope that matters — one
+  binary runs several instances on a host, and the command has already resolved
+  `CLAW_HOME` to find the config, so it reports on the instance you asked
+  about. A stale file left by a hard kill reads as "not running": the process
+  must still exist *and* still be claw, because pids are recycled.
+
+  The figure is resident set size, the same number `ps` reports as RSS — not
+  virtual size, which for a Go process includes a gigabyte of reserved address
+  space and would suggest ClawEh is enormous when it is not.
+- **Memory retention.** `event` memories are deleted after **30 days** and
+  retired memories **90 days** after they were retired, both overridable per
+  agent on the Agents page (blank = the default, `-1` = keep forever). Events
+  stop being useful long before they stop accumulating — one agent recorded an
+  hourly "nothing changed" note and reached 300 rows — and retiring leaves the
+  row behind, so a store that retires steadily grows forever while showing
+  nothing for it. **Only those two are ever deleted by age:** a `fact`,
+  `preference`, `rule` or `operational` memory is permanent, so no retention
+  policy can silently drop a standing instruction. The sweep runs as part of
+  consolidation and logs what it removed.
+
+  Retention is deliberately not something the model sets per memory. It already
+  makes that judgement by choosing the type — "I drove to the KOA on 4 Sep" is
+  an `event`, "we go to the KOA every Labour Day" is a `fact` — and a second
+  knob would reopen the multi-field guesswork the type redesign closed.
+- **The WebUI memory page is now a curation surface.** Change a memory's type,
+  retire and restore it, show retired memories, and add a memory or a domain by
+  hand. A memory you add yourself is recorded with `origin: user`, which the
+  assistant sees.
+- **Bulk curation.** Select many memories — or a whole domain at once from its
+  header — and retype, retire, restore or delete them together. A domain that
+  accumulated several hundred near-identical entries is the case the page exists
+  for, and one row at a time is not a job anyone starts.
+- **YAML export and import.** `GET /api/memory/{id}/export` downloads a full
+  dump — domains, memories, every field, with a format version — and import
+  loads one back in **merge** mode (add what is missing) or **replace** mode
+  (wipe and load). IDs are re-minted on import, so a dump can be loaded into a
+  different agent to seed it.
+- **An automatic snapshot before every schema migration.** The database is
+  copied to `<name>.pre-v<N>.db` beside itself before a migration runs, so an
+  upgrade is recoverable without preparation. The snapshot is named for the
+  version the store came *from*, which can differ between agents.
+- **Cognitive-memory databases are migrated when the agent loads**, at startup
+  and on config reload, rather than whenever each session next happens to be
+  opened. Lazy migration spread a schema change across hours of ordinary use
+  with no point an operator could call it done, and left a store belonging to an
+  agent nobody talked to that day on the old schema indefinitely. Each upgrade
+  is logged with its versions and the snapshot path, and a database that cannot
+  be migrated is reported at startup instead of surfacing mid-conversation.
+
+### Changed
+
+- **BREAKING: the Gemini CLI provider is replaced by Antigravity (`agy`).**
+  Google has deprecated the Gemini CLI. The `antigravity-cli` protocol takes its
+  place, seeded as the **Antigravity CLI** provider and model, and the setup
+  wizard detects `agy` alongside the other CLI agents.
+
+  **`gemini-cli` remains accepted as an alias** and now runs `agy`, so an
+  existing configuration keeps starting, keeps auto-starting the MCP host, and
+  keeps working. New configurations should use `antigravity-cli`. The seeded
+  Gemini model and its `GEMINI_CLI_TRUST_WORKSPACE` environment variable are
+  gone; if you had customised that model, point it at the new provider.
+
+  `set-mcp.sh` now registers claw with `agy mcp add` instead of `gemini mcp add`,
+  and reports what to add for Cursor, which has no `mcp add` subcommand and is
+  configured through `~/.cursor/mcp.json`.
+- **A `retire` operation may omit its `evidence`.** Every memory operation had
+  to cite a message in the current batch, which is right for anything that
+  writes text — the rule exists to keep asserted memories anchored to something
+  the user actually said. A retire asserts nothing and names a memory that must
+  already exist, and housekeeping is by definition not raised by the current
+  conversation, so the requirement made every tidy-up operation invalid. A
+  single invalid operation rejects the whole payload, so an agent following the
+  new rule above would have aborted entire consolidation runs.
+
+- **BREAKING: the consolidation prompt is no longer overridable.** A workspace
+  `COGMEM.md` used to replace it wholesale. Its contents are now **appended** to
+  the built-in prompt instead, so the file holds instructions for that assistant
+  — what to record, what to leave alone — while the rules and the output schema
+  stay with the engine.
+
+  The old arrangement made the machine contract operator-editable and froze it
+  at whatever version each workspace was seeded with, so a change to the schema
+  reached no existing agent. That survived by luck rather than design: a
+  required field the old copy did not emit would have failed validation on every
+  operation, and one invalid operation rejects the whole payload — silent, total
+  consolidation failure across every agent, visible only in run records.
+
+  **A `COGMEM.md` that is a copy of the built-in prompt is ignored**, with a
+  warning naming the file, because appending one would show the model two
+  contradictory output schemas. Every workspace seeded by an earlier version
+  contains exactly that, so those agents fall back to the built-in prompt with
+  no action needed: reduce the file to your own instructions, or delete it. New
+  workspaces are seeded with a short commented stub instead of a copy of the
+  prompt.
+- **BREAKING: `cogmem_export` writes YAML, not Markdown.** The output moves from
+  `files/MEMORY_EXPORT.md` to `files/MEMORY_EXPORT.yaml` and is the same format
+  the WebUI exports — which means it can be read back. The Markdown projection
+  could only be looked at.
+- **Memory lines in the prompt now show their type**, so the assistant can tell
+  a standing rule from a stale observation: `- (rule) Do not use the word
+  "thuddy."` Previously only the text was shown.
+- **The prompt tag `[source: …]` is now `[origin: …]`.** It always rendered
+  `origin`; with no `source` field left, the old label was actively misleading.
+- **BREAKING: existing agents keep their old consolidation prompt, and must be
+  updated by hand.** Each agent workspace holds a `COGMEM.md` seeded from the
+  shipped template and never overwritten afterwards — which is the point of it,
+  but means an upgraded install keeps the prompt it was seeded with. That prompt
+  still produces valid output, so nothing fails: the agent simply never records
+  an `event` or `operational` memory, and the most useful part of this release
+  never reaches it. Delete the seeded copies to pick up the current prompt:
+
+  ```
+  rm ~/.claw/agents/*/COGMEM.md      # or $CLAW_HOME/agents/*/COGMEM.md
+  ```
+
+  They are re-seeded from the new template on the next start. **If you have
+  edited one, keep it and add the new types yourself** — the file is yours.
+  ClawEh now logs a warning naming any agent whose prompt predates the new
+  types, so a missed one is visible rather than silent.
+- **Consolidation states a memory's type and nothing else.** It no longer sets
+  `status` (there is no longer a choice) or `source` (gone), and an operation
+  that omits a required field is rejected rather than silently defaulted.
+
+### Fixed
+
+- **BREAKING: CLI models no longer need `extra_args` set, and the flags are now
+  supplied automatically.** Every CLI agent needs a flag to run unattended
+  (`--dangerously-skip-permissions`, `--yolo`, and so on). It was stored on each
+  model, could not be set anywhere in the Web UI, and left out it failed
+  silently: the CLI auto-denies the tool call it cannot prompt for and reports a
+  completed turn with an empty answer, so the assistant answers chat and goes
+  mute the moment it tries to do anything. ClawEh now supplies each protocol's
+  required flags itself and appends whatever `extra_args` adds, so a model
+  written before this — or added through the Web UI — works without being
+  edited. A model that already lists the flag does not get it twice.
+
+  The breaking part is that the flags can no longer be removed by clearing
+  `extra_args`. If you deliberately run a CLI sandboxed, say so and we will add
+  the opt-out.
+
+- **A CLI that refused a tool call reported success and said nothing.** The
+  Antigravity CLI returns `status: SUCCESS` with an empty response and a
+  `denied_actions` list when it is not allowed to act; ClawEh did not know the
+  field existed and handed the empty answer on with no error and nothing in the
+  log. It now fails with the refused action and the flag that fixes it.
+
+- **BREAKING: deleting a provider silently changed the settings of others.**
+  Configuration is loaded by overlaying the file onto the built-in defaults, and
+  deleting a provider shifted every later entry onto a different default, which
+  it then inherited unset fields from. Deleting `OpenAI` gave `OpenRouter Chat`
+  Groq's `no_parallel_tool_calls` and `NVIDIA` OpenRouter Strict's
+  `strict_compat` — wire-behaviour changes to providers nobody touched, made
+  permanent by the next save. **Check your `providers` for `strict_compat` or
+  `no_parallel_tool_calls` on an endpoint that should not have them** if you
+  have ever deleted a provider; remove the key and restart.
+
+- **A dormant agent compacted twice in a row on waking.** Compaction has an age
+  trigger — it fires once the oldest message in the live window passes
+  `trigger.days` (7), however little of the window that window holds. The pass
+  cannot always cut back to the retention age cap (5 days): the last messages are
+  kept whatever their age, and the latest user turn is kept even when it is over
+  the cap, deliberately, since a request with no user message is rejected
+  outright. A session dormant past the trigger therefore comes back holding a
+  message the pass was never going to remove, and the next message fired another
+  pass against the same boundary — on production, a second compaction 109
+  seconds after the first, summarizing 36 tokens. The age trigger now waits for
+  the window to move past a boundary it has already compacted against. Nothing
+  to change: the intended gap between trigger and retention (2 days of quiet)
+  now holds in the case where it did not.
+
+- **The model count is shown on every configured CLI row.** It was omitted
+  where a CLI had a single model, which left it printed for one CLI and absent
+  for the rest — read as a fault rather than as brevity.
+
+- **Plural translations never selected their plural form.** Keys carrying a
+  `_plural` sibling — the pre-v21 i18next convention — are silently ignored by
+  the version in use, which wants `_other`. Provider cards read "2 model", and
+  the new CLI rows inherited it. Both fixed, with a test that fails on any
+  `_plural` key left in the catalogue.
+
+- **A CLI provider was offered five settings that do nothing.** Proxy,
+  `strict_compat`, `require_reasoning_content`, `no_parallel_tool_calls` and
+  `response_format_json` are HTTP wire knobs, and the CLI factory reads none of
+  them — a CLI provider is built from its command, workspace, arguments and
+  environment alone. Shown on a CLI form they were five controls with no effect,
+  and an off switch reads as a feature that is available and disabled: it made
+  `response_format_json` look like the reason a CLI was not returning JSON. It
+  always does. `--output-format json` (`--json` for Codex) is in the arguments
+  ClawEh passes, not in the configuration, and never was optional. The advanced
+  section is now hidden for CLI providers.
+
+- **The Providers page called a CLI provider configured whenever a path was
+  filled in, without checking that the binary was there.** A provider pinned to
+  a CLI that had since been upgraded or uninstalled showed a green dot and
+  "Configured" while every request through it failed. The reverse was worse: a
+  CLI provider with the **Command** field left blank — which is how the seeded
+  config ships, and the more robust choice, since it follows the CLI across
+  upgrades — showed as unconfigured even though it worked. The dot and the label
+  now mean the binary actually resolves, decided in the ClawEh process against
+  the `PATH` its subprocesses are launched with, and the card names the binary a
+  blank command resolved to. CLI cards also carry a **Configured** /
+  **Not configured** label at all: they previously rendered an empty space where
+  every other card said what it was.
+- **Adding a CLI provider no longer demands a command.** The field was
+  mandatory, which forced a hard-coded path on every new CLI provider — the one
+  configuration that breaks when the CLI is upgraded. Leave it blank and ClawEh
+  runs the protocol's default binary from `PATH`. The field also no longer shows
+  `/usr/local/bin/claude` as a placeholder, which suggested a path was expected
+  and named the wrong CLI for three of the four protocols.
+- **The wire-protocol picker offered `gemini-cli` and not `antigravity-cli`,**
+  so there was no way to add an Antigravity provider through the Web UI. It now
+  offers `antigravity-cli`; a provider already configured as `gemini-cli` keeps
+  working — the backend treats it as an alias for the same binary — and still
+  renders as a CLI provider.
+- **`systemctl stop` and `systemctl restart` now shut ClawEh down gracefully.**
+  Only `SIGINT` was handled, and systemd sends `SIGTERM`, whose default
+  disposition kills the process outright — so every stop and restart skipped
+  shutdown entirely: channels were never stopped cleanly, in-flight work was
+  never drained, and the 15-second graceful-shutdown timeout was dead code on
+  the one path production actually uses. Pressing Ctrl-C in a foreground run
+  always worked, which is why it went unnoticed.
+- **An operation that omitted both `status` and `source` was accepted and then
+  defaulted to a combination the rules forbid** — `assistant_inferred` with
+  `active`. Every guard tested for the fields being *wrong*, not missing. The
+  fields are gone and the remaining ones are checked for presence.
+- **Memories in `review` were unreachable.** They were excluded from the prompt,
+  excluded from `cogmem_memory_search`, and excluded from the WebUI, and the
+  digest that was meant to surface them showed a fixed top-eight by confidence —
+  so 236 of the 244 had never been seen by anything. They are now active and
+  visible.
+
+## [0.4.72]
+
+First release under the stable-compatibility policy: config schemas, tool names,
+API shapes, and the device-gateway protocol are now things other installs depend
+on, and breaking one is a deliberate decision rather than a free move.
+
+### Security
+
+- **`GET /api/config` no longer returns credentials.** It previously returned the
+  whole configuration unmasked — provider API keys, bot tokens, device tokens,
+  the WebUI channel token — on a surface with no operator authentication. Values
+  are now masked (`sk-****cdef`). `PUT` and `PATCH` restore masked values from
+  disk, so reading the config, editing it and writing it back does not destroy
+  the credentials you never saw. Setting a genuinely new credential still writes
+  through. Masking is driven by the JSON field name, so a credential added later
+  is covered from the day it appears; list entries are matched by identity
+  (`id`, `name`, `model_name`, `account`) so deleting or reordering bots,
+  providers or models cannot move a credential onto the wrong entry.
+- **The WebUI chat socket no longer disables its origin check, and no longer
+  puts the token in the URL.** Setup wrote `channels.webui.allow_origins: ["*"]`
+  into every install so a frontend dev server on port 5173 could connect — a
+  development convenience that shipped to production and switched off the only
+  defence against cross-site WebSocket hijacking, since CORS does not apply to
+  WebSockets. It also set `allow_token_query: true`, putting the token in the
+  URL where proxies, access logs, `Referer` headers and browser history record
+  it. Setup no longer writes either.
+
+  Empty `allow_origins` now means **same origin** (the `Origin` host must match
+  the `Host` requested) rather than "allow any", which works however the
+  operator reaches the UI — localhost, a LAN address, or a proxied hostname. An
+  explicit list is still honoured verbatim, `"*"` included, which is what a
+  frontend dev server needs.
+
+  The browser now sends the token as a WebSocket subprotocol
+  (`["claw-token", "<token>"]`) instead of a query parameter, because the
+  browser WebSocket API cannot set an `Authorization` header. The server echoes
+  only the `claw-token` marker, never the token. `Authorization: Bearer` still
+  works for non-browser clients, and `allow_token_query` still works if set
+  explicitly.
+
+  **This affects `/webui/ws` only** — the browser console's chat socket. The
+  device gateway on port 18791, which ClawToTalk and other OpenClaw-compatible
+  apps use, authenticates inside the protocol rather than at the HTTP handshake
+  and is untouched.
+
+  **Existing installs carry `allow_origins: ["*"]` from a previous setup run.**
+  Clear it (`"allow_origins": []` under `channels.webui`, or the Channels page)
+  to pick up same-origin checking; nothing clears it for you.
+
+- **The device gateway compares shared tokens in constant time with respect to
+  length.** `subtle.ConstantTimeCompare` returns early when lengths differ, so
+  the comparison leaked the secret's length. Both sides are now hashed to a fixed
+  width first.
+
+### Added
+
+- **`file_count` — line, word, character and byte counts for a file, like
+  `wc`.** Useful for sizing a file before reading it, and cheap enough to use as
+  a change signal. Counts match `wc` exactly, verified in the tests against the
+  real binary: `lines` is the newline count, so a file whose last line is
+  unterminated reports one fewer than you would count by eye — `final_newline`
+  in the result says which case you are in. `characters` counts Unicode
+  characters and `bytes` counts bytes, which differ for non-ASCII text. The file
+  is streamed, so it works on files too large for the read tools, and a file
+  that is not valid UTF-8 is measured rather than rejected, with `invalid_utf8`
+  marking the character count as untrustworthy.
+
+- **Watch jobs: cron that only wakes the agent when something changed.**
+  `cron_schedule` accepts `watch_tool`, `watch_args` and `watch_fields`. The
+  named tool is called on the schedule **with no model in the loop**; the values
+  at `watch_fields` are fingerprinted and compared with the previous run, and
+  `message` is delivered only when they move. Polling "is there new mail?" no
+  longer costs an LLM turn per check to conclude nothing happened.
+
+  `watch_fields` are dot-paths into the tool's result. A path crossing a list
+  applies to every element and collects the results, so `messages.id` is the set
+  of ids currently present. Naming fields rather than hashing the whole result is
+  what stops a probe firing on unread counts, timestamps and reordering. Omitting
+  them compares the entire result.
+
+  Behaviour worth knowing: the first run records a baseline **silently**, so
+  creating a watch does not immediately report everything that already exists.
+  A failed probe leaves the fingerprint untouched — advancing it would swallow
+  the change that happened while the probe was broken — and after five
+  consecutive failures the agent is told once, because a probe that has gone
+  blind otherwise looks exactly like a quiet one. Probes run against the owning
+  agent's tool registry, resolved on every run so a tool revoked in config stops
+  being probed, and session-scoped tools are refused since a probe has no
+  conversation to act on. Each probe is bounded at 60 seconds.
+
+- **`claw install` now creates the `openclaw` symlink.** The Rabbit R1's
+  `rabbit-agent` spawns `openclaw acp`, so the binary has to exist under that
+  name. Only `make install` did this before, which meant an install from a
+  release binary silently lacked the R1 path. Also documented: the README now
+  has an **External devices** section covering both transports — the device
+  gateway that OpenClaw-compatible apps such as ClawToTalk connect to, and the
+  stdio ACP bridge the R1 uses — and how the bridge reaches the running gateway
+  over loopback.
+- **`--allowed-cidrs` accepts `private` and `any` as shorthands** for the RFC1918
+  ranges and for any address, so the common headless choices do not require
+  remembering three prefixes.
+- **`gateway.allowed_cidrs` accepts `"*"`, meaning any address in either
+  family.** `0.0.0.0/0` is the obvious thing to reach for and does not mean
+  that — it is an IPv4 prefix, so on a dual-stack host it still refuses IPv6
+  clients, which reads as the allowlist simply not working. CIDRs continue to
+  mean exactly what they say (`0.0.0.0/0` is all IPv4, `::/0` is all IPv6);
+  `"*"` is the unambiguous way to open it to everything, spelled the same as the
+  wildcards in `allow_from` and `allow_origins`.
+
+- **`claw network` — set who may reach the WebUI/API without editing
+  config.json.** The recovery path for an install that listens on the network
+  and then refuses every connection from it, which is what an empty
+  `gateway.allowed_cidrs` looks like from a browser. With no argument it allows
+  the private LAN ranges; it also takes a comma-separated CIDR list or one of
+  `private`, `any`, `none`. `claw network --show` prints the current allowlist
+  and changes nothing.
+
+  ```
+  claw network                    # 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+  claw network 192.168.1.0/24     # one subnet
+  claw network any                # any address — the WebUI has no password
+  claw network none               # back to loopback only
+  ```
+
+  It writes the config and exits, so it is safe to run against a running
+  gateway.
+
+### Changed
+
+- **`claw install` refuses a non-loopback `--host` without `--allowed-cidrs`.**
+  That combination produces an install which listens on the network and then
+  refuses every connection from it — indistinguishable from a firewall problem.
+  It now fails at install time with the flags to fix it. An install whose config
+  already carries an allowlist is unaffected.
+- **BREAKING — an empty `gateway.allowed_cidrs` now means loopback only.** It
+  previously fell back to the RFC1918 private ranges, so an install bound to
+  `0.0.0.0` served the whole local network by default. Binding address and
+  allowlist are now two independent gates: binding off-box makes ClawEh *listen*
+  there, and the allowlist decides who is *served*.
+
+  If you reach the WebUI from another machine and have never set
+  `gateway.allowed_cidrs`, set it now or you will lose access on upgrade:
+
+  ```json
+  { "gateway": { "allowed_cidrs": ["192.168.1.0/24"] } }
+  ```
+
+  Use the three RFC1918 ranges (`10.0.0.0/8`, `172.16.0.0/12`,
+  `192.168.0.0/16`) to restore the previous behaviour exactly, or `"*"` to allow
+  any address. Loopback is always allowed. `claw install --allowed-cidrs` sets
+  the same field, and the gateway logs a warning at startup when it is bound
+  off-box with an empty allowlist.
+
+- **Built with Go 1.27.1, and all Go dependencies updated to their latest
+  releases.** Notable bumps: `github.com/mark3labs/mcp-go` 0.58.0 → 1.0.0,
+  `modernc.org/sqlite` 1.57.0 → 1.58.0, `github.com/anthropics/anthropic-sdk-go`
+  1.68.0 → 1.69.0, and `golang.org/x/crypto` 0.55.0 → 0.56.0. No config, tool,
+  API or protocol behaviour changes with it; the `go` directive in `go.mod`
+  stays at 1.26.7, so building from source still works with an older toolchain.
+- **The version now carries a build number: `0.4.72+d4812df7 [20260902155301]`.**
+  The commit identifies which source a binary came from, but a hash has no
+  order, so it cannot answer "is the copy I am running newer than the one I just
+  built?" — and a rebuild of the same commit is indistinguishable without it. The
+  build number is the UTC link time (`yyyymmddhhmmss`), which always increases,
+  compares correctly as plain text, and needs no version bump to change. It
+  appears everywhere the version does: `claw version`, `claw status`, the startup
+  log, the WebUI footer, `GET /api/system/version`, and the agent's system
+  prompt.
+
+  The release number and commit stay one unbroken token before the space, so a
+  version truncated on paste still identifies its source. `SemVer()` is
+  unchanged — bare `0.4.72` — so MCP, ACP and device-gateway handshakes, and the
+  release tag, are untouched. A plain `go build` with no ldflags still reports a
+  bare version.
+- **`gateway.allowed_cidrs` now applies without a restart.** The allowlist was
+  fixed for the lifetime of the listener, so widening it after locking yourself
+  out meant restarting the service. A running gateway now picks the change up
+  on its next config reload — about 15 seconds with the default interval and
+  debounce — and because the listener is not recreated, open WebUI WebSocket
+  connections survive it. An allowlist that
+  fails to parse is refused and the running one is kept, rather than the reload
+  dropping access to loopback.
+- **The startup warning for a network bind with an empty allowlist now names the
+  fix.** It previously suggested `0.0.0.0/0` for "any address", which is an IPv4
+  prefix — it still refuses IPv6 clients, which on a dual-stack host reads as the
+  allowlist being broken. It now points at `claw network` and, for the
+  allow-everything case, at `"*"`, which covers both families.
+
+### Removed
+
+- **The `hw_i2c` and `hw_spi` tools.** Inherited from the picoclaw fork, where
+  they drove sensors over the Linux I2C/SPI buses on the original SBC.
+- **`docs/config.example.json` and `docs/env-example`.** The example config had
+  drifted so far it no longer loaded, and described picoclaw's model shape rather
+  than ClawEh's. ClawEh writes a complete `~/.claw/config.json` on first run,
+  generated from the config types, so it cannot drift — that file is now the
+  reference. Every variable in `env-example` was dead, including a Feishu channel
+  this codebase has never had.
+
+### Fixed
+
+- Billing failures now surface OpenRouter's top-up URL, which it sends in
+  `error.metadata.remedy_hint` rather than a `billing_url` field, and the
+  provider is rechecked every 30 minutes.
+- The remote access guide described the WebUI and device gateway as sharing port
+  18790. The device gateway is a separate listener on `channels.device.port`
+  (default 18791); following the old text published the wrong port and left the
+  gateway unreachable.
+- The tools configuration guide documented `use_bm25` / `use_regex` discovery
+  keys and `tool_search_tool_*` tools that do not exist. The meta-tools are
+  `search_tools` and `get_tool_details`, and discovery config lives at
+  `tools.discovery`, not `tools.mcp.discovery`.
+- `cmd/claw-auth/README.md` documented environment variables and a `-config`
+  file that `claw-auth` has never read; OAuth client credentials come from the
+  MCPFusion server. It also called the binary `fusion-oauth` throughout.
+- A skills error lost its wrapped cause and read `skills directoryw %v`.
+- **The gateway no longer crashes on the second config reload.** Any two config
+  changes in the life of a process — two saves from the WebUI, two `claw network`
+  runs, an edit to config.json followed by another — killed it with
+  `panic: close of closed channel`. The mount watcher was stopped on every
+  reload but only ever created at startup, so the second stop closed an
+  already-closed channel. It is now rebuilt on reload like every other service,
+  which also fixes the quieter half of the bug: after the first reload, external
+  mount notifications had stopped firing for the rest of the process's life.
+- **A dead MCP server is detected and reconnected again.** The liveness probe
+  asked `Client.Ping`, which in `mark3labs/mcp-go` v1.0.0 returns success
+  *without contacting the server* whenever the negotiated protocol is modern
+  (2026-07-28 or later). Every MCP server therefore reported healthy forever,
+  and a session that had gone away was never reconnected — the failure stayed
+  invisible until a real tool call hit it. The probe now issues a `ListTools`
+  round trip, which reaches the server on every protocol version.
+- **`/ready` now reports ready.** It answered `503 not ready` for the entire
+  life of every process. The readiness flag was only ever set by
+  `health.Server.Start()`, which starts the health server's own listener — and
+  the merged binary does not use it, registering the handlers on the shared mux
+  instead. Readiness is now set once the listener is up and the channels have
+  started, re-set after a config reload, and cleared on shutdown. `/health` is
+  unchanged and still answers as soon as the port is open; the difference
+  between the two is the point of having both.
+- **The delete button on an agent card has an accessible name.** It was
+  icon-only with no `aria-label`, so a screen reader announced nothing on the
+  control that deletes an agent.
+- **A successful memory consolidation no longer looks like a failure.** When the
+  memory model proposed an inferred item as `active` instead of `review`, ClawEh
+  corrected it, saved the memories correctly, and recorded a note saying so —
+  but the note was stored in the run's `error` field, so the memory page showed
+  it in red on a run that had actually succeeded. Runs now carry a separate
+  `note`, shown as ordinary text; `error` means the run failed. Existing
+  databases are migrated on open, and notes already stranded in `error` on
+  successful runs are moved across, so the red text clears immediately rather
+  than after the next run.
+- **The WebUI devices page no longer fails intermittently with
+  `store open failed`.** Roughly one gateway restart in three, `GET /api/devices`
+  returned a 500 and the page showed an error. Opening the device pairing
+  database re-set `journal_mode=WAL` on every call, and CONVERTING a database to
+  WAL takes an exclusive lock that `busy_timeout` does not cover — SQLite
+  returns `SQLITE_BUSY` immediately — so the admin API lost the race against the
+  device channel opening the same file at startup. The mode is a property of the
+  file and now it is only converted when it is not already WAL, with a short
+  retry, and a database that stays on the rollback journal is logged rather than
+  failing the open. The API also keeps one database handle for the process
+  instead of opening and closing one per request.
+- **The agent Tools page no longer shows a raw translation key as a heading.**
+  Tools in the `common` and `memory` categories were grouped under
+  `pages.agent.tools.categories.common` and `….memory`, because the catalog
+  defines those categories and the UI had no labels for them. They now read
+  "Common Directory" and "Memory".
+- **Typing a channel's `allow_from` list no longer eats trailing separators.**
+  The WebUI field resynced itself from the parsed value on every keystroke, so a
+  `,` or space typed to start the next entry disappeared as soon as it was
+  entered, and the entry had to be worked around rather than typed. Affects the
+  Telegram, Slack and generic channel forms.
+
+[0.6.5]: https://github.com/PivotLLM/ClawEh/compare/0.6.4...0.6.5
+[0.6.4]: https://github.com/PivotLLM/ClawEh/compare/0.6.3...0.6.4
+[0.6.3]: https://github.com/PivotLLM/ClawEh/compare/0.6.2...0.6.3
+[0.6.2]: https://github.com/PivotLLM/ClawEh/compare/0.6.1...0.6.2
+[0.6.1]: https://github.com/PivotLLM/ClawEh/compare/0.6.0...0.6.1
+[0.6.0]: https://github.com/PivotLLM/ClawEh/compare/0.5.7...0.6.0
+[0.5.7]: https://github.com/PivotLLM/ClawEh/compare/0.5.6...0.5.7
+[0.5.6]: https://github.com/PivotLLM/ClawEh/compare/0.5.5...0.5.6
+[0.5.5]: https://github.com/PivotLLM/ClawEh/compare/0.5.3...0.5.5
+[0.5.3]: https://github.com/PivotLLM/ClawEh/compare/0.5.2...0.5.3
+[0.5.2]: https://github.com/PivotLLM/ClawEh/compare/0.5.0...0.5.2
+[0.5.0]: https://github.com/PivotLLM/ClawEh/compare/0.4.72...0.5.0
+[0.4.72]: https://github.com/PivotLLM/ClawEh/compare/0.4.70...0.4.72

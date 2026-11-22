@@ -1,0 +1,762 @@
+package cron
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/adhocore/gronx"
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/alerts"
+	"github.com/PivotLLM/ClawEh/internal/clock"
+	"github.com/PivotLLM/ClawEh/internal/perms"
+	"github.com/PivotLLM/ClawEh/logger"
+)
+
+// KindListen is the schedule kind of a listen job: it has no next run because
+// it never stops. The job's watch tool is called continuously in the
+// background (a long-poll or event-wait tool), and each result that carries a
+// new value for the watched fields is delivered to the agent. See
+// tools/schedule/listen.go.
+const KindListen = "listen"
+
+type CronSchedule struct {
+	Kind    string `json:"kind"`
+	AtMS    *int64 `json:"atMs,omitempty"`
+	EveryMS *int64 `json:"everyMs,omitempty"`
+	Expr    string `json:"expr,omitempty"`
+	TZ      string `json:"tz,omitempty"`
+}
+
+// CronWatch turns a job into a change probe: instead of waking the agent on a
+// schedule, the job calls a tool, decides from the result whether anything
+// changed, and only then delivers Message.
+//
+// The point is cost. Polling "is there new mail?" by waking the model, having it
+// call a tool and conclude nothing happened, is the expensive way to learn
+// nothing. The probe runs without a model in the loop.
+type CronWatch struct {
+	// Tool is the published tool name to call, e.g. "google_gmail_messages_list".
+	Tool string `json:"tool"`
+	// Args are the parameters passed to the tool, verbatim.
+	Args map[string]any `json:"args,omitempty"`
+	// Fields are dot-paths into the tool's JSON result naming the values that
+	// decide "changed", e.g. ["messages.id"]. A path crossing an array fans out
+	// over its elements and collects them, so "messages.id" is every id in the
+	// list. Empty means the whole result is compared.
+	//
+	// Naming fields rather than hashing the whole result is what keeps a probe
+	// from firing on incidental churn — an unread badge, a relative timestamp,
+	// a reordering — none of which mean new mail arrived.
+	Fields []string `json:"fields,omitempty"`
+	// TimeoutSec bounds one call of the tool for a listen job: how long the
+	// long-poll may wait for an event before the call is dropped and made
+	// again. 0 means the default (5 minutes). Scheduled watches ignore it and
+	// use their fixed 60-second probe timeout.
+	TimeoutSec int `json:"timeoutSec,omitempty"`
+	// SuppressRepeats, for a listen job, withholds a result whose watched
+	// fields match the last delivered event. Off by default: every result with
+	// the fields present is delivered, because each occurrence may matter (a
+	// document edited several times in a row). Turn it on for a source that
+	// replays its latest event on every reconnect.
+	SuppressRepeats bool `json:"suppressRepeats,omitempty"`
+}
+
+type CronPayload struct {
+	Mode     string `json:"mode"` // "agent" | "isolated" | "deliver" | "command" | "watch"
+	Message  string `json:"message"`
+	Command  string `json:"command,omitempty"`
+	Channel  string `json:"channel,omitempty"`
+	To       string `json:"to,omitempty"`
+	PeerKind string `json:"peer_kind,omitempty"` // "channel" (default) or "direct"
+	// Watch, when set, makes this a change probe rather than an unconditional
+	// wake-up. Mode is "watch".
+	Watch *CronWatch `json:"watch,omitempty"`
+}
+
+type CronJobState struct {
+	NextRunAtMS *int64 `json:"nextRunAtMs,omitempty"`
+	LastRunAtMS *int64 `json:"lastRunAtMs,omitempty"`
+	LastStatus  string `json:"lastStatus,omitempty"`
+	LastError   string `json:"lastError,omitempty"`
+	// WatchDigest is the fingerprint of the watched fields as of the last
+	// successful probe. Empty means no baseline yet: the first probe records one
+	// and stays silent, so creating a watch does not immediately report
+	// everything that already exists as "new".
+	WatchDigest string `json:"watchDigest,omitempty"`
+	// WatchFailures counts consecutive probe errors. It exists so a probe that
+	// starts failing is not mistaken for a probe that sees no change — silence
+	// caused by a broken credential looks exactly like silence caused by an
+	// empty inbox.
+	WatchFailures int `json:"watchFailures,omitempty"`
+}
+
+type CronJob struct {
+	ID             string       `json:"id"`
+	Name           string       `json:"name"`
+	AgentID        string       `json:"agentId,omitempty"` // owning agent; empty = operator/legacy (CLI-managed only)
+	Enabled        bool         `json:"enabled"`
+	Schedule       CronSchedule `json:"schedule"`
+	Payload        CronPayload  `json:"payload"`
+	State          CronJobState `json:"state"`
+	CreatedAtMS    int64        `json:"createdAtMs"`
+	UpdatedAtMS    int64        `json:"updatedAtMs"`
+	DeleteAfterRun bool         `json:"deleteAfterRun"`
+	Fingerprint    string       `json:"fingerprint,omitempty"`
+}
+
+// cronFingerprint computes a stable, content-addressed identifier over a job's
+// DEFINITION fields only — its Schedule and Payload. Name, Enabled, State, ID,
+// timestamps, and DeleteAfterRun are intentionally excluded so that two jobs
+// with the same schedule and payload share a fingerprint, and editing the
+// definition changes it. The result is the first 8 hex chars of the SHA-256 of
+// the marshaled definition.
+func cronFingerprint(schedule CronSchedule, payload CronPayload) string {
+	data, err := json.Marshal(struct {
+		S CronSchedule `json:"S"`
+		P CronPayload  `json:"P"`
+	}{schedule, payload})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])[:8]
+}
+
+type CronStore struct {
+	Version int       `json:"version"`
+	Jobs    []CronJob `json:"jobs"`
+}
+
+type JobHandler func(job *CronJob) (string, error)
+
+// UpdateWatchState persists the outcome of a watch probe. It is called from the
+// job handler, which runs without the service lock held, and only touches the
+// two watch fields so the post-run state update (last run, status, next run)
+// still applies on top.
+func (cs *CronService) UpdateWatchState(jobID, digest string, failures int) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID != jobID {
+			continue
+		}
+		cs.store.Jobs[i].State.WatchDigest = digest
+		cs.store.Jobs[i].State.WatchFailures = failures
+		return cs.saveStoreUnsafe()
+	}
+	return fmt.Errorf("cron: job %q not found", jobID)
+}
+
+type CronService struct {
+	storePath   string
+	store       *CronStore
+	onJob       JobHandler
+	mu          sync.RWMutex
+	running     bool
+	stopChan    chan struct{}
+	gronx       *gronx.Gronx
+	fileModTime time.Time // mtime of store file at last load or save
+	alerter     alerter.Alerter
+	loadErr     error // store load failure at construction, see LoadError
+	// jobFaults holds each job's "Scheduled job failed" alerts to one when its
+	// runs start failing and one a day while they keep failing; a run that
+	// succeeds ends it, and so does removing the job.
+	jobFaults alerts.Incidents
+	// clock times jobFaults; nil means clock.Real (tests set a fake).
+	clock clock.Clock
+}
+
+// LoadError returns the error from loading the store when the service was
+// created, or nil. The service starts with an empty store in that case.
+func (cs *CronService) LoadError() error {
+	return cs.loadErr
+}
+
+// SetAlerter routes job failures to an alerter.
+func (cs *CronService) SetAlerter(a alerter.Alerter) {
+	cs.mu.Lock()
+	cs.alerter = a
+	cs.mu.Unlock()
+}
+
+func NewCronService(storePath string, onJob JobHandler) *CronService {
+	cs := &CronService{
+		storePath: storePath,
+		onJob:     onJob,
+		gronx:     gronx.New(),
+	}
+	// Initialize and load store on creation
+	if err := cs.loadStore(); err != nil {
+		logger.WarnCF("cron", "Failed to load cron store", map[string]any{"path": storePath, "error": err.Error()})
+		cs.loadErr = err
+	}
+	return cs
+}
+
+func (cs *CronService) Start() error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	if cs.running {
+		return nil
+	}
+
+	if err := cs.loadStore(); err != nil {
+		return fmt.Errorf("failed to load store: %w", err)
+	}
+
+	cs.recomputeNextRuns()
+	if err := cs.saveStoreUnsafe(); err != nil {
+		return fmt.Errorf("failed to save store: %w", err)
+	}
+
+	cs.stopChan = make(chan struct{})
+	cs.running = true
+	go cs.runLoop(cs.stopChan)
+
+	return nil
+}
+
+func (cs *CronService) Stop() {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	if !cs.running {
+		return
+	}
+
+	cs.running = false
+	if cs.stopChan != nil {
+		close(cs.stopChan)
+		cs.stopChan = nil
+	}
+}
+
+func (cs *CronService) runLoop(stopChan chan struct{}) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopChan:
+			return
+		case <-ticker.C:
+			cs.checkJobs()
+		}
+	}
+}
+
+func (cs *CronService) checkJobs() {
+	cs.mu.Lock()
+
+	if !cs.running {
+		cs.mu.Unlock()
+		return
+	}
+
+	// Reload from disk if the file was modified externally (e.g. by the CLI).
+	if info, err := os.Stat(cs.storePath); err == nil && info.ModTime().After(cs.fileModTime) {
+		prev := cs.store
+		if err := cs.loadStore(); err != nil {
+			logger.WarnCF("cron", "failed to reload store, keeping existing", map[string]any{"error": err.Error()})
+			cs.store = prev
+		}
+	}
+
+	now := time.Now().UnixMilli()
+	var dueJobIDs []string
+
+	// Collect jobs that are due (we need to copy them to execute outside lock)
+	for i := range cs.store.Jobs {
+		job := &cs.store.Jobs[i]
+		if job.Enabled && job.State.NextRunAtMS != nil && *job.State.NextRunAtMS <= now {
+			dueJobIDs = append(dueJobIDs, job.ID)
+		}
+	}
+
+	// Only persist state when there are due jobs to avoid clobbering
+	// concurrent writes from the CLI or other processes.
+	if len(dueJobIDs) > 0 {
+		// Reset next run before unlocking to prevent duplicate execution.
+		dueMap := make(map[string]bool, len(dueJobIDs))
+		for _, jobID := range dueJobIDs {
+			dueMap[jobID] = true
+		}
+		for i := range cs.store.Jobs {
+			if dueMap[cs.store.Jobs[i].ID] {
+				cs.store.Jobs[i].State.NextRunAtMS = nil
+			}
+		}
+
+		if err := cs.saveStoreUnsafe(); err != nil {
+			logger.WarnCF("cron", "failed to save store", map[string]any{"error": err.Error()})
+			cs.alertSaveFailed(err)
+		}
+	}
+
+	cs.mu.Unlock()
+
+	// Execute jobs outside lock.
+	for _, jobID := range dueJobIDs {
+		cs.executeJobByID(jobID)
+	}
+}
+
+func (cs *CronService) executeJobByID(jobID string) {
+	startTime := time.Now().UnixMilli()
+
+	cs.mu.RLock()
+	var callbackJob *CronJob
+	for i := range cs.store.Jobs {
+		job := &cs.store.Jobs[i]
+		if job.ID == jobID {
+			jobCopy := *job
+			callbackJob = &jobCopy
+			break
+		}
+	}
+	cs.mu.RUnlock()
+
+	if callbackJob == nil {
+		logger.WarnCF("cron", "job not found, skipping", map[string]any{"job_id": jobID})
+		return
+	}
+
+	// Log job execution start
+	logger.InfoCF("cron", "executing job", map[string]any{
+		"name":     callbackJob.Name,
+		"id":       jobID,
+		"schedule": callbackJob.Schedule.Kind,
+		"channel":  callbackJob.Payload.Channel,
+	})
+
+	var err error
+	if cs.onJob != nil {
+		_, err = cs.onJob(callbackJob)
+	}
+
+	execDuration := time.Now().UnixMilli() - startTime
+
+	// Now acquire lock to update state
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	var job *CronJob
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID == jobID {
+			job = &cs.store.Jobs[i]
+			break
+		}
+	}
+	if job == nil {
+		logger.WarnCF("cron", "job disappeared before state update", map[string]any{"job_id": jobID})
+		return
+	}
+
+	job.State.LastRunAtMS = &startTime
+	job.UpdatedAtMS = time.Now().UnixMilli()
+
+	if err != nil {
+		job.State.LastStatus = "error"
+		job.State.LastError = err.Error()
+		logger.ErrorCF("cron", "job failed", map[string]any{
+			"name":        job.Name,
+			"id":          job.ID,
+			"duration_ms": execDuration,
+			"error":       err.Error(),
+		})
+		// Every failed run is logged and kept in the job's state; the operator
+		// is alerted on the first, then once a day while every run fails.
+		if cs.alerter != nil {
+			if o := cs.jobFaults.Report(job.ID, clock.Or(cs.clock).Now()); o.Alert {
+				cs.alerter.Send(alerter.Alert{
+					Title:       "Scheduled job failed",
+					Description: job.Name + " (" + job.ID + ")" + o.Note(),
+					Details:     err.Error(),
+					EventID:     job.ID,
+				})
+			}
+		}
+	} else {
+		job.State.LastStatus = "ok"
+		job.State.LastError = ""
+		cs.jobFaults.Resolve(job.ID) // it runs again: its next failure is news
+	}
+
+	// Compute next run time
+	var nextRunStr string
+	if job.Schedule.Kind == "at" {
+		if job.DeleteAfterRun {
+			if _, rmErr := cs.removeJobUnsafe(job.ID); rmErr != nil {
+				logger.WarnCF("cron", "failed to remove job after run", map[string]any{"error": rmErr.Error()})
+			}
+			nextRunStr = "(deleted)"
+		} else {
+			job.Enabled = false
+			job.State.NextRunAtMS = nil
+			nextRunStr = "(disabled)"
+		}
+	} else {
+		nextRun := cs.computeNextRun(&job.Schedule, time.Now().UnixMilli())
+		job.State.NextRunAtMS = nextRun
+		if nextRun != nil {
+			nextRunStr = time.UnixMilli(*nextRun).Format("2006-01-02 15:04:05")
+		} else {
+			nextRunStr = "(none)"
+		}
+	}
+
+	if err == nil {
+		logger.InfoCF("cron", "job completed", map[string]any{
+			"name":        job.Name,
+			"duration_ms": execDuration,
+			"next_run":    nextRunStr,
+		})
+	}
+
+	if err := cs.saveStoreUnsafe(); err != nil {
+		logger.WarnCF("cron", "failed to save store", map[string]any{"error": err.Error()})
+		cs.alertSaveFailed(err)
+	}
+}
+
+func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int64 {
+	if schedule.Kind == "at" {
+		if schedule.AtMS != nil && *schedule.AtMS > nowMS {
+			return schedule.AtMS
+		}
+		return nil
+	}
+
+	if schedule.Kind == "every" {
+		if schedule.EveryMS == nil || *schedule.EveryMS <= 0 {
+			return nil
+		}
+		next := nowMS + *schedule.EveryMS
+		return &next
+	}
+
+	if schedule.Kind == "cron" {
+		if schedule.Expr == "" {
+			return nil
+		}
+
+		// Use gronx to calculate next run time
+		now := time.UnixMilli(nowMS)
+		nextTime, err := gronx.NextTickAfter(schedule.Expr, now, false)
+		if err != nil {
+			logger.WarnCF("cron", "failed to compute next run for cron expr", map[string]any{
+				"expr":  schedule.Expr,
+				"error": err.Error(),
+			})
+			return nil
+		}
+
+		nextMS := nextTime.UnixMilli()
+		return &nextMS
+	}
+
+	return nil
+}
+
+func (cs *CronService) recomputeNextRuns() {
+	now := time.Now().UnixMilli()
+	for i := range cs.store.Jobs {
+		job := &cs.store.Jobs[i]
+		if job.Enabled {
+			job.State.NextRunAtMS = cs.computeNextRun(&job.Schedule, now)
+		}
+	}
+}
+
+func (cs *CronService) getNextWakeMS() *int64 {
+	var nextWake *int64
+	for _, job := range cs.store.Jobs {
+		if job.Enabled && job.State.NextRunAtMS != nil {
+			if nextWake == nil || *job.State.NextRunAtMS < *nextWake {
+				nextWake = job.State.NextRunAtMS
+			}
+		}
+	}
+	return nextWake
+}
+
+func (cs *CronService) Load() error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.loadStore()
+}
+
+func (cs *CronService) SetOnJob(handler JobHandler) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.onJob = handler
+}
+
+func (cs *CronService) loadStore() error {
+	cs.store = &CronStore{
+		Version: 1,
+		Jobs:    []CronJob{},
+	}
+
+	data, err := os.ReadFile(cs.storePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	// Unmarshal via legacy-aware intermediate to migrate old deliver/kind fields.
+	var raw struct {
+		Version int `json:"version"`
+		Jobs    []struct {
+			CronJob
+			Payload struct {
+				CronPayload
+				Deliver bool   `json:"deliver"`
+				Kind    string `json:"kind"`
+			} `json:"payload"`
+		} `json:"jobs"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	cs.store.Version = raw.Version
+	cs.store.Jobs = make([]CronJob, len(raw.Jobs))
+	for i, rj := range raw.Jobs {
+		job := rj.CronJob
+		p := rj.Payload.CronPayload
+		if p.Mode == "" {
+			switch {
+			case p.Command != "":
+				p.Mode = "command"
+			case rj.Payload.Deliver:
+				p.Mode = "deliver"
+			default:
+				p.Mode = "agent"
+			}
+		}
+		if p.PeerKind == "" {
+			p.PeerKind = "channel"
+		}
+		job.Payload = p
+		// Backfill fingerprint for legacy stores that predate the field.
+		if job.Fingerprint == "" {
+			job.Fingerprint = cronFingerprint(job.Schedule, job.Payload)
+		}
+		cs.store.Jobs[i] = job
+	}
+	if info, err := os.Stat(cs.storePath); err == nil {
+		cs.fileModTime = info.ModTime()
+	}
+	return nil
+}
+
+func (cs *CronService) saveStoreUnsafe() error {
+	data, err := json.MarshalIndent(cs.store, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// Atomic write with explicit sync for flash storage reliability; the file
+	// (and its folder, when created) take exactly their area's modes.
+	if err := perms.CurrentPolicy().WriteFile(cs.storePath, data); err != nil {
+		return err
+	}
+	if info, err := os.Stat(cs.storePath); err == nil {
+		cs.fileModTime = info.ModTime()
+	}
+	return nil
+}
+
+func (cs *CronService) AddJob(
+	name string,
+	schedule CronSchedule,
+	message, mode, channel, to, peerKind string,
+) (*CronJob, error) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	now := time.Now().UnixMilli()
+
+	if mode == "" {
+		mode = "agent"
+	}
+	if peerKind == "" {
+		peerKind = "channel"
+	}
+
+	// One-time tasks (at) should be deleted after execution
+	deleteAfterRun := (schedule.Kind == "at")
+
+	job := CronJob{
+		ID:       generateID(),
+		Name:     name,
+		Enabled:  true,
+		Schedule: schedule,
+		Payload: CronPayload{
+			Mode:     mode,
+			Message:  message,
+			Channel:  channel,
+			To:       to,
+			PeerKind: peerKind,
+		},
+		State: CronJobState{
+			NextRunAtMS: cs.computeNextRun(&schedule, now),
+		},
+		CreatedAtMS:    now,
+		UpdatedAtMS:    now,
+		DeleteAfterRun: deleteAfterRun,
+	}
+	job.Fingerprint = cronFingerprint(job.Schedule, job.Payload)
+
+	cs.store.Jobs = append(cs.store.Jobs, job)
+	if err := cs.saveStoreUnsafe(); err != nil {
+		return nil, err
+	}
+
+	return &job, nil
+}
+
+func (cs *CronService) UpdateJob(job *CronJob) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID == job.ID {
+			cs.store.Jobs[i] = *job
+			cs.store.Jobs[i].UpdatedAtMS = time.Now().UnixMilli()
+			// Recompute the fingerprint so definition edits change the hash.
+			cs.store.Jobs[i].Fingerprint = cronFingerprint(cs.store.Jobs[i].Schedule, cs.store.Jobs[i].Payload)
+			return cs.saveStoreUnsafe()
+		}
+	}
+	return errors.New("job not found")
+}
+
+func (cs *CronService) RemoveJob(jobID string) (bool, error) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	return cs.removeJobUnsafe(jobID)
+}
+
+func (cs *CronService) removeJobUnsafe(jobID string) (bool, error) {
+	before := len(cs.store.Jobs)
+	var jobs []CronJob
+	for _, job := range cs.store.Jobs {
+		if job.ID != jobID {
+			jobs = append(jobs, job)
+		}
+	}
+	cs.store.Jobs = jobs
+	removed := len(cs.store.Jobs) < before
+
+	if removed {
+		cs.jobFaults.Resolve(jobID)
+		if err := cs.saveStoreUnsafe(); err != nil {
+			return true, err
+		}
+	}
+
+	return removed, nil
+}
+
+func (cs *CronService) EnableJob(jobID string, enabled bool) (*CronJob, error) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	for i := range cs.store.Jobs {
+		job := &cs.store.Jobs[i]
+		if job.ID == jobID {
+			job.Enabled = enabled
+			job.UpdatedAtMS = time.Now().UnixMilli()
+
+			if enabled {
+				job.State.NextRunAtMS = cs.computeNextRun(&job.Schedule, time.Now().UnixMilli())
+			} else {
+				job.State.NextRunAtMS = nil
+			}
+
+			if err := cs.saveStoreUnsafe(); err != nil {
+				return job, err
+			}
+			return job, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	if includeDisabled {
+		jobs := make([]CronJob, len(cs.store.Jobs))
+		copy(jobs, cs.store.Jobs)
+		return jobs
+	}
+
+	var enabled []CronJob
+	for _, job := range cs.store.Jobs {
+		if job.Enabled {
+			enabled = append(enabled, job)
+		}
+	}
+
+	return enabled
+}
+
+func (cs *CronService) Status() map[string]any {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	var enabledCount int
+	for _, job := range cs.store.Jobs {
+		if job.Enabled {
+			enabledCount++
+		}
+	}
+
+	return map[string]any{
+		"enabled":      cs.running,
+		"jobs":         len(cs.store.Jobs),
+		"nextWakeAtMS": cs.getNextWakeMS(),
+	}
+}
+
+func generateID() string {
+	// Use crypto/rand for better uniqueness under concurrent access
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to time-based if crypto/rand fails
+		return strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+	return hex.EncodeToString(b)
+}
+
+// alertSaveFailed reports a store write failure: the in-memory jobs drift
+// from disk and are lost on restart. Repeats collapse in the alerter.
+func (cs *CronService) alertSaveFailed(err error) {
+	if cs.alerter == nil {
+		return
+	}
+	cs.alerter.Send(alerter.Alert{
+		Title:       "Cron store not saved",
+		Description: cs.storePath + ": job changes are held in memory only and are lost on restart",
+		Details:     err.Error(),
+		EventID:     "cron-store",
+	})
+}

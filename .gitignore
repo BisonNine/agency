@@ -1,0 +1,80 @@
+# Claude Code local tooling state
+.claude/
+.cm*
+CLAUDE.local.md
+
+
+# Binaries and build artifacts
+ClawEh
+bin/
+build/
+private/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/claw
+/claw-test
+internal/onboard/workspace/
+test.out
+
+# ClawEh data directory
+.claw/
+config.json
+sessions/
+!/internal/sessions/
+
+# Coverage
+
+# Secrets & Config (keep templates, ignore actual secrets)
+.env
+config/config.json
+
+# Test
+coverage.txt
+coverage.html
+
+# OS
+.DS_Store
+# macOS AppleDouble resource forks (created when the tree is touched over SMB/AFP)
+._*
+
+# Ralph workspace
+ralph/
+.ralph/
+tasks/
+
+# Frontend dependencies (managed by pnpm)
+web/frontend/node_modules/
+
+# Editors
+.vscode/
+.idea/
+
+# Added by goreleaser init:
+dist/
+*.vite/
+
+# Windows Application Icon/Resource
+*.syso
+
+# Keep embedded backend dist directory placeholder in VCS
+!web/backend/dist/
+web/backend/dist/*
+!web/backend/dist/.gitkeep
+
+# The manual's build (make manual) lands in the Go embed source; keep only the
+# placeholder.
+web/backend/manual/*
+!web/backend/manual/.gitkeep
+manual/node_modules/
+manual/.vitepress/cache/
+
+# Playwright MCP session output (page snapshots, console logs).
+.playwright-mcp/
+
+# Scratch audit output (pnpm audit > audit.txt); not source.
+audit.txt
+.test-failures.log

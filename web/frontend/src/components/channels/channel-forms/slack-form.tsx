@@ -1,0 +1,102 @@
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
+
+import type { ChannelConfig } from "@/api/channels"
+import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
+import { Field, KeyInput } from "@/components/shared-form"
+import { Input } from "@/components/ui/input"
+
+interface SlackFormProps {
+  config: ChannelConfig
+  onChange: (key: string, value: unknown) => void
+  isEdit: boolean
+  fieldErrors?: Record<string, string>
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === "string")
+}
+
+export function SlackForm({
+  config,
+  onChange,
+  isEdit,
+  fieldErrors = {},
+}: SlackFormProps) {
+  const { t } = useTranslation()
+  // The draft is a free-text mirror of the allow_from array, resynced when the
+  // array actually changes value. Adjusted during render, and compared by the
+  // joined STRING rather than by the array identity the old effect depended on.
+  // That identity changed on every keystroke, because typing rebuilds the array
+  // through onChange — so the effect re-ran and overwrote the draft with the
+  // reparsed value, eating a trailing "," or space the moment it was typed.
+  const allowFromValue = asStringArray(config.allow_from).join(", ")
+  const [allowFromDraft, setAllowFromDraft] = useState(allowFromValue)
+  const [syncedAllowFrom, setSyncedAllowFrom] = useState(allowFromValue)
+  if (allowFromValue !== syncedAllowFrom) {
+    setSyncedAllowFrom(allowFromValue)
+    setAllowFromDraft(allowFromValue)
+  }
+
+  const botTokenExtraHint =
+    isEdit && asString(config.bot_token)
+      ? ` ${t("channels.field.secretHintSet")}`
+      : ""
+  const appTokenExtraHint =
+    isEdit && asString(config.app_token)
+      ? ` ${t("channels.field.secretHintSet")}`
+      : ""
+
+  return (
+    <div className="space-y-5">
+      <Field
+        label={t("channels.field.botToken")}
+        required
+        hint={`${t("channels.form.desc.botToken")}${botTokenExtraHint}`}
+        error={fieldErrors.bot_token}
+      >
+        <KeyInput
+          value={asString(config._bot_token)}
+          onChange={(v) => onChange("_bot_token", v)}
+          placeholder={maskedSecretPlaceholder(config.bot_token, "xoxb-xxxx")}
+        />
+      </Field>
+
+      <Field
+        label={t("channels.field.appToken")}
+        hint={`${t("channels.form.desc.appToken")}${appTokenExtraHint}`}
+      >
+        <KeyInput
+          value={asString(config._app_token)}
+          onChange={(v) => onChange("_app_token", v)}
+          placeholder={maskedSecretPlaceholder(config.app_token, "xapp-xxxx")}
+        />
+      </Field>
+
+      <Field
+        label={t("channels.field.allowFrom")}
+        hint={t("channels.form.desc.allowFrom")}
+      >
+        <Input
+          value={allowFromDraft}
+          onChange={(e) => setAllowFromDraft(e.target.value)}
+          onBlur={() =>
+            onChange(
+              "allow_from",
+              allowFromDraft
+                .split(",")
+                .map((s: string) => s.trim())
+                .filter(Boolean),
+            )
+          }
+          placeholder={t("channels.field.allowFromPlaceholder")}
+        />
+      </Field>
+    </div>
+  )
+}

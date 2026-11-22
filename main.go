@@ -1,0 +1,82 @@
+// ClawEh
+// License: MIT
+//
+// Copyright (c) 2026 Tenebris Technologies Inc.
+
+package main
+
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/internal/admincmd"
+	"github.com/PivotLLM/ClawEh/internal/agent"
+	"github.com/PivotLLM/ClawEh/internal/backup"
+	"github.com/PivotLLM/ClawEh/internal/cron"
+	"github.com/PivotLLM/ClawEh/internal/devicegw"
+	"github.com/PivotLLM/ClawEh/internal/gateway"
+	"github.com/PivotLLM/ClawEh/internal/install"
+	"github.com/PivotLLM/ClawEh/internal/memory"
+	"github.com/PivotLLM/ClawEh/internal/model"
+	"github.com/PivotLLM/ClawEh/internal/network"
+	"github.com/PivotLLM/ClawEh/internal/sessions"
+	"github.com/PivotLLM/ClawEh/internal/skills"
+	"github.com/PivotLLM/ClawEh/internal/status"
+	"github.com/PivotLLM/ClawEh/internal/test"
+	"github.com/PivotLLM/ClawEh/internal/tlscert"
+	"github.com/PivotLLM/ClawEh/internal/token"
+	"github.com/PivotLLM/ClawEh/internal/upgrade"
+	"github.com/PivotLLM/ClawEh/internal/version"
+)
+
+func NewClawCommand() *cobra.Command {
+	// Default subcommand: run the merged gateway + WebUI + session API on the
+	// single port from cfg.Gateway. `claw` with no arguments is the supported
+	// way to launch the server; the `claw gateway` alias is preserved for
+	// existing systemd units and muscle memory during the transition.
+	defaultCmd := gateway.NewGatewayCommand()
+	cmd := &cobra.Command{
+		Use:          app.BinaryName(),
+		Short:        app.TagLine(),
+		Args:         defaultCmd.Args,
+		SilenceUsage: true,
+		PreRunE:      defaultCmd.PreRunE,
+		RunE:         defaultCmd.RunE,
+	}
+	cmd.Flags().AddFlagSet(defaultCmd.Flags())
+
+	cmd.AddCommand(
+		admincmd.NewAdminCommand(),
+		agent.NewAgentCommand(),
+		defaultCmd,
+		gateway.NewACPCommand(),
+		status.NewStatusCommand(),
+		cron.NewCronCommand(),
+		skills.NewSkillsCommand(),
+		memory.NewMemoryCommand(),
+		sessions.NewSessionsCommand(),
+		model.NewModelCommand(),
+		install.NewInstallCommand(),
+		install.NewUninstallCommand(),
+		network.NewNetworkCommand(),
+		test.NewTestCommand(),
+		token.NewTokenCommand(),
+		tlscert.NewTLSCommand(),
+		devicegw.NewDevicesCommand(),
+		backup.NewBackupCommand(),
+		backup.NewRestoreCommand(),
+		upgrade.NewUpgradeCommand(),
+		version.NewVersionCommand(),
+	)
+
+	return cmd
+}
+
+func main() {
+	cmd := NewClawCommand()
+	if err := cmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}

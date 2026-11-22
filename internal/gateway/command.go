@@ -1,0 +1,56 @@
+package gateway
+
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+func NewGatewayCommand() *cobra.Command {
+	var debug bool
+	var noTruncate bool
+
+	cmd := &cobra.Command{
+		Use:          "gateway",
+		Aliases:      []string{"g"},
+		Short:        "Start " + app.ShortName(),
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		PreRunE: func(_ *cobra.Command, _ []string) error {
+			if noTruncate && !debug {
+				return errors.New("the --no-truncate option can only be used in conjunction with --debug (-d)")
+			}
+
+			if noTruncate {
+				utils.SetDisableTruncation(true)
+				logger.Info("String truncation is globally disabled via 'no-truncate' flag")
+			}
+
+			return nil
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if err := gatewayCmd(debug); err != nil {
+				// Log to claw.log too (gatewayCmd enables file logging early), not
+				// just the console/journal, so the fatal reason is captured.
+				logger.ErrorCF("gateway", "gateway exited with error", map[string]any{"error": err.Error()})
+				fmt.Fprintf(os.Stderr, "\nError: %s\n\n", err)
+				// 1 for a startup or configuration error; exitCodeServiceDied
+				// when a core service died after startup and the gateway shut
+				// itself down for the service manager to restart.
+				os.Exit(exitCode(err))
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
+	cmd.Flags().BoolVarP(&noTruncate, "no-truncate", "T", false, "Disable string truncation in debug logs")
+
+	return cmd
+}

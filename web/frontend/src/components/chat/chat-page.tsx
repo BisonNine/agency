@@ -1,0 +1,109 @@
+import { IconPlus } from "@tabler/icons-react"
+import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+
+import { AssistantMessage } from "@/components/chat/assistant-message"
+import { ChatComposer } from "@/components/chat/chat-composer"
+import { ChatEmptyState } from "@/components/chat/chat-empty-state"
+import { TypingIndicator } from "@/components/chat/typing-indicator"
+import { UserMessage } from "@/components/chat/user-message"
+import { PageHeader } from "@/components/page-header"
+import { Button } from "@/components/ui/button"
+import { useChatModels } from "@/hooks/use-chat-models"
+import { useClawChat } from "@/hooks/use-claw-chat"
+
+export function ChatPage() {
+  const { t } = useTranslation()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [hasScrolled, setHasScrolled] = useState(false)
+  const [input, setInput] = useState("")
+
+  const { messages, isTyping, sendMessage, newChat } = useClawChat()
+
+  const { hasConfiguredModels, defaultModelName } = useChatModels()
+
+  const syncScrollState = (element: HTMLDivElement) => {
+    const { scrollTop, scrollHeight, clientHeight } = element
+    setHasScrolled(scrollTop > 0)
+    setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
+  }
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    syncScrollState(e.currentTarget)
+  }
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      if (isAtBottom) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      }
+      syncScrollState(scrollRef.current)
+    }
+  }, [messages, isTyping, isAtBottom])
+
+  const handleSend = () => {
+    if (!input.trim()) return
+    sendMessage(input.trim())
+    setInput("")
+  }
+
+  return (
+    <div className="bg-background/95 flex h-full flex-col">
+      <PageHeader
+        title={t("navigation.chat")}
+        className={`transition-shadow ${
+          hasScrolled ? "shadow-sm" : "shadow-none"
+        }`}
+        titleExtra={undefined}
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={newChat}
+          className="h-9 gap-2"
+        >
+          <IconPlus className="size-4" />
+          <span className="hidden sm:inline">{t("chat.newChat")}</span>
+        </Button>
+      </PageHeader>
+
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 lg:px-24 xl:px-48"
+      >
+        <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
+          {messages.length === 0 && !isTyping && (
+            <ChatEmptyState
+              hasConfiguredModels={hasConfiguredModels}
+              defaultModelName={defaultModelName}
+            />
+          )}
+
+          {messages.map((msg) => (
+            <div key={msg.id} className="flex w-full">
+              {msg.role === "assistant" ? (
+                <AssistantMessage
+                  content={msg.content}
+                  timestamp={msg.timestamp}
+                />
+              ) : (
+                <UserMessage content={msg.content} />
+              )}
+            </div>
+          ))}
+
+          {isTyping && <TypingIndicator />}
+        </div>
+      </div>
+
+      <ChatComposer
+        input={input}
+        onInputChange={setInput}
+        onSend={handleSend}
+        hasDefaultModel={Boolean(defaultModelName)}
+      />
+    </div>
+  )
+}

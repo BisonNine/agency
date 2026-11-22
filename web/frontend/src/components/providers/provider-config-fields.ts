@@ -1,0 +1,64 @@
+// Shared definitions for the provider management UI.
+
+// PROTOCOL_OPTIONS is what the wire-protocol picker offers. "gemini-cli" is
+// deliberately absent: Google deprecated the Gemini CLI and it now runs
+// Antigravity. Existing configs naming it keep working — the backend treats it
+// as an alias — but nothing new should be created with it.
+export const PROTOCOL_OPTIONS = [
+  "openai-chat",
+  "openai-responses",
+  "azure",
+  "anthropic",
+  "anthropic-messages",
+  "claude-cli",
+  "codex-cli",
+  "antigravity-cli",
+  "cursor-cli",
+  "human",
+  // Speech only (Task models): Google's Gemini API and ElevenLabs. Base URL
+  // optional (the vendor's), API key required.
+  "gemini",
+  "elevenlabs",
+] as const
+
+export type Protocol = (typeof PROTOCOL_OPTIONS)[number]
+
+// DEFAULT_PROTOCOL is the protocol a provider form starts with. It and the
+// picker are checked against config/testdata/provider_protocols.json, which
+// the backend checks against the protocols it accepts.
+export const DEFAULT_PROTOCOL: Protocol = "openai-chat"
+
+// CLI_PROTOCOLS still includes the "gemini-cli" alias, unlike the picker: a
+// provider already carrying it must keep rendering as a CLI card, with a
+// command field rather than a base URL and API key.
+const CLI_PROTOCOLS: ReadonlySet<string> = new Set([
+  "claude-cli",
+  "codex-cli",
+  "antigravity-cli",
+  "gemini-cli",
+  "cursor-cli",
+])
+
+// isCliProtocol reports whether a protocol is subprocess-based — these use a
+// `command` and have no base_url / api_key.
+export function isCliProtocol(protocol: string): boolean {
+  return CLI_PROTOCOLS.has(protocol)
+}
+
+// isHumanProtocol reports whether a protocol is "human": a model on it
+// represents a person, who answers in their own chat. It has no base_url,
+// api_key or command.
+export function isHumanProtocol(protocol: string): boolean {
+  return protocol === "human"
+}
+
+// requiresBaseURL reports whether base_url is required for a protocol.
+export function requiresBaseURL(protocol: string): boolean {
+  return (
+    protocol === "openai-chat" ||
+    protocol === "openai-responses" ||
+    protocol === "azure" ||
+    protocol === "anthropic" ||
+    protocol === "anthropic-messages"
+  )
+}

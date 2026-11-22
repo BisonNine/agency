@@ -1,0 +1,1168 @@
+#!/usr/bin/env bash
+################################################################################
+# ClawEh Comprehensive Test Suite
+# Runs all Go tests with race detector and coverage measurement, followed by
+# MCP server integration tests (probe-driven, self-contained).
+#
+# Usage:
+#   ./test.sh             Full suite: unit tests + MCP integration (default)
+#   ./test.sh -f          Fast mode: no race detector, no coverage
+#   ./test.sh -c          Coverage only (no race detector)
+#   ./test.sh -s          Skip MCP integration tests
+#   ./test.sh -n          Disable colour output
+#   ./test.sh -x          Preserve test artifacts after completion
+#   ./test.sh -h          Show help
+#
+# MCP integration tests require the 'probe' binary on PATH. If probe is not
+# found, the integration section is skipped with a warning (not a failure).
+# Set PROBE_PATH to override the binary location.
+#
+# When Go tests fail, the failing tests' output is re-printed in a FAILURE
+# DETAILS section after the package results, and written to .test-failures.log
+# in the repo root for review after a long run. The final summary lists each
+# failed test with a ready-to-paste rerun command.
+#
+# Exit codes:
+#   0  All tests passed and coverage gate met
+#   1  One or more tests failed or coverage below minimum
+################################################################################
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# A test gateway must never alert the operator: no ALERTER_* channel from ~/.alerter.
+# shellcheck source=tests/lib/gateway_env.sh
+source "$SCRIPT_DIR/tests/lib/gateway_env.sh"
+
+#===============================================================================
+# Configuration
+#===============================================================================
+
+COVERAGE_MIN=50          # Minimum overall coverage % required to pass
+COVERAGE_FILE="coverage.out"
+FAILURE_LOG=".test-failures.log"   # Go test failure details, rewritten on every run
+TIMEOUT="300s"
+
+#===============================================================================
+# Argument Parsing
+#===============================================================================
+
+FAST_MODE=false
+COVERAGE_ONLY=false
+COLOR_OFF=false
+PRESERVE_ARTIFACTS=false
+SKIP_INTEGRATION=false
+
+while getopts "fcsinxh" opt; do
+    case $opt in
+        f) FAST_MODE=true ;;
+        c) COVERAGE_ONLY=true ;;
+        s) SKIP_INTEGRATION=true ;;
+        i) ;;  # kept for backward compat — integration now runs by default
+        n) COLOR_OFF=true ;;
+        x) PRESERVE_ARTIFACTS=true ;;
+        h)
+            echo "Usage: $0 [-f] [-c] [-s] [-n] [-x] [-h]"
+            echo "  -f  Fast mode: no race detector, no coverage (quickest feedback)"
+            echo "  -c  Coverage mode: coverage measurement only, no race detector"
+            echo "  -s  Skip MCP integration tests"
+            echo "  -n  Disable colour output"
+            echo "  -x  Preserve test artifacts after completion (for debugging)"
+            echo "  -h  Show this help"
+            exit 0
+            ;;
+        *)
+            echo "Usage: $0 [-f] [-c] [-s] [-n] [-x] [-h]"
+            exit 1
+            ;;
+    esac
+done
+
+#===============================================================================
+# Colors
+#===============================================================================
+
+# Disable colours if -n flag given, NO_COLOR env var is set, or stdout is not a
+# terminal. The escape byte is put in the variable with ANSI-C quoting ($'..')
+# so plain echo prints it correctly in any bash (3.2 on macOS included); a
+# '\033' string would be printed literally.
+if $COLOR_OFF || [ -n "${NO_COLOR+x}" ] || [ ! -t 1 ]; then
+    RED='' GREEN='' YELLOW='' BLUE='' CYAN='' BOLD='' DIM='' NC=''
+    export NO_COLOR=1   # child scripts (tests/test_mcpserver.sh) follow suit
+else
+    RED=$'\033[0;31m'
+    GREEN=$'\033[0;32m'
+    YELLOW=$'\033[1;33m'
+    BLUE=$'\033[0;34m'
+    CYAN=$'\033[0;36m'
+    BOLD=$'\033[1m'
+    DIM=$'\033[2m'
+    NC=$'\033[0m'
+fi
+
+#===============================================================================
+# Pre-flight Checks
+#===============================================================================
+
+echo ""
+echo "${BOLD}============================================${NC}"
+echo "${BOLD}   ClawEh Test Suite${NC}"
+if $FAST_MODE; then
+    echo "${BOLD}   Mode: Fast (no race detector)${NC}"
+elif $COVERAGE_ONLY; then
+    echo "${BOLD}   Mode: Coverage (no race detector)${NC}"
+else
+    echo "${BOLD}   Mode: Full (race detector + coverage)${NC}"
+fi
+if $SKIP_INTEGRATION; then
+    echo "${BOLD}   Integration: skipped (-s)${NC}"
+fi
+echo "${BOLD}============================================${NC}"
+echo ""
+
+if ! command -v go &>/dev/null; then
+    echo "${RED}ERROR: 'go' not found in PATH${NC}"
+    exit 1
+fi
+
+GO_VERSION=$(go version | awk '{print $3}')
+echo "Go version:  ${CYAN}${GO_VERSION}${NC}"
+echo "Module:      ${CYAN}$(go list -m 2>/dev/null || echo 'unknown')${NC}"
+echo "Directory:   ${CYAN}${SCRIPT_DIR}${NC}"
+echo ""
+
+#===============================================================================
+# Build Test Command
+#===============================================================================
+
+if $FAST_MODE; then
+    TEST_CMD="go test -count=1 -timeout=${TIMEOUT}"
+    RUN_COVERAGE=false
+    RUN_RACE=false
+elif $COVERAGE_ONLY; then
+    TEST_CMD="go test -coverprofile=${COVERAGE_FILE} -count=1 -timeout=${TIMEOUT}"
+    RUN_COVERAGE=true
+    RUN_RACE=false
+else
+    TEST_CMD="go test -race -coverprofile=${COVERAGE_FILE} -count=1 -timeout=${TIMEOUT}"
+    RUN_COVERAGE=true
+    RUN_RACE=true
+fi
+
+#===============================================================================
+# Run go generate
+#===============================================================================
+
+echo "${BOLD}Generating code...${NC}"
+if ! go generate ./... 2>&1; then
+    echo "${RED}ERROR: go generate failed${NC}"
+    exit 1
+fi
+echo "${GREEN}Generate complete${NC}"
+echo ""
+
+#===============================================================================
+# Run Tests
+#===============================================================================
+
+echo "${BOLD}Running tests...${NC}"
+if $RUN_RACE; then
+    echo "${DIM}(race detector enabled — this takes a moment)${NC}"
+elif $FAST_MODE; then
+    echo "${YELLOW}WARNING: fast mode — race detector disabled. Do not use this as a final verification.${NC}"
+fi
+echo ""
+
+TMPOUT=$(mktemp)
+if $PRESERVE_ARTIFACTS; then
+    trap 'rm -f "$TMPOUT"' EXIT
+else
+    trap 'rm -f "$TMPOUT" "$COVERAGE_FILE"' EXIT
+fi
+
+# Run tests, capture output, stream to terminal simultaneously
+set +e
+$TEST_CMD ./... 2>&1 | tee "$TMPOUT"
+TEST_EXIT=${PIPESTATUS[0]}
+set -e
+
+#===============================================================================
+# Parse Results
+#===============================================================================
+
+PASS_COUNT=0
+FAIL_COUNT=0
+SKIP_COUNT=0
+declare -a FAILED_PKGS=()
+declare -a PASSED_PKGS=()
+declare -a SKIPPED_PKGS=()
+
+while IFS= read -r line; do
+    # ok  	github.com/...	0.123s	coverage: 45.6% of statements
+    if [[ "$line" =~ ^ok[[:space:]] ]]; then
+        pkg=$(echo "$line" | awk '{print $2}')
+        PASSED_PKGS+=("$line")
+        PASS_COUNT=$((PASS_COUNT + 1))
+    # FAIL	github.com/...	0.123s
+    elif [[ "$line" =~ ^FAIL[[:space:]] ]] && [[ ! "$line" =~ ^FAIL$ ]]; then
+        pkg=$(echo "$line" | awk '{print $2}')
+        FAILED_PKGS+=("$pkg")
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    # ?   	github.com/...	[no test files]
+    elif [[ "$line" =~ ^\? ]]; then
+        pkg=$(echo "$line" | awk '{print $2}')
+        SKIPPED_PKGS+=("$pkg")
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+    fi
+done < "$TMPOUT"
+
+#===============================================================================
+# Package Summary
+#===============================================================================
+
+echo ""
+echo "${BOLD}============================================${NC}"
+echo "${BOLD}   PACKAGE RESULTS${NC}"
+echo "${BOLD}============================================${NC}"
+echo ""
+
+if [ ${#FAILED_PKGS[@]} -gt 0 ]; then
+    echo "${RED}${BOLD}Failed packages:${NC}"
+    for pkg in "${FAILED_PKGS[@]}"; do
+        echo "  ${RED}✗${NC} ${pkg}"
+    done
+    echo ""
+fi
+
+echo "${GREEN}${BOLD}Passed: ${PASS_COUNT}${NC}  ${RED}${BOLD}Failed: ${FAIL_COUNT}${NC}  ${DIM}No tests: ${SKIP_COUNT}${NC}"
+
+#===============================================================================
+# Failure Details
+#
+# go test (without -v) prints output only for failing tests and buffers it per
+# package, so each failed package's block in $TMPOUT is exactly its failures:
+# "--- FAIL:" lines, t.Error messages with file:line, panics, data races and
+# compiler errors. Re-print those blocks here, save them to $FAILURE_LOG, and
+# build an index of failed tests for the final summary.
+#===============================================================================
+
+rm -f "$FAILURE_LOG"
+declare -a FAILED_TESTS=()   # "pkg<TAB>TestName<TAB>file:line" per top-level failed test
+MODULE_PATH=$(go list -m 2>/dev/null || echo "")
+
+if [ ${#FAILED_PKGS[@]} -gt 0 ]; then
+    # Extract every failed package's output block, in order, into the log.
+    awk '
+        /^(ok|FAIL|\?)[[:space:]]/ {
+            if ($1 == "FAIL") { printf "%s%s\n", buf, $0 }
+            buf = ""; next
+        }
+        /^FAIL$/ { next }
+        { buf = buf $0 "\n" }
+    ' "$TMPOUT" > "$FAILURE_LOG"
+
+    # Index: top-level "--- FAIL: Name" lines with the first file:line that
+    # follows (subtest failures report under their parent's name). The
+    # package's FAIL line comes after its block, so entries are held until it
+    # is seen.
+    while IFS=$'\t' read -r pkg name loc; do
+        FAILED_TESTS+=("${pkg}"$'\t'"${name}"$'\t'"${loc}")
+    done < <(awk '
+        BEGIN { n = 0 }
+        function flush() { if (name != "") { names[n] = name; locs[n] = loc; n++ }; name = ""; loc = "" }
+        /^FAIL[[:space:]]/ {
+            flush()
+            if ($0 ~ /\[build failed\]/) { names[n] = "(build failed)"; locs[n] = ""; n++ }
+            if (n == 0) { names[n] = "(see details)"; locs[n] = ""; n++ }
+            for (i = 0; i < n; i++) printf "%s\t%s\t%s\n", $2, names[i], locs[i]
+            n = 0; next
+        }
+        /^--- FAIL: / { flush(); name = $3; next }
+        /^panic: / && name == "" { name = "(panic)"; next }
+        loc == "" && name != "" && match($0, /[A-Za-z0-9_.-]+\.go:[0-9]+:/) { loc = substr($0, RSTART, RLENGTH - 1) }
+    ' "$FAILURE_LOG")
+
+    echo ""
+    echo "${RED}${BOLD}============================================${NC}"
+    echo "${RED}${BOLD}   FAILURE DETAILS${NC}"
+    echo "${RED}${BOLD}============================================${NC}"
+    echo ""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^FAIL[[:space:]] ]]; then
+            echo "${RED}${BOLD}${line}${NC}"
+            echo ""
+        elif [[ "$line" =~ ^[[:space:]]*---\ FAIL: ]]; then
+            echo "${RED}${line}${NC}"
+        else
+            echo "$line"
+        fi
+    done < "$FAILURE_LOG"
+    echo "${DIM}(saved to ${FAILURE_LOG})${NC}"
+fi
+
+#===============================================================================
+# Coverage Summary
+#===============================================================================
+
+if $RUN_COVERAGE && [ -f "$COVERAGE_FILE" ]; then
+    echo ""
+    echo "${BOLD}============================================${NC}"
+    echo "${BOLD}   COVERAGE SUMMARY${NC}"
+    echo "${BOLD}============================================${NC}"
+    echo ""
+
+    # Extract per-package coverage from test output (already captured in TMPOUT).
+    # Lines look like: ok  	<pkg>	0.123s	coverage: 45.6% of statements
+    # Sort lowest first so gaps are visible at a glance.
+    printf "  ${BOLD}%-60s %8s${NC}\n" "Package" "Coverage"
+    printf "  ${DIM}%-60s %8s${NC}\n" "------------------------------------------------------------" "--------"
+
+    COVTMP=$(mktemp)
+    while IFS= read -r line; do
+        pkg=$(echo "$line" | awk '{print $2}')
+        num=$(echo "$line" | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
+        echo "$num $pkg"
+    done < <(grep '^ok' "$TMPOUT" | grep 'coverage:') | sort -n > "$COVTMP"
+
+    while IFS= read -r entry; do
+        num=$(echo "$entry" | awk '{print $1}')
+        pkg=$(echo "$entry" | awk '{print $2}')
+        shortpkg=$(echo "$pkg" | sed 's|github.com/PivotLLM/ClawEh/||')
+        pct="${num}%"
+        if (( $(echo "$num < $COVERAGE_MIN" | bc -l) )); then
+            color="${RED}"
+        elif (( $(echo "$num < 70" | bc -l) )); then
+            color="${YELLOW}"
+        else
+            color="${GREEN}"
+        fi
+        printf "  %-60s ${color}%8s${NC}\n" "$shortpkg" "$pct"
+    done < "$COVTMP"
+    rm -f "$COVTMP"
+
+    echo ""
+
+    TOTAL_PCT=$(go tool cover -func="$COVERAGE_FILE" | grep "^total:" | awk '{print $3}')
+    TOTAL_NUM=$(echo "$TOTAL_PCT" | tr -d '%')
+
+    if (( $(echo "$TOTAL_NUM < $COVERAGE_MIN" | bc -l) )); then
+        TOTAL_COLOR="${RED}"
+    elif (( $(echo "$TOTAL_NUM < 70" | bc -l) )); then
+        TOTAL_COLOR="${YELLOW}"
+    else
+        TOTAL_COLOR="${GREEN}"
+    fi
+
+    echo "  ${BOLD}Overall coverage: ${TOTAL_COLOR}${BOLD}${TOTAL_PCT}${NC}${BOLD} (minimum: ${COVERAGE_MIN}%)${NC}"
+fi
+
+#===============================================================================
+# Optional: MCP Server Integration Tests
+#
+# Fully self-contained: builds claw, starts a fresh gateway in a temporary
+# CLAW_HOME with mcp_host enabled, runs the probe-driven test, then tears
+# everything down. No assumptions about an already-running claw.
+#===============================================================================
+
+INTEGRATION_RAN=false
+INTEGRATION_PASSED=true
+CLI_SMOKE_STATUS="skipped (set CLAW_TEST_CLI=1)"
+CLI_SMOKE_PASSED=true
+INTEGRATION_PASS_COUNT=0
+INTEGRATION_FAIL_COUNT=0
+declare -a INTEGRATION_FAILS=()   # one reason per failed check, repeated in the final summary
+
+# integ_fail: report a failed integration check and remember it for the summary.
+integ_fail() {
+    echo "  ${RED}FAIL${NC}: $1"
+    INTEGRATION_FAILS+=("$1")
+    INTEGRATION_FAIL_COUNT=$((INTEGRATION_FAIL_COUNT + 1))
+    INTEGRATION_PASSED=false
+}
+
+# Frontend gates. The SPA is compiled into the Go binary, so a broken typecheck
+# or a failing SPA test ships in the release just as surely as a Go failure does
+# — but nothing here checked it, and a red frontend sat unnoticed long enough to
+# grow from 7 problems to 35 the moment a plugin was updated.
+#
+# Linting is oxlint, installed globally rather than as a project dependency, so
+# it is reported as SKIPPED rather than failing when absent — but reported
+# either way. A silent skip is how a red lint went unnoticed long enough to grow
+# from 7 problems to 35. Set OXLINT to point at a specific binary.
+#
+# --deny-warnings: oxlint exits 0 on warnings by default, so without it this
+# check could never fail and would be decorative.
+#
+# Failed, not skipped, when pnpm or node_modules are absent: the gate covers
+# the whole suite, and a skipped section would let it pass untested. The gate
+# does not install them itself; the message names the command that does.
+FRONTEND_RAN=false
+FRONTEND_PASSED=true
+FRONTEND_MISSING=""
+LINT_STATUS="not run"
+FRONTEND_DIR="$SCRIPT_DIR/web/frontend"
+
+echo ""
+echo "${BOLD}============================================${NC}"
+echo "${BOLD}   FRONTEND (typecheck, lint, unit tests)${NC}"
+echo "${BOLD}============================================${NC}"
+echo ""
+
+if ! command -v pnpm >/dev/null 2>&1; then
+    FRONTEND_MISSING="pnpm not on PATH; install pnpm, then run: make frontend-deps"
+elif [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+    FRONTEND_MISSING="node_modules missing; run: make frontend-deps (or pnpm install --frozen-lockfile in web/frontend)"
+fi
+
+if [ -n "$FRONTEND_MISSING" ]; then
+    echo "${RED}ERROR: frontend checks cannot run: ${FRONTEND_MISSING}${NC}"
+    FRONTEND_PASSED=false
+else
+    FRONTEND_RAN=true
+    if (cd "$FRONTEND_DIR" && pnpm exec tsc -b --noEmit); then
+        echo "${GREEN}  typecheck passed${NC}"
+    else
+        echo "${RED}  typecheck FAILED${NC}"
+        FRONTEND_PASSED=false
+    fi
+    if (cd "$FRONTEND_DIR" && pnpm run test); then
+        echo "${GREEN}  unit tests passed${NC}"
+    else
+        echo "${RED}  unit tests FAILED${NC}"
+        FRONTEND_PASSED=false
+    fi
+
+    OXLINT_BIN="${OXLINT:-oxlint}"
+    if command -v "$OXLINT_BIN" >/dev/null 2>&1; then
+        if (cd "$FRONTEND_DIR" && "$OXLINT_BIN" --deny-warnings); then
+            echo "${GREEN}  lint passed${NC}"
+            LINT_STATUS="passed"
+        else
+            echo "${RED}  lint FAILED${NC}"
+            LINT_STATUS="failed"
+            FRONTEND_PASSED=false
+        fi
+    else
+        # A missing linter fails the gate: a run that skipped a stage cannot be
+        # reported as passing.
+        echo "${RED}  lint FAILED: oxlint not installed (npm i -g oxlint)${NC}"
+        LINT_STATUS="failed"
+        FRONTEND_PASSED=false
+    fi
+fi
+
+if ! $SKIP_INTEGRATION; then
+    echo ""
+    echo "${BOLD}============================================${NC}"
+    echo "${BOLD}   MCP SERVER INTEGRATION TESTS${NC}"
+    echo "${BOLD}============================================${NC}"
+    echo ""
+
+    INTEGRATION_SCRIPT="$SCRIPT_DIR/tests/test_mcpserver.sh"
+    if [ ! -x "$INTEGRATION_SCRIPT" ]; then
+        echo "${RED}ERROR: $INTEGRATION_SCRIPT not found or not executable${NC}"
+        INTEGRATION_PASSED=false
+    else
+        # probe is a required external prerequisite for integration tests.
+        PROBE_BIN="${PROBE_PATH:-probe}"
+        if ! command -v "$PROBE_BIN" >/dev/null 2>&1; then
+            echo "${RED}ERROR: 'probe' not found on PATH — MCP integration tests cannot run.${NC}"
+            echo "${DIM}Set PROBE_PATH or install probe to run the full test suite.${NC}"
+            INTEGRATION_PASSED=false
+        else
+            INTEGRATION_RAN=true
+
+            # ---- Pick free ports so we don't collide with a running claw. ----
+            pick_free_port() {
+                python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+PY
+            }
+
+            MCP_PORT=$(pick_free_port)
+            GATEWAY_PORT=$(pick_free_port)
+
+            # ---- Workspace + binary in a per-run tempdir. ----
+            INTEG_TMP=$(mktemp -d -t claw-integ.XXXXXX)
+            INTEG_HOME="$INTEG_TMP/home"
+            INTEG_BIN="$INTEG_TMP/claw"
+            INTEG_LOG="$INTEG_TMP/gateway.log"
+            mkdir -p "$INTEG_HOME"
+
+            cleanup_integration() {
+                if [ -n "${ALERT_PID:-}" ]; then
+                    kill -KILL "$ALERT_PID" 2>/dev/null || true
+                fi
+                if [ -n "${INTEG_PID:-}" ] && kill -0 "$INTEG_PID" 2>/dev/null; then
+                    kill -TERM "$INTEG_PID" 2>/dev/null || true
+                    # Give the gateway a moment to release its lock + shut down cleanly.
+                    for _ in 1 2 3 4 5 6 7 8 9 10; do
+                        kill -0 "$INTEG_PID" 2>/dev/null || break
+                        sleep 0.5
+                    done
+                    kill -KILL "$INTEG_PID" 2>/dev/null || true
+                fi
+                if $PRESERVE_ARTIFACTS; then
+                    echo "${DIM}Integration artifacts preserved at: $INTEG_TMP${NC}"
+                else
+                    rm -rf "$INTEG_TMP"
+                fi
+                # Preserve the earlier EXIT trap's cleanup of TMPOUT/COVERAGE_FILE.
+                if $PRESERVE_ARTIFACTS; then
+                    rm -f "$TMPOUT"
+                else
+                    rm -f "$TMPOUT" "$COVERAGE_FILE"
+                fi
+            }
+            trap cleanup_integration EXIT
+
+            echo "${DIM}Building claw binary...${NC}"
+            if ! go build -o "$INTEG_BIN" . 2>&1; then
+                echo "${RED}ERROR: failed to build claw${NC}"
+                integ_fail "claw binary failed to build"
+            else
+                # Generate a random session token for Tier 2 integration tests.
+                # Passed only via environment — never written to a config file.
+                TEST_SESSION_TOKEN="SST$(openssl rand -hex 32)"
+
+                # One Fusion service (the MCPFusion module's own wxca sample, no
+                # credentials) so the probe suite can check per-agent Fusion
+                # gating on the running binary: main lists the service, alice
+                # has Fusion on but lists nothing and must get none of its tools.
+                FUSION_SAMPLE="$(go list -m -f '{{.Dir}}' github.com/PivotLLM/MCPFusion 2>/dev/null)/configs/wxca.json"
+                FUSION_SERVICE=""
+                if [ -f "$FUSION_SAMPLE" ]; then
+                    mkdir -p "$INTEG_HOME/fusion"
+                    cp "$FUSION_SAMPLE" "$INTEG_HOME/fusion/wxca.json"
+                    chmod 600 "$INTEG_HOME/fusion/wxca.json"
+                    FUSION_SERVICE="wxca"
+                else
+                    integ_fail "MCPFusion sample service not found at $FUSION_SAMPLE; Fusion gating checks cannot run"
+                fi
+
+                # With CLAW_TEST_CLI=1 and a Claude CLI on PATH, the config also
+                # gets a Claude CLI provider and model and an agent "cli" on it
+                # (with ccv3), which main may spawn: tests/test_cli_ccv3.sh has the
+                # probe spawn it so a real CLI turn calls the ccv3 tool over this
+                # gateway's own MCP host. The CLI is pointed at that host alone
+                # by its mcp.json and allowed only that tool; "Allow CLI to bypass
+                # restrictions" stays off. Nothing else in the config changes, so
+                # the probe suite's expectations hold either way.
+                CLI_LIVE_JSON=""
+                CLI_LIVE_AGENT=""
+                CLI_LIVE_ALLOW=""
+                CLI_LIVE_CMD="${CLAW_TEST_CLI_COMMAND:-claude}"
+                if [ "${CLAW_TEST_CLI:-}" = "1" ] && command -v "$CLI_LIVE_CMD" >/dev/null 2>&1; then
+                    printf '{"mcpServers":{"claw":{"type":"http","url":"http://127.0.0.1:%s/internal"}}}\n' "$MCP_PORT" > "$INTEG_HOME/mcp.json"
+                    chmod 600 "$INTEG_HOME/mcp.json"
+                    CLI_LIVE_JSON="\"providers\": [{\"name\": \"Claude CLI\", \"protocol\": \"claude-cli\", \"command\": \"$(command -v "$CLI_LIVE_CMD")\"}],
+  \"models\": [{\"model_name\": \"Claude CLI\", \"model\": \"claude-cli\", \"provider\": \"Claude CLI\", \"enabled\": true, \"request_timeout\": 180,
+    \"extra_args\": [\"--mcp-config\", \"$INTEG_HOME/mcp.json\", \"--strict-mcp-config\", \"--allowedTools\", \"mcp__claw__ccv3\"]}],"
+                    CLI_LIVE_AGENT=",
+      {\"id\": \"cli\", \"name\": \"cli\", \"models\": [\"Claude CLI\"], \"ccv3\": true}"
+                    CLI_LIVE_ALLOW="\"subagents\": {\"allow_agents\": [\"cli\"]},"
+                fi
+
+                # ---- Minimal config: enable MCP host on the chosen ports. ----
+                cat > "$INTEG_HOME/config.json" <<EOF
+{
+  $CLI_LIVE_JSON
+  "agents": {
+    "list": [
+      {
+        "id": "main",
+        "name": "main",
+        "default": true,
+        "tools": ["*", "cogmem_*", "shell_exec"],
+        "fusion": true,
+        "forum": true,
+        "ccv3": true,
+        "classifiers": { "enabled": true },
+        $CLI_LIVE_ALLOW
+        "mcp_tools": ["wxca"]
+      },
+      {
+        "id": "alice",
+        "name": "alice",
+        "tools": ["*", "cogmem_*"],
+        "fusion": true
+      },
+      {
+        "id": "bob",
+        "name": "Bob",
+        "tools": ["file_*"],
+        "character_card": "probe-attached"
+      }$CLI_LIVE_AGENT
+    ]
+  },
+  "bindings": [
+    {
+      "agent_id": "main",
+      "default": true,
+      "match": { "channel": "cli", "peer": { "kind": "channel", "id": "integration-probe" } }
+    }
+  ],
+  "channels": {
+    "webui": {
+      "enabled": true,
+      "token": "integration-test-token"
+    }
+  },
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": $GATEWAY_PORT,
+    "tls": { "mode": "off" }
+  },
+  "tools": {
+    "web": {
+      "duckduckgo": {
+        "enabled": true,
+        "max_results": 5
+      }
+    },
+    "skills": { "registry": { "enabled": true } },
+    "cron": { "enabled": true }
+  },
+  "mcp_host": {
+    "enabled": true,
+    "listen": "127.0.0.1:$MCP_PORT",
+    "endpoint_path": "/mcp",
+    "external_tools": ["*"],
+    "internal_tools": [
+      "file_read_bytes",
+      "file_read_lines",
+      "file_count",
+      "file_view_image",
+      "file_write",
+      "file_edit",
+      "file_edit_lines",
+      "file_edit_bytes",
+      "file_insert_lines",
+      "file_insert_bytes",
+      "file_delete_lines",
+      "file_delete_bytes",
+      "file_append",
+      "file_list",
+      "file_glob",
+      "file_search_lines",
+      "file_search_bytes",
+      "file_copy",
+      "file_delete",
+      "file_move",
+      "file_mkdir",
+      "file_rmdir",
+      "web_fetch",
+      "web_search",
+      "msg_send",
+      "msg_send_file",
+      "session_messages",
+      "session_search",
+      "session_compact",
+      "session_info",
+      "session_summary_list",
+      "session_summary_get",
+      "session_clear",
+      "shell_exec",
+      "skill_find",
+      "skill_install",
+      "cron_schedule",
+      "agent_spawn",
+      "agent_status",
+      "agent_list",
+      "agent_message",
+      "cogmem_domain_get",
+      "cogmem_memory_search",
+      "cogmem_domain_list",
+      "cogmem_explain",
+      "cogmem_memory_create",
+      "cogmem_memory_attach",
+      "cogmem_domain_update",
+      "cogmem_memory_retire",
+      "cogmem_domain_create",
+      "cogmem_domain_archive",
+      "cogmem_domain_migrate",
+      "cogmem_memory_forget",
+      "cogmem_consolidate",
+      "cogmem_export",
+      "cogmem_status",
+      "common_list",
+      "common_get",
+      "common_put",
+      "common_delete",
+      "time_now",
+      "ccv3",
+      "forum_readme",
+      "forum_models",
+      "forum_new",
+      "forum_config_template",
+      "forum_config_import",
+      "forum_config_update",
+      "forum_config_export",
+      "forum_validate",
+      "forum_launch",
+      "forum_status",
+      "forum_pause",
+      "forum_resume",
+      "forum_cancel",
+      "forum_results",
+      "forum_delete",
+      "classifier_readme",
+      "classifier_list",
+      "classifier_get",
+      "classifier_create",
+      "classifier_update",
+      "classifier_delete",
+      "classifier_validate",
+      "classifier_status",
+      "classifier_test",
+      "classifier_rerun",
+      "classifier_activity",
+      "wxca"
+    ]
+  }
+}
+EOF
+                # The gateway refuses a config.json readable by other users.
+                chmod 600 "$INTEG_HOME/config.json"
+
+                # A character card attached to bob, so the ccv3 probes can see a
+                # rename and a delete refused while a card is in use.
+                mkdir -p "$INTEG_HOME/cards"
+                printf '{"spec":"chara_card_v3","spec_version":"3.0","data":{"name":"Probe","description":"A probe.","tags":[],"alternate_greetings":[],"group_only_greetings":[],"creation_date":1,"modification_date":1}}\n' > "$INTEG_HOME/cards/probe-attached.json"
+                chmod 600 "$INTEG_HOME/cards/probe-attached.json"
+
+                # Pre-seed a long-lived service token for the default agent so the
+                # gateway loads it at boot (exercises loadServiceTokens + the
+                # headless service session on /mcp + /internal).
+                TEST_SERVICE_TOKEN="SST$(openssl rand -hex 32)"
+                ALICE_SERVICE_TOKEN="SST$(openssl rand -hex 32)"
+                BOB_SERVICE_TOKEN="SST$(openssl rand -hex 32)"
+                mkdir -p "$INTEG_HOME/internal"
+                printf '{"main":"%s","alice":"%s","bob":"%s"}\n' "$TEST_SERVICE_TOKEN" "$ALICE_SERVICE_TOKEN" "$BOB_SERVICE_TOKEN" > "$INTEG_HOME/internal/service-tokens.json"
+
+                echo "${DIM}Starting gateway (CLAW_HOME=$INTEG_HOME, MCP=127.0.0.1:$MCP_PORT)...${NC}"
+                CLAW_HOME="$INTEG_HOME" CLAW_MCP_TEST_TOKEN="$TEST_SESSION_TOKEN" "$INTEG_BIN" gateway >"$INTEG_LOG" 2>&1 &
+                INTEG_PID=$!
+
+                # ---- Wait for the MCP port to accept connections. ----
+                READY=false
+                for _ in $(seq 1 40); do
+                    if ! kill -0 "$INTEG_PID" 2>/dev/null; then
+                        break  # gateway died — fall through to failure path
+                    fi
+                    if (echo > "/dev/tcp/127.0.0.1/$MCP_PORT") 2>/dev/null; then
+                        READY=true
+                        break
+                    fi
+                    sleep 0.25
+                done
+
+                if ! $READY; then
+                    echo "${RED}ERROR: MCP server did not start on 127.0.0.1:$MCP_PORT within 10s${NC}"
+                    echo "${DIM}--- gateway log (tail) ---${NC}"
+                    tail -n 40 "$INTEG_LOG" | sed 's/^/    /'
+                    integ_fail "MCP server did not start within 10s (see gateway log tail above)"
+                else
+                    echo "${GREEN}Gateway ready on 127.0.0.1:$MCP_PORT/mcp${NC}"
+                    echo ""
+
+                    # ---- PID file: written at startup ----
+                    #
+                    # `claw status` finds a running instance through this file,
+                    # so if it is absent or wrong the command silently reports
+                    # "not running" on a healthy system.
+                    echo "${BOLD}--- PID file ---${NC}"
+                    echo ""
+                    # The port probe above can win a race with the write, so
+                    # poll briefly rather than testing once.
+                    for _ in $(seq 1 20); do
+                        [ -f "$INTEG_HOME/internal/claw.pid" ] && break
+                        sleep 0.25
+                    done
+                    if [ -f "$INTEG_HOME/internal/claw.pid" ]; then
+                        PIDFILE_CONTENT=$(cat "$INTEG_HOME/internal/claw.pid" 2>/dev/null | tr -d ' \n')
+                        if [ "$PIDFILE_CONTENT" = "$INTEG_PID" ]; then
+                            echo "  ${GREEN}PASS${NC}: claw.pid written at startup (pid $PIDFILE_CONTENT)"
+                            INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                        else
+                            integ_fail "claw.pid says '$PIDFILE_CONTENT', process is $INTEG_PID"
+                        fi
+                    else
+                        integ_fail "claw.pid not written at startup"
+                    fi
+                    echo ""
+
+                    # ---- Workspace population: initial startup ----
+                    echo "${BOLD}--- Workspace population (initial startup) ---${NC}"
+                    echo ""
+                    WORKSPACE_TEMPLATES="AGENTS.md SOUL.md USER.md IDENTITY.md MEMORY.md"
+                    # The default agent (id=main) uses agents/default; named agents use agents/{id}
+                    for agent_ws in "main:$INTEG_HOME/agents/default" "alice:$INTEG_HOME/agents/alice"; do
+                        agent="${agent_ws%%:*}"
+                        WS="${agent_ws#*:}"
+                        for tpl in $WORKSPACE_TEMPLATES; do
+                            if [ -f "$WS/$tpl" ]; then
+                                echo "  ${GREEN}PASS${NC}: $agent/$tpl populated at startup"
+                                INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                            else
+                                integ_fail "$agent/$tpl missing after startup"
+                            fi
+                        done
+                    done
+
+                    # Drop a tiny valid 1x1 PNG so file_view_image has a real
+                    # image to view (hermetic success probe).
+                    mkdir -p "$INTEG_HOME/agents/default/files"
+                    printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' \
+                        | base64 -d > "$INTEG_HOME/agents/default/files/probe.png" 2>/dev/null || true
+                    echo ""
+
+                    # Run the probe-driven test against this ephemeral instance.
+                    if SERVER_URL="http://127.0.0.1:$MCP_PORT" \
+                       ENDPOINT="/internal" \
+                       BEARER_ENDPOINT="/mcp" \
+                       PROBE_PATH="$PROBE_BIN" \
+                       SESSION_TOKEN="$TEST_SESSION_TOKEN" \
+                       SERVICE_TOKEN="$TEST_SERVICE_TOKEN" \
+                       FUSION_SERVICE="$FUSION_SERVICE" \
+                       UNGRANTED_SERVICE_TOKEN="$ALICE_SERVICE_TOKEN" \
+                       NOSHELL_SERVICE_TOKEN="$BOB_SERVICE_TOKEN" \
+                       CONFIG_FILE="$INTEG_HOME/config.json" \
+                       GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT" \
+                       GATEWAY_LOG="$INTEG_LOG" \
+                       bash "$INTEGRATION_SCRIPT"; then
+                        echo "${GREEN}MCP server integration tests passed.${NC}"
+                    else
+                        echo "${RED}MCP server integration tests failed.${NC}"
+                        echo "${DIM}--- gateway log (tail) ---${NC}"
+                        tail -n 40 "$INTEG_LOG" | sed 's/^/    /'
+                        integ_fail "probe suite (tests/test_mcpserver.sh) reported failures; see its output above"
+                    fi
+
+                    # Classifiers end to end: its own gateway, a stub model and
+                    # a stub Telegram chat (hermetic), driven over MCP.
+                    echo ""
+                    echo "${BOLD}--- Classifiers end to end ---${NC}"
+                    echo ""
+                    if PROBE_PATH="$PROBE_BIN" bash "$SCRIPT_DIR/tests/test_classifier.sh" "$INTEG_BIN"; then
+                        INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                    else
+                        integ_fail "classifiers end to end (tests/test_classifier.sh) failed; see its output above"
+                    fi
+
+                    # Task models end to end: its own gateway and a stub
+                    # vendor (hermetic), agent_spawn driven over MCP.
+                    echo ""
+                    echo "${BOLD}--- Task models end to end ---${NC}"
+                    echo ""
+                    if PROBE_PATH="$PROBE_BIN" bash "$SCRIPT_DIR/tests/test_task_models.sh" "$INTEG_BIN"; then
+                        INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                    else
+                        integ_fail "task models end to end (tests/test_task_models.sh) failed; see its output above"
+                    fi
+
+                    # The coding harness end to end: its own gateway, a git
+                    # repository in the agent's files/ and a read-only
+                    # allowed folder, the coding tools driven over MCP.
+                    echo ""
+                    echo "${BOLD}--- Coding harness end to end ---${NC}"
+                    echo ""
+                    if PROBE_PATH="$PROBE_BIN" bash "$SCRIPT_DIR/tests/test_coding_harness.sh" "$INTEG_BIN"; then
+                        INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                    else
+                        integ_fail "coding harness end to end (tests/test_coding_harness.sh) failed; see its output above"
+                    fi
+
+                    # ---- Workspace re-population: delete alice's dir and restart ----
+                    if [ "${CLAW_TEST_CLI:-}" = "1" ]; then
+                        echo ""
+                        echo "${BOLD}--- CLI provider smoke (opt-in) ---${NC}"
+                        echo ""
+                        if bash "$SCRIPT_DIR/tests/test_cli_provider.sh" "$INTEG_BIN"; then
+                            CLI_SMOKE_STATUS="passed"
+                        else
+                            CLI_SMOKE_STATUS="failed"
+                            CLI_SMOKE_PASSED=false
+                            integ_fail "CLI provider smoke (tests/test_cli_provider.sh) failed; see its output above"
+                        fi
+                        echo ""
+                        echo "${BOLD}--- CLI tool call over MCP (opt-in) ---${NC}"
+                        echo ""
+                        if [ -z "$CLI_LIVE_JSON" ]; then
+                            echo "  skipped: CLI '$CLI_LIVE_CMD' not on PATH (set CLAW_TEST_CLI_COMMAND)"
+                            CLI_SMOKE_STATUS="failed"
+                            CLI_SMOKE_PASSED=false
+                            integ_fail "CLI tool call over MCP: no CLI on PATH"
+                        elif PROBE_PATH="$PROBE_BIN" MCP_URL="http://127.0.0.1:$MCP_PORT/internal" \
+                             SESSION_TOKEN="$TEST_SESSION_TOKEN" CLAW_HOME="$INTEG_HOME" GATEWAY_LOG="$INTEG_LOG" \
+                             bash "$SCRIPT_DIR/tests/test_cli_ccv3.sh"; then
+                            :
+                        else
+                            CLI_SMOKE_STATUS="failed"
+                            CLI_SMOKE_PASSED=false
+                            integ_fail "CLI tool call over MCP (tests/test_cli_ccv3.sh) failed; see its output above"
+                        fi
+                    fi
+                    echo ""
+                    echo "${BOLD}--- Workspace population (restart after deletion) ---${NC}"
+                    echo ""
+
+                    # Stop the running instance with SIGTERM — what systemd
+                    # sends, and the signal a service actually has to handle.
+                    kill -TERM "$INTEG_PID" 2>/dev/null
+                    TERM_CLEAN=false
+                    for _ in $(seq 1 20); do
+                        if ! kill -0 "$INTEG_PID" 2>/dev/null; then
+                            TERM_CLEAN=true
+                            break
+                        fi
+                        sleep 0.25
+                    done
+                    kill -KILL "$INTEG_PID" 2>/dev/null || true
+
+                    # SIGTERM must run the shutdown path, not kill outright.
+                    #
+                    # Go's default disposition for an unregistered SIGTERM is to
+                    # terminate immediately, so this is not hypothetical: only
+                    # SIGINT was handled once, and every systemctl stop skipped
+                    # shutdown entirely. The pid file is the visible proof —
+                    # it is removed by a deferred cleanup that a hard kill never
+                    # reaches.
+                    if ! $TERM_CLEAN; then
+                        integ_fail "ClawEh did not exit within 5s of SIGTERM"
+                    elif [ -f "$INTEG_HOME/internal/claw.pid" ]; then
+                        integ_fail "claw.pid survived SIGTERM — shutdown did not run"
+                    else
+                        echo "  ${GREEN}PASS${NC}: SIGTERM ran graceful shutdown (claw.pid removed)"
+                        INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                    fi
+                    echo ""
+
+                    # Delete alice's workspace — simulates adding a fresh agent.
+                    rm -rf "$INTEG_HOME/agents/alice"
+                    echo "  ${DIM}Deleted alice's workspace directory${NC}"
+
+                    # Restart the gateway.
+                    CLAW_HOME="$INTEG_HOME" CLAW_MCP_TEST_TOKEN="$TEST_SESSION_TOKEN" \
+                        "$INTEG_BIN" gateway >>"$INTEG_LOG" 2>&1 &
+                    INTEG_PID=$!
+
+                    # Wait for MCP port — workspace population happens before the server
+                    # starts listening, so once the port is up the files are on disk.
+                    RESTART_READY=false
+                    for _ in $(seq 1 40); do
+                        if ! kill -0 "$INTEG_PID" 2>/dev/null; then
+                            break
+                        fi
+                        if (echo > "/dev/tcp/127.0.0.1/$MCP_PORT") 2>/dev/null; then
+                            RESTART_READY=true
+                            break
+                        fi
+                        sleep 0.25
+                    done
+
+                    ALICE_WS="$INTEG_HOME/agents/alice"
+                    if ! $RESTART_READY; then
+                        integ_fail "gateway did not restart within 10s"
+                    else
+                        for tpl in $WORKSPACE_TEMPLATES; do
+                            if [ -f "$ALICE_WS/$tpl" ]; then
+                                echo "  ${GREEN}PASS${NC}: alice/$tpl re-populated after restart"
+                                INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                            else
+                                integ_fail "alice/$tpl missing after restart"
+                            fi
+                        done
+                    fi
+                fi
+
+                # ---- Test gateways never alert the operator ----
+                #
+                # tests/lib/gateway_env.sh (sourced above) exports every
+                # ALERTER_* channel variable empty, so the alerter does not
+                # take the operator's ~/.alerter settings and alerts reach
+                # alerts.log only. A second gateway gets a decoy ~/.alerter
+                # that sets every channel variable but leaves each channel one
+                # required value short, so it can never deliver: a variable
+                # the helper misses makes its channel half-configured, which
+                # disables alerting, and the expected alert is then missing
+                # from alerts.log. Its config names a model that does not
+                # exist, which raises an alert at startup.
+                echo ""
+                echo "${BOLD}--- Test gateway alerts stay local ---${NC}"
+                echo ""
+                ALERT_TMP="$INTEG_TMP/alert-check"
+                ALERT_HOME="$ALERT_TMP/home"
+                ALERT_LOG="$ALERT_TMP/gateway.log"
+                ALERTS_FILE="$ALERT_HOME/logs/alerts.log"
+                mkdir -p "$ALERT_HOME" "$ALERT_TMP/userhome"
+                # The variables the helper exports, read from the helper itself.
+                ALERT_VARS=$(grep -o 'ALERTER_[A-Z_]*=' "$SCRIPT_DIR/tests/lib/gateway_env.sh" | tr -d '=')
+                ALERT_ENV_LEAKS=""
+                [ -n "$ALERT_VARS" ] || ALERT_ENV_LEAKS=" (no ALERTER_* variables found)"
+                for v in $ALERT_VARS; do
+                    if [ -z "${!v+set}" ] || [ -n "${!v}" ]; then
+                        ALERT_ENV_LEAKS="$ALERT_ENV_LEAKS $v"
+                    fi
+                done
+                cat > "$ALERT_TMP/userhome/.alerter" <<EOF
+ALERTER_PUSHOVER_TOKEN=decoy
+ALERTER_PUSHOVER_NORMAL=0
+ALERTER_PUSHOVER_URGENT=1
+ALERTER_PUSHOVER_EMERGENCY=2
+ALERTER_TELNYX_API_KEY=decoy
+ALERTER_SMS_FROM=+15550100
+ALERTER_SMTP_HOST=127.0.0.1
+ALERTER_SMTP_PORT=1
+ALERTER_SMTP_USER=alice
+ALERTER_SMTP_PASSWORD=decoy
+ALERTER_SMTP_FROM=alice@example.com
+ALERTER_WEBHOOK_HEADERS={"X-Decoy":"1"}
+EOF
+                cat > "$ALERT_HOME/config.json" <<EOF
+{
+  "agents": {
+    "defaults": { "models": ["No Such Model"] },
+    "list": [{ "id": "main", "name": "main", "default": true }]
+  },
+  "channels": { "webui": { "enabled": true, "token": "alert-check-token" } },
+  "gateway": { "host": "127.0.0.1", "port": $(pick_free_port), "tls": { "mode": "off" } }
+}
+EOF
+                chmod 600 "$ALERT_HOME/config.json"
+                HOME="$ALERT_TMP/userhome" CLAW_HOME="$ALERT_HOME" "$INTEG_BIN" gateway >"$ALERT_LOG" 2>&1 &
+                ALERT_PID=$!
+                for _ in $(seq 1 40); do
+                    grep -qs 'No Such Model' "$ALERTS_FILE" && break
+                    kill -0 "$ALERT_PID" 2>/dev/null || break
+                    sleep 0.25
+                done
+                kill -TERM "$ALERT_PID" 2>/dev/null || true
+                for _ in $(seq 1 40); do
+                    kill -0 "$ALERT_PID" 2>/dev/null || break
+                    sleep 0.25
+                done
+                kill -KILL "$ALERT_PID" 2>/dev/null || true
+                wait "$ALERT_PID" 2>/dev/null || true
+                ALERT_PID=""
+                if [ -n "$ALERT_ENV_LEAKS" ]; then
+                    integ_fail "not exported empty for test gateways (tests/lib/gateway_env.sh):$ALERT_ENV_LEAKS"
+                elif ! grep -qs 'agents.defaults.models named model "No Such Model"' "$ALERTS_FILE"; then
+                    echo "${DIM}--- gateway log (tail) ---${NC}"
+                    tail -n 40 "$ALERT_LOG" | sed 's/^/    /'
+                    integ_fail "missing-model alert not in the test gateway's alerts.log (see gateway log tail above)"
+                else
+                    echo "  ${GREEN}PASS${NC}: test gateway alert written to its alerts.log only"
+                    INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
+                fi
+            fi
+        fi
+    fi
+fi
+
+#===============================================================================
+# Final Summary
+#===============================================================================
+
+echo ""
+echo "${BOLD}============================================${NC}"
+echo "${BOLD}   TEST SUMMARY${NC}"
+echo "${BOLD}============================================${NC}"
+echo ""
+
+TOTAL_PKGS=$((PASS_COUNT + FAIL_COUNT))
+echo "Go packages: ${BOLD}${TOTAL_PKGS}${NC}"
+echo "Passed:      ${GREEN}${BOLD}${PASS_COUNT}${NC}"
+echo "Failed:      ${RED}${BOLD}${FAIL_COUNT}${NC}"
+echo "No tests:    ${DIM}${SKIP_COUNT}${NC}"
+
+OVERALL_PASS=true
+
+if [ $FAIL_COUNT -gt 0 ]; then
+    OVERALL_PASS=false
+    echo ""
+    echo "${RED}${BOLD}Failed Go tests:${NC}"
+    RERUN_FLAGS="-count=1"
+    if $RUN_RACE; then RERUN_FLAGS="-race ${RERUN_FLAGS}"; fi
+    for entry in "${FAILED_TESTS[@]}"; do
+        IFS=$'\t' read -r pkg name loc <<< "$entry"
+        dir="$pkg"
+        if [ -n "$MODULE_PATH" ]; then
+            dir=".${pkg#"$MODULE_PATH"}"   # module root -> ".", subpackages -> "./x/y"
+        fi
+        echo "  ${RED}✗${NC} ${pkg}  ${BOLD}${name}${NC}  ${loc}"
+        case "$name" in
+            "(build failed)"|"(panic)")
+                echo "      ${DIM}go test ${RERUN_FLAGS} ${dir}${NC}" ;;
+            *)
+                echo "      ${DIM}go test ${RERUN_FLAGS} -run '^${name%%/*}\$' ${dir}${NC}" ;;
+        esac
+    done
+    echo ""
+    echo "Details:     see FAILURE DETAILS above, or ${BOLD}${FAILURE_LOG}${NC}"
+fi
+
+if $RUN_COVERAGE && [ -f "$COVERAGE_FILE" ]; then
+    echo "Coverage:    ${TOTAL_COLOR}${BOLD}${TOTAL_PCT}${NC}"
+    if (( $(echo "$TOTAL_NUM < $COVERAGE_MIN" | bc -l) )); then
+        echo ""
+        echo "${RED}Coverage ${TOTAL_PCT} is below minimum ${COVERAGE_MIN}%${NC}"
+        OVERALL_PASS=false
+    fi
+fi
+
+if $RUN_RACE; then
+    echo "Race:        ${GREEN}enabled${NC}"
+fi
+
+if ! $FRONTEND_RAN; then
+    echo "Frontend:    ${RED}failed (${FRONTEND_MISSING})${NC}"
+    OVERALL_PASS=false
+elif $FRONTEND_PASSED; then
+    echo "Frontend:    ${GREEN}passed${NC} (typecheck, lint, unit tests)"
+else
+    echo "Frontend:    ${RED}failed${NC}"
+    OVERALL_PASS=false
+fi
+
+if $SKIP_INTEGRATION; then
+    echo "MCP integ:   ${DIM}skipped (-s)${NC}"
+elif $INTEGRATION_RAN; then
+    if $INTEGRATION_PASSED; then
+        echo "MCP integ:   ${GREEN}passed${NC} (workspace: ${INTEGRATION_PASS_COUNT}/${INTEGRATION_PASS_COUNT} checks)"
+    else
+        echo "MCP integ:   ${RED}failed${NC} (${INTEGRATION_FAIL_COUNT} failure(s), ${INTEGRATION_PASS_COUNT} check(s) passed)"
+        OVERALL_PASS=false
+        if [ ${#INTEGRATION_FAILS[@]} -gt 0 ]; then
+            echo ""
+            echo "${RED}${BOLD}Failed MCP integration checks:${NC}"
+            for reason in "${INTEGRATION_FAILS[@]}"; do
+                echo "  ${RED}✗${NC} ${reason}"
+            done
+            echo "      ${DIM}details: MCP SERVER INTEGRATION section above; rerun with -x to keep the gateway log${NC}"
+        fi
+    fi
+else
+    # probe was not found — counts as a failure per test suite contract
+    echo "MCP integ:   ${RED}failed (probe not found)${NC}"
+    OVERALL_PASS=false
+fi
+echo "CLI smoke:   ${CLI_SMOKE_STATUS}"
+
+echo ""
+
+if $OVERALL_PASS; then
+    echo "${GREEN}${BOLD}All tests passed!${NC}"
+    echo ""
+    exit 0
+else
+    echo "${RED}${BOLD}FAILURES DETECTED${NC}"
+    echo ""
+    exit 1
+fi

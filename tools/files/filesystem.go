@@ -1,0 +1,1877 @@
+package files
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"math"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	"github.com/PivotLLM/ClawEh/fileutil"
+	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/internal/perms"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/tools"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+const MaxReadFileSize = 32 * 1024 // 32KB (~8K tokens) per-read cap to avoid context overflow
+
+// defaultReadLineCount is how many lines file_read_lines returns when
+// line_count is unspecified. Output is still capped to the byte ceiling.
+const defaultReadLineCount = 250
+
+func isWithinWorkspace(candidate, workspace string) bool {
+	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
+	return err == nil && filepath.IsLocal(rel)
+}
+
+type ReadFileTool struct {
+	sysFs    fileSystem
+	maxSize  int64
+	lineMode bool // true => file_read_lines (line addressing); false => file_read_bytes
+}
+
+// NewReadFileTool builds the byte-addressed read tool (file_read_bytes).
+func NewReadFileTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
+	return newReadTool(false, workspace, restrict, maxReadFileSize, allowPaths...)
+}
+
+// NewReadLinesTool builds the line-addressed read tool (file_read_lines).
+func NewReadLinesTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
+	return newReadTool(true, workspace, restrict, maxReadFileSize, allowPaths...)
+}
+
+func newReadTool(
+	lineMode bool,
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
+	}
+
+	maxSize := int64(maxReadFileSize)
+	if maxSize <= 0 {
+		maxSize = MaxReadFileSize
+	}
+
+	return &ReadFileTool{
+		sysFs:    buildFs(workspace, restrict, patterns),
+		maxSize:  maxSize,
+		lineMode: lineMode,
+	}
+}
+
+func (t *ReadFileTool) Name() string {
+	if t.lineMode {
+		return "file_read_lines"
+	}
+	return "file_read_bytes"
+}
+
+func (t *ReadFileTool) Description() string {
+	if t.lineMode {
+		return "Read the lines you found: reads a file by line number from `start_line` (1-based; a line number " +
+			"from file_search_lines) for `line_count` lines. Lines come back numbered and the status block gives the " +
+			"next `start_line`. Use it to get the exact text before file_edit. " +
+			"(To page by raw bytes instead, use file_read_bytes.)"
+	}
+	return "Read a file by BYTE offset. Pass `offset` and optional `length` to read a byte range; the status " +
+		"block tells you the next `offset`. Best for binary or very large files. " +
+		"Byte offsets from file_search_bytes feed directly into this tool. " +
+		"(For human-readable line addressing, use file_read_lines.)"
+}
+
+func (t *ReadFileTool) Parameters() map[string]any {
+	if t.lineMode {
+		return map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "Path to the file to read.",
+				},
+				"start_line": map[string]any{
+					"type":        "integer",
+					"description": "1-based line to start from (default 1).",
+					"default":     1,
+				},
+				"line_count": map[string]any{
+					"type":        "integer",
+					"description": "Number of lines to read from start_line (default 250). Still capped to the byte limit.",
+					"default":     defaultReadLineCount,
+				},
+			},
+			"required": []string{"path"},
+		}
+	}
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Path to the file to read.",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Byte offset to start reading from.",
+				"default":     0,
+			},
+			"length": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of bytes to read.",
+				"default":     t.maxSize,
+			},
+		},
+		"required": []string{"path"},
+	}
+}
+
+func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	path, ok := args["path"].(string)
+	if !ok {
+		return tools.ErrorResult("path is required")
+	}
+
+	// Keep the two addressing modes pure: reject the other mode's parameters
+	// rather than silently ignoring them (a stray start_line on file_read_bytes
+	// would otherwise read from offset 0 — the exact front-chunk trap this split
+	// exists to prevent). Point the caller at the right tool.
+	if t.lineMode {
+		if argPresent(args, "offset") || argPresent(args, "length") {
+			return tools.ErrorResult("file_read_lines reads by line and does not accept offset/length. " +
+				"Use file_read_lines(path, start_line[, line_count]); to read by byte use file_read_bytes(path, offset).")
+		}
+	} else if argPresent(args, "start_line") || argPresent(args, "line_count") {
+		return tools.ErrorResult("file_read_bytes reads by byte offset and does not accept start_line/line_count. " +
+			"Use file_read_bytes(path, offset[, length]); to read by line use file_read_lines(path, start_line).")
+	}
+
+	// offset (optional, default 0)
+	offset, err := getInt64Arg(args, "offset", 0)
+	if err != nil {
+		return errResult(err)
+	}
+	if offset < 0 {
+		return tools.ErrorResult("offset must be >= 0")
+	}
+
+	// length (optional, capped at MaxReadFileSize)
+	length, err := getInt64Arg(args, "length", t.maxSize)
+	if err != nil {
+		return errResult(err)
+	}
+	if length <= 0 {
+		return tools.ErrorResult("length must be > 0")
+	}
+	if length > t.maxSize {
+		length = t.maxSize
+	}
+
+	// Line mode (file_read_lines): read a numbered slice of lines.
+	startLine, err := getInt64Arg(args, "start_line", 1)
+	if err != nil {
+		return errResult(err)
+	}
+	lineCount, err := getInt64Arg(args, "line_count", defaultReadLineCount)
+	if err != nil {
+		return errResult(err)
+	}
+
+	file, err := t.sysFs.Open(path)
+	if err != nil {
+		return errResult(err)
+	}
+	defer utils.CloseQuietly(file)
+
+	// measure total size
+	totalSize := int64(-1) // -1 means unknown
+	if info, statErr := file.Stat(); statErr == nil {
+		totalSize = info.Size()
+	}
+
+	// sniff the first 512 bytes to detect binary content before loading
+	// it into the LLM context. Seeking back to 0 afterwards restores state.
+	sniff := make([]byte, 512)
+	sniffN, err := file.Read(sniff)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return tools.ErrorResult(fmt.Sprintf("failed to read %q: %v", path, err)).WithError(err)
+	}
+
+	// Reset read position to beginning before applying the caller's offset.
+	if seeker, ok := file.(io.Seeker); ok {
+		_, err = seeker.Seek(0, io.SeekStart)
+		if err != nil {
+			return tools.ErrorResult(fmt.Sprintf("failed to reset file position after sniff: %v", err)).WithError(err)
+		}
+	} else {
+		if offset < int64(sniffN) && offset > 0 {
+			return tools.ErrorResult(
+				"non-seekable file: cannot seek to an offset within the first 512 bytes after binary detection",
+			)
+		}
+	}
+
+	// Line mode (file_read_lines): read a numbered slice of lines from the file
+	// (position is at 0 after the sniff reset). Bounded by lineCount and the byte
+	// ceiling.
+	if t.lineMode {
+		if startLine < 1 {
+			startLine = 1
+		}
+		if lineCount <= 0 {
+			lineCount = defaultReadLineCount
+		}
+		return t.readLines(file, path, startLine, lineCount)
+	}
+
+	// Seek to the requested offset.
+	if seeker, ok := file.(io.Seeker); ok {
+		_, err = seeker.Seek(offset, io.SeekStart)
+		if err != nil {
+			return tools.ErrorResult(fmt.Sprintf("failed to seek to offset %d: %v", offset, err)).WithError(err)
+		}
+	} else if offset > 0 {
+		remaining := offset - int64(sniffN)
+		if remaining > 0 {
+			_, err = io.CopyN(io.Discard, file, remaining)
+			if err != nil {
+				return tools.ErrorResult(fmt.Sprintf("failed to advance to offset %d: %v", offset, err)).WithError(err)
+			}
+		}
+	}
+
+	probe := make([]byte, length+1)
+	n, err := io.ReadFull(file, probe)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return tools.ErrorResult(fmt.Sprintf("failed to read file content: %v", err)).WithError(err)
+	}
+
+	hasMore := int64(n) > length
+	data := probe[:min(int64(n), length)]
+
+	if len(data) == 0 {
+		return tools.NewToolResult("[END OF FILE - no content at this offset]")
+	}
+
+	readEnd := offset + int64(len(data))
+
+	logger.DebugCF("tool", "ReadFileTool execution completed successfully",
+		map[string]any{
+			"path":       path,
+			"bytes_read": len(data),
+			"has_more":   hasMore,
+		})
+
+	// The status block follows the content (not a header) so the actionable
+	// continuation instruction sits at the model's highest-attention position.
+	// A hint buried above a large chunk was being ignored, causing models to
+	// re-read the same front chunk instead of advancing the offset.
+	return tools.NewToolResult(string(data) +
+		byteReadStatus(path, filepath.Base(path), offset, readEnd, length, totalSize, hasMore))
+}
+
+// byteReadStatus renders the explicit end-of-output status block for a byte-mode
+// read, including the exact next call to make. Placed after the content.
+func byteReadStatus(path, displayPath string, offset, readEnd, length, totalSize int64, hasMore bool) string {
+	var b strings.Builder
+	b.WriteString("\n\n=== FILE READ STATUS ===\n")
+	fmt.Fprintf(&b, "File: %s\n", displayPath)
+	if totalSize >= 0 {
+		fmt.Fprintf(&b, "Total size: %d bytes\n", totalSize)
+	}
+	if totalSize >= 0 && length > 0 {
+		totalChunks := max((totalSize+length-1)/length, 1)
+		fmt.Fprintf(&b, "Chunk returned: bytes %d-%d (chunk %d of %d)\n",
+			offset, readEnd-1, offset/length+1, totalChunks)
+	} else {
+		fmt.Fprintf(&b, "Chunk returned: bytes %d-%d\n", offset, readEnd-1)
+	}
+	if hasMore {
+		b.WriteString("Status: TRUNCATED — more content remains\n\n")
+		b.WriteString("ACTION REQUIRED:\n")
+		b.WriteString("  To continue, call:\n")
+		fmt.Fprintf(&b, "  file_read_bytes(path=%q, offset=%d)\n\n", path, readEnd)
+		fmt.Fprintf(&b, "Do NOT call file_read_bytes again without offset=%d — you will receive the same chunk.\n", readEnd)
+	} else {
+		b.WriteString("Status: COMPLETE — END OF FILE, no further content\n")
+	}
+	b.WriteString("=== END STATUS ===")
+	return b.String()
+}
+
+// readLines returns a numbered slice of lines [startLine, startLine+lineCount)
+// from file (positioned at 0), bounded by the byte ceiling. The output is
+// prefixed with each line's 1-based number and a header noting the range and how
+// to fetch the next chunk.
+func (t *ReadFileTool) readLines(file io.Reader, path string, startLine, lineCount int64) *tools.ToolResult {
+	displayPath := filepath.Base(path)
+	scanner := bufio.NewScanner(file)
+	// Allow long lines up to the byte ceiling (default 64KB buffer is too small).
+	scanner.Buffer(make([]byte, 0, 64*1024), int(t.maxSize)+1)
+
+	var b strings.Builder
+	var cur, emitted, lastLine int64
+	endLine := startLine + lineCount // exclusive
+	bytesCapped := false
+	moreLines := false
+
+	for scanner.Scan() {
+		cur++
+		if cur < startLine {
+			continue
+		}
+		if cur >= endLine {
+			moreLines = true
+			break
+		}
+		line := scanner.Text()
+		// Stop before exceeding the byte ceiling so the result never overflows
+		// context; tell the caller to continue from here.
+		if int64(b.Len()+len(line))+16 > t.maxSize {
+			bytesCapped = true
+			moreLines = true
+			break
+		}
+		fmt.Fprintf(&b, "%d: %s\n", cur, line)
+		emitted++
+		lastLine = cur
+	}
+	if err := scanner.Err(); err != nil {
+		return tools.ErrorResult(fmt.Sprintf("failed to read lines: %v", err)).WithError(err)
+	}
+
+	if emitted == 0 {
+		return tools.NewToolResult(fmt.Sprintf("[file: %s | no lines at start_line=%d (file has %d line(s))]", displayPath, startLine, cur))
+	}
+
+	logger.DebugCF("tool", "ReadFileTool line-mode read completed",
+		map[string]any{"path": displayPath, "start_line": startLine, "lines": emitted, "more": moreLines})
+	return tools.NewToolResult(b.String() +
+		lineReadStatus(path, displayPath, startLine, lastLine, bytesCapped || moreLines, bytesCapped))
+}
+
+// lineReadStatus renders the explicit end-of-output status block for a line-mode
+// read, including the exact next call. Placed after the content (see
+// byteReadStatus for why).
+func lineReadStatus(path, displayPath string, startLine, lastLine int64, moreFollow, bytesCapped bool) string {
+	var b strings.Builder
+	b.WriteString("\n\n=== FILE READ STATUS ===\n")
+	fmt.Fprintf(&b, "File: %s\n", displayPath)
+	fmt.Fprintf(&b, "Lines returned: %d-%d\n", startLine, lastLine)
+	if moreFollow {
+		if bytesCapped {
+			b.WriteString("Status: TRUNCATED at the byte limit — more lines remain\n\n")
+		} else {
+			b.WriteString("Status: TRUNCATED — more lines remain\n\n")
+		}
+		b.WriteString("ACTION REQUIRED:\n")
+		b.WriteString("  To continue, call:\n")
+		fmt.Fprintf(&b, "  file_read_lines(path=%q, start_line=%d)\n\n", path, lastLine+1)
+		fmt.Fprintf(&b, "Do NOT call file_read_lines again without start_line=%d — you will receive the same lines.\n", lastLine+1)
+	} else {
+		b.WriteString("Status: COMPLETE — END OF FILE, no further lines\n")
+	}
+	b.WriteString("=== END STATUS ===")
+	return b.String()
+}
+
+// getInt64Arg extracts an integer argument from the args map, returning the
+// provided default if the key is absent.
+func getInt64Arg(args map[string]any, key string, defaultVal int64) (int64, error) {
+	raw, exists := args[key]
+	if !exists {
+		return defaultVal, nil
+	}
+
+	switch v := raw.(type) {
+	case float64:
+		if v != math.Trunc(v) {
+			return 0, fmt.Errorf("%s must be an integer, got float %v", key, v)
+		}
+		if v > math.MaxInt64 || v < math.MinInt64 {
+			return 0, fmt.Errorf("%s value %v overflows int64", key, v)
+		}
+		return int64(v), nil
+	case int:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case string:
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid integer format for %s parameter: %w", key, err)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("unsupported type %T for %s parameter", raw, key)
+	}
+}
+
+// argPresent reports whether the caller supplied a non-nil value for key.
+func argPresent(args map[string]any, key string) bool {
+	v, ok := args[key]
+	return ok && v != nil
+}
+
+type WriteFileTool struct {
+	sysFs fileSystem
+}
+
+func NewWriteFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
+	return NewWriteFileToolScoped(workspace, restrict, "", allowPaths...)
+}
+
+// NewWriteFileToolScoped constructs a WriteFileTool whose writes are confined to
+// <workspace>/<writeSubdir> (reads stay workspace-wide). An empty writeSubdir
+// yields the legacy whole-workspace behaviour.
+func NewWriteFileToolScoped(workspace string, restrict bool, writeSubdir string, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
+	}
+	return &WriteFileTool{sysFs: buildWriteFs(workspace, restrict, writeSubdir, patterns)}
+}
+
+func (t *WriteFileTool) Name() string {
+	return "file_write"
+}
+
+func (t *WriteFileTool) Description() string {
+	return "Create a file, or replace a whole file: writes content (parent folders created as needed). " +
+		"Refuses to replace an existing file unless overwrite is true. To change part of a file, use file_edit."
+}
+
+func (t *WriteFileTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Path to the file to write",
+			},
+			"content": map[string]any{
+				"type":        "string",
+				"description": "Content to write to the file",
+			},
+			"overwrite": map[string]any{
+				"type":        "boolean",
+				"description": "If the target file already exists and overwrite is not true, the call fails. Set overwrite: true to replace an existing file.",
+				"default":     false,
+			},
+			"display": map[string]any{
+				"type":        "boolean",
+				"description": "If true, after the operation, send the written/edited/appended content to the user as a fenced block separated by `---` markers.",
+				"default":     false,
+			},
+			"backup": map[string]any{
+				"type":        "boolean",
+				"description": "If true and the target file exists, copy it to <file>.NNNN (next unused 4-digit suffix, starting at 0001) before modification. Silently skipped when the target does not exist.",
+				"default":     false,
+			},
+		},
+		"required": []string{"path", "content"},
+	}
+}
+
+func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	path, ok := args["path"].(string)
+	if !ok {
+		return tools.ErrorResult("path is required")
+	}
+
+	content, ok := args["content"].(string)
+	if !ok {
+		return tools.ErrorResult("content is required")
+	}
+
+	if !getBoolArg(args, "overwrite", false) {
+		if info, err := t.sysFs.Stat(path); err == nil && !info.IsDir() {
+			return tools.ErrorResult(fmt.Sprintf("file already exists: %s. Set overwrite: true to replace it.", path))
+		}
+	}
+
+	if getBoolArg(args, "backup", false) {
+		// Refused before backing up, so the answer names the file.
+		if err := checkWrite(t.sysFs, path); err != nil {
+			return errResult(err)
+		}
+		if _, err := backupExistingFile(t.sysFs, path); err != nil {
+			return errResult(err)
+		}
+	}
+
+	if err := t.sysFs.WriteFile(path, []byte(content)); err != nil {
+		return errResult(err)
+	}
+
+	forLLM := "File written: " + path
+	if getBoolArg(args, "display", false) {
+		return &tools.ToolResult{
+			ForLLM:  forLLM,
+			ForUser: displayBody(displayHeader("Wrote", path), content),
+		}
+	}
+	return tools.SilentResult(forLLM)
+}
+
+type ListDirTool struct {
+	sysFs fileSystem
+}
+
+func NewListDirTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ListDirTool {
+	var patterns []*regexp.Regexp
+	if len(allowPaths) > 0 {
+		patterns = allowPaths[0]
+	}
+	return &ListDirTool{sysFs: buildFs(workspace, restrict, patterns)}
+}
+
+func (t *ListDirTool) Name() string {
+	return "file_list"
+}
+
+func (t *ListDirTool) Description() string {
+	return "See what is in a folder: lists its files and subfolders, one level by default; recursive=true lists the whole tree. " +
+		"To find files by name, use file_glob."
+}
+
+func (t *ListDirTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Path to list",
+			},
+			"recursive": map[string]any{
+				"type":        "boolean",
+				"description": "List the entire tree under path (paths shown relative to the workspace). Hidden directories are skipped. Default false (one level).",
+				"default":     false,
+			},
+		},
+		"required": []string{"path"},
+	}
+}
+
+func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	path, ok := args["path"].(string)
+	if !ok {
+		path = "."
+	}
+
+	if getBoolArg(args, "recursive", false) {
+		return t.listRecursive(path)
+	}
+
+	entries, err := t.sysFs.ReadDir(path)
+	if err != nil {
+		return tools.ErrorResult(fmt.Sprintf("failed to read directory: %v", err)).WithError(err)
+	}
+	return formatDirEntries(entries)
+}
+
+// maxRecursiveListEntries caps recursive listings so a large tree can't flood the
+// model's context.
+const maxRecursiveListEntries = 1000
+
+// listRecursive walks the tree under start via the sandboxed fs (scoping and
+// allowed folders still apply), listing entries with workspace-relative paths. Hidden
+// directories (.git, etc.) and the .claw marker are skipped.
+func (t *ListDirTool) listRecursive(start string) *tools.ToolResult {
+	var b strings.Builder
+	count := 0
+	truncated := false
+
+	var rec func(dir string)
+	rec = func(dir string) {
+		entries, err := t.sysFs.ReadDir(dir) // os/fs ReadDir returns entries sorted by name
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if count >= maxRecursiveListEntries {
+				truncated = true
+				return
+			}
+			name := e.Name()
+			if name == global.FolderMarkerFile {
+				continue
+			}
+			child := filepath.Join(dir, name)
+			display := filepath.ToSlash(child)
+			if e.IsDir() {
+				if strings.HasPrefix(name, ".") {
+					continue // don't descend into hidden dirs
+				}
+				b.WriteString("DIR:  " + display + "\n")
+				count++
+				rec(child)
+			} else {
+				b.WriteString("FILE: " + display + "\n")
+				count++
+			}
+		}
+	}
+	rec(start)
+
+	out := b.String()
+	if truncated {
+		out += fmt.Sprintf("\n[truncated at %d entries — list a subdirectory for more]\n", maxRecursiveListEntries)
+	}
+	return tools.NewToolResult(out)
+}
+
+func formatDirEntries(entries []os.DirEntry) *tools.ToolResult {
+	var result strings.Builder
+	for _, entry := range entries {
+		// Hide the claw-internal new-file marker from agents.
+		if entry.Name() == global.FolderMarkerFile {
+			continue
+		}
+		if entry.IsDir() {
+			result.WriteString("DIR:  " + entry.Name() + "\n")
+		} else {
+			result.WriteString("FILE: " + entry.Name() + "\n")
+		}
+	}
+	return tools.NewToolResult(result.String())
+}
+
+// fileSystem abstracts reading, writing, and listing files.
+type fileSystem interface {
+	ReadFile(path string) ([]byte, error)
+	WriteFile(path string, data []byte) error
+	WriteFileMode(path string, data []byte, mode os.FileMode) error
+	WriteFileExclMode(path string, data []byte, mode os.FileMode) error
+	ReadDir(path string) ([]os.DirEntry, error)
+	Open(path string) (fs.File, error)
+	Stat(path string) (os.FileInfo, error)
+	// Lstat is Stat without following a link in the final component.
+	Lstat(path string) (os.FileInfo, error)
+	Remove(path string) error
+	// MkdirAll creates the folder at path and any missing parents; an existing
+	// folder is not an error.
+	MkdirAll(path string) error
+}
+
+// writeChecker is implemented by the layers that refuse writes by path, so a
+// tool can be refused before it starts work it could not finish (a move that
+// would copy and then fail to remove the source, an edit that would match
+// text or write a backup first).
+type writeChecker interface {
+	CheckWrite(path string) error
+}
+
+// checkWrite returns the refusal fsys would give a write to path, or nil when
+// no layer refuses it by policy (the write itself can still fail).
+func checkWrite(fsys fileSystem, path string) error {
+	if c, ok := fsys.(writeChecker); ok {
+		return c.CheckWrite(path)
+	}
+	return nil
+}
+
+// rootChecker is implemented by the layers that have a root folder an agent
+// must not remove: the sandbox's workspace, the write folder (e.g. files/) and
+// each allowed folder.
+type rootChecker interface {
+	isRoot(path string) bool
+}
+
+// isRoot reports whether path is the root folder of any layer of fsys.
+func isRoot(fsys fileSystem, path string) bool {
+	if c, ok := fsys.(rootChecker); ok {
+		return c.isRoot(path)
+	}
+	return false
+}
+
+// errResult is the error result for err, keeping err so the registry can
+// tell an expected refusal (tools.IsExpectedRefusal) from a failure.
+func errResult(err error) *tools.ToolResult {
+	return tools.ErrorResult(err.Error()).WithError(err)
+}
+
+// hostFs is an unrestricted fileReadWriter that operates directly on the host filesystem.
+type hostFs struct {
+	// beforeOpen, when set (tests only), runs after a read's checks and
+	// just before the open.
+	beforeOpen func(target string)
+}
+
+// notRegular refuses reading path, which is not a regular file (a folder,
+// FIFO, device or socket): reading one could block or never end.
+func notRegular(path string) error {
+	return tools.Refusal(fmt.Errorf("access denied: %s is not a regular file", path))
+}
+
+// regularOpen checks the file just opened for path: it must be a regular
+// file, and when checked is given, the same file. Otherwise it is closed
+// and refused.
+func regularOpen(f *os.File, path string, checked os.FileInfo) (*os.File, error) {
+	info, err := f.Stat()
+	switch {
+	case err != nil:
+		utils.CloseQuietly(f)
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	case !info.Mode().IsRegular():
+		utils.CloseQuietly(f)
+		return nil, notRegular(path)
+	case checked != nil && !os.SameFile(checked, info):
+		utils.CloseQuietly(f)
+		return nil, tools.Refusal(fmt.Errorf("access denied: %s changed while it was being opened", path))
+	}
+	return f, nil
+}
+
+// openErr words a failed open or read of a file.
+func openErr(op string, err error) error {
+	switch {
+	case os.IsNotExist(err):
+		return fmt.Errorf("failed to %s file: file not found: %w", op, err)
+	case os.IsPermission(err) || strings.Contains(err.Error(), "permission denied"):
+		return fmt.Errorf("failed to %s file: access denied: %w", op, err)
+	}
+	return fmt.Errorf("failed to %s file: %w", op, err)
+}
+
+// openRegular opens path for reading: its links are resolved first, the
+// target must be a regular file (nothing else is opened), and it is opened
+// without following a link, without waiting and without becoming a
+// terminal, so a link swapped in at the last moment is refused; the open
+// file must be the file checked.
+func (h *hostFs) openRegular(op, path string) (*os.File, error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	checked, err := os.Lstat(target)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	if !checked.Mode().IsRegular() {
+		return nil, notRegular(path)
+	}
+	if h.beforeOpen != nil {
+		h.beforeOpen(target)
+	}
+	f, err := os.OpenFile(target, hostOpenFlags, 0)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	return regularOpen(f, path, checked)
+}
+
+func (h *hostFs) ReadFile(path string) ([]byte, error) {
+	f, err := h.openRegular("read", path)
+	if err != nil {
+		return nil, err
+	}
+	defer utils.CloseQuietly(f)
+	content, err := io.ReadAll(f)
+	if err != nil {
+		return nil, openErr("read", err)
+	}
+	return content, nil
+}
+
+func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
+	return os.ReadDir(path)
+}
+
+func (h *hostFs) WriteFile(path string, data []byte) error {
+	if err := modePolicy().MkdirAll(filepath.Dir(path)); err != nil {
+		return err
+	}
+	return fileutil.WriteFileAtomic(path, data, modePolicy().ModesFor(path).File)
+}
+
+func (h *hostFs) WriteFileMode(path string, data []byte, mode os.FileMode) error {
+	if err := modePolicy().MkdirAll(filepath.Dir(path)); err != nil {
+		return err
+	}
+	return fileutil.WriteFileAtomic(path, data, mode)
+}
+
+func (h *hostFs) Remove(path string) error {
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete file: file not found: %w", err)
+		}
+		if os.IsPermission(err) {
+			return fmt.Errorf("failed to delete file: access denied: %w", err)
+		}
+		return fmt.Errorf("failed to delete file: %w", err)
+	}
+	return nil
+}
+
+func (h *hostFs) MkdirAll(path string) error {
+	return modePolicy().MkdirAll(path)
+}
+
+func (h *hostFs) WriteFileExclMode(path string, data []byte, mode os.FileMode) error {
+	if err := modePolicy().MkdirAll(filepath.Dir(path)); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) //nolint:gosec // hostFs is the unrestricted backend, selected by buildBaseFs only when restrict is false
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		discardPartial(f, os.Remove, path)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		discardPartial(f, os.Remove, path)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		discardPartial(nil, os.Remove, path)
+		return err
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		discardPartial(nil, os.Remove, path)
+		return err
+	}
+	return nil
+}
+
+// discardPartial closes f (when non-nil) and removes path after a failed
+// write. The write error is what the caller returns; a cleanup failure is
+// only logged because there is nothing further the caller can do about it.
+func discardPartial(f *os.File, remove func(string) error, path string) {
+	if f != nil {
+		if closeErr := f.Close(); closeErr != nil {
+			logger.WarnCF("tool", "failed to close partial file", map[string]any{"path": path, "error": closeErr.Error()})
+		}
+	}
+	if rmErr := remove(path); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+		logger.WarnCF("tool", "failed to remove partial file", map[string]any{"path": path, "error": rmErr.Error()})
+	}
+}
+
+func (h *hostFs) Stat(path string) (os.FileInfo, error) {
+	return os.Stat(path)
+}
+
+func (h *hostFs) Lstat(path string) (os.FileInfo, error) {
+	return os.Lstat(path)
+}
+
+func (h *hostFs) Open(path string) (fs.File, error) {
+	f, err := h.openRegular("open", path)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// sandboxFs is a sandboxed fileSystem that operates within a strictly defined workspace using os.Root.
+type sandboxFs struct {
+	workspace string
+	// outside names what a link leaving the sandbox leaves, in the refusal;
+	// "" is "the workspace".
+	outside string
+}
+
+func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) error) error {
+	if r.workspace == "" {
+		return errors.New("workspace is not defined")
+	}
+
+	root, err := os.OpenRoot(r.workspace)
+	if err != nil {
+		return fmt.Errorf("failed to open workspace: %w", err)
+	}
+	defer utils.CloseQuietly(root)
+
+	relPath, err := getSafeRelPath(r.workspace, path)
+	if err != nil {
+		return err
+	}
+
+	if err := fn(root, relPath); err != nil {
+		if isRootEscape(err) {
+			// A link that leads out of the sandbox: a refusal in plain words,
+			// not os.Root's "openat …: path escapes from parent".
+			outside := r.outside
+			if outside == "" {
+				outside = "the workspace"
+			}
+			return tools.Refusal(fmt.Errorf("access denied: %s resolves outside %s", r.abs(path), outside))
+		}
+		return err
+	}
+	return nil
+}
+
+// isRootEscape reports whether err is os.Root refusing a path that leaves the
+// root (through a link or ".."). os exports no sentinel for it, so the text
+// is matched.
+func isRootEscape(err error) bool {
+	return strings.Contains(err.Error(), "path escapes from parent")
+}
+
+func (r *sandboxFs) ReadFile(path string) ([]byte, error) {
+	var content []byte
+	err := r.execute(path, func(root *os.Root, relPath string) error {
+		f, err := r.openRegular(root, "read", path, relPath)
+		if err != nil {
+			return err
+		}
+		defer utils.CloseQuietly(f)
+		if content, err = io.ReadAll(f); err != nil {
+			return openErr("read", err)
+		}
+		return nil
+	})
+	return content, err
+}
+
+// openRegular opens relPath in root for reading without waiting (a FIFO
+// does not block) and without becoming a terminal, and refuses anything but
+// a regular file. os.Root keeps any link it follows inside the workspace.
+func (r *sandboxFs) openRegular(root *os.Root, op, path, relPath string) (*os.File, error) {
+	f, err := root.OpenFile(relPath, readOpenFlags, 0)
+	if err != nil {
+		return nil, openErr(op, err)
+	}
+	return regularOpen(f, r.abs(path), nil)
+}
+
+func (r *sandboxFs) WriteFile(path string, data []byte) error {
+	return r.WriteFileMode(path, data, modePolicy().ModesFor(r.abs(path)).File)
+}
+
+// abs is path as an absolute path under the sandbox's workspace, for the
+// mode policy.
+func (r *sandboxFs) abs(path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(r.workspace, path)
+}
+
+// mkdirAll creates relPath under root and any missing parents, each with
+// exactly the folder mode its area gives it, never leaving the root.
+func (r *sandboxFs) mkdirAll(root *os.Root, relPath string) error {
+	relPath = filepath.Clean(relPath)
+	if relPath == "." || relPath == string(filepath.Separator) {
+		return nil
+	}
+	if fi, err := root.Stat(relPath); err == nil {
+		if fi.IsDir() {
+			return nil
+		}
+		return &os.PathError{Op: "mkdir", Path: relPath, Err: os.ErrExist}
+	}
+	if err := r.mkdirAll(root, filepath.Dir(relPath)); err != nil {
+		return err
+	}
+	mode := modePolicy().ModesFor(filepath.Join(r.workspace, relPath)).Dir
+	if err := root.Mkdir(relPath, mode); err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return err
+	}
+	return root.Chmod(relPath, mode)
+}
+
+// tmpFileSeq makes atomic-write temp filenames unique across concurrent
+// goroutines in this process. os.Getpid()+UnixNano() alone collides when two
+// goroutines hit the same nanosecond, which broke concurrent backups under load.
+var tmpFileSeq atomic.Uint64
+
+func (r *sandboxFs) WriteFileMode(path string, data []byte, mode os.FileMode) error {
+	return r.execute(path, func(root *os.Root, relPath string) error {
+		dir := filepath.Dir(relPath)
+		if dir != "." && dir != "/" {
+			if err := r.mkdirAll(root, dir); err != nil {
+				return fmt.Errorf("failed to create parent directories: %w", err)
+			}
+		}
+
+		// pid+nano for human/cross-process readability; the atomic counter
+		// guarantees uniqueness across concurrent goroutines within this process.
+		// The temp file sits beside the target, so the write needs only the
+		// target folder's permission (an allowed folder may be writable below
+		// a read-only root).
+		tmpRelPath := filepath.Join(dir, fmt.Sprintf(".tmp-%d-%d-%d", os.Getpid(), time.Now().UnixNano(), tmpFileSeq.Add(1)))
+
+		tmpFile, err := root.OpenFile(tmpRelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+		if err != nil {
+			discardPartial(nil, root.Remove, tmpRelPath)
+			return fmt.Errorf("failed to open temp file: %w", err)
+		}
+
+		if _, err := tmpFile.Write(data); err != nil {
+			discardPartial(tmpFile, root.Remove, tmpRelPath)
+			return fmt.Errorf("failed to write temp file: %w", err)
+		}
+
+		if err := tmpFile.Sync(); err != nil {
+			discardPartial(tmpFile, root.Remove, tmpRelPath)
+			return fmt.Errorf("failed to sync temp file: %w", err)
+		}
+
+		if err := tmpFile.Close(); err != nil {
+			discardPartial(nil, root.Remove, tmpRelPath)
+			return fmt.Errorf("failed to close temp file: %w", err)
+		}
+
+		if err := root.Chmod(tmpRelPath, mode); err != nil {
+			discardPartial(nil, root.Remove, tmpRelPath)
+			return fmt.Errorf("failed to set file mode: %w", err)
+		}
+
+		if err := root.Rename(tmpRelPath, relPath); err != nil {
+			discardPartial(nil, root.Remove, tmpRelPath)
+			return fmt.Errorf("failed to rename temp file over target: %w", err)
+		}
+
+		if dirFile, err := root.Open(dir); err == nil {
+			if syncErr := dirFile.Sync(); syncErr != nil {
+				logger.WarnCF("tool", "failed to sync directory after write", map[string]any{"path": relPath, "error": syncErr.Error()})
+			}
+			utils.CloseQuietly(dirFile)
+		}
+
+		return nil
+	})
+}
+
+func (r *sandboxFs) WriteFileExclMode(path string, data []byte, mode os.FileMode) error {
+	return r.execute(path, func(root *os.Root, relPath string) error {
+		dir := filepath.Dir(relPath)
+		if dir != "." && dir != "/" {
+			if err := r.mkdirAll(root, dir); err != nil {
+				return fmt.Errorf("failed to create parent directories: %w", err)
+			}
+		}
+		f, err := root.OpenFile(relPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(data); err != nil {
+			discardPartial(f, root.Remove, relPath)
+			return err
+		}
+		if err := f.Sync(); err != nil {
+			discardPartial(f, root.Remove, relPath)
+			return err
+		}
+		if err := f.Close(); err != nil {
+			discardPartial(nil, root.Remove, relPath)
+			return err
+		}
+		if err := root.Chmod(relPath, mode); err != nil {
+			discardPartial(nil, root.Remove, relPath)
+			return err
+		}
+		return nil
+	})
+}
+
+func (r *sandboxFs) Stat(path string) (os.FileInfo, error) {
+	var info os.FileInfo
+	err := r.execute(path, func(root *os.Root, relPath string) error {
+		fi, err := root.Stat(relPath)
+		if err != nil {
+			return err
+		}
+		info = fi
+		return nil
+	})
+	return info, err
+}
+
+func (r *sandboxFs) Lstat(path string) (os.FileInfo, error) {
+	var info os.FileInfo
+	err := r.execute(path, func(root *os.Root, relPath string) error {
+		fi, err := root.Lstat(relPath)
+		if err != nil {
+			return err
+		}
+		info = fi
+		return nil
+	})
+	return info, err
+}
+
+func (r *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
+	var entries []os.DirEntry
+	err := r.execute(path, func(root *os.Root, relPath string) error {
+		dirEntries, err := fs.ReadDir(root.FS(), relPath)
+		if err != nil {
+			return err
+		}
+		entries = dirEntries
+		return nil
+	})
+	return entries, err
+}
+
+func (r *sandboxFs) Remove(path string) error {
+	return r.execute(path, func(root *os.Root, relPath string) error {
+		if err := root.Remove(relPath); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("failed to delete file: file not found: %w", err)
+			}
+			if os.IsPermission(err) ||
+				strings.Contains(err.Error(), "permission denied") {
+				return fmt.Errorf("failed to delete file: access denied: %w", err)
+			}
+			return fmt.Errorf("failed to delete file: %w", err)
+		}
+		return nil
+	})
+}
+
+func (r *sandboxFs) MkdirAll(path string) error {
+	return r.execute(path, func(root *os.Root, relPath string) error {
+		return r.mkdirAll(root, relPath)
+	})
+}
+
+// isRoot reports whether path is the sandbox's workspace itself.
+func (r *sandboxFs) isRoot(path string) bool {
+	rel, err := getSafeRelPath(r.workspace, path)
+	return err == nil && rel == "."
+}
+
+func (r *sandboxFs) Open(path string) (fs.File, error) {
+	var f fs.File
+	err := r.execute(path, func(root *os.Root, relPath string) error {
+		file, err := r.openRegular(root, "open", path, relPath)
+		if err != nil {
+			return err
+		}
+		f = file
+		return nil
+	})
+	return f, err
+}
+
+// whitelistFs wraps a sandboxFs and allows access to specific paths outside
+// the workspace when they match any of the provided patterns.
+type whitelistFs struct {
+	sandbox  *sandboxFs
+	host     hostFs
+	patterns []*regexp.Regexp
+}
+
+func (w *whitelistFs) matches(path string) bool {
+	for _, p := range w.patterns {
+		if p.MatchString(path) {
+			return true
+		}
+	}
+	return false
+}
+
+// hostReadPath is the path a read of the allow-listed path goes to: path
+// with its links resolved. A link may lead only to another allow-listed
+// path or elsewhere inside the allow-listed folder path lies in (its links
+// resolved too, for a system folder such as /tmp that is itself a link);
+// anywhere else is refused, so a link in an allow-read folder cannot reach
+// a file the agent may not read. A path that does not resolve (missing) is
+// returned as it is, for the host to report.
+func (w *whitelistFs) hostReadPath(path string) (string, error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path, nil //nolint:nilerr // the host read reports a missing path itself
+	}
+	if w.matches(target) || w.matches(target+string(filepath.Separator)) {
+		return target, nil
+	}
+	if area := w.matchedArea(path); area != "" {
+		if resolved, rerr := filepath.EvalSymlinks(area); rerr == nil && (target == resolved || isWithinWorkspace(target, resolved)) {
+			return target, nil
+		}
+	}
+	return "", tools.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read", path))
+}
+
+// matchedArea returns the shortest folder prefix of path that an allow-read
+// pattern matches (as a folder, with a trailing separator), or "".
+func (w *whitelistFs) matchedArea(path string) string {
+	var dirs []string // path and its parents, deepest first
+	for d := filepath.Clean(path); ; d = filepath.Dir(d) {
+		dirs = append(dirs, d)
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	sep := string(filepath.Separator)
+	for _, d := range slices.Backward(dirs) {
+		if w.matches(strings.TrimSuffix(d, sep) + sep) {
+			return d
+		}
+	}
+	return ""
+}
+
+func (w *whitelistFs) ReadFile(path string) ([]byte, error) {
+	if w.matches(path) {
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.ReadFile(target)
+	}
+	return w.sandbox.ReadFile(path)
+}
+
+func (w *whitelistFs) WriteFile(path string, data []byte) error {
+	if w.matches(path) {
+		return w.host.WriteFile(path, data)
+	}
+	return w.sandbox.WriteFile(path, data)
+}
+
+func (w *whitelistFs) WriteFileMode(path string, data []byte, mode os.FileMode) error {
+	if w.matches(path) {
+		return w.host.WriteFileMode(path, data, mode)
+	}
+	return w.sandbox.WriteFileMode(path, data, mode)
+}
+
+func (w *whitelistFs) WriteFileExclMode(path string, data []byte, mode os.FileMode) error {
+	if w.matches(path) {
+		return w.host.WriteFileExclMode(path, data, mode)
+	}
+	return w.sandbox.WriteFileExclMode(path, data, mode)
+}
+
+func (w *whitelistFs) Stat(path string) (os.FileInfo, error) {
+	if w.matches(path) {
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.Stat(target)
+	}
+	return w.sandbox.Stat(path)
+}
+
+func (w *whitelistFs) Lstat(path string) (os.FileInfo, error) {
+	if w.matches(path) {
+		return w.host.Lstat(path)
+	}
+	return w.sandbox.Lstat(path)
+}
+
+func (w *whitelistFs) ReadDir(path string) ([]os.DirEntry, error) {
+	if w.matches(path) {
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.ReadDir(target)
+	}
+	return w.sandbox.ReadDir(path)
+}
+
+func (w *whitelistFs) Open(path string) (fs.File, error) {
+	if w.matches(path) {
+		target, err := w.hostReadPath(path)
+		if err != nil {
+			return nil, err
+		}
+		return w.host.Open(target)
+	}
+	return w.sandbox.Open(path)
+}
+
+func (w *whitelistFs) Remove(path string) error {
+	if w.matches(path) {
+		return w.host.Remove(path)
+	}
+	return w.sandbox.Remove(path)
+}
+
+func (w *whitelistFs) MkdirAll(path string) error {
+	if w.matches(path) {
+		return w.host.MkdirAll(path)
+	}
+	return w.sandbox.MkdirAll(path)
+}
+
+func (w *whitelistFs) isRoot(path string) bool {
+	return !w.matches(path) && w.sandbox.isRoot(path)
+}
+
+// buildFs returns the appropriate fileSystem implementation based on restriction
+// settings and optional path whitelist patterns.
+func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
+	return withAllowedFolders(workspace, restrict, buildBaseFs(workspace, restrict, patterns))
+}
+
+// buildBaseFs is buildFs without the allowed-folders layer; buildWriteFs uses
+// it so the write-scope sits inside that layer (allowedFs is always outermost,
+// so paths in an allowed folder bypass the workspace read/write scopes and use
+// the folder's own sandbox).
+func buildBaseFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSystem {
+	if !restrict {
+		return &hostFs{}
+	}
+	sandbox := &sandboxFs{workspace: workspace}
+	var inner fileSystem = sandbox
+	if len(patterns) > 0 {
+		inner = &whitelistFs{sandbox: sandbox, patterns: patterns}
+	}
+	// Optional read-scope: confine agent reads to specific workspace subdirs
+	// (e.g. files/ + skills/). Off by default (nil) so direct unit-test
+	// construction is unaffected; the provider enables it from config.
+	if len(readScopeSubdirs) > 0 && workspace != "" {
+		return newReadScopedFs(inner, workspace, readScopeSubdirs, patterns)
+	}
+	return inner
+}
+
+// modePolicy is the policy new files and folders follow: the process default
+// (perms.CurrentPolicy), which the gateway sets from the config at start and
+// on every reload, before the tools are rebuilt.
+func modePolicy() perms.Policy { return perms.CurrentPolicy() }
+
+// readScopeSubdirs, when non-empty, confines agent file reads to these workspace
+// subdirectories (plus any allow-listed host paths). It is a single process-wide
+// read policy, set once at provider construction from
+// AgentDefaults.WorkspaceReadSubdirs; empty means legacy workspace-wide reads.
+var readScopeSubdirs []string
+
+// SetReadScopeSubdirs installs the workspace read allowlist (e.g. ["files","skills"]).
+// Passing nil/empty restores legacy workspace-wide reads.
+func SetReadScopeSubdirs(subdirs []string) { readScopeSubdirs = subdirs }
+
+// readScopedFs wraps an inner fileSystem to confine reads to a set of workspace
+// subdirectories (readRoots). Host paths matching patterns (e.g. the global
+// skills dir, Tools.AllowReadPaths) bypass the check. Writes pass through — the
+// write tools layer writeScopedFs on top for write confinement.
+type readScopedFs struct {
+	inner       fileSystem
+	workspace   string
+	readRoots   []string // absolute
+	subdirNames []string // for the error message
+	patterns    []*regexp.Regexp
+	// beforeRead, when set (tests only), runs after the check and just
+	// before the read, with the path inside the read root.
+	beforeRead func(rel string)
+}
+
+func newReadScopedFs(inner fileSystem, workspace string, subdirs []string, patterns []*regexp.Regexp) *readScopedFs {
+	roots := make([]string, 0, len(subdirs))
+	for _, s := range subdirs {
+		if abs, err := filepath.Abs(filepath.Join(workspace, s)); err == nil {
+			roots = append(roots, abs)
+		}
+	}
+	return &readScopedFs{inner: inner, workspace: workspace, readRoots: roots, subdirNames: subdirs, patterns: patterns}
+}
+
+// readAllowed refuses a read of path outside the read roots: the path as
+// given, and then with the links in it resolved, so a link such as
+// files/x -> ../sessions/y does not reach a folder the agent may not read.
+// With parentOnly (Lstat), the last component is not followed. For a path in
+// the workspace it returns the read root the resolved path lies in, as a
+// sandbox, and the path inside it: the read is then made inside that root,
+// so a link swapped in after the check cannot lead it out of the read root.
+// A nil sandbox means the read goes to the layer below with path as given
+// (an allow-read host path, or one the sandbox below refuses).
+func (r *readScopedFs) readAllowed(path string, parentOnly bool) (*sandboxFs, string, error) {
+	for _, p := range r.patterns {
+		if p.MatchString(path) {
+			return nil, "", nil
+		}
+	}
+	var absPath string
+	if filepath.IsAbs(path) {
+		absPath = filepath.Clean(path)
+	} else {
+		a, err := filepath.Abs(filepath.Join(r.workspace, path))
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to resolve file path: %w", err)
+		}
+		absPath = a
+	}
+	if r.rootOf(absPath) == "" {
+		return nil, "", tools.Refusal(fmt.Errorf("read denied: the agent can only read %s/", strings.Join(r.subdirNames, "/, ")))
+	}
+	return r.resolvedInReadRoot(path, absPath, parentOnly)
+}
+
+// rootOf returns the read root absPath is or lies inside, or "".
+func (r *readScopedFs) rootOf(absPath string) string {
+	for _, root := range r.readRoots {
+		if absPath == root || isWithinWorkspace(absPath, root) {
+			return root
+		}
+	}
+	return ""
+}
+
+// resolvedInReadRoot refuses a read of path when absPath, with the links in
+// the workspace resolved (all but the last with parentOnly), lands in the
+// workspace outside every read root; otherwise it returns that read root as
+// a sandbox and the resolved path inside it. A link leading out of the
+// workspace is left to the sandbox below, which refuses it; one to a host
+// path matching an allow-read pattern is read there.
+func (r *readScopedFs) resolvedInReadRoot(path, absPath string, parentOnly bool) (*sandboxFs, string, error) {
+	absWorkspace, err := filepath.Abs(r.workspace)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to resolve workspace: %w", err)
+	}
+	rel, err := filepath.Rel(absWorkspace, absPath)
+	if err != nil || !filepath.IsLocal(rel) {
+		return nil, "", nil // not a workspace path: nothing of the workspace to resolve
+	}
+	last := ""
+	if parentOnly {
+		rel, last = filepath.Dir(rel), filepath.Base(rel)
+	}
+	root, err := os.OpenRoot(absWorkspace)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to open workspace: %w", err)
+	}
+	defer utils.CloseQuietly(root)
+	resolved, ok, err := resolveInWorkspace(root, rel)
+	if err != nil {
+		return nil, "", err
+	}
+	if !ok {
+		return nil, "", nil // leaves the workspace: the sandbox refuses it
+	}
+	target := filepath.Join(absWorkspace, resolved, last)
+	scoped := func(base string) (*sandboxFs, string, error) {
+		inside, rerr := filepath.Rel(base, target)
+		if rerr != nil {
+			return nil, "", fmt.Errorf("failed to resolve file path: %w", rerr)
+		}
+		return &sandboxFs{workspace: base, outside: "the folders the agent can read"}, inside, nil
+	}
+	if base := r.rootOf(target); base != "" {
+		return scoped(base)
+	}
+	for _, rr := range r.readRoots {
+		// A read root that is itself a link (files -> elsewhere/files) is
+		// compared by where it leads.
+		if rootRel, rerr := filepath.Rel(absWorkspace, rr); rerr == nil && filepath.IsLocal(rootRel) {
+			if res, rok, rerr := resolveInWorkspace(root, rootRel); rerr == nil && rok {
+				resRoot := filepath.Join(absWorkspace, res)
+				if target == resRoot || isWithinWorkspace(target, resRoot) {
+					return scoped(resRoot)
+				}
+			}
+		}
+	}
+	for _, p := range r.patterns {
+		if p.MatchString(target) {
+			return nil, "", nil
+		}
+	}
+	return nil, "", tools.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read (%s/)",
+		path, strings.Join(r.subdirNames, "/, ")))
+}
+
+// CheckWrite asks the layer below: reads are this layer's only concern.
+func (r *readScopedFs) CheckWrite(path string) error { return checkWrite(r.inner, path) }
+
+func (r *readScopedFs) ReadFile(path string) ([]byte, error) {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
+		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.ReadFile(rel)
+	}
+	return r.inner.ReadFile(path)
+}
+
+func (r *readScopedFs) ReadDir(path string) ([]os.DirEntry, error) {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
+		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.ReadDir(rel)
+	}
+	return r.inner.ReadDir(path)
+}
+
+func (r *readScopedFs) Open(path string) (fs.File, error) {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
+		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.Open(rel)
+	}
+	return r.inner.Open(path)
+}
+
+func (r *readScopedFs) Stat(path string) (os.FileInfo, error) {
+	sb, rel, err := r.readAllowed(path, false)
+	if err != nil {
+		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.Stat(rel)
+	}
+	return r.inner.Stat(path)
+}
+
+func (r *readScopedFs) Lstat(path string) (os.FileInfo, error) {
+	sb, rel, err := r.readAllowed(path, true)
+	if err != nil {
+		return nil, err
+	}
+	if sb != nil {
+		r.hook(rel)
+		return sb.Lstat(rel)
+	}
+	return r.inner.Lstat(path)
+}
+
+// hook runs beforeRead (tests only) between the check and the read.
+func (r *readScopedFs) hook(rel string) {
+	if r.beforeRead != nil {
+		r.beforeRead(rel)
+	}
+}
+
+func (r *readScopedFs) WriteFile(path string, data []byte) error {
+	return r.inner.WriteFile(path, data)
+}
+
+func (r *readScopedFs) WriteFileMode(path string, data []byte, mode os.FileMode) error {
+	return r.inner.WriteFileMode(path, data, mode)
+}
+
+func (r *readScopedFs) WriteFileExclMode(path string, data []byte, mode os.FileMode) error {
+	return r.inner.WriteFileExclMode(path, data, mode)
+}
+
+func (r *readScopedFs) Remove(path string) error {
+	return r.inner.Remove(path)
+}
+
+func (r *readScopedFs) MkdirAll(path string) error {
+	return r.inner.MkdirAll(path)
+}
+
+func (r *readScopedFs) isRoot(path string) bool { return isRoot(r.inner, path) }
+
+// buildWriteFs returns the fileSystem for the write/edit/append/copy tools.
+// When restrict is on and writeSubdir is non-empty, writes are confined to
+// <workspace>/<writeSubdir> while reads stay workspace-wide; host paths matching
+// patterns (Tools.AllowWritePaths) remain writable. When writeSubdir is empty,
+// behaviour matches buildFs (legacy: the whole workspace is writable).
+func buildWriteFs(workspace string, restrict bool, writeSubdir string, patterns []*regexp.Regexp) fileSystem {
+	base := buildBaseFs(workspace, restrict, patterns)
+	if !restrict || writeSubdir == "" {
+		return withAllowedFolders(workspace, restrict, base)
+	}
+	// allowedFs stays outermost so writes into an allowed folder are not
+	// rejected by the workspace write-scope; other writes still confine to
+	// writeSubdir.
+	scoped := &writeScopedFs{
+		inner:     base,
+		workspace: workspace,
+		writeRoot: filepath.Join(workspace, writeSubdir),
+		patterns:  patterns,
+	}
+	return withAllowedFolders(workspace, restrict, scoped)
+}
+
+// writeScopedFs wraps an inner fileSystem to allow reads across the whole
+// workspace while confining writes (and the directory creation they imply) to
+// writeRoot (<workspace>/<subdir>). Host paths matching patterns are exempt so
+// Tools.AllowWritePaths keeps working.
+type writeScopedFs struct {
+	inner     fileSystem
+	workspace string
+	writeRoot string
+	patterns  []*regexp.Regexp
+}
+
+// writeAllowed reports whether a write to path is permitted: either the path
+// matches a whitelisted host pattern, or it resolves within writeRoot. With
+// parentOnly, links are resolved in the parent of path only, not in its last
+// component: removing a link removes the link, not what it points to.
+func (w *writeScopedFs) writeAllowed(path string, parentOnly bool) error {
+	for _, p := range w.patterns {
+		if p.MatchString(path) {
+			return nil
+		}
+	}
+
+	absRoot, err := filepath.Abs(w.writeRoot)
+	if err != nil {
+		return fmt.Errorf("failed to resolve write root: %w", err)
+	}
+
+	var absPath string
+	if filepath.IsAbs(path) {
+		absPath = filepath.Clean(path)
+	} else {
+		absPath, err = filepath.Abs(filepath.Join(w.workspace, path))
+		if err != nil {
+			return fmt.Errorf("failed to resolve file path: %w", err)
+		}
+	}
+
+	if absPath != absRoot && !isWithinWorkspace(absPath, absRoot) {
+		return tools.Refusal(fmt.Errorf("write denied: outside %s", w.writeRoot))
+	}
+	if parentOnly {
+		return w.resolvedWithinRoot(path, filepath.Dir(absPath), absRoot)
+	}
+	return w.resolvedWithinRoot(path, absPath, absRoot)
+}
+
+// maxLinkHops bounds how many links resolveInWorkspace follows, so a loop
+// (a -> b, b -> a) is refused instead of followed forever.
+const maxLinkHops = 40
+
+// resolvedWithinRoot refuses a write to path when absPath (path itself, or its
+// parent) lands outside the write folder with links resolved. The
+// sandbox below follows links that stay inside the workspace, so without this
+// check a link such as files/link -> ../skills would let writes reach skills/.
+func (w *writeScopedFs) resolvedWithinRoot(path, absPath, absRoot string) error {
+	absWorkspace, err := filepath.Abs(w.workspace)
+	if err != nil {
+		return fmt.Errorf("failed to resolve workspace: %w", err)
+	}
+	relPath, err := filepath.Rel(absWorkspace, absPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve file path: %w", err)
+	}
+	relRoot, err := filepath.Rel(absWorkspace, absRoot)
+	if err != nil {
+		return fmt.Errorf("failed to resolve write root: %w", err)
+	}
+
+	root, err := os.OpenRoot(absWorkspace)
+	if err != nil {
+		return fmt.Errorf("failed to open workspace: %w", err)
+	}
+	defer utils.CloseQuietly(root)
+
+	outside := tools.Refusal(fmt.Errorf("write denied: %s resolves outside %s", path, w.writeRoot))
+	resolvedRoot, ok, err := resolveInWorkspace(root, relRoot)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return outside
+	}
+	resolved, ok, err := resolveInWorkspace(root, relPath)
+	if err != nil {
+		return err
+	}
+	if !ok || (resolved != resolvedRoot && !isWithinWorkspace(resolved, resolvedRoot)) {
+		return outside
+	}
+	return nil
+}
+
+// resolveInWorkspace returns rel (a path relative to root) with every link in
+// its existing components resolved; the components from the first missing one
+// on are appended as given. ok is false when resolution leaves root, a link
+// is absolute (os.Root refuses those), or links chain more than maxLinkHops.
+func resolveInWorkspace(root *os.Root, rel string) (resolved string, ok bool, err error) {
+	resolved = "."
+	pending := splitPath(rel)
+	hops := 0
+	for len(pending) > 0 {
+		c := pending[0]
+		pending = pending[1:]
+		if c == ".." {
+			if resolved == "." {
+				return "", false, nil
+			}
+			resolved = filepath.Dir(resolved)
+			continue
+		}
+		next := filepath.Join(resolved, c)
+		info, lerr := root.Lstat(next)
+		if lerr != nil {
+			if errors.Is(lerr, fs.ErrNotExist) || errors.Is(lerr, syscall.ENOTDIR) {
+				// Nothing below a missing component can be a link. A ".." below
+				// it is refused: MkdirAll would create the missing folders and
+				// then follow the ".." into whatever links come after it.
+				if slices.Contains(pending, "..") {
+					return "", false, nil
+				}
+				return filepath.Join(append([]string{next}, pending...)...), true, nil
+			}
+			return "", false, fmt.Errorf("failed to resolve %s: %w", next, lerr)
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
+			resolved = next
+			continue
+		}
+		hops++
+		if hops > maxLinkHops {
+			return "", false, nil
+		}
+		target, rerr := root.Readlink(next)
+		if rerr != nil {
+			return "", false, fmt.Errorf("failed to read link %s: %w", next, rerr)
+		}
+		if filepath.IsAbs(target) {
+			return "", false, nil
+		}
+		// A relative target is resolved against the link's folder, which is
+		// where resolved still points.
+		pending = append(splitPath(target), pending...)
+	}
+	return resolved, true, nil
+}
+
+// splitPath splits a relative path into its components, dropping empty and "."
+// ones. It does not clean the path: in a link target such as "l/..", the ".."
+// applies to where the link l leads, not lexically to "l".
+func splitPath(p string) []string {
+	var parts []string
+	for c := range strings.SplitSeq(filepath.ToSlash(p), "/") {
+		if c != "" && c != "." {
+			parts = append(parts, c)
+		}
+	}
+	return parts
+}
+
+// CheckWrite refuses a write to path that writeAllowed, or a layer below,
+// would refuse.
+func (w *writeScopedFs) CheckWrite(path string) error {
+	if err := w.writeAllowed(path, false); err != nil {
+		return err
+	}
+	return checkWrite(w.inner, path)
+}
+
+func (w *writeScopedFs) ReadFile(path string) ([]byte, error) {
+	return w.inner.ReadFile(path)
+}
+
+func (w *writeScopedFs) ReadDir(path string) ([]os.DirEntry, error) {
+	return w.inner.ReadDir(path)
+}
+
+func (w *writeScopedFs) Open(path string) (fs.File, error) {
+	return w.inner.Open(path)
+}
+
+func (w *writeScopedFs) Stat(path string) (os.FileInfo, error) {
+	return w.inner.Stat(path)
+}
+
+func (w *writeScopedFs) Lstat(path string) (os.FileInfo, error) {
+	return w.inner.Lstat(path)
+}
+
+func (w *writeScopedFs) Remove(path string) error {
+	if err := w.writeAllowed(path, true); err != nil {
+		return err
+	}
+	return w.inner.Remove(path)
+}
+
+func (w *writeScopedFs) MkdirAll(path string) error {
+	if err := w.writeAllowed(path, false); err != nil {
+		return err
+	}
+	return w.inner.MkdirAll(path)
+}
+
+// isRoot reports whether path is the write folder itself, or a root of a
+// layer below.
+func (w *writeScopedFs) isRoot(path string) bool {
+	absRoot, err := filepath.Abs(w.writeRoot)
+	if err != nil {
+		return false
+	}
+	absPath := filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		if absPath, err = filepath.Abs(filepath.Join(w.workspace, path)); err != nil {
+			return false
+		}
+	}
+	return absPath == absRoot || isRoot(w.inner, path)
+}
+
+func (w *writeScopedFs) WriteFile(path string, data []byte) error {
+	if err := w.writeAllowed(path, false); err != nil {
+		return err
+	}
+	return w.inner.WriteFile(path, data)
+}
+
+func (w *writeScopedFs) WriteFileMode(path string, data []byte, mode os.FileMode) error {
+	if err := w.writeAllowed(path, false); err != nil {
+		return err
+	}
+	return w.inner.WriteFileMode(path, data, mode)
+}
+
+func (w *writeScopedFs) WriteFileExclMode(path string, data []byte, mode os.FileMode) error {
+	if err := w.writeAllowed(path, false); err != nil {
+		return err
+	}
+	return w.inner.WriteFileExclMode(path, data, mode)
+}
+
+// Helper to get a safe relative path for os.Root usage
+func getSafeRelPath(workspace, path string) (string, error) {
+	if workspace == "" {
+		return "", errors.New("workspace is not defined")
+	}
+
+	rel := filepath.Clean(path)
+	if filepath.IsAbs(rel) {
+		var err error
+		rel, err = filepath.Rel(workspace, rel)
+		if err != nil {
+			return "", fmt.Errorf("failed to calculate relative path: %w", err)
+		}
+	}
+
+	if !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("path escapes workspace: %s", path)
+	}
+
+	return rel, nil
+}

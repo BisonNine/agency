@@ -1,0 +1,1065 @@
+// Types, parsing and small helpers for the agents page.
+//
+// Split out of agents-page.tsx, which had grown to 1619 lines: this is the part
+// with no React in it at all, and it is the part the card, the rail and the
+// autosave hook all need. Same shape as config/form-model.ts and
+// mcp/form-model.ts.
+
+export interface MessageConfig {
+  window_minutes: number
+  window_count: number
+}
+
+export interface AgentEntry {
+  id: string
+  name?: string
+  enabled?: boolean
+  default?: boolean
+  models?: string[]
+  /** The skills the agent may use ("*" = every skill); absent or [] = none. */
+  skills?: string[]
+  /** The native tools the agent may call; absent or [] = none. */
+  tools?: string[]
+  message?: MessageConfig | null
+  temperature?: number
+  /** Model/tool steps one turn may take; undefined = agents.defaults. */
+  max_tool_iterations?: number
+  /** Days an `event` memory is kept. undefined = agents.defaults; 0 = the
+   *  built-in default; negative = keep forever. */
+  event_retention_days?: number
+  /** Days a retired memory is kept after it was retired. Same convention. */
+  retired_retention_days?: number
+  summarization_models?: string[]
+  share_common?: boolean
+  global_cron?: boolean
+  maestro?: MaestroSettings
+  /** The per-agent `classifiers` block: the switch and the one model every
+   *  classifier the agent owns uses. Absent = off. */
+  classifiers?: ClassifiersSettings
+  /** The per-agent `task_models` grant: the kinds of task model it may use
+   *  through agent_spawn. Absent = all off. */
+  task_models?: TaskModelGrant
+  fusion?: boolean
+  forum?: boolean
+  /** The character card (cards/<id>.json) rendered into the system prompt;
+   *  absent or "" = none. */
+  character_card?: string
+  /** The ccv3 suite: the card-library tool. */
+  ccv3?: boolean
+  cogmem?: boolean
+  /** allowed_folders: real folders the file tools may use. */
+  allowed_folders?: AllowedFolderEntry[]
+  mcp_tools?: string[]
+  /** Tools the agent may never call, even when tools / mcp_tools admit them. */
+  deny_tools?: string[]
+  /** subagents.allow_agents: the agents this one may message ("*" = every
+   *  agent); absent or [] = none. */
+  allow_agents?: string[]
+  /** subagents.models: the worker model chain every worker this agent starts
+   *  runs on; absent or [] = the agent's own models. */
+  subagent_models?: string[]
+  /** The agent exactly as loaded. A save starts from it, so every key this
+   *  page does not edit (workspace, subagents, memory, compression, …) is
+   *  written back unchanged. Absent for an agent added on this page. */
+  raw?: Record<string, unknown>
+}
+
+export interface AllowedFolderEntry {
+  path: string
+  notify?: boolean
+  /** Shown to the agent after the folder in its prompt; at most
+   *  MAX_FOLDER_NOTE_CHARS characters. */
+  note?: string
+}
+
+// MAX_FOLDER_NOTE_CHARS is config.MaxAllowedFolderNoteChars: the longest note
+// an allowed folder may carry.
+export const MAX_FOLDER_NOTE_CHARS = 100
+
+export interface AgentsConfig {
+  defaults: {
+    models?: string[]
+    temperature?: number
+    /** The step cap an agent without its own gets: the configured default,
+     *  else BUILTIN_MAX_TOOL_ITERATIONS. */
+    max_tool_iterations?: number
+  }
+  list?: AgentEntry[]
+}
+
+export interface SkillInfo {
+  name: string
+  description?: string
+  source?: string
+}
+
+export function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
+}
+
+export function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+export function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+export function asNumber(value: unknown, defaultVal = 0): number {
+  return typeof value === "number" ? value : defaultVal
+}
+
+// BUILTIN_MAX_TOOL_ITERATIONS is the step cap the server falls back to when
+// agents.defaults.max_tool_iterations is 0 or missing (resolveRunLimits in
+// agent/instance.go).
+export const BUILTIN_MAX_TOOL_ITERATIONS = 20
+
+// positiveInt is value when it is a whole number above zero, else undefined.
+export function positiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : undefined
+}
+
+// splitCsv parses a comma-separated MCP-allow string into trimmed, non-empty entries.
+export function splitCsv(s: string): string[] {
+  return s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+// MCPAccessServer is one row of the MCP access or Fusion services checkbox
+// list.
+export interface MCPAccessServer {
+  name: string
+  checked: boolean
+  // configured is false for an entry that names no configured server or
+  // Fusion service (a server since removed, or a hand-typed entry from before
+  // the checkbox list); it is shown checked and flagged so it can be removed.
+  configured: boolean
+}
+
+const norm = (s: string) => s.trim().toLowerCase()
+
+// fusionOwned reports whether an mcp_tools entry belongs to a Fusion service:
+// it names the service, or a group within it (<service>_...).
+function fusionOwned(entry: string, serviceNames: string[]): boolean {
+  const e = norm(entry)
+  return serviceNames.some((s) => e === norm(s) || e.startsWith(norm(s) + "_"))
+}
+
+// mcpAccessView turns an agent's mcp_tools entries into checkbox rows: one
+// per configured server (checked when an entry matches it, case-insensitively)
+// followed by one flagged row per entry that matches no configured server and
+// no Fusion service. Access is per server; there is no finer grant. Entries
+// owned by a Fusion service are left to fusionAccessView.
+export function mcpAccessView(
+  entries: string[],
+  serverNames: string[],
+  fusionServices: string[] = [],
+): MCPAccessServer[] {
+  const rows: MCPAccessServer[] = serverNames.map((name) => ({
+    name,
+    checked: entries.some((e) => norm(e) === norm(name)),
+    configured: true,
+  }))
+  for (const raw of entries) {
+    const e = raw.trim()
+    if (
+      e &&
+      !serverNames.some((n) => norm(n) === norm(e)) &&
+      !fusionOwned(e, fusionServices)
+    ) {
+      rows.push({ name: e, checked: true, configured: false })
+    }
+  }
+  return rows
+}
+
+// fusionAccessView turns the same entries into the Fusion services rows: one
+// per defined service (checked when an entry names it) followed by one checked
+// row per entry that names a group within a service (microsoft365_calendar),
+// which is a valid finer grant and so is not flagged.
+export function fusionAccessView(
+  entries: string[],
+  serviceNames: string[],
+): MCPAccessServer[] {
+  const rows: MCPAccessServer[] = serviceNames.map((name) => ({
+    name,
+    checked: entries.some((e) => norm(e) === norm(name)),
+    configured: true,
+  }))
+  for (const raw of entries) {
+    const e = raw.trim()
+    if (
+      e &&
+      !serviceNames.some((n) => norm(n) === norm(e)) &&
+      fusionOwned(e, serviceNames)
+    ) {
+      rows.push({ name: e, checked: true, configured: true })
+    }
+  }
+  return rows
+}
+
+// mcpAccessEntries is the inverse of mcpAccessView: the mcp_tools list for
+// the checked rows.
+export function mcpAccessEntries(rows: MCPAccessServer[]): string[] {
+  return rows.filter((s) => s.checked).map((s) => s.name)
+}
+
+// CLIBypassWarning is one model in an agent's chain whose skip-permissions flag
+// is being ignored: the model's extra_args carries the CLI's bypass flag, but
+// the provider's "Allow CLI to bypass restrictions" is off, so the flag is not
+// passed and the CLI applies its own permission settings.
+export interface CLIBypassWarning {
+  model: string
+  provider: string
+  flag: string
+}
+
+// cliBypassWarnings lists the ignored bypass flags for an agent's model chain
+// (the agent's own list, or the defaults when it has none). models and
+// providers are the raw config arrays; clis is GET /api/system/clis, which
+// carries each CLI protocol's bypass flags.
+export function cliBypassWarnings(
+  chain: string[],
+  defaultChain: string[],
+  models: unknown,
+  providers: unknown,
+  clis: { protocol: string; bypass_args: string[] }[],
+): CLIBypassWarning[] {
+  const effective = chain.length > 0 ? chain : defaultChain
+  const out: CLIBypassWarning[] = []
+  for (const alias of effective) {
+    const model = asArray(models)
+      .map(asRecord)
+      .find((m) => norm(asString(m.model_name)) === norm(alias))
+    if (!model) continue
+    const provider = asArray(providers)
+      .map(asRecord)
+      .find((p) => norm(asString(p.name)) === norm(asString(model.provider)))
+    if (!provider || provider.bypass_restrictions === true) continue
+    const cli = clis.find((c) => c.protocol === asString(provider.protocol))
+    if (!cli) continue
+    const flag = asArray(model.extra_args)
+      .map(asString)
+      .find((a) => cli.bypass_args.includes(a))
+    if (flag)
+      out.push({ model: alias, provider: asString(provider.name), flag })
+  }
+  return out
+}
+
+// toggleAccessEntry adds the name to the entries when absent and removes it
+// (case-insensitively) when present. It works on the entry list, not on the
+// rows, because one entry can back a row in both lists at once: a name that is
+// an MCP server and a Fusion service (simpledoc) is one grant for both, so
+// either checkbox toggles the same entry and both rows follow.
+export function toggleAccessEntry(entries: string[], name: string): string[] {
+  const present = entries.some((e) => norm(e) === norm(name))
+  return present
+    ? entries.filter((e) => norm(e) !== norm(name))
+    : [...entries, name]
+}
+
+// SHELL_TOOL is the one tool granted only by name: an agent runs shell
+// commands only when its tools list names shell_exec (its box in the tool
+// list); a "*" or prefix entry never includes it.
+export const SHELL_TOOL = "shell_exec"
+
+const isShellEntry = (e: string) => norm(e) === SHELL_TOOL
+
+// shellAllowed reports whether the tools list names shell_exec explicitly.
+export function shellAllowed(tools: string[]): boolean {
+  return tools.some(isShellEntry)
+}
+
+// toolDenied reports whether deny_tools blocks the tool name, under the
+// backend's rule: an exact entry (case-insensitive) or a prefix entry ending
+// in "*".
+export function toolDenied(denyTools: string[], name: string): boolean {
+  const n = name.toLowerCase()
+  return denyTools.some((raw) => {
+    const d = norm(raw)
+    return d.endsWith("*") ? n.startsWith(d.slice(0, -1)) : d === n
+  })
+}
+
+// withShellAllowed adds or removes the explicit shell_exec entry and leaves
+// every other entry (including "*") as it is.
+export function withShellAllowed(tools: string[], allowed: boolean): string[] {
+  const rest = tools.filter((e) => !isShellEntry(e))
+  return allowed ? [...rest, SHELL_TOOL] : rest
+}
+
+// CODING_TOOLS are the tools the "Coding tools" button adds to an agent's
+// tools list.
+export const CODING_TOOLS = [
+  "file_list",
+  "file_glob",
+  "file_read_lines",
+  "file_search_lines",
+  "file_edit_lines",
+  "file_insert_lines",
+  "file_delete_lines",
+  "file_edit",
+  "file_write",
+  SHELL_TOOL,
+  "agent_spawn",
+]
+
+// codingToolInList reports whether the tools list grants name: shell_exec only
+// by its own entry, any other tool by its entry, "*" or a prefix entry such as
+// "file_*" (toolPatternMatches).
+function codingToolInList(tools: string[], name: string): boolean {
+  if (name === SHELL_TOOL) return shellAllowed(tools)
+  return tools.some((e) => toolPatternMatches(e.trim(), name))
+}
+
+// withCodingTools adds every coding tool the list does not already grant
+// (by name, "*" or a prefix entry; shell_exec only by name) and never removes
+// anything.
+export function withCodingTools(tools: string[]): string[] {
+  const missing = CODING_TOOLS.filter((name) => !codingToolInList(tools, name))
+  return [...tools, ...missing]
+}
+
+// MESSAGE_TOOL is the tool an agent messages other agents with; whom it may
+// message is subagents.allow_agents ("May message" on the Agents page).
+export const MESSAGE_TOOL = "agent_message"
+
+// ALL_AGENTS is the allow_agents entry that allows every agent.
+export const ALL_AGENTS = "*"
+
+// toolPatternMatches is config.MatchToolPattern for one entry: "*", a
+// case-insensitive prefix ending in "*", or an exact name.
+function toolPatternMatches(entry: string, name: string): boolean {
+  if (entry === "*") return true
+  if (entry.endsWith("*")) {
+    return name.toLowerCase().startsWith(entry.slice(0, -1).toLowerCase())
+  }
+  return entry.toLowerCase() === name.toLowerCase()
+}
+
+// SPAWN_TOOL also reads subagents.allow_agents: the agents it may start.
+export const SPAWN_TOOL = "agent_spawn"
+
+// toolGranted reports whether the agent has the internal tool, under the
+// backend's rule (AgentConfig.IsToolAllowed): the tools list admits it and
+// deny_tools does not name it; shell_exec is admitted only by naming it
+// (shellAllowed). Both are checked against
+// config/testdata/tool_grant_cases.json. Not for mcp_ tools.
+export function toolGranted(
+  tools: string[],
+  denyTools: string[],
+  name: string,
+): boolean {
+  if (toolDenied(denyTools, name)) return false
+  if (name.toLowerCase() === SHELL_TOOL) return shellAllowed(tools)
+  return tools.some((e) => toolPatternMatches(e, name))
+}
+
+// MayMessageRow is one box of the "May message" checklist.
+export interface MayMessageRow {
+  /** The agent id as configured, or the entry as saved for a stale row. */
+  id: string
+  label: string
+  checked: boolean
+  /** false for a saved entry that names no other configured agent (a removed
+   *  agent, or the agent itself); it is shown checked so it can be removed. */
+  configured: boolean
+}
+
+// mayMessageRows turns an agent's allow_agents into checklist rows: one per
+// other configured agent (by display name, else id), checked when an entry
+// names it or the list holds "*", then one row per entry that names no other
+// configured agent.
+export function mayMessageRows(
+  allow: string[],
+  selfId: string,
+  agents: { id: string; name?: string }[],
+): MayMessageRow[] {
+  const all = allow.includes(ALL_AGENTS)
+  const others = agents.filter((a) => !sameAgentId(a.id, selfId))
+  const rows: MayMessageRow[] = others.map((a) => ({
+    id: a.id,
+    label: a.name || a.id,
+    checked: all || allow.some((e) => sameAgentId(e, a.id)),
+    configured: true,
+  }))
+  for (const e of allow) {
+    if (e === ALL_AGENTS || others.some((a) => sameAgentId(e, a.id))) continue
+    if (rows.some((r) => !r.configured && sameAgentId(r.id, e))) continue
+    rows.push({ id: e, label: e, checked: true, configured: false })
+  }
+  return rows
+}
+
+// toggleAllowAgent adds the agent id to allow_agents when no entry names it
+// and removes every entry naming it (sameAgentId) when one does. Other
+// entries keep their order and spelling.
+export function toggleAllowAgent(allow: string[], id: string): string[] {
+  return allow.some((e) => sameAgentId(e, id))
+    ? allow.filter((e) => !sameAgentId(e, id))
+    : [...allow, id]
+}
+
+// withAllAgents writes ["*"] for "All agents", and drops "*" (keeping any
+// named entries) when it is turned off.
+export function withAllAgents(allow: string[], on: boolean): string[] {
+  return on ? [ALL_AGENTS] : allow.filter((e) => e !== ALL_AGENTS)
+}
+
+// internalToolsSummary is the label of an agent's internal tools. An agent
+// has only the tools its list names, so an empty list is "No tools".
+export function internalToolsSummary(list: string[]): {
+  text: string
+  none: boolean
+} {
+  if (list.length === 0) return { text: "No tools", none: true }
+  return {
+    text: `${list.includes("*") ? "all" : list.length} granted`,
+    none: false,
+  }
+}
+
+// ALL_SKILLS is the skills entry that grants every installed skill, including
+// ones installed later ("All skills" on the Agents page).
+export const ALL_SKILLS = "*"
+
+// skillsSummary is the label of an agent's skills list: an agent has only the
+// skills it lists, so an empty list is "No skills".
+export function skillsSummary(skills: string[]): string {
+  if (skills.length === 0) return "No skills"
+  if (skills.includes(ALL_SKILLS)) return "All skills"
+  return `${skills.length} skill${skills.length === 1 ? "" : "s"} selected`
+}
+
+// settingsCardClass groups a set of agent settings into one bordered card.
+export const settingsCardClass =
+  "border-border/60 bg-card rounded-xl border p-4 space-y-5"
+
+export function parseAgent(value: unknown): AgentEntry {
+  const r = asRecord(value)
+  const enabledRaw = r.enabled
+  const cbRaw = asRecord(r.message)
+  const cbMins = asNumber(cbRaw.window_minutes)
+  return {
+    raw: r,
+    id: asString(r.id),
+    name: asString(r.name) || undefined,
+    enabled: enabledRaw === false ? false : true,
+    default: r.default === true,
+    models: asArray(r.models).map(asString).filter(Boolean),
+    skills: asArray(r.skills).map(asString).filter(Boolean),
+    // Drop any stale mcp_* entries from the per-tool allowlist: MCP access now
+    // lives in mcp_tools, so saving an edited agent cleanly migrates it off the
+    // old all-or-nothing wildcard.
+    tools: asArray(r.tools)
+      .map(asString)
+      .filter(Boolean)
+      .filter((tName) => !tName.toLowerCase().startsWith("mcp_")),
+    mcp_tools: asArray(r.mcp_tools).map(asString).filter(Boolean),
+    deny_tools: asArray(r.deny_tools).map(asString).filter(Boolean),
+    allow_agents: asArray(asRecord(r.subagents).allow_agents).map(asString),
+    subagent_models: asArray(asRecord(r.subagents).models)
+      .map(asString)
+      .filter(Boolean),
+    message:
+      cbMins > 0
+        ? {
+            window_minutes: cbMins,
+            window_count: asNumber(cbRaw.window_count) || 2,
+          }
+        : null,
+    temperature: typeof r.temperature === "number" ? r.temperature : undefined,
+    max_tool_iterations: positiveInt(r.max_tool_iterations),
+    event_retention_days:
+      typeof r.event_retention_days === "number"
+        ? r.event_retention_days
+        : undefined,
+    retired_retention_days:
+      typeof r.retired_retention_days === "number"
+        ? r.retired_retention_days
+        : undefined,
+    summarization_models: asArray(r.summarization_models)
+      .map(asString)
+      .filter(Boolean),
+    share_common: r.share_common === false ? false : true,
+    global_cron: r.global_cron === true,
+    maestro: maestroFromRaw(r.maestro),
+    classifiers: classifiersFromRaw(r.classifiers),
+    task_models: taskModelGrantFromRaw(r.task_models),
+    fusion: r.fusion === true,
+    forum: r.forum === true,
+    character_card: asString(r.character_card) || undefined,
+    ccv3: r.ccv3 === true,
+    cogmem: r.cogmem !== false,
+    allowed_folders: asArray(r.allowed_folders).map((f) => {
+      const fr = asRecord(f)
+      return {
+        path: asString(fr.path),
+        notify: fr.notify === true,
+        ...(asString(fr.note) ? { note: asString(fr.note) } : {}),
+      }
+    }),
+  }
+}
+
+// AgentBindingView is a read-only projection of one binding for the Channels
+// display. The raw binding objects are preserved separately for saving so that
+// fields this page doesn't model (account_id, guild_id, …) are never dropped.
+export interface AgentBindingView {
+  index: number // index into the full bindings array
+  channel: string
+  peerKind: string
+  peerID: string
+  isDefault: boolean
+  hasPeer: boolean // routing peer present → delivers there, no chat id needed
+  deliverTo: string // explicit cron delivery chat id (for peerless channels)
+}
+
+export function parseAgentBindings(
+  appConfig: unknown,
+): Record<string, unknown>[] {
+  return asArray(asRecord(appConfig).bindings).map((b) => asRecord(b))
+}
+
+export function bindingViewsForAgent(
+  raw: Record<string, unknown>[],
+  agentID: string,
+): AgentBindingView[] {
+  const views: AgentBindingView[] = []
+  raw.forEach((b, index) => {
+    if (!sameAgentId(asString(b.agent_id), agentID)) return
+    const match = asRecord(b.match)
+    const peer = asRecord(match.peer)
+    const channel = asString(match.channel)
+    const peerKind = asString(peer.kind)
+    const peerID = asString(peer.id)
+    views.push({
+      index,
+      channel,
+      peerKind,
+      peerID,
+      isDefault: b.default === true,
+      hasPeer: channel !== "" && peerKind !== "" && peerID !== "",
+      deliverTo: asString(b.deliver_to),
+    })
+  })
+  return views
+}
+
+// sortAgentList orders agents alphabetically by display name (name, falling back
+// to id), case-insensitively. Order in agents.list is not semantically
+// significant (the default agent is marked by its `default` flag, bindings route
+// by id), so sorting for display is safe and keeps the list stable.
+export function sortAgentList(list: AgentEntry[]): AgentEntry[] {
+  return [...list].sort((a, b) =>
+    (a.name || a.id).localeCompare(b.name || b.id, undefined, {
+      sensitivity: "base",
+    }),
+  )
+}
+
+export function parseAgentsConfig(appConfig: unknown): AgentsConfig {
+  const cfg = asRecord(appConfig)
+  const agents = asRecord(cfg.agents)
+  const defaults = asRecord(agents.defaults)
+  return {
+    defaults: {
+      models: asArray(defaults.models).map(asString).filter(Boolean),
+      temperature:
+        typeof defaults.temperature === "number"
+          ? defaults.temperature
+          : undefined,
+      max_tool_iterations:
+        positiveInt(defaults.max_tool_iterations) ??
+        BUILTIN_MAX_TOOL_ITERATIONS,
+    },
+    list: sortAgentList(asArray(agents.list).map(parseAgent)),
+  }
+}
+
+export async function fetchSkills(): Promise<SkillInfo[]> {
+  const res = await fetch("/api/skills")
+  if (!res.ok) return []
+  const data = (await res.json()) as { skills?: SkillInfo[] }
+  return data.skills ?? []
+}
+
+/** The per-agent `classifiers` config block. */
+export interface ClassifiersSettings {
+  enabled: boolean
+  /** The classifier model; absent = none set. */
+  model?: string
+}
+
+/** classifiersFromRaw parses the saved block; anything but an object reads
+ *  as absent. */
+export function classifiersFromRaw(
+  v: unknown,
+): ClassifiersSettings | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
+  const r = asRecord(v)
+  return {
+    enabled: r.enabled === true,
+    model: asString(r.model).trim() || undefined,
+  }
+}
+
+/** The kinds of task model an agent can be allowed, in the page's order. */
+export const TASK_GRANT_KINDS = ["text", "image", "tts", "stt"] as const
+export type TaskGrantKind = (typeof TASK_GRANT_KINDS)[number]
+
+/** The per-agent `task_models` grant. */
+export type TaskModelGrant = Partial<Record<TaskGrantKind, boolean>>
+
+/** taskModelGrantFromRaw parses the saved grant: only true kinds are kept;
+ *  anything but an object, or no kind on, reads as absent. */
+export function taskModelGrantFromRaw(v: unknown): TaskModelGrant | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
+  const r = asRecord(v)
+  const out: TaskModelGrant = {}
+  for (const k of TASK_GRANT_KINDS) if (r[k] === true) out[k] = true
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/** setTaskModelGrant turns one kind of the agent's grant on or off; with no
+ *  kind left on the block is dropped. */
+export function setTaskModelGrant(
+  a: AgentEntry,
+  kind: TaskGrantKind,
+  on: boolean,
+): AgentEntry {
+  const next: TaskModelGrant = { ...a.task_models }
+  if (on) next[kind] = true
+  else delete next[kind]
+  return {
+    ...a,
+    task_models: Object.keys(next).length > 0 ? next : undefined,
+  }
+}
+
+/** taskModelsFor lists the models in use's list on the Task models page
+ *  (`task_models.<use>`), in order. Anything malformed is left out. */
+export function taskModelsFor(taskModels: unknown, use: string): string[] {
+  if (!taskModels || typeof taskModels !== "object") return []
+  const list = (taskModels as Record<string, unknown>)[use]
+  if (!Array.isArray(list)) return []
+  return list
+    .filter(
+      (m): m is { model: string } =>
+        !!m &&
+        typeof m === "object" &&
+        typeof (m as { model?: unknown }).model === "string",
+    )
+    .map((m) => m.model.trim())
+    .filter((m) => m !== "")
+}
+
+/** classifyModels lists the models in the Classification list on the Task
+ *  models page (`task_models.classify`), in order: the models a classifier
+ *  model may be. */
+export function classifyModels(taskModels: unknown): string[] {
+  return taskModelsFor(taskModels, "classify")
+}
+
+/** toggleClassifiers turns the agent's classifiers switch over. Turning it
+ *  on with no model set writes the first model in Classification; turning
+ *  it off drops the block. With an empty Classification list the server
+ *  refuses the switch. */
+export function toggleClassifiers(
+  a: AgentEntry,
+  classify: string[],
+): AgentEntry {
+  if (a.classifiers?.enabled) return { ...a, classifiers: undefined }
+  const model = a.classifiers?.model || classify[0] || undefined
+  return { ...a, classifiers: { enabled: true, model } }
+}
+
+/** The per-agent `maestro` config block. Absent means Maestro is off. */
+export interface MaestroSettings {
+  enabled: boolean
+  /** Parallel task-set concurrency cap; undefined = Maestro's default (5). */
+  max_concurrent?: number
+  /** Dispatch rate limit: requests per period; undefined = defaults (10 / 60 s). */
+  rate_limit_requests?: number
+  rate_limit_period?: number
+  /** Whether a parallel run may be honoured when the LLM asks; undefined = allowed. */
+  allow_parallel?: boolean
+}
+
+/** The editable runner settings inside the block (the enabled switch is
+ *  saved immediately like the other suite toggles, these are debounced). */
+export interface MaestroRunnerEdits {
+  maxConcurrent: number | undefined
+  rateLimitRequests: number | undefined
+  rateLimitPeriod: number | undefined
+  allowParallel: boolean
+}
+
+function asPositiveInt(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isInteger(v) && v > 0 ? v : undefined
+}
+
+/** maestroFromRaw parses the saved block. The retired boolean form
+ *  (`"maestro": true`) is not honoured by the backend, so it reads as a
+ *  disabled block here too; null/undefined means no block. */
+export function maestroFromRaw(v: unknown): MaestroSettings | undefined {
+  if (v === null || v === undefined) return undefined
+  if (typeof v !== "object" || Array.isArray(v)) return { enabled: false }
+  const r = v as Record<string, unknown>
+  return {
+    enabled: r.enabled === true,
+    max_concurrent: asPositiveInt(r.max_concurrent),
+    rate_limit_requests: asPositiveInt(r.rate_limit_requests),
+    rate_limit_period: asPositiveInt(r.rate_limit_period),
+    allow_parallel: r.allow_parallel === false ? false : undefined,
+  }
+}
+
+/** maestroPayload is the block as sent to the backend: `enabled` always, the
+ *  other keys only when set, and `allow_parallel` only when false (true is
+ *  the default and is left implicit). */
+export function maestroPayload(m: MaestroSettings): Record<string, unknown> {
+  return {
+    enabled: m.enabled === true,
+    ...(m.max_concurrent !== undefined
+      ? { max_concurrent: m.max_concurrent }
+      : {}),
+    ...(m.rate_limit_requests !== undefined
+      ? { rate_limit_requests: m.rate_limit_requests }
+      : {}),
+    ...(m.rate_limit_period !== undefined
+      ? { rate_limit_period: m.rate_limit_period }
+      : {}),
+    ...(m.allow_parallel === false ? { allow_parallel: false } : {}),
+  }
+}
+
+export function maestroEditsFromAgent(a: AgentEntry): MaestroRunnerEdits {
+  return {
+    maxConcurrent: a.maestro?.max_concurrent,
+    rateLimitRequests: a.maestro?.rate_limit_requests,
+    rateLimitPeriod: a.maestro?.rate_limit_period,
+    allowParallel: a.maestro?.allow_parallel !== false,
+  }
+}
+
+/** applyMaestroEdits folds the debounced runner edits back into the saved
+ *  block; an agent without a block stays without one. */
+export function applyMaestroEdits(
+  m: MaestroSettings | undefined,
+  e: MaestroRunnerEdits,
+): MaestroSettings | undefined {
+  if (!m) return undefined
+  return {
+    enabled: m.enabled,
+    max_concurrent: e.maxConcurrent,
+    rate_limit_requests: e.rateLimitRequests,
+    rate_limit_period: e.rateLimitPeriod,
+    allow_parallel: e.allowParallel ? undefined : false,
+  }
+}
+
+// AGENT_PAGE_KEYS are the agents.list keys agentPayload writes from the page's
+// own state. Every other key of the loaded agent passes through untouched, so
+// a key the page does not know about, including one added to AgentConfig
+// later, survives a save. PATCH /api/config replaces agents.list wholesale
+// (arrays are not merged), so anything left out here would be deleted.
+const AGENT_PAGE_KEYS = [
+  "id",
+  "enabled",
+  "name",
+  "default",
+  "models",
+  "skills",
+  "tools",
+  "message",
+  "temperature",
+  "max_tool_iterations",
+  "event_retention_days",
+  "retired_retention_days",
+  "summarization_models",
+  "share_common",
+  "global_cron",
+  "maestro",
+  "classifiers",
+  "task_models",
+  "fusion",
+  "forum",
+  "character_card",
+  "ccv3",
+  "cogmem",
+  "mcp_tools",
+  "deny_tools",
+  "allowed_folders",
+  "subagents",
+]
+
+// MAESTRO_PAGE_KEYS are the keys of the maestro block maestroPayload writes;
+// the rest of a loaded block passes through the same way.
+const MAESTRO_PAGE_KEYS = [
+  "enabled",
+  "max_concurrent",
+  "rate_limit_requests",
+  "rate_limit_period",
+  "allow_parallel",
+]
+
+function withoutKeys(
+  r: Record<string, unknown>,
+  keys: string[],
+): Record<string, unknown> {
+  const out = { ...r }
+  for (const k of keys) delete out[k]
+  return out
+}
+
+/** agentPayload is one agents.list entry as saved: the loaded agent with the
+ *  fields this page edits replaced by their current values. */
+export function agentPayload(a: AgentEntry): Record<string, unknown> {
+  const raw = a.raw ?? {}
+  return {
+    ...withoutKeys(raw, AGENT_PAGE_KEYS),
+    id: a.id,
+    ...(a.enabled === false ? { enabled: false } : {}),
+    ...(a.name ? { name: a.name } : {}),
+    ...(a.default ? { default: true } : {}),
+    ...(a.models && a.models.length > 0 ? { models: a.models } : {}),
+    // Absent and [] both mean none for skills and tools.
+    ...(a.skills && a.skills.length > 0 ? { skills: a.skills } : {}),
+    ...(a.tools && a.tools.length > 0 ? { tools: a.tools } : {}),
+    message:
+      a.message && a.message.window_minutes > 0
+        ? {
+            window_minutes: a.message.window_minutes,
+            window_count: a.message.window_count,
+          }
+        : null,
+    ...(a.temperature !== undefined ? { temperature: a.temperature } : {}),
+    ...(positiveInt(a.max_tool_iterations) !== undefined
+      ? { max_tool_iterations: a.max_tool_iterations }
+      : {}),
+    ...(a.event_retention_days !== undefined
+      ? { event_retention_days: a.event_retention_days }
+      : {}),
+    ...(a.retired_retention_days !== undefined
+      ? { retired_retention_days: a.retired_retention_days }
+      : {}),
+    ...(a.summarization_models && a.summarization_models.length > 0
+      ? { summarization_models: a.summarization_models }
+      : {}),
+    ...(a.share_common === false ? { share_common: false } : {}),
+    ...(a.global_cron ? { global_cron: true } : {}),
+    ...(a.maestro
+      ? {
+          maestro: {
+            ...withoutKeys(asRecord(raw.maestro), MAESTRO_PAGE_KEYS),
+            ...maestroPayload(a.maestro),
+          },
+        }
+      : {}),
+    // Only an agent with the switch on keeps the block; turning it off drops
+    // it, model included.
+    ...(a.classifiers?.enabled
+      ? {
+          classifiers: {
+            enabled: true,
+            ...(a.classifiers.model ? { model: a.classifiers.model } : {}),
+          },
+        }
+      : {}),
+    ...(a.task_models ? { task_models: a.task_models } : {}),
+    ...(a.fusion ? { fusion: true } : {}),
+    ...(a.forum ? { forum: true } : {}),
+    ...(a.character_card ? { character_card: a.character_card } : {}),
+    ...(a.ccv3 ? { ccv3: true } : {}),
+    ...(a.cogmem === false ? { cogmem: false } : {}),
+    // Always sent (like tools/allowed_folders) so clearing the box persists; the
+    // backend drops an empty slice on save (omitempty).
+    mcp_tools: a.mcp_tools ?? [],
+    // Always sent so clearing the list persists; blank rows (an entry being
+    // typed) are dropped. The backend drops an empty slice on save.
+    deny_tools: (a.deny_tools ?? []).map((d) => d.trim()).filter(Boolean),
+    ...subagentsPayload(raw, a.allow_agents, a.subagent_models),
+    // Always sent (like tools) so removing every folder persists; blank rows
+    // are dropped. The backend drops an empty slice on save (omitempty).
+    allowed_folders: (a.allowed_folders ?? [])
+      .filter((f) => f.path.trim() !== "")
+      .map((f) => ({
+        path: f.path.trim(),
+        ...(f.notify ? { notify: true } : {}),
+        ...(f.note?.trim() ? { note: f.note.trim() } : {}),
+      })),
+  }
+}
+
+// subagentsPayload is the subagents block as saved: the loaded block with
+// allow_agents and models replaced by the page's lists (each absent when
+// empty), and no block at all when nothing is left in it.
+function subagentsPayload(
+  raw: Record<string, unknown>,
+  allow: string[] | undefined,
+  models: string[] | undefined,
+): Record<string, unknown> {
+  const loaded = asRecord(raw.subagents)
+  if (allow === undefined && models === undefined) {
+    return raw.subagents === undefined ? {} : { subagents: raw.subagents }
+  }
+  const allowList = allow ?? asArray(loaded.allow_agents).map(asString)
+  const modelList = models ?? asArray(loaded.models).map(asString)
+  const block = {
+    ...withoutKeys(loaded, ["allow_agents", "models"]),
+    ...(allowList.length > 0 ? { allow_agents: allowList } : {}),
+    ...(modelList.length > 0 ? { models: modelList } : {}),
+  }
+  return Object.keys(block).length > 0 ? { subagents: block } : {}
+}
+
+/** agentsPayload is the PATCH /api/config body for the agent list. It
+ *  intentionally omits agents.defaults (edited on the Config page): the patch
+ *  is a deep merge, so leaving it out keeps what that page last saved. */
+export function agentsPayload(cfg: AgentsConfig): Record<string, unknown> {
+  return { agents: { list: (cfg.list ?? []).map(agentPayload) } }
+}
+
+// The agent id rule, identical to config/agent_id.go (both are checked against
+// config/testdata/agent_id_cases.json): 1 to 64 characters of ASCII letters
+// (either case), 0-9, '-' and '_', starting with a letter or digit. Ids are
+// case-insensitive: an agent's identity is its id in lower case
+// (normalizeAgentId), and sameAgentId compares identities. The server refuses
+// any other id with the same sentence agentIdProblem gives, quoting the id as
+// quoteAgentId does.
+const AGENT_ID_MAX = 64
+const AGENT_ID_VALID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+const AGENT_ID_INVALID_CHARS = /[^A-Za-z0-9_-]+/
+const ASCII_SPACE_EDGES = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g
+
+// asciiLower lower-cases A-Z only, as config's asciiLower does.
+function asciiLower(s: string): string {
+  return s.replace(/[A-Z]+/g, (m) => m.toLowerCase())
+}
+
+// isValidAgentId mirrors config.ValidAgentID.
+export function isValidAgentId(id: string): boolean {
+  return AGENT_ID_VALID.test(id)
+}
+
+// repairAgentId mirrors config.repairAgentID: the valid id suggested for id,
+// keeping its case, or "" when nothing usable is left.
+export function repairAgentId(id: string): string {
+  let result = id
+    .replace(new RegExp(AGENT_ID_INVALID_CHARS.source, "g"), "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+  if (result.length > AGENT_ID_MAX) {
+    result = result.slice(0, AGENT_ID_MAX).replace(/[-_]+$/, "")
+  }
+  return result
+}
+
+// normalizeAgentId mirrors config.NormalizeAgentID: an agent's identity, any
+// input turned into a valid id in lower case, or fallback (config's is
+// "main") when nothing usable is left.
+export function normalizeAgentId(id: string, fallback = "main"): string {
+  if (isValidAgentId(id)) return asciiLower(id)
+  const repaired = repairAgentId(id)
+  return repaired === "" ? fallback : asciiLower(repaired)
+}
+
+// sameAgentId mirrors config.SameAgentID: a and b name the same agent ("Bob"
+// and "bob" do).
+export function sameAgentId(a: string, b: string): boolean {
+  if (a.replace(ASCII_SPACE_EDGES, "") === "") return false
+  if (b.replace(ASCII_SPACE_EDGES, "") === "") return false
+  return normalizeAgentId(a) === normalizeAgentId(b)
+}
+
+// QUOTE_AS_CODE is what quoteAgentId writes as a code: control and format
+// characters and separators (Unicode Cc, Cf, Z), as config.quoteAgentID.
+const QUOTE_AS_CODE = /^[\p{Cc}\p{Cf}\p{Z}]$/u
+
+// quoteAgentId is config.quoteAgentID: '"' and '\' are escaped with a
+// backslash, tab, newline and carriage return are \t, \n and \r, every other
+// Cc, Cf or Z character but the ASCII space is \u and four lower-case hex
+// digits (\U and eight above U+FFFF), and the rest stands as itself.
+export function quoteAgentId(s: string): string {
+  let out = '"'
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0
+    if (ch === '"' || ch === "\\") out += `\\${ch}`
+    else if (ch === "\t") out += "\\t"
+    else if (ch === "\n") out += "\\n"
+    else if (ch === "\r") out += "\\r"
+    else if (ch !== " " && QUOTE_AS_CODE.test(ch)) {
+      out +=
+        cp > 0xffff
+          ? `\\U${cp.toString(16).padStart(8, "0")}`
+          : `\\u${cp.toString(16).padStart(4, "0")}`
+    } else out += ch
+  }
+  return `${out}"`
+}
+
+// freeAgentId mirrors config.freeAgentID: id, or when another agent has it,
+// id with "-2", "-3", ... appended (shortened to keep 64 characters) until it
+// is free.
+export function freeAgentId(id: string, taken: readonly string[]): string {
+  const isTaken = (c: string) => taken.some((t) => sameAgentId(t, c))
+  if (!isTaken(id)) return id
+  for (let n = 2; ; n++) {
+    const suffix = `-${n}`
+    let base = id
+    if (base.length + suffix.length > AGENT_ID_MAX) {
+      base = base.slice(0, AGENT_ID_MAX - suffix.length).replace(/[-_]+$/, "")
+    }
+    if (!isTaken(base + suffix)) return base + suffix
+  }
+}
+
+// agentIdProblem returns why id cannot be an agent id, or null when it can.
+// taken are the ids other agents have: the suggested id is none of them.
+export function agentIdProblem(
+  id: string,
+  taken: readonly string[] = [],
+): string | null {
+  if (isValidAgentId(id)) return null
+  const trimmed = id.replace(ASCII_SPACE_EDGES, "")
+  if (trimmed === "") return 'An agent has no id; give it one, such as "alice".'
+  const repaired = repairAgentId(id)
+  const suggestion = repaired === "" ? "" : freeAgentId(repaired, taken)
+  const validChars = !AGENT_ID_INVALID_CHARS.test(trimmed)
+  let problem = "may use only letters, digits, - and _"
+  if (trimmed.length > AGENT_ID_MAX && validChars) {
+    problem = `is longer than ${AGENT_ID_MAX} characters`
+  } else if ((trimmed[0] === "-" || trimmed[0] === "_") && validChars) {
+    problem = "must start with a letter or digit"
+  }
+  const msg = `Agent id ${quoteAgentId(id)} ${problem}`
+  if (suggestion === "") return `${msg}.`
+  return `${msg}; use ${quoteAgentId(suggestion)}.`
+}
+
+// newAgentIdProblem returns why id cannot be the id of a new agent, or null
+// when it can: the agentIdProblem sentence, or the one the server gives for
+// an id that names an agent already there, ignoring case
+// (config.duplicateAgentIDError).
+export function newAgentIdProblem(
+  id: string,
+  existingIds: readonly string[],
+): string | null {
+  const problem = agentIdProblem(id, existingIds)
+  if (problem) return problem
+  const other = existingIds.find((e) => sameAgentId(e, id))
+  if (other === undefined) return null
+  if (other === id) {
+    return `Agent id ${quoteAgentId(id)} is used twice; give each agent its own id.`
+  }
+  return `Agent ids ${quoteAgentId(other)} and ${quoteAgentId(id)} name the same agent; give each agent its own id.`
+}

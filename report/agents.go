@@ -1,0 +1,372 @@
+// ClawEh
+// License: MIT
+
+package report
+
+import (
+	"context"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/ccv3"
+	"github.com/PivotLLM/ClawEh/classifier/classifierfs"
+	"github.com/PivotLLM/ClawEh/cogmemhost"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
+	"github.com/PivotLLM/ClawEh/forum/forumfs"
+)
+
+// cardExists reports whether the character-card library has card id.
+func cardExists(cfg *config.Config, id string) bool {
+	store, err := ccv3.Open(cfg.CardsPath())
+	return err == nil && store.Exists(id)
+}
+
+// cardCount describes the character-card library for the Data section.
+func cardCount(cfg *config.Config) string {
+	store, err := ccv3.Open(cfg.CardsPath())
+	if err != nil {
+		return "unreadable: " + err.Error()
+	}
+	cards, invalid, err := store.List()
+	if err != nil {
+		return "unreadable: " + err.Error()
+	}
+	out := itoa(len(cards)) + " cards"
+	if len(invalid) > 0 {
+		out += ", " + itoa(len(invalid)) + " invalid files"
+	}
+	return out
+}
+
+// sensitiveTools are the internal tools that reach beyond the agent's own
+// workspace read: run programs, change files, send messages, install code,
+// or start other agents (or give them turns).
+var sensitiveTools = []string{"shell_exec", "file_write", "file_edit", "file_delete", "file_rmdir", "msg_send", "skill_install", "agent_spawn", "agent_message"}
+
+// folderRow is one line of the Folder access table before sorting.
+type folderRow struct {
+	path      string
+	read      bool
+	write     bool
+	notes     []string
+	highlight bool
+}
+
+// folderAccess collects every path an agent can reach through ClawEh's file
+// tools, plus the directories ClawEh itself writes on the agent's behalf,
+// under the rule in tools/files (ReadPolicy and buildBaseFs): writes are
+// confined when restrict_to_workspace is on, reads when it is on and
+// allow_read_outside_workspace is off; allow-listed host patterns bypass both.
+type folderAccess struct {
+	rows map[string]*folderRow
+	// special is the one highlighted "anything" row, kept first.
+	special *folderRow
+}
+
+// alwaysReadableNotes says what each of config.AlwaysReadableWorkspaceDirs holds.
+var alwaysReadableNotes = map[string]string{
+	"tasks":                  "sub-agent results",
+	"tmp":                    "inbound attachments",
+	forumfs.BaseDirName:      "the agent's forums",
+	classifierfs.BaseDirName: "the agent's classifiers",
+}
+
+func (f *folderAccess) add(path string, read, write bool, note string) {
+	r, ok := f.rows[path]
+	if !ok {
+		r = &folderRow{path: path}
+		f.rows[path] = r
+	}
+	r.read = r.read || read
+	r.write = r.write || write
+	if note != "" {
+		r.notes = append(r.notes, note)
+	}
+}
+
+func agentFolderAccess(cfg *config.Config, env Environment, a *config.AgentConfig) Table {
+	d := cfg.Agents.Defaults
+	ws := resolveWorkspace(cfg, a)
+	fa := &folderAccess{rows: map[string]*folderRow{}}
+	user := orValue(env.User, unknown)
+
+	switch {
+	case !d.RestrictToWorkspace:
+		fa.special = &folderRow{
+			path: "anything user " + user + " can access", read: true, write: true, highlight: true,
+			notes: []string{"restrict_to_workspace is off"},
+		}
+		fa.add(ws, true, true, "agent workspace")
+	default:
+		writeRoot := ws
+		note := "workspace write area"
+		if d.WorkspaceWriteSubdir != "" {
+			writeRoot = filepath.Join(ws, d.WorkspaceWriteSubdir)
+		} else {
+			note = "whole workspace writable (workspace_write_subdir is empty)"
+		}
+		fa.add(writeRoot, false, true, note)
+		if d.AllowReadOutsideWorkspace {
+			fa.special = &folderRow{
+				path: "anything user " + user + " can read", read: true, highlight: true,
+				notes: []string{"allow_read_outside_workspace is on"},
+			}
+		} else if len(d.WorkspaceReadSubdirs) == 0 {
+			fa.add(ws, true, false, "whole workspace readable (workspace_read_subdirs is empty)")
+		} else {
+			for _, sub := range d.WorkspaceReadSubdirs {
+				fa.add(filepath.Join(ws, sub), true, false, "workspace read area")
+			}
+			for _, sub := range config.AlwaysReadableWorkspaceDirs {
+				fa.add(filepath.Join(ws, sub), true, false, alwaysReadableNotes[sub]+" (always readable)")
+			}
+		}
+		for _, p := range cfg.Tools.AllowReadPaths {
+			fa.add(p, true, false, "pattern (allow_read_paths)")
+		}
+		for _, p := range cfg.Tools.AllowWritePaths {
+			fa.add(p, false, true, "pattern (allow_write_paths)")
+		}
+	}
+
+	if a.MaestroEnabled() {
+		fa.add(config.MaestroDataDir(ws), true, true, "Maestro data")
+	}
+	notify := map[string]bool{}
+	for _, f := range a.AllowedFolders {
+		if f.Notify {
+			notify[filepath.Clean(strings.TrimSpace(f.Path))] = true
+		}
+	}
+	for _, p := range a.AllowedFolderPaths() {
+		note := "allowed folder; write access follows file permissions"
+		if notify[p] {
+			note += ", notify"
+		}
+		fa.add(p, true, fileutil.Writable(p), note)
+	}
+	fa.add(cfg.SkillsPath(), true, false, "global skills")
+	if a.SharesCommon() {
+		fa.add(cfg.ResolveCommonDir(), true, true, "shared common directory (common_* tools)")
+	}
+	if a.CognitiveMemoryEnabled() {
+		fa.add(cogmemhost.Dir(ws), false, true, "cognitive memory store (written by "+app.ShortName()+", not via file tools)")
+	}
+	fa.add(filepath.Join(ws, "sessions"), false, true, "session archive (written by "+app.ShortName()+", not via file tools)")
+
+	t := Table{Caption: "Folder access", Columns: []string{"Path", "Access", "Notes"}}
+	if fa.special != nil {
+		t.Rows = append(t.Rows, row(fa.special.path, access(fa.special.read, fa.special.write), strings.Join(fa.special.notes, "; ")))
+		t.Highlight = append(t.Highlight, 0)
+	}
+	for _, p := range sortedKeys(fa.rows) {
+		r := fa.rows[p]
+		shown, note := p, ""
+		if !strings.Contains(strings.Join(r.notes, ""), "pattern") {
+			shown, note = resolvePath(p)
+		}
+		notes := append([]string{}, r.notes...)
+		if note != "" {
+			notes = append(notes, note)
+		}
+		t.Rows = append(t.Rows, row(shown, access(r.read, r.write), strings.Join(notes, "; ")))
+	}
+	return t
+}
+
+func access(read, write bool) string {
+	switch {
+	case read && write:
+		return "[read/write]"
+	case write:
+		return "[write]"
+	default:
+		return "[read]"
+	}
+}
+
+// agentToolsTable lists the internal tools two per row, each with a yes/no
+// sensitive marker, so the table uses the page width.
+func agentToolsTable(a *config.AgentConfig) Table {
+	t := Table{Caption: "Internal tools", Columns: []string{"Tool", "Sensitive", "Tool", "Sensitive"}}
+	tools := a.Tools
+	if len(tools) == 0 {
+		t.Rows = append(t.Rows, row("(none)", "", "", ""))
+		return t
+	}
+	var cells [][]string
+	explicit := map[string]bool{}
+	for _, e := range tools {
+		explicit[strings.ToLower(e)] = true
+		cells = append(cells, row(e, yesNo(isSensitive(e))))
+	}
+	for _, s := range sensitiveTools {
+		// shell_exec is granted only by name, never by a pattern.
+		if !explicit[s] && !config.IsShellTool(s) && config.MatchToolPattern(tools, s) {
+			cells = append(cells, row(s, "yes (by pattern)"))
+		}
+	}
+	// forum_launch gives other agents turns; the forum switch, not the
+	// tools list, grants it.
+	if a.Forum && !a.IsToolDenied(forumfs.LaunchTool) {
+		cells = append(cells, row(forumfs.LaunchTool, "yes (Allow forum)"))
+	}
+	for i := 0; i < len(cells); i += 2 {
+		r := row(cells[i][0], cells[i][1], "", "")
+		if i+1 < len(cells) {
+			r[2], r[3] = cells[i+1][0], cells[i+1][1]
+		}
+		t.Rows = append(t.Rows, r)
+	}
+	return t
+}
+
+func isSensitive(name string) bool {
+	return slices.Contains(sensitiveTools, strings.ToLower(name))
+}
+
+func agentMCPTable(cfg *config.Config, a *config.AgentConfig) Table {
+	t := Table{Caption: "MCP access", Columns: []string{"mcp_tools entry", "Servers reached"}}
+	if len(a.MCPTools) == 0 {
+		if a.Fusion {
+			t.Rows = append(t.Rows, row(none, "no MCP tools; Fusion is on but no service is listed, so no Fusion tools"))
+			return t
+		}
+		t.Rows = append(t.Rows, row(none, "no MCP tools"))
+		return t
+	}
+	servers := sortedKeys(cfg.Tools.MCP.Servers)
+	for _, e := range a.MCPTools {
+		var reach []string
+		for _, s := range servers {
+			if desc, ok := mcpEntryReach(e, s); ok {
+				reach = append(reach, s+" ("+desc+")")
+			}
+		}
+		if len(reach) == 0 {
+			if a.Fusion {
+				// With Fusion on the entry may name a Fusion service or a group
+				// within one; the services are only known to the running engine.
+				t.Rows = append(t.Rows, row(e, "no MCP server; Fusion tools named "+e+"…"))
+				continue
+			}
+			t.Highlight = append(t.Highlight, len(t.Rows))
+			t.Rows = append(t.Rows, row(e, "matches no configured server"))
+			continue
+		}
+		t.Rows = append(t.Rows, row(e, strings.Join(reach, "; ")))
+	}
+	return t
+}
+
+func agentSection(ctx context.Context, cfg *config.Config, env Environment, a *config.AgentConfig) Section {
+	d := cfg.Agents.Defaults
+	models := a.Models
+	modelsNote := ""
+	if len(models) == 0 {
+		models = d.Models
+		modelsNote = " (from defaults)"
+	}
+	sub := "none allowed"
+	if a.Subagents != nil && (len(a.Subagents.AllowAgents) > 0 || len(a.Subagents.Models) > 0) {
+		sub = "agents " + joinOr(a.Subagents.AllowAgents, none) + "; worker models " + joinOr(a.Subagents.Models, "(agent's own)")
+	}
+	sub += "; max depth " + itoa(d.GetMaxSubagentDepth())
+	_, human := cfg.HumanModelOf(a)
+	memory := onOff(a.CognitiveMemoryEnabled())
+	if a.Memory != nil {
+		memory += " (per-agent memory block)"
+	}
+	title := a.ID
+	if a.Name != "" && a.Name != a.ID {
+		title += " (" + a.Name + ")"
+	}
+	card := none
+	if a.CharacterCard != "" {
+		card = a.CharacterCard
+		switch {
+		case human:
+			card += " (ignored: the agent represents a person)"
+		case !cardExists(cfg, a.CharacterCard):
+			card += " (missing: no such card in the library)"
+		}
+	}
+	classifierModel, classifierModelMarked := classifierModelState(cfg, a)
+	settings := pairs("Settings",
+		row("Enabled", yesNo(a.IsEnabled())),
+		row("Routing default", yesNo(config.SameAgentID(a.ID, defaultAgentID(cfg)))),
+		row("Workspace", resolveWorkspace(cfg, a)),
+		row("Models", strings.TrimSpace(joinLines(models, none)+"\n"+strings.TrimSpace(modelsNote))),
+		row("Summarization models", joinOr(a.SummarizationModels, "(global chain)")),
+		row("Cognitive memory", memory),
+		row("Sub-agents", sub),
+		row("Suites", "Maestro "+onOff(a.MaestroEnabled())+", Fusion "+onOff(a.Fusion)),
+		row("Forum (sets up forums with other agents)", onOff(a.Forum)),
+		row("Allow classifiers", classifiersSwitch(a, human)),
+		row("Classifier model", classifierModel),
+		row("Task models (agent_spawn kinds allowed)", taskModelGrant(a)),
+		row("Character card", card),
+		row("Character card tools (edits the card library)", onOff(a.CCv3)),
+		row("Shared common directory", onOff(a.SharesCommon())),
+		row("Global cron (schedules for other agents)", onOff(a.GlobalCron)),
+	)
+	if classifierModelMarked {
+		for i, r := range settings.Rows {
+			if r[0] == "Classifier model" {
+				settings.Highlight = append(settings.Highlight, i)
+			}
+		}
+	}
+	if len(a.DenyTools) > 0 {
+		settings.Rows = append(settings.Rows, row("Denied tools (deny_tools, wins over every grant incl. suites)", joinLines(a.DenyTools, none)))
+	}
+	tables := []Table{settings, agentToolsTable(a), agentMCPTable(cfg, a), agentFolderAccess(cfg, env, a)}
+	if t, ok := classifiersTable(ctx, cfg, a); ok {
+		tables = append(tables, t)
+	}
+	return Section{
+		Title:  title,
+		Tables: tables,
+	}
+}
+
+func collectAgents(ctx context.Context, cfg *config.Config, env Environment) Section {
+	d := cfg.Agents.Defaults
+	readSubdirs := append([]string{}, d.WorkspaceReadSubdirs...)
+	if len(readSubdirs) > 0 {
+		readSubdirs = append(readSubdirs, config.AlwaysReadableWorkspaceDirs...)
+	}
+	defaults := pairs("Defaults (agents.defaults)",
+		row("restrict_to_workspace", onOff(d.RestrictToWorkspace)),
+		row("allow_read_outside_workspace", onOff(d.AllowReadOutsideWorkspace)),
+		row("Workspace write area", orValue(d.WorkspaceWriteSubdir, "(whole workspace)")),
+		row("Workspace read areas", joinOr(readSubdirs, "(whole workspace)")),
+		row("Agents base directory", cfg.BaseDir()),
+		row("Max sub-agent depth", itoa(d.GetMaxSubagentDepth())),
+	)
+	s := Section{
+		Title: "Agents",
+		Notes: []string{
+			"One subsection per configured agent. Internal tools marked sensitive run programs, change files, " +
+				"send messages, install code or start other agents. Folder access lists every path the agent's " +
+				"file tools can reach, resolved as the filesystem sees it, plus the directories " + app.ShortName() + " writes for the agent.",
+		},
+		Tables: []Table{defaults},
+	}
+	agents := make([]*config.AgentConfig, 0, len(cfg.Agents.List))
+	for i := range cfg.Agents.List {
+		agents = append(agents, &cfg.Agents.List[i])
+	}
+	sort.SliceStable(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })
+	for _, a := range agents {
+		s.Subsections = append(s.Subsections, agentSection(ctx, cfg, env, a))
+	}
+	if len(agents) == 0 {
+		s.Notes = append(s.Notes, "No agents are configured.")
+	}
+	return s
+}

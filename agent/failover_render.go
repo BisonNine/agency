@@ -1,0 +1,372 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/providers"
+)
+
+// cooldownPolicy maps the config cooldown section to a providers.CooldownPolicy
+// (the per-category "settled" durations reached after the 1/3/5-minute
+// escalation). A nil config yields the built-in defaults.
+func cooldownPolicy(cfg *config.Config) providers.CooldownPolicy {
+	if cfg == nil {
+		return providers.DefaultCooldownPolicy()
+	}
+	c := cfg.Cooldown
+	return providers.CooldownPolicy{
+		BillingAuth: c.BillingAuth(),
+		RateLimit:   c.RateLimit(),
+		BadRequest:  c.BadRequest(),
+		ClientError: c.ClientError(),
+		ServerError: c.ServerError(),
+	}
+}
+
+// renderTurnError converts a failed turn into a single user-facing string. Order
+// of precedence:
+//  1. the turn budget elapsed (hard backstop) — say so plainly;
+//  2. a billing failure — the billing renderer adds an actionable top-up URL;
+//  3. any other provider/fallback failure — surface the raw HTTP status code(s),
+//     because operators are technical and want the code, not an interpretation;
+//  4. anything else — the raw error.
+func renderTurnError(turnCtx context.Context, budget time.Duration, err error) string {
+	return renderTurnErrorFor("", turnCtx, budget, err)
+}
+
+// renderTurnErrorFor is renderTurnError with the assistant's display name, which
+// prefixes the declined-tools message: that reply can land in a channel shared
+// by several assistants, and the operator must see at once whose CLI refused.
+func renderTurnErrorFor(assistant string, turnCtx context.Context, budget time.Duration, err error) string {
+	out := renderTurnErrorText(turnCtx, budget, err)
+	if assistant == "" || out == "" {
+		return out
+	}
+	if declined, ok := errors.AsType[*providers.CLIDeclinedError](err); ok && declined != nil {
+		return assistant + ": " + out
+	}
+	return out
+}
+
+func renderTurnErrorText(turnCtx context.Context, budget time.Duration, err error) string {
+	if turnCtx != nil && errors.Is(turnCtx.Err(), context.DeadlineExceeded) {
+		return fmt.Sprintf(
+			"⚠️ This turn ran past the %s time limit and was stopped. Some steps may have completed — ask me to continue if needed.",
+			formatBudget(budget),
+		)
+	}
+	if friendly := renderBillingError(err); friendly != "" {
+		return friendly
+	}
+	if friendly := renderFailoverError(err); friendly != "" {
+		return friendly
+	}
+	return "Error processing message: " + redactSecrets(err.Error())
+}
+
+// fallbackNotifier returns a providers.FallbackNotify that posts a short,
+// technical heads-up to the originating chat each time a model fails and the
+// chain moves to the next one. Returns nil for non-user contexts (no channel, or
+// the internal "system" channel, or when SendResponse is off) so background work
+// stays silent. The notice ALWAYS includes the HTTP status code when present.
+func (al *AgentLoop) fallbackNotifier(ctx context.Context, opts processOptions) providers.FallbackNotify {
+	if opts.Channel == "" || opts.Channel == "system" || opts.ChatID == "" {
+		return nil
+	}
+	// The user is told once per turn per model change: the models passed over
+	// and the one used instead. A primary that fails over on every tool
+	// iteration (a model that 400s each call, or one in cooldown, whose
+	// "retry in" time changes each step) would otherwise repeat its heads-up
+	// per iteration. One notifier spans the turn (see runLLMIteration), so this
+	// memory suppresses the repeats; a different change is still announced.
+	seen := make(map[string]bool)
+	return func(passed []providers.FallbackAttempt, next providers.FallbackCandidate) {
+		notice := formatFallbackNotice(passed, next)
+		change := modelChange(passed, next)
+		if notice == "" || seen[change] {
+			return
+		}
+		seen[change] = true
+		pubCtx, cancel := context.WithTimeout(ctx, publishTimeout)
+		defer cancel()
+		if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+			Channel: opts.Channel,
+			ChatID:  opts.ChatID,
+			Content: notice,
+		}); err != nil {
+			logger.WarnCF("agent", "Failed to publish fallback notice",
+				map[string]any{"channel": opts.Channel, "error": err.Error()})
+		}
+	}
+}
+
+// modelChange identifies a fallback by the models it passed over and the one
+// it uses instead, ignoring why and for how long, for fallbackNotifier.
+func modelChange(passed []providers.FallbackAttempt, next providers.FallbackCandidate) string {
+	names := make([]string, 0, len(passed)+1)
+	for _, a := range passed {
+		names = append(names, attemptName(a))
+	}
+	return strings.Join(append(names, candidateName(next)), "\x00")
+}
+
+// formatFallbackNotice builds the mid-chain heads-up for the candidates the
+// chain just moved past. For a failure, e.g. "⚠️ grok-2 error HTTP 402 (out of
+// credits).\nTrying gpt-4o…"; for cooldown skips, ONE line naming the cause,
+// e.g. "⚠️ 3 models unavailable — out of credits (retry in up to 58m). Using
+// Grok Medium." — so a skip is never silent after an earlier "Trying <this>…"
+// but a fully-parked provider costs one line per turn, not one per model.
+func formatFallbackNotice(passed []providers.FallbackAttempt, next providers.FallbackCandidate) string {
+	if len(passed) == 0 {
+		return ""
+	}
+	nextName := candidateName(next)
+	if passed[0].Skipped {
+		return formatSkipNotice(passed, nextName)
+	}
+	failed := passed[0]
+	return fmt.Sprintf("⚠️ %s.\nTrying %s…",
+		attemptText(attemptName(failed), failed.Error, failed.Reason),
+		nextName,
+	)
+}
+
+// formatSkipNotice collapses a run of cooldown-skipped candidates into a single
+// line that names WHY they are parked — "in cooldown" on its own tells the user
+// nothing actionable, which is the whole point of carrying the tracker's reason
+// through the skip.
+func formatSkipNotice(skipped []providers.FallbackAttempt, nextName string) string {
+	reasons := distinctReasons(skipped)
+	cause := strings.Join(reasons, ", ")
+	if cause == "" {
+		cause = "in cooldown"
+	}
+
+	var longest time.Duration
+	for _, a := range skipped {
+		if a.Remaining > longest {
+			longest = a.Remaining
+		}
+	}
+	retry := ""
+	if r := formatRemaining(longest); r != "" {
+		if len(skipped) == 1 {
+			retry = fmt.Sprintf(" (retry in %s)", r)
+		} else {
+			retry = fmt.Sprintf(" (retry in up to %s)", r)
+		}
+	}
+
+	if len(skipped) == 1 {
+		return fmt.Sprintf("⚠️ %s unavailable — %s%s. Using %s.",
+			attemptName(skipped[0]), cause, retry, nextName)
+	}
+	return fmt.Sprintf("⚠️ %d models unavailable — %s%s. Using %s.",
+		len(skipped), cause, retry, nextName)
+}
+
+// distinctReasons lists the human-readable failure reasons across a batch of
+// skipped attempts, in first-seen order and without repeats, so a mixed batch
+// reads "out of credits, rate limited" rather than repeating one cause N times.
+func distinctReasons(attempts []providers.FallbackAttempt) []string {
+	seen := make(map[string]bool, len(attempts))
+	var out []string
+	for _, a := range attempts {
+		if a.Reason == "" {
+			continue
+		}
+		text := providers.ReasonText(a.Reason)
+		if seen[text] {
+			continue
+		}
+		seen[text] = true
+		out = append(out, text)
+	}
+	return out
+}
+
+// formatRemaining renders a cooldown remainder compactly ("42m", "30s").
+// Returns "" for a non-positive duration so the caller can omit the clause.
+func formatRemaining(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	if d.Round(time.Second) < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Round(time.Second)/time.Second))
+	}
+	return fmt.Sprintf("%dm", int(d.Round(time.Minute)/time.Minute))
+}
+
+// candidateName prefers the user-facing alias over the wire model id.
+func candidateName(c providers.FallbackCandidate) string {
+	if c.Alias != "" {
+		return c.Alias
+	}
+	return c.Model
+}
+
+// attemptName prefers the user-facing alias over the wire model id.
+func attemptName(a providers.FallbackAttempt) string {
+	if a.Alias != "" {
+		return a.Alias
+	}
+	return a.Model
+}
+
+// renderFailoverError formats a provider failover failure with the HTTP status
+// code(s) intact. Returns "" when err is not a FailoverError/FallbackExhaustedError
+// (so the caller can fall through to a generic rendering).
+func renderFailoverError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if exhausted, ok := errors.AsType[*providers.FallbackExhaustedError](err); ok {
+		var attempts []string
+		for _, a := range exhausted.Attempts {
+			if a.Skipped {
+				continue
+			}
+			attempts = append(attempts, attemptText(a.Model, a.Error, a.Reason))
+		}
+		if len(attempts) == 0 {
+			return ""
+		}
+		if len(attempts) == 1 {
+			return "All models failed. " + attempts[len(attempts)-1] + "."
+		}
+		return "All models failed:\n  • " + strings.Join(attempts, "\n  • ")
+	}
+	if fe, ok := errors.AsType[*providers.FailoverError](err); ok {
+		return attemptText(fe.Model, fe, fe.Reason) + "."
+	}
+	// The declined-tools error has no HTTP status or known pattern, so the chain
+	// returns it unclassified (wrapped in "fallback: unclassified error from …")
+	// rather than as an exhausted chain. Its text is the whole point: show it.
+	if declined, ok := errors.AsType[*providers.CLIDeclinedError](err); ok {
+		return declined.Error()
+	}
+	return ""
+}
+
+// attemptText renders one failed attempt from its error. The CLI declined-tools
+// guard's error is written for the user (it names the setting to change), so it
+// is shown verbatim rather than reduced to its failover classification; every
+// other error is rendered by attemptDescription with its HTTP status.
+func attemptText(model string, err error, reason providers.FailoverReason) string {
+	if declined, ok := errors.AsType[*providers.CLIDeclinedError](err); ok {
+		if model == "" {
+			model = "model"
+		}
+		return model + " error: " + declined.Error()
+	}
+	text := attemptDescription(model, failoverStatus(err), reason)
+	if msg := providerMessage(err); msg != "" {
+		text += ": " + msg
+	}
+	return text
+}
+
+// maxProviderMessageRunes caps the provider's own message in a reply, which
+// must stay a short line in a chat.
+const maxProviderMessageRunes = 200
+
+// providerMessageRe finds a "message" string in an error body that is not
+// whole JSON (the provider's preview of the body may be cut short).
+var providerMessageRe = regexp.MustCompile(`"message"\s*:\s*("(?:[^"\\]|\\.)*")`)
+
+// providerMessage returns the one-line message a provider gave with a failed
+// request (the "message" of its JSON error body, e.g. Anthropic's
+// {"type":"error","error":{"message":"..."}}), with secret-looking text
+// redacted (redactSecrets) and trimmed to maxProviderMessageRunes, or "" when
+// the error carries none.
+func providerMessage(err error) string {
+	fe, ok := errors.AsType[*providers.FailoverError](err)
+	if !ok || fe == nil || fe.Wrapped == nil {
+		return ""
+	}
+	raw := fe.Wrapped.Error()
+	start := strings.IndexByte(raw, '{')
+	if start < 0 {
+		return ""
+	}
+	msg := jsonErrorMessage(raw[start:])
+	if msg == "" {
+		if m := providerMessageRe.FindStringSubmatch(raw[start:]); m != nil {
+			if unquoted, err := strconv.Unquote(m[1]); err == nil {
+				msg = unquoted
+			}
+		}
+	}
+	msg = strings.TrimRight(strings.Join(strings.Fields(redactSecrets(msg)), " "), ".")
+	if r := []rune(msg); len(r) > maxProviderMessageRunes {
+		msg = strings.TrimSpace(string(r[:maxProviderMessageRunes])) + "…"
+	}
+	return msg
+}
+
+// jsonErrorMessage reads the message from a JSON error body: error.message,
+// a string error, or a top-level message. It returns "" when body does not
+// start with a JSON object or has none of these.
+func jsonErrorMessage(body string) string {
+	var doc map[string]any
+	if json.NewDecoder(strings.NewReader(body)).Decode(&doc) != nil {
+		return ""
+	}
+	switch e := doc["error"].(type) {
+	case map[string]any:
+		if m, ok := e["message"].(string); ok {
+			return m
+		}
+	case string:
+		return e
+	}
+	if m, ok := doc["message"].(string); ok {
+		return m
+	}
+	return ""
+}
+
+// failoverStatus extracts the HTTP status code carried by a classified
+// FailoverError, or 0 when the error has none (timeout, network, …).
+func failoverStatus(err error) int {
+	if fe, ok := errors.AsType[*providers.FailoverError](err); ok {
+		return fe.Status
+	}
+	return 0
+}
+
+// attemptDescription renders one model failure: it ALWAYS includes the HTTP
+// status when present (e.g. "grok error HTTP 402 (billing)") and otherwise falls
+// back to the classified reason (e.g. "grok error: timeout").
+func attemptDescription(model string, status int, reason providers.FailoverReason) string {
+	name := model
+	if name == "" {
+		name = "model"
+	}
+	r := providers.ReasonText(reason)
+	if status > 0 {
+		return fmt.Sprintf("%s error HTTP %d (%s)", name, status, r)
+	}
+	return fmt.Sprintf("%s error: %s", name, r)
+}
+
+// formatBudget renders a turn budget compactly (e.g. "15m", "90s").
+func formatBudget(d time.Duration) string {
+	if d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(d/time.Minute))
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d/time.Second))
+	}
+	return d.String()
+}

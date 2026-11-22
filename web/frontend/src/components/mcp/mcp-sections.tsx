@@ -1,0 +1,543 @@
+import { IconPlus, IconTrash } from "@tabler/icons-react"
+import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
+
+import type { MCPServerStatus } from "@/api/channels"
+import {
+  type MCPHostForm,
+  type MCPServerForm,
+  validateEndpointPath,
+  validateListen,
+} from "@/components/mcp/form-model"
+import { Field, SwitchCardField } from "@/components/shared-form"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+
+type UpdateMCPField = <K extends keyof MCPHostForm>(
+  key: K,
+  value: MCPHostForm[K],
+) => void
+
+interface SectionCardProps {
+  title: string
+  description?: string
+  children: ReactNode
+}
+
+function SectionCard({ title, description, children }: SectionCardProps) {
+  return (
+    <Card size="sm">
+      <CardHeader className="border-border border-b">
+        <CardTitle>{title}</CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="divide-border/70 divide-y">{children}</div>
+      </CardContent>
+    </Card>
+  )
+}
+
+interface EnableSectionProps {
+  form: MCPHostForm
+  onFieldChange: UpdateMCPField
+}
+
+export function EnableSection({ form, onFieldChange }: EnableSectionProps) {
+  const { t } = useTranslation()
+  return (
+    <SectionCard
+      title={t("pages.mcp.sections.enable")}
+      description={t("pages.mcp.enable_desc")}
+    >
+      <SwitchCardField
+        label={t("pages.mcp.enabled")}
+        hint={t("pages.mcp.enabled_hint")}
+        layout="setting-row"
+        checked={form.enabled}
+        onCheckedChange={(checked) => onFieldChange("enabled", checked)}
+      />
+      <SwitchCardField
+        label={t("pages.mcp.auto_enable")}
+        hint={t("pages.mcp.auto_enable_hint")}
+        layout="setting-row"
+        checked={form.autoEnable}
+        onCheckedChange={(checked) => onFieldChange("autoEnable", checked)}
+      />
+    </SectionCard>
+  )
+}
+
+interface TransportSectionProps {
+  form: MCPHostForm
+  onFieldChange: UpdateMCPField
+}
+
+export function TransportSection({
+  form,
+  onFieldChange,
+}: TransportSectionProps) {
+  const { t } = useTranslation()
+  const listenError = validateListen(form.listen) ?? undefined
+  const pathError = validateEndpointPath(form.endpointPath) ?? undefined
+  return (
+    <SectionCard
+      title={t("pages.mcp.sections.transport")}
+      description={t("pages.mcp.transport_desc")}
+    >
+      <Field
+        label={t("pages.mcp.listen")}
+        hint={t("pages.mcp.listen_hint")}
+        error={listenError}
+        layout="setting-row"
+      >
+        <Input
+          value={form.listen}
+          onChange={(e) => onFieldChange("listen", e.target.value)}
+          placeholder="127.0.0.1:5911"
+        />
+      </Field>
+      <Field
+        label={t("pages.mcp.endpoint_path")}
+        hint={t("pages.mcp.endpoint_path_hint")}
+        error={pathError}
+        layout="setting-row"
+      >
+        <Input
+          value={form.endpointPath}
+          onChange={(e) => onFieldChange("endpointPath", e.target.value)}
+          placeholder="/mcp"
+        />
+      </Field>
+    </SectionCard>
+  )
+}
+
+interface ToolsSectionProps {
+  title: string
+  description: string
+  note: string
+  patterns: string[]
+  onChange: (next: string[]) => void
+}
+
+export function ToolsSection({
+  title,
+  description,
+  note,
+  patterns,
+  onChange,
+}: ToolsSectionProps) {
+  const { t } = useTranslation()
+
+  const setPatternAt = (index: number, value: string) => {
+    const next = [...patterns]
+    next[index] = value
+    onChange(next)
+  }
+
+  const addPattern = () => {
+    onChange([...patterns, ""])
+  }
+
+  const removePatternAt = (index: number) => {
+    onChange(patterns.filter((_, i) => i !== index))
+  }
+
+  return (
+    <SectionCard title={title} description={description}>
+      <div className="space-y-3 py-4">
+        <div className="text-muted-foreground text-xs">{note}</div>
+        <div className="text-muted-foreground text-xs">
+          {t("pages.mcp.tools_pattern_hint")}
+        </div>
+
+        <div className="space-y-2">
+          {patterns.length === 0 ? (
+            <div className="text-muted-foreground text-xs italic">
+              {t("pages.mcp.tools_empty_warning")}
+            </div>
+          ) : (
+            patterns.map((pattern, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <Input
+                  value={pattern}
+                  placeholder={t("pages.mcp.tools_pattern_placeholder")}
+                  onChange={(e) => setPatternAt(idx, e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => removePatternAt(idx)}
+                  aria-label={t("common.remove")}
+                >
+                  <IconTrash className="size-4" />
+                </Button>
+              </div>
+            ))
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addPattern}
+          >
+            <IconPlus className="size-4" />
+            {t("pages.mcp.tools_add_pattern")}
+          </Button>
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+interface DiscoverySectionProps {
+  discoveryEnabled: boolean
+  alwaysShownNamespaces: string[]
+  onFieldChange: UpdateMCPField
+  onNamespacesChange: (next: string[]) => void
+}
+
+// DiscoverySection edits the global progressive-tool-discovery switch
+// (tools.discovery.enabled) and the extra always-shown namespaces
+// (tools.discovery.always_shown_namespaces).
+export function DiscoverySection({
+  discoveryEnabled,
+  alwaysShownNamespaces,
+  onFieldChange,
+  onNamespacesChange,
+}: DiscoverySectionProps) {
+  const { t } = useTranslation()
+
+  const setAt = (index: number, value: string) => {
+    const next = [...alwaysShownNamespaces]
+    next[index] = value
+    onNamespacesChange(next)
+  }
+  const add = () => onNamespacesChange([...alwaysShownNamespaces, ""])
+  const removeAt = (index: number) =>
+    onNamespacesChange(alwaysShownNamespaces.filter((_, i) => i !== index))
+
+  return (
+    <SectionCard
+      title="Progressive Tool Discovery"
+      description="Hide most tools behind a search so the in-loop model starts with a small set and loads tools on demand. Global switch, off by default. MCP clients (CLI providers) always receive the full tool list and are never affected."
+    >
+      <SwitchCardField
+        label="Enable progressive discovery"
+        hint="When on, the fusion/maestro suites and upstream MCP tools are hidden from the in-loop model and found via search_tools / get_tool_details. Native tools and cogmem stay always visible; pin extra namespaces below to keep them shown. The MCP host is never subject to discovery — external clients always get the full list."
+        checked={discoveryEnabled}
+        onCheckedChange={(checked) =>
+          onFieldChange("discoveryEnabled", checked)
+        }
+      />
+      {discoveryEnabled && (
+        <div className="space-y-3 py-4">
+          <div className="text-muted-foreground text-xs">
+            Pinned namespaces: discovery-eligible tools whose namespace is
+            listed here stay visible to the model instead of being hidden behind
+            search. Native tools, cogmem, and the search meta-tools are always
+            shown by rule; add more here (e.g. &quot;maestro&quot;,
+            &quot;fusion&quot;, &quot;file&quot;). Everything else is discovered
+            on demand.
+          </div>
+          <div className="space-y-2">
+            {alwaysShownNamespaces.length === 0 ? (
+              <div className="text-muted-foreground text-xs italic">
+                Nothing pinned: only native tools, cogmem, and the search
+                meta-tools stay visible up front; everything else is discovered
+                on demand.
+              </div>
+            ) : (
+              alwaysShownNamespaces.map((ns, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <Input
+                    value={ns}
+                    placeholder="namespace (e.g. file)"
+                    onChange={(e) => setAt(idx, e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => removeAt(idx)}
+                    aria-label={t("common.remove")}
+                  >
+                    <IconTrash className="size-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+            <Button type="button" variant="outline" size="sm" onClick={add}>
+              <IconPlus className="size-4" />
+              Add namespace
+            </Button>
+          </div>
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+interface ResilienceSectionProps {
+  reconnectCooldownSeconds: number
+  callTimeoutSeconds: number
+  livenessProbeSeconds: number
+  onFieldChange: UpdateMCPField
+}
+
+// ResilienceSection edits how claw handles outbound MCP sessions that drop or hang
+// (tools.mcp.reconnect_cooldown_seconds / call_timeout_seconds /
+// liveness_probe_seconds). Applies to the external servers above.
+export function ResilienceSection({
+  reconnectCooldownSeconds,
+  callTimeoutSeconds,
+  livenessProbeSeconds,
+  onFieldChange,
+}: ResilienceSectionProps) {
+  const { t } = useTranslation()
+  return (
+    <SectionCard
+      title="Client Resilience"
+      description={t("pages.mcp.resilience_desc")}
+    >
+      <Field
+        label="Reconnect cooldown (seconds)"
+        hint="After a failed reconnect, wait this long before retrying that server, so a dead upstream isn't hammered on every call. Default 30."
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={1}
+          value={reconnectCooldownSeconds}
+          onChange={(e) =>
+            onFieldChange("reconnectCooldownSeconds", Number(e.target.value))
+          }
+        />
+      </Field>
+      <Field
+        label="Call timeout backstop (seconds)"
+        hint="Maximum time for a single tool call when the caller sets no deadline of its own, so a hung server can't block forever. Default 300."
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={1}
+          value={callTimeoutSeconds}
+          onChange={(e) =>
+            onFieldChange("callTimeoutSeconds", Number(e.target.value))
+          }
+        />
+      </Field>
+      <Field
+        label="Liveness probe interval (seconds)"
+        hint={t("pages.mcp.liveness_probe_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="number"
+          min={0}
+          value={livenessProbeSeconds}
+          onChange={(e) =>
+            onFieldChange("livenessProbeSeconds", Number(e.target.value))
+          }
+        />
+      </Field>
+    </SectionCard>
+  )
+}
+
+// serverStatusStyle maps a resolved state to its pill label and colors.
+const serverStatusStyle: Record<string, { label: string; className: string }> =
+  {
+    connected: {
+      label: "Connected",
+      className: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    },
+    reconnecting: {
+      label: "Reconnecting…",
+      className: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    },
+    cooldown: {
+      label: "Cooldown",
+      className: "bg-destructive/15 text-destructive",
+    },
+    disconnected: {
+      label: "Disconnected",
+      className: "bg-muted text-muted-foreground",
+    },
+    disabled: {
+      label: "Disabled",
+      className: "bg-muted text-muted-foreground",
+    },
+  }
+
+// ServerStatusBadge shows a live connection pill. When no live status is known,
+// it falls back to the configured toggle: enabled ⇒ disconnected, off ⇒ disabled.
+export function ServerStatusBadge({
+  live,
+  enabled,
+}: {
+  live?: MCPServerStatus
+  enabled: boolean
+}) {
+  const state = live?.state ?? (enabled ? "disconnected" : "disabled")
+  const style = serverStatusStyle[state] ?? serverStatusStyle.disconnected
+  const title =
+    state === "cooldown" && live?.cooldown_until
+      ? `In cooldown until ${new Date(live.cooldown_until).toLocaleTimeString()}`
+      : undefined
+  return (
+    <span
+      title={title}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${style.className}`}
+    >
+      <span className="size-1.5 rounded-full bg-current" />
+      {style.label}
+    </span>
+  )
+}
+
+// ServerFields renders the editable fields for a single external (upstream) MCP
+// server (tools.mcp.servers). The parent (MCP Servers page) owns selection, the
+// status badge, add and remove — this is just the field stack, so it can live in
+// a two-column list/detail layout like the Agents page.
+export function ServerFields({
+  server: s,
+  onChange,
+}: {
+  server: MCPServerForm
+  onChange: (patch: Partial<MCPServerForm>) => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="space-y-3">
+      <Field label={t("pages.mcp.server_name")} layout="setting-row">
+        <Input
+          value={s.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder={t("pages.mcp.server_name_ph")}
+          className="font-mono"
+        />
+      </Field>
+
+      <Field label={t("pages.mcp.server_type")} layout="setting-row">
+        <Select
+          value={s.type}
+          onValueChange={(v) => onChange({ type: v as "stdio" | "http" })}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="http">http</SelectItem>
+            <SelectItem value="stdio">stdio</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+
+      <SwitchCardField
+        label={t("pages.mcp.server_enabled")}
+        checked={s.enabled}
+        onCheckedChange={(c) => onChange({ enabled: c })}
+        layout="setting-row"
+      />
+
+      {s.type === "http" ? (
+        <>
+          <Field label={t("pages.mcp.server_url")} layout="setting-row">
+            <Input
+              value={s.url}
+              onChange={(e) => onChange({ url: e.target.value })}
+              placeholder="http://127.0.0.1:9999/mcp"
+              className="font-mono"
+            />
+          </Field>
+          <Field
+            label={t("pages.mcp.server_headers")}
+            hint={t("pages.mcp.server_headers_hint")}
+            layout="setting-row"
+          >
+            <Textarea
+              value={s.headers}
+              onChange={(e) => onChange({ headers: e.target.value })}
+              placeholder={"Authorization: Bearer xyz"}
+              className="min-h-[60px] font-mono text-xs"
+              spellCheck={false}
+            />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label={t("pages.mcp.server_command")} layout="setting-row">
+            <Input
+              value={s.command}
+              onChange={(e) => onChange({ command: e.target.value })}
+              placeholder="npx"
+              className="font-mono"
+            />
+          </Field>
+          <Field
+            label={t("pages.mcp.server_args")}
+            hint={t("pages.mcp.server_args_hint")}
+            layout="setting-row"
+          >
+            <Textarea
+              value={s.args}
+              onChange={(e) => onChange({ args: e.target.value })}
+              placeholder={"-y\n@modelcontextprotocol/server-foo"}
+              className="min-h-[60px] font-mono text-xs"
+              spellCheck={false}
+            />
+          </Field>
+          <Field
+            label={t("pages.mcp.server_env")}
+            hint={t("pages.mcp.server_env_hint")}
+            layout="setting-row"
+          >
+            <Textarea
+              value={s.env}
+              onChange={(e) => onChange({ env: e.target.value })}
+              placeholder={"API_KEY=..."}
+              className="min-h-[60px] font-mono text-xs"
+              spellCheck={false}
+            />
+          </Field>
+          <Field label={t("pages.mcp.server_env_file")} layout="setting-row">
+            <Input
+              value={s.envFile}
+              onChange={(e) => onChange({ envFile: e.target.value })}
+              placeholder="/path/to/.env"
+              className="font-mono"
+            />
+          </Field>
+        </>
+      )}
+
+      <SwitchCardField
+        label="Reveal together"
+        hint="Under progressive discovery, make all of this server's tools available together when the model looks one of them up. Use only for small, cohesive servers."
+        checked={s.revealTogether}
+        onCheckedChange={(c) => onChange({ revealTogether: c })}
+        layout="setting-row"
+      />
+    </div>
+  )
+}

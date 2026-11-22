@@ -1,0 +1,199 @@
+import { errorMessage } from "./error-message"
+import { type ProductNameFields, setProductNames } from "@/store/product"
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(path, options)
+  if (!res.ok) {
+    throw new Error(await errorMessage(res))
+  }
+  return res.json() as Promise<T>
+}
+
+export interface CLIInfo {
+  protocol: string
+  label: string
+  binary: string
+  installed: boolean
+  path?: string
+  version?: string
+  /** Whether any model reaching this CLI is enabled — what the switch shows. */
+  enabled: boolean
+  /** Whether a provider for this CLI exists at all. */
+  configured: boolean
+  /** Config index of that provider, for the edit sheet. -1 when there is none. */
+  provider_index: number
+  /** Models running through this CLI, and how many of them are enabled. */
+  models: number
+  models_enabled: number
+  /** Headless mode, JSON output — what the provider always passes. */
+  base_args: string[]
+  /** The non-security flags the CLI needs to run headless, always passed. */
+  required_args: string[]
+  /** The skip-permissions / sandbox-bypass flags, passed only when bypass_restrictions is on. */
+  bypass_args: string[]
+  /** The CLI provider's "Allow CLI to bypass restrictions" setting. False when there is no provider. */
+  bypass_restrictions: boolean
+  /** What this CLI's models add on top, deduplicated across them. */
+  extra_args?: string[]
+  /** Last, after the model flag: the stdin marker. */
+  trailing_args?: string[]
+}
+
+// listCLIs reports every supported CLI agent (claude/codex/agy/cursor): whether
+// its binary is installed, and how it is currently configured. Rows come back
+// for CLIs that are not installed too — the Providers page greys those out, and
+// the setup wizard offers only the installed ones.
+//
+// Every argument list is normalised to an array here: Go encodes a nil slice as
+// null (a CLI with no bypass flags, a model with no extra_args), and the rows
+// spread them.
+export async function listCLIs(): Promise<CLIInfo[]> {
+  const rows = await request<CLIInfo[] | null>("/api/system/clis")
+  return (rows ?? []).map((cli) => ({
+    ...cli,
+    base_args: cli.base_args ?? [],
+    required_args: cli.required_args ?? [],
+    bypass_args: cli.bypass_args ?? [],
+    extra_args: cli.extra_args ?? [],
+    trailing_args: cli.trailing_args ?? [],
+  }))
+}
+
+// setCLIEnabled turns a CLI agent on or off. On creates the provider and model
+// if they are missing; off disables every model reaching that CLI. Nothing is
+// deleted either way, so the switch is reversible.
+export async function setCLIEnabled(
+  protocol: string,
+  enabled: boolean,
+): Promise<void> {
+  await request(`/api/system/clis/${encodeURIComponent(protocol)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  })
+}
+
+// setCLIBypassRestrictions sets a configured CLI's "Allow CLI to bypass restrictions":
+// whether its skip-permissions / sandbox-bypass flag is passed. Separate from
+// the enable switch on purpose — enabling never turns this on.
+export async function setCLIBypassRestrictions(
+  protocol: string,
+  bypass: boolean,
+): Promise<void> {
+  await request(`/api/system/clis/${encodeURIComponent(protocol)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bypass_restrictions: bypass }),
+  })
+}
+
+export interface SetupStatus {
+  // pristine: an auto-seeded config the user has never saved.
+  pristine: boolean
+  // has_usable_model: at least one enabled model has working credentials.
+  has_usable_model: boolean
+  // needs_setup: pristine with no usable model — drives the first-run redirect.
+  needs_setup: boolean
+}
+
+// getSetupStatus reports whether this is a fresh install that should be sent to
+// the setup wizard.
+export async function getSetupStatus(): Promise<SetupStatus> {
+  return request<SetupStatus>("/api/system/setup-status")
+}
+
+// reloadGateway forces an immediate config reload, bypassing the mtime-debounce.
+// It resolves only once the reload has completed, so callers can wait before
+// directing the user back into the app.
+export async function reloadGateway(): Promise<void> {
+  await request<unknown>("/api/gateway/reload", { method: "POST" })
+}
+
+export interface VersionInfo extends ProductNameFields {
+  version: string
+}
+
+// getVersion returns the running build's version and the product's names (for
+// the sidebar footer); the names also update the shared store.
+export async function getVersion(): Promise<VersionInfo> {
+  const res = await request<VersionInfo>("/api/system/version")
+  setProductNames(res)
+  return res
+}
+
+/** Runtime state of the running process, for the Status page. */
+export interface SystemStatus {
+  version: string
+  build?: string
+  uptime_seconds: number
+  uptime: string
+  pid: number
+  /** Resident set size: the physical RAM the process holds. */
+  memory_bytes: number
+  go_version?: string
+  os: string
+  arch: string
+  // os_name is a human OS name ("Ubuntu 24.04.4 LTS"), empty when the host
+  // does not say — fall back to os.
+  os_name?: string
+  goroutines: number
+  agents: number
+  /** Enabled models, and providers that are actually usable — not totals. */
+  models: number
+  providers: number
+  channels: number
+  cli_providers: boolean
+  mcp_host: boolean
+}
+
+export async function getSystemStatus(): Promise<SystemStatus> {
+  const res = await fetch("/api/system/status")
+  if (!res.ok) throw new Error(`Failed to fetch status: ${res.status}`)
+  return res.json()
+}
+
+// restartSystem asks the gateway to restart. 202 means the service manager
+// will bring it back; anything else (409 when not run as a service) throws the
+// server's message.
+export async function restartSystem(): Promise<void> {
+  const res = await fetch("/api/system/restart", { method: "POST" })
+  if (res.status === 202) return
+  let message = `Restart failed: ${res.status}`
+  try {
+    const body = (await res.json()) as { error?: string }
+    if (typeof body.error === "string" && body.error.trim() !== "") {
+      message = body.error
+    }
+  } catch {
+    // keep fallback
+  }
+  throw new Error(message)
+}
+
+// reloadPage is what the Network page calls once the gateway is back; a
+// function of its own so a test can replace it (jsdom's location is fixed).
+export function reloadPage(): void {
+  window.location.reload()
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// waitForRestart polls /ready once a second until the gateway has gone down and
+// answers 200 again, so the page is not reloaded from the old process while
+// it is still shutting down. Resolves false when timeoutMs passes first.
+export async function waitForRestart(timeoutMs = 60_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  let wentDown = false
+  while (Date.now() < deadline) {
+    await sleep(1000)
+    let up = false
+    try {
+      up = (await fetch("/ready", { cache: "no-store" })).status === 200
+    } catch {
+      up = false
+    }
+    if (!up) wentDown = true
+    else if (wentDown) return true
+  }
+  return false
+}

@@ -1,0 +1,710 @@
+import { IconChevronRight, IconLoader2, IconPlus } from "@tabler/icons-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
+
+import { CARDS_QUERY_KEY, getCards } from "@/api/cards"
+import {
+  type AgentToolCatalogResponse,
+  HUMAN_AGENTS_QUERY_KEY,
+  getAgentTools,
+  getAppConfig,
+  getHumanAgents,
+  getIgnoredAllowedFolders,
+  patchAppConfig,
+} from "@/api/channels"
+import { type ModelInfo, getModels } from "@/api/models"
+import { listCLIs } from "@/api/system"
+import { AgentCard } from "@/components/agents/agent-card"
+import { AgentIdField } from "@/components/agents/agent-id-field"
+import {
+  type AgentEntry,
+  type AgentsConfig,
+  type SkillInfo,
+  TASK_GRANT_KINDS,
+  type TaskGrantKind,
+  agentsPayload,
+  applyMaestroEdits,
+  asString,
+  bindingViewsForAgent,
+  classifyModels,
+  cliBypassWarnings,
+  fetchSkills,
+  internalToolsSummary,
+  newAgentIdProblem,
+  parseAgentBindings,
+  parseAgentsConfig,
+  sameAgentId,
+  setTaskModelGrant,
+  sortAgentList,
+  taskModelsFor,
+  toggleClassifiers,
+} from "@/components/agents/agent-model"
+import { FallbacksSelect } from "@/components/agents/model-selects"
+import { SkillsSelect } from "@/components/agents/skills-select"
+import { ToolSelect } from "@/components/agents/tool-select"
+import {
+  type AgentEdits,
+  editsFromAgent,
+  useAgentAutosave,
+} from "@/components/agents/use-agent-autosave"
+import { PageHeader } from "@/components/page-header"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+
+// Stable empties for the pending state: a fresh [] on every render would be a
+// new identity and would invalidate every memo that depends on these.
+const EMPTY_MODELS: ModelInfo[] = []
+const EMPTY_SKILLS: SkillInfo[] = []
+const EMPTY_TOOLS: AgentToolCatalogResponse = { tools: [], default_tools: [] }
+const EMPTY_BINDINGS: Record<string, unknown>[] = []
+
+export function AgentsPage() {
+  const queryClient = useQueryClient()
+  const { t } = useTranslation()
+  const [agentsCfg, setAgentsCfg] = useState<AgentsConfig>({
+    defaults: {},
+    list: [],
+  })
+  const [saving, setSaving] = useState<string | null>(null)
+  // Raw binding objects, preserved verbatim so saving never drops fields this
+  // page doesn't model. Only the per-agent `default` flag is edited here.
+
+  // For adding new agent
+  const [addingId, setAddingId] = useState("")
+  const [addingName, setAddingName] = useState("")
+  const [addingModels, setAddingModels] = useState<string[]>([])
+  // A new agent starts with no skills and no tools; "All skills" and
+  // "Default tools" in the selectors write them into its lists.
+  const [addingSkills, setAddingSkills] = useState<string[]>([])
+  const [addingTools, setAddingTools] = useState<string[]>([])
+  const [addingToolsExpanded, setAddingToolsExpanded] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
+  // Which agent the left rail has selected; only that agent's card is rendered.
+  const [selectedId, setSelectedId] = useState("")
+
+  const {
+    data: loaded,
+    isPending: loading,
+    error: loadError,
+  } = useQuery({
+    queryKey: ["agents-page"],
+    queryFn: async () => {
+      const [appConfig, modelsData, skillsData, toolsData, clis] =
+        await Promise.all([
+          getAppConfig(),
+          getModels(),
+          fetchSkills(),
+          getAgentTools(),
+          listCLIs(),
+        ])
+      return {
+        agentsCfg: parseAgentsConfig(appConfig),
+        bindings: parseAgentBindings(appConfig),
+        rawModels: appConfig.models,
+        classifyModels: classifyModels(appConfig.task_models),
+        taskKindsWithModels: TASK_GRANT_KINDS.filter(
+          (k) => taskModelsFor(appConfig.task_models, k).length > 0,
+        ),
+        rawProviders: appConfig.providers,
+        clis,
+        models: modelsData.models,
+        availableSkills: [...skillsData].sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ),
+        availableTools: toolsData,
+      }
+    },
+  })
+
+  // Human agents breaking their rules are not run; each card says why. Kept
+  // apart from the page query so a save can refresh it alone.
+  const { data: humanInfo } = useQuery({
+    queryKey: HUMAN_AGENTS_QUERY_KEY,
+    queryFn: getHumanAgents,
+  })
+  // Saved allowed folders the file tools skip; each is marked in its row.
+  const { data: ignoredFolders } = useQuery({
+    queryKey: ["agents-ignored-folders"],
+    queryFn: getIgnoredAllowedFolders,
+  })
+  // The character-card library, for each card's Character card select.
+  const { data: cardsData } = useQuery({
+    queryKey: CARDS_QUERY_KEY,
+    queryFn: getCards,
+  })
+  const refreshAgentNotes = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: HUMAN_AGENTS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: ["agents-ignored-folders"] }),
+    ])
+
+  const fetchError = loadError
+    ? loadError instanceof Error
+      ? loadError.message
+      : "Failed to load"
+    : ""
+
+  // Everything except agentsCfg is read-only here, so it is derived straight
+  // from the query rather than mirrored into state. agentsCfg keeps its state
+  // because the edit flow below writes to it optimistically.
+  const models = loaded?.models ?? EMPTY_MODELS
+  const availableSkills = loaded?.availableSkills ?? EMPTY_SKILLS
+  const availableTools = loaded?.availableTools ?? EMPTY_TOOLS
+  const addingSummary = internalToolsSummary(addingTools)
+  const bindings = loaded?.bindings ?? EMPTY_BINDINGS
+
+  // Seed the editable config when a fetch lands. Adjusted during render rather
+  // than in an effect so the page is never painted with an empty agent list for
+  // a frame, and it fires only for a genuinely new fetch result. syncedLoad
+  // starts undefined, not at `loaded`: when the page mounts with the query
+  // already cached (a return visit through the sidebar), `loaded` is set on the
+  // first render, and seeding it here means the cached list shows at once
+  // instead of "No agents yet" until a reload.
+  const [syncedLoad, setSyncedLoad] = useState<typeof loaded>(undefined)
+  if (loaded && loaded !== syncedLoad) {
+    setSyncedLoad(loaded)
+    setAgentsCfg(loaded.agentsCfg)
+  }
+
+  const handleSaveAgent = async (index: number, edits: AgentEdits) => {
+    const list = [...(agentsCfg.list ?? [])]
+    list[index] = {
+      ...list[index],
+      models: edits.models.length > 0 ? edits.models : undefined,
+      skills: edits.skills,
+      tools: edits.tools,
+      message:
+        edits.message.mins > 0
+          ? {
+              window_minutes: edits.message.mins,
+              window_count: edits.message.count,
+            }
+          : null,
+      temperature: edits.temperature,
+      max_tool_iterations: edits.maxToolIterations,
+      event_retention_days: edits.eventRetentionDays,
+      retired_retention_days: edits.retiredRetentionDays,
+      summarization_models:
+        edits.summarizationModels.length > 0
+          ? edits.summarizationModels
+          : undefined,
+      share_common: edits.shareCommon,
+      allowed_folders: edits.allowedFolders,
+      mcp_tools: edits.mcpTools,
+      deny_tools: edits.denyTools,
+      allow_agents: edits.allowAgents,
+      subagent_models: edits.subagentModels,
+      maestro: applyMaestroEdits(list[index].maestro, edits.maestro),
+    }
+    const next: AgentsConfig = { ...agentsCfg, list }
+    try {
+      await patchAppConfig(agentsPayload(next))
+      void refreshAgentNotes()
+      // In-place update: no reload, so no scroll jump. The hook suppresses its
+      // reseed around this write, so the saved snapshot cannot overwrite a
+      // field that is still being edited.
+      setAgentsCfg(next)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save")
+      throw e // the hook turns a rejection into the card's error state
+    }
+  }
+
+  // The edit buffers, their debounce and the per-card save hint all live in
+  // the hook; the page keeps only what it takes to turn one buffer into a
+  // config patch.
+  const autosave = useAgentAutosave(agentsCfg.list ?? [], handleSaveAgent)
+
+  const edit = autosave.editAgent
+
+  const handleDeleteAgent = async (index: number) => {
+    setSaving(`delete-${index}`)
+    const list = (agentsCfg.list ?? []).filter((_, i) => i !== index)
+    const next: AgentsConfig = { ...agentsCfg, list }
+    try {
+      await patchAppConfig(agentsPayload(next))
+      toast.success("Deleted")
+      // Update local state in place instead of reloading the whole page, which
+      // would unmount the list and scroll back to the top.
+      setAgentsCfg(next)
+      // Move the rail selection to a neighbour rather than letting it reset to
+      // the top.
+      if (list.length > 0) {
+        setSelectedId(list[Math.min(index, list.length - 1)].id)
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete")
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  // toggleFlag saves one per-agent switch on its own (not threaded through
+  // the big autosave): flip returns the agent with the switch changed. Local
+  // state is updated in place instead of reloading the whole page, which
+  // would unmount the list and scroll back to the top.
+  const toggleFlag = async (
+    index: number,
+    savingKey: string,
+    flip: (agent: AgentEntry) => AgentEntry,
+  ) => {
+    const list = [...(agentsCfg.list ?? [])]
+    list[index] = flip(list[index])
+    const next: AgentsConfig = { ...agentsCfg, list }
+    setSaving(`${savingKey}-${index}`)
+    try {
+      await patchAppConfig(agentsPayload(next))
+      setAgentsCfg(next)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save")
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const handleToggleAgent = (index: number) =>
+    toggleFlag(index, "toggle", (a) => ({ ...a, enabled: !a.enabled }))
+  const handleToggleGlobalCron = (index: number) =>
+    toggleFlag(index, "globalcron", (a) => ({
+      ...a,
+      global_cron: !a.global_cron,
+    }))
+  const handleToggleMaestro = (index: number) =>
+    toggleFlag(index, "maestro", (a) => ({
+      ...a,
+      maestro: {
+        ...(a.maestro ?? { enabled: false }),
+        enabled: a.maestro?.enabled !== true,
+      },
+    }))
+  const handleToggleClassifiers = (index: number) =>
+    toggleFlag(index, "classifiers", (a) =>
+      toggleClassifiers(a, loaded?.classifyModels ?? []),
+    )
+  const handleClassifierModelChange = (index: number, model: string) =>
+    toggleFlag(index, "classifiers", (a) => ({
+      ...a,
+      classifiers: { enabled: true, model },
+    }))
+  const handleTaskModelGrant = (
+    index: number,
+    kind: TaskGrantKind,
+    on: boolean,
+  ) => toggleFlag(index, "taskmodels", (a) => setTaskModelGrant(a, kind, on))
+  const handleToggleFusion = (index: number) =>
+    toggleFlag(index, "fusion", (a) => ({ ...a, fusion: !a.fusion }))
+  const handleToggleForum = (index: number) =>
+    toggleFlag(index, "forum", (a) => ({ ...a, forum: !a.forum }))
+  const handleToggleCCv3 = (index: number) =>
+    toggleFlag(index, "ccv3", (a) => ({ ...a, ccv3: !a.ccv3 }))
+  // "" = none; the Cards page's "Used by" column reads the same config.
+  const handleCharacterCardChange = async (index: number, id: string) => {
+    await toggleFlag(index, "card", (a) => ({
+      ...a,
+      character_card: id || undefined,
+    }))
+    void queryClient.invalidateQueries({ queryKey: CARDS_QUERY_KEY })
+  }
+  // Cognitive memory is on unless set to false.
+  const handleToggleCogmem = (index: number) =>
+    toggleFlag(index, "cogmem", (a) => ({ ...a, cogmem: a.cogmem === false }))
+
+  // Set the given binding (by its index in the full bindings array) as the
+  // agent's default channel, clearing default on the agent's other bindings.
+  // deliverTo is the explicit cron chat id for channels without a routing peer
+  // (e.g. a Telegram bot); it is stored on the target binding. The raw binding
+  // objects are mapped in place so unknown fields are preserved.
+  const handleSetDefaultBinding = async (
+    agentID: string,
+    targetIndex: number,
+    deliverTo?: string,
+  ) => {
+    const next = bindings.map((b, i) => {
+      if (!sameAgentId(asString(b.agent_id), agentID)) return b
+      if (i !== targetIndex) return { ...b, default: false }
+      const updated: Record<string, unknown> = { ...b, default: true }
+      if (deliverTo !== undefined) updated.deliver_to = deliverTo
+      return updated
+    })
+    setSaving(`binding-${targetIndex}`)
+    try {
+      await patchAppConfig({ bindings: next })
+      void refreshAgentNotes()
+      // Optimistic cache update rather than a refetch, matching what the old
+      // setBindings(next) did: the patch already succeeded, so re-reading the
+      // whole page would only cost a round trip.
+      queryClient.setQueryData(["agents-page"], (prev: typeof loaded) =>
+        prev ? { ...prev, bindings: next } : prev,
+      )
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Failed to save default channel",
+      )
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const existingAgentIds = (agentsCfg.list ?? []).map((a) => a.id)
+
+  const handleAddAgent = async () => {
+    if (!addingId.trim()) {
+      toast.error("Agent ID is required")
+      return
+    }
+    const idProblem = newAgentIdProblem(addingId, existingAgentIds)
+    if (idProblem) {
+      toast.error(idProblem)
+      return
+    }
+    const newId = addingId
+    const list = sortAgentList([
+      ...(agentsCfg.list ?? []),
+      {
+        id: newId,
+        ...(addingName.trim() ? { name: addingName.trim() } : {}),
+        ...(addingModels.length > 0 ? { models: addingModels } : {}),
+        ...(addingSkills.length > 0 ? { skills: addingSkills } : {}),
+        ...(addingTools.length > 0 ? { tools: addingTools } : {}),
+      },
+    ])
+    const next: AgentsConfig = { ...agentsCfg, list }
+    setSaving("add")
+    try {
+      await patchAppConfig(agentsPayload(next))
+      toast.success("Agent added")
+      setAddingId("")
+      setAddingName("")
+      setAddingModels([])
+      setAddingSkills([])
+      setAddingTools([])
+      setShowAdd(false)
+      // Update local state in place instead of reloading the whole page, which
+      // would unmount the list and scroll back to the top.
+      setAgentsCfg(next)
+      setSelectedId(newId)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to add agent")
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  // Keep the rail selection valid: default to the first agent on load, and
+  // recover when the selected agent is removed. Derived during render rather
+  // than written back through an effect — an effect renders once with a stale
+  // or empty selection and then again with the corrected one, and everything
+  // below keys off this value.
+  const agentList = agentsCfg.list ?? []
+
+  // cancelAdd closes the Add Agent form and clears its fields; the Cancel
+  // button and Escape in the form's text fields both use it.
+  const cancelAdd = () => {
+    setShowAdd(false)
+    setAddingId("")
+    setAddingName("")
+    setAddingModels([])
+    setAddingSkills([])
+    setAddingTools([])
+    setAddingToolsExpanded(false)
+  }
+  const escapeCancelsAdd = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") cancelAdd()
+  }
+  const activeId =
+    agentList.length === 0
+      ? ""
+      : agentList.some((a) => a.id === selectedId)
+        ? selectedId
+        : agentList[0].id
+
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader title={t("navigation.agents")}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowAdd(true)}
+          disabled={showAdd}
+        >
+          <IconPlus className="size-4" />
+          Add Agent
+        </Button>
+      </PageHeader>
+
+      <div className="flex min-h-0 flex-1">
+        {/* Left rail: one entry per agent. Selecting one renders just its card,
+            so the page no longer scrolls through every agent at once. */}
+        {!loading && !fetchError && (agentsCfg.list ?? []).length > 0 && (
+          <nav className="border-border/60 w-52 shrink-0 space-y-0.5 overflow-y-auto border-r px-2 py-4">
+            {(agentsCfg.list ?? []).map((agent) => {
+              const active = !showAdd && agent.id === activeId
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => {
+                    setShowAdd(false)
+                    setSelectedId(agent.id)
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                    active
+                      ? "bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-accent/50"
+                  }`}
+                >
+                  <span
+                    className={`size-1.5 shrink-0 rounded-full ${agent.enabled !== false ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+                  />
+                  <span className="truncate">{agent.name || agent.id}</span>
+                </button>
+              )
+            })}
+          </nav>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 sm:px-6">
+          <div className="w-full max-w-250 space-y-3 pt-4">
+            {loading && (
+              <div className="flex items-center justify-center py-20">
+                <IconLoader2 className="text-muted-foreground size-6 animate-spin" />
+              </div>
+            )}
+
+            {fetchError && (
+              <div className="text-destructive bg-destructive/10 rounded-lg px-4 py-3 text-sm">
+                {fetchError}
+              </div>
+            )}
+
+            {!loading && !fetchError && (
+              <>
+                {/* Agent defaults (default agent, default model, summarization
+                  models) now live on the Config page. */}
+                {(agentsCfg.list ?? []).length === 0 && !showAdd && (
+                  <p className="text-muted-foreground py-20 text-center text-sm">
+                    No agents yet. Use “Add Agent” to create one.
+                  </p>
+                )}
+                {/* Only the rail-selected agent renders. The wrapper preserves the
+                  original (agent, i) binding so the card props stay unchanged. */}
+                {(agentsCfg.list ?? [])
+                  .map((agent, i) => ({
+                    agent,
+                    i,
+                    e: autosave.edits[i] ?? editsFromAgent(agent),
+                  }))
+                  .filter(({ agent }) => !showAdd && agent.id === activeId)
+                  .map(({ agent, i, e }) => (
+                    <AgentCard
+                      key={agent.id}
+                      label={agent.id}
+                      name={agent.name}
+                      enabled={agent.enabled !== false}
+                      selectedModels={e.models}
+                      bypassWarnings={cliBypassWarnings(
+                        e.models,
+                        agentsCfg.defaults.models ?? [],
+                        loaded?.rawModels,
+                        loaded?.rawProviders,
+                        loaded?.clis ?? [],
+                      )}
+                      human={(humanInfo?.human_agents ?? []).some((id) =>
+                        sameAgentId(id, agent.id),
+                      )}
+                      humanNotes={(humanInfo?.problems ?? []).filter(
+                        (p) =>
+                          p.kind !== "setting" &&
+                          sameAgentId(p.agent ?? "", agent.id),
+                      )}
+                      skills={e.skills}
+                      tools={e.tools}
+                      availableSkills={availableSkills}
+                      availableTools={availableTools}
+                      models={models}
+                      messageWindowMinutes={e.message.mins}
+                      messageWindowCount={e.message.count}
+                      temperature={e.temperature}
+                      onToggleEnabled={() => handleToggleAgent(i)}
+                      onModelsChange={(m) => edit(i, { models: m })}
+                      onSkillsChange={(sk) => edit(i, { skills: sk })}
+                      onToolsChange={(tl) => edit(i, { tools: tl })}
+                      onMessageChange={(mins, count) =>
+                        edit(i, { message: { mins, count } })
+                      }
+                      onTemperatureChange={(tp) => edit(i, { temperature: tp })}
+                      maxToolIterations={e.maxToolIterations}
+                      defaultMaxToolIterations={
+                        agentsCfg.defaults.max_tool_iterations
+                      }
+                      onMaxToolIterationsChange={(v) =>
+                        edit(i, { maxToolIterations: v })
+                      }
+                      eventRetentionDays={e.eventRetentionDays}
+                      onEventRetentionDaysChange={(v) =>
+                        edit(i, { eventRetentionDays: v })
+                      }
+                      retiredRetentionDays={e.retiredRetentionDays}
+                      onRetiredRetentionDaysChange={(v) =>
+                        edit(i, { retiredRetentionDays: v })
+                      }
+                      summarizationModels={e.summarizationModels}
+                      onSummarizationModelsChange={(sm) =>
+                        edit(i, { summarizationModels: sm })
+                      }
+                      subagentModels={e.subagentModels}
+                      onSubagentModelsChange={(wm) =>
+                        edit(i, { subagentModels: wm })
+                      }
+                      shareCommon={e.shareCommon}
+                      onShareCommonChange={(sc) => edit(i, { shareCommon: sc })}
+                      globalCron={agent.global_cron === true}
+                      onGlobalCronChange={() => handleToggleGlobalCron(i)}
+                      maestro={agent.maestro?.enabled === true}
+                      onMaestroChange={() => handleToggleMaestro(i)}
+                      maestroSettings={e.maestro}
+                      onMaestroSettingsChange={(ms) => edit(i, { maestro: ms })}
+                      classifiers={agent.classifiers?.enabled === true}
+                      onClassifiersChange={() => handleToggleClassifiers(i)}
+                      classifierModel={agent.classifiers?.model ?? ""}
+                      classifierModels={loaded?.classifyModels ?? []}
+                      taskModelGrant={agent.task_models ?? {}}
+                      taskKindsWithModels={loaded?.taskKindsWithModels ?? []}
+                      onTaskModelGrantChange={(kind, on) =>
+                        handleTaskModelGrant(i, kind, on)
+                      }
+                      taskModelsSaving={saving === `taskmodels-${i}`}
+                      onClassifierModelChange={(m) =>
+                        handleClassifierModelChange(i, m)
+                      }
+                      fusion={agent.fusion === true}
+                      onFusionChange={() => handleToggleFusion(i)}
+                      forum={agent.forum === true}
+                      onForumChange={() => handleToggleForum(i)}
+                      characterCard={agent.character_card ?? ""}
+                      availableCards={cardsData?.cards ?? []}
+                      onCharacterCardChange={(id) =>
+                        handleCharacterCardChange(i, id)
+                      }
+                      ccv3={agent.ccv3 === true}
+                      onCCv3Change={() => handleToggleCCv3(i)}
+                      cogmem={agent.cogmem !== false}
+                      onCogmemChange={() => handleToggleCogmem(i)}
+                      allowedFolders={e.allowedFolders}
+                      ignoredFolders={(ignoredFolders ?? []).filter((f) =>
+                        sameAgentId(f.agent, agent.id),
+                      )}
+                      onAllowedFoldersChange={(fs) =>
+                        edit(i, { allowedFolders: fs })
+                      }
+                      mcpTools={e.mcpTools}
+                      onMCPToolsChange={(mt) => edit(i, { mcpTools: mt })}
+                      denyTools={e.denyTools}
+                      onDenyToolsChange={(dt) => edit(i, { denyTools: dt })}
+                      allowAgents={e.allowAgents}
+                      configuredAgents={agentsCfg.list ?? []}
+                      onAllowAgentsChange={(aa) => edit(i, { allowAgents: aa })}
+                      agentBindings={bindingViewsForAgent(bindings, agent.id)}
+                      onSetDefaultBinding={(target, deliverTo) =>
+                        handleSetDefaultBinding(agent.id, target, deliverTo)
+                      }
+                      onDelete={() => handleDeleteAgent(i)}
+                      status={autosave.status[`agent-${i}`]}
+                    />
+                  ))}
+
+                {/* Add agent form */}
+                {showAdd && (
+                  <div className="border-border/60 bg-card space-y-3 rounded-xl border p-4">
+                    <span className="text-sm font-semibold">New Agent</span>
+                    <div className="space-y-2">
+                      <AgentIdField
+                        value={addingId}
+                        existingIds={existingAgentIds}
+                        onChange={setAddingId}
+                        onKeyDown={escapeCancelsAdd}
+                      />
+                      <Input
+                        value={addingName}
+                        onChange={(e) => setAddingName(e.target.value)}
+                        onKeyDown={escapeCancelsAdd}
+                        placeholder="Display name (optional, e.g. Sam)"
+                      />
+                      <div className="space-y-1.5">
+                        <p className="text-foreground text-sm font-semibold">
+                          Models (tried in order)
+                        </p>
+                        <FallbacksSelect
+                          fallbacks={addingModels}
+                          primary=""
+                          models={models}
+                          onChange={setAddingModels}
+                        />
+                      </div>
+                      {availableSkills.length > 0 && (
+                        <div className="space-y-1.5">
+                          <p className="text-foreground text-sm font-semibold">
+                            Skills
+                          </p>
+                          <SkillsSelect
+                            selected={addingSkills}
+                            availableSkills={availableSkills}
+                            onChange={setAddingSkills}
+                          />
+                        </div>
+                      )}
+                      {(availableTools.tools.length > 0 ||
+                        (availableTools.mcp_servers?.length ?? 0) > 0 ||
+                        (availableTools.fusion_services?.length ?? 0) > 0) && (
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAddingToolsExpanded((v) => !v)}
+                            className="flex cursor-pointer items-center gap-1 select-none"
+                          >
+                            <IconChevronRight
+                              className={`text-muted-foreground size-3.5 opacity-60 transition-transform duration-200 ${addingToolsExpanded ? "rotate-90" : ""}`}
+                            />
+                            <span
+                              className={`text-sm font-semibold ${addingSummary.none ? "text-amber-400" : "text-foreground"}`}
+                            >
+                              Internal tools: {addingSummary.text}
+                            </span>
+                          </button>
+                          {addingToolsExpanded && (
+                            <ToolSelect
+                              selected={addingTools}
+                              catalog={availableTools}
+                              onChange={setAddingTools}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={cancelAdd}
+                        disabled={saving === "add"}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleAddAgent}
+                        disabled={saving === "add"}
+                      >
+                        {saving === "add" ? "Adding..." : "Add"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

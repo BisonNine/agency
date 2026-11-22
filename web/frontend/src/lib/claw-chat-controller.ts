@@ -1,0 +1,326 @@
+import { LOGIN_PATH, loginHref } from "@/lib/auth-redirect"
+import {
+  generateSessionId,
+  normalizeUnixTimestamp,
+} from "@/lib/claw-chat-state"
+import { getChatState, updateChatStore } from "@/store/chat"
+
+interface WebUIMessage {
+  type: string
+  id?: string
+  session_id?: string
+  timestamp?: number | string
+  payload?: Record<string, unknown>
+}
+
+let wsRef: WebSocket | null = null
+let isConnecting = false
+let msgIdCounter = 0
+let activeSessionIdRef = getChatState().activeSessionId
+let initialized = false
+let connectionGeneration = 0
+let reconnectAttempts = 0
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+// The connection generation whose /api/auth/status probe is in flight, or -1.
+let probing = -1
+
+type SessionProbe = "ok" | "gone" | "down"
+
+// probeSession asks the server why the socket failed. The browser hides the
+// handshake status, so a refused socket (the session is gone, e.g. after a
+// gateway restart) and a gateway that is down look the same from onclose.
+async function probeSession(): Promise<SessionProbe> {
+  let res: Response
+  try {
+    res = await fetch("/api/auth/status")
+  } catch {
+    return "down"
+  }
+  if (res.status === 401) return "gone"
+  if (!res.ok) return "ok"
+  try {
+    const body = (await res.json()) as { authenticated?: boolean }
+    return body.authenticated === false ? "gone" : "ok"
+  } catch {
+    return "ok"
+  }
+}
+
+function goToLogin() {
+  const { pathname, search } = window.location
+  if (pathname.startsWith(LOGIN_PATH)) return
+  window.location.assign(loginHref(pathname + search))
+}
+
+// scheduleReconnect probes the session once per failure, then either sends the
+// browser to the login page (session gone: retrying would be refused for ever)
+// or arms a single capped-exponential-backoff retry of connectChat — 1s → 5s
+// while the gateway is unreachable, 1s → 30s otherwise (e.g. the WebUI channel
+// bouncing during a config reload). Used by every failure path — socket close,
+// socket error, and a failed WebSocket construction. An intentional
+// disconnectChat() clears the timer and bumps the generation, so a probe or
+// timer from before it is ignored.
+function scheduleReconnect() {
+  if (reconnectTimer || probing === connectionGeneration) {
+    return
+  }
+  const generation = connectionGeneration
+  probing = generation
+  void probeSession().then((result) => {
+    if (probing === generation) probing = -1
+    if (generation !== connectionGeneration) return
+    if (result === "gone") {
+      goToLogin()
+      return
+    }
+    const cap = result === "down" ? 5000 : 30000
+    const delay = Math.min(cap, 1000 * 2 ** reconnectAttempts)
+    reconnectAttempts += 1
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      void connectChat()
+    }, delay)
+  })
+}
+
+function handleWebUIMessage(message: WebUIMessage) {
+  const payload = message.payload || {}
+
+  switch (message.type) {
+    case "message.create": {
+      const content = (payload.content as string) || ""
+      const messageId = (payload.message_id as string) || `webui-${Date.now()}`
+      const timestamp =
+        message.timestamp !== undefined &&
+        Number.isFinite(Number(message.timestamp))
+          ? normalizeUnixTimestamp(Number(message.timestamp))
+          : Date.now()
+
+      updateChatStore((prev) => ({
+        messages: [
+          ...prev.messages,
+          {
+            id: messageId,
+            role: "assistant",
+            content,
+            timestamp,
+          },
+        ],
+        isTyping: false,
+      }))
+      break
+    }
+
+    case "message.update": {
+      const content = (payload.content as string) || ""
+      const messageId = payload.message_id as string
+      if (!messageId) {
+        break
+      }
+
+      updateChatStore((prev) => ({
+        messages: prev.messages.map((msg) =>
+          msg.id === messageId ? { ...msg, content } : msg,
+        ),
+      }))
+      break
+    }
+
+    case "typing.start":
+      updateChatStore({ isTyping: true })
+      break
+
+    case "typing.stop":
+      updateChatStore({ isTyping: false })
+      break
+
+    case "error":
+      console.error("WebUI error:", payload)
+      updateChatStore({ isTyping: false })
+      break
+
+    case "pong":
+      break
+
+    default:
+      console.log("Unknown webui message type:", message.type)
+  }
+}
+
+function setActiveSessionId(sessionId: string) {
+  activeSessionIdRef = sessionId
+  updateChatStore({ activeSessionId: sessionId })
+}
+
+export async function connectChat() {
+  if (
+    isConnecting ||
+    (wsRef &&
+      (wsRef.readyState === WebSocket.OPEN ||
+        wsRef.readyState === WebSocket.CONNECTING))
+  ) {
+    return
+  }
+
+  // A fresh connect attempt supersedes any pending auto-reconnect.
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
+  const generation = connectionGeneration + 1
+  connectionGeneration = generation
+  isConnecting = true
+  updateChatStore({ connectionState: "connecting" })
+
+  try {
+    // The socket is same-origin and authenticated by the login session cookie,
+    // which the browser attaches on its own. No token is fetched or sent: the
+    // WebUI channel token stays on the server for non-browser clients.
+    const socket = new WebSocket(chatSocketUrl(activeSessionIdRef))
+
+    if (generation !== connectionGeneration) {
+      socket.close()
+      return
+    }
+
+    socket.onopen = () => {
+      if (wsRef !== socket) {
+        return
+      }
+      reconnectAttempts = 0
+      updateChatStore({ connectionState: "connected" })
+      isConnecting = false
+    }
+
+    socket.onmessage = (event) => {
+      try {
+        const message: WebUIMessage = JSON.parse(event.data)
+        handleWebUIMessage(message)
+      } catch {
+        console.warn("Non-JSON message from webui:", event.data)
+      }
+    }
+
+    socket.onclose = () => {
+      if (wsRef !== socket) {
+        return
+      }
+      wsRef = null
+      isConnecting = false
+      updateChatStore({
+        connectionState: "disconnected",
+        isTyping: false,
+      })
+      scheduleReconnect()
+    }
+
+    socket.onerror = () => {
+      if (wsRef !== socket) {
+        return
+      }
+      isConnecting = false
+      updateChatStore({ connectionState: "error" })
+      // A socket error is usually followed by onclose, but not always — retry so
+      // the chat doesn't get stuck in "error" until a manual refresh.
+      scheduleReconnect()
+    }
+
+    wsRef = socket
+  } catch (error) {
+    if (generation !== connectionGeneration) {
+      return
+    }
+    console.error("Failed to connect to webui:", error)
+    updateChatStore({ connectionState: "error" })
+    isConnecting = false
+    // The attempt failed before a socket existed (construction threw), so
+    // there's no onclose to retry for us — schedule one here.
+    scheduleReconnect()
+  }
+}
+
+// chatSocketUrl is the WebUI channel's WebSocket on the origin the page was
+// served from: wss: behind TLS, ws: otherwise. Exported for the test.
+export function chatSocketUrl(sessionId: string): string {
+  const scheme = window.location.protocol === "https:" ? "wss:" : "ws:"
+  return `${scheme}//${window.location.host}/webui/ws?session_id=${encodeURIComponent(sessionId)}`
+}
+
+export function disconnectChat() {
+  connectionGeneration += 1
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  reconnectAttempts = 0
+
+  const socket = wsRef
+  wsRef = null
+  isConnecting = false
+
+  if (socket) {
+    socket.close()
+  }
+
+  updateChatStore({
+    connectionState: "disconnected",
+    isTyping: false,
+  })
+}
+
+export function sendChatMessage(content: string) {
+  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
+    console.warn("WebSocket not connected")
+    return
+  }
+
+  const id = `msg-${++msgIdCounter}-${Date.now()}`
+
+  updateChatStore((prev) => ({
+    messages: [
+      ...prev.messages,
+      { id, role: "user", content, timestamp: Date.now() },
+    ],
+    isTyping: true,
+  }))
+
+  wsRef.send(
+    JSON.stringify({
+      type: "message.send",
+      id,
+      payload: { content },
+    }),
+  )
+}
+
+export async function newChatSession() {
+  if (getChatState().messages.length === 0) {
+    return
+  }
+
+  disconnectChat()
+  setActiveSessionId(generateSessionId())
+  updateChatStore({
+    messages: [],
+    isTyping: false,
+  })
+
+  await connectChat()
+}
+
+export function initializeChatStore() {
+  if (initialized) {
+    return
+  }
+
+  initialized = true
+  activeSessionIdRef = getChatState().activeSessionId
+
+  void connectChat()
+}
+
+export function teardownChatStore() {
+  initialized = false
+  disconnectChat()
+}

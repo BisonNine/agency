@@ -1,0 +1,198 @@
+// API client for channels navigation and channel-specific config flows.
+import { errorMessage } from "./error-message"
+
+export type ChannelConfig = Record<string, unknown>
+export type AppConfig = Record<string, unknown>
+
+export interface SupportedChannel {
+  name: string
+  display_name?: string
+  config_key: string
+  variant?: string
+}
+
+interface ChannelsCatalogResponse {
+  channels: SupportedChannel[]
+}
+
+interface ConfigActionResponse {
+  status: string
+  errors?: string[]
+}
+
+const BASE_URL = ""
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, options)
+  if (!res.ok) {
+    throw new Error(await errorMessage(res))
+  }
+  return res.json() as Promise<T>
+}
+
+export async function getChannelsCatalog(): Promise<ChannelsCatalogResponse> {
+  return request<ChannelsCatalogResponse>("/api/channels/catalog")
+}
+
+export async function getAppConfig(): Promise<AppConfig> {
+  return request<AppConfig>("/api/config")
+}
+
+export async function patchAppConfig(
+  patch: Record<string, unknown>,
+): Promise<ConfigActionResponse> {
+  return request<ConfigActionResponse>("/api/config", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  })
+}
+
+export interface AgentToolEntry {
+  name: string
+  description: string
+  // suite, when set, marks an all-or-nothing tool suite (cogmem, maestro)
+  // managed by the agent's per-suite toggle rather than this per-tool list.
+  suite?: string
+}
+
+export interface AgentMCPServer {
+  name: string
+  pattern: string
+}
+
+export interface AgentToolCatalogResponse {
+  tools: AgentToolEntry[]
+  mcp_servers?: AgentMCPServer[]
+  // Fusion services defined in the fusion config folder. An mcp_tools entry
+  // naming one grants the service's tools when the agent's Fusion switch is on.
+  fusion_services?: string[]
+  // The standard set the "Default tools" button writes into an agent's list.
+  default_tools: string[]
+}
+
+export async function getAgentTools(): Promise<AgentToolCatalogResponse> {
+  return request<AgentToolCatalogResponse>("/api/agents/tools")
+}
+
+// HumanAgentProblem is one way the configuration breaks the human-agent
+// rules. kind says where it shows: "not_running" and "ignored" on the agent's
+// card, "setting" on the page given by page (/system, /models). link, when
+// set, is the page that fixes it.
+export interface HumanAgentProblem {
+  agent?: string
+  kind: "not_running" | "ignored" | "setting"
+  message: string
+  link?: string
+  page?: string
+}
+
+export interface HumanAgentsInfo {
+  problems: HumanAgentProblem[]
+  human_agents: string[]
+}
+
+// HUMAN_AGENTS_QUERY_KEY is the react-query key of getHumanAgents, shared by
+// every page that shows or refreshes the human-agent notes.
+export const HUMAN_AGENTS_QUERY_KEY = ["agents-human-problems"] as const
+
+export async function getHumanAgents(): Promise<HumanAgentsInfo> {
+  const res = await request<Partial<HumanAgentsInfo>>("/api/agents/human")
+  return { problems: res.problems ?? [], human_agents: res.human_agents ?? [] }
+}
+
+// IgnoredAllowedFolder is a saved allowed folder the file tools skip: its
+// path is not absolute, holds a line break, or
+// the folder does not exist.
+export interface IgnoredAllowedFolder {
+  agent: string
+  path: string
+  reason: "not_absolute" | "not_found" | "line_break"
+}
+
+export async function getIgnoredAllowedFolders(): Promise<
+  IgnoredAllowedFolder[]
+> {
+  const res = await request<{ ignored?: IgnoredAllowedFolder[] }>(
+    "/api/agents/allowed-folders/ignored",
+  )
+  return res.ignored ?? []
+}
+
+// SecMsgLinkStatus mirrors the backend pairing reply. status is
+// "pending" | "complete" | "error"; qr_png is a PNG data-URL for the pairing URI.
+export interface SecMsgLinkStatus {
+  status: string
+  uri?: string
+  qr_png?: string
+  phone?: string
+  error?: string
+}
+
+// requestSecMsgLink starts device linking for a configured secmsg channel and
+// returns the pairing QR.
+export async function requestSecMsgLink(
+  name: string,
+): Promise<SecMsgLinkStatus> {
+  return request<SecMsgLinkStatus>(
+    `/api/channels/secmsg/${encodeURIComponent(name)}/link`,
+    { method: "POST" },
+  )
+}
+
+// getSecMsgLinkStatus polls current pairing status for a configured channel.
+export async function getSecMsgLinkStatus(
+  name: string,
+): Promise<SecMsgLinkStatus> {
+  return request<SecMsgLinkStatus>(
+    `/api/channels/secmsg/${encodeURIComponent(name)}/link`,
+  )
+}
+
+// SecMsgAccounts is the live account list discovered from a daemon.
+export interface SecMsgAccounts {
+  accounts: string[]
+}
+
+// getSecMsgAccounts queries the daemon live and returns its linked account ids,
+// so the WebUI reflects what the daemon hosts rather than what config enumerates.
+export async function getSecMsgAccounts(name: string): Promise<SecMsgAccounts> {
+  return request<SecMsgAccounts>(
+    `/api/channels/secmsg/${encodeURIComponent(name)}/accounts`,
+  )
+}
+
+// MCPServerStatus mirrors mcp.ServerStatus. state is
+// "connected" | "reconnecting" | "cooldown"; cooldown_until is RFC3339 (only for
+// the cooldown state). Servers absent from the response are disconnected.
+export interface MCPServerStatus {
+  name: string
+  state: string
+  transport?: string
+  tool_count: number
+  cooldown_until?: string
+  // last_error is why the last connection attempt failed and last_error_at
+  // (RFC3339) when; both absent while the server is healthy.
+  last_error?: string
+  last_error_at?: string
+}
+
+interface MCPStatusResponse {
+  servers: MCPServerStatus[]
+}
+
+// getMCPStatus reports the live connection state of outbound MCP servers.
+export async function getMCPStatus(): Promise<MCPStatusResponse> {
+  return request<MCPStatusResponse>("/api/mcp/status")
+}
+
+// reconnectMCPServer forces one outbound MCP server to reconnect and
+// re-register its tools, for a server restarted with a changed tool list.
+export async function reconnectMCPServer(name: string): Promise<void> {
+  await request<unknown>(
+    `/api/mcp/servers/${encodeURIComponent(name)}/reconnect`,
+    { method: "POST" },
+  )
+}
+
+export type { ChannelsCatalogResponse, ConfigActionResponse, MCPStatusResponse }

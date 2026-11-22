@@ -1,0 +1,170 @@
+package api
+
+import (
+	"net/http"
+	"sort"
+
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/tools"
+	"github.com/PivotLLM/ClawEh/tools/fusion"
+)
+
+type agentToolEntry struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Suite, when set, marks an all-or-nothing suite (cogmem, maestro) managed by
+	// the agent's per-suite toggle rather than this per-tool list.
+	Suite string `json:"suite,omitempty"`
+}
+
+type agentMCPServer struct {
+	Name    string `json:"name"`
+	Pattern string `json:"pattern"`
+}
+
+type agentToolCatalogResponse struct {
+	Tools      []agentToolEntry `json:"tools"`
+	MCPServers []agentMCPServer `json:"mcp_servers,omitempty"`
+	// FusionServices are the Fusion services defined in the fusion config
+	// folder; an mcp_tools entry naming one grants the agent that service's
+	// tools when its Fusion switch is on.
+	FusionServices []string `json:"fusion_services,omitempty"`
+	// DefaultTools is the standard set the Agents page's "Default tools"
+	// button writes into an agent's list; an agent has only what it lists.
+	DefaultTools []string `json:"default_tools"`
+}
+
+func (h *Handler) registerAgentRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/agents/tools", h.handleListAgentTools)
+	mux.HandleFunc("GET /api/agents/human", h.handleHumanAgentProblems)
+	mux.HandleFunc("GET /api/agents/allowed-folders/ignored", h.handleIgnoredAllowedFolders)
+}
+
+// ignoredAllowedFolder is an allowed folder of the saved configuration the
+// file tools skip (config.IgnoredAllowedFolders); the Agents page marks its
+// row. Reason is "not_absolute", "not_found" or "line_break".
+type ignoredAllowedFolder struct {
+	Agent  string `json:"agent"`
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// handleIgnoredAllowedFolders lists the allowed folders the file tools skip.
+func (h *Handler) handleIgnoredAllowedFolders(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := h.currentConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := []ignoredAllowedFolder{}
+	for _, f := range cfg.IgnoredAllowedFolders() {
+		out = append(out, ignoredAllowedFolder{Agent: f.Agent, Path: f.Path, Reason: f.Reason})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]any{"ignored": out})
+}
+
+// humanAgentProblem is one way the configuration breaks the human-agent
+// rules, with where the WebUI shows it. Kind is one of:
+//   - "not_running": the agent named in Agent is not run (shown on its card);
+//   - "ignored": a human model the agent names is ignored there (a note on
+//     its card);
+//   - "setting": a global setting ignores a human model (shown on Page,
+//     "/system" or "/models": the page that sets it).
+//
+// Link, when set, is the page that fixes it ("/channels" for a missing chat).
+type humanAgentProblem struct {
+	Agent   string `json:"agent,omitempty"`
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	Link    string `json:"link,omitempty"`
+	Page    string `json:"page,omitempty"`
+}
+
+// handleHumanAgentProblems lists the human agents and the human-agent
+// problems of the saved configuration (config.HumanProblems).
+func (h *Handler) handleHumanAgentProblems(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := h.currentConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	problems := []humanAgentProblem{}
+	for _, p := range cfg.HumanProblems() {
+		hp := humanAgentProblem{Agent: p.Agent, Message: p.Message}
+		switch {
+		case p.SetsAgentAside():
+			hp.Kind = "not_running"
+		case p.Agent != "":
+			hp.Kind = "ignored"
+		case p.Kind == config.HumanSharedName:
+			hp.Kind, hp.Page = "setting", "/models"
+		default:
+			hp.Kind, hp.Page = "setting", "/system"
+		}
+		if p.Kind == config.HumanNoChat {
+			hp.Link = "/channels"
+		}
+		problems = append(problems, hp)
+	}
+	humans := []string{}
+	for i := range cfg.Agents.List {
+		if cfg.IsHumanAgent(cfg.Agents.List[i].ID) {
+			humans = append(humans, cfg.Agents.List[i].ID)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]any{"problems": problems, "human_agents": humans})
+}
+
+func (h *Handler) handleListAgentTools(w http.ResponseWriter, r *http.Request) {
+	// Flat list of built-in tools in display order, built dynamically from providers.
+	var builtinTools []agentToolEntry
+	for _, p := range tools.GetProviders() {
+		for _, d := range p.Describe() {
+			builtinTools = append(builtinTools, agentToolEntry{
+				Name:        d.Name,
+				Description: d.Description,
+				Suite:       d.Suite,
+			})
+		}
+	}
+	// Append static (non-provider) tools.
+	for _, d := range tools.StaticToolDescriptors {
+		builtinTools = append(builtinTools, agentToolEntry{
+			Name:        d.Name,
+			Description: d.Description,
+		})
+	}
+
+	// MCP servers: one entry per configured server; selecting it grants mcp_name_* access
+	var mcpServers []agentMCPServer
+	if cfg, err := h.currentConfig(); err == nil && cfg.Tools.MCPClientEffectivelyEnabled() {
+		for name := range cfg.Tools.MCP.Servers {
+			mcpServers = append(mcpServers, agentMCPServer{
+				Name:    name,
+				Pattern: tools.MCPServerPattern(name),
+			})
+		}
+		sort.Slice(mcpServers, func(i, j int) bool {
+			return mcpServers[i].Name < mcpServers[j].Name
+		})
+	}
+
+	defaultTools := tools.DefaultEnabledToolNames()
+	if defaultTools == nil {
+		defaultTools = []string{}
+	}
+	var fusionServices []string
+	if cfg, cfgErr := h.currentConfig(); cfgErr == nil {
+		fusionServices = fusion.ServiceNames(cfg) //nolint:contextcheck // the engine is process-wide and built once, outside any request
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, agentToolCatalogResponse{
+		Tools:          builtinTools,
+		MCPServers:     mcpServers,
+		FusionServices: fusionServices,
+		DefaultTools:   defaultTools,
+	})
+}

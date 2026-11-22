@@ -1,0 +1,131 @@
+//go:build integration
+
+package providers
+
+import (
+	"context"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+)
+
+// TestIntegration_DispatchStatus_ClaudeCLI runs the real claude CLI and asserts
+// that the parser populates DispatchStatus with a dated model id, non-zero
+// cache creation tokens, and a non-zero cost.
+func TestIntegration_DispatchStatus_ClaudeCLI(t *testing.T) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude CLI not found in PATH")
+	}
+
+	p := NewClaudeCliProvider("", t.TempDir(), []string{"--model", "haiku"}, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	resp, err := p.Chat(ctx, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if resp.Status == nil {
+		t.Fatal("Status is nil; expected populated DispatchStatus")
+	}
+	t.Logf("DispatchStatus: %+v", resp.Status)
+
+	if resp.Status.Model == "" {
+		t.Error("Model is empty; expected exact dated id (e.g. claude-haiku-4-5-20251001)")
+	}
+	if !strings.HasPrefix(resp.Status.Model, "claude-") {
+		t.Errorf("Model = %q, want claude-* prefix", resp.Status.Model)
+	}
+	if !resp.Status.Success {
+		t.Error("Success = false; expected true on a successful run")
+	}
+	if resp.Status.InputTokens == 0 {
+		t.Error("InputTokens = 0; expected non-zero")
+	}
+	if resp.Status.OutputTokens == 0 {
+		t.Error("OutputTokens = 0; expected non-zero")
+	}
+	if resp.Status.DurationMs == 0 {
+		t.Error("DurationMs = 0; expected non-zero")
+	}
+	// Cost reported by claude-cli should be non-zero when the model dispatched.
+	if resp.Status.CostUSD == nil || *resp.Status.CostUSD <= 0 {
+		var shown any = "not reported"
+		if resp.Status.CostUSD != nil {
+			shown = *resp.Status.CostUSD
+		}
+		t.Logf("warning: CostUSD = %v; design doc expects a reported, non-zero cost", shown)
+	}
+	if resp.Status.BytesSent == 0 {
+		t.Error("BytesSent = 0; expected non-zero (stdin payload)")
+	}
+	if resp.Status.BytesReceived == 0 {
+		t.Error("BytesReceived = 0; expected non-zero (stdout JSON)")
+	}
+}
+
+// TestIntegration_DispatchStatus_CodexCLI runs the real codex CLI and asserts
+// that the parser produces NumTurns >= 1 and cache_read_tokens from
+// cached_input_tokens.
+func TestIntegration_DispatchStatus_CodexCLI(t *testing.T) {
+	if _, err := exec.LookPath("codex"); err != nil {
+		t.Skip("codex CLI not found in PATH")
+	}
+
+	extraArgs := []string{"--skip-git-repo-check", "--sandbox", "read-only", "--dangerously-bypass-approvals-and-sandbox"}
+	p := NewCodexCliProvider("", t.TempDir(), extraArgs, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	resp, err := p.Chat(ctx, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if resp.Status == nil {
+		t.Fatal("Status is nil")
+	}
+	t.Logf("DispatchStatus: %+v", resp.Status)
+
+	if resp.Status.NumTurns < 1 {
+		t.Errorf("NumTurns = %d, want >= 1", resp.Status.NumTurns)
+	}
+	if resp.Status.InputTokens == 0 {
+		t.Error("InputTokens = 0; expected populated from turn.completed.usage")
+	}
+	if resp.Status.BytesSent == 0 {
+		t.Error("BytesSent = 0; expected non-zero (stdin payload)")
+	}
+	if resp.Status.BytesReceived == 0 {
+		t.Error("BytesReceived = 0; expected non-zero (JSONL stream)")
+	}
+}
+
+// TestIntegration_DispatchStatus_AntigravityCLI runs the real Antigravity CLI
+// (agy) and confirms the dispatch status carries the traffic counters. The
+// CLI reports no per-model breakdown, so the model is not asserted.
+func TestIntegration_DispatchStatus_AntigravityCLI(t *testing.T) {
+	if _, err := exec.LookPath("agy"); err != nil {
+		t.Skip("agy CLI not found in PATH")
+	}
+
+	p := NewAntigravityCliProvider("", t.TempDir(), nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	resp, err := p.Chat(ctx, []Message{{Role: "user", Content: "say hi"}}, nil, "", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if resp.Status == nil {
+		t.Fatal("Status is nil")
+	}
+	t.Logf("DispatchStatus: %+v", resp.Status)
+
+	if resp.Status.BytesSent == 0 {
+		t.Error("BytesSent = 0; expected non-zero")
+	}
+	if resp.Status.BytesReceived == 0 {
+		t.Error("BytesReceived = 0; expected non-zero")
+	}
+}

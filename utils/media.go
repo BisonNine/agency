@@ -1,0 +1,319 @@
+package utils
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/PivotLLM/ClawEh/logger"
+)
+
+// IsAudioFile checks if a file is an audio file based on its filename extension and content type.
+func IsAudioFile(filename, contentType string) bool {
+	// .oga and .opus: Telegram voice notes arrive as Ogg Opus with those names.
+	audioExtensions := []string{".mp3", ".wav", ".ogg", ".oga", ".opus", ".m4a", ".flac", ".aac", ".wma"}
+	audioTypes := []string{"audio/", "application/ogg", "application/x-ogg"}
+
+	for _, ext := range audioExtensions {
+		if strings.HasSuffix(strings.ToLower(filename), ext) {
+			return true
+		}
+	}
+
+	for _, audioType := range audioTypes {
+		if strings.HasPrefix(strings.ToLower(contentType), audioType) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// SanitizeFilename removes potentially dangerous characters from a filename
+// and returns a safe version for local filesystem storage.
+func SanitizeFilename(filename string) string {
+	// Get the base filename without path
+	base := filepath.Base(filename)
+
+	// Remove any directory traversal attempts
+	base = strings.ReplaceAll(base, "..", "")
+	base = strings.ReplaceAll(base, "/", "_")
+	base = strings.ReplaceAll(base, "\\", "_")
+
+	return base
+}
+
+// DownloadOptions holds optional parameters for downloading files
+type DownloadOptions struct {
+	Timeout      time.Duration
+	ExtraHeaders map[string]string
+	LoggerPrefix string
+	ProxyURL     string
+	// LogURL, when set, is shown in logs in place of the URL, for a URL that
+	// carries a credential (a Telegram file URL embeds the bot token).
+	LogURL string
+}
+
+var (
+	mediaStagingMu  sync.RWMutex
+	mediaStagingDir string
+	mediaDirMode    os.FileMode = 0o700
+	mediaFileMode   os.FileMode = 0o600
+)
+
+// SetMediaStagingDir points downloaded media at a directory under the instance
+// data dir (e.g. ~/.claw/media or /opt/claw/media) instead of shared /tmp,
+// created with dirMode, its files with fileMode (security.permissions.media; a
+// zero mode means 0700 or 0600). The gateway sets this at startup from
+// cfg.DataDir(); empty restores the fallback.
+func SetMediaStagingDir(dir string, dirMode, fileMode os.FileMode) {
+	if dirMode == 0 {
+		dirMode = 0o700
+	}
+	if fileMode == 0 {
+		fileMode = 0o600
+	}
+	mediaStagingMu.Lock()
+	mediaStagingDir, mediaDirMode, mediaFileMode = dir, dirMode, fileMode
+	mediaStagingMu.Unlock()
+}
+
+// MediaModes returns the modes media is staged with: the directory's and the
+// files'.
+func MediaModes() (dirMode, fileMode os.FileMode) {
+	mediaStagingMu.RLock()
+	defer mediaStagingMu.RUnlock()
+	return mediaDirMode, mediaFileMode
+}
+
+// MediaTempDir is the scratch directory for downloaded media. It uses the
+// configured data-dir staging path when set; otherwise it falls back to a
+// per-user /tmp dir (CLI/tests with no data dir). The uid suffix on the
+// fallback keeps two instances running as different users on one host from
+// colliding on a single 0700 dir ("permission denied" for the second user).
+func MediaTempDir() string {
+	mediaStagingMu.RLock()
+	dir := mediaStagingDir
+	mediaStagingMu.RUnlock()
+	if dir != "" {
+		return dir
+	}
+	return filepath.Join(os.TempDir(), fmt.Sprintf("claw_media_%d", os.Getuid()))
+}
+
+// DownloadFile downloads a file from URL to a local temp directory.
+// Returns the local file path or empty string on error.
+func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
+	// Set defaults
+	if opts.Timeout == 0 {
+		opts.Timeout = 60 * time.Second
+	}
+	if opts.LoggerPrefix == "" {
+		opts.LoggerPrefix = "utils"
+	}
+	// hide replaces the URL with opts.LogURL in text bound for the logs.
+	hide := func(s string) string {
+		if opts.LogURL == "" {
+			return s
+		}
+		return strings.ReplaceAll(s, urlStr, opts.LogURL)
+	}
+
+	mediaDir := MediaTempDir()
+	dirMode, fileMode := MediaModes()
+	if err := mkdirExact(mediaDir, dirMode); err != nil {
+		logger.ErrorCF(opts.LoggerPrefix, "Failed to create media directory", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	// Generate unique filename with UUID prefix to prevent conflicts
+	safeName := SanitizeFilename(filename)
+	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_"+safeName)
+
+	// Create HTTP request
+	req, err := http.NewRequest(http.MethodGet, urlStr, nil)
+	if err != nil {
+		logger.ErrorCF(opts.LoggerPrefix, "Failed to create download request", map[string]any{
+			"error": hide(err.Error()),
+		})
+		return ""
+	}
+
+	// Add extra headers (e.g., Authorization for Slack)
+	for key, value := range opts.ExtraHeaders {
+		req.Header.Set(key, value)
+	}
+
+	// checkRedirect re-applies the original request headers when redirecting
+	// within the same registered domain (e.g. files.slack.com → tenant.slack.com).
+	// Go's default policy strips Authorization on cross-host redirects; preserving
+	// it within the same domain (last two hostname labels) is safe and required for
+	// Slack's file download flow, which redirects from files.slack.com to the
+	// workspace subdomain before serving the file.
+	// redirects records each hop for diagnostic logging.
+	origReq := req
+	var redirects []string
+	checkRedirect := func(r *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		redirects = append(redirects, hide(fmt.Sprintf("%s → %s", via[len(via)-1].URL.String(), r.URL.String())))
+		if registeredDomain(r.URL.Hostname()) == registeredDomain(origReq.URL.Hostname()) {
+			maps.Copy(r.Header, origReq.Header)
+		}
+		return nil
+	}
+
+	client := &http.Client{
+		Timeout:       opts.Timeout,
+		CheckRedirect: checkRedirect,
+	}
+	if opts.ProxyURL != "" {
+		proxyURL, parseErr := url.Parse(opts.ProxyURL)
+		if parseErr != nil {
+			logger.ErrorCF(opts.LoggerPrefix, "Invalid proxy URL for download", map[string]any{
+				"error": parseErr.Error(),
+				"proxy": opts.ProxyURL,
+			})
+			return ""
+		}
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.ErrorCF(opts.LoggerPrefix, "Failed to download file", map[string]any{
+			"error": hide(err.Error()),
+			"url":   hide(urlStr),
+		})
+		return ""
+	}
+	defer func() { CloseQuietly(resp.Body) }()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.ErrorCF(opts.LoggerPrefix, "File download returned non-200 status", map[string]any{
+			"status": resp.StatusCode,
+			"url":    hide(urlStr),
+		})
+		return ""
+	}
+
+	// Reject HTML responses — these are error/auth pages, not the actual file.
+	if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(ct, "text/html") {
+		// Read a snippet of the body so logs reveal exactly what page was returned.
+		snippet, readErr := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if readErr != nil {
+			logger.DebugCF(opts.LoggerPrefix, "failed to read HTML response snippet", map[string]any{"error": readErr.Error()})
+		}
+		// Detect Slack's web login redirect: files.slack.com → workspace.slack.com/?redir=...
+		// This happens when the bot token lacks the files:read OAuth scope.
+		finalURL := hide(resp.Request.URL.String())
+		if strings.Contains(finalURL, "slack.com") && strings.Contains(finalURL, "redir=") {
+			logger.ErrorCF(opts.LoggerPrefix, "Slack redirected to login page — bot token is missing 'files:read' OAuth scope. Add it in Slack App settings → OAuth & Permissions → Bot Token Scopes, then reinstall the app.", map[string]any{
+				"url":       hide(urlStr),
+				"final_url": finalURL,
+				"status":    resp.StatusCode,
+				"redirects": redirects,
+			})
+			return ""
+		}
+		logger.ErrorCF(opts.LoggerPrefix, "File download returned HTML — possible auth failure or redirect issue", map[string]any{
+			"url":          hide(urlStr),
+			"final_url":    finalURL,
+			"status":       resp.StatusCode,
+			"content_type": ct,
+			"redirects":    redirects,
+			"body_snippet": strings.TrimSpace(string(snippet)),
+		})
+		return ""
+	}
+
+	out, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, fileMode) //nolint:gosec // path is MediaTempDir plus a UUID and SanitizeFilename output
+	if err != nil {
+		logger.ErrorCF(opts.LoggerPrefix, "Failed to create local file", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+	_, err = io.Copy(out, resp.Body)
+	if err == nil {
+		// Exactly the media file mode, whatever the umask.
+		err = out.Chmod(fileMode)
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		if rmErr := os.Remove(localPath); rmErr != nil {
+			logger.WarnCF(opts.LoggerPrefix, "Failed to remove partial file", map[string]any{
+				"path":  localPath,
+				"error": rmErr.Error(),
+			})
+		}
+		logger.ErrorCF(opts.LoggerPrefix, "Failed to write file", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+
+	logger.DebugCF(opts.LoggerPrefix, "File downloaded successfully", map[string]any{
+		"path": localPath,
+	})
+
+	return localPath
+}
+
+// DownloadFileSimple is a simplified version of DownloadFile without options
+func DownloadFileSimple(url, filename string) string {
+	return DownloadFile(url, filename, DownloadOptions{
+		LoggerPrefix: "media",
+	})
+}
+
+// registeredDomain returns the registered domain (last two labels) of a hostname.
+// Used by CheckRedirect to decide whether to forward auth headers across a redirect.
+// Examples: "files.slack.com" → "slack.com", "example.com" → "example.com".
+func registeredDomain(hostname string) string {
+	parts := strings.Split(hostname, ".")
+	if len(parts) <= 2 {
+		return hostname
+	}
+	return strings.Join(parts[len(parts)-2:], ".")
+}
+
+// mkdirExact creates dir and any missing parents, giving each folder it
+// creates exactly mode, whatever the umask. Existing folders keep theirs.
+func mkdirExact(dir string, mode os.FileMode) error {
+	dir = filepath.Clean(dir)
+	if fi, err := os.Stat(dir); err == nil {
+		if fi.IsDir() {
+			return nil
+		}
+		return &os.PathError{Op: "mkdir", Path: dir, Err: os.ErrExist}
+	}
+	if parent := filepath.Dir(dir); parent != dir {
+		if err := mkdirExact(parent, mode); err != nil {
+			return err
+		}
+	}
+	if err := os.Mkdir(dir, mode); err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return err
+	}
+	return os.Chmod(dir, mode)
+}

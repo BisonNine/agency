@@ -1,0 +1,1270 @@
+package matrix
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"html"
+	"io"
+	"mime"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gomarkdown/markdown"
+	mdhtml "github.com/gomarkdown/markdown/html"
+	"github.com/gomarkdown/markdown/parser"
+	"github.com/tenebris-tech/alerter"
+	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
+
+	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/channels"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/identity"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/media"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+const (
+	typingRefreshInterval      = 20 * time.Second
+	typingServerTTL            = 30 * time.Second
+	roomKindCacheTTL           = 5 * time.Minute
+	roomKindCacheCleanupPeriod = 1 * time.Minute
+	roomKindCacheMaxEntries    = 2048
+
+	matrixMediaTempDirName = "claw_media"
+
+	// syncStopWait bounds how long Stop waits for the sync to end.
+	syncStopWait = 10 * time.Second
+)
+
+var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
+
+type roomKindCacheEntry struct {
+	isGroup   bool
+	expiresAt time.Time
+	touchedAt time.Time
+}
+
+type roomKindCache struct {
+	mu         sync.Mutex
+	entries    map[string]roomKindCacheEntry
+	maxEntries int
+	ttl        time.Duration
+}
+
+func newRoomKindCache(maxEntries int, ttl time.Duration) *roomKindCache {
+	if maxEntries <= 0 {
+		maxEntries = roomKindCacheMaxEntries
+	}
+	if ttl <= 0 {
+		ttl = roomKindCacheTTL
+	}
+
+	return &roomKindCache{
+		entries:    make(map[string]roomKindCacheEntry),
+		maxEntries: maxEntries,
+		ttl:        ttl,
+	}
+}
+
+func (c *roomKindCache) get(roomID string, now time.Time) (bool, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	entry, ok := c.entries[roomID]
+	if !ok {
+		return false, false
+	}
+	if !entry.expiresAt.After(now) {
+		delete(c.entries, roomID)
+		return false, false
+	}
+
+	return entry.isGroup, true
+}
+
+func (c *roomKindCache) set(roomID string, isGroup bool, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if entry, ok := c.entries[roomID]; ok {
+		entry.isGroup = isGroup
+		entry.expiresAt = now.Add(c.ttl)
+		entry.touchedAt = now
+		c.entries[roomID] = entry
+		return
+	}
+
+	c.cleanupExpiredLocked(now)
+	for len(c.entries) >= c.maxEntries {
+		if !c.evictOldestLocked() {
+			break
+		}
+	}
+
+	c.entries[roomID] = roomKindCacheEntry{
+		isGroup:   isGroup,
+		expiresAt: now.Add(c.ttl),
+		touchedAt: now,
+	}
+}
+
+func (c *roomKindCache) cleanupExpired(now time.Time) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cleanupExpiredLocked(now)
+}
+
+func (c *roomKindCache) cleanupExpiredLocked(now time.Time) int {
+	removed := 0
+	for roomID, entry := range c.entries {
+		if !entry.expiresAt.After(now) {
+			delete(c.entries, roomID)
+			removed++
+		}
+	}
+	return removed
+}
+
+func (c *roomKindCache) evictOldestLocked() bool {
+	if len(c.entries) == 0 {
+		return false
+	}
+
+	var (
+		oldestRoomID string
+		oldestAt     time.Time
+	)
+
+	for roomID, entry := range c.entries {
+		if oldestRoomID == "" || entry.touchedAt.Before(oldestAt) {
+			oldestRoomID = roomID
+			oldestAt = entry.touchedAt
+		}
+	}
+
+	delete(c.entries, oldestRoomID)
+	return true
+}
+
+type typingSession struct {
+	stopCh chan struct{}
+	once   sync.Once
+}
+
+func newTypingSession() *typingSession {
+	return &typingSession{
+		stopCh: make(chan struct{}),
+	}
+}
+
+func (s *typingSession) stop() {
+	s.once.Do(func() {
+		close(s.stopCh)
+	})
+}
+
+// MatrixChannel implements the Channel interface for Matrix.
+type MatrixChannel struct {
+	*channels.BaseChannel
+
+	client *mautrix.Client
+	config config.MatrixConfig
+	syncer *mautrix.DefaultSyncer
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	// startTime is when a channel for this account first started in this
+	// process (accountState.firstStart): older events are not handled.
+	startTime time.Time
+	// account is the account's state shared with the channels that replace
+	// this one on a configuration save.
+	account *accountState
+	// syncDone is closed when runSync has returned.
+	syncDone chan struct{}
+
+	typingMu       sync.Mutex
+	typingSessions map[string]*typingSession // roomID -> session
+
+	roomKindCache     *roomKindCache
+	localpartMentionR *regexp.Regexp
+
+	// roomName looks up a room's name for the encrypted-room warning; tests
+	// replace it.
+	roomName func(ctx context.Context, roomID id.RoomID) string
+}
+
+func NewMatrixChannel(cfg config.MatrixConfig, messageBus *bus.MessageBus) (*MatrixChannel, error) {
+	homeserver := strings.TrimSpace(cfg.Homeserver)
+	userID := strings.TrimSpace(cfg.UserID)
+	accessToken := strings.TrimSpace(cfg.AccessToken)
+	if homeserver == "" {
+		return nil, errors.New("matrix homeserver is required")
+	}
+	if userID == "" {
+		return nil, errors.New("matrix user_id is required")
+	}
+	if accessToken == "" {
+		return nil, errors.New("matrix access_token is required")
+	}
+
+	client, err := mautrix.NewClient(homeserver, id.UserID(userID), accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("create matrix client: %w", err)
+	}
+	if cfg.DeviceID != "" {
+		client.DeviceID = id.DeviceID(cfg.DeviceID)
+	}
+
+	syncer, ok := client.Syncer.(*mautrix.DefaultSyncer)
+	if !ok {
+		return nil, errors.New("matrix syncer is not *mautrix.DefaultSyncer")
+	}
+
+	base := channels.NewBaseChannel(
+		"matrix",
+		cfg,
+		messageBus,
+		cfg.AllowFrom,
+		channels.WithMaxMessageLength(65536),
+		channels.WithGroupTrigger(cfg.GroupTrigger),
+		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+	)
+
+	ch := &MatrixChannel{
+		BaseChannel:       base,
+		client:            client,
+		config:            cfg,
+		syncer:            syncer,
+		typingSessions:    make(map[string]*typingSession),
+		startTime:         time.Now(),
+		account:           accountStateFor(homeserver, userID),
+		roomKindCache:     newRoomKindCache(roomKindCacheMaxEntries, roomKindCacheTTL),
+		localpartMentionR: localpartMentionRegexp(matrixLocalpart(client.UserID)),
+		typingMu:          sync.Mutex{},
+	}
+	ch.roomName = ch.lookupRoomName
+	client.Store = accountSyncStore{st: ch.account}
+	client.Syncer = healthSyncer{DefaultSyncer: syncer, ch: ch}
+	return ch, nil
+}
+
+// healthSyncer reports each /sync outcome to the channel's outage tracker.
+// mautrix retries a failed /sync itself (every 10s); only the errors it treats
+// as fatal end SyncWithContext, and runSync handles those.
+type healthSyncer struct {
+	*mautrix.DefaultSyncer
+	ch *MatrixChannel
+}
+
+func (s healthSyncer) ProcessResponse(ctx context.Context, res *mautrix.RespSync, since string) error {
+	s.ch.ReportConnected()
+	if err := s.DefaultSyncer.ProcessResponse(ctx, res, since); err != nil {
+		return err
+	}
+	// A channel stopped while handling the batch skipped the rest of it: its
+	// successor fetches the batch again (what was handled is claimed).
+	if ctx.Err() == nil {
+		s.ch.account.processed(res.NextBatch)
+	}
+	return nil
+}
+
+func (s healthSyncer) OnFailedSync(res *mautrix.RespSync, err error) (time.Duration, error) {
+	wait, fatal := s.DefaultSyncer.OnFailedSync(res, err)
+	if fatal == nil {
+		s.ch.ReportConnFailure(err)
+	}
+	return wait, fatal
+}
+
+// runSync keeps the Matrix sync running until the channel stops, restarting it
+// with backoff whenever it ends. A revoked access token cannot be fixed by
+// retrying: it alerts at once, then once a day while it stays rejected, and
+// the loop keeps retrying at its slowest rate in case the token is restored.
+func (c *MatrixChannel) runSync() {
+	defer close(c.syncDone)
+	var backoff time.Duration
+	for {
+		err := c.client.SyncWithContext(c.ctx)
+		if c.ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			err = errors.New("sync stopped")
+		}
+		if errors.Is(err, mautrix.MUnknownToken) {
+			backoff = channels.ConnRetryMax
+			logger.ErrorCF("matrix", "Matrix rejected the access token", map[string]any{
+				"error": err.Error(),
+			})
+			c.AlertLasting(alerter.Alert{
+				Title:       "Channel credentials rejected",
+				Description: c.Name() + ": the homeserver rejected the access token; no messages are received until it is replaced",
+				Details:     err.Error(),
+			})
+		} else {
+			if c.ConnDownSince().IsZero() {
+				backoff = 0 // it was working until now: retry fast
+			}
+			backoff = channels.NextConnRetry(backoff)
+			c.ReportConnFailure(err)
+			logger.WarnCF("matrix", "Matrix sync stopped; restarting", map[string]any{
+				"error": err.Error(),
+				"retry": backoff.String(),
+			})
+		}
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+	}
+}
+
+func (c *MatrixChannel) Start(ctx context.Context) error {
+	logger.InfoC("matrix", "Starting Matrix channel")
+
+	runCtx, cancel := context.WithCancel(ctx)
+	c.ctx, c.cancel = runCtx, cancel
+	c.startTime = c.account.started(time.Now())
+
+	c.syncer.OnEventType(event.EventMessage, c.handleMessageEvent)
+	c.syncer.OnEventType(event.StateMember, c.handleMemberEvent)
+	c.syncer.OnEventType(event.EventEncrypted, c.handleEncryptedEvent)
+	c.syncer.OnEventType(event.StateEncryption, c.handleEncryptedEvent)
+
+	c.SetRunning(true)
+	go c.runRoomKindCacheJanitor(runCtx)
+
+	c.syncDone = make(chan struct{})
+	go c.runSync()
+
+	logger.InfoC("matrix", "Matrix channel started")
+	return nil
+}
+
+func (c *MatrixChannel) Stop(ctx context.Context) error {
+	logger.InfoC("matrix", "Stopping Matrix channel")
+	c.SetRunning(false)
+
+	if c.cancel != nil {
+		c.cancel()
+	}
+	// Wait for the sync to end, so a batch it was handling is either finished
+	// or left for the next channel, never half recorded (healthSyncer).
+	if c.syncDone != nil {
+		select {
+		case <-c.syncDone:
+		case <-ctx.Done():
+			logger.WarnC("matrix", "Matrix sync did not end before the stop deadline")
+		case <-time.After(syncStopWait):
+			logger.WarnC("matrix", "Matrix sync did not end within "+syncStopWait.String())
+		}
+	}
+	c.stopTypingSessions(ctx)
+
+	logger.InfoC("matrix", "Matrix channel stopped")
+	return nil
+}
+
+// Removed forgets the account's sync position and handled events once the
+// configuration no longer asks for this channel (turned off or removed), so a
+// channel turned on again starts fresh instead of catching up. The channel
+// manager calls it after Stop.
+func (c *MatrixChannel) Removed() {
+	forgetAccount(c.account)
+}
+
+func markdownToHTML(md string) string {
+	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
+	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.CommonFlags})
+	return strings.TrimSpace(string(markdown.ToHTML([]byte(md), p, renderer)))
+}
+
+func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	roomID := id.RoomID(strings.TrimSpace(msg.ChatID))
+	if roomID == "" {
+		return fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
+	}
+
+	content := strings.TrimSpace(msg.Content)
+	if content == "" {
+		return nil
+	}
+
+	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, c.messageContent(content))
+	if err != nil {
+		return fmt.Errorf("matrix send: %w", channels.ErrTemporary)
+	}
+	return nil
+}
+
+func (c *MatrixChannel) messageContent(text string) *event.MessageEventContent {
+	mc := &event.MessageEventContent{MsgType: event.MsgText, Body: text}
+	if c.config.MessageFormat != "plain" {
+		mc.Format = event.FormatHTML
+		mc.FormattedBody = markdownToHTML(text)
+	}
+	return mc
+}
+
+// SendMedia implements channels.MediaSender.
+func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+	roomID := id.RoomID(strings.TrimSpace(msg.ChatID))
+	if roomID == "" {
+		return fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	for _, part := range msg.Parts {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		localPath, meta, err := store.ResolveWithMeta(part.Ref)
+		if err != nil {
+			logger.ErrorCF("matrix", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			return fmt.Errorf("matrix send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
+		}
+
+		fileInfo, err := os.Stat(localPath)
+		if err != nil {
+			logger.ErrorCF("matrix", "Failed to stat media file", map[string]any{
+				"path":  localPath,
+				"error": err.Error(),
+			})
+			return fmt.Errorf("matrix send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
+		}
+
+		file, err := os.Open(localPath) //nolint:gosec // path comes from the media store's own ref map (FileMediaStore.Resolve)
+		if err != nil {
+			logger.ErrorCF("matrix", "Failed to open media file", map[string]any{
+				"path":  localPath,
+				"error": err.Error(),
+			})
+			return fmt.Errorf("matrix send media: %w: %s is no longer available", channels.ErrSendFailed, part.Filename)
+		}
+
+		filename := strings.TrimSpace(part.Filename)
+		if filename == "" {
+			filename = strings.TrimSpace(meta.Filename)
+		}
+		if filename == "" {
+			filename = filepath.Base(localPath)
+		}
+		if filename == "" {
+			filename = "file"
+		}
+
+		contentType := strings.TrimSpace(part.ContentType)
+		if contentType == "" {
+			contentType = strings.TrimSpace(meta.ContentType)
+		}
+		if contentType == "" {
+			contentType = mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
+		}
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		uploadResp, err := c.client.UploadMedia(ctx, mautrix.ReqUploadMedia{
+			Content:       file,
+			ContentLength: fileInfo.Size(),
+			ContentType:   contentType,
+			FileName:      filename,
+		})
+		utils.CloseQuietly(file)
+		if err != nil {
+			logger.ErrorCF("matrix", "Failed to upload media", map[string]any{
+				"path":  localPath,
+				"type":  part.Type,
+				"error": err.Error(),
+			})
+			return fmt.Errorf("matrix upload media: %w", channels.ErrTemporary)
+		}
+
+		msgType := matrixOutboundMsgType(part.Type, filename, contentType)
+		content := matrixOutboundContent(
+			part.Caption,
+			filename,
+			msgType,
+			contentType,
+			fileInfo.Size(),
+			uploadResp.ContentURI.CUString(),
+		)
+
+		if _, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, content); err != nil {
+			logger.ErrorCF("matrix", "Failed to send media message", map[string]any{
+				"room_id": roomID.String(),
+				"type":    msgType,
+				"error":   err.Error(),
+			})
+			return fmt.Errorf("matrix send media: %w", channels.ErrTemporary)
+		}
+	}
+
+	return nil
+}
+
+// StartTyping implements channels.TypingCapable.
+func (c *MatrixChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+	if !c.IsRunning() {
+		return func() {}, nil
+	}
+
+	roomID := id.RoomID(strings.TrimSpace(chatID))
+	if roomID == "" {
+		return func() {}, errors.New("matrix room ID is empty")
+	}
+
+	session := newTypingSession()
+
+	c.typingMu.Lock()
+	if prev := c.typingSessions[chatID]; prev != nil {
+		prev.stop()
+	}
+	c.typingSessions[chatID] = session
+	c.typingMu.Unlock()
+
+	go c.typingLoop(ctx, roomID, session)
+
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			session.stop()
+			c.typingMu.Lock()
+			if current := c.typingSessions[chatID]; current == session {
+				delete(c.typingSessions, chatID)
+			}
+			c.typingMu.Unlock()
+			if _, typingErr := c.client.UserTyping(context.WithoutCancel(ctx), roomID, false, 0); typingErr != nil {
+				logger.DebugCF("matrix", "Failed to clear typing indicator", map[string]any{
+					"room_id": roomID, "error": typingErr.Error(),
+				})
+			}
+		})
+	}
+
+	return stop, nil
+}
+
+// SendPlaceholder implements channels.PlaceholderCapable.
+func (c *MatrixChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
+	if !c.config.Placeholder.Enabled {
+		return "", nil
+	}
+
+	roomID := id.RoomID(strings.TrimSpace(chatID))
+	if roomID == "" {
+		return "", errors.New("matrix room ID is empty")
+	}
+
+	text := strings.TrimSpace(c.config.Placeholder.Text)
+	if text == "" {
+		text = "Thinking... 💭"
+	}
+
+	resp, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, &event.MessageEventContent{
+		MsgType: event.MsgNotice,
+		Body:    text,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return resp.EventID.String(), nil
+}
+
+// EditMessage implements channels.MessageEditor.
+func (c *MatrixChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
+	roomID := id.RoomID(strings.TrimSpace(chatID))
+	if roomID == "" {
+		return errors.New("matrix room ID is empty")
+	}
+	if strings.TrimSpace(messageID) == "" {
+		return errors.New("matrix message ID is empty")
+	}
+
+	editContent := c.messageContent(content)
+	editContent.SetEdit(id.EventID(messageID))
+
+	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, editContent)
+	return err
+}
+
+func (c *MatrixChannel) handleMemberEvent(ctx context.Context, evt *event.Event) {
+	if !c.config.JoinOnInvite {
+		return
+	}
+	if evt == nil {
+		return
+	}
+
+	member := evt.Content.AsMember()
+	if member.Membership != event.MembershipInvite {
+		return
+	}
+	if evt.GetStateKey() != c.client.UserID.String() {
+		return
+	}
+
+	_, err := c.client.JoinRoomByID(ctx, evt.RoomID)
+	if err != nil {
+		logger.WarnCF("matrix", "Failed to auto-join invited room", map[string]any{
+			"room_id": evt.RoomID.String(),
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	logger.InfoCF("matrix", "Joined room after invite", map[string]any{
+		"room_id": evt.RoomID.String(),
+	})
+}
+
+func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event) {
+	if evt == nil {
+		return
+	}
+
+	// Ignore our own messages.
+	if evt.Sender == c.client.UserID {
+		return
+	}
+
+	// Ignore events from before the channel first started (startTime is at
+	// the millisecond, like the event's timestamp, so an event sent in the
+	// start's own millisecond counts as after it), and events a previous
+	// channel for this account already handled.
+	if time.UnixMilli(evt.Timestamp).Before(c.startTime) || c.account.handled(evt.ID) {
+		return
+	}
+
+	msgEvt := evt.Content.AsMessage()
+	if msgEvt == nil {
+		return
+	}
+
+	// Ignore edits.
+	if msgEvt.RelatesTo != nil && msgEvt.RelatesTo.GetReplaceID() != "" {
+		return
+	}
+
+	roomID := evt.RoomID.String()
+	scope := channels.BuildMediaScope("matrix", roomID, evt.ID.String())
+
+	content, mediaPaths, ok := c.extractInboundContent(ctx, msgEvt, scope)
+	if !ok {
+		return
+	}
+	content = strings.TrimSpace(content)
+	if content == "" && len(mediaPaths) == 0 {
+		return
+	}
+
+	senderID := evt.Sender.String()
+	sender := bus.SenderInfo{
+		Platform:    "matrix",
+		PlatformID:  senderID,
+		CanonicalID: identity.BuildCanonicalID("matrix", senderID),
+		Username:    senderID,
+		DisplayName: senderID,
+	}
+
+	if !c.IsAllowedSender(sender) {
+		logger.DebugCF("matrix", "Message rejected by allowlist", map[string]any{
+			"sender_id": senderID,
+		})
+		return
+	}
+
+	isGroup := c.isGroupRoom(ctx, evt.RoomID)
+	if isGroup {
+		isMentioned := c.isBotMentioned(msgEvt)
+		if isMentioned {
+			content = c.stripSelfMention(content)
+		}
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
+		if !respond {
+			logger.DebugCF("matrix", "Ignoring group message by trigger rules", map[string]any{
+				"room_id":      roomID,
+				"is_mentioned": isMentioned,
+				"mention_only": c.config.GroupTrigger.MentionOnly,
+				"prefixes":     c.config.GroupTrigger.Prefixes,
+			})
+			return
+		}
+		content = cleaned
+	} else {
+		content = c.stripSelfMention(content)
+	}
+
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+
+	peerKind := "direct"
+	peerID := senderID
+	if isGroup {
+		peerKind = "group"
+		peerID = roomID
+	}
+
+	metadata := map[string]string{
+		"room_id":    roomID,
+		"timestamp":  strconv.FormatInt(evt.Timestamp, 10),
+		"is_group":   strconv.FormatBool(isGroup),
+		"sender_raw": senderID,
+	}
+	if replyTo := msgEvt.GetRelatesTo().GetReplyTo(); replyTo != "" {
+		metadata["reply_to_msg_id"] = replyTo.String()
+	}
+
+	// A channel being stopped hands nothing on: its successor fetches the
+	// event again. Otherwise the event is claimed, and released if it could
+	// not be published, for the same reason.
+	if ctx.Err() != nil || !c.account.claim(evt.ID) {
+		return
+	}
+	if err := c.DeliverMessage(
+		ctx,
+		bus.Peer{Kind: peerKind, ID: peerID},
+		evt.ID.String(),
+		senderID,
+		roomID,
+		content,
+		mediaPaths,
+		metadata,
+		sender,
+	); err != nil {
+		c.account.release(evt.ID)
+		logger.WarnCF("matrix", "Message not handed on; it is fetched again when the channel restarts", map[string]any{
+			"room_id":  roomID,
+			"event_id": evt.ID.String(),
+			"error":    err.Error(),
+		})
+	}
+}
+
+func (c *MatrixChannel) extractInboundContent(
+	ctx context.Context,
+	msgEvt *event.MessageEventContent,
+	scope string,
+) (string, []string, bool) {
+	switch msgEvt.MsgType {
+	case event.MsgText, event.MsgNotice:
+		return msgEvt.Body, nil, true
+	case event.MsgImage, event.MsgAudio, event.MsgVideo, event.MsgFile:
+		return c.extractInboundMedia(ctx, msgEvt, scope)
+	default:
+		logger.DebugCF("matrix", "Ignoring unsupported matrix msgtype", map[string]any{
+			"msgtype": msgEvt.MsgType,
+		})
+		return "", nil, false
+	}
+}
+
+func (c *MatrixChannel) extractInboundMedia(
+	ctx context.Context,
+	msgEvt *event.MessageEventContent,
+	scope string,
+) (string, []string, bool) {
+	mediaKind := matrixMediaKind(msgEvt.MsgType)
+	label := matrixMediaLabel(msgEvt, mediaKind)
+	content := fmt.Sprintf("[%s: %s]", mediaKind, label)
+	if caption := strings.TrimSpace(msgEvt.GetCaption()); caption != "" {
+		content = caption + "\n" + content
+	}
+
+	localPath, err := c.downloadMedia(ctx, msgEvt, mediaKind)
+	if err != nil {
+		logger.WarnCF("matrix", "Failed to download media; forwarding as text-only marker", map[string]any{
+			"msgtype": msgEvt.MsgType,
+			"error":   err.Error(),
+		})
+		return content, nil, true
+	}
+
+	filename := matrixMediaFilename(label, mediaKind, matrixContentType(msgEvt))
+	ref := c.storeMedia(localPath, media.MediaMeta{
+		Filename:    filename,
+		ContentType: matrixContentType(msgEvt),
+		Source:      "matrix",
+	}, scope)
+	return content, []string{ref}, true
+}
+
+func (c *MatrixChannel) storeMedia(localPath string, meta media.MediaMeta, scope string) string {
+	if store := c.GetMediaStore(); store != nil {
+		ref, err := store.Store(localPath, meta, scope)
+		if err == nil {
+			return ref
+		}
+		logger.WarnCF("matrix", "Failed to store media in MediaStore, falling back to local path", map[string]any{
+			"path":  localPath,
+			"error": err.Error(),
+		})
+	}
+	return localPath
+}
+
+func (c *MatrixChannel) downloadMedia(
+	ctx context.Context,
+	msgEvt *event.MessageEventContent,
+	mediaKind string,
+) (string, error) {
+	uri := matrixMediaURI(msgEvt)
+	if uri == "" {
+		return "", errors.New("empty matrix media URL")
+	}
+	parsed := uri.ParseOrIgnore()
+	if parsed.IsEmpty() {
+		return "", fmt.Errorf("invalid matrix media URL: %s", uri)
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	resp, err := c.client.Download(reqCtx, parsed)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logger.DebugCF("matrix", "Response body close failed", map[string]any{"error": closeErr.Error()})
+		}
+	}()
+
+	reader := resp.Body
+	readerClose := func() error { return nil }
+
+	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
+	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
+		if err = msgEvt.File.PrepareForDecryption(); err != nil {
+			return "", fmt.Errorf("decrypt matrix media: %w", err)
+		}
+		decryptReader := msgEvt.File.DecryptStream(resp.Body)
+		reader = decryptReader
+		readerClose = decryptReader.Close
+	}
+
+	label := matrixMediaLabel(msgEvt, mediaKind)
+	ext := matrixMediaExt(label, matrixContentType(msgEvt), mediaKind)
+	mediaDir, err := matrixMediaTempDir()
+	if err != nil {
+		return "", fmt.Errorf("create matrix media directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(mediaDir, "matrix-media-*"+ext)
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if !cleanup {
+			return
+		}
+		utils.CloseQuietly(tmp)
+		if rmErr := os.Remove(tmpPath); rmErr != nil {
+			logger.WarnCF("matrix", "Failed to remove temp media file", map[string]any{
+				"path": tmpPath, "error": rmErr.Error(),
+			})
+		}
+	}()
+
+	_, err = io.Copy(tmp, reader)
+	if err != nil {
+		return "", err
+	}
+	if err = readerClose(); err != nil {
+		return "", fmt.Errorf("decrypt matrix media: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return "", err
+	}
+
+	cleanup = false
+	return tmpPath, nil
+}
+
+func matrixContentType(msgEvt *event.MessageEventContent) string {
+	if msgEvt != nil && msgEvt.Info != nil {
+		return strings.TrimSpace(msgEvt.Info.MimeType)
+	}
+	return ""
+}
+
+func matrixMediaURI(msgEvt *event.MessageEventContent) id.ContentURIString {
+	if msgEvt == nil {
+		return ""
+	}
+	if msgEvt.URL != "" {
+		return msgEvt.URL
+	}
+	if msgEvt.File != nil {
+		return msgEvt.File.URL
+	}
+	return ""
+}
+
+func matrixMediaKind(msgType event.MessageType) string {
+	switch msgType {
+	case event.MsgAudio:
+		return "audio"
+	case event.MsgVideo:
+		return "video"
+	case event.MsgFile:
+		return "file"
+	default:
+		return "image"
+	}
+}
+
+func matrixOutboundMsgType(partType, filename, contentType string) event.MessageType {
+	switch strings.ToLower(strings.TrimSpace(partType)) {
+	case "image":
+		return event.MsgImage
+	case "audio", "voice":
+		return event.MsgAudio
+	case "video":
+		return event.MsgVideo
+	case "file", "document":
+		return event.MsgFile
+	}
+
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case strings.HasPrefix(ct, "image/"):
+		return event.MsgImage
+	case strings.HasPrefix(ct, "audio/"), ct == "application/ogg", ct == "application/x-ogg":
+		return event.MsgAudio
+	case strings.HasPrefix(ct, "video/"):
+		return event.MsgVideo
+	}
+
+	switch strings.ToLower(strings.TrimSpace(filepath.Ext(filename))) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+		return event.MsgImage
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
+		return event.MsgAudio
+	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+		return event.MsgVideo
+	default:
+		return event.MsgFile
+	}
+}
+
+func matrixOutboundContent(
+	caption, filename string,
+	msgType event.MessageType,
+	contentType string,
+	size int64,
+	uri id.ContentURIString,
+) *event.MessageEventContent {
+	body := strings.TrimSpace(caption)
+	if body == "" {
+		body = filename
+	}
+	if body == "" {
+		body = matrixMediaKind(msgType)
+	}
+
+	info := &event.FileInfo{MimeType: strings.TrimSpace(contentType)}
+	if size > 0 && size <= int64(int(^uint(0)>>1)) {
+		info.Size = int(size)
+	}
+
+	content := &event.MessageEventContent{
+		MsgType:  msgType,
+		Body:     body,
+		URL:      uri,
+		FileName: filename,
+		Info:     info,
+	}
+	return content
+}
+
+func matrixMediaLabel(msgEvt *event.MessageEventContent, fallback string) string {
+	if msgEvt == nil {
+		return fallback
+	}
+	if v := strings.TrimSpace(msgEvt.FileName); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(msgEvt.Body); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func matrixMediaFilename(label, mediaKind, contentType string) string {
+	filename := strings.TrimSpace(label)
+	if filename == "" {
+		filename = mediaKind
+	}
+	if filepath.Ext(filename) == "" {
+		filename += matrixMediaExt("", contentType, mediaKind)
+	}
+	return filename
+}
+
+func matrixMediaExt(filename, contentType, mediaKind string) string {
+	if ext := strings.TrimSpace(filepath.Ext(filename)); ext != "" {
+		return ext
+	}
+	if contentType != "" {
+		if exts, err := mime.ExtensionsByType(contentType); err == nil && len(exts) > 0 {
+			return exts[0]
+		}
+	}
+	switch mediaKind {
+	case "audio":
+		return ".ogg"
+	case "video":
+		return ".mp4"
+	case "file":
+		return ".bin"
+	default:
+		return ".jpg"
+	}
+}
+
+func (c *MatrixChannel) isGroupRoom(ctx context.Context, roomID id.RoomID) bool {
+	now := time.Now()
+	if isGroup, ok := c.roomKindCache.get(roomID.String(), now); ok {
+		return isGroup
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	resp, err := c.client.JoinedMembers(reqCtx, roomID)
+	if err != nil {
+		logger.DebugCF("matrix", "Failed to query room members; assume direct", map[string]any{
+			"room_id": roomID.String(),
+			"error":   err.Error(),
+		})
+		return false
+	}
+
+	isGroup := len(resp.Joined) > 2
+	c.roomKindCache.set(roomID.String(), isGroup, now)
+	return isGroup
+}
+
+func (c *MatrixChannel) isBotMentioned(msgEvt *event.MessageEventContent) bool {
+	if msgEvt == nil {
+		return false
+	}
+
+	if msgEvt.Mentions != nil && msgEvt.Mentions.Has(c.client.UserID) {
+		return true
+	}
+
+	userID := c.client.UserID.String()
+	if userID != "" && strings.Contains(msgEvt.Body, userID) {
+		return true
+	}
+	if mentionsUserInFormattedBody(msgEvt.FormattedBody, c.client.UserID) {
+		return true
+	}
+
+	mentionR := c.localpartMentionR
+	if mentionR == nil {
+		mentionR = localpartMentionRegexp(matrixLocalpart(c.client.UserID))
+	}
+	if mentionR == nil {
+		return false
+	}
+
+	// Matrix users are addressed as MXID "@localpart:server", but many clients
+	// emit plain-text mentions as "@localpart". Both forms are handled here.
+	return mentionR.MatchString(msgEvt.Body) || mentionR.MatchString(msgEvt.FormattedBody)
+}
+
+func mentionsUserInFormattedBody(formattedBody string, userID id.UserID) bool {
+	target := strings.ToLower(strings.TrimSpace(userID.String()))
+	if target == "" {
+		return false
+	}
+
+	formattedBody = strings.TrimSpace(formattedBody)
+	if formattedBody == "" {
+		return false
+	}
+
+	if strings.Contains(strings.ToLower(formattedBody), target) {
+		return true
+	}
+
+	matches := matrixMentionHrefRegexp.FindAllStringSubmatch(formattedBody, -1)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		decoded := decodeMatrixMentionHref(match[1])
+		if strings.Contains(strings.ToLower(decoded), target) {
+			return true
+		}
+
+		u, err := url.Parse(decoded)
+		if err != nil {
+			continue
+		}
+
+		if strings.Contains(strings.ToLower(u.Path), target) || strings.Contains(strings.ToLower(u.Fragment), target) {
+			return true
+		}
+		if strings.Contains(strings.ToLower(decodeMatrixMentionHref(u.Fragment)), target) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func decodeMatrixMentionHref(v string) string {
+	decoded := html.UnescapeString(strings.TrimSpace(v))
+	if decoded == "" {
+		return ""
+	}
+
+	for range 2 {
+		next, err := url.QueryUnescape(decoded)
+		if err != nil || next == decoded {
+			break
+		}
+		decoded = next
+	}
+	return decoded
+}
+
+func (c *MatrixChannel) typingLoop(ctx context.Context, roomID id.RoomID, session *typingSession) {
+	sendTyping := func() {
+		_, err := c.client.UserTyping(ctx, roomID, true, typingServerTTL)
+		if err != nil {
+			logger.DebugCF("matrix", "Failed to send typing status", map[string]any{
+				"room_id": roomID.String(),
+				"error":   err.Error(),
+			})
+		}
+	}
+
+	sendTyping()
+	ticker := time.NewTicker(typingRefreshInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-session.stopCh:
+			return
+		case <-ticker.C:
+			sendTyping()
+		}
+	}
+}
+
+func (c *MatrixChannel) stopTypingSessions(ctx context.Context) {
+	c.typingMu.Lock()
+	sessions := c.typingSessions
+	c.typingSessions = make(map[string]*typingSession)
+	c.typingMu.Unlock()
+
+	for roomID, session := range sessions {
+		session.stop()
+		if _, typingErr := c.client.UserTyping(ctx, id.RoomID(roomID), false, 0); typingErr != nil {
+			logger.DebugCF("matrix", "Failed to clear typing indicator", map[string]any{
+				"room_id": roomID, "error": typingErr.Error(),
+			})
+		}
+	}
+}
+
+func (c *MatrixChannel) runRoomKindCacheJanitor(ctx context.Context) {
+	ticker := time.NewTicker(roomKindCacheCleanupPeriod)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			c.roomKindCache.cleanupExpired(now)
+		}
+	}
+}
+
+func (c *MatrixChannel) stripSelfMention(text string) string {
+	return stripUserMentionWithRegexp(text, c.client.UserID, c.localpartMentionR)
+}
+
+func matrixMediaTempDir() (string, error) {
+	dirName := fmt.Sprintf("%s_%d", matrixMediaTempDirName, os.Getuid())
+	mediaDir := filepath.Join(os.TempDir(), dirName)
+	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
+		return "", err
+	}
+	return mediaDir, nil
+}
+
+func matrixLocalpart(userID id.UserID) string {
+	s := strings.TrimPrefix(userID.String(), "@")
+	localpart, _, _ := strings.Cut(s, ":")
+	return strings.TrimSpace(localpart)
+}
+
+func localpartMentionRegexp(localpart string) *regexp.Regexp {
+	localpart = strings.TrimSpace(localpart)
+	if localpart == "" {
+		return nil
+	}
+
+	// Match Matrix mentions in plain text while avoiding false positives:
+	//   "@claw" and "@claw:matrix.org" should match,
+	//   "test@example.com" and "helloclawworld" should not.
+	pattern := `(?i)(^|[^[:alnum:]_])@` + regexp.QuoteMeta(localpart) + `(?::[A-Za-z0-9._:-]+)?([^[:alnum:]_]|$)`
+	return regexp.MustCompile(pattern)
+}
+
+func stripUserMention(text string, userID id.UserID) string {
+	return stripUserMentionWithRegexp(text, userID, localpartMentionRegexp(matrixLocalpart(userID)))
+}
+
+func stripUserMentionWithRegexp(text string, userID id.UserID, mentionR *regexp.Regexp) string {
+	cleaned := strings.ReplaceAll(text, userID.String(), "")
+
+	if mentionR != nil {
+		cleaned = mentionR.ReplaceAllString(cleaned, "$1$2")
+	}
+
+	cleaned = strings.TrimSpace(cleaned)
+	cleaned = strings.TrimLeft(cleaned, ",:; ")
+	return strings.TrimSpace(cleaned)
+}

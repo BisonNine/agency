@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=ClawEh
+Comment=Personal AI Assistant
+Exec=claw
+Icon=claw
+Terminal=true
+Type=Application
+Categories=Utility;Network;
+Keywords=claw;ai;agent;bot;

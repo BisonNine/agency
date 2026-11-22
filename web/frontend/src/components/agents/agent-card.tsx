@@ -1,0 +1,1183 @@
+import { IconPlus, IconTrash } from "@tabler/icons-react"
+import { Link } from "@tanstack/react-router"
+import { useState } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
+
+import { type CardSummary } from "@/api/cards"
+import {
+  type AgentToolCatalogResponse,
+  type HumanAgentProblem,
+  type IgnoredAllowedFolder,
+} from "@/api/channels"
+import { type ModelInfo } from "@/api/models"
+import {
+  type AgentBindingView,
+  type AllowedFolderEntry,
+  BUILTIN_MAX_TOOL_ITERATIONS,
+  type CLIBypassWarning,
+  MAX_FOLDER_NOTE_CHARS,
+  MESSAGE_TOOL,
+  type MaestroRunnerEdits,
+  SPAWN_TOOL,
+  type SkillInfo,
+  TASK_GRANT_KINDS,
+  type TaskGrantKind,
+  type TaskModelGrant,
+  internalToolsSummary,
+  settingsCardClass,
+  toolGranted,
+} from "@/components/agents/agent-model"
+import { DenyToolsEditor } from "@/components/agents/deny-tools-editor"
+import { MaestroSettingsSection } from "@/components/agents/maestro-settings"
+import { MayMessageSelect } from "@/components/agents/may-message-select"
+import { MCPAccessSelect } from "@/components/agents/mcp-access-select"
+import { MessageTokensSection } from "@/components/agents/message-tokens-section"
+import { FallbacksSelect } from "@/components/agents/model-selects"
+import { SkillsSelect } from "@/components/agents/skills-select"
+import { ToolSelect } from "@/components/agents/tool-select"
+import {
+  noteKey,
+  pageLabel,
+  uniqueNotes,
+} from "@/components/human-setting-notes"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+
+export interface AgentCardProps {
+  label: string
+  name?: string
+  enabled?: boolean
+  selectedModels: string[]
+  /** The skills the agent may use ("*" = every skill); [] = none. */
+  skills: string[]
+  /** The native tools the agent may call; [] = none. */
+  tools: string[]
+  availableSkills: SkillInfo[]
+  availableTools: AgentToolCatalogResponse
+  models: ModelInfo[]
+  messageWindowMinutes?: number
+  messageWindowCount?: number
+  temperature?: number
+  /** The agent's own step cap; undefined = the default. */
+  maxToolIterations?: number
+  /** The step cap that applies when the field is blank, shown in the hint. */
+  defaultMaxToolIterations?: number
+  eventRetentionDays?: number
+  retiredRetentionDays?: number
+  summarizationModels?: string[]
+  /** subagents.models ("Sub-Agent models"); [] = the agent's own models. */
+  subagentModels?: string[]
+  shareCommon?: boolean
+  globalCron?: boolean
+  maestro?: boolean
+  maestroSettings?: MaestroRunnerEdits
+  onMaestroSettingsChange?: (v: MaestroRunnerEdits) => void
+  /** The classifiers switch ("Allow classifiers"). */
+  classifiers?: boolean
+  onClassifiersChange?: (v: boolean) => void
+  /** The classifier model ("" = none set). */
+  classifierModel?: string
+  /** The models the agent can use: its own, else the default models. */
+  classifierModels?: string[]
+  /** The agent's task-model grant (agent_spawn kinds). */
+  taskModelGrant?: TaskModelGrant
+  /** The kinds whose list on Task models has at least one model. */
+  taskKindsWithModels?: TaskGrantKind[]
+  onTaskModelGrantChange?: (kind: TaskGrantKind, on: boolean) => void
+  /** A grant change is being saved: the boxes wait for it, so a second
+   *  click can't save over the first. */
+  taskModelsSaving?: boolean
+  onClassifierModelChange?: (model: string) => void
+  fusion?: boolean
+  forum?: boolean
+  /** The agent's character_card ("" = none). */
+  characterCard?: string
+  /** The library (GET /api/cards) for the Character card select. */
+  availableCards?: Pick<CardSummary, "id" | "name">[]
+  onCharacterCardChange?: (id: string) => void
+  /** The ccv3 switch: the card-library tool. */
+  ccv3?: boolean
+  onCCv3Change?: (v: boolean) => void
+  cogmem?: boolean
+  allowedFolders?: AllowedFolderEntry[]
+  onAllowedFoldersChange?: (folders: AllowedFolderEntry[]) => void
+  /** Saved allowed folders the file tools skip (GET /api/agents/allowed-folders/ignored). */
+  ignoredFolders?: IgnoredAllowedFolder[]
+  mcpTools?: string[]
+  onMCPToolsChange?: (mcpTools: string[]) => void
+  denyTools?: string[]
+  onDenyToolsChange?: (denyTools: string[]) => void
+  /** subagents.allow_agents ("May message"). */
+  allowAgents?: string[]
+  /** Every configured agent, for the "May message" list. */
+  configuredAgents?: { id: string; name?: string }[]
+  onAllowAgentsChange?: (allow: string[]) => void
+  agentBindings?: AgentBindingView[]
+  onSetDefaultBinding?: (targetIndex: number, deliverTo?: string) => void
+  onToggleEnabled?: () => void
+  onModelsChange: (models: string[]) => void
+  /** Models in the chain whose skip-permissions flag is ignored (see cliBypassWarnings). */
+  bypassWarnings?: CLIBypassWarning[]
+  /** The agent represents a person (a model on the human protocol). */
+  human?: boolean
+  /** Human-agent rule notes for this agent (GET /api/agents/human). */
+  humanNotes?: HumanAgentProblem[]
+  onSkillsChange: (skills: string[]) => void
+  onToolsChange: (tools: string[]) => void
+  onMessageChange?: (mins: number, count: number) => void
+  onEventRetentionDaysChange?: (v: number | undefined) => void
+  onRetiredRetentionDaysChange?: (v: number | undefined) => void
+  onTemperatureChange?: (t: number | undefined) => void
+  onMaxToolIterationsChange?: (v: number | undefined) => void
+  onSummarizationModelsChange?: (models: string[]) => void
+  onSubagentModelsChange?: (models: string[]) => void
+  onShareCommonChange?: (share: boolean) => void
+  onGlobalCronChange?: (v: boolean) => void
+  onMaestroChange?: (v: boolean) => void
+  onFusionChange?: (v: boolean) => void
+  onForumChange?: (v: boolean) => void
+  onCogmemChange?: (v: boolean) => void
+  onDelete?: () => void
+  status?: "saving" | "saved" | "error"
+}
+
+export function AgentCard({
+  label,
+  name,
+  enabled,
+  selectedModels,
+  skills,
+  tools,
+  availableSkills,
+  availableTools,
+  models,
+  messageWindowMinutes = 0,
+  messageWindowCount = 2,
+  temperature = undefined,
+  maxToolIterations = undefined,
+  defaultMaxToolIterations = BUILTIN_MAX_TOOL_ITERATIONS,
+  eventRetentionDays = undefined,
+  retiredRetentionDays = undefined,
+  summarizationModels = [],
+  subagentModels = [],
+  shareCommon = true,
+  globalCron = false,
+  maestro = false,
+  maestroSettings = undefined,
+  onMaestroSettingsChange = undefined,
+  classifiers = false,
+  onClassifiersChange = undefined,
+  classifierModel = "",
+  classifierModels = [],
+  taskModelGrant = {},
+  taskKindsWithModels = [],
+  onTaskModelGrantChange = undefined,
+  taskModelsSaving = false,
+  onClassifierModelChange = undefined,
+  fusion = false,
+  forum = false,
+  characterCard = "",
+  availableCards = [],
+  onCharacterCardChange = undefined,
+  ccv3 = false,
+  onCCv3Change = undefined,
+  cogmem = true,
+  allowedFolders = [],
+  onAllowedFoldersChange = undefined,
+  ignoredFolders = [],
+  mcpTools = [],
+  onMCPToolsChange = undefined,
+  denyTools = [],
+  onDenyToolsChange = undefined,
+  allowAgents = [],
+  configuredAgents = [],
+  onAllowAgentsChange = undefined,
+  agentBindings = [],
+  onSetDefaultBinding = undefined,
+  onToggleEnabled,
+  onModelsChange,
+  bypassWarnings = [],
+  human = false,
+  humanNotes = [],
+  onSkillsChange,
+  onToolsChange,
+  onMessageChange,
+  onEventRetentionDaysChange = undefined,
+  onRetiredRetentionDaysChange = undefined,
+  onTemperatureChange = undefined,
+  onMaxToolIterationsChange = undefined,
+  onSummarizationModelsChange = undefined,
+  onSubagentModelsChange = undefined,
+  onShareCommonChange = undefined,
+  onGlobalCronChange = undefined,
+  onMaestroChange = undefined,
+  onFusionChange = undefined,
+  onForumChange = undefined,
+  onCogmemChange = undefined,
+  onDelete,
+  status,
+}: AgentCardProps) {
+  const { t } = useTranslation()
+  const toolsSummary = internalToolsSummary(tools)
+  // Local edits for explicit cron chat ids (peerless channels), keyed by the
+  // binding's index in the full bindings array.
+  const [deliverEdits, setDeliverEdits] = useState<Record<number, string>>({})
+  const deliverValue = (b: AgentBindingView) =>
+    deliverEdits[b.index] ?? b.deliverTo
+  const mcpServers = availableTools.mcp_servers ?? []
+  // The trash button only opens this; the agent is deleted on confirm.
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  // A saved card the library no longer has stays selectable, marked, so the
+  // operator sees the value where it lives rather than in a log.
+  const cardMissing =
+    characterCard !== "" && !availableCards.some((c) => c.id === characterCard)
+  // A classifier model that is not in Classification stays selectable, marked.
+  const classifierModelUnusable =
+    classifierModel !== "" && !classifierModels.includes(classifierModel)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <span className="font-mono text-lg font-semibold">
+            {name || label}
+          </span>
+          {name && name !== label && (
+            <span className="text-muted-foreground ml-2 font-mono text-xs">
+              ({label})
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {status && (
+            <span
+              className={`text-xs ${status === "error" ? "text-destructive" : status === "saved" ? "text-emerald-500" : "text-muted-foreground"}`}
+            >
+              {status === "saving"
+                ? "Saving…"
+                : status === "saved"
+                  ? "Saved ✓"
+                  : "Save failed"}
+            </span>
+          )}
+          {onToggleEnabled !== undefined && (
+            <Switch
+              checked={enabled ?? true}
+              onCheckedChange={onToggleEnabled}
+              aria-label={(enabled ?? true) ? "Disable agent" : "Enable agent"}
+            />
+          )}
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setConfirmDelete(true)}
+              // Icon-only, so it needs an explicit name: without one a screen
+              // reader announces nothing at all, and the button that DELETES AN
+              // AGENT is the last place to leave unlabelled. The enable switch
+              // beside it is already labelled the same way.
+              aria-label={`Delete agent ${label}`}
+              title={`Delete agent ${label}`}
+              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            >
+              <IconTrash className="size-3.5" />
+            </Button>
+          )}
+          {onDelete && (
+            <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+              <AlertDialogContent size="sm">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {t("agents.deleteTitle", { name: name || label })}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t("agents.deleteDescription")}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => {
+                      setConfirmDelete(false)
+                      onDelete()
+                    }}
+                  >
+                    {t("agents.delete")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      </div>
+
+      <div className={settingsCardClass}>
+        <div className="space-y-1.5">
+          <p className="text-foreground text-sm font-semibold">
+            Models (tried in order)
+          </p>
+          <FallbacksSelect
+            fallbacks={selectedModels}
+            primary=""
+            models={models}
+            onChange={onModelsChange}
+          />
+          {/* One line per CLI, however many of the chain's models run on it:
+              the state, and the means to change it. */}
+          {[
+            ...new Map(bypassWarnings.map((w) => [w.provider, w])).values(),
+          ].map((w) => (
+            <p
+              key={w.provider}
+              className="text-xs text-amber-600 dark:text-amber-400"
+            >
+              {t("agents.bypassNotAllowed", { provider: w.provider })}{" "}
+              <Link to="/providers" className="underline">
+                {t("agents.bypassAllow")}
+              </Link>
+            </p>
+          ))}
+          {human && (
+            <p className="text-muted-foreground text-xs">{t("agents.human")}</p>
+          )}
+          {uniqueNotes(humanNotes).map((n) => (
+            <p
+              key={noteKey(n)}
+              data-testid="human-agent-problem"
+              className="text-xs text-amber-600 dark:text-amber-400"
+            >
+              {n.kind === "not_running"
+                ? t("agents.humanNotRunning", { message: n.message })
+                : t("agents.humanIgnored", { message: n.message })}
+              {n.link && (
+                <>
+                  {" "}
+                  <Link to={n.link} className="underline">
+                    {pageLabel(n.link, t)}
+                  </Link>
+                </>
+              )}
+            </p>
+          ))}
+        </div>
+
+        {!human && onSubagentModelsChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.workerModels")}
+            </p>
+            <FallbacksSelect
+              fallbacks={subagentModels}
+              primary=""
+              models={models}
+              onChange={onSubagentModelsChange}
+              addPlaceholder={t("agents.workerModelsAdd")}
+            />
+            <p className="text-muted-foreground text-xs">
+              {subagentModels.length === 0
+                ? t("agents.workerModelsEmptyHint")
+                : t("agents.workerModelsHint")}
+            </p>
+          </div>
+        )}
+
+        {!human && onSummarizationModelsChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.summarizationModels")}
+            </p>
+            <FallbacksSelect
+              fallbacks={summarizationModels}
+              primary=""
+              models={models}
+              onChange={onSummarizationModelsChange}
+              addPlaceholder={t("agents.summarizationModelsAdd")}
+            />
+            <p className="text-muted-foreground text-xs">
+              {t("agents.summarizationModelsHint")}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {!human && availableSkills.length > 0 && (
+        <div className={settingsCardClass}>
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">Skills</p>
+            <SkillsSelect
+              selected={skills}
+              availableSkills={availableSkills}
+              onChange={onSkillsChange}
+            />
+          </div>
+        </div>
+      )}
+
+      {!human &&
+        (onMCPToolsChange !== undefined ||
+          onDenyToolsChange !== undefined ||
+          onAllowAgentsChange !== undefined ||
+          availableTools.tools.length > 0) && (
+          <div className={settingsCardClass}>
+            <p className="text-foreground text-sm font-semibold">Tools</p>
+
+            {onMCPToolsChange !== undefined && (
+              <MCPAccessSelect
+                serverNames={mcpServers.map((s) => s.name)}
+                fusionServices={availableTools.fusion_services ?? []}
+                value={mcpTools}
+                onChange={onMCPToolsChange}
+              />
+            )}
+
+            {availableTools.tools.length > 0 && (
+              <div className="space-y-1.5">
+                <p
+                  className={`text-xs font-semibold ${toolsSummary.none ? "text-amber-400" : "text-foreground"}`}
+                >
+                  Internal tools: {toolsSummary.text}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Native tools that stay in this agent&apos;s context on every
+                  request. Suites (cogmem, maestro, fusion, forum) and MCP
+                  access are controlled by their own toggles.
+                </p>
+                <ToolSelect
+                  selected={tools}
+                  catalog={availableTools}
+                  onChange={onToolsChange}
+                  denyTools={denyTools}
+                />
+              </div>
+            )}
+
+            {onAllowAgentsChange !== undefined && (
+              <MayMessageSelect
+                agentName={name || label}
+                agentId={label}
+                agents={configuredAgents}
+                value={allowAgents}
+                messageGranted={toolGranted(tools, denyTools, MESSAGE_TOOL)}
+                // The list also decides whom agent_spawn may start and whom a
+                // forum may ask, so it has an effect with either of those.
+                listUsed={
+                  toolGranted(tools, denyTools, MESSAGE_TOOL) ||
+                  toolGranted(tools, denyTools, SPAWN_TOOL) ||
+                  forum
+                }
+                onChange={onAllowAgentsChange}
+              />
+            )}
+
+            {onDenyToolsChange !== undefined && (
+              <div className="space-y-1.5">
+                <p className="text-foreground text-xs font-semibold">
+                  {t("agents.denyTools")}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {t("agents.denyToolsHint")}
+                </p>
+                <DenyToolsEditor
+                  value={denyTools}
+                  onChange={onDenyToolsChange}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+      {!human && onAllowedFoldersChange !== undefined && (
+        <div className={settingsCardClass}>
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.allowedFolders")}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.allowedFoldersHint")}
+            </p>
+            {allowedFolders.map((f, fi) => {
+              const set = (patch: Partial<AllowedFolderEntry>) =>
+                onAllowedFoldersChange(
+                  allowedFolders.map((x, j) =>
+                    j === fi ? { ...x, ...patch } : x,
+                  ),
+                )
+              return (
+                <div key={fi} className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={f.path}
+                      onChange={(e) => set({ path: e.target.value })}
+                      placeholder="/srv/src"
+                      aria-label={t("agents.allowedFolderPath")}
+                      className="h-7 flex-1 font-mono text-xs"
+                    />
+                    <label className="text-muted-foreground flex items-center gap-1 text-xs select-none">
+                      <Checkbox
+                        checked={f.notify === true}
+                        onCheckedChange={(c) => set({ notify: c === true })}
+                      />
+                      {t("agents.allowedFolderNotify")}
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={t("agents.allowedFolderRemove")}
+                      onClick={() =>
+                        onAllowedFoldersChange(
+                          allowedFolders.filter((_, j) => j !== fi),
+                        )
+                      }
+                    >
+                      <IconTrash className="size-3.5" />
+                    </Button>
+                  </div>
+                  <Input
+                    value={f.note ?? ""}
+                    onChange={(e) => set({ note: e.target.value })}
+                    maxLength={MAX_FOLDER_NOTE_CHARS}
+                    placeholder={t("agents.allowedFolderNote")}
+                    aria-label={t("agents.allowedFolderNote")}
+                    className="h-7 text-xs"
+                  />
+                  {(() => {
+                    const ignored = ignoredFolders.find(
+                      (g) => g.path === f.path,
+                    )
+                    return ignored ? (
+                      <p
+                        data-testid="ignored-folder"
+                        className="text-xs text-amber-600 dark:text-amber-400"
+                      >
+                        {t(
+                          ignored.reason === "not_absolute"
+                            ? "agents.allowedFolderNotAbsolute"
+                            : ignored.reason === "line_break"
+                              ? "agents.allowedFolderLineBreak"
+                              : "agents.allowedFolderNotFound",
+                        )}
+                      </p>
+                    ) : null
+                  })()}
+                </div>
+              )
+            })}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() =>
+                onAllowedFoldersChange([
+                  ...allowedFolders,
+                  { path: "", notify: false },
+                ])
+              }
+            >
+              <IconPlus className="size-3.5" />
+              {t("agents.allowedFolderAdd")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!human && (
+        <div className={settingsCardClass}>
+          <MessageTokensSection agentId={label} />
+        </div>
+      )}
+
+      {!human && onMessageChange !== undefined && (
+        <div className={settingsCardClass}>
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              Rotating Tokens
+            </p>
+            <p className="text-muted-foreground text-xs">
+              A token that changes automatically; use Integration Tokens for new
+              apps.
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                value={messageWindowMinutes}
+                onChange={(e) =>
+                  onMessageChange(
+                    Math.max(0, parseInt(e.target.value) || 0),
+                    messageWindowCount,
+                  )
+                }
+                className="h-7 w-20 text-xs"
+                aria-label="Token rotation (minutes, 0 = disabled)"
+              />
+              <span className="text-muted-foreground text-xs">
+                Token rotation (minutes, 0 = disabled)
+              </span>
+            </div>
+            {messageWindowMinutes > 0 && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={messageWindowCount}
+                  onChange={(e) =>
+                    onMessageChange(
+                      messageWindowMinutes,
+                      Math.max(1, parseInt(e.target.value) || 1),
+                    )
+                  }
+                  className="h-7 w-20 text-xs"
+                  aria-label="Number of tokens retained"
+                />
+                <span className="text-muted-foreground text-xs">
+                  Number of tokens retained
+                </span>
+              </div>
+            )}
+            {messageWindowMinutes > 0 && (
+              <p className="text-muted-foreground text-xs">
+                Effective token lifetime:{" "}
+                {messageWindowMinutes * messageWindowCount} minutes. Endpoint:{" "}
+                <span className="font-mono">
+                  POST /api/message/&#123;token&#125;
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className={settingsCardClass}>
+        {!human && onTemperatureChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">Temperature</p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperature ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value
+                  onTemperatureChange(v === "" ? undefined : parseFloat(v))
+                }}
+                className="h-7 w-20 text-xs"
+                placeholder="default"
+              />
+              <span className="text-muted-foreground text-xs">
+                (0–2; blank uses the default temperature, else the model's own;
+                not sent to Anthropic models)
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!human && onMaxToolIterationsChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.maxToolIterations")}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={maxToolIterations ?? ""}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  onMaxToolIterationsChange(v > 0 ? v : undefined)
+                }}
+                className="h-7 w-20 text-xs"
+                placeholder={String(defaultMaxToolIterations)}
+                aria-label={t("agents.maxToolIterations")}
+              />
+              <span className="text-muted-foreground text-xs">
+                {t("agents.maxToolIterationsHint", {
+                  steps: defaultMaxToolIterations,
+                })}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Memory retention. Events are things that happened at a point in
+            time; they are never in the prompt, but they accumulate — an hourly
+            "nothing changed" note reached 300 rows on one agent. Retiring a
+            memory leaves the row behind, so a store that retires steadily grows
+            forever while showing nothing for it. Only these two are ever
+            deleted by age: a fact, preference, rule or operational note is
+            permanent. */}
+        {!human && onEventRetentionDaysChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.eventRetention")}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={-1}
+                step={1}
+                value={eventRetentionDays ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value
+                  onEventRetentionDaysChange(
+                    v === "" ? undefined : parseInt(v, 10),
+                  )
+                }}
+                className="h-7 w-20 text-xs"
+                placeholder="30"
+              />
+              <span className="text-muted-foreground text-xs">
+                {t("agents.retentionHint", { days: 30 })}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!human && onRetiredRetentionDaysChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.retiredRetention")}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={-1}
+                step={1}
+                value={retiredRetentionDays ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value
+                  onRetiredRetentionDaysChange(
+                    v === "" ? undefined : parseInt(v, 10),
+                  )
+                }}
+                className="h-7 w-20 text-xs"
+                placeholder="90"
+              />
+              <span className="text-muted-foreground text-xs">
+                {t("agents.retentionHint", { days: 90 })}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!human && onShareCommonChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.shareCommon")}
+              </p>
+              <Switch
+                checked={shareCommon}
+                onCheckedChange={onShareCommonChange}
+                aria-label={t("agents.shareCommon")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.shareCommonHint")}
+            </p>
+          </div>
+        )}
+
+        {!human && onCogmemChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.cogmem")}
+              </p>
+              <Switch
+                checked={cogmem}
+                onCheckedChange={onCogmemChange}
+                aria-label={t("agents.cogmem")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.cogmemHint")}
+            </p>
+          </div>
+        )}
+
+        {!human && onMaestroChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.maestro")}
+              </p>
+              <Switch
+                checked={maestro}
+                onCheckedChange={onMaestroChange}
+                aria-label={t("agents.maestro")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.maestroHint")}
+            </p>
+            {maestro && maestroSettings && onMaestroSettingsChange && (
+              <MaestroSettingsSection
+                value={maestroSettings}
+                onChange={onMaestroSettingsChange}
+              />
+            )}
+          </div>
+        )}
+
+        {!human && onClassifiersChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.classifiers")}
+              </p>
+              <Switch
+                checked={classifiers}
+                onCheckedChange={onClassifiersChange}
+                aria-label={t("agents.classifiers")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.classifiersHint")}
+            </p>
+            {classifierModels.length === 0 && (
+              <p
+                data-testid="classifier-no-classify-models"
+                className="text-xs text-amber-600 dark:text-amber-400"
+              >
+                {t("agents.classifierNoClassifyModels")}{" "}
+                <Link to="/task-models" className="underline">
+                  {t("navigation.task_models")}
+                </Link>
+                .
+              </p>
+            )}
+            {classifiers && onClassifierModelChange && (
+              <div className="space-y-1.5">
+                <p className="text-foreground text-sm font-semibold">
+                  {t("agents.classifierModel")}
+                </p>
+                <Select
+                  value={classifierModel}
+                  onValueChange={onClassifierModelChange}
+                >
+                  <SelectTrigger
+                    className="w-full"
+                    aria-label={t("agents.classifierModel")}
+                  >
+                    <SelectValue
+                      placeholder={t("agents.classifierModelNone")}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classifierModels.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                    {classifierModelUnusable && (
+                      <SelectItem value={classifierModel}>
+                        {t("agents.classifierModelUnusableOption", {
+                          model: classifierModel,
+                        })}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {classifierModelUnusable && (
+                  <p
+                    data-testid="classifier-model-unusable"
+                    className="text-xs text-amber-600 dark:text-amber-400"
+                  >
+                    {t("agents.classifierModelUnusable")}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!human && onTaskModelGrantChange !== undefined && (
+          <div className="space-y-1.5" data-testid="task-model-grants">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.taskModels")}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.taskModelsHint")}
+            </p>
+            {!toolGranted(tools, denyTools, SPAWN_TOOL) && (
+              <p
+                data-testid="task-models-no-spawn"
+                className="text-xs text-amber-600 dark:text-amber-400"
+              >
+                {t("agents.taskModelsNoSpawn")}
+              </p>
+            )}
+            {TASK_GRANT_KINDS.map((kind) => {
+              const id = `task-grant-${kind}`
+              return (
+                <div key={kind} className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={id}
+                      checked={taskModelGrant[kind] === true}
+                      disabled={taskModelsSaving}
+                      onCheckedChange={(v) =>
+                        onTaskModelGrantChange(kind, v === true)
+                      }
+                      aria-label={`${t("agents.taskModels")}: ${t(`agents.taskKind.${kind}`)}`}
+                    />
+                    <Label htmlFor={id} className="text-sm font-normal">
+                      {t(`agents.taskKind.${kind}`)}
+                    </Label>
+                  </div>
+                  {!taskKindsWithModels.includes(kind) && (
+                    <p
+                      data-testid={`task-grant-no-model-${kind}`}
+                      className="pl-6 text-xs text-amber-600 dark:text-amber-400"
+                    >
+                      {t("agents.taskKindNoModel", {
+                        list: t(`agents.taskList.${kind}`),
+                      })}{" "}
+                      <Link to="/task-models" className="underline">
+                        {t("navigation.task_models")}
+                      </Link>
+                      .
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {!human && onFusionChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.fusion")}
+              </p>
+              <Switch
+                checked={fusion}
+                onCheckedChange={onFusionChange}
+                aria-label={t("agents.fusion")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.fusionHint")}
+            </p>
+          </div>
+        )}
+
+        {!human && onForumChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.forum")}
+              </p>
+              <Switch
+                checked={forum}
+                onCheckedChange={onForumChange}
+                aria-label={t("agents.forum")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.forumHint")}
+            </p>
+          </div>
+        )}
+
+        {!human && onCharacterCardChange !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.characterCard")}
+            </p>
+            <Select
+              value={characterCard || "__none__"}
+              onValueChange={(v) =>
+                onCharacterCardChange(v === "__none__" ? "" : v)
+              }
+            >
+              <SelectTrigger
+                className="w-full"
+                aria-label={t("agents.characterCard")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">
+                  {t("agents.characterCardNone")}
+                </SelectItem>
+                {availableCards.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} ({c.id})
+                  </SelectItem>
+                ))}
+                {cardMissing && (
+                  <SelectItem value={characterCard}>
+                    {t("agents.characterCardMissingOption", {
+                      id: characterCard,
+                    })}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            {cardMissing && (
+              <p
+                data-testid="character-card-missing"
+                className="text-xs text-amber-600 dark:text-amber-400"
+              >
+                {t("agents.characterCardMissing")}{" "}
+                <Link to="/agent/cards" className="underline">
+                  {t("agents.characterCardLibrary")}
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
+
+        {!human && onCCv3Change !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.ccv3")}
+              </p>
+              <Switch
+                checked={ccv3}
+                onCheckedChange={onCCv3Change}
+                aria-label={t("agents.ccv3")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.ccv3Hint")}
+            </p>
+          </div>
+        )}
+
+        {!human && onGlobalCronChange !== undefined && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.globalCron")}
+              </p>
+              <Switch
+                checked={globalCron}
+                onCheckedChange={onGlobalCronChange}
+                aria-label={t("agents.globalCron")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.globalCronHint")}
+            </p>
+          </div>
+        )}
+
+        {onSetDefaultBinding !== undefined && (
+          <div className="space-y-1.5">
+            <p className="text-foreground text-sm font-semibold">
+              {t("agents.channels")}
+            </p>
+            {agentBindings.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                {t("agents.channelsNone")}
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {agentBindings.map((b) => {
+                  // webui has no durable delivery address (its chat id is a
+                  // per-browser session), so it cannot be a default channel.
+                  const noDefault = b.channel === "webui"
+                  return (
+                    <div
+                      key={b.index}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <input
+                        type="radio"
+                        name={`default-channel-${label}`}
+                        aria-label={`Default channel: ${b.channel}`}
+                        checked={b.isDefault}
+                        disabled={noDefault}
+                        onChange={() => {
+                          if (noDefault) return
+                          if (b.hasPeer) {
+                            onSetDefaultBinding(b.index)
+                            return
+                          }
+                          const to = deliverValue(b).trim()
+                          if (!to) {
+                            toast.error(t("agents.channelsNeedChatId"))
+                            return
+                          }
+                          onSetDefaultBinding(b.index, to)
+                        }}
+                      />
+                      <span className="font-mono">
+                        {b.channel}
+                        {b.hasPeer ? ` · ${b.peerKind}:${b.peerID}` : ""}
+                      </span>
+                      {!b.hasPeer && !noDefault && (
+                        <input
+                          type="text"
+                          className="border-border/60 bg-background w-28 rounded border px-1.5 py-0.5 font-mono text-xs"
+                          placeholder={t("agents.channelsChatIdPlaceholder")}
+                          value={deliverValue(b)}
+                          onChange={(e) =>
+                            setDeliverEdits((s) => ({
+                              ...s,
+                              [b.index]: e.target.value,
+                            }))
+                          }
+                          onBlur={() => {
+                            const to = deliverValue(b).trim()
+                            if (b.isDefault && to)
+                              onSetDefaultBinding(b.index, to)
+                          }}
+                        />
+                      )}
+                      {noDefault && (
+                        <span className="text-muted-foreground">
+                          — {t("agents.channelsNoDefault")}
+                        </span>
+                      )}
+                      {b.isDefault && (
+                        <span className="text-muted-foreground">
+                          — {t("agents.channelsDefault")}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <p className="text-muted-foreground text-xs">
+              {t("agents.channelsHint")}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

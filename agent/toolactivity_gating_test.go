@@ -1,0 +1,89 @@
+package agent
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/providers"
+)
+
+// A tool call posts a "🔧 …" breadcrumb only when /tools is on for the session.
+func TestToolActivity_BreadcrumbGating(t *testing.T) {
+	run := func(t *testing.T, on bool) []string {
+		t.Helper()
+		tl := newTestAgentLoop(t)
+		al, cfg, msgBus := tl.al, tl.cfg, tl.msgBus
+		// Keep the model's ForUser streaming off so only the breadcrumb reaches the bus.
+		cfg.Agents.Defaults.StreamToolActivity = false
+
+		agentInstance := al.registry.Default()
+		if agentInstance == nil {
+			t.Fatal("no default agent")
+		}
+		agentInstance.Tools.Register(&mockDisplayTool{forUser: "unused"})
+		if agentInstance.Config != nil {
+			agentInstance.Config.Tools = []string{"*"}
+		}
+		agentInstance.Provider = &sequenceProvider{
+			responses: []*providers.LLMResponse{
+				{Content: "", ToolCalls: []providers.ToolCall{{
+					ID: "tc-1", Type: "function", Name: "display_tool",
+					Function: &providers.FunctionCall{Name: "display_tool", Arguments: `{}`},
+				}}},
+				{Content: "done"},
+			},
+			errors: []error{nil, nil},
+		}
+
+		opts := processOptions{
+			SessionKey:   "tools-gate",
+			Channel:      "test",
+			ChatID:       "chat",
+			UserMessage:  "go",
+			SendResponse: false,
+		}
+		al.setShowToolActivity(agentInstance, opts.SessionKey, on)
+
+		collected := make(chan bus.OutboundMessage, 16)
+		subCtx, subCancel := context.WithCancel(context.Background())
+		defer subCancel()
+		go func() {
+			for {
+				msg, ok := msgBus.SubscribeOutbound(subCtx)
+				if !ok {
+					return
+				}
+				collected <- msg
+			}
+		}()
+
+		if _, err := al.runAgentLoop(context.Background(), agentInstance, opts); err != nil {
+			t.Fatalf("runAgentLoop: %v", err)
+		}
+
+		seen := untilMarker(t, msgBus, collected)
+		msgs := make([]string, 0, len(seen))
+		for _, m := range seen {
+			msgs = append(msgs, m.Content)
+		}
+		return msgs
+	}
+
+	hasBreadcrumb := func(msgs []string) bool {
+		for _, m := range msgs {
+			if strings.HasPrefix(m, "🔧 ") {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !hasBreadcrumb(run(t, true)) {
+		t.Fatal("toggle ON: expected a 🔧 breadcrumb, got none")
+	}
+	if hasBreadcrumb(run(t, false)) {
+		t.Fatal("toggle OFF: breadcrumb published despite /tools off")
+	}
+}

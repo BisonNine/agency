@@ -1,0 +1,1538 @@
+#!/usr/bin/env bash
+################################################################################
+# ClawEh MCP Server Functional Tests
+#
+# Validates the claw MCP server (claw acting as an MCP host) over Streamable
+# HTTP transport using the `probe` binary. Structured in two tiers:
+#
+# Tier 1 — Discovery and auth validation (always runs, no session_token needed):
+#   Section 0: Reachability
+#   Section 1: Tool catalogue
+#   Section 2: Unauthenticated rejection
+#
+# Tier 2 — Authenticated tests (only when SESSION_TOKEN env var is set):
+#   Section 3: File operations
+#   Section 4: Session tool smoke tests
+#
+# REQUIREMENTS:
+#   - A running claw gateway with mcp_host.enabled=true (default port 5911)
+#   - The 'probe' binary on PATH (override with PROBE_PATH env var)
+#   - The configured workspace must be writable by the test
+#
+# Configuration via tests/.env (optional) or env vars:
+#   SERVER_URL      Base URL of the MCP host (default: http://127.0.0.1:5911)
+#   ENDPOINT        Session-token-parameter endpoint path (default: /internal)
+#   BEARER_ENDPOINT Optional bearer endpoint path (e.g. /mcp); when set with
+#                   SESSION_TOKEN, Tier 3 exercises Authorization: Bearer auth
+#   PROBE_PATH      Path to probe binary (default: probe)
+#   SESSION_TOKEN   SST<64hex> token from an active claw session's system prompt
+#
+# Exit codes:
+#   0   All tests passed
+#   1   One or more tests failed
+################################################################################
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# A test gateway must never alert the operator: no ALERTER_* channel from ~/.alerter.
+# shellcheck source=tests/lib/gateway_env.sh
+source "$SCRIPT_DIR/lib/gateway_env.sh"
+
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/.env"
+fi
+
+SERVER_URL="${SERVER_URL:-http://127.0.0.1:5911}"
+ENDPOINT="${ENDPOINT:-/internal}"
+BEARER_ENDPOINT="${BEARER_ENDPOINT:-}"   # optional: bearer endpoint path (e.g. /mcp)
+PROBE_PATH="${PROBE_PATH:-probe}"
+SESSION_TOKEN="${SESSION_TOKEN:-}"
+SERVICE_TOKEN="${SERVICE_TOKEN:-}"   # optional: long-lived per-agent service token
+FUSION_SERVICE="${FUSION_SERVICE:-}"   # optional: a Fusion service the token's agent lists in mcp_tools
+UNGRANTED_SERVICE_TOKEN="${UNGRANTED_SERVICE_TOKEN:-}"   # optional: service token of alice: Fusion on and nothing listed; tools "*" without shell_exec
+NOSHELL_SERVICE_TOKEN="${NOSHELL_SERVICE_TOKEN:-}"   # required by 4b.1b: service token of the agent Bob, whose tools leave out shell_exec
+CONFIG_FILE="${CONFIG_FILE:-}"     # optional: path to config file for reload test
+GATEWAY_URL="${GATEWAY_URL:-}"     # optional: gateway base URL for /health and /ready checks
+GATEWAY_LOG="${GATEWAY_LOG:-}"     # optional: the gateway's log file, for background-behaviour checks
+FULL_URL="${SERVER_URL}${ENDPOINT}"
+BEARER_URL="${SERVER_URL}${BEARER_ENDPOINT}"
+
+# All tools the test config exposes — the source of truth for count/catalogue checks.
+# Note: search_tools and get_tool_details are omitted here because they only register
+# when tools.discovery.enabled=true, which the test config does not set.
+# Every tool the test config exposes that is guaranteed to register (no live
+# model required). agent_spawn/agent_status/agent_list/agent_message (subagent capability) are
+# also exposed but only probed when actually present in the catalogue, so this
+# script stays portable.
+EXPECTED_TOOLS="file_read_bytes file_read_lines file_count file_view_image file_write file_edit file_edit_lines file_edit_bytes file_insert_lines file_insert_bytes file_delete_lines file_delete_bytes file_append file_list file_glob file_search_lines file_search_bytes file_copy file_delete file_move file_mkdir file_rmdir web_fetch web_search msg_send msg_send_file session_messages session_search session_compact session_info session_summary_list session_summary_get session_clear shell_exec skill_find skill_install cron_schedule cogmem_domain_get cogmem_memory_search cogmem_domain_list cogmem_explain cogmem_memory_create cogmem_memory_attach cogmem_domain_update cogmem_memory_retire cogmem_domain_create cogmem_domain_archive cogmem_domain_migrate cogmem_memory_forget cogmem_consolidate cogmem_status cogmem_export common_list common_get common_put common_delete time_now"
+EXPECTED_TOOL_COUNT=38
+
+# Namespace prefixes that must have at least one tool in the catalogue.
+# Covers every provider-owned namespace that is in the test config.
+EXPECTED_NAMESPACES="file_ web_ session_ msg_ shell_ skill_ cron_ cogmem_ common_"
+
+# Unique scratch file inside the agent workspace so repeated runs do not collide.
+# Writes are confined to <workspace>/files by the read-only-workspace default
+# (WorkspaceWriteSubdir), so the scratch file must live under files/.
+SCRATCH_REL="files/claw_mcp_test_$$.txt"
+
+# Colors
+# ANSI-C quoting ($'..') puts the escape byte in the variable so plain echo
+# renders it in any bash; a '\033' string would be printed literally.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    RED=$'\033[0;31m'
+    GREEN=$'\033[0;32m'
+    YELLOW=$'\033[1;33m'
+    BLUE=$'\033[0;34m'
+    BOLD=$'\033[1m'
+    NC=$'\033[0m'
+else
+    RED='' GREEN='' YELLOW='' BLUE='' BOLD='' NC=''
+fi
+
+PASS_COUNT=0
+FAIL_COUNT=0
+TIER2_PASS=0
+TIER2_FAIL=0
+
+# Cleanup scratch files on exit.
+cleanup() {
+    if [ -n "${SCRATCH_REL:-}" ]; then
+        # Best-effort: remove via write_file with empty content is not reliable
+        # without auth, so only attempt if probe is available and SESSION_TOKEN set.
+        :
+    fi
+}
+trap cleanup EXIT
+
+print_section() {
+    echo ""
+    echo "${BOLD}${BLUE}============================================${NC}"
+    echo "${BOLD}${BLUE}   $1${NC}"
+    echo "${BOLD}${BLUE}============================================${NC}"
+    echo ""
+}
+
+# probe_call <tool> <params-json>
+# Echoes raw output, returns probe's exit code.
+# Claw-native tools are published under their bare namespaced names
+# (file_read_lines, cogmem_status, …); upstream MCP tools are "<server>_*". The old
+# reserved "local_" prefix was dropped in #32 — do not reintroduce it, or every call
+# resolves to a non-existent tool and the probes report "tool not found" instead of
+# testing anything.
+probe_call() {
+    local tool="$1"
+    local params="$2"
+    "$PROBE_PATH" -url "$FULL_URL" -transport http \
+        -call "$tool" -params "$params" 2>&1
+}
+
+# probe_call_auth <tool> <params-json>
+# Injects SESSION_TOKEN into params before calling. Requires SESSION_TOKEN set.
+probe_call_auth() {
+    local tool="$1"
+    local params="$2"
+    local augmented
+    augmented=$(printf '%s' "$params" | python3 -c "
+import json, sys
+p = json.loads(sys.stdin.read())
+p['session_token'] = '${SESSION_TOKEN}'
+print(json.dumps(p))
+")
+    "$PROBE_PATH" -url "$FULL_URL" -transport http \
+        -call "$tool" -params "$augmented" 2>&1
+}
+
+# run_test_ok <name> <tool> <params> [expected_substring]
+# Expects "Tool call succeeded" in output.
+run_test_ok() {
+    local test_name="$1"
+    local tool="$2"
+    local params="$3"
+    local expected="${4:-}"
+
+    echo "  ${test_name}"
+    local result
+    result=$(probe_call "$tool" "$params")
+
+    if echo "$result" | grep -q "Tool call succeeded"; then
+        if [ -n "$expected" ]; then
+            if echo "$result" | grep -qF "$expected"; then
+                echo "    ${GREEN}PASS${NC}: found expected substring"
+                PASS_COUNT=$((PASS_COUNT + 1))
+            else
+                echo "    ${RED}FAIL${NC}: expected '$expected' not found"
+                echo "    Output: $result"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
+        else
+            echo "    ${GREEN}PASS${NC}: tool call succeeded"
+            PASS_COUNT=$((PASS_COUNT + 1))
+        fi
+    else
+        echo "    ${RED}FAIL${NC}: tool call failed unexpectedly"
+        echo "    Output: $result"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+}
+
+# run_test_ok_auth <name> <tool> <params> [expected_substring]
+# Like run_test_ok but injects SESSION_TOKEN and tracks tier-2 counts.
+run_test_ok_auth() {
+    local test_name="$1"
+    local tool="$2"
+    local params="$3"
+    local expected="${4:-}"
+
+    echo "  ${test_name}"
+    local result
+    result=$(probe_call_auth "$tool" "$params")
+
+    if echo "$result" | grep -q "Tool call succeeded"; then
+        if [ -n "$expected" ]; then
+            if echo "$result" | grep -qF "$expected"; then
+                echo "    ${GREEN}PASS${NC}: found expected substring"
+                TIER2_PASS=$((TIER2_PASS + 1))
+                PASS_COUNT=$((PASS_COUNT + 1))
+            else
+                echo "    ${RED}FAIL${NC}: expected '$expected' not found"
+                echo "    Output: $result"
+                TIER2_FAIL=$((TIER2_FAIL + 1))
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
+        else
+            echo "    ${GREEN}PASS${NC}: tool call succeeded"
+            TIER2_PASS=$((TIER2_PASS + 1))
+            PASS_COUNT=$((PASS_COUNT + 1))
+        fi
+    else
+        echo "    ${RED}FAIL${NC}: tool call failed unexpectedly"
+        echo "    Output: $result"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+}
+
+# run_test_err <name> <tool> <params>
+# Expects an MCP-level error in the output (no session_token).
+run_test_err() {
+    local test_name="$1"
+    local tool="$2"
+    local params="$3"
+
+    echo "  ${test_name}"
+    local result
+    result=$(probe_call "$tool" "$params")
+
+    if echo "$result" | grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"|not found"; then
+        echo "    ${GREEN}PASS${NC}: tool returned an error as expected"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: expected an error but tool succeeded"
+        echo "    Output: $result"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+}
+
+# run_test_err_contains <name> <tool> <params> <substring>
+# Expects an error whose output contains <substring> (case-insensitive).
+run_test_err_contains() {
+    local test_name="$1"
+    local tool="$2"
+    local params="$3"
+    local substr="$4"
+
+    echo "  ${test_name}"
+    local result
+    result=$(probe_call "$tool" "$params")
+
+    if echo "$result" | grep -qi "$substr"; then
+        echo "    ${GREEN}PASS${NC}: error contains '$substr'"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: expected error containing '$substr' but not found"
+        echo "    Output: $result"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+}
+
+# run_test_not_auth_err <name> <tool> <params>
+# Calls tool WITH session_token and verifies output does NOT contain the
+# "invalid or missing session_token" auth error. Tracks tier-2 counts.
+run_test_not_auth_err() {
+    local test_name="$1"
+    local tool="$2"
+    local params="$3"
+
+    echo "  ${test_name}"
+    local result
+    result=$(probe_call_auth "$tool" "$params")
+
+    if echo "$result" | grep -qi "invalid or missing session_token"; then
+        echo "    ${RED}FAIL${NC}: got auth error — session_token not accepted"
+        echo "    Output: $result"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    else
+        echo "    ${GREEN}PASS${NC}: no auth error (token accepted)"
+        TIER2_PASS=$((TIER2_PASS + 1))
+        PASS_COUNT=$((PASS_COUNT + 1))
+    fi
+}
+
+# run_test_err_auth <name> <tool> <params>
+# Expects an MCP-level error WITH session_token. Tracks tier-2 counts.
+run_test_err_auth() {
+    local test_name="$1"
+    local tool="$2"
+    local params="$3"
+
+    echo "  ${test_name}"
+    local result
+    result=$(probe_call_auth "$tool" "$params")
+
+    if echo "$result" | grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"|not found"; then
+        echo "    ${GREEN}PASS${NC}: tool returned an error as expected"
+        TIER2_PASS=$((TIER2_PASS + 1))
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: expected an error but tool succeeded"
+        echo "    Output: $result"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+}
+
+# run_test_err_msg_auth <name> <tool> <params> <expected>
+# Expects a tool error WITH session_token whose text contains <expected>.
+run_test_err_msg_auth() {
+    local test_name="$1"
+    local tool="$2"
+    local params="$3"
+    local expected="$4"
+
+    echo "  ${test_name}"
+    local result
+    result=$(probe_call_auth "$tool" "$params")
+
+    if echo "$result" | grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"" && echo "$result" | grep -qF "$expected"; then
+        echo "    ${GREEN}PASS${NC}: refused with \"$expected\""
+        TIER2_PASS=$((TIER2_PASS + 1))
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: expected an error containing \"$expected\""
+        echo "    Output: $result"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+}
+
+# tier2_pass / tier2_fail record one tier-2 result for checks written inline
+# (outside the run_test_*_auth helpers), so they count toward the tier-2 tally.
+tier2_pass() {
+    TIER2_PASS=$((TIER2_PASS + 1))
+    PASS_COUNT=$((PASS_COUNT + 1))
+}
+
+tier2_fail() {
+    TIER2_FAIL=$((TIER2_FAIL + 1))
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+}
+
+################################################################################
+# Header
+################################################################################
+
+echo ""
+echo "${BOLD}============================================${NC}"
+echo "${BOLD}   ClawEh MCP Server Tests${NC}"
+echo "${BOLD}============================================${NC}"
+echo "Server:  $FULL_URL"
+echo "Probe:   $PROBE_PATH"
+echo "Scratch: $SCRATCH_REL"
+echo ""
+
+if ! command -v "$PROBE_PATH" > /dev/null 2>&1; then
+    echo "${RED}ERROR: probe not found at '$PROBE_PATH'${NC}"
+    exit 1
+fi
+
+################################################################################
+# TIER 1 — Discovery and auth validation (no session_token required)
+################################################################################
+
+echo "${BOLD}--- TIER 1: Discovery and auth validation ---${NC}"
+
+#-------------------------------------------------------------------------------
+# Section 0: Reachability
+#-------------------------------------------------------------------------------
+
+print_section "0. Reachability and service health"
+
+echo "  0.1 MCP server reachable — list tools"
+LIST_OUT=$("$PROBE_PATH" -url "$FULL_URL" -transport http -list 2>&1)
+if [ $? -ne 0 ]; then
+    echo "${RED}FAIL: probe could not connect to $FULL_URL${NC}"
+    echo "$LIST_OUT"
+    echo ""
+    echo "${YELLOW}Hint: ensure claw gateway is running and mcp_host.enabled=true.${NC}"
+    exit 1
+fi
+echo "$LIST_OUT" | sed 's/^/      /'
+echo "    ${GREEN}PASS${NC}: server reachable, returned tool list"
+PASS_COUNT=$((PASS_COUNT + 1))
+
+if [ -n "$GATEWAY_URL" ]; then
+    echo "  0.2 Gateway /health returns 200"
+    HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$GATEWAY_URL/health" 2>/dev/null)
+    if [ "$HEALTH_CODE" = "200" ]; then
+        echo "    ${GREEN}PASS${NC}: /health returned 200"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: /health returned $HEALTH_CODE"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    echo "  0.3 Gateway /ready responds"
+    READY_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$GATEWAY_URL/ready" 2>/dev/null)
+    # A running gateway with its channels started must report 200. This used to
+    # accept 503 as well, on the theory that it meant "reachable but not ready" —
+    # which masked the fact that /ready answered 503 for the entire life of every
+    # process, because nothing ever set the readiness flag.
+    if [ "$READY_CODE" = "200" ]; then
+        echo "    ${GREEN}PASS${NC}: /ready responded 200 (ready)"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: /ready returned '$READY_CODE', want 200"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+fi
+
+echo "  0.4 Minimum tool count (expected: $EXPECTED_TOOL_COUNT)"
+# probe lists tools as "      NN: tool_name" — count those lines
+TOOL_COUNT=$(echo "$LIST_OUT" | grep -cE "^[0-9]+:" || true)
+if [ "$TOOL_COUNT" -ge "$EXPECTED_TOOL_COUNT" ]; then
+    echo "    ${GREEN}PASS${NC}: found $TOOL_COUNT tools (minimum: $EXPECTED_TOOL_COUNT)"
+    PASS_COUNT=$((PASS_COUNT + 1))
+else
+    echo "    ${RED}FAIL${NC}: found $TOOL_COUNT tools, expected at least $EXPECTED_TOOL_COUNT"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
+echo "  0.5 At least one tool present per namespace"
+NS_OK=true
+for ns in $EXPECTED_NAMESPACES; do
+    if echo "$LIST_OUT" | grep -qF "$ns"; then
+        echo "    OK: namespace '${ns%_}'"
+    else
+        echo "    ${RED}FAIL${NC}: no tool found for namespace '${ns%_}' (expected a tool starting with '$ns')"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        NS_OK=false
+    fi
+done
+if $NS_OK; then
+    echo "    ${GREEN}PASS${NC}: all expected namespaces represented"
+    PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
+#-------------------------------------------------------------------------------
+# Section 1: Tool catalogue
+#-------------------------------------------------------------------------------
+
+print_section "1. Tool catalogue"
+
+check_tool() {
+    local num="$1"
+    local tool_name="$2"
+    echo "  ${num} Tool '${tool_name}' present"
+    if echo "$LIST_OUT" | grep -qF "$tool_name"; then
+        echo "    ${GREEN}PASS${NC}: found"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: not found in tool list"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+}
+
+check_tool "1.1"  "file_read_bytes"
+check_tool "1.1b" "file_read_lines"
+check_tool "1.1c" "file_view_image"
+check_tool "1.1d" "file_count"
+check_tool "1.2"  "file_write"
+check_tool "1.3"  "file_edit"
+check_tool "1.3a" "file_edit_lines"
+check_tool "1.3b" "file_edit_bytes"
+check_tool "1.3c" "file_insert_lines"
+check_tool "1.3d" "file_insert_bytes"
+check_tool "1.3e" "file_delete_lines"
+check_tool "1.3f" "file_delete_bytes"
+check_tool "1.4"  "file_append"
+check_tool "1.5"  "file_list"
+check_tool "1.5a" "file_glob"
+check_tool "1.5b" "file_search_lines"
+check_tool "1.5c" "file_search_bytes"
+check_tool "1.6"  "web_fetch"
+check_tool "1.7"  "web_search"
+check_tool "1.8"  "msg_send_file"
+check_tool "1.8b" "msg_send"
+check_tool "1.9"  "session_messages"
+check_tool "1.10" "session_search"
+check_tool "1.11" "session_compact"
+check_tool "1.12" "session_info"
+check_tool "1.13" "cogmem_domain_create"
+check_tool "1.14" "cogmem_memory_create"
+check_tool "1.14b" "cogmem_memory_attach"
+check_tool "1.15" "cogmem_status"
+check_tool "1.17" "cogmem_domain_migrate"
+check_tool "1.18" "time_now"
+# search_tools and get_tool_details are only registered when
+# tools.discovery.enabled=true — not set in the standard test config.
+
+#-------------------------------------------------------------------------------
+# Section 2: Unauthenticated rejection
+#-------------------------------------------------------------------------------
+
+print_section "2. Unauthenticated rejection"
+
+run_test_err_contains "2.1 file_list without session_token returns session_token error" \
+    "file_list" '{"path":"."}' "session_token"
+
+run_test_err_contains "2.2 file_read_bytes without session_token returns session_token error" \
+    "file_read_bytes" '{"path":"test.txt"}' "session_token"
+
+run_test_err_contains "2.3 session_info without session_token returns session_token error" \
+    "session_info" '{}' "session_token"
+
+################################################################################
+# TIER 2 — Authenticated tests (SESSION_TOKEN required)
+################################################################################
+
+echo ""
+echo "${BOLD}--- TIER 2: Authenticated tests ---${NC}"
+
+if [ -z "$SESSION_TOKEN" ]; then
+    echo ""
+    echo "${YELLOW}TIER 2 SKIPPED: SESSION_TOKEN is not set.${NC}"
+    echo ""
+    echo "To run Tier 2, set SESSION_TOKEN to the SST<64hex> token found in"
+    echo "an active claw session's system prompt, then re-run this script:"
+    echo ""
+    echo "  SESSION_TOKEN=SST<64hex> $0"
+    echo ""
+else
+
+    PAYLOAD="hello-from-mcp-test-$$"
+
+    #---------------------------------------------------------------------------
+    # Section 3: File operations (Tier 2)
+    #---------------------------------------------------------------------------
+
+    print_section "3. File operations (authenticated)"
+
+    run_test_ok_auth "3.1 file_list working area (files/)" \
+        "file_list" '{"path":"files"}'
+
+    run_test_ok_auth "3.2 file_write creates a scratch file" \
+        "file_write" "{\"path\":\"$SCRATCH_REL\",\"content\":\"$PAYLOAD\"}"
+
+    run_test_ok_auth "3.3 file_read_bytes returns the written payload" \
+        "file_read_bytes" "{\"path\":\"$SCRATCH_REL\"}" "$PAYLOAD"
+
+    run_test_ok_auth "3.3b file_view_image views a PNG (dropped in setup)" \
+        "file_view_image" '{"path":"files/probe.png"}' "viewing image"
+
+    APPENDED="appended-line-$$"
+
+    run_test_ok_auth "3.4 file_append adds a new line" \
+        "file_append" "{\"path\":\"$SCRATCH_REL\",\"content\":\"\n$APPENDED\"}"
+
+    run_test_ok_auth "3.5 file_read_bytes shows appended content" \
+        "file_read_bytes" "{\"path\":\"$SCRATCH_REL\"}" "$APPENDED"
+
+    run_test_ok_auth "3.5a2 file_count reports wc-style counts" \
+        "file_count" "{\"path\":\"$SCRATCH_REL\"}" "\"lines\":"
+
+    run_test_ok_auth "3.5b file_read_lines returns numbered lines" \
+        "file_read_lines" "{\"path\":\"$SCRATCH_REL\",\"start_line\":1,\"line_count\":1}" "1: "
+
+    run_test_ok_auth "3.5c file_search_lines finds the appended content" \
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\"}" "$APPENDED"
+
+    run_test_ok_auth "3.5d file_search_bytes reports a byte offset for the content" \
+        "file_search_bytes" "{\"query\":\"$APPENDED\",\"path\":\"files\"}" "bytes "
+
+    run_test_ok_auth "3.5e file_glob finds the scratch file by name pattern" \
+        "file_glob" "{\"pattern\":\"**/claw_mcp_test_$$.txt\",\"path\":\"files\"}" "$SCRATCH_REL"
+
+    run_test_ok_auth "3.5f file_search_lines output=files with include lists the file" \
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\",\"include\":\"claw_mcp_test_$$.txt\",\"output\":\"files\"}" "$SCRATCH_REL"
+
+    run_test_ok_auth "3.5g file_search_lines output=count counts the matching lines" \
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\",\"output\":\"count\"}" "$SCRATCH_REL: 1"
+
+    run_test_ok_auth "3.5h file_search_lines context shows the line before the match" \
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"$SCRATCH_REL\",\"context\":1}" "$SCRATCH_REL-1- $PAYLOAD"
+
+    IGN_REL="files/claw_mcp_ign_$$"
+    run_test_ok_auth "3.5i file_write seeds a .gitignore" \
+        "file_write" "{\"path\":\"$IGN_REL/.gitignore\",\"content\":\"*.log\"}"
+
+    run_test_ok_auth "3.5j file_write seeds an ignored file" \
+        "file_write" "{\"path\":\"$IGN_REL/skip.log\",\"content\":\"ignored-$$\"}"
+
+    run_test_ok_auth "3.5k file_search_lines skips what .gitignore ignores" \
+        "file_search_lines" "{\"query\":\"ignored-$$\",\"path\":\"$IGN_REL\"}" "No matches"
+
+    run_test_ok_auth "3.5l file_rmdir removes the .gitignore folder" \
+        "file_rmdir" "{\"path\":\"$IGN_REL\",\"sure\":true,\"recursive\":true}"
+
+    run_test_ok_auth "3.6 file_edit replaces a substring" \
+        "file_edit" "{\"path\":\"$SCRATCH_REL\",\"old_text\":\"$PAYLOAD\",\"new_text\":\"replaced-$$\"}"
+
+    run_test_ok_auth "3.7 file_read_bytes confirms replacement" \
+        "file_read_bytes" "{\"path\":\"$SCRATCH_REL\"}" "replaced-$$"
+
+    run_test_ok_auth "3.8 file_copy duplicates a file" \
+        "file_copy" "{\"source_path\":\"$SCRATCH_REL\",\"destination_path\":\"${SCRATCH_REL}.copy\"}"
+
+    # Range edit family on a dedicated multi-line scratch file.
+    LINEFILE="files/claw_mcp_lines_$$.txt"
+    run_test_ok_auth "3.8a file_write seeds a multi-line file" \
+        "file_write" "{\"path\":\"$LINEFILE\",\"content\":\"L1\nL2\nL3\"}"
+
+    run_test_ok_auth "3.8b file_insert_lines inserts after line 1" \
+        "file_insert_lines" "{\"path\":\"$LINEFILE\",\"after_line\":1,\"text\":\"INS\"}" "Inserted"
+
+    run_test_ok_auth "3.8c file_edit_lines replaces a line" \
+        "file_edit_lines" "{\"path\":\"$LINEFILE\",\"start\":2,\"replace\":\"EDITED\"}" "Replaced"
+
+    run_test_ok_auth "3.8d file_read_lines confirms the edit" \
+        "file_read_lines" "{\"path\":\"$LINEFILE\",\"start_line\":1,\"line_count\":50}" "EDITED"
+
+    echo "  3.8e file_edit_lines refuses empty replace (points at file_delete_lines)"
+    r8e=$(probe_call_auth "file_edit_lines" "{\"path\":\"$LINEFILE\",\"start\":1,\"replace\":\"\"}")
+    if echo "$r8e" | grep -qi "file_delete_lines"; then
+        echo "    ${GREEN}PASS${NC}: empty replace refused"
+        TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: expected refusal pointing at file_delete_lines"
+        echo "    Output: $r8e"
+        TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    run_test_ok_auth "3.8f file_delete_lines removes a line" \
+        "file_delete_lines" "{\"path\":\"$LINEFILE\",\"start\":1,\"end\":1}" "Deleted"
+
+    run_test_ok_auth "3.8g file_edit_bytes replaces a byte range" \
+        "file_edit_bytes" "{\"path\":\"$LINEFILE\",\"start\":0,\"end\":0,\"replace\":\"Z\"}" "Replaced"
+
+    # Folder tools: make a folder, move it with its file, then remove it.
+    DIR_REL="files/claw_mcp_dir_$$"
+    run_test_ok_auth "3.8h file_mkdir creates a folder" \
+        "file_mkdir" "{\"path\":\"$DIR_REL/sub\"}"
+
+    run_test_ok_auth "3.8i file_write seeds a file in the folder" \
+        "file_write" "{\"path\":\"$DIR_REL/sub/x.txt\",\"content\":\"folder-$$\"}"
+
+    run_test_ok_auth "3.8j file_move moves the folder" \
+        "file_move" "{\"source_path\":\"$DIR_REL\",\"destination_path\":\"${DIR_REL}_moved\"}"
+
+    run_test_ok_auth "3.8k file_read_bytes reads the moved file" \
+        "file_read_bytes" "{\"path\":\"${DIR_REL}_moved/sub/x.txt\"}" "folder-$$"
+
+    run_test_err_auth "3.8l file_rmdir refuses a non-empty folder without recursive" \
+        "file_rmdir" "{\"path\":\"${DIR_REL}_moved\",\"sure\":true}"
+
+    run_test_ok_auth "3.8m file_rmdir removes the folder recursively" \
+        "file_rmdir" "{\"path\":\"${DIR_REL}_moved\",\"sure\":true,\"recursive\":true}"
+
+    run_test_err_auth "3.9 file_read_bytes on missing path returns an error" \
+        "file_read_bytes" '{"path":"files/definitely_not_a_real_file_'$$'_xyz.txt"}'
+
+    run_test_err_auth "3.10 unknown tool is rejected" \
+        "definitely_not_a_real_tool_$$" '{}'
+
+    #---------------------------------------------------------------------------
+    # Section 4: Session tool smoke tests (Tier 2)
+    #---------------------------------------------------------------------------
+
+    print_section "4. Session tool smoke tests (authenticated)"
+
+    run_test_not_auth_err "4.1 session_info — token accepted" \
+        "session_info" '{}'
+
+    run_test_not_auth_err "4.2 session_compact — token accepted" \
+        "session_compact" '{}'
+
+    run_test_not_auth_err "4.3 session_messages — token accepted" \
+        "session_messages" '{"seq_start":1,"seq_end":10}'
+
+    run_test_not_auth_err "4.4 session_search — token accepted" \
+        "session_search" '{"query":"test"}'
+
+    run_test_not_auth_err "4.5 session_summary_list — token accepted" \
+        "session_summary_list" '{}'
+
+    run_test_not_auth_err "4.6 session_summary_get — token accepted" \
+        "session_summary_get" '{"id":"none"}'
+
+    run_test_not_auth_err "4.7 session_clear — token accepted" \
+        "session_clear" '{}'
+
+    #---------------------------------------------------------------------------
+    # Section 4b: Every remaining provider tool. These reach out to the network
+    # (web, skill) or need a live model (agent), so we use graceful-error probes
+    # — the call must be accepted and the tool must respond (success OR a clean
+    # tool-level error), not fail at the transport/auth layer.
+    #---------------------------------------------------------------------------
+
+    print_section "4b. Remaining provider tools (graceful probes)"
+
+    # shell_exec follows the token's agent: the session token's agent has it
+    # and runs it over MCP; Bob's tools leave it out, so he does not have it.
+    run_test_ok_auth "4b.1 shell_exec runs for an agent allowed it" \
+        "shell_exec" '{"command":"echo mcp-shell-ok"}' "mcp-shell-ok"
+
+    echo "  4b.1b shell_exec refused for an agent not allowed it (service token)"
+    if [ -n "$NOSHELL_SERVICE_TOKEN" ]; then
+        ns=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
+            -call shell_exec -params "$(printf '{"command":"echo mcp-shell-ok","session_token":"%s"}' "$NOSHELL_SERVICE_TOKEN")" 2>&1)
+        if echo "$ns" | grep -qF "Permission denied: the tool \"shell_exec\" is not enabled for this agent." && ! echo "$ns" | grep -q "^mcp-shell-ok"; then
+            echo "    ${GREEN}PASS${NC}: refused, not enabled for Bob"
+            tier2_pass
+        else
+            echo "    ${RED}FAIL${NC}: Bob's service token was not refused"
+            echo "$ns" | head -5 | sed 's/^/      /'
+            tier2_fail
+        fi
+    else
+        echo "    ${RED}FAIL${NC}: NOSHELL_SERVICE_TOKEN is not set (the service token of Bob, whose tools leave out shell_exec)"
+        tier2_fail
+    fi
+
+    # "*" does not include shell_exec: alice's tools are "*" without naming it.
+    if [ -n "$UNGRANTED_SERVICE_TOKEN" ]; then
+        echo "  4b.1c shell_exec refused for an agent whose tools are \"*\" only (service token)"
+        ns=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
+            -call shell_exec -params "$(printf '{"command":"echo mcp-shell-ok","session_token":"%s"}' "$UNGRANTED_SERVICE_TOKEN")" 2>&1)
+        if echo "$ns" | grep -qF "Permission denied: the tool \"shell_exec\" is not enabled for this agent." && ! echo "$ns" | grep -q "^mcp-shell-ok"; then
+            echo "    ${GREEN}PASS${NC}: refused, not enabled for alice"
+            tier2_pass
+        else
+            echo "    ${RED}FAIL${NC}: alice's service token was not refused"
+            echo "$ns" | head -5 | sed 's/^/      /'
+            tier2_fail
+        fi
+    fi
+
+    run_test_not_auth_err "4b.2 web_search — token accepted" \
+        "web_search" '{"query":"hello"}'
+
+    run_test_not_auth_err "4b.3 web_fetch — token accepted" \
+        "web_fetch" '{"url":"https://example.com"}'
+
+    run_test_not_auth_err "4b.4 msg_send_file — token accepted" \
+        "msg_send_file" '{"files":[{"path":"no-such-file"}]}'
+
+    run_test_err_msg_auth "4b.4a msg_send_file — the old \"path\" argument is refused" \
+        "msg_send_file" '{"path":"no-such-file"}' 'is no longer accepted'
+
+    run_test_err_msg_auth "4b.4c msg_send_file — more than 10 files refused" \
+        "msg_send_file" '{"files":[{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"},{"path":"a"}]}' \
+        'At most 10 files can be sent at once.'
+
+    # The test token belongs to no turn, so there is no chat to send to.
+    run_test_err_msg_auth "4b.4d msg_send_file — no chat for a token without a turn" \
+        "msg_send_file" '{"files":[{"path":"no-such-file"}]}' 'There is no chat to send files to.'
+
+    run_test_not_auth_err "4b.4b msg_send — token accepted (no longer hard-excluded)" \
+        "msg_send" '{"content":"probe"}'
+
+    # Like msg_send_file, msg_send goes only to the chat of a running turn.
+    run_test_err_msg_auth "4b.4e msg_send — no chat for a token without a turn" \
+        "msg_send" '{"content":"probe"}' 'There is no chat to send messages to.'
+
+    run_test_not_auth_err "4b.5 skill_find — token accepted" \
+        "skill_find" '{"query":"github"}'
+
+    run_test_not_auth_err "4b.6 skill_install — token accepted" \
+        "skill_install" '{"slug":"no-such-skill","registry":"clawhub"}'
+
+    run_test_not_auth_err "4b.7 cron_schedule — token accepted" \
+        "cron_schedule" '{}'
+
+    # Tools that only register on certain hosts (agent tools need the subagent
+    # capability). Probe them only when the catalogue lists them. Empty args are
+    # fine — these probes assert the session token is accepted, not that the call
+    # succeeds (agent_status needs a uuid).
+    for opt_tool in agent_spawn agent_status agent_list; do
+        if echo "$LIST_OUT" | grep -qw "$opt_tool"; then
+            run_test_not_auth_err "4b.* $opt_tool — token accepted" "$opt_tool" '{}'
+        else
+            echo "  4b.* $opt_tool not registered on this host (skipped)"
+        fi
+    done
+
+    # agent_message needs a target in the caller's subagents.allow_agents,
+    # which the test config does not grant: the whisper must be refused with
+    # a tool error (the gating holds on the running binary).
+    if echo "$LIST_OUT" | grep -qw "agent_message"; then
+        run_test_err_msg_auth "4b.8 agent_message — refused without allow_agents" \
+            "agent_message" '{"agent":"alice","message":"probe","wait_seconds":0}' "You may not message alice"
+    else
+        echo "  4b.8 agent_message not registered on this host (skipped)"
+    fi
+
+    # agent_spawn with a kind calls a task model; the test agent has no
+    # task-model grant (and no task model is ticked), so the call must be
+    # refused with a tool error naming the kind.
+    if echo "$LIST_OUT" | grep -qw "agent_spawn"; then
+        run_test_err_msg_auth "4b.9 agent_spawn kind — refused without a task-model grant" \
+            "agent_spawn" '{"kind":"text","task":"probe","mode":"wait"}' "is not allowed to use task models for text"
+    else
+        echo "  4b.9 agent_spawn not registered on this host (skipped)"
+    fi
+
+    #---------------------------------------------------------------------------
+    # Section 4c: Cognitive-memory tools (cogmem_*). Session-scoped, off by
+    # default (DefaultAllow=false) — the test agent's allowlist enables them via
+    # "cogmem_*". The store is a per-session SQLite DB created on demand, so the
+    # deterministic, hermetic tools (create_domain, remember, list_domains,
+    # search, forget, status) are asserted as full SUCCESS. Tools that need a
+    # specific domain/hook id (get_domain, explain, update_domain, retire_hook,
+    # archive_domain) are probed with representative args as graceful cases — the
+    # harness has no facility to thread the generated id between probe calls, so
+    # we assert the call is accepted (token honoured, no transport/auth failure)
+    # rather than a specific id-dependent outcome. consolidate is non-blocking and
+    # may touch an LLM in the background, so it is a graceful probe too.
+    #---------------------------------------------------------------------------
+
+    print_section "4c. Cognitive-memory tools (cogmem)"
+
+    COGMEM_DOMAIN="mcp-cogmem-test-$$"
+    COGMEM_HOOK_TEXT="cogmem probe note $$"
+
+    # --- Hermetic, deterministic tools: assert full SUCCESS. ---
+
+    # create_domain returns a freshly assigned domain id and reports success.
+    # Includes a tool-trigger list (comma-delimited substrings) to exercise that param.
+    run_test_ok_auth "4c.1 cogmem_domain_create creates a (non-sticky) topic domain" \
+        "cogmem_domain_create" "{\"name\":\"$COGMEM_DOMAIN\",\"triggers\":\"google_gmail,system\"}" "Created domain"
+
+    # remember with a domain_hint auto-creates/uses a topic domain and records
+    # a durable hook — no pre-existing id required, so it succeeds deterministically.
+    run_test_ok_auth "4c.2 cogmem_memory_create records a hook (domain_hint)" \
+        "cogmem_memory_create" "{\"domain_hint\":\"$COGMEM_DOMAIN\",\"type\":\"fact\",\"text\":\"$COGMEM_HOOK_TEXT\"}"
+
+    # A memory may carry a pointer to a markdown file whose full contents are
+    # injected into context with it. The path must be readable through the file
+    # tools, so seed one in files/ first.
+    COGMEM_DOC_REL="files/claw_mcp_voice_$$.md"
+    run_test_ok_auth "4c.2a file_write seeds a markdown doc for the attachment probe" \
+        "file_write" "{\"path\":\"$COGMEM_DOC_REL\",\"content\":\"# Voice\nShort sentences.\"}"
+
+    run_test_ok_auth "4c.2b cogmem_memory_create attaches a readable markdown file" \
+        "cogmem_memory_create" "{\"domain_hint\":\"$COGMEM_DOMAIN\",\"type\":\"rule\",\"text\":\"voice doc $$\",\"file\":\"$COGMEM_DOC_REL\"}" \
+        "Attached $COGMEM_DOC_REL"
+
+    # An attachment the agent cannot read (outside the read scope) must be
+    # rejected at create time rather than stored and failing silently later.
+    run_test_err_auth "4c.2c cogmem_memory_create rejects an unreadable attachment" \
+        "cogmem_memory_create" "{\"domain_hint\":\"$COGMEM_DOMAIN\",\"type\":\"rule\",\"text\":\"bad attach $$\",\"file\":\"/etc/hosts.md\"}"
+
+    # Non-markdown attachments are rejected by extension.
+    run_test_err_auth "4c.2d cogmem_memory_create rejects a non-markdown attachment" \
+        "cogmem_memory_create" "{\"domain_hint\":\"$COGMEM_DOMAIN\",\"type\":\"rule\",\"text\":\"bad ext $$\",\"file\":\"$SCRATCH_REL\"}"
+
+    # memory_attach repoints an existing memory's document in place; the probe
+    # reuses the doc seeded above, then detaches it.
+    run_test_not_auth_err "4c.2e cogmem_memory_attach — token accepted" \
+        "cogmem_memory_attach" "{\"id\":\"hMCPtest\",\"file\":\"$COGMEM_DOC_REL\"}"
+
+    run_test_err_auth "4c.2f cogmem_memory_attach rejects an unreadable file" \
+        "cogmem_memory_attach" '{"id":"hMCPtest","file":"/etc/hosts.md"}'
+
+    # list_domains must now report at least the domain(s) created above.
+    run_test_ok_auth "4c.3 cogmem_domain_list lists domains" \
+        "cogmem_domain_list" '{}' "domain(s)"
+
+    # search over hook text — success whether or not a match is found.
+    run_test_ok_auth "4c.4 cogmem_memory_search returns a result set" \
+        "cogmem_memory_search" "{\"query\":\"$COGMEM_HOOK_TEXT\"}"
+
+    # status reports store health deterministically.
+    run_test_ok_auth "4c.5 cogmem_status reports memory health" \
+        "cogmem_status" '{}' "Cognitive memory database"
+
+    # forget retires matching hooks; succeeds whether 0 or N hooks match.
+    run_test_ok_auth "4c.6 cogmem_memory_forget retires matching hooks" \
+        "cogmem_memory_forget" "{\"query\":\"$COGMEM_HOOK_TEXT\"}"
+
+    # --- id-dependent tools: graceful probes (token accepted). ---
+
+    run_test_not_auth_err "4c.7 cogmem_domain_get — token accepted" \
+        "cogmem_domain_get" '{"id":"dMCPtest"}'
+
+    run_test_not_auth_err "4c.8 cogmem_explain — token accepted" \
+        "cogmem_explain" '{"id":"dMCPtest"}'
+
+    run_test_not_auth_err "4c.9 cogmem_domain_update — token accepted" \
+        "cogmem_domain_update" '{"id":"dMCPtest","set_summary":"probe","set_sticky":true}'
+
+    run_test_not_auth_err "4c.10 cogmem_memory_retire — token accepted" \
+        "cogmem_memory_retire" '{"id":"hMCPtest","reason":"probe"}'
+
+    run_test_not_auth_err "4c.11 cogmem_domain_archive — token accepted" \
+        "cogmem_domain_archive" '{"id":"dMCPtest"}'
+
+    run_test_not_auth_err "4c.11b cogmem_domain_migrate — token accepted" \
+        "cogmem_domain_migrate" '{"from":"dMCPfrom","to":"dMCPto"}'
+
+    # --- consolidate: non-blocking, may touch an LLM — graceful probe. ---
+
+    run_test_not_auth_err "4c.12 cogmem_consolidate — token accepted (queued/accepted)" \
+        "cogmem_consolidate" '{"scope":"probe"}'
+
+    # export: dumps the whole store to files/MEMORY_EXPORT.yaml — hermetic,
+    # succeeds with auth. YAML rather than Markdown because the dump can be read
+    # back: it is a backup, not a report.
+    run_test_ok_auth "4c.13 cogmem_export writes a YAML dump" \
+        "cogmem_export" '{}' "MEMORY_EXPORT.yaml"
+
+    # Section 4d: Shared common-directory tools (common_*). Hermetic and
+    # deterministic. common_put copies the scratch file (under files/, created in
+    # Section 3) into the shared dir; list/get/delete round-trip it.
+    print_section "4d. Common-directory tools (common)"
+
+    COMMON_NAME="mcp_common_$$.txt"
+
+    run_test_ok_auth "4d.1 common_put copies a workspace file to the shared dir" \
+        "common_put" "{\"path\":\"$SCRATCH_REL\",\"as\":\"$COMMON_NAME\"}"
+
+    run_test_ok_auth "4d.2 common_list shows the shared file" \
+        "common_list" '{}' "$COMMON_NAME"
+
+    run_test_ok_auth "4d.3 common_get copies it into the agent workspace" \
+        "common_get" "{\"name\":\"$COMMON_NAME\"}"
+
+    run_test_ok_auth "4d.4 common_delete removes the shared file" \
+        "common_delete" "{\"name\":\"$COMMON_NAME\"}"
+
+    # --- 4e. time_now -----------------------------------------------------
+    # Hermetic: no network, no hardware, no LLM. The rendered payload always
+    # carries an rfc3339 stamp, so that substring is a stable success signal.
+    echo "  4e. time_now"
+    run_test_ok_auth "4e.1 time_now returns the current time" \
+        "time_now" '{}' "rfc3339"
+    run_test_ok_auth "4e.2 time_now converts to a named timezone" \
+        "time_now" '{"timezone":"UTC"}' "UTC+00:00"
+    # The unknown-timezone path is covered by a unit test in tools/timetool;
+    # it is hermetic, so there is nothing environmental for this suite to add.
+
+    #---------------------------------------------------------------------------
+    # Section 4f: A listen job is a persistent callback: one cron_schedule call
+    # creates it, and from then on the gateway calls the watched tool in the
+    # background and delivers each new result to the agent with no further
+    # calls from anyone. time_now is the probe: it is hermetic and its result
+    # changes every second, so a listener on it must deliver repeatedly. The
+    # proof of "background" is in the gateway log: deliveries recorded after
+    # the add returned and before anything else was called.
+    #
+    # Runs with the SERVICE token over the bearer endpoint: cron_schedule
+    # derives the calling agent from the session key, which a service token
+    # resolves to the agent's main session (the test SST token is registered
+    # under a synthetic key). That is also the real shape of this feature —
+    # an external client such as Claude Code arming a callback for an agent.
+    # Needs GATEWAY_LOG, SERVICE_TOKEN and BEARER_ENDPOINT.
+    #---------------------------------------------------------------------------
+
+    if [ -n "$GATEWAY_LOG" ] && [ -r "$GATEWAY_LOG" ] && [ -n "$SERVICE_TOKEN" ] && [ -n "$BEARER_ENDPOINT" ]; then
+        print_section "4f. Listen job (background callback, service token)"
+
+        probe_call_service() {
+            "$PROBE_PATH" -url "$BEARER_URL" -transport http \
+                -headers "Authorization:Bearer ${SERVICE_TOKEN}" \
+                -call "$1" -params "$2" 2>&1
+        }
+
+        echo "  4f.1 cron_schedule add listen — listener created"
+        LISTEN_ADD=$(probe_call_service "cron_schedule" "{\"action\":\"add\",\"message\":\"listen probe $$\",\"listen\":true,\"watch_tool\":\"time_now\",\"watch_timeout_seconds\":5}")
+        LISTEN_ID=$(printf '%s' "$LISTEN_ADD" | grep -o 'id: [A-Za-z0-9_-]*' | head -1 | cut -d' ' -f2)
+        if echo "$LISTEN_ADD" | grep -q "Listener added" && [ -n "$LISTEN_ID" ]; then
+            echo "    ${GREEN}PASS${NC}: listener $LISTEN_ID created"
+            TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            echo "    ${RED}FAIL${NC}: add did not create a listener"
+            echo "    Output: $(printf '%s' "$LISTEN_ADD" | grep -A3 'Tool Call Result' | tail -3)"
+            TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+
+        echo "  4f.2 listener delivers repeatedly in the background (no further calls)"
+        sleep 7
+        LISTEN_STARTED=$(grep -c "listen: started" "$GATEWAY_LOG" || true)
+        LISTEN_DELIVERED=$(grep -c "listen: event delivered" "$GATEWAY_LOG" || true)
+        if [ "$LISTEN_STARTED" -ge 1 ] && [ "$LISTEN_DELIVERED" -ge 2 ]; then
+            echo "    ${GREEN}PASS${NC}: $LISTEN_DELIVERED deliveries logged while nothing was called"
+            TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            echo "    ${RED}FAIL${NC}: started=$LISTEN_STARTED delivered=$LISTEN_DELIVERED (want >=1 and >=2)"
+            grep "listen:" "$GATEWAY_LOG" | tail -5 | sed 's/^/    /'
+            TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+
+        echo "  4f.3 cron_schedule list — shows the listener as continuous"
+        LISTEN_LIST=$(probe_call_service "cron_schedule" '{"action":"list"}')
+        if echo "$LISTEN_LIST" | grep -q "listen (continuous)"; then
+            echo "    ${GREEN}PASS${NC}: listed as continuous"
+            TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            echo "    ${RED}FAIL${NC}: listener not listed as continuous"
+            echo "    Output: $(printf '%s' "$LISTEN_LIST" | grep -A4 'Tool Call Result' | tail -4)"
+            TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+
+        echo "  4f.4 cron_schedule remove — listener stops at once"
+        LISTEN_RM=$(probe_call_service "cron_schedule" "{\"action\":\"remove\",\"job_id\":\"$LISTEN_ID\"}")
+        sleep 3
+        LISTEN_STOPPED=$(grep -c "listen: stopped" "$GATEWAY_LOG" || true)
+        if echo "$LISTEN_RM" | grep -q "removed" && [ "$LISTEN_STOPPED" -ge 1 ]; then
+            echo "    ${GREEN}PASS${NC}: listener stopped after removal"
+            TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            echo "    ${RED}FAIL${NC}: remove output or stop line missing (stopped=$LISTEN_STOPPED)"
+            echo "    Output: $(printf '%s' "$LISTEN_RM" | grep -A3 'Tool Call Result' | tail -3)"
+            TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+    else
+        echo "  4f.* listen job checks skipped (need GATEWAY_LOG, SERVICE_TOKEN and BEARER_ENDPOINT)"
+    fi
+
+    #---------------------------------------------------------------------------
+    # Section 4g: Forum tools (forum_*). The test config switches `forum` on for
+    # main, the session token's agent. Every tool is probed: readme returns the
+    # guide, a template, and refuses an unknown template; models and status
+    # are hermetic successes on an agent with no forums; validate and launch
+    # refuse a call without an ID and an unknown forum; pause, resume, cancel,
+    # results and delete refuse an unknown forum. A forum is then set up hermetically: new,
+    # template, update, export, validate (refused: the template's models are
+    # placeholders and the test config has no models), import, export again,
+    # launch (refused: invalid), status (new), results (refused: no run),
+    # status with a bad run number (refused) and delete. No run is started.
+    #---------------------------------------------------------------------------
+
+    if echo "$LIST_OUT" | grep -qw "forum_launch"; then
+        print_section "4g. Forum tools (forum)"
+        FORUM_ID="00000000-0000-4000-8000-$(printf '%012d' "$$")"
+
+        run_test_ok_auth "4g.1 forum_models lists the agent's models" \
+            "forum_models" '{}' "["
+        run_test_ok_auth "4g.2 forum_status lists no forums" \
+            "forum_status" '{}' "[]"
+        run_test_err_msg_auth "4g.3 forum_validate refuses a call without an id" \
+            "forum_validate" '{}' "The id argument is required"
+        run_test_err_msg_auth "4g.4 forum_launch refuses an unknown forum" \
+            "forum_launch" "{\"id\":\"$FORUM_ID\"}" "was not found"
+        run_test_err_msg_auth "4g.5 forum_pause refuses an unknown forum" \
+            "forum_pause" "{\"id\":\"$FORUM_ID\"}" "was not found"
+        run_test_err_msg_auth "4g.6 forum_resume refuses an unknown forum" \
+            "forum_resume" "{\"id\":\"$FORUM_ID\"}" "was not found"
+        run_test_err_msg_auth "4g.7 forum_cancel refuses an unknown forum" \
+            "forum_cancel" "{\"id\":\"$FORUM_ID\"}" "was not found"
+        run_test_err_msg_auth "4g.8 forum_results refuses an unknown forum" \
+            "forum_results" "{\"id\":\"$FORUM_ID\"}" "was not found"
+        run_test_err_msg_auth "4g.9 forum_delete refuses an unknown forum" \
+            "forum_delete" "{\"id\":\"$FORUM_ID\"}" "was not found"
+        run_test_ok_auth "4g.10 forum_readme returns the guide and the templates" \
+            "forum_readme" '{}' "## Templates"
+        run_test_ok_auth "4g.11 forum_readme returns a template" \
+            "forum_readme" '{"template":"council"}' "result_layers"
+        run_test_err_msg_auth "4g.12 forum_readme refuses an unknown template" \
+            "forum_readme" '{"template":"nosuch"}' "There is no template"
+
+        echo "  4g.13 forum_new creates a forum"
+        NEW_FORUM_OUT=$(probe_call_auth "forum_new" '{}')
+        NEW_FORUM_ID=$(echo "$NEW_FORUM_OUT" | grep -oE 'Forum [0-9a-f-]{36} created' | head -1 | awk '{print $2}')
+        if [ -n "$NEW_FORUM_ID" ]; then
+            echo "    ${GREEN}PASS${NC}: forum $NEW_FORUM_ID"
+            TIER2_PASS=$((TIER2_PASS + 1))
+            PASS_COUNT=$((PASS_COUNT + 1))
+            run_test_ok_auth "4g.14 forum_config_template sets the council template" \
+                "forum_config_template" "{\"id\":\"$NEW_FORUM_ID\",\"name\":\"council\"}" "council template"
+            run_test_ok_auth "4g.15 forum_config_update applies a merge patch" \
+                "forum_config_update" "{\"id\":\"$NEW_FORUM_ID\",\"changes\":{\"name\":\"probe-council\",\"seed\":7}}" "is updated"
+            run_test_ok_auth "4g.16 forum_config_export returns the changed configuration" \
+                "forum_config_export" "{\"id\":\"$NEW_FORUM_ID\"}" "probe-council"
+            run_test_err_msg_auth "4g.17 forum_validate names the placeholder models" \
+                "forum_validate" "{\"id\":\"$NEW_FORUM_ID\"}" "participants.member1.model"
+            run_test_ok_auth "4g.18 forum_config_import replaces the configuration" \
+                "forum_config_import" "{\"id\":\"$NEW_FORUM_ID\",\"config\":{\"version\":1,\"name\":\"probe-import\"}}" "imported configuration"
+            run_test_ok_auth "4g.19 forum_config_export returns the imported configuration" \
+                "forum_config_export" "{\"id\":\"$NEW_FORUM_ID\"}" "probe-import"
+            run_test_err_msg_auth "4g.20 forum_launch refuses an invalid configuration" \
+                "forum_launch" "{\"id\":\"$NEW_FORUM_ID\"}" "invalid configuration"
+            run_test_ok_auth "4g.21 forum_status shows the new forum" \
+                "forum_status" "{\"id\":\"$NEW_FORUM_ID\"}" "\"new\""
+            run_test_err_msg_auth "4g.22 forum_results refuses a forum with no run" \
+                "forum_results" "{\"id\":\"$NEW_FORUM_ID\"}" "has not been launched"
+            run_test_err_msg_auth "4g.23 forum_status refuses a bad run number" \
+                "forum_status" "{\"id\":\"$NEW_FORUM_ID\",\"run\":0}" "must be a run number"
+            run_test_ok_auth "4g.24 forum_delete removes the forum" \
+                "forum_delete" "{\"id\":\"$NEW_FORUM_ID\"}" "is deleted"
+        else
+            echo "    ${RED}FAIL${NC}: no forum ID in the reply"
+            echo "    Output: $NEW_FORUM_OUT"
+            TIER2_FAIL=$((TIER2_FAIL + 1))
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+    else
+        # The test config switches forum on for main: missing tools are a
+        # regression, not an optional host feature.
+        echo "  4g. Forum tools"
+        echo "    ${RED}FAIL${NC}: forum_launch is not in the catalogue although main has forum on"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    #---------------------------------------------------------------------------
+    # Section 4h: the character-card tool (ccv3). The test config switches
+    # `ccv3` on for main and attaches the card "probe-attached" to bob. Every
+    # action is probed hermetically: list, create, get, update (and an invalid
+    # patch, nothing written), copy, rename, delete, an unknown action, a
+    # missing argument, an unknown field, and rename/delete refused while bob
+    # uses the card.
+    #---------------------------------------------------------------------------
+
+    if echo "$LIST_OUT" | grep -qw "ccv3"; then
+        print_section "4h. Character cards (ccv3)"
+        CARD_ID="probe-$(printf '%06d' "$$")"
+
+        run_test_ok_auth "4h.1 ccv3 list shows the attached card and who uses it" \
+            "ccv3" '{"action":"list"}' "probe-attached"
+        run_test_ok_auth "4h.2 ccv3 create writes a card" \
+            "ccv3" "{\"action\":\"create\",\"id\":\"$CARD_ID\",\"card\":{\"name\":\"Probe Two\",\"description\":\"{{char}} probes.\"}}" "Probe Two"
+        run_test_ok_auth "4h.3 ccv3 get returns the envelope" \
+            "ccv3" "{\"action\":\"get\",\"id\":\"$CARD_ID\"}" "chara_card_v3"
+        run_test_ok_auth "4h.4 ccv3 update applies a merge patch" \
+            "ccv3" "{\"action\":\"update\",\"id\":\"$CARD_ID\",\"changes\":{\"personality\":\"Curious.\"}}" "Curious."
+        run_test_err_msg_auth "4h.5 ccv3 update refuses an unknown field" \
+            "ccv3" "{\"action\":\"update\",\"id\":\"$CARD_ID\",\"changes\":{\"nosuch\":1}}" "not valid"
+        run_test_err_msg_auth "4h.6 ccv3 create refuses an existing id" \
+            "ccv3" "{\"action\":\"create\",\"id\":\"$CARD_ID\",\"card\":{\"name\":\"Again\"}}" "already exists"
+        run_test_ok_auth "4h.7 ccv3 copy makes a second card" \
+            "ccv3" "{\"action\":\"copy\",\"id\":\"$CARD_ID\",\"new_id\":\"$CARD_ID-copy\"}" "copied_from"
+        run_test_ok_auth "4h.8 ccv3 rename changes the id" \
+            "ccv3" "{\"action\":\"rename\",\"id\":\"$CARD_ID-copy\",\"new_id\":\"$CARD_ID-renamed\"}" "previous_id"
+        run_test_err_msg_auth "4h.9 ccv3 rename refuses a card an agent uses" \
+            "ccv3" "{\"action\":\"rename\",\"id\":\"probe-attached\",\"new_id\":\"probe-free\"}" "is attached to agent Bob"
+        run_test_err_msg_auth "4h.10 ccv3 delete refuses a card an agent uses" \
+            "ccv3" '{"action":"delete","id":"probe-attached"}' "is attached to agent Bob"
+        run_test_err_msg_auth "4h.11 ccv3 refuses an unknown action" \
+            "ccv3" '{"action":"explode"}' "list, get, create, update, rename, copy or delete"
+        run_test_err_msg_auth "4h.12 ccv3 get refuses a call without an id" \
+            "ccv3" '{"action":"get"}' "id"
+        run_test_ok_auth "4h.13 ccv3 delete removes a card" \
+            "ccv3" "{\"action\":\"delete\",\"id\":\"$CARD_ID\"}" "deleted"
+        run_test_ok_auth "4h.14 ccv3 delete removes the renamed copy" \
+            "ccv3" "{\"action\":\"delete\",\"id\":\"$CARD_ID-renamed\"}" "deleted"
+        run_test_err_msg_auth "4h.15 ccv3 get refuses a deleted card" \
+            "ccv3" "{\"action\":\"get\",\"id\":\"$CARD_ID\"}" "does not exist"
+    else
+        echo "  4h. Character cards"
+        echo "    ${RED}FAIL${NC}: ccv3 is not in the catalogue although main has ccv3 on"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    #---------------------------------------------------------------------------
+    # Section 4i: Classifier tools (classifier_*). The test config switches
+    # `classifiers` on for main (no classifier model: the test config has no
+    # models). Every tool is probed hermetically. The classifier's source is
+    # forum_status, which main has and which lists no forums (an empty list),
+    # so creating it makes its one live call and its runs make no model call.
+    # readme, list, create, get, update (and an update over max_rules, refused,
+    # nothing written), validate, status and activity succeed; test and rerun
+    # refuse (no items); get, update and delete refuse an unknown classifier;
+    # create refuses a source tool main does not have and an unknown argument;
+    # delete removes the classifier.
+    #---------------------------------------------------------------------------
+
+    if echo "$LIST_OUT" | grep -qw "classifier_create"; then
+        print_section "4i. Classifier tools (classifiers)"
+        CLS_ID="probe-cls-$(printf '%06d' "$$")"
+        CLS_DEF="{\"id\":\"$CLS_ID\",\"enabled\":true,\"trigger\":{\"every_seconds\":3600},\"source\":{\"tool\":\"forum_status\",\"items\":\"\",\"id\":\"id\"},\"classify\":{\"instructions\":\"Sort the forums.\",\"categories\":[{\"name\":\"keep\"},{\"name\":\"drop\"}]}}"
+        CLS_MANY_RULES=$(for i in $(seq 1 101); do printf '"Rule %d.",' "$i"; done)
+        CLS_MANY_RULES="[${CLS_MANY_RULES%,}]"
+
+        run_test_ok_auth "4i.1 classifier_readme returns the guide" \
+            "classifier_readme" '{}' "## Substitution"
+        run_test_ok_auth "4i.2 classifier_list lists no classifiers" \
+            "classifier_list" '{}' "[]"
+        run_test_ok_auth "4i.3 classifier_create saves a classifier" \
+            "classifier_create" "{\"definition\":$CLS_DEF}" "Classifier $CLS_ID created."
+        run_test_ok_auth "4i.4 classifier_get returns the definition with its owner" \
+            "classifier_get" "{\"id\":\"$CLS_ID\"}" "\"owner\": \"main\""
+        run_test_ok_auth "4i.5 classifier_update applies a merge patch" \
+            "classifier_update" "{\"id\":\"$CLS_ID\",\"changes\":{\"classify\":{\"rules\":[\"Forums about probes are keep.\"]}}}" "Classifier $CLS_ID updated."
+        run_test_err_msg_auth "4i.6 classifier_update refuses more rules than max_rules" \
+            "classifier_update" "{\"id\":\"$CLS_ID\",\"changes\":{\"classify\":{\"rules\":$CLS_MANY_RULES}}}" "classify.rules has 101 rules; this install allows 100."
+        run_test_ok_auth "4i.7 classifier_get shows the rule from the update" \
+            "classifier_get" "{\"id\":\"$CLS_ID\"}" "Forums about probes are keep."
+        run_test_ok_auth "4i.8 classifier_validate checks a definition and calls its source" \
+            "classifier_validate" "{\"definition\":$CLS_DEF}" "The definition is valid."
+        run_test_ok_auth "4i.9 classifier_status reports the classifier" \
+            "classifier_status" "{\"id\":\"$CLS_ID\"}" "\"id\": \"$CLS_ID\""
+        run_test_ok_auth "4i.10 classifier_activity has no entries" \
+            "classifier_activity" "{\"id\":\"$CLS_ID\"}" "[]"
+        run_test_err_msg_auth "4i.11 classifier_test refuses a source with no items" \
+            "classifier_test" "{\"id\":\"$CLS_ID\"}" "The source lists no items."
+        run_test_err_msg_auth "4i.12 classifier_rerun refuses an item while the source lists none" \
+            "classifier_rerun" "{\"id\":\"$CLS_ID\",\"item_id\":\"nosuch\"}" "The source lists no items."
+        run_test_err_msg_auth "4i.13 classifier_create refuses a source tool main does not have" \
+            "classifier_create" "{\"definition\":{\"id\":\"probe-cls-missing\",\"enabled\":true,\"trigger\":{\"every_seconds\":60},\"source\":{\"tool\":\"nosuch_list\",\"items\":\"\",\"id\":\"id\"},\"classify\":{\"instructions\":\"x\",\"categories\":[{\"name\":\"keep\"}]}}}" "tool nosuch_list is not available to agent main"
+        run_test_err_msg_auth "4i.19 classifier_create refuses a classifier tool as its source" \
+            "classifier_create" "{\"definition\":{\"id\":\"probe-cls-self\",\"enabled\":true,\"trigger\":{\"every_seconds\":60},\"source\":{\"tool\":\"classifier_list\",\"items\":\"\",\"id\":\"id\"},\"classify\":{\"instructions\":\"x\",\"categories\":[{\"name\":\"keep\"}]}}}" "classifier_list can't be used by a classifier (source)."
+        run_test_err_msg_auth "4i.14 classifier_list refuses an unknown argument" \
+            "classifier_list" '{"nosuch":1}' "Unknown argument nosuch"
+        run_test_ok_auth "4i.15 classifier_delete removes the classifier" \
+            "classifier_delete" "{\"id\":\"$CLS_ID\"}" "Classifier $CLS_ID deleted."
+        run_test_err_msg_auth "4i.16 classifier_get refuses an unknown classifier" \
+            "classifier_get" "{\"id\":\"$CLS_ID\"}" "does not exist"
+        run_test_err_msg_auth "4i.17 classifier_update refuses an unknown classifier" \
+            "classifier_update" "{\"id\":\"$CLS_ID\",\"changes\":{\"enabled\":false}}" "does not exist"
+        run_test_err_msg_auth "4i.18 classifier_delete refuses an unknown classifier" \
+            "classifier_delete" "{\"id\":\"$CLS_ID\"}" "does not exist"
+    else
+        # The test config switches classifiers on for main: missing tools are
+        # a regression, not an optional host feature.
+        echo "  4i. Classifier tools"
+        echo "    ${RED}FAIL${NC}: classifier_create is not in the catalogue although main has classifiers on"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+fi  # end SESSION_TOKEN block
+
+################################################################################
+# TIER 3 — Bearer endpoint (/mcp): standard Authorization: Bearer auth with
+# clean tool schemas (no session_token parameter). Runs only when both
+# BEARER_ENDPOINT and SESSION_TOKEN are set. The same SST token authenticates
+# here, just transported in the header.
+################################################################################
+
+if [ -n "$BEARER_ENDPOINT" ] && [ -n "$SESSION_TOKEN" ]; then
+    print_section "6. Bearer endpoint ($BEARER_ENDPOINT)"
+
+    # 6.1 — A valid bearer lists tools (clean schemas, header auth).
+    echo "  6.1 tools/list over bearer endpoint with valid token"
+    bl=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
+        -headers "Authorization:Bearer ${SESSION_TOKEN}" -list 2>&1)
+    if echo "$bl" | grep -q "file_read_bytes"; then
+        echo "    ${GREEN}PASS${NC}: bearer tools/list returned the catalogue"
+        TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: bearer tools/list did not return tools"
+        echo "    Output: $bl"
+        TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    # 6.2 — A hermetic tool succeeds with NO session_token param (header auth).
+    echo "  6.2 session_info via bearer header, no session_token param"
+    bc=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
+        -headers "Authorization:Bearer ${SESSION_TOKEN}" \
+        -call "session_info" -params '{}' 2>&1)
+    if echo "$bc" | grep -q "Tool call succeeded"; then
+        echo "    ${GREEN}PASS${NC}: tool call succeeded over bearer transport"
+        TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: bearer tool call failed unexpectedly"
+        echo "    Output: $bc"
+        TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    # 6.3 — No bearer is rejected at the HTTP layer (401), so probe cannot init.
+    echo "  6.3 missing bearer is rejected (401)"
+    nb=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
+        -call "session_info" -params '{}' 2>&1)
+    if echo "$nb" | grep -qiE "401|unauthorized|bearer|failed|error"; then
+        echo "    ${GREEN}PASS${NC}: request without bearer was rejected"
+        TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: missing bearer was not rejected"
+        echo "    Output: $nb"
+        TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    # 6.4 — An invalid bearer is rejected (401).
+    echo "  6.4 invalid bearer is rejected (401)"
+    ib=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
+        -headers "Authorization:Bearer SSTdeadbeef" \
+        -call "session_info" -params '{}' 2>&1)
+    if echo "$ib" | grep -qiE "401|unauthorized|bearer|failed|error"; then
+        echo "    ${GREEN}PASS${NC}: request with invalid bearer was rejected"
+        TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: invalid bearer was not rejected"
+        echo "    Output: $ib"
+        TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+fi  # end bearer tier
+
+################################################################################
+# TIER 4 — Service token (long-lived, headless). Exercises loadServiceTokens:
+# a token pre-seeded into the state file must work as a bearer on /mcp and as a
+# session_token parameter on /internal, resolving to the headless service
+# session. Runs only when SERVICE_TOKEN is set.
+################################################################################
+
+if [ -n "$SERVICE_TOKEN" ]; then
+    print_section "7. Service token (long-lived, headless)"
+
+    if [ -n "$BEARER_ENDPOINT" ]; then
+        echo "  7.1 service token works as a bearer on $BEARER_ENDPOINT"
+        st_b=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
+            -headers "Authorization:Bearer ${SERVICE_TOKEN}" \
+            -call "session_info" -params '{}' 2>&1)
+        if echo "$st_b" | grep -q "Tool call succeeded"; then
+            echo "    ${GREEN}PASS${NC}: service token accepted on bearer endpoint"
+            TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            echo "    ${RED}FAIL${NC}: service token rejected on bearer endpoint"
+            echo "    Output: $st_b"
+            TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+    fi
+
+    echo "  7.2 service token works as session_token on $ENDPOINT"
+    st_i=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
+        -call "session_info" -params "$(printf '{"session_token":"%s"}' "$SERVICE_TOKEN")" 2>&1)
+    if echo "$st_i" | grep -q "Tool call succeeded"; then
+        echo "    ${GREEN}PASS${NC}: service token accepted as session_token parameter"
+        TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: service token rejected as session_token parameter"
+        echo "    Output: $st_i"
+        TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    echo "  7.3 service token of an agent allowed shell_exec runs it"
+    st_sh=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
+        -call "shell_exec" -params "$(printf '{"command":"echo svc-shell-ok","session_token":"%s"}' "$SERVICE_TOKEN")" 2>&1)
+    if echo "$st_sh" | grep -q "Tool call succeeded" && echo "$st_sh" | grep -qF "svc-shell-ok"; then
+        echo "    ${GREEN}PASS${NC}: shell_exec ran with the service token"
+        TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: shell_exec did not run with the service token"
+        echo "    Output: $st_sh"
+        TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+fi  # end service-token tier
+
+################################################################################
+# SECTION 5 — Config reload: MCP server recovers after config file change
+# Requires CONFIG_FILE env var (set automatically by test.sh).
+################################################################################
+
+if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
+    print_section "5. Config reload (MCP server restart)"
+
+    # 5.0 — Establish baseline before triggering reload.
+    echo "  5.0 Baseline: tool count and namespace coverage before reload"
+    BASELINE_COUNT=$(echo "$LIST_OUT" | grep -cE "^[0-9]+:" || true)
+    BASELINE_NS_OK=true
+    for ns in $EXPECTED_NAMESPACES; do
+        if ! echo "$LIST_OUT" | grep -qF "$ns"; then
+            echo "    ${RED}FAIL${NC}: namespace '${ns%_}' missing before reload — baseline invalid"
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            BASELINE_NS_OK=false
+        fi
+    done
+    if $BASELINE_NS_OK; then
+        echo "    ${GREEN}PASS${NC}: baseline established — $BASELINE_COUNT tools, all namespaces present"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    fi
+
+    # 5.1 — Touch config to trigger the watcher.
+    echo "  5.1 Touch config file to trigger reload"
+    touch "$CONFIG_FILE"
+    echo "    ${GREEN}PASS${NC}: config file touched (mtime updated)"
+    PASS_COUNT=$((PASS_COUNT + 1))
+
+    # 5.2 — Poll until MCP server responds again (config watcher polls every 5 s).
+    echo "  5.2 MCP server recovers after reload"
+    RELOAD_DEADLINE=$(($(date +%s) + 30))
+    RELOAD_OK=false
+    # First wait briefly for the server to go away (reload shuts it down).
+    sleep 2
+    while [ "$(date +%s)" -lt "$RELOAD_DEADLINE" ]; do
+        if "$PROBE_PATH" -url "$FULL_URL" -transport http -list >/dev/null 2>&1; then
+            RELOAD_OK=true
+            break
+        fi
+        sleep 1
+    done
+
+    if $RELOAD_OK; then
+        echo "    ${GREEN}PASS${NC}: MCP server reachable after reload"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: MCP server did not recover within 30s after reload"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    if $RELOAD_OK; then
+        LIST_RELOAD=$("$PROBE_PATH" -url "$FULL_URL" -transport http -list 2>&1)
+
+        # 5.3 — Full tool catalogue check — every expected tool must be present.
+        echo "  5.3 Full tool catalogue intact after reload"
+        RELOAD_TOOLS_OK=true
+        for tool in $EXPECTED_TOOLS; do
+            if ! echo "$LIST_RELOAD" | grep -qF "$tool"; then
+                echo "    ${RED}FAIL${NC}: '$tool' missing after reload"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                RELOAD_TOOLS_OK=false
+            fi
+        done
+        if $RELOAD_TOOLS_OK; then
+            echo "    ${GREEN}PASS${NC}: all $EXPECTED_TOOL_COUNT expected tools present after reload"
+            PASS_COUNT=$((PASS_COUNT + 1))
+        fi
+
+        # 5.4 — Tool count matches baseline (no silent additions or drops).
+        echo "  5.4 Tool count matches pre-reload baseline"
+        RELOAD_COUNT=$(echo "$LIST_RELOAD" | grep -cE "^[0-9]+:" || true)
+        if [ "$RELOAD_COUNT" -eq "$BASELINE_COUNT" ]; then
+            echo "    ${GREEN}PASS${NC}: tool count unchanged ($RELOAD_COUNT tools)"
+            PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            echo "    ${RED}FAIL${NC}: tool count changed — was $BASELINE_COUNT, now $RELOAD_COUNT"
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+
+        # 5.5 — All namespaces still present after reload.
+        echo "  5.5 All namespaces present after reload"
+        RELOAD_NS_OK=true
+        for ns in $EXPECTED_NAMESPACES; do
+            if ! echo "$LIST_RELOAD" | grep -qF "$ns"; then
+                echo "    ${RED}FAIL${NC}: namespace '${ns%_}' missing after reload"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                RELOAD_NS_OK=false
+            fi
+        done
+        if $RELOAD_NS_OK; then
+            echo "    ${GREEN}PASS${NC}: all namespaces present after reload"
+            PASS_COUNT=$((PASS_COUNT + 1))
+        fi
+
+        # 5.6 — Reload smoke check: the service token still authenticates. It is
+        # re-synced from disk on every rebuild, so this does not show that tokens
+        # issued before the reload survive it; the Go tests cover that.
+        if [ -n "$SERVICE_TOKEN" ]; then
+            echo "  5.6 service token still works after reload"
+            rl_svc=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
+                -call "session_info" -params "$(printf '{"session_token":"%s"}' "$SERVICE_TOKEN")" 2>&1)
+            if echo "$rl_svc" | grep -q "Tool call succeeded"; then
+                echo "    ${GREEN}PASS${NC}: service token accepted after reload"
+                TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
+            else
+                echo "    ${RED}FAIL${NC}: service token rejected after reload"
+                echo "    Output: $rl_svc"
+                TIER2_FAIL=$((TIER2_FAIL + 1)); FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
+        fi
+
+        # 5.7 — Reload smoke check: the test session token still authenticates.
+        # It is registered again on every rebuild, so like 5.6 it is not the
+        # regression check for carried tokens.
+        if [ -n "$SESSION_TOKEN" ]; then
+            run_test_ok_auth "5.7 session token still works after reload" "session_info" '{}'
+        fi
+    fi
+fi
+
+################################################################################
+# 8. Fusion service gating on the running binary
+################################################################################
+# The gate's instance defines one Fusion service (FUSION_SERVICE). The agent
+# behind SESSION_TOKEN lists it in mcp_tools; the agent behind
+# UNGRANTED_SERVICE_TOKEN has Fusion on and lists nothing. The first must be
+# able to call the service's tools, the second must be refused with the
+# not-enabled message. Pins the per-agent gating end to end, so a refactor that
+# stops consulting mcp_tools for Fusion tools fails here, not in production.
+if [ -n "$FUSION_SERVICE" ]; then
+    print_section "8. Fusion service gating ($FUSION_SERVICE)"
+    FUSION_TOOL="${FUSION_SERVICE}_city_search"
+
+    echo "  8.1 tools/list publishes the granted agent's Fusion tools"
+    if echo "$LIST_OUT" | grep -qF "$FUSION_TOOL"; then
+        echo "    ${GREEN}PASS${NC}: $FUSION_TOOL listed"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "    ${RED}FAIL${NC}: $FUSION_TOOL not in tools/list"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    echo "  8.2 the agent listing the service may call its tools"
+    if [ -n "$SESSION_TOKEN" ]; then
+        fg=$(probe_call_auth "$FUSION_TOOL" '{"q":"Ottawa"}')
+        if echo "$fg" | grep -qi "not enabled for this agent"; then
+            echo "    ${RED}FAIL${NC}: refused although mcp_tools lists $FUSION_SERVICE"
+            echo "$fg" | head -5 | sed 's/^/      /'
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+        else
+            # The call reached the Fusion handler; a network failure past that
+            # point is not a gating result.
+            echo "    ${GREEN}PASS${NC}: call reached the Fusion tool"
+            PASS_COUNT=$((PASS_COUNT + 1))
+        fi
+    else
+        echo "    SKIP: needs SESSION_TOKEN"
+    fi
+
+    echo "  8.3 the agent listing no service is refused"
+    if [ -n "$UNGRANTED_SERVICE_TOKEN" ]; then
+        ug=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
+            -call "$FUSION_TOOL" -params "$(printf '{"q":"Ottawa","session_token":"%s"}' "$UNGRANTED_SERVICE_TOKEN")" 2>&1)
+        if echo "$ug" | grep -qi "not enabled for this agent"; then
+            echo "    ${GREEN}PASS${NC}: refused with the not-enabled message"
+            PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            echo "    ${RED}FAIL${NC}: an agent with Fusion on and nothing listed reached $FUSION_TOOL"
+            echo "$ug" | head -5 | sed 's/^/      /'
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+    else
+        echo "    SKIP: needs UNGRANTED_SERVICE_TOKEN"
+    fi
+fi
+
+################################################################################
+# Summary
+################################################################################
+
+TIER1_PASS=$((PASS_COUNT - TIER2_PASS))
+TIER1_FAIL=$((FAIL_COUNT - TIER2_FAIL))
+
+echo ""
+echo "${BOLD}============================================${NC}"
+echo "${BOLD}   Test Summary${NC}"
+echo "${BOLD}============================================${NC}"
+echo ""
+echo "  Tier 1 — ${GREEN}Passed: $TIER1_PASS${NC}  ${RED}Failed: $TIER1_FAIL${NC}"
+if [ -n "$SESSION_TOKEN" ]; then
+    echo "  Tier 2 — ${GREEN}Passed: $TIER2_PASS${NC}  ${RED}Failed: $TIER2_FAIL${NC}"
+else
+    echo "  Tier 2 — ${YELLOW}SKIPPED${NC} (SESSION_TOKEN not set)"
+fi
+echo ""
+echo "  Overall — ${GREEN}Passed: $PASS_COUNT${NC}  ${RED}Failed: $FAIL_COUNT${NC}  Total: $((PASS_COUNT + FAIL_COUNT))"
+echo ""
+
+if [ "$FAIL_COUNT" -gt 0 ]; then
+    echo "${RED}SOME TESTS FAILED${NC}"
+    exit 1
+fi
+echo "${GREEN}ALL TESTS PASSED${NC}"
+exit 0

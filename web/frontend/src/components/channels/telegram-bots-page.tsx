@@ -1,0 +1,453 @@
+import { IconLoader2, IconPlus, IconTrash } from "@tabler/icons-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
+
+import { getAppConfig, patchAppConfig } from "@/api/channels"
+import { TelegramForm } from "@/components/channels/channel-forms/telegram-form"
+import { PageHeader } from "@/components/page-header"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+
+type SaveStatus = "saving" | "saved" | "error" | null
+
+type BotConfig = Record<string, unknown>
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function asBool(value: unknown): boolean {
+  return value === true
+}
+
+function botToEditState(bot: unknown): BotConfig {
+  const b = asRecord(bot)
+  return { ...b, _token: "" }
+}
+
+function editStateToBot(state: BotConfig): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(state)) {
+    if (key === "_token") continue
+    if (key === "token") {
+      const incoming = asString(state["_token"])
+      out["token"] = incoming !== "" ? incoming : value
+      continue
+    }
+    out[key] = value
+  }
+  return out
+}
+
+function newEmptyBot(): BotConfig {
+  return {
+    id: "",
+    enabled: true,
+    token: "",
+    _token: "",
+    base_url: "",
+    proxy: "",
+    allow_from: [],
+    typing: { enabled: true },
+    placeholder: { enabled: true, text: "Thinking... 💭" },
+  }
+}
+
+interface BotCardProps {
+  bot: BotConfig
+  isExpanded: boolean
+  isNew: boolean
+  saving: boolean
+  onExpand: () => void
+  onCollapse: () => void
+  onChange: (key: string, value: unknown) => void
+  onToggleEnabled: (enabled: boolean) => void
+  onSave: () => void
+  onDelete: () => void
+}
+
+function BotCard({
+  bot,
+  isExpanded,
+  isNew,
+  saving,
+  onExpand,
+  onCollapse,
+  onChange,
+  onToggleEnabled,
+  onSave,
+  onDelete,
+}: BotCardProps) {
+  const { t } = useTranslation()
+  const configured = asString(bot.token) !== ""
+  const botId = asString(bot.id)
+  // The bot's id names it; the default bot (blank or "default" id) has none.
+  const label = botId === "" || botId === "default" ? "Default bot" : botId
+
+  return (
+    <div className="border-border/60 bg-card rounded-xl border">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <span
+          className={[
+            "h-2 w-2 shrink-0 rounded-full",
+            configured ? "bg-green-500" : "bg-muted-foreground/25",
+          ].join(" ")}
+          title={
+            configured
+              ? t("models.status.configured")
+              : t("models.status.unconfigured")
+          }
+        />
+        <span className="min-w-0 flex-1 truncate font-mono text-sm font-semibold">
+          {isNew ? (
+            <Input
+              value={botId}
+              onChange={(e) => onChange("id", e.target.value)}
+              placeholder="bot-id (leave blank for default)"
+              className="h-7 text-sm"
+            />
+          ) : (
+            <span>{label}</span>
+          )}
+        </span>
+
+        {!isNew && (
+          <Switch
+            checked={asBool(bot.enabled)}
+            onCheckedChange={onToggleEnabled}
+            aria-label={asBool(bot.enabled) ? "Disable bot" : "Enable bot"}
+          />
+        )}
+
+        {!isExpanded && (
+          <Button variant="outline" size="sm" onClick={onExpand}>
+            {t("common.edit")}
+          </Button>
+        )}
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onDelete}
+          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          aria-label={isNew ? "Delete bot" : `Delete ${label}`}
+          title={isNew ? "Delete bot" : `Delete ${label}`}
+        >
+          <IconTrash className="size-3.5" />
+        </Button>
+      </div>
+
+      {isExpanded && (
+        <div className="border-border/40 space-y-4 border-t px-4 py-4">
+          {isNew && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">
+                {t("channels.page.enableLabel")}
+              </span>
+              <Switch
+                checked={asBool(bot.enabled)}
+                onCheckedChange={(v) => onChange("enabled", v)}
+                aria-label={t("channels.page.enableLabel")}
+              />
+            </div>
+          )}
+
+          <TelegramForm
+            config={bot}
+            onChange={onChange}
+            isEdit={configured && !isNew}
+          />
+
+          <div className="border-border/40 flex justify-end gap-2 border-t pt-4">
+            {isNew ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={onCollapse}
+                  disabled={saving}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button onClick={onSave} disabled={saving}>
+                  {saving ? t("common.saving") : t("common.save")}
+                </Button>
+              </>
+            ) : (
+              // Existing bots auto-save on edit; this just collapses the card.
+              <Button variant="outline" onClick={onCollapse}>
+                {t("common.done")}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function TelegramBotsPage() {
+  const { t } = useTranslation()
+  const [bots, setBots] = useState<BotConfig[]>([])
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
+  // `saving` gates the explicit Add-bot flow; `status` drives the auto-save hint.
+  const [saving, setSaving] = useState(false)
+  const [status, setStatus] = useState<SaveStatus>(null)
+  const [isAdding, setIsAdding] = useState(false)
+  const [newBot, setNewBot] = useState<BotConfig>(newEmptyBot())
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  )
+
+  const queryClient = useQueryClient()
+
+  const {
+    data: fetched,
+    isPending: loading,
+    error: loadError,
+  } = useQuery({
+    queryKey: ["telegram-bots"],
+    queryFn: async () => {
+      const appConfig = await getAppConfig()
+      const channelsConfig = asRecord(asRecord(appConfig).channels)
+      return asArray(channelsConfig["telegram"]).map(botToEditState)
+    },
+  })
+
+  // Kept as a named refresh so the post-save call sites read unchanged; it now
+  // invalidates the cache instead of refetching by hand.
+  const loadData = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["telegram-bots"] })
+  }
+
+  const fetchError = loadError
+    ? loadError instanceof Error
+      ? loadError.message
+      : t("channels.loadError")
+    : ""
+
+  // Seed the editable list when a fetch lands. Adjusted during render rather
+  // than in an effect so the list is never painted empty for a frame, and it
+  // fires only when a genuinely new fetch result arrives — never clobbering
+  // edits made since.
+  const [syncedFetch, setSyncedFetch] = useState(fetched)
+  if (fetched && fetched !== syncedFetch) {
+    setSyncedFetch(fetched)
+    setBots(fetched)
+  }
+
+  // Clear pending timers on unmount.
+  useEffect(
+    () => () => {
+      clearTimeout(saveTimer.current)
+      clearTimeout(savedTimer.current)
+    },
+    [],
+  )
+
+  const buildBotsPayload = (editedBots: BotConfig[]) =>
+    editedBots.map(editStateToBot)
+
+  // saveBots persists a bots array immediately. It does NOT refetch, so a token
+  // being typed in an existing card is never blanked mid-edit. Any pending
+  // debounce is cancelled first so a toggle/delete isn't followed by a stale save.
+  const saveBots = async (list: BotConfig[]) => {
+    clearTimeout(saveTimer.current)
+    setStatus("saving")
+    try {
+      await patchAppConfig({
+        channels: { telegram: buildBotsPayload(list) },
+      })
+      setStatus("saved")
+      clearTimeout(savedTimer.current)
+      savedTimer.current = setTimeout(() => setStatus(null), 2000)
+    } catch (e) {
+      setStatus("error")
+      toast.error(e instanceof Error ? e.message : t("channels.page.saveError"))
+    }
+  }
+
+  // Both refs exist because the debounce fires long after the handler that
+  // scheduled it: the timer must run the newest saver against the newest
+  // bots, and the handler calls setBots() immediately before scheduleSave(),
+  // so the bots value in that closure is still the previous one. Reading
+  // through refs at fire time is what makes the save use what the user actually
+  // typed.
+  //
+  // The writes happen in an effect rather than during render. A render-phase
+  // ref write is a side effect in render — unsafe under concurrent rendering,
+  // and what react-hooks/refs flags. The effect runs after paint, hundreds of
+  // milliseconds before the 600 ms debounce fires, so the values are current.
+  const botsRef = useRef<BotConfig[]>(bots)
+  const saveBotsRef = useRef(saveBots)
+  useEffect(() => {
+    botsRef.current = bots
+    saveBotsRef.current = saveBots
+  })
+
+  // Debounced auto-save for existing-bot field edits.
+  const scheduleSave = () => {
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(
+      () => void saveBotsRef.current(botsRef.current),
+      600,
+    )
+  }
+
+  const handleBotChange = (index: number, key: string, value: unknown) => {
+    setBots((prev) => {
+      const next = [...prev]
+      next[index] = { ...next[index], [key]: value }
+      return next
+    })
+    scheduleSave()
+  }
+
+  const handleToggleBotEnabled = (index: number, enabled: boolean) => {
+    const updated = bots.map((b, i) => (i === index ? { ...b, enabled } : b))
+    setBots(updated)
+    void saveBots(updated)
+  }
+
+  const handleDeleteBot = (index: number) => {
+    const updated = bots.filter((_, i) => i !== index)
+    setBots(updated)
+    setExpandedIndex(null)
+    void saveBots(updated)
+  }
+
+  const handleAddBot = async () => {
+    const allBots = [...bots.map(editStateToBot), editStateToBot(newBot)]
+    setSaving(true)
+    try {
+      await patchAppConfig({
+        channels: { telegram: allBots },
+      })
+      toast.success(t("channels.page.saveSuccess"))
+      setIsAdding(false)
+      setNewBot(newEmptyBot())
+      await loadData()
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : t("channels.page.saveError")
+      toast.error(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader title={t("channels.name.telegram")}>
+        {status && (
+          <span
+            className={`text-xs ${status === "error" ? "text-destructive" : status === "saved" ? "text-emerald-500" : "text-muted-foreground"}`}
+          >
+            {status === "saving"
+              ? "Saving…"
+              : status === "saved"
+                ? "Saved ✓"
+                : "Save failed"}
+          </span>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setIsAdding(true)
+            setExpandedIndex(null)
+          }}
+          disabled={isAdding}
+        >
+          <IconPlus className="size-4" />
+          Add Bot
+        </Button>
+      </PageHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 sm:px-6">
+        <div className="w-full max-w-250 space-y-3 pt-4">
+          {loading && (
+            <div className="flex items-center justify-center py-20">
+              <IconLoader2 className="text-muted-foreground size-6 animate-spin" />
+            </div>
+          )}
+
+          {fetchError && (
+            <div className="text-destructive bg-destructive/10 rounded-lg px-4 py-3 text-sm">
+              {fetchError}
+            </div>
+          )}
+
+          {!loading && !fetchError && bots.length === 0 && !isAdding && (
+            <p className="text-muted-foreground text-sm">
+              No Telegram bots configured. Add one to get started.
+            </p>
+          )}
+
+          {!loading &&
+            !fetchError &&
+            bots.map((bot, i) => (
+              <BotCard
+                key={i}
+                bot={bot}
+                isExpanded={expandedIndex === i}
+                isNew={false}
+                saving={false}
+                onExpand={() => {
+                  setExpandedIndex(i)
+                  setIsAdding(false)
+                }}
+                onCollapse={() => setExpandedIndex(null)}
+                onChange={(key, value) => handleBotChange(i, key, value)}
+                onToggleEnabled={(enabled) =>
+                  handleToggleBotEnabled(i, enabled)
+                }
+                onSave={() => {}}
+                onDelete={() => handleDeleteBot(i)}
+              />
+            ))}
+
+          {isAdding && (
+            <BotCard
+              bot={newBot}
+              isExpanded={true}
+              isNew={true}
+              saving={saving}
+              onExpand={() => {}}
+              onCollapse={() => {
+                setIsAdding(false)
+                setNewBot(newEmptyBot())
+              }}
+              onChange={(key, value) =>
+                setNewBot((prev) => ({ ...prev, [key]: value }))
+              }
+              onToggleEnabled={(enabled) =>
+                setNewBot((prev) => ({ ...prev, enabled }))
+              }
+              onSave={handleAddBot}
+              onDelete={() => {
+                setIsAdding(false)
+                setNewBot(newEmptyBot())
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

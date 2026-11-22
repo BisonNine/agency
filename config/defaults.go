@@ -1,0 +1,359 @@
+// ClawEh
+// License: MIT
+
+package config
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/logger"
+)
+
+// DefaultConfig returns the default configuration for ClawEh.
+func DefaultConfig() *Config {
+	// Determine the base path for the workspace.
+	// Priority: $CLAW_HOME > ~/.claw
+	var homePath string
+	if clawHome := os.Getenv(global.EnvVarHome); clawHome != "" {
+		homePath = clawHome
+	} else {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			logger.WarnCF("config", "home directory unknown; using relative data dir", map[string]any{"error": err.Error()})
+		}
+		homePath = filepath.Join(userHome, global.DefaultDataDir)
+	}
+	agentsBaseDir := filepath.Join(homePath, "agents")
+
+	cfg := &Config{
+		// Marks this as an auto-seeded config the user hasn't saved yet; the first
+		// SaveConfig clears it. SeedDefaultConfig preserves it when written to disk.
+		DefaultConfig: true,
+		Agents: AgentsConfig{
+			BaseDir: agentsBaseDir,
+			Defaults: AgentDefaults{
+				RestrictToWorkspace:  true,
+				WorkspaceWriteSubdir: "files",
+				WorkspaceReadSubdirs: []string{"files", "skills"},
+				Memory: MemoryConfig{
+					Prompt: MemoryPromptConfig{
+						TopKDomains: 3, MaxChars: 4000, MinConfidence: 0.65,
+						IncludeDebugTrace: false,
+						FileMaxBytes:      256 * 1024, FileTotalMaxBytes: 512 * 1024,
+					},
+					Consolidation: MemoryConsolidationConfig{
+						EveryNMessages: 50, IdleMinutes: 60, Nightly: true, NightlyAt: "03:20",
+						ProposeDomains: true, AutoPromote: false, DebugDump: false,
+						MaxBatchMessages: 200, MaxInputTokens: 96000, PerMessageChars: 12000,
+						MaxOutputTokens: 8000, MaxRuntimeSecs: 120,
+					},
+					Export: MemoryExportConfig{Enabled: true},
+				},
+				Models:               []string{"Claude CLI", "Codex CLI"},
+				MaxTokens:            32768,
+				Temperature:          nil, // nil means use provider default
+				MaxToolIterations:    50,
+				RequestTimeout:       300, // global default (s); per-model overrides (CLIs set longer)
+				MaxConcurrentTurns:   8,
+				ContextWindow:        128000,
+				ArchiveDays:          365,
+				SummaryRetentionDays: 3650,
+			},
+			List: []AgentConfig{
+				{
+					ID:      global.DefaultAgentID,
+					Name:    app.ShortName(),
+					Default: true,
+					// Tools omitted: an agent has only the tools its list
+					// names, so the seeded agent starts with none.
+				},
+			},
+		},
+		Bindings: []AgentBinding{},
+		Session: SessionConfig{
+			RetentionDays: 0, // keep every session; see session.retention_days
+		},
+		Channels: ChannelsConfig{
+			Telegram: []TelegramBotConfig{
+				{
+					ID:        "default",
+					Enabled:   false,
+					Token:     "",
+					AllowFrom: FlexibleStringSlice{},
+					Typing:    TypingConfig{Enabled: true},
+					Placeholder: PlaceholderConfig{
+						Enabled: true,
+						Text:    "Thinking... 💭",
+					},
+					// Enabled left nil → on by default (see CoalesceConfig.IsEnabled).
+					Coalesce: CoalesceConfig{
+						WindowMS: DefaultCoalesceWindowMS,
+					},
+				},
+			},
+			Discord: DiscordConfig{
+				Enabled:     false,
+				Token:       "",
+				AllowFrom:   FlexibleStringSlice{},
+				MentionOnly: false,
+			},
+			Slack: SlackConfig{
+				Enabled:   false,
+				BotToken:  "",
+				AppToken:  "",
+				AllowFrom: FlexibleStringSlice{},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
+			},
+			Matrix: MatrixConfig{
+				Enabled:      false,
+				Homeserver:   "https://matrix.org",
+				UserID:       "",
+				AccessToken:  "",
+				DeviceID:     "",
+				JoinOnInvite: true,
+				AllowFrom:    FlexibleStringSlice{},
+				GroupTrigger: GroupTriggerConfig{
+					MentionOnly: true,
+				},
+				Placeholder: PlaceholderConfig{
+					Enabled: true,
+					Text:    "Thinking... 💭",
+				},
+			},
+			WebUI: WebUIConfig{
+				Enabled:        false,
+				Token:          "",
+				PingInterval:   30,
+				ReadTimeout:    60,
+				WriteTimeout:   10,
+				MaxConnections: 100,
+				AllowFrom:      FlexibleStringSlice{},
+			},
+			Device: DeviceChannelConfig{
+				Enabled:   false,
+				Host:      "127.0.0.1", // loopback until the user enables local-network listening
+				Port:      18791,       // own listener, next to the WebUI/admin port (18790)
+				AllowFrom: FlexibleStringSlice{},
+			},
+		},
+		// Named endpoints. A model references one by name; the WebUI groups
+		// models by provider. Add your API key to the provider you want to use.
+		Providers: []Provider{
+			// CLI providers run a local binary found on PATH; set `command` to
+			// override the path. base_url is unused for CLI protocols.
+			{Name: "Claude CLI", Protocol: "claude-cli"},
+			{Name: "Codex CLI", Protocol: "codex-cli"},
+			{Name: "Antigravity CLI", Protocol: "antigravity-cli"},
+			{Name: "Cursor CLI", Protocol: "cursor-cli"},
+
+			{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
+			{Name: "Anthropic", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1"},
+			{Name: "DeepSeek", Protocol: "openai-chat", BaseURL: "https://api.deepseek.com/v1", RequireReasoningContent: true},
+			{Name: "Google API", Protocol: "openai-chat", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai"},
+			{Name: "Qwen", Protocol: "openai-chat", BaseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
+			{Name: "Moonshot", Protocol: "openai-chat", BaseURL: "https://api.moonshot.ai/v1"},
+			{Name: "Groq", Protocol: "openai-chat", BaseURL: "https://api.groq.com/openai/v1", NoParallelToolCalls: true},
+			{Name: "OpenRouter Chat", Protocol: "openai-chat", BaseURL: "https://openrouter.ai/api/v1"},
+			{Name: "OpenRouter Responses", Protocol: "openai-responses", BaseURL: "https://openrouter.ai/api/v1"},
+			{Name: "OpenRouter Strict", Protocol: "openai-chat", BaseURL: "https://openrouter.ai/api/v1", StrictCompat: true},
+			{Name: "OpenRouter Chat DeepSeek", Protocol: "openai-chat", BaseURL: "https://openrouter.ai/api/v1", RequireReasoningContent: true},
+			{Name: "NVIDIA", Protocol: "openai-chat", BaseURL: "https://integrate.api.nvidia.com/v1", StrictCompat: true},
+			{Name: "Cerebras", Protocol: "openai-chat", BaseURL: "https://api.cerebras.ai/v1"},
+			{Name: "Ollama", Protocol: "openai-chat", BaseURL: "http://localhost:11434/v1"},
+			{Name: "Mistral", Protocol: "openai-chat", BaseURL: "https://api.mistral.ai/v1"},
+			{Name: "Avian", Protocol: "openai-chat", BaseURL: "https://api.avian.io/v1"},
+			{Name: "vLLM Local", Protocol: "openai-chat", BaseURL: "http://localhost:8000/v1"},
+			{Name: "Bedrock Chat", Protocol: "openai-chat", BaseURL: "https://bedrock-mantle.us-east-1.api.aws/v1"},
+			{Name: "Bedrock Responses", Protocol: "openai-responses", BaseURL: "https://bedrock-mantle.us-east-1.api.aws/openai/v1"},
+			{Name: "Abliteration", Protocol: "openai-chat", BaseURL: "https://api.abliteration.ai/v1"},
+			{Name: "xAI", Protocol: "openai-chat", BaseURL: "https://api.x.ai/v1"},
+		},
+		Models: []ModelConfig{
+			// ============================================
+			// A starter catalogue of tested providers/models, ALL DISABLED.
+			// Enable a model and add its provider's api_key to use it. CLI models
+			// need the matching binary on PATH. `model` is the raw id the endpoint
+			// expects; `provider` names the endpoint above.
+			// ============================================
+
+			// CLI providers (local binaries). The flags each CLI needs come from the
+			// CLIAgents catalogue (config/clis.go), not from extra_args; the
+			// permission-bypass flag is passed only when the provider's
+			// bypass_restrictions is on.
+			{ModelName: "Claude CLI", Model: "claude-cli", Provider: "Claude CLI", RequestTimeout: 3600, Env: map[string]string{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}, Enabled: false},
+			{ModelName: "Claude CLI Opus", Model: "Opus", Provider: "Claude CLI", RequestTimeout: 3600, Env: map[string]string{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}, Enabled: false},
+			{ModelName: "Claude CLI Fable", Model: "Fable", Provider: "Claude CLI", RequestTimeout: 3600, Env: map[string]string{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}, ContextWindow: 750000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "Codex CLI", Model: "codex-cli", Provider: "Codex CLI", RequestTimeout: 3600, Enabled: false},
+			// Antigravity (binary "agy") replaces the deprecated Gemini CLI. The
+			// prompt is piped on stdin and the provider never passes -p/--print:
+			// with either, agy reads the prompt from argv and ignores stdin.
+			{ModelName: "Antigravity CLI", Model: "antigravity-cli", Provider: "Antigravity CLI", RequestTimeout: 3600, Enabled: false},
+			{ModelName: "Cursor CLI", Model: "cursor-cli", Provider: "Cursor CLI", RequestTimeout: 3600, Enabled: false},
+
+			// HTTP providers.
+			{ModelName: "OpenAI GPT 5.5", Model: "gpt-5.5", Provider: "OpenAI", DropParams: []string{"temperature"}, Enabled: false},
+			{ModelName: "Claude Sonnet 5.5", Model: "claude-sonnet-5-5", Provider: "Anthropic", Enabled: false},
+			{ModelName: "Claude Opus 5.5", Model: "claude-opus-5-5", Provider: "Anthropic", Enabled: false},
+			{ModelName: "Claude Fable 5.1", Model: "claude-fable-5-1", Provider: "Anthropic", Enabled: false},
+			{ModelName: "DeepSeek Flash", Model: "deepseek-flash", Provider: "DeepSeek", ContextWindow: 900000, Enabled: false},
+			{ModelName: "Gemini 3.8 Flash", Model: "gemini-3.8-flash", Provider: "Google API", Enabled: false},
+			{ModelName: "Qwen Plus", Model: "qwen-plus", Provider: "Qwen", Enabled: false},
+			{ModelName: "Groq GPT OSS 120b", Model: "openai/gpt-oss-120b", Provider: "Groq", Enabled: false},
+			{ModelName: "OpenRouter Auto", Model: "openrouter/auto", Provider: "OpenRouter Chat", Enabled: false},
+			{ModelName: "Llama 3", Model: "llama3", Provider: "Ollama", Enabled: false},
+			{ModelName: "Mistral Small", Model: "mistral-small-latest", Provider: "Mistral", Enabled: false},
+			{ModelName: "DeepSeek v3.2", Model: "deepseek/deepseek-v3.2", Provider: "Avian", Enabled: false},
+			{ModelName: "Local Model", Model: "custom-model", Provider: "vLLM Local", Enabled: false},
+			{ModelName: "Bedrock Opus 5.5", Model: "anthropic.claude-opus-5-5", Provider: "Bedrock Chat", Enabled: false},
+			{ModelName: "Bedrock Sonnet 5.5", Model: "anthropic.claude-sonnet-5-5", Provider: "Bedrock Chat", Enabled: false},
+			{ModelName: "Bedrock GPT 5.5", Model: "openai.gpt-5.5", Provider: "Bedrock Responses", DropParams: []string{"temperature"}, Enabled: false},
+			{ModelName: "Bedrock GPT 6 Astra", Model: "openai.gpt-6-astra", Provider: "Bedrock Responses", ContextWindow: 250000, Enabled: false},
+			{ModelName: "Bedrock DeepSeek 3", Model: "deepseek.v3.2", Provider: "Bedrock Chat", Enabled: false},
+			{ModelName: "Bedrock Nova 2 Lite", Model: "amazon.nova-2-lite-v1:0", Provider: "Bedrock Chat", Enabled: false},
+			{ModelName: "Bedrock Gemma 3", Model: "google.gemma-3-27b-it", Provider: "Bedrock Chat", MaxTokens: 5000, StrictAlternation: true, Enabled: false},
+			{ModelName: "Abliteration", Model: "abliterated-model", Provider: "Abliteration", Enabled: false},
+			{ModelName: "OpenRouter Llama 4 Maverick", Model: "meta-llama/llama-4-maverick", Provider: "OpenRouter Chat", Enabled: false},
+			{ModelName: "OpenRouter Llama 4 Scout", Model: "meta-llama/llama-4-scout", Provider: "OpenRouter Chat", Enabled: false},
+			{ModelName: "OpenRouter Fable Latest", Model: "anthropic/claude-fable-latest", Provider: "OpenRouter Chat", ContextWindow: 1000000, Enabled: false},
+			{ModelName: "OpenRouter Kimi Latest", Model: "moonshotai/kimi-latest", Provider: "OpenRouter Chat", ContextWindow: 1000000, Enabled: false},
+			{ModelName: "OpenRouter Gemini Flash Latest", Model: "google/gemini-flash-latest", Provider: "OpenRouter Chat", ContextWindow: 1000000, Enabled: false},
+			{ModelName: "OpenRouter GPT Terra Latest", Model: "openai/gpt-terra-latest", Provider: "OpenRouter Responses", ContextWindow: 750000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "OpenRouter GPT 6 Astra", Model: "openai/gpt-6-astra", Provider: "OpenRouter Responses", ContextWindow: 1000000, Enabled: false},
+			{ModelName: "OpenRouter GPT 6 Sol", Model: "openai/gpt-6-sol", Provider: "OpenRouter Responses", ContextWindow: 1000000, Enabled: false},
+			{ModelName: "OpenRouter GPT 6 Luna", Model: "openai/gpt-6-luna", Provider: "OpenRouter Responses", ContextWindow: 1000000, Enabled: false},
+			{ModelName: "OpenRouter GLM Latest", Model: "z-ai/glm-latest", Provider: "OpenRouter Responses", ContextWindow: 750000, Enabled: false},
+			{ModelName: "OpenRouter DeepSeek Flash Latest", Model: "~deepseek/deepseek-flash-latest", Provider: "OpenRouter Chat DeepSeek", ContextWindow: 500000, Enabled: false},
+			{ModelName: "OpenRouter DeepSeek Pro Latest", Model: "~deepseek/deepseek-pro-latest", Provider: "OpenRouter Chat DeepSeek", ContextWindow: 500000, Enabled: false},
+			{ModelName: "Grok 4.7", Model: "grok-4.7", Provider: "xAI", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "Grok 4.7 High", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "high", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "Grok 4.7 Medium", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "medium", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "Grok 4.7 None", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "none", ThinkingLevel: "off", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "OpenRouter GPT 5.5", Model: "openai/gpt-5.5", Provider: "OpenRouter Strict", DropParams: []string{"temperature"}, Enabled: false},
+		},
+		Gateway: GatewayConfig{
+			Host: "127.0.0.1",
+			Port: DefaultGatewayPort,
+		},
+		Tools: ToolsConfig{
+			MediaCleanup: MediaCleanupConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				MaxAge:   30,
+				Interval: 5,
+			},
+			Web: WebToolsConfig{
+				Proxy:           "",
+				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
+				Brave: BraveConfig{
+					Enabled:    false,
+					APIKey:     "",
+					APIKeys:    nil,
+					MaxResults: 5,
+				},
+				Tavily: TavilyConfig{
+					Enabled:    false,
+					APIKey:     "",
+					APIKeys:    nil,
+					MaxResults: 5,
+				},
+				DuckDuckGo: DuckDuckGoConfig{
+					Enabled:    false,
+					MaxResults: 5,
+				},
+				Perplexity: PerplexityConfig{
+					Enabled:    false,
+					APIKey:     "",
+					APIKeys:    nil,
+					MaxResults: 5,
+				},
+				SearXNG: SearXNGConfig{
+					Enabled:    false,
+					BaseURL:    "",
+					MaxResults: 5,
+				},
+				GLMSearch: GLMSearchConfig{
+					Enabled:      false,
+					APIKey:       "",
+					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
+					SearchEngine: "search_std",
+					MaxResults:   5,
+				},
+			},
+			Cron: CronToolsConfig{
+				ToolConfig: ToolConfig{
+					Enabled: true,
+				},
+				ExecTimeoutMinutes: 5,
+			},
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+				TimeoutSeconds:     60,
+			},
+			Skills: SkillsToolsConfig{
+				Registry: ToolConfig{
+					Enabled: false,
+				},
+				Registries: SkillsRegistriesConfig{
+					ClawHub: ClawHubRegistryConfig{
+						Enabled: false,
+						BaseURL: "https://clawhub.ai",
+					},
+				},
+				MaxConcurrentSearches: 2,
+				SearchCache: SearchCacheConfig{
+					MaxSize:    50,
+					TTLSeconds: 300,
+				},
+			},
+			MCP: MCPConfig{
+				Servers:              map[string]MCPServerConfig{},
+				LivenessProbeSeconds: DefaultMCPLivenessProbeSeconds,
+			},
+			// Progressive tool discovery: single global switch, default OFF.
+			Discovery: ToolDiscoveryConfig{
+				Enabled:          false,
+				MaxSearchResults: DefaultDiscoveryMaxSearchHits,
+			},
+			ReadFile: ReadFileToolConfig{
+				MaxReadFileSize: 32 * 1024, // 32KB (~8K tokens) per read
+			},
+		},
+		Devices: DevicesConfig{
+			Enabled:    false,
+			MonitorUSB: true,
+		},
+		Logging: LoggingConfig{
+			File:          global.DefaultLogFile,
+			Console:       global.DefaultLogConsole,
+			Level:         global.DefaultLogLevel,
+			JSON:          global.DefaultLogJSON,
+			RetentionDays: global.DefaultLogRetentionDays,
+			DumpRefusals:  false,
+			DumpAll:       false,
+		},
+		MCPHost: MCPHostConfig{
+			Enabled:      false,
+			AutoEnable:   true,
+			Listen:       "127.0.0.1:5911",
+			EndpointPath: "/mcp",
+			// InternalTools/ExternalTools are intentionally left unset: when empty,
+			// each endpoint's catalogue mirrors the internal API path — it advertises
+			// every tool any agent is allowed, gated PER AGENT at execution time via
+			// the session_token. Set an explicit per-endpoint list only to narrow
+			// (coarsely) what /internal or /mcp advertises.
+			InternalTools: nil,
+			ExternalTools: nil,
+		},
+		ConfigReloadIntervalSeconds: global.DefaultConfigReloadIntervalSeconds,
+		Security:                    SecurityConfig{Permissions: DefaultPermissions()},
+	}
+	cfg.dataDir = homePath
+	return cfg
+}

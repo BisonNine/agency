@@ -1,0 +1,456 @@
+import { IconLoader2 } from "@tabler/icons-react"
+import { useQuery } from "@tanstack/react-query"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+
+import {
+  type ChannelConfig,
+  type SupportedChannel,
+  getAppConfig,
+  getChannelsCatalog,
+  patchAppConfig,
+} from "@/api/channels"
+import { getChannelDisplayName } from "@/components/channels/channel-display-name"
+import { DiscordForm } from "@/components/channels/channel-forms/discord-form"
+import { GenericForm } from "@/components/channels/channel-forms/generic-form"
+import { SlackForm } from "@/components/channels/channel-forms/slack-form"
+import { TelegramForm } from "@/components/channels/channel-forms/telegram-form"
+import { PageHeader } from "@/components/page-header"
+import { Switch } from "@/components/ui/switch"
+
+type SaveStatus = "saving" | "saved" | "error" | null
+
+interface ChannelConfigPageProps {
+  channelName: string
+}
+
+const SECRET_FIELD_MAP: Record<string, string> = {
+  token: "_token",
+  app_secret: "_app_secret",
+  client_secret: "_client_secret",
+  corp_secret: "_corp_secret",
+  access_token: "_access_token",
+  bot_token: "_bot_token",
+  app_token: "_app_token",
+  encoding_aes_key: "_encoding_aes_key",
+  encrypt_key: "_encrypt_key",
+  verification_token: "_verification_token",
+  password: "_password",
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function asBool(value: unknown): boolean {
+  return value === true
+}
+
+function buildEditConfig(config: ChannelConfig): ChannelConfig {
+  const edit: ChannelConfig = { ...config }
+  for (const secretKey of Object.keys(SECRET_FIELD_MAP)) {
+    if (secretKey in config) {
+      edit[SECRET_FIELD_MAP[secretKey]] = ""
+    }
+  }
+  return edit
+}
+
+function normalizeConfig(rawConfig: ChannelConfig): ChannelConfig {
+  return { ...rawConfig }
+}
+
+function buildSavePayload(
+  editConfig: ChannelConfig,
+  enabled: boolean,
+): ChannelConfig {
+  const payload: ChannelConfig = { enabled }
+
+  for (const [key, value] of Object.entries(editConfig)) {
+    if (key.startsWith("_")) continue
+    if (key === "enabled") continue
+
+    if (key in SECRET_FIELD_MAP) {
+      const editKey = SECRET_FIELD_MAP[key]
+      const incoming = asString(editConfig[editKey])
+      payload[key] = incoming !== "" ? incoming : value
+      continue
+    }
+
+    payload[key] = value
+  }
+
+  return payload
+}
+
+function isConfigured(
+  channel: SupportedChannel,
+  config: ChannelConfig,
+): boolean {
+  switch (channel.name) {
+    case "telegram":
+      return asString(config.token) !== ""
+    case "discord":
+      return asString(config.token) !== ""
+    case "slack":
+      return asString(config.bot_token) !== ""
+    case "webui":
+      return asString(config.token) !== ""
+    case "matrix":
+      return (
+        asString(config.homeserver) !== "" &&
+        asString(config.user_id) !== "" &&
+        asString(config.access_token) !== ""
+      )
+    default:
+      return false
+  }
+}
+
+function getRequiredFieldKeys(channelName: string): string[] {
+  switch (channelName) {
+    case "telegram":
+      return ["token"]
+    case "discord":
+      return ["token"]
+    case "slack":
+      return ["bot_token"]
+    case "webui":
+      return ["token"]
+    case "matrix":
+      return ["homeserver", "user_id", "access_token"]
+    default:
+      return []
+  }
+}
+
+function isMissingRequiredValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return true
+  }
+  if (typeof value === "string") {
+    return value.trim() === ""
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0
+  }
+  return false
+}
+
+const CHANNELS_WITHOUT_DOCS = new Set(["webui", "wecom", "matrix"])
+
+export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
+  const { t } = useTranslation()
+
+  const [status, setStatus] = useState<SaveStatus>(null)
+  const [serverError, setServerError] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
+  const [editConfig, setEditConfig] = useState<ChannelConfig>({})
+  const [enabled, setEnabled] = useState(false)
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  )
+
+  const {
+    data: loaded,
+    isPending: loading,
+    error: loadError,
+  } = useQuery({
+    queryKey: ["channel-config", channelName],
+    queryFn: async () => {
+      const [catalog, appConfig] = await Promise.all([
+        getChannelsCatalog(),
+        getAppConfig(),
+      ])
+      const matched =
+        catalog.channels.find((item) => item.name === channelName) ?? null
+      if (!matched) {
+        throw new Error(t("channels.page.notFound", { name: channelName }))
+      }
+      const channelsConfig = asRecord(asRecord(appConfig).channels)
+      const raw = asRecord(channelsConfig[matched.config_key])
+      const normalized = normalizeConfig(raw)
+      return {
+        channel: matched,
+        editConfig: buildEditConfig(normalized),
+        enabled: asBool(normalized.enabled),
+      }
+    },
+  })
+
+  const channel = loaded?.channel ?? null
+  const fetchError = loadError
+    ? loadError instanceof Error
+      ? loadError.message
+      : t("channels.loadError")
+    : ""
+
+  // Seed the editable copies when a fetch lands. Adjusted during render rather
+  // than in an effect so the form is never painted empty for a frame, and never
+  // clobbers what the user has typed since — this fires only when a genuinely
+  // new fetch result arrives.
+  const [syncedLoad, setSyncedLoad] = useState(loaded)
+  if (loaded && loaded !== syncedLoad) {
+    setSyncedLoad(loaded)
+    setEditConfig(loaded.editConfig)
+    setEnabled(loaded.enabled)
+    setServerError("")
+    setFieldErrors({})
+  }
+
+  // Clear pending timers on unmount / channel switch.
+  useEffect(
+    () => () => {
+      clearTimeout(saveTimer.current)
+      clearTimeout(savedTimer.current)
+    },
+    [],
+  )
+
+  const savePayload = useMemo(() => {
+    if (!channel) return null
+    return buildSavePayload(editConfig, enabled)
+  }, [channel, editConfig, enabled])
+
+  const configured = useMemo(() => {
+    if (!channel || !savePayload) return false
+    return isConfigured(channel, savePayload)
+  }, [channel, savePayload])
+
+  const docsUrl = useMemo(() => {
+    if (!channel) return ""
+    if (CHANNELS_WITHOUT_DOCS.has(channel.name)) return ""
+    return "https://github.com/PivotLLM/ClawEh"
+  }, [channel])
+
+  const channelDisplayName = useMemo(() => {
+    if (!channel) return channelName
+    return getChannelDisplayName(channel, t)
+  }, [channel, channelName, t])
+
+  const hiddenKeys = useMemo<string[]>(() => [], [])
+  const requiredKeys = useMemo(
+    () => getRequiredFieldKeys(channelName),
+    [channelName],
+  )
+
+  // doSave persists the current channel config. It does NOT refetch afterwards,
+  // so a masked secret the user is mid-typing is not blanked. A required field is
+  // only enforced when the channel is enabled — a disabled channel may be saved
+  // incomplete while it is being set up.
+  const doSave = async () => {
+    if (!channel) return
+    const payload = buildSavePayload(editConfig, enabled)
+
+    if (enabled) {
+      const missing = getRequiredFieldKeys(channel.name).filter((key) =>
+        isMissingRequiredValue(payload[key]),
+      )
+      if (missing.length > 0) {
+        const requiredFieldError = t("channels.validation.requiredField")
+        const nextFieldErrors: Record<string, string> = {}
+        for (const key of missing) nextFieldErrors[key] = requiredFieldError
+        setFieldErrors(nextFieldErrors)
+        setStatus("error")
+        return
+      }
+    }
+
+    setFieldErrors({})
+    setServerError("")
+    setStatus("saving")
+    try {
+      await patchAppConfig({
+        channels: {
+          [channel.config_key]: payload,
+        },
+      })
+      setStatus("saved")
+      clearTimeout(savedTimer.current)
+      savedTimer.current = setTimeout(() => setStatus(null), 2000)
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : t("channels.page.saveError")
+      setServerError(message)
+      setStatus("error")
+    }
+  }
+
+  // The debounced scheduler has to stay stable across keystrokes, but the timer
+  // it sets must run the newest closure — so doSave is reached through a ref.
+  // The ref is updated in an effect rather than during render: a render-phase
+  // ref write is a side effect in render, which is not safe under concurrent
+  // rendering and is what react-hooks/refs objects to. This also replaces three
+  // separate value refs (channel, editConfig, enabled) that existed only to feed
+  // this one closure; it now reads them directly.
+  const doSaveRef = useRef(doSave)
+  useEffect(() => {
+    doSaveRef.current = doSave
+  })
+
+  const scheduleSave = useCallback(() => {
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => void doSaveRef.current(), 600)
+  }, [])
+
+  const handleChange = useCallback(
+    (key: string, value: unknown) => {
+      const normalizedKey = key.startsWith("_") ? key.slice(1) : key
+      setEditConfig((prev) => ({ ...prev, [key]: value }))
+      setFieldErrors((prev) => {
+        if (!(key in prev) && !(normalizedKey in prev)) {
+          return prev
+        }
+        const next = { ...prev }
+        delete next[key]
+        delete next[normalizedKey]
+        return next
+      })
+      scheduleSave()
+    },
+    [scheduleSave],
+  )
+
+  const renderForm = () => {
+    if (!channel) return null
+    const isEdit = configured
+
+    switch (channel.name) {
+      case "telegram":
+        return (
+          <TelegramForm
+            config={editConfig}
+            onChange={handleChange}
+            isEdit={isEdit}
+            fieldErrors={fieldErrors}
+          />
+        )
+      case "discord":
+        return (
+          <DiscordForm
+            config={editConfig}
+            onChange={handleChange}
+            isEdit={isEdit}
+            fieldErrors={fieldErrors}
+          />
+        )
+      case "slack":
+        return (
+          <SlackForm
+            config={editConfig}
+            onChange={handleChange}
+            isEdit={isEdit}
+            fieldErrors={fieldErrors}
+          />
+        )
+      default:
+        return (
+          <GenericForm
+            config={editConfig}
+            onChange={handleChange}
+            isEdit={isEdit}
+            hiddenKeys={hiddenKeys}
+            requiredKeys={requiredKeys}
+            fieldErrors={fieldErrors}
+          />
+        )
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader
+        title={channelDisplayName}
+        titleExtra={
+          channel ? (
+            <div className="flex items-center gap-1.5">
+              {enabled ? (
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                  {t("channels.page.enabled")}
+                </span>
+              ) : configured ? (
+                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                  {t("channels.status.configured")}
+                </span>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+      >
+        {status && (
+          <span
+            className={`text-xs ${status === "error" ? "text-destructive" : status === "saved" ? "text-emerald-500" : "text-muted-foreground"}`}
+          >
+            {status === "saving"
+              ? "Saving…"
+              : status === "saved"
+                ? "Saved ✓"
+                : "Save failed"}
+          </span>
+        )}
+      </PageHeader>
+
+      <div className="flex min-h-0 flex-1 justify-center overflow-y-auto px-4 pb-8 sm:px-6">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <IconLoader2 className="text-muted-foreground size-6 animate-spin" />
+          </div>
+        ) : fetchError ? (
+          <div className="text-destructive bg-destructive/10 rounded-lg px-4 py-3 text-sm">
+            {fetchError}
+          </div>
+        ) : (
+          <div className="w-full max-w-250 space-y-5 pt-2">
+            <div className="flex items-center gap-2 text-sm">
+              <p className="font-medium">
+                {t("channels.edit", {
+                  name: channelDisplayName,
+                })}
+              </p>
+              {channel && docsUrl && (
+                <a
+                  href={docsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+                >
+                  {t("channels.page.docLink")}
+                </a>
+              )}
+            </div>
+
+            <div className="border-border/60 bg-background flex items-center justify-between rounded-lg border px-4 py-3">
+              <p className="text-sm font-medium">
+                {t("channels.page.enableLabel")}
+              </p>
+              <Switch
+                checked={enabled}
+                onCheckedChange={(v) => {
+                  setEnabled(v)
+                  scheduleSave()
+                }}
+                aria-label={t("channels.page.enableLabel")}
+              />
+            </div>
+
+            {renderForm()}
+
+            {serverError && (
+              <p className="text-destructive text-sm">{serverError}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

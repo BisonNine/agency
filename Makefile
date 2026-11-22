@@ -1,0 +1,565 @@
+.PHONY: all build claw-auth install uninstall uninstall-all clean help require-golangci-lint govulncheck test test-race test-coverage test-cover-html test-regression test-maestro-host generate vet fmt fmt-check lint fix deps update-deps check run frontend frontend-deps manual manual-deps manual-check frontend-typecheck frontend-lint frontend-test build-linux-arm build-linux-arm64 build-linux-mipsle build-pi-zero build-all release-checksums release-sign sbom
+
+# Binary names
+BINARY_NAME=claw
+BUILD_DIR=build
+CMD_DIR=.
+MAIN_GO=main.go
+
+# Build metadata. The VERSION itself is NOT injected: it is the const in
+# app/app.go and is a property of the source, not of the machine that
+# compiled it. Only the commit, timestamp and toolchain are stamped in, and
+# FormatVersion appends them. Injecting a git-describe string here is what used
+# to make `claw version` report the last tag plus a commit count while the rest
+# of the app reported the constant.
+GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
+GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
+# BUILD_NUMBER orders builds; GIT_COMMIT identifies their source. The commit
+# cannot answer "is the copy I am running newer than the one I just built?" —
+# a hash has no order — so a rebuild of the same commit is indistinguishable
+# without this. UTC, because local time repeats an hour twice a year and a
+# newer build would sort older. Assigned with := so one `make build-all`
+# stamps ONE number across every platform: with a recursive `=` the shell
+# re-runs per expansion and each target would land a second or two apart.
+#
+# Reproducible builds: the two timestamps are the only thing that differs
+# between two builds of one commit (-trimpath removes the paths). When
+# SOURCE_DATE_EPOCH is set (the reproducible-builds.org convention; for a
+# release use the commit time, `git log -1 --format=%ct`) both are derived
+# from it instead of the clock, so anyone can rebuild the release and get the
+# identical binary. `date -d @N` is GNU, `date -r N` is BSD/macOS.
+ifdef SOURCE_DATE_EPOCH
+BUILD_TIME:=$(shell date -u -d @$(SOURCE_DATE_EPOCH) +%FT%T%z 2>/dev/null || date -u -r $(SOURCE_DATE_EPOCH) +%FT%T%z)
+BUILD_NUMBER:=$(shell date -u -d @$(SOURCE_DATE_EPOCH) +%Y%m%d%H%M%S 2>/dev/null || date -u -r $(SOURCE_DATE_EPOCH) +%Y%m%d%H%M%S)
+else
+BUILD_TIME=$(shell date +%FT%T%z)
+BUILD_NUMBER:=$(shell date -u +%Y%m%d%H%M%S)
+endif
+APP_PKG=github.com/PivotLLM/ClawEh/app
+LDFLAGS=-ldflags "-X $(APP_PKG).gitCommit=$(GIT_COMMIT) -X $(APP_PKG).buildTime=$(BUILD_TIME) -X $(APP_PKG).goVersion=$(GO_VERSION) -X $(APP_PKG).buildNumber=$(BUILD_NUMBER) -s -w"
+# -trimpath keeps the build machine's directory layout out of the binary
+# (panic traces and the SBOM then match between machines) and is what makes
+# a rebuild reproducible. Every `go build` below takes it.
+BUILD_FLAGS=-trimpath
+
+# Go variables
+GO?=CGO_ENABLED=0 go
+# oxlint is a global install, not a project dependency; override to pin a path.
+OXLINT?=oxlint
+GOFLAGS?=-v -tags stdjson
+
+# Patch MIPS LE ELF e_flags (offset 36) for NaN2008-only kernels (e.g. Ingenic X2600).
+#
+# Bytes (octal): \004 \024 \000 \160  →  little-endian 0x70001404
+#   0x70000000  EF_MIPS_ARCH_32R2   MIPS32 Release 2
+#   0x00001000  EF_MIPS_ABI_O32     O32 ABI
+#   0x00000400  EF_MIPS_NAN2008     IEEE 754-2008 NaN encoding
+#   0x00000004  EF_MIPS_CPIC        PIC calling sequence
+#
+# Go's GOMIPS=softfloat emits no FP instructions, so the NaN mode is irrelevant
+# at runtime — this is purely an ELF metadata fix to satisfy the kernel's check.
+# patchelf cannot modify e_flags; dd at a fixed offset is the most portable way.
+#
+# Ref: https://codebrowser.dev/linux/linux/arch/mips/include/asm/elf.h.html
+define PATCH_MIPS_FLAGS
+	@if [ -f "$(1)" ]; then \
+		printf '\004\024\000\160' | dd of=$(1) bs=1 seek=36 count=4 conv=notrunc 2>/dev/null || \
+		{ echo "Error: failed to patch MIPS e_flags for $(1)"; exit 1; }; \
+	else \
+		echo "Error: $(1) not found, cannot patch MIPS e_flags"; exit 1; \
+	fi
+endef
+
+# Golangci-lint
+# golangci-lint: on PATH if present, otherwise the Go bin directory (go install
+# puts it there, which is not on everyone's PATH). Override with GOLANGCI_LINT=.
+GOLANGCI_LINT?=$(shell command -v golangci-lint 2>/dev/null || echo "$$(go env GOPATH)/bin/golangci-lint")
+
+# Pinned Go tools, installed into the repo's own bin/ (gitignored) on first use
+# so every machine and CI run uses the same version. Override the binary path
+# (CYCLONEDX_GOMOD=) to use another copy.
+TOOLS_BIN=$(CURDIR)/bin
+# vulncheck runs the govulncheck on the PATH and honours govulncheck.ignore in
+# b9.yaml. It is our own module, so it runs at its latest release, unpinned.
+VULNCHECK=go.bison9.com/vulncheck/cmd/vulncheck@latest
+CYCLONEDX_GOMOD_VERSION=v1.12.0
+CYCLONEDX_GOMOD?=$(TOOLS_BIN)/cyclonedx-gomod
+# minisign (https://jedisct1.github.io/minisign/; `brew install minisign` /
+# `apt install minisign`) signs the release checksum list. MINISIGN_KEY is the
+# secret key file; the default is where `minisign -G` puts it.
+MINISIGN?=minisign
+MINISIGN_KEY?=$(HOME)/.minisign/minisign.key
+# The release version, read from the single source of truth in app/app.go.
+VERSION=$(shell awk -F'"' '/^[[:space:]]*version = "/{print $$2}' app/app.go)
+
+# Installation
+INSTALL_PREFIX?=$(HOME)/.local
+INSTALL_BIN_DIR=$(INSTALL_PREFIX)/bin
+INSTALL_TMP_SUFFIX=.new
+
+# Data directory
+CLAW_HOME?=$(HOME)/.claw
+WORKSPACE_DIR?=$(CLAW_HOME)/workspace
+WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
+BUILTIN_SKILLS_DIR=$(CURDIR)/skills
+
+# OS detection
+UNAME_S:=$(shell uname -s)
+UNAME_M:=$(shell uname -m)
+
+# Platform-specific settings
+ifeq ($(UNAME_S),Linux)
+	PLATFORM=linux
+	ifeq ($(UNAME_M),x86_64)
+		ARCH=amd64
+	else ifeq ($(UNAME_M),aarch64)
+		ARCH=arm64
+	else ifeq ($(UNAME_M),armv81)
+		ARCH=arm64
+	else ifeq ($(UNAME_M),loongarch64)
+		ARCH=loong64
+	else ifeq ($(UNAME_M),riscv64)
+		ARCH=riscv64
+	else ifeq ($(UNAME_M),mipsel)
+		ARCH=mipsle
+	else
+		ARCH=$(UNAME_M)
+	endif
+else ifeq ($(UNAME_S),Darwin)
+	PLATFORM=darwin
+	ifeq ($(UNAME_M),x86_64)
+		ARCH=amd64
+	else ifeq ($(UNAME_M),arm64)
+		ARCH=arm64
+	else
+		ARCH=$(UNAME_M)
+	endif
+else
+	PLATFORM=$(UNAME_S)
+	ARCH=$(UNAME_M)
+endif
+
+# Cross-compilation: override PLATFORM and/or ARCH (and optionally GOARM/GOMIPS)
+# on the command line to build for another target. PLATFORM maps to GOOS and ARCH
+# to GOARCH; both default to the detected host, so a plain `make build` is
+# unchanged. Examples:
+#   make build PLATFORM=linux   ARCH=arm64
+#   make build PLATFORM=linux   ARCH=arm    GOARM=7
+#   make build PLATFORM=windows ARCH=amd64
+#   make build PLATFORM=darwin  ARCH=arm64
+# Note: linux/mipsle needs the ELF e_flags patch — use `make build-linux-mipsle`.
+GOARM?=
+GOMIPS?=
+BUILD_ENV=GOOS=$(PLATFORM) GOARCH=$(ARCH)$(if $(GOARM), GOARM=$(GOARM))$(if $(GOMIPS), GOMIPS=$(GOMIPS))
+
+# Windows executables need the .exe suffix. Without it `make build
+# PLATFORM=windows` produces an extensionless binary that Windows will not run
+# and that jsign will not sign. The build-all target has always hardcoded the
+# suffix; this makes the parameterised build agree with it.
+EXE=$(if $(filter windows,$(PLATFORM)),.exe)
+
+BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
+CLAW_AUTH_NAME=claw-auth
+CLAW_AUTH_PATH=$(BUILD_DIR)/$(CLAW_AUTH_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
+
+# Frontend / embedded SPA
+FRONTEND_DIR=web/frontend
+FRONTEND_NODE_MODULES=$(FRONTEND_DIR)/node_modules
+EMBED_DIR=web/backend/dist
+EMBED_INDEX=$(EMBED_DIR)/index.html
+# Source files that, when changed, should retrigger the frontend build.
+FRONTEND_SOURCES=$(shell find $(FRONTEND_DIR)/src $(FRONTEND_DIR)/public 2>/dev/null) \
+	$(FRONTEND_DIR)/index.html \
+	$(FRONTEND_DIR)/package.json \
+	$(FRONTEND_DIR)/pnpm-lock.yaml \
+	$(FRONTEND_DIR)/vite.config.ts \
+	$(FRONTEND_DIR)/tsconfig.json \
+	$(FRONTEND_DIR)/tsconfig.app.json \
+	$(FRONTEND_DIR)/tsconfig.node.json
+
+# User manual (VitePress, its own pnpm project), embedded by web/backend/manual.go
+# and served at /manual/.
+MANUAL_DIR=manual
+MANUAL_NODE_MODULES=$(MANUAL_DIR)/node_modules
+MANUAL_EMBED_DIR=web/backend/manual
+MANUAL_INDEX=$(MANUAL_EMBED_DIR)/index.html
+MANUAL_SOURCES=$(shell find $(MANUAL_DIR) \( -path $(MANUAL_NODE_MODULES) -o -path $(MANUAL_DIR)/.vitepress/cache \) -prune -o -type f -print 2>/dev/null)
+
+# Default target
+## all: the default — run the full test gate, then build (binaries only if tests pass).
+all: test build
+
+## build: Build the claw and claw-auth binaries (frontend SPA embedded) for current platform.
+build: $(EMBED_INDEX) $(MANUAL_INDEX) generate
+	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
+	@mkdir -p $(BUILD_DIR)
+	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
+	@echo "Build complete: $(BINARY_PATH)"
+	@ln -sf $(notdir $(BINARY_PATH)) $(BUILD_DIR)/$(BINARY_NAME)$(EXE)
+	@echo "Building $(CLAW_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
+	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(CLAW_AUTH_PATH) ./cmd/claw-auth
+	@echo "Build complete: $(CLAW_AUTH_PATH)"
+	@ln -sf $(notdir $(CLAW_AUTH_PATH)) $(BUILD_DIR)/$(CLAW_AUTH_NAME)$(EXE)
+
+## claw-auth: Build the standalone claw-auth OAuth helper CLI (runs on the user's own computer).
+claw-auth:
+	@echo "Building $(CLAW_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
+	@mkdir -p $(BUILD_DIR)
+	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(CLAW_AUTH_PATH) ./cmd/claw-auth
+	@echo "Build complete: $(CLAW_AUTH_PATH)"
+	@ln -sf $(notdir $(CLAW_AUTH_PATH)) $(BUILD_DIR)/$(CLAW_AUTH_NAME)$(EXE)
+
+## frontend: Build the SPA into the Go embed source (web/backend/dist).
+frontend: $(EMBED_INDEX)
+
+## frontend-deps: Install frontend npm dependencies.
+frontend-deps: $(FRONTEND_NODE_MODULES)
+
+$(FRONTEND_NODE_MODULES): $(FRONTEND_DIR)/package.json $(FRONTEND_DIR)/pnpm-lock.yaml
+	@echo "Installing frontend dependencies (pnpm install)..."
+	@cd $(FRONTEND_DIR) && pnpm install
+	@touch $(FRONTEND_NODE_MODULES)
+
+$(EMBED_INDEX): $(FRONTEND_SOURCES) | $(FRONTEND_NODE_MODULES)
+	@echo "Building frontend SPA into $(EMBED_DIR)..."
+	@cd $(FRONTEND_DIR) && pnpm run build:backend
+
+## manual: Build the user manual into the Go embed source (web/backend/manual).
+manual: $(MANUAL_INDEX)
+
+## manual-deps: Install the manual's npm dependencies (VitePress).
+manual-deps: $(MANUAL_NODE_MODULES)
+
+$(MANUAL_NODE_MODULES): $(MANUAL_DIR)/package.json $(MANUAL_DIR)/pnpm-lock.yaml
+	@echo "Installing manual dependencies (pnpm install)..."
+	@cd $(MANUAL_DIR) && pnpm install
+	@touch $(MANUAL_NODE_MODULES)
+
+# A failed build removes index.html, so the next make retries instead of
+# embedding a partial manual.
+$(MANUAL_INDEX): $(MANUAL_SOURCES) | $(MANUAL_NODE_MODULES)
+	@echo "Building manual into $(MANUAL_EMBED_DIR)..."
+	@cd $(MANUAL_DIR) && pnpm run build || { rm -f $(CURDIR)/$(MANUAL_INDEX); exit 1; }
+
+## manual-check: Rebuild the manual from scratch for the test gate (a broken manual fails it). Does not install dependencies.
+manual-check:
+	@test -d $(MANUAL_NODE_MODULES) || { echo "ERROR: manual dependencies missing; run: make manual-deps (or pnpm install --frozen-lockfile in $(MANUAL_DIR))"; exit 1; }
+	@echo "Building manual into $(MANUAL_EMBED_DIR)..."
+	@cd $(MANUAL_DIR) && pnpm run build || { rm -f $(CURDIR)/$(MANUAL_INDEX); exit 1; }
+
+## install: Build and install claw (runs 'claw install -y')
+install: build
+	@$(BUILD_DIR)/$(BINARY_NAME) install -y
+
+## uninstall: Remove claw service and binary from system
+uninstall:
+	@if [ -x $(INSTALL_BIN_DIR)/$(BINARY_NAME) ]; then \
+		$(INSTALL_BIN_DIR)/$(BINARY_NAME) uninstall -y || true; \
+	elif [ -x $(HOME)/bin/$(BINARY_NAME) ]; then \
+		$(HOME)/bin/$(BINARY_NAME) uninstall -y || true; \
+	elif [ -x $(BUILD_DIR)/$(BINARY_NAME) ]; then \
+		$(BUILD_DIR)/$(BINARY_NAME) uninstall -y || true; \
+	fi
+	@echo "Uninstalling $(BINARY_NAME)..."
+	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME) $(HOME)/bin/$(BINARY_NAME)
+	@rm -f $(INSTALL_BIN_DIR)/openclaw $(HOME)/bin/openclaw
+	@echo "Removed binaries"
+	@echo "Note: Data directory $(CLAW_HOME) was not removed. Run 'make uninstall-all' to remove everything."
+
+## uninstall-all: Remove claw and all data
+uninstall-all:
+	@echo "Removing binaries..."
+	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)
+	@echo "Removing data directory..."
+	@rm -rf $(CLAW_HOME)
+	@echo "Removed: $(CLAW_HOME)"
+	@echo "Complete uninstallation done!"
+
+## generate: Run go generate (refreshes embedded onboard workspace)
+generate:
+	@echo "Run generate..."
+	@mkdir -p $(EMBED_DIR)
+	@touch $(EMBED_DIR)/.gitkeep
+	@rm -r ./internal/onboard/workspace 2>/dev/null || true
+	@$(GO) generate ./...
+	@echo "Run generate complete"
+
+## build-linux-arm: Build for Linux ARMv7 (e.g. Raspberry Pi Zero 2 W 32-bit)
+build-linux-arm: $(EMBED_INDEX) $(MANUAL_INDEX) generate
+	@echo "Building for linux/arm (GOARM=7)..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=arm GOARM=7 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./$(CMD_DIR)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm"
+
+## build-linux-arm64: Build for Linux ARM64 (e.g. Raspberry Pi Zero 2 W 64-bit)
+build-linux-arm64: $(EMBED_INDEX) $(MANUAL_INDEX) generate
+	@echo "Building for linux/arm64..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=arm64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64"
+
+## build-linux-mipsle: Build for Linux MIPS32 LE
+build-linux-mipsle: $(EMBED_INDEX) $(MANUAL_INDEX) generate
+	@echo "Building for linux/mipsle (softfloat)..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle"
+
+## build-pi-zero: Build for Raspberry Pi Zero 2 W (32-bit and 64-bit)
+build-pi-zero: build-linux-arm build-linux-arm64
+	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
+
+## build-all: Build claw for all platforms
+build-all: $(EMBED_INDEX) $(MANUAL_INDEX) generate
+	@echo "Building for multiple platforms..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=amd64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=arm GOARM=7 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm ./$(CMD_DIR)
+	GOOS=linux GOARCH=arm64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=loong64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=riscv64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=mipsle GOMIPS=softfloat $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle ./$(CMD_DIR)
+	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
+	GOOS=linux GOARCH=arm GOARM=7 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-armv7 ./$(CMD_DIR)
+	GOOS=darwin GOARCH=arm64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
+	GOOS=windows GOARCH=amd64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
+	GOOS=netbsd GOARCH=amd64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-netbsd-amd64 ./$(CMD_DIR)
+	GOOS=netbsd GOARCH=arm64 $(GO) build $(BUILD_FLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-netbsd-arm64 ./$(CMD_DIR)
+	@echo "All builds complete"
+
+## release-checksums: Write build/checksums.txt (SHA-256 of every release archive and sbom.json) plus a .sha256 per archive for the install scripts.
+release-checksums:
+	@cd $(BUILD_DIR) && ls *.tar.gz >/dev/null 2>&1 || { echo "ERROR: no *.tar.gz release archives in $(BUILD_DIR)"; exit 1; }
+	@cd $(BUILD_DIR) && \
+	  if command -v sha256sum >/dev/null 2>&1; then SUM="sha256sum"; else SUM="shasum -a 256"; fi; \
+	  for f in *.tar.gz; do $$SUM "$$f" > "$$f.sha256"; done; \
+	  $$SUM *.tar.gz $$(ls sbom.json 2>/dev/null) > checksums.txt
+	@echo "Wrote $(BUILD_DIR)/checksums.txt:"
+	@cat $(BUILD_DIR)/checksums.txt
+
+## release-sign: Sign build/checksums.txt with minisign (secret key: ~/.minisign/minisign.key, or MINISIGN_KEY=path) -> checksums.txt.minisig, which `claw upgrade` requires.
+release-sign: release-checksums
+	@test -f "$(MINISIGN_KEY)" || { echo "ERROR: minisign secret key $(MINISIGN_KEY) not found (generate once with: minisign -G; or set MINISIGN_KEY=/path/to/key)"; exit 1; }
+	@command -v $(MINISIGN) >/dev/null 2>&1 || { echo "ERROR: $(MINISIGN) not found (brew install minisign / apt install minisign)"; exit 1; }
+	@rm -f $(BUILD_DIR)/checksums.txt.minisig
+	@$(MINISIGN) -S -s $(MINISIGN_KEY) -m $(BUILD_DIR)/checksums.txt -t "ClawEh v$(VERSION) $(GIT_COMMIT)"
+	@echo "Signed: $(BUILD_DIR)/checksums.txt.minisig"
+
+## sbom: Write a CycloneDX SBOM of the claw binary's Go modules to build/sbom.json (cyclonedx-gomod, pinned; installed into bin/ when missing).
+sbom:
+	@command -v "$(CYCLONEDX_GOMOD)" >/dev/null 2>&1 || { \
+	  echo "Installing cyclonedx-gomod $(CYCLONEDX_GOMOD_VERSION) into $(TOOLS_BIN)..."; \
+	  GOBIN=$(TOOLS_BIN) go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@$(CYCLONEDX_GOMOD_VERSION); }
+	@mkdir -p $(BUILD_DIR)
+	@echo "Generating SBOM..."
+	@CGO_ENABLED=0 $(CYCLONEDX_GOMOD) app -json -licenses -output $(BUILD_DIR)/sbom.json .
+	@echo "Wrote $(BUILD_DIR)/sbom.json"
+
+## clean: Remove all build artifacts (Go binaries, frontend dist, embedded SPA, built manual)
+clean:
+	@echo "Cleaning build artifacts..."
+	@rm -rf $(BUILD_DIR)
+	@rm -rf $(EMBED_DIR)
+	@mkdir -p $(EMBED_DIR)
+	@touch $(EMBED_DIR)/.gitkeep
+	@rm -rf $(FRONTEND_DIR)/dist
+	@rm -rf $(MANUAL_EMBED_DIR) $(MANUAL_DIR)/.vitepress/cache
+	@mkdir -p $(MANUAL_EMBED_DIR)
+	@touch $(MANUAL_EMBED_DIR)/.gitkeep
+	@echo "Clean complete (node_modules left in place)"
+
+## vet: Run go vet for static analysis
+vet: generate
+	@$(GO) vet ./...
+
+## test: The one gate. Format check, vet, lint and govulncheck, then test.sh: Go tests with the
+## race detector and coverage, frontend typecheck and unit tests, and the
+## probe-driven MCP integration suite. Exits non-zero on any failure and ends
+## with a pass/fail summary. Needs probe on PATH (test.sh names it if missing).
+## test-maestro-host and check-webui stay separate: they bind ports or need a
+## running instance. The manual is built first, so a broken manual fails the
+## gate and the Go test of /manual/ has it to serve.
+test: manual-check generate fmt-check vet lint govulncheck
+	@./test.sh
+
+## govulncheck: Fail on a known vulnerability the code calls, unless b9.yaml lists it under govulncheck.ignore with a reason and it is still in date. Needs govulncheck on the PATH (go install golang.org/x/vuln/cmd/govulncheck@latest) and network access.
+govulncheck:
+	@echo "Scanning for known vulnerabilities (govulncheck)..."
+	@go run $(VULNCHECK) .
+
+## frontend-typecheck: Typecheck the SPA (tsc)
+frontend-typecheck: $(FRONTEND_NODE_MODULES)
+	@echo "Typechecking frontend..."
+	@cd $(FRONTEND_DIR) && pnpm exec tsc -b --noEmit
+
+## frontend-lint: Lint the SPA with oxlint (skipped if oxlint is not installed)
+#
+# oxlint is installed globally rather than as a project dependency, so this
+# skips instead of failing when it is absent — a checkout without it must still
+# build. Set OXLINT to point at a specific binary.
+#
+# Rules and ignores live in web/frontend/.oxlintrc.json, so a bare `oxlint`
+# invocation matches what this target does. No path argument: that lints the
+# whole project (134 files) rather than src alone (132), picking up
+# vite.config.ts and anything else at the root.
+#
+# --deny-warnings makes a warning fail the build. oxlint exits 0 on warnings by
+# default, which would make this target incapable of ever failing — a gate that
+# cannot fail is not a gate. The warning set was zero when this was turned on.
+frontend-lint:
+	@if command -v $(OXLINT) >/dev/null 2>&1; then \
+		echo "Linting frontend with oxlint..."; \
+		cd $(FRONTEND_DIR) && $(OXLINT) --deny-warnings; \
+	else \
+		echo "oxlint not installed - skipping frontend lint (npm i -g oxlint)"; \
+	fi
+
+## frontend-test: Run the SPA unit tests (vitest)
+frontend-test: $(FRONTEND_NODE_MODULES)
+	@echo "Testing frontend..."
+	@cd $(FRONTEND_DIR) && pnpm run test
+
+## test-maestro-host: Run Maestro's MCP regression suite against a live gateway (needs probe, jq, zip; own target because it binds ports and needs external tools).
+test-maestro-host: generate
+	@./test-maestro-host.sh
+
+## test-race: Run full test suite with race detector
+test-race: generate
+	@go test -race -count=1 -timeout=300s ./...
+
+## test-coverage: Run tests with coverage summary (per-package and overall)
+test-coverage: generate
+	@$(GO) test -coverprofile=coverage.out -count=1 -timeout=300s ./... 2>&1
+	@echo ""
+	@echo "Per-package coverage (sorted by percentage):"
+	@go tool cover -func=coverage.out | grep -v "^total:" | awk '{print $$3, $$1}' | sort -t'%' -k1 -n | awk '{print $$2, $$1}'
+	@echo ""
+	@echo "Overall total:"
+	@go tool cover -func=coverage.out | grep "^total:"
+	@rm -f coverage.out
+
+## test-cover-html: Generate HTML coverage report
+test-cover-html: generate
+	@$(GO) test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out -o coverage.html
+	@rm -f coverage.out
+	@echo "Coverage report: $(CURDIR)/coverage.html"
+
+## test-regression: Full regression gate — race detector + coverage enforcement (min 50%)
+test-regression: generate
+	@echo "Running regression test suite..."
+	@go test -race -coverprofile=coverage.out -count=1 -timeout=300s ./...
+	@echo ""
+	@echo "Coverage summary:"
+	@go tool cover -func=coverage.out | grep -v "^total:" | awk '{print $$3, $$1}' | sort -t'%' -k1 -n | awk '{print $$2, $$1}'
+	@echo ""
+	@go tool cover -func=coverage.out | grep "^total:"
+	@TOTAL=$$(go tool cover -func=coverage.out | grep "^total:" | awk '{print $$3}' | tr -d '%'); \
+	rm -f coverage.out; \
+	if [ $$(echo "$$TOTAL < 50" | bc) -eq 1 ]; then \
+		echo "Coverage $$TOTAL% is below minimum 50%"; exit 1; \
+	fi
+	@echo "Regression gate passed."
+
+## fmt: Format Go code
+fmt:
+	@$(GOLANGCI_LINT) fmt
+
+## lint: Run linters
+lint: require-golangci-lint
+	@$(GOLANGCI_LINT) run
+
+## require-golangci-lint: fail with a clear message when the linter is missing.
+require-golangci-lint:
+	@test -x "$(GOLANGCI_LINT)" || { \
+	  echo "ERROR: golangci-lint not found (looked for $(GOLANGCI_LINT))."; \
+	  echo "Install it with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
+	  echo "or set GOLANGCI_LINT=/path/to/golangci-lint"; exit 1; }
+
+## fix: Fix linting issues
+fix:
+	@$(GOLANGCI_LINT) run --fix
+
+## deps: Download and verify dependencies (optional; only needed for offline-build prep or after go.mod changes — normal builds and tests fetch implicitly)
+deps:
+	@$(GO) mod download
+	@$(GO) mod verify
+
+## update-deps: Update dependencies
+update-deps:
+	@$(GO) get -u ./...
+	@$(GO) mod tidy
+
+## fmt-check: Verify formatting without rewriting anything (`make fmt` fixes)
+fmt-check: require-golangci-lint
+	@echo "Checking formatting..."
+	@$(GOLANGCI_LINT) fmt --diff
+
+## check: The full gate — formatting, vet, and the complete suite
+#
+# One entry point, not two. `test.sh` already runs the Go suite with -race and a
+# coverage gate, the frontend typecheck/lint/unit tests, the MCP server tests
+# against an ephemeral gateway, and the workspace integration checks (pid file,
+# SIGTERM shutdown, workspace re-population) — none of which `go test ./...`
+# reaches. It does not run fmt or vet, and check did not run the integration
+# tests, so neither was a superset of the other and "I ran the tests" meant two
+# different things depending on who said it.
+#
+# Safe to gate a pipeline with: it rewrites nothing (fmt-check reports a diff
+# rather than applying it), needs no running service, disables colour when
+# stdout is not a terminal, and exits non-zero on any failure — including a
+# missing `probe`, which fails rather than skipping quietly.
+#
+# The one thing it cannot cover is the browser suite, which needs a running
+# instance to drive: see `make check-webui`.
+check: test
+
+## check-webui: Browser regression suite (requires a running dev instance)
+check-webui:
+	@node tests/frontend-e2e.mjs
+
+## run: Build and run claw
+run: build
+	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
+
+## help: Show this help message
+help:
+	@echo "ClawEh Makefile"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make [target]"
+	@echo ""
+	@echo "Targets:"
+	@grep -E '^## ' $(MAKEFILE_LIST) | sort | awk -F': ' '{printf "  %-20s %s\n", substr($$1, 4), $$2}'
+	@echo ""
+	@echo "Examples:"
+	@echo "  make                    # Same as 'make build'"
+	@echo "  make build              # Build claw (frontend SPA embedded) for current platform"
+	@echo "  make install            # Build and install to $(INSTALL_BIN_DIR)"
+	@echo "  make clean              # Remove all build artifacts (keeps node_modules)"
+	@echo "  make uninstall          # Remove binaries"
+	@echo "  make uninstall-all      # Remove binaries and data directory"
+	@echo ""
+	@echo "Cross-compilation (PLATFORM=GOOS, ARCH=GOARCH; default to host):"
+	@echo "  make build PLATFORM=linux ARCH=arm64       # Linux ARM64"
+	@echo "  make build PLATFORM=linux ARCH=arm GOARM=7 # Linux ARMv7"
+	@echo "  make build PLATFORM=windows ARCH=amd64     # Windows x86-64"
+	@echo "  make build PLATFORM=darwin ARCH=arm64      # macOS Apple Silicon"
+	@echo ""
+	@echo "Release (after the archives are in $(BUILD_DIR)):"
+	@echo "  make sbom                                            # build/sbom.json"
+	@echo "  make release-sign                # checksums.txt + checksums.txt.minisig (key: ~/.minisign/minisign.key)"
+	@echo "  SOURCE_DATE_EPOCH=\$$(git log -1 --format=%ct) make build-all  # reproducible timestamps"
+	@echo ""
+	@echo "Environment Variables:"
+	@echo "  PLATFORM                # Target GOOS (default: host, $(PLATFORM))"
+	@echo "  ARCH                    # Target GOARCH (default: host, $(ARCH))"
+	@echo "  GOARM / GOMIPS          # Optional sub-arch (e.g. GOARM=7, GOMIPS=softfloat)"
+	@echo "  INSTALL_PREFIX          # Installation prefix (default: ~/.local)"
+	@echo "  CLAW_HOME               # Data directory (default: ~/.claw)"
+	@echo ""
+	@echo "Current Configuration:"
+	@echo "  Platform: $(PLATFORM)/$(ARCH)"
+	@echo "  Binary:   $(BINARY_PATH)"
+	@echo "  Install:  $(INSTALL_BIN_DIR)"
+	@echo "  Data:     $(CLAW_HOME)"

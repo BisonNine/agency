@@ -1,0 +1,61 @@
+// ClawEh
+// License: MIT
+//
+// Copyright (c) 2026 Tenebris Technologies Inc.
+
+package classifier
+
+import (
+	_ "embed"
+	"fmt"
+	"strings"
+)
+
+// The classifier guide, served by the readme tool.
+//
+//go:embed readme/README.md
+var readme string
+
+// guide returns the classifier guide followed by the install's limits.
+func guide(c Ceilings, productName string) string {
+	var b strings.Builder
+	b.WriteString(withHostName(readme, productName))
+	lines := make([]string, 0, 8)
+	for _, f := range []struct {
+		name  string
+		value int
+	}{
+		{"max_rules", c.MaxRules},
+		{"max_prompt_chars", c.MaxPromptChars},
+		{"max_item_chars", c.MaxItemChars},
+		{"max_items_per_run", c.MaxItemsPerRun},
+		{"max_parallel", c.MaxParallel},
+		{"max_activity_hours", c.MaxActivityHours},
+		{"max_source_pages", c.MaxSourcePages},
+		{"min_every_seconds", c.MinEverySeconds},
+	} {
+		if f.value > 0 {
+			lines = append(lines, fmt.Sprintf("- `%s`: %d\n", f.name, f.value))
+		}
+	}
+	if len(lines) > 0 {
+		b.WriteString("\n## This install's limits\n\n")
+		for _, l := range lines {
+			b.WriteString(l)
+		}
+	}
+	return b.String()
+}
+
+// hostPlaceholder in the embedded guide is replaced with the host's
+// product name (Host.ProductName) when the guide is served.
+const hostPlaceholder = "{{HOST}}"
+
+// withHostName fills the guide's host placeholder with name, or "the host"
+// when the host gave none.
+func withHostName(text, name string) string {
+	if name == "" {
+		name = "the host"
+	}
+	return strings.ReplaceAll(text, hostPlaceholder, name)
+}

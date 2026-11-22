@@ -1,0 +1,115 @@
+// API client for model list management.
+import { errorMessage } from "./error-message"
+
+export interface ModelInfo {
+  index: number
+  model_name: string
+  model: string
+  // Name of the provider this model is reached through.
+  provider: string
+  // Advanced fields
+  workspace?: string
+  max_tokens?: number
+  // Model context window size in tokens. 0/undefined → use the agent default.
+  context_window?: number
+  max_tokens_field?: string
+  request_timeout?: number
+  thinking_level?: string
+  no_tools?: boolean
+  // Vision passthrough for MCP tool-result images: "" / "off" drops them,
+  // "user_message" injects them as a follow-up user turn, "tool_response"
+  // attaches them to the tool result (the OpenAI Responses API and xAI accept
+  // it; plain OpenAI chat does not, so use "user_message" there).
+  vision?: string
+  // Shape 3 per-LLM custom fields. extra_body accepts an explicit `null` on
+  // save to clear a previously-stored value; the backend handler merge-loads
+  // the request JSON into the existing entry, so an absent field would
+  // otherwise preserve the old value rather than removing it.
+  reasoning_effort?: string
+  extra_body?: Record<string, unknown> | null
+  // drop_params accepts an explicit empty array on save to clear a previously
+  // stored value, mirroring extra_body's null-to-clear semantics.
+  drop_params?: string[] | null
+  strict_alternation?: boolean
+  enabled: boolean
+  // Meta
+  configured: boolean
+  is_default: boolean
+}
+
+interface ModelsListResponse {
+  models: ModelInfo[]
+  total: number
+  default_model: string
+  // The install's effective Turn timeout in seconds (the built-in default
+  // when unset); 0 from a server that does not send it.
+  turn_timeout: number
+}
+
+interface ModelActionResponse {
+  status: string
+  index?: number
+  default_model?: string
+}
+
+const BASE_URL = ""
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, options)
+  if (!res.ok) {
+    throw new Error(await errorMessage(res))
+  }
+  return res.json() as Promise<T>
+}
+
+// getModels normalises the list at the boundary: Go encodes an empty slice as
+// null, and the page spreads and sorts `models` as an array.
+export async function getModels(): Promise<ModelsListResponse> {
+  const data = await request<Partial<ModelsListResponse>>("/api/models")
+  const models = data.models ?? []
+  return {
+    models,
+    total: data.total ?? models.length,
+    default_model: data.default_model ?? "",
+    turn_timeout: data.turn_timeout ?? 0,
+  }
+}
+
+export async function addModel(
+  model: Partial<ModelInfo>,
+): Promise<ModelActionResponse> {
+  return request<ModelActionResponse>("/api/models", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(model),
+  })
+}
+
+export async function updateModel(
+  index: number,
+  model: Partial<ModelInfo>,
+): Promise<ModelActionResponse> {
+  return request<ModelActionResponse>(`/api/models/${index}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(model),
+  })
+}
+
+export async function deleteModel(index: number): Promise<ModelActionResponse> {
+  return request<ModelActionResponse>(`/api/models/${index}`, {
+    method: "DELETE",
+  })
+}
+
+export async function setDefaultModel(
+  modelName: string,
+): Promise<ModelActionResponse> {
+  return request<ModelActionResponse>("/api/models/default", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_name: modelName }),
+  })
+}
+
+export type { ModelsListResponse, ModelActionResponse }

@@ -1,0 +1,661 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/channels/device"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/internal/perms"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/routing"
+	"github.com/PivotLLM/ClawEh/utils"
+)
+
+// registerDeviceRoutes wires the external-device gateway onboarding/management API.
+//
+// SECURITY: these endpoints expose the pairing QR (which embeds the shared gateway
+// token) and the approve/reject controls. They inherit the same auth posture as the
+// rest of /api/* — see web/backend/server.go. Keep them behind the operator auth the
+// setup wizard adds; do not expose this API on an untrusted network.
+func (h *Handler) registerDeviceRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/devices/pair", h.handleDevicePair)      // provision token + enable + render QR
+	mux.HandleFunc("GET /api/devices/pair", h.handleDevicePairStatus) // read-only current pairing config
+	mux.HandleFunc("POST /api/devices/settings", h.handleDeviceSettings)
+	mux.HandleFunc("POST /api/devices/word-token/regenerate", h.handleDeviceWordTokenRegenerate)
+	mux.HandleFunc("GET /api/devices/pending", h.handleDevicePending)
+	mux.HandleFunc("POST /api/devices/pending/{id}/approve", h.handleDeviceApprove)
+	mux.HandleFunc("POST /api/devices/pending/{id}/reject", h.handleDeviceReject)
+	mux.HandleFunc("GET /api/devices", h.handleDeviceList)
+	mux.HandleFunc("POST /api/devices/{id}/agent", h.handleDeviceAgent)
+	mux.HandleFunc("POST /api/devices/{id}/user", h.handleDeviceUser)
+	mux.HandleFunc("POST /api/devices/{id}/agents", h.handleDeviceAllowedAgents)
+	mux.HandleFunc("DELETE /api/devices/{id}", h.handleDeviceRemove)
+}
+
+// SetDeviceDisconnector wires the running device channel's DisconnectDevice,
+// so removing a device ends its open connections at once. The gateway resolves
+// the channel per call, so it finds a device channel a reload rebuilt.
+func (h *Handler) SetDeviceDisconnector(fn func(deviceID string)) {
+	h.reloadMu.Lock()
+	h.deviceDisconnect = fn
+	h.reloadMu.Unlock()
+}
+
+func (h *Handler) deviceDisconnector() func(deviceID string) {
+	h.reloadMu.Lock()
+	defer h.reloadMu.Unlock()
+	return h.deviceDisconnect
+}
+
+// deviceStoreFor returns the cached pairing-DB handle, opening it on first use.
+// The channel and this admin API share the same WAL database file.
+//
+// Cached rather than opened per request. Every open re-ran the WAL pragma, the
+// CREATE TABLE schema and an ALTER TABLE that is expected to fail once applied —
+// on every single request — and raced the device channel for the same file. The
+// caller must NOT close what it gets back; the handle lives for the process.
+//
+// The live config is read per call, because callers use it for live values
+// and it is a snapshot. A data dir change (config reload) reopens against the
+// new path rather than serving the old database.
+func (h *Handler) openDeviceStore(ctx context.Context) (*device.Store, *config.Config, error) {
+	cfg, err := h.currentConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	stateDir := filepath.Join(cfg.DataDir(), global.InternalDir)
+	if mkErr := os.MkdirAll(stateDir, perms.SecretModes().Dir); mkErr != nil {
+		return nil, nil, mkErr
+	}
+	path := filepath.Join(stateDir, "gateway.db")
+
+	h.deviceMu.Lock()
+	defer h.deviceMu.Unlock()
+
+	if h.deviceStore != nil && h.deviceStorePath == path {
+		return h.deviceStore, cfg, nil
+	}
+	if h.deviceStore != nil {
+		utils.CloseQuietly(h.deviceStore)
+		h.deviceStore = nil
+		h.deviceStorePath = ""
+	}
+	store, err := device.OpenStore(ctx, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	h.deviceStore, h.deviceStorePath = store, path
+	return store, cfg, nil
+}
+
+// deviceStoreUnavailable reports a store-open failure. The error is LOGGED and
+// ALERTED but not returned to the client: /api/* carries no operator
+// authentication and the error text contains filesystem paths. It was
+// previously discarded entirely, which is why an intermittent SQLITE_BUSY on
+// this endpoint left no trace anywhere and needed a patched binary to identify.
+func (h *Handler) deviceStoreUnavailable(w http.ResponseWriter, err error) {
+	logger.ErrorCF("api", "device store unavailable", map[string]any{"error": err.Error()})
+	h.alerterRef().Send(alerter.Alert{
+		Title:       "Device store unavailable",
+		Description: "the paired-device store could not be opened; device pages and pairing fail until it is",
+		Details:     err.Error(),
+		EventID:     "device-store",
+	})
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "store open failed"})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	encodeJSON(w, v)
+}
+
+// handleDevicePair provisions the device gateway (generates+persists a shared token
+// and enables the channel if needed), reloads the gateway, and returns the device
+// setup payload plus a rendered QR (PNG data-URL + ASCII).
+func (h *Handler) handleDevicePair(w http.ResponseWriter, r *http.Request) {
+	changed := false
+	err := h.updateConfig(r, func(c *config.Config) error {
+		d := &c.Channels.Device
+		if d.Token == "" {
+			tok, terr := device.GenerateSharedToken()
+			if terr != nil {
+				return terr
+			}
+			d.Token, changed = tok, true
+		}
+		if d.WordToken == "" {
+			wtok, werr := device.GenerateWordToken()
+			if werr != nil {
+				return werr
+			}
+			d.WordToken, changed = wtok, true
+		}
+		if !d.Enabled {
+			d.Enabled, changed = true, true
+		}
+		if !changed {
+			return config.ErrUnchanged
+		}
+		return nil
+	})
+	if err != nil {
+		writeUpdateError(w, err)
+		return
+	}
+	cfg, err := h.currentConfig()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "config load failed"})
+		return
+	}
+	// Only reload when provisioning actually changed config (first-time token/enable).
+	// Regenerating the QR for an already-provisioned gateway must NOT bounce the
+	// listener — that caused intermittent failures and dropped the device.
+	if changed {
+		if reload := h.reloadFunc(); reload != nil {
+			if reloadErr := reload(); reloadErr != nil {
+				logger.WarnCF("api", "config reload failed", map[string]any{"error": reloadErr.Error()})
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, h.buildPairResponse(cfg, true))
+}
+
+// handleDeviceSettings updates the device listener network settings (LAN toggle,
+// External URL, enabled), persists them, reloads the gateway (which re-binds the
+// device listener), and returns the refreshed pairing status.
+func (h *Handler) handleDeviceSettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ListenLAN   *bool   `json:"listen_lan"`
+		ExternalURL *string `json:"external_url"`
+		Enabled     *bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	// Only persist + reload (which re-binds the device listener) when something
+	// actually changed, so saving with no edits is a cheap no-op.
+	changed := false
+	err := h.updateConfig(r, func(c *config.Config) error {
+		d := &c.Channels.Device
+		if body.ListenLAN != nil {
+			newHost := "127.0.0.1"
+			if *body.ListenLAN {
+				newHost = "0.0.0.0"
+			}
+			if d.Host != newHost {
+				d.Host = newHost
+				changed = true
+			}
+		}
+		if body.ExternalURL != nil {
+			if v := strings.TrimSpace(*body.ExternalURL); v != d.ExternalURL {
+				d.ExternalURL = v
+				changed = true
+			}
+		}
+		if body.Enabled != nil && d.Enabled != *body.Enabled {
+			d.Enabled = *body.Enabled
+			changed = true
+		}
+		if !changed {
+			return config.ErrUnchanged
+		}
+		return nil
+	})
+	if err != nil {
+		writeUpdateError(w, err)
+		return
+	}
+	cfg, err := h.currentConfig()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "config load failed"})
+		return
+	}
+	if changed {
+		if reload := h.reloadFunc(); reload != nil {
+			if reloadErr := reload(); reloadErr != nil {
+				logger.WarnCF("api", "config reload failed", map[string]any{"error": reloadErr.Error()})
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, h.buildPairResponse(cfg, false))
+}
+
+// handleDeviceWordTokenRegenerate mints a fresh word passphrase, persists it, reloads
+// the gateway so the new value takes effect, and returns the refreshed pairing status.
+// The long QR token is left untouched.
+func (h *Handler) handleDeviceWordTokenRegenerate(w http.ResponseWriter, r *http.Request) {
+	wtok, werr := device.GenerateWordToken()
+	if werr != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "word token generation failed"})
+		return
+	}
+	err := h.updateConfig(r, func(c *config.Config) error {
+		c.Channels.Device.WordToken = wtok
+		return nil
+	})
+	if err != nil {
+		writeUpdateError(w, err)
+		return
+	}
+	cfg, err := h.currentConfig()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "config load failed"})
+		return
+	}
+	if reload := h.reloadFunc(); reload != nil {
+		if reloadErr := reload(); reloadErr != nil {
+			logger.WarnCF("api", "config reload failed", map[string]any{"error": reloadErr.Error()})
+		}
+	}
+	writeJSON(w, http.StatusOK, h.buildPairResponse(cfg, false))
+}
+
+// handleDevicePairStatus returns the current pairing config without mutating it.
+func (h *Handler) handleDevicePairStatus(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := h.currentConfig()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "config load failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, h.buildPairResponse(cfg, false))
+}
+
+// buildPairResponse assembles the setup payload, optional rendered QR, the device
+// listener status, and operator warnings from the active config. The advertised
+// endpoint comes from channels.device.external_url (or the LAN IPs by default), and
+// the listener status reflects channels.device host/port (NOT the WebUI port).
+func (h *Handler) buildPairResponse(cfg *config.Config, render bool) map[string]any {
+	dev := cfg.Channels.Device
+	devicePort := dev.Port
+	if devicePort == 0 {
+		devicePort = device.DefaultDevicePort
+	}
+	host := dev.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	token := dev.Token
+
+	listLAN := h.lanIPv4s
+	if listLAN == nil {
+		listLAN = device.LANIPv4s
+	}
+	lanIPs := listLAN()
+	payload, perr := device.BuildSetupPayload(dev.ExternalURL, cfg.Gateway.ExternalURL, lanIPs, devicePort, token, dev.TLS)
+	badAddress := perr != nil // only the external address can make it fail
+	encoded := ""
+	if perr == nil {
+		encoded, perr = payload.Encode()
+	}
+
+	// Warnings are short hover text beside the access label on the Devices
+	// page, which links to the Network page where each is fixed.
+	warnings := []string{}
+	if device.IsLoopbackHost(host) {
+		warnings = append(warnings, "Devices on your network can't connect.")
+	}
+	if dev.ExternalURL == "" && len(payload.IPs) == 0 {
+		warnings = append(warnings, "No network address found; set an external address.")
+	}
+	if perr != nil {
+		logger.WarnCF("api", "Device pairing payload unavailable", map[string]any{"error": perr.Error()})
+		if badAddress {
+			warnings = append(warnings, "The external address is not valid.")
+		} else {
+			warnings = append(warnings, "The pairing code could not be made.")
+		}
+	}
+
+	out := map[string]any{
+		"payload":      encoded, // raw JSON string the device decodes from the QR
+		"ips":          payload.IPs,
+		"port":         payload.Port,
+		"protocol":     payload.Protocol,
+		"enabled":      dev.Enabled,
+		"hasToken":     token != "",
+		"word_token":   dev.WordToken, // typeable passphrase for clients that enter a token by hand
+		"listen_host":  host,
+		"listen_port":  devicePort,
+		"listen_lan":   !device.IsLoopbackHost(host),
+		"tls":          dev.TLS, // channels.device.tls: the listener speaks wss://
+		"external_url": dev.ExternalURL,
+		"connect_url":  device.ConnectURL(dev, cfg.Gateway.ExternalURL, lanIPs), // the address devices connect to, as the QR advertises it
+		"warnings":     warnings,
+	}
+	if render && token != "" && encoded != "" {
+		if pngURL, err := device.RenderQRCodePNGDataURL(encoded); err == nil {
+			out["qr_png"] = pngURL
+		}
+		if ascii, err := device.RenderQRCodeASCII(encoded); err == nil {
+			out["qr_ascii"] = ascii
+		}
+	}
+	return out
+}
+
+type pendingDeviceView struct {
+	RequestID   string `json:"request_id"`
+	DeviceID    string `json:"device_id"`
+	DisplayName string `json:"display_name"`
+	Platform    string `json:"platform"`
+	ClientID    string `json:"client_id"`
+	Role        string `json:"role"`
+	RemoteIP    string `json:"remote_ip"`
+	CreatedAtMs int64  `json:"created_at_ms"`
+}
+
+func (h *Handler) handleDevicePending(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.openDeviceStore(r.Context())
+	if err != nil {
+		h.deviceStoreUnavailable(w, err)
+		return
+	}
+	pending, err := store.ListPending(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "list failed"})
+		return
+	}
+	views := make([]pendingDeviceView, 0, len(pending))
+	for _, p := range pending {
+		views = append(views, pendingDeviceView{
+			RequestID: p.RequestID, DeviceID: p.DeviceID, DisplayName: p.DisplayName,
+			Platform: p.Platform, ClientID: p.ClientID, Role: p.Role, RemoteIP: p.RemoteIP, CreatedAtMs: p.CreatedAtMs,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pending": views})
+}
+
+func (h *Handler) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
+	h.resolvePending(w, r, true)
+}
+
+func (h *Handler) handleDeviceReject(w http.ResponseWriter, r *http.Request) {
+	h.resolvePending(w, r, false)
+}
+
+func (h *Handler) resolvePending(w http.ResponseWriter, r *http.Request, approve bool) {
+	requestID := r.PathValue("id")
+	store, _, err := h.openDeviceStore(r.Context())
+	if err != nil {
+		h.deviceStoreUnavailable(w, err)
+		return
+	}
+
+	if approve {
+		dev, _, aerr := store.Approve(r.Context(), requestID, nil, nil)
+		if errors.Is(aerr, device.ErrPendingNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "pending request not found"})
+			return
+		}
+		if aerr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "approve failed"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "approved", "device_id": dev.DeviceID})
+		return
+	}
+
+	if rerr := store.Reject(r.Context(), requestID); errors.Is(rerr, device.ErrPendingNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "pending request not found"})
+		return
+	} else if rerr != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "reject failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
+}
+
+type pairedDeviceView struct {
+	DeviceID    string   `json:"device_id"`
+	DisplayName string   `json:"display_name"`
+	Platform    string   `json:"platform"`
+	ClientMode  string   `json:"client_mode"`
+	Roles       []string `json:"roles"`
+	Scopes      []string `json:"scopes"`
+	AgentID     string   `json:"agent_id"` // per-device assigned agent ("" = default)
+	// AgentRef is agent_id normalized: the id agents[] lists it under.
+	AgentRef string `json:"agent_ref,omitempty"`
+	// AgentName is the assigned agent's display name while it is configured.
+	AgentName string `json:"agent_name,omitempty"`
+	// AgentMissing is true when agent_id names an agent the service does not
+	// run; the device then talks to the default agent. AgentState says why:
+	// "not_found" (no longer configured), "disabled", or "set_aside" (a
+	// human agent breaking the human-agent rules).
+	AgentMissing bool   `json:"agent_missing"`
+	AgentState   string `json:"agent_state,omitempty"`
+	// UserName is the person holding the device, as stored ("" = the
+	// default); UserDefault is that default, operator.name, else the admin
+	// account's username ("" when neither is set).
+	UserName    string `json:"user_name"`
+	UserDefault string `json:"user_default"`
+	// AllowedAgents are the agents the device may talk to ([] = every
+	// agent); AgentAllowed is false when the assigned agent is outside
+	// them, so the device does not use it.
+	AllowedAgents []string `json:"allowed_agents"`
+	AgentAllowed  bool     `json:"agent_allowed"`
+	ApprovedAtMs  int64    `json:"approved_at_ms"`
+	LastSeenAtMs  int64    `json:"last_seen_at_ms"`
+}
+
+// agentOption is a selectable agent for the per-device assistant dropdown.
+type agentOption struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// configuredAgents returns the selectable agents (normalized id + display name).
+func configuredAgents(cfg *config.Config) []agentOption {
+	out := make([]agentOption, 0, len(cfg.Agents.List))
+	for i := range cfg.Agents.List {
+		ac := &cfg.Agents.List[i]
+		id := routing.NormalizeAgentID(ac.ID)
+		name := ac.Name
+		if name == "" {
+			name = id
+		}
+		out = append(out, agentOption{ID: id, Name: name})
+	}
+	return out
+}
+
+// assignedAgentState returns the display name of the agent a device is
+// assigned to (normalized id ref) and, when the service does not run it, why:
+// "not_found", "disabled", or "set_aside" for a human agent breaking the
+// human-agent rules. It is the rule the running service applies (the device
+// channel honours an assignment only to an agent the loop runs; the loop's
+// configuration disables the set-aside agents, config.PruneHumanProblems).
+// Human agents that follow the rules count as running.
+func assignedAgentState(cfg *config.Config, ref string) (name, state string) {
+	var ac *config.AgentConfig
+	for i := range cfg.Agents.List {
+		if config.SameAgentID(cfg.Agents.List[i].ID, ref) {
+			ac = &cfg.Agents.List[i]
+			break
+		}
+	}
+	switch {
+	case ac == nil:
+		return "", "not_found"
+	case !ac.IsEnabled():
+		return ac.DisplayName(), "disabled"
+	}
+	for _, p := range cfg.HumanProblems() {
+		if p.SetsAgentAside() && config.SameAgentID(p.Agent, ref) {
+			return ac.DisplayName(), "set_aside"
+		}
+	}
+	return ac.DisplayName(), ""
+}
+
+func (h *Handler) handleDeviceList(w http.ResponseWriter, r *http.Request) {
+	store, cfg, err := h.openDeviceStore(r.Context())
+	if err != nil {
+		h.deviceStoreUnavailable(w, err)
+		return
+	}
+	paired, err := store.ListPaired(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "list failed"})
+		return
+	}
+	agents := configuredAgents(cfg)
+	userDefault := cfg.OperatorName()
+	if auth := h.authStore(); userDefault == "" && auth != nil {
+		userDefault = auth.Username()
+	}
+	views := make([]pairedDeviceView, 0, len(paired))
+	for _, d := range paired {
+		v := pairedDeviceView{
+			DeviceID: d.DeviceID, DisplayName: d.DisplayName, Platform: d.Platform,
+			ClientMode: d.ClientMode, Roles: d.Roles, Scopes: d.Scopes, AgentID: d.AgentID,
+			UserName: d.UserName, UserDefault: userDefault,
+			AllowedAgents: d.AllowedAgents, AgentAllowed: d.AgentID == "" || d.Allows(d.AgentID),
+			ApprovedAtMs: d.ApprovedAtMs, LastSeenAtMs: d.LastSeenAtMs,
+		}
+		if v.AllowedAgents == nil {
+			v.AllowedAgents = []string{}
+		}
+		if d.AgentID != "" {
+			v.AgentRef = routing.NormalizeAgentID(d.AgentID)
+			v.AgentName, v.AgentState = assignedAgentState(cfg, v.AgentRef)
+			v.AgentMissing = v.AgentState != ""
+		}
+		views = append(views, v)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"devices": views, "agents": agents})
+}
+
+// handleDeviceAgent assigns (or clears) the agent a paired device routes to. Body:
+// {"agent_id": "<id>"} — empty string routes the device to the gateway default. Takes
+// effect on the device's next turn; no reload needed (read live from the store).
+func (h *Handler) handleDeviceAgent(w http.ResponseWriter, r *http.Request) {
+	deviceID := r.PathValue("id")
+	var body struct {
+		AgentID string `json:"agent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	store, _, err := h.openDeviceStore(r.Context())
+	if err != nil {
+		h.deviceStoreUnavailable(w, err)
+		return
+	}
+	if err := store.SetDeviceAgent(r.Context(), deviceID, strings.TrimSpace(body.AgentID)); err != nil {
+		if errors.Is(err, device.ErrPairedNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "device not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleDeviceUser sets (or clears) the name of the person holding a paired
+// device, which the assistant is told is the sender. Body: {"user_name":
+// "<name>"} — empty string uses the default (operator.name, else the admin
+// account's username). Takes effect on the device's next message (read live
+// from the store).
+func (h *Handler) handleDeviceUser(w http.ResponseWriter, r *http.Request) {
+	deviceID := r.PathValue("id")
+	var body struct {
+		UserName string `json:"user_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	store, _, err := h.openDeviceStore(r.Context())
+	if err != nil {
+		h.deviceStoreUnavailable(w, err)
+		return
+	}
+	if err := store.SetDeviceUser(r.Context(), deviceID, body.UserName); err != nil {
+		switch {
+		case errors.Is(err, device.ErrInvalidUserName):
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("The user name must be at most %d characters, with no control characters.", device.MaxDeviceUserNameLen),
+			})
+		case errors.Is(err, device.ErrPairedNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "device not found"})
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleDeviceAllowedAgents limits a paired device to some agents. Body:
+// {"allowed_agents": ["<id>", ...]} — required; an empty array allows every agent. Each
+// id must be a valid agent id; one not configured (yet) is accepted. Takes
+// effect on the device's next request (read live from the store).
+func (h *Handler) handleDeviceAllowedAgents(w http.ResponseWriter, r *http.Request) {
+	deviceID := r.PathValue("id")
+	var body struct {
+		AllowedAgents *[]string `json:"allowed_agents"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if body.AllowedAgents == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "allowed_agents is required."})
+		return
+	}
+	for _, id := range *body.AllowedAgents {
+		if !config.ValidAgentID(strings.TrimSpace(id)) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("%q is not a valid agent id.", id),
+			})
+			return
+		}
+	}
+	store, _, err := h.openDeviceStore(r.Context())
+	if err != nil {
+		h.deviceStoreUnavailable(w, err)
+		return
+	}
+	if err := store.SetDeviceAllowedAgents(r.Context(), deviceID, *body.AllowedAgents); err != nil {
+		if errors.Is(err, device.ErrPairedNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "device not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *Handler) handleDeviceRemove(w http.ResponseWriter, r *http.Request) {
+	deviceID := r.PathValue("id")
+	store, _, err := h.openDeviceStore(r.Context())
+	if err != nil {
+		h.deviceStoreUnavailable(w, err)
+		return
+	}
+	if err := store.RemovePaired(r.Context(), deviceID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "remove failed"})
+		return
+	}
+	// The device's tokens are gone; end any connection it still has open.
+	if disconnect := h.deviceDisconnector(); disconnect != nil {
+		disconnect(deviceID)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+}

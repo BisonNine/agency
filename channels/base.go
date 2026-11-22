@@ -1,0 +1,540 @@
+package channels
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/hex"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/tenebris-tech/alerter"
+
+	"github.com/PivotLLM/ClawEh/alerts"
+	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/identity"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/media"
+)
+
+var (
+	uniqueIDCounter atomic.Uint64
+	uniqueIDPrefix  string
+)
+
+func init() {
+	// One-time read from crypto/rand for a unique prefix (single syscall).
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// fallback to time-based prefix
+		binary.BigEndian.PutUint64(b[:], uint64(time.Now().UnixNano()))
+	}
+	uniqueIDPrefix = hex.EncodeToString(b[:])
+}
+
+const (
+	inboundDedupeSize = 1024
+	inboundDedupeTTL  = 30 * time.Minute
+)
+
+// inboundDedupe remembers recently seen inbound message ids so a redelivery
+// (a Slack retry, a replayed update) does not run the same message twice. It
+// is bounded to inboundDedupeSize entries, evicted oldest-first, and an entry
+// expires after inboundDedupeTTL.
+type inboundDedupe struct {
+	mu    sync.Mutex
+	seen  map[string]time.Time
+	order []string // insertion order, for capacity eviction
+	now   func() time.Time
+}
+
+func newInboundDedupe() *inboundDedupe {
+	return &inboundDedupe{seen: make(map[string]time.Time), now: time.Now}
+}
+
+// duplicate reports whether key was seen within the TTL, recording it otherwise.
+func (d *inboundDedupe) duplicate(key string) bool {
+	if d == nil {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	now := d.now()
+	if t, ok := d.seen[key]; ok {
+		if now.Sub(t) < inboundDedupeTTL {
+			return true
+		}
+		delete(d.seen, key)
+		d.order = slices.DeleteFunc(d.order, func(k string) bool { return k == key })
+	}
+	d.seen[key] = now
+	d.order = append(d.order, key)
+	for len(d.order) > inboundDedupeSize {
+		delete(d.seen, d.order[0])
+		d.order = d.order[1:]
+	}
+	return false
+}
+
+// audioAnnotationRe matches audio/voice annotations injected by channels (e.g. [voice], [audio: file.ogg]).
+var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
+
+// uniqueID generates a process-unique ID using a random prefix and an atomic counter.
+// This ID is intended for internal correlation (e.g. media scope keys) and is NOT
+// cryptographically secure — it must not be used in contexts where unpredictability matters.
+func uniqueID() string {
+	n := uniqueIDCounter.Add(1)
+	return uniqueIDPrefix + strconv.FormatUint(n, 16)
+}
+
+type Channel interface {
+	Name() string
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	Send(ctx context.Context, msg bus.OutboundMessage) error
+	IsRunning() bool
+	IsAllowed(senderID string) bool
+	IsAllowedSender(sender bus.SenderInfo) bool
+	ReasoningChannelID() string
+}
+
+// BaseChannelOption is a functional option for configuring a BaseChannel.
+type BaseChannelOption func(*BaseChannel)
+
+// WithMaxMessageLength sets the maximum message length (in runes) for a channel.
+// Messages exceeding this limit will be automatically split by the Manager.
+// A value of 0 means no limit.
+func WithMaxMessageLength(n int) BaseChannelOption {
+	return func(c *BaseChannel) { c.maxMessageLength = n }
+}
+
+// WithGroupTrigger sets the group trigger configuration for a channel.
+func WithGroupTrigger(gt config.GroupTriggerConfig) BaseChannelOption {
+	return func(c *BaseChannel) { c.groupTrigger = gt }
+}
+
+// WithReasoningChannelID sets the reasoning channel ID where thoughts should be sent.
+func WithReasoningChannelID(id string) BaseChannelOption {
+	return func(c *BaseChannel) { c.reasoningChannelID = id }
+}
+
+// MessageLengthProvider is an opt-in interface that channels implement
+// to advertise their maximum message length. The Manager uses this via
+// type assertion to decide whether to split outbound messages.
+type MessageLengthProvider interface {
+	MaxMessageLength() int
+}
+
+// StreamCapable is an opt-in interface a channel implements to receive partial
+// assistant text as the model generates it. The Manager routes coalesced deltas
+// here via StreamDelta; channels that do not implement it are streamed nothing
+// and behave exactly as before (the terminal reply still arrives via Send).
+type StreamCapable interface {
+	StreamDelta(ctx context.Context, chatID, delta string) error
+}
+
+type BaseChannel struct {
+	config              any
+	bus                 *bus.MessageBus
+	running             atomic.Bool
+	name                string
+	allowList           []string
+	maxMessageLength    int
+	groupTrigger        config.GroupTriggerConfig
+	mediaStore          media.MediaStore
+	placeholderRecorder PlaceholderRecorder
+	owner               Channel // the concrete channel that embeds this BaseChannel
+	reasoningChannelID  string
+	// alerter, when set, hears about faults the channel cannot recover from.
+	// Guarded by alerterMu: it is injected after construction and read from
+	// the channel's receive goroutines.
+	alerterMu sync.RWMutex
+	alerter   alerter.Alerter
+	// conn tracks connection outages; see ReportConnFailure.
+	conn connWatch
+	// lasting holds a fault that is met again on every retry to one alert and
+	// one a day; see AlertLasting.
+	lasting alerts.Incidents
+	// platform groups connection outages across channels; see SetPlatform.
+	platform string
+	// outages aggregates connection outages per platform (connOutages;
+	// replaced in tests).
+	outages *connAggregator
+	// seen drops redelivered inbound messages; see inboundDedupe.
+	seen *inboundDedupe
+}
+
+func NewBaseChannel(
+	name string,
+	config any,
+	bus *bus.MessageBus,
+	allowList []string,
+	opts ...BaseChannelOption,
+) *BaseChannel {
+	bc := &BaseChannel{
+		config:    config,
+		bus:       bus,
+		name:      name,
+		allowList: allowList,
+		seen:      newInboundDedupe(),
+		outages:   connOutages,
+	}
+	for _, opt := range opts {
+		opt(bc)
+	}
+	return bc
+}
+
+// MaxMessageLength returns the maximum message length (in runes) for this channel.
+// A value of 0 means no limit.
+func (c *BaseChannel) MaxMessageLength() int {
+	return c.maxMessageLength
+}
+
+// ShouldRespondInGroup determines whether the bot should respond in a group chat.
+// Each channel is responsible for:
+//  1. Detecting isMentioned (platform-specific)
+//  2. Stripping bot mention from content (platform-specific)
+//  3. Calling this method to get the group response decision
+//
+// Logic:
+//   - If isMentioned → always respond
+//   - If mention_only configured and not mentioned → ignore
+//   - If prefixes configured → respond if content starts with any prefix (strip it)
+//   - If prefixes configured but no match and not mentioned → ignore
+//   - Otherwise (no group_trigger configured) → respond to all (permissive default)
+func (c *BaseChannel) ShouldRespondInGroup(isMentioned bool, content string) (bool, string) {
+	gt := c.groupTrigger
+
+	// Mentioned → always respond
+	if isMentioned {
+		return true, strings.TrimSpace(content)
+	}
+
+	// mention_only → require mention
+	if gt.MentionOnly {
+		return false, content
+	}
+
+	// Prefix matching
+	if len(gt.Prefixes) > 0 {
+		for _, prefix := range gt.Prefixes {
+			if prefix != "" && strings.HasPrefix(content, prefix) {
+				return true, strings.TrimSpace(strings.TrimPrefix(content, prefix))
+			}
+		}
+		// Prefixes configured but none matched and not mentioned → ignore
+		return false, content
+	}
+
+	// No group_trigger configured → permissive (respond to all)
+	return true, strings.TrimSpace(content)
+}
+
+func (c *BaseChannel) Name() string {
+	return c.name
+}
+
+func (c *BaseChannel) ReasoningChannelID() string {
+	return c.reasoningChannelID
+}
+
+func (c *BaseChannel) IsRunning() bool {
+	return c.running.Load()
+}
+
+func (c *BaseChannel) IsAllowed(senderID string) bool {
+	if len(c.allowList) == 0 {
+		return false
+	}
+
+	// Extract parts from compound senderID like "123456|username"
+	idPart := senderID
+	userPart := ""
+	if idx := strings.Index(senderID, "|"); idx > 0 {
+		idPart = senderID[:idx]
+		userPart = senderID[idx+1:]
+	}
+
+	for _, allowed := range c.allowList {
+		if allowed == "*" {
+			return true
+		}
+		// Strip leading "@" from allowed value for username matching
+		trimmed := strings.TrimPrefix(allowed, "@")
+		allowedID := trimmed
+		allowedUser := ""
+		if idx := strings.Index(trimmed, "|"); idx > 0 {
+			allowedID = trimmed[:idx]
+			allowedUser = trimmed[idx+1:]
+		}
+
+		// Support either side using "id|username" compound form.
+		// This keeps backward compatibility with legacy Telegram allowlist entries.
+		if senderID == allowed ||
+			idPart == allowed ||
+			senderID == trimmed ||
+			idPart == trimmed ||
+			idPart == allowedID ||
+			(allowedUser != "" && senderID == allowedUser) ||
+			(userPart != "" && (userPart == allowed || userPart == trimmed || userPart == allowedUser)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsAllowedSender checks whether a structured SenderInfo is permitted by the allow-list.
+// It delegates to identity.MatchAllowed for each entry, providing unified matching
+// across all legacy formats and the new canonical "platform:id" format.
+func (c *BaseChannel) IsAllowedSender(sender bus.SenderInfo) bool {
+	if len(c.allowList) == 0 {
+		return false
+	}
+
+	for _, allowed := range c.allowList {
+		if allowed == "*" {
+			return true
+		}
+		if identity.MatchAllowed(sender, allowed) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// HandleMessage hands an inbound message to the agents (see DeliverMessage);
+// a failure to publish it is logged.
+func (c *BaseChannel) HandleMessage(
+	ctx context.Context,
+	peer bus.Peer,
+	messageID, senderID, chatID, content string,
+	media []string,
+	metadata map[string]string,
+	senderOpts ...bus.SenderInfo,
+) {
+	if err := c.DeliverMessage(ctx, peer, messageID, senderID, chatID, content, media, metadata, senderOpts...); err != nil {
+		logger.ErrorCF("channels", "Failed to publish inbound message", map[string]any{
+			"channel": c.name,
+			"chat_id": chatID,
+			"error":   err.Error(),
+		})
+	}
+}
+
+// DeliverMessage is HandleMessage for a channel that must know whether the
+// message reached the agents: it returns the error when publishing failed (the
+// bus closed, or ctx ended), and nil when it was published or deliberately
+// dropped (a sender not allowed, a duplicate).
+func (c *BaseChannel) DeliverMessage(
+	ctx context.Context,
+	peer bus.Peer,
+	messageID, senderID, chatID, content string,
+	media []string,
+	metadata map[string]string,
+	senderOpts ...bus.SenderInfo,
+) error {
+	// Use SenderInfo-based allow check when available, else fall back to string
+	var sender bus.SenderInfo
+	if len(senderOpts) > 0 {
+		sender = senderOpts[0]
+	}
+	if sender.CanonicalID != "" || sender.PlatformID != "" {
+		if !c.IsAllowedSender(sender) {
+			logger.DebugCF("channels", "inbound rejected by allow-list", map[string]any{
+				"channel": c.name, "chat_id": chatID, "canonical_id": sender.CanonicalID,
+				"platform_id": sender.PlatformID, "allow_list_len": len(c.allowList),
+			})
+			return nil
+		}
+	} else {
+		if !c.IsAllowed(senderID) {
+			logger.DebugCF("channels", "inbound rejected by allow-list", map[string]any{
+				"channel": c.name, "chat_id": chatID, "sender_id": senderID, "allow_list_len": len(c.allowList),
+			})
+			return nil
+		}
+	}
+
+	// Platforms number messages per chat, so the id is only unique with the chat.
+	if messageID != "" && c.seen.duplicate(chatID+"\x00"+messageID) {
+		logger.DebugCF("channels", "inbound dropped: duplicate delivery", map[string]any{
+			"channel": c.name, "chat_id": chatID, "message_id": messageID,
+		})
+		return nil
+	}
+
+	// Set SenderID to canonical if available, otherwise keep the raw senderID
+	resolvedSenderID := senderID
+	if sender.CanonicalID != "" {
+		resolvedSenderID = sender.CanonicalID
+	}
+
+	scope := BuildMediaScope(c.name, chatID, messageID)
+
+	msg := bus.InboundMessage{
+		Channel:    c.name,
+		SenderID:   resolvedSenderID,
+		Sender:     sender,
+		ChatID:     chatID,
+		Content:    content,
+		Media:      media,
+		Peer:       peer,
+		MessageID:  messageID,
+		MediaScope: scope,
+		Metadata:   metadata,
+	}
+	// A channel may pin the conversation session explicitly (the device gateway
+	// uses this to select the agent and to align with the session a client reads
+	// history from). The agent loop resolves it to that agent's main session.
+	if sk := metadata["session_key"]; sk != "" {
+		msg.SessionKey = sk
+	}
+
+	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
+	// Each capability is independent — all three may fire for the same message.
+	if c.owner != nil && c.placeholderRecorder != nil {
+		// Typing — independent pipeline
+		if tc, ok := c.owner.(TypingCapable); ok {
+			if stop, err := tc.StartTyping(ctx, chatID); err == nil {
+				c.placeholderRecorder.RecordTypingStop(c.name, chatID, stop)
+			}
+		}
+		// Reaction — independent pipeline
+		if rc, ok := c.owner.(ReactionCapable); ok && messageID != "" {
+			if undo, err := rc.ReactToMessage(ctx, chatID, messageID); err == nil {
+				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, messageID, undo)
+			}
+		}
+		// Placeholder — independent pipeline.
+		// Skip when the message contains audio: the agent will send the
+		// placeholder after transcription completes, so the user sees
+		// "Thinking…" only once the voice has been processed.
+		if !audioAnnotationRe.MatchString(content) {
+			if pc, ok := c.owner.(PlaceholderCapable); ok {
+				if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
+					c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+				}
+			}
+		}
+	}
+
+	return c.bus.PublishInbound(ctx, msg)
+}
+
+// SetRunning records whether the channel is running. Stopping ends any
+// connection outage in progress: a stopped channel no longer retries.
+func (c *BaseChannel) SetRunning(running bool) {
+	c.running.Store(running)
+	if !running {
+		c.connStopped()
+	}
+}
+
+// SetMediaStore injects a MediaStore into the channel.
+func (c *BaseChannel) SetMediaStore(s media.MediaStore) { c.mediaStore = s }
+
+// GetMediaStore returns the injected MediaStore (may be nil).
+func (c *BaseChannel) GetMediaStore() media.MediaStore { return c.mediaStore }
+
+// SetPlaceholderRecorder injects a PlaceholderRecorder into the channel.
+func (c *BaseChannel) SetPlaceholderRecorder(r PlaceholderRecorder) {
+	c.placeholderRecorder = r
+}
+
+// GetPlaceholderRecorder returns the injected PlaceholderRecorder (may be nil).
+func (c *BaseChannel) GetPlaceholderRecorder() PlaceholderRecorder {
+	return c.placeholderRecorder
+}
+
+// SetAlerter routes the channel's operator alerts to a. The Manager injects it.
+func (c *BaseChannel) SetAlerter(a alerter.Alerter) {
+	c.alerterMu.Lock()
+	c.alerter = a
+	c.alerterMu.Unlock()
+}
+
+// Alert raises a through the injected alerter; it is a no-op until one is set.
+// An empty EventID is filled with the channel name so repeats of the same
+// fault from this channel are de-duplicated by the alerter.
+func (c *BaseChannel) Alert(a alerter.Alert) {
+	c.alerterMu.RLock()
+	al := c.alerter
+	c.alerterMu.RUnlock()
+	if al == nil {
+		return
+	}
+	if a.EventID == "" {
+		a.EventID = c.name
+	}
+	al.Send(a)
+}
+
+// AlertLasting raises a like Alert, for a fault that lasts until someone fixes
+// it and is met again on every retry, such as a rejected token: the first
+// report is sent, the next ones are held until alerts.RemindEvery has passed,
+// and the one sent then says since when and how many were held. A working
+// connection (ReportConnected) ends it, so the fault alerts at once if it
+// returns. Faults are told apart by the alert's title.
+func (c *BaseChannel) AlertLasting(a alerter.Alert) {
+	c.alerterMu.RLock()
+	al := c.alerter
+	c.alerterMu.RUnlock()
+	if al == nil {
+		return // nobody to tell yet: the first report with an alerter is the first alert
+	}
+	o := c.lasting.Report(a.Title, c.conn.clk().Now())
+	if !o.Alert {
+		return
+	}
+	a.Description += o.Note()
+	c.Alert(a)
+}
+
+// SetOwner injects the concrete channel that embeds this BaseChannel.
+// This allows HandleMessage to auto-trigger TypingCapable / ReactionCapable / PlaceholderCapable.
+func (c *BaseChannel) SetOwner(ch Channel) {
+	c.owner = ch
+}
+
+// BuildMediaScope constructs a scope key for media lifecycle tracking.
+func BuildMediaScope(channel, chatID, messageID string) string {
+	id := messageID
+	if id == "" {
+		id = uniqueID()
+	}
+	return channel + ":" + chatID + ":" + id
+}
+
+// ExtractAgentMention checks whether text begins with a known trigger character
+// followed by a valid agent name and a space. Returns the matched agent name
+// (normalized, lowercase) and the stripped content, or ("", original) if no match.
+// knownAgents must be pre-normalized to lowercase.
+func ExtractAgentMention(text string, triggers []string, knownAgents []string) (agentName string, stripped string) {
+	for _, trigger := range triggers {
+		if !strings.HasPrefix(text, trigger) {
+			continue
+		}
+		rest := text[len(trigger):]
+		// Find the space separator
+		spaceIdx := strings.IndexByte(rest, ' ')
+		if spaceIdx < 1 {
+			continue
+		}
+		candidate := strings.ToLower(rest[:spaceIdx])
+		for _, known := range knownAgents {
+			if candidate == known {
+				return known, rest[spaceIdx+1:]
+			}
+		}
+	}
+	return "", text
+}

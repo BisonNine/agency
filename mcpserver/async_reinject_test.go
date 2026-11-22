@@ -1,0 +1,96 @@
+// ClawEh
+// License: MIT
+
+package mcpserver
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/PivotLLM/ClawEh/bus"
+	"github.com/PivotLLM/ClawEh/tools"
+)
+
+// TestPublishMCPAsyncToLLM_ReinjectsCompletion verifies an async tool's
+// completion (ForLLM) is re-injected as a "system" message routed to the
+// chat of the call's turn, so the primary LLM is notified without polling.
+func TestPublishMCPAsyncToLLM_ReinjectsCompletion(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	rec := sessionRecord{agentID: "alice", sessionKey: "agent:alice:main"}
+	dest := tools.ReplyChat{Channel: "slack", ChatID: "C9"}
+
+	got := make(chan bus.InboundMessage, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if m, ok := msgBus.ConsumeInbound(ctx); ok {
+			got <- m
+		}
+	}()
+	// give the consumer a moment to subscribe
+	time.Sleep(20 * time.Millisecond)
+
+	publishMCPAsyncToLLM(context.Background(), msgBus, rec, dest, "agent_spawn",
+		&tools.ToolResult{ForLLM: `{"event":"completed","uuid":"abc"}`}, 3)
+
+	select {
+	case m := <-got:
+		if m.Channel != "system" {
+			t.Errorf("channel = %q, want system", m.Channel)
+		}
+		if m.ChatID != "C9" || m.Metadata[bus.MetaOriginChannel] != "slack" {
+			t.Errorf("chat = %q on %q, want C9 on slack", m.ChatID, m.Metadata[bus.MetaOriginChannel])
+		}
+		if m.Content == "" || m.SenderID != "async:agent_spawn" {
+			t.Errorf("unexpected message: %+v", m)
+		}
+		// The spawner's session info must travel with the completion so it routes
+		// back to the spawning agent's session (not the default agent).
+		if m.SessionKey != "agent:alice:main" {
+			t.Errorf("session_key = %q, want agent:alice:main", m.SessionKey)
+		}
+		if m.Metadata["preresolved_agent_id"] != "alice" {
+			t.Errorf("preresolved_agent_id = %q, want alice", m.Metadata["preresolved_agent_id"])
+		}
+		// The re-entered turn keeps the spawning call's depth.
+		if m.Metadata[bus.MetaSpawnDepth] != "3" {
+			t.Errorf("spawn_depth = %q, want 3", m.Metadata[bus.MetaSpawnDepth])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected a re-injected system inbound message")
+	}
+}
+
+// TestPublishMCPAsyncToLLM_DropsWithoutChannel verifies no message is published
+// when the call had no turn chat (no turn, or several): nothing to route to.
+func TestPublishMCPAsyncToLLM_DropsWithoutChannel(t *testing.T) {
+	for _, dest := range []tools.ReplyChat{{}, {Ambiguous: true}} {
+		assertNoReinject(t, dest)
+	}
+}
+
+func assertNoReinject(t *testing.T, dest tools.ReplyChat) {
+	t.Helper()
+	msgBus := bus.NewMessageBus()
+	rec := sessionRecord{agentID: "alice", sessionKey: "agent:alice:main"}
+
+	published := make(chan struct{}, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		defer cancel()
+		if _, ok := msgBus.ConsumeInbound(ctx); ok {
+			published <- struct{}{}
+		}
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	publishMCPAsyncToLLM(context.Background(), msgBus, rec, dest, "agent_spawn", &tools.ToolResult{ForLLM: "x"}, 0)
+
+	select {
+	case <-published:
+		t.Fatalf("published with %+v, want nothing when there is no turn chat", dest)
+	case <-time.After(400 * time.Millisecond):
+		// expected: nothing published
+	}
+}

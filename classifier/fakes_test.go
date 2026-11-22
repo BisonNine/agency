@@ -1,0 +1,484 @@
+// ClawEh
+// License: MIT
+//
+// Copyright (c) 2026 Tenebris Technologies Inc.
+
+package classifier
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/PivotLLM/ClawEh/internal/clock"
+)
+
+// fakeTools is the agent's tool registry: handlers by tool name, and a log of
+// calls.
+type fakeTools struct {
+	mu       sync.Mutex
+	handlers map[string]func(args map[string]any) (string, error)
+	schemas  map[string]map[string]any // by tool; a tool without one is not checked
+	calls    []toolCall
+}
+
+func (f *fakeTools) Schema(agentID, tool string) (map[string]any, error) {
+	if err := f.Has(agentID, tool); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.schemas[tool], nil
+}
+
+// setSchema gives tool an argument schema.
+func (f *fakeTools) setSchema(tool string, schema map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.schemas == nil {
+		f.schemas = map[string]map[string]any{}
+	}
+	f.schemas[tool] = schema
+}
+
+type toolCall struct {
+	agent, tool string
+	classifier  string // ClassifierID of the call's context
+	args        map[string]any
+}
+
+func (f *fakeTools) Has(agentID, tool string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.handlers[tool]; !ok {
+		return fmt.Errorf("tool %s is not available to agent %s", tool, agentID)
+	}
+	return nil
+}
+
+func (f *fakeTools) Call(ctx context.Context, agentID, tool string, args map[string]any) (string, error) {
+	f.mu.Lock()
+	h, ok := f.handlers[tool]
+	f.calls = append(f.calls, toolCall{agent: agentID, tool: tool, classifier: ClassifierID(ctx), args: args})
+	f.mu.Unlock()
+	if !ok {
+		return "", ToolUnavailable(fmt.Sprintf("tool %s is not available to agent %s", tool, agentID))
+	}
+	return h(args)
+}
+
+func (f *fakeTools) set(tool string, h func(args map[string]any) (string, error)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.handlers[tool] = h
+}
+
+func (f *fakeTools) remove(tool string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.handlers, tool)
+}
+
+// callsOf returns the calls of tool, in order.
+func (f *fakeTools) callsOf(tool string) []toolCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []toolCall
+	for _, c := range f.calls {
+		if c.tool == tool {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// fakeModel answers with reply(user) and counts its calls.
+type fakeModel struct {
+	mu          sync.Mutex
+	reply       func(system, user string) (string, error)
+	calls       []string // the user messages
+	systems     []string // the system prompts
+	classifiers []string // ClassifierID of each call's context
+}
+
+func (m *fakeModel) Complete(ctx context.Context, _, system, user string) (string, string, error) {
+	m.mu.Lock()
+	m.calls = append(m.calls, user)
+	m.classifiers = append(m.classifiers, ClassifierID(ctx))
+	m.systems = append(m.systems, system)
+	reply := m.reply
+	m.mu.Unlock()
+	r, err := reply(system, user)
+	return r, "cheap", err
+}
+
+func (m *fakeModel) count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.calls)
+}
+
+func (m *fakeModel) setReply(f func(system, user string) (string, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reply = f
+}
+
+type fakeNotifier struct {
+	mu      sync.Mutex
+	texts   []string
+	notices []notice
+	alerts  []stateAlert
+}
+
+// stateAlert is one operator alert of a state.db that cannot be opened.
+type stateAlert struct {
+	agent, classifier, path string
+	err                     error
+}
+
+func (n *fakeNotifier) StateFailed(ctx context.Context, agentID, path string, err error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.alerts = append(n.alerts, stateAlert{agent: agentID, classifier: ClassifierID(ctx), path: path, err: err})
+}
+
+func (n *fakeNotifier) allAlerts() []stateAlert {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]stateAlert(nil), n.alerts...)
+}
+
+// notice is one failure notice delivered to an agent.
+type notice struct {
+	agent, classifier, text string
+}
+
+func (n *fakeNotifier) Summary(_ context.Context, _, text string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.texts = append(n.texts, text)
+	return nil
+}
+
+func (n *fakeNotifier) RunFailed(ctx context.Context, agentID, text string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.notices = append(n.notices, notice{agent: agentID, classifier: ClassifierID(ctx), text: text})
+	return nil
+}
+
+func (n *fakeNotifier) allNotices() []notice {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]notice(nil), n.notices...)
+}
+
+func (n *fakeNotifier) all() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]string(nil), n.texts...)
+}
+
+type fakeAuditor struct {
+	mu     sync.Mutex
+	events []AuditEvent
+}
+
+func (a *fakeAuditor) Record(ev AuditEvent) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.events = append(a.events, ev)
+}
+
+func (a *fakeAuditor) kinds(kind string) []AuditEvent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []AuditEvent
+	for _, e := range a.events {
+		if e.Kind == kind {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// testLogger keeps warnings for assertions. An error log fails the test
+// unless expectErrors was called; the errors are then kept.
+type testLogger struct {
+	t            *testing.T
+	mu           sync.Mutex
+	warns        []string
+	errs         []string
+	errorsWanted bool
+}
+
+func (l *testLogger) expectErrors() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.errorsWanted = true
+}
+
+func (l *testLogger) errors() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.errs...)
+}
+
+func (l *testLogger) Debugf(string, ...any) {}
+func (l *testLogger) Infof(string, ...any)  {}
+func (l *testLogger) Warnf(format string, v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.warns = append(l.warns, fmt.Sprintf(format, v...))
+}
+
+func (l *testLogger) Errorf(format string, v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.errorsWanted {
+		l.t.Errorf("unexpected error log: "+format, v...)
+		return
+	}
+	l.errs = append(l.errs, fmt.Sprintf(format, v...))
+}
+
+func (l *testLogger) warnings(sub string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for _, w := range l.warns {
+		if strings.Contains(w, sub) {
+			n++
+		}
+	}
+	return n
+}
+
+// fakeWrap is the tests' Host.WrapUntrusted: the text between visible
+// markers.
+func fakeWrap(s string) string { return "<<untrusted>>" + s + "<</untrusted>>" }
+
+// env is a service over fakes with one scope, alice's.
+type env struct {
+	t        *testing.T
+	svc      *Service
+	scope    Scope
+	tools    *fakeTools
+	model    *fakeModel
+	instr    *fakeInstructions
+	notifier *fakeNotifier
+	auditor  *fakeAuditor
+	log      *testLogger
+	clock    *clock.Fake
+	ceilings Ceilings
+	scopes   []Scope
+	mu       sync.Mutex
+}
+
+var testStart = time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)
+
+// inbox is the source list: message ids, in order.
+var inboxIDs = []string{"m1", "m2", "m3"}
+
+// newEnv builds a service whose alice has a mail source (mail_list over
+// inbox), a reader (mail_read) and a mover (mail_move), and a model that
+// answers "urgent" for mail from bob@example.com and "low" otherwise.
+func newEnv(t *testing.T) *env {
+	t.Helper()
+	e := &env{
+		t:        t,
+		scope:    Scope{AgentID: "alice", BaseDirectory: filepath.Join(t.TempDir(), "classifiers")},
+		tools:    &fakeTools{handlers: map[string]func(map[string]any) (string, error){}},
+		model:    &fakeModel{},
+		instr:    &fakeInstructions{files: map[string]string{}, dirs: map[string][]NamedText{}},
+		notifier: &fakeNotifier{},
+		auditor:  &fakeAuditor{},
+		clock:    clock.NewFake(testStart),
+		ceilings: Ceilings{MaxRules: 100, MaxPromptChars: 20000, MaxItemChars: 50000, MaxItemsPerRun: 500, MaxParallel: 8, MaxActivityHours: 720, MinEverySeconds: 15, ProcessedDays: 30},
+	}
+	e.log = &testLogger{t: t}
+	e.scopes = []Scope{e.scope}
+	e.setInbox(inboxIDs)
+	e.tools.set("mail_read", func(args map[string]any) (string, error) {
+		id := fmt.Sprint(args["id"])
+		from := "news@example.org"
+		if id == "m1" || id == "m3" {
+			from = "bob@example.com"
+		}
+		return fmt.Sprintf(`{"from":{"address":%q},"subject":"About %s","body":{"content":"<p>Hello <b>Alice</b></p><script>x()</script>"}}`, from, id), nil
+	})
+	e.tools.set("mail_move", func(map[string]any) (string, error) { return "moved", nil })
+	e.model.setReply(func(_, user string) (string, error) {
+		if strings.Contains(user, "bob@example.com") {
+			return "urgent\nfrom a client", nil
+		}
+		return "low: a newsletter", nil
+	})
+	e.svc = New(Host{
+		Tools: e.tools, Model: e.model, Instructions: e.instr, Notifier: e.notifier, Auditor: e.auditor, Logger: e.log, Clock: e.clock,
+		Modes:    func(string) (os.FileMode, os.FileMode) { return 0o750, 0o640 },
+		Ceilings: func() Ceilings { e.mu.Lock(); defer e.mu.Unlock(); return e.ceilings },
+		Scopes:   func() []Scope { e.mu.Lock(); defer e.mu.Unlock(); return append([]Scope(nil), e.scopes...) },
+		// Visible, so tests see what is marked as untrusted.
+		WrapUntrusted: fakeWrap,
+	})
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := e.svc.Close(ctx); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	return e
+}
+
+// setMaxRules changes the install's max_rules.
+func (e *env) setMaxRules(n int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.ceilings.MaxRules = n
+}
+
+// setInbox makes mail_list return messages with these ids.
+func (e *env) setInbox(ids []string) {
+	e.tools.set("mail_list", func(map[string]any) (string, error) {
+		msgs := make([]map[string]any, len(ids))
+		for i, id := range ids {
+			msgs[i] = map[string]any{"id": id, "subject": "About " + id}
+		}
+		b, err := json.Marshal(map[string]any{"messages": msgs})
+		return string(b), err
+	})
+}
+
+// definition is the inbox classifier as a map, to change before creating.
+func definition() map[string]any {
+	return map[string]any{
+		"id":      "inbox-priority",
+		"enabled": true,
+		"trigger": map[string]any{"every_seconds": 120},
+		"source":  map[string]any{"tool": "mail_list", "args": map[string]any{"folder": "Inbox"}, "items": "messages", "id": "id"},
+		"fetch": map[string]any{
+			"tool":   "mail_read",
+			"args":   map[string]any{"id": "{{item.id}}"},
+			"fields": map[string]any{"from": "from.address", "subject": "subject", "body": "body.content"},
+			"html":   []any{"body"},
+		},
+		"classify": map[string]any{
+			"instructions": "Decide how important this email is to the user.",
+			"rules":        []any{"Email from bob@example.com is from a client and is always urgent."},
+			"categories": []any{
+				map[string]any{"name": "urgent", "description": "Needs the user today."},
+				map[string]any{"name": "low", "description": "Newsletters."},
+			},
+		},
+		"actions": map[string]any{
+			"urgent": map[string]any{"tool": "mail_move", "args": map[string]any{"id": "{{item.id}}", "destination": "Urgent"}},
+			"low":    map[string]any{"tool": "mail_move", "args": map[string]any{"id": "{{item.id}}", "destination": "{{category}}"}},
+		},
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// create saves def for alice.
+func (e *env) create(def map[string]any) *Definition {
+	e.t.Helper()
+	if _, err := e.svc.Create(context.Background(), e.scope, mustJSON(e.t, def)); err != nil {
+		e.t.Fatalf("Create: %v", err)
+	}
+	d, err := e.svc.validDefinition(e.scope, fmt.Sprint(def["id"]))
+	if err != nil {
+		e.t.Fatalf("read back: %v", err)
+	}
+	return d
+}
+
+// run runs the classifier once, as the scheduler would.
+func (e *env) run(id string) RunRecord {
+	e.t.Helper()
+	d, err := e.svc.validDefinition(e.scope, id)
+	if err != nil {
+		e.t.Fatalf("definition %s: %v", id, err)
+	}
+	return e.svc.runClassifier(context.Background(), e.scope, d, nil)
+}
+
+// processed returns the classifier's processed rows by item id.
+func (e *env) processed(id string) map[string]processedRow {
+	e.t.Helper()
+	st, err := e.svc.state(context.Background(), e.scope.BaseDirectory)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	rows, err := st.processed(context.Background(), NormalizeID(id))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return rows
+}
+
+// moves returns the destination of every mail_move call by message id.
+func (e *env) moves() map[string]any {
+	out := map[string]any{}
+	for _, c := range e.tools.callsOf("mail_move") {
+		out[fmt.Sprint(c.args["id"])] = c.args["destination"]
+	}
+	return out
+}
+
+var errBoom = errors.New("boom")
+
+// obj is v as a JSON object; a test definition map always has one there.
+func obj(v any) map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		panic(fmt.Sprintf("not a JSON object: %#v", v))
+	}
+	return m
+}
+
+// activity reads the inbox classifier's activity log.
+func (e *env) activity(q ActivityQuery) []ActivityEntry {
+	e.t.Helper()
+	entries, err := e.svc.Activity(e.scope, "inbox-priority", q)
+	if err != nil {
+		e.t.Fatalf("Activity: %v", err)
+	}
+	return entries
+}
+
+// list lists scope's classifiers.
+func (e *env) list(scope Scope) []Summary {
+	e.t.Helper()
+	sums, err := e.svc.List(scope)
+	if err != nil {
+		e.t.Fatalf("List: %v", err)
+	}
+	return sums
+}
+
+// def reads the inbox classifier's definition.
+func (e *env) def() *Definition {
+	e.t.Helper()
+	d, err := e.svc.validDefinition(e.scope, "inbox-priority")
+	if err != nil {
+		e.t.Fatalf("definition: %v", err)
+	}
+	return d
+}

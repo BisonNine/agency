@@ -1,0 +1,901 @@
+package agent
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
+
+	"github.com/PivotLLM/ctxengine"
+
+	"github.com/PivotLLM/ClawEh/app"
+	"github.com/PivotLLM/ClawEh/config"
+	"github.com/PivotLLM/ClawEh/fileutil"
+	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/logger"
+	"github.com/PivotLLM/ClawEh/providers"
+	"github.com/PivotLLM/ClawEh/skills"
+)
+
+type ContextBuilder struct {
+	workspace           string
+	skillsLoader        *skills.SkillsLoader
+	skillsFilter        []string
+	memory              *MemoryStore
+	allowedFolders      []config.AllowedFolderConfig
+	toolDiscoveryActive bool
+	// maestroEnabled adds the Maestro identity rule (global.MaestroPromptRule).
+	maestroEnabled bool
+
+	// toolsGranted, when set, reports whether the agent has any tool at all;
+	// when it has none the dynamic prompt says so (noToolsNotice).
+	toolsGranted func() bool
+
+	// channelKind resolves a channel name to its kind, whose prompt file
+	// (config.ChannelPromptFile) the dynamic prompt carries
+	// (WithChannelKind). Nil: only the names fixed by the code are known.
+	channelKind func(channel string) string
+
+	// fixedPrompt, when set, is the agent's whole system prompt: no identity,
+	// workspace files, skills, memory guidance, date or runtime block. A fresh
+	// temporary agent's prompt (see WithFixedPrompt).
+	fixedPrompt string
+
+	// cardPath is the configured agent's character card file
+	// (<CLAW_HOME>/cards/<id>.json, WithCharacterCard), tracked for cache
+	// invalidation like a bootstrap file, and renderCard renders it into the
+	// static prompt after the identity rules. Empty: no card.
+	cardPath   string
+	renderCard func() (string, error)
+	// cardPrompt is a clone's own rendered character card (WithCardPrompt);
+	// when set it is used instead of cardPath.
+	cardPrompt string
+
+	// memoryGuidance is the operating rule contributed by the memory subsystem
+	// (cogmem.Guidance()), or "" for an agent that has none. Rendered as one
+	// numbered rule in the identity section.
+	memoryGuidance string
+
+	// Cache for system prompt to avoid rebuilding on every call.
+	// This fixes issue #607: repeated reprocessing of the entire context.
+	// The cache auto-invalidates when workspace source files change (mtime check).
+	systemPromptMutex  sync.RWMutex
+	cachedSystemPrompt string
+	cachedAt           time.Time // max observed mtime across tracked paths at cache build time
+
+	// cachedDate is the date string baked into the cached prompt. The prompt
+	// carries today's date, which no file mtime reflects, so without this the
+	// cache would keep serving yesterday's date indefinitely — a silent wrong
+	// answer, and precisely the failure the date anchor exists to prevent.
+	cachedDate string
+
+	// now is the clock used for the date line, injectable for tests. nil means
+	// time.Now.
+	now func() time.Time
+
+	// existedAtCache tracks which source file paths existed the last time the
+	// cache was built. This lets sourceFilesChanged detect files that are newly
+	// created (didn't exist at cache time, now exist) or deleted (existed at
+	// cache time, now gone) — both of which should trigger a cache rebuild.
+	existedAtCache map[string]bool
+
+	// skillFilesAtCache snapshots the skill tree file set and mtimes at cache
+	// build time. This catches nested file creations/deletions/mtime changes
+	// that may not update the top-level skill root directory mtime.
+	skillFilesAtCache map[string]time.Time
+}
+
+// WithMaestro marks the agent as having the Maestro suite, which adds the
+// Maestro rule to the identity section.
+func (cb *ContextBuilder) WithMaestro(enabled bool) *ContextBuilder {
+	cb.maestroEnabled = enabled
+	return cb
+}
+
+// WithToolsGranted sets the check of whether the agent has any tool. It is
+// read on every turn, so a tool registered later (an MCP server that connects)
+// removes the notice.
+func (cb *ContextBuilder) WithToolsGranted(granted func() bool) *ContextBuilder {
+	cb.toolsGranted = granted
+	return cb
+}
+
+// noToolsNotice is the line an agent with no tools at all gets in its prompt.
+const noToolsNotice = "You have not been granted any tools. If a request requires tools, please advise the user and ask them to enable the tools in the web user interface."
+
+func (cb *ContextBuilder) WithToolDiscovery(active bool) *ContextBuilder {
+	cb.toolDiscoveryActive = active
+	return cb
+}
+
+// WithChannelKind sets how a channel name resolves to its channel kind
+// (config.Config.ChannelKind), so a secmsg account's channel finds its
+// kind's prompt file.
+func (cb *ContextBuilder) WithChannelKind(kindOf func(channel string) string) *ContextBuilder {
+	cb.channelKind = kindOf
+	return cb
+}
+
+// WithMemoryGuidance sets the memory subsystem's operating rule for this
+// agent. Pass "" (or never call it) for an agent without cognitive memory, and
+// the identity section carries no memory rule at all.
+func (cb *ContextBuilder) WithMemoryGuidance(text string) *ContextBuilder {
+	cb.memoryGuidance = text
+	return cb
+}
+
+// WithAllowedFolders records the agent's allowed folders (absolute paths, with
+// their notes) so the system prompt can tell the agent which folders its file
+// tools can reach.
+func (cb *ContextBuilder) WithAllowedFolders(folders []config.AllowedFolderConfig) *ContextBuilder {
+	cb.allowedFolders = folders
+	return cb
+}
+
+// accessibleFolders lists, one "- " line each, every folder the file tools can
+// reach by absolute path: <workspace>/files and <workspace>/skills always,
+// <workspace>/maestro with Maestro on, then each allowed folder by its real
+// path, marked read-only when the app's account cannot write it (checked as
+// the prompt is built) and followed by its note.
+func (cb *ContextBuilder) accessibleFolders(workspacePath string) string {
+	lines := []string{
+		filepath.Join(workspacePath, "files") + " (read/write)",
+		filepath.Join(workspacePath, "skills") + " (read-only)",
+	}
+	if cb.maestroEnabled {
+		lines = append(lines, config.MaestroDataDir(workspacePath)+" (read/write)")
+	}
+	for _, f := range cb.allowedFolders {
+		if info, err := os.Stat(f.Path); err != nil || !info.IsDir() {
+			continue // the file tools skip it too
+		}
+		line := f.Path
+		if !fileutil.Writable(f.Path) {
+			line += " (read-only)"
+		}
+		if note := promptNote(f.Note); note != "" {
+			line += ": " + note
+		}
+		lines = append(lines, line)
+	}
+	return "- " + strings.Join(lines, "\n- ")
+}
+
+// promptNote is a folder note as the prompt shows it: newlines and other
+// control characters become spaces, and it is cut to
+// config.MaxAllowedFolderNoteChars characters, so a hand-edited note cannot
+// break the folder list.
+func promptNote(note string) string {
+	note = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, note)
+	if r := []rune(note); len(r) > config.MaxAllowedFolderNoteChars {
+		note = string(r[:config.MaxAllowedFolderNoteChars])
+	}
+	return strings.TrimSpace(note)
+}
+
+// WithCharacterCard gives the agent the character card at path, rendered by
+// render whenever the static prompt is built (see cardSection). An empty path
+// means no card.
+func (cb *ContextBuilder) WithCharacterCard(path string, render func() (string, error)) *ContextBuilder {
+	cb.cardPath, cb.renderCard = path, render
+	return cb
+}
+
+// WithCardPrompt gives the agent an already rendered character card (a clone
+// created with its own card), used instead of the card file.
+func (cb *ContextBuilder) WithCardPrompt(text string) *ContextBuilder {
+	cb.cardPrompt = strings.TrimSpace(text)
+	return cb
+}
+
+// hasCard reports whether a character card takes part in the prompt.
+func (cb *ContextBuilder) hasCard() bool { return cb.cardPrompt != "" || cb.cardPath != "" }
+
+// cardSection is the character card's block of the static prompt: the
+// clone's rendered text, or the card rendered now from the library. A
+// card that cannot be read or parsed yields no block and one WARN; the
+// agent runs without it (the Agents page and Check Up show the missing card).
+func (cb *ContextBuilder) cardSection() string {
+	if cb.cardPrompt != "" {
+		return cb.cardPrompt
+	}
+	if cb.cardPath == "" || cb.renderCard == nil {
+		return ""
+	}
+	text, err := cb.renderCard()
+	if err != nil {
+		logger.WarnCF("agent", "Character card not rendered; the agent runs without it",
+			map[string]any{"card": cb.cardPath, "error": err.Error()})
+		return ""
+	}
+	logger.DebugCF("agent", "Character card rendered", map[string]any{"card": cb.cardPath, "chars": len(text)})
+	return text
+}
+
+// WithFixedPrompt makes text the agent's whole system prompt: PromptLayers
+// returns it alone, and nothing is read from the workspace. It also leaves the
+// agent no skills.
+func (cb *ContextBuilder) WithFixedPrompt(text string) *ContextBuilder {
+	cb.fixedPrompt = text
+	cb.skillsFilter = []string{}
+	return cb
+}
+
+// WithSkillsFilter sets the skills available to this agent: only those the
+// filter names. A nil or empty filter means no skills. Each pattern may use
+// '*' as a wildcard (e.g. "fetch-*"; "*" is every skill).
+func (cb *ContextBuilder) WithSkillsFilter(filter []string) *ContextBuilder {
+	cb.skillsFilter = filter
+	return cb
+}
+
+func getGlobalConfigDir() string {
+	if home := os.Getenv("CLAW_HOME"); home != "" {
+		return home
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claw")
+}
+
+func NewContextBuilder(workspace string) *ContextBuilder {
+	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
+
+	return &ContextBuilder{
+		workspace:    workspace,
+		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir),
+		memory:       NewMemoryStore(workspace),
+	}
+}
+
+// currentDate renders today's date for the system prompt, together with a
+// pointer to the tool that supplies the time.
+//
+// Deliberately DAY granularity. This string sits in the cached prefix, ahead of
+// the whole conversation, and every HTTP provider ClawEh dispatches to caches by
+// longest-common-prefix — at minute granularity the prefix breaks on nearly
+// every turn, taking the entire history with it. Measured against production
+// logs, first-dispatch cache hit rates were 5.6% and 1.6% for the two busiest
+// agents while later dispatches inside the same minute ran 70-89%.
+//
+// The date is still worth its once-a-day invalidation: a model given no date
+// does not ask for one, it answers from its training cutoff.
+func (cb *ContextBuilder) currentDate() string {
+	return cb.clock().Format("Monday, Jan 2, 2006")
+}
+
+// clock returns the time source for the date line.
+func (cb *ContextBuilder) clock() time.Time {
+	if cb.now != nil {
+		return cb.now()
+	}
+	return time.Now()
+}
+
+func (cb *ContextBuilder) getIdentity() string {
+	workspacePath, err := filepath.Abs(cb.workspace)
+	if err != nil {
+		workspacePath = cb.workspace
+	}
+	version := app.Version()
+
+	// The agent's file tools are scoped to files/ (read/write) and skills/ (read);
+	// its config (AGENTS/SOUL/IDENTITY/USER/MEMORY) is injected into this prompt.
+	//
+	// Rules are numbered in the order they are appended, so a subsystem that is
+	// not wired for this agent (cognitive memory off) simply contributes no rule
+	// and the numbering closes over the gap.
+	rules := []string{
+		"**ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.",
+		"**Be helpful and accurate** - When using tools, briefly explain what you're doing.\n\n" +
+			"   **Declining to respond** - If you should not reply at all — for example a group message clearly directed at someone else — reply with exactly !none (and nothing else). Do NOT return an empty message: an empty reply is treated as an error and you will be asked to try again. Replying !none tells the system you intentionally have nothing to say.",
+	}
+	if g := strings.TrimSpace(cb.memoryGuidance); g != "" {
+		rules = append(rules, g)
+	}
+	rules = append(rules, "**Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.")
+	if cb.maestroEnabled {
+		rules = append(rules, global.MaestroPromptRule)
+	}
+	if cb.toolDiscoveryActive {
+		rules = append(rules, discoveryRule)
+	}
+
+	// With a character card the card says who the agent is (cardSection);
+	// without one it is the plain assistant.
+	identity := "You are a helpful AI assistant."
+	if cb.hasCard() {
+		identity = "You are the character described below."
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, `# %s (%s)
+
+%s
+
+## Workspace
+Your workspace is %s. Relative paths start there; write your work under files/.
+Your configuration and memory are already included in this prompt; you do not need to read workspace files.
+Folders your file tools can reach by absolute path:
+%s
+
+## Important Rules
+
+`, app.ShortName(), version, identity, workspacePath, cb.accessibleFolders(workspacePath))
+	for i, r := range rules {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		fmt.Fprintf(&b, "%d. %s", i+1, r)
+	}
+	if !cb.toolDiscoveryActive {
+		// Historical shape: the rules block ended in an empty discovery slot.
+		b.WriteString("\n\n")
+	}
+	return b.String()
+}
+
+// discoveryRule is appended to the identity rules when progressive tool
+// discovery is active.
+const discoveryRule = "**Tool Discovery** - Your visible tools are limited to save memory, but a large hidden library exists (integrations, browsers, task tools, and more). If you lack the right tool for a task, BEFORE giving up, call " +
+	"`search_tools(query)`" + " with a natural-language description of what you need. It returns matching tools and makes them available, so you can call one right away; " +
+	"`get_tool_details(name)`" + " shows a tool's full schema. Do not refuse a request unless the search returns nothing."
+
+func (cb *ContextBuilder) BuildSystemPrompt() string {
+	if cb.fixedPrompt != "" {
+		return cb.fixedPrompt
+	}
+	parts := []string{}
+
+	// Core identity section
+	parts = append(parts, cb.getIdentity())
+
+	// The character card, before the workspace files so SOUL.md and
+	// IDENTITY.md still apply on top of it.
+	if card := cb.cardSection(); card != "" {
+		parts = append(parts, card)
+	}
+
+	// Bootstrap files
+	bootstrapContent := cb.LoadBootstrapFiles()
+	if bootstrapContent != "" {
+		parts = append(parts, bootstrapContent)
+	}
+
+	// Skills - show summary, AI can read full content with read_file tool
+	skillsSummary := cb.skillsLoader.BuildSkillsSummaryForSkills(cb.filteredSkills())
+	if skillsSummary != "" {
+		parts = append(parts, "# Skills\n\nThe following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.\n\n"+skillsSummary)
+	}
+
+	// Memory context
+	memoryContext := cb.memory.GetMemoryContext()
+	if memoryContext != "" {
+		parts = append(parts, "# Memory\n\n"+memoryContext)
+	}
+
+	// Today's date, last in the static prompt so everything above it stays
+	// byte-identical across the day boundary. The tool pointer matters: without
+	// it a date-only anchor reads as authoritative for the time of day too.
+	parts = append(parts, fmt.Sprintf(
+		"# Date\n\nToday is %s — call `time_now` if you need the current time, timezone, or a precise timestamp.",
+		cb.currentDate()))
+
+	// The external-message endpoint (POST /api/message/{token}) and its rotating
+	// tokens still exist (see internal/gateway/message_route.go) so a future
+	// "notify an agent" feature can use them, but the agent is no longer told
+	// about them — Maestro and agent_spawn deliver completions in-process via
+	// ToolCall.Notify, so there is nothing for the agent to hand out.
+
+	// Join with "---" separator
+	return strings.Join(parts, "\n\n---\n\n")
+}
+
+// BuildSystemPromptWithCache returns the cached system prompt if available
+// and source files haven't changed, otherwise builds and caches it.
+// Source file changes are detected via mtime checks (cheap stat calls).
+func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
+	// Try read lock first — fast path when cache is valid
+	cb.systemPromptMutex.RLock()
+	if cb.cachedSystemPrompt != "" && !cb.sourceFilesChangedLocked() {
+		result := cb.cachedSystemPrompt
+		cb.systemPromptMutex.RUnlock()
+		return result
+	}
+	cb.systemPromptMutex.RUnlock()
+
+	// Acquire write lock for building
+	cb.systemPromptMutex.Lock()
+	defer cb.systemPromptMutex.Unlock()
+
+	// Double-check: another goroutine may have rebuilt while we waited
+	if cb.cachedSystemPrompt != "" && !cb.sourceFilesChangedLocked() {
+		return cb.cachedSystemPrompt
+	}
+
+	// Snapshot the baseline (existence + max mtime) BEFORE building the prompt.
+	// This way cachedAt reflects the pre-build state: if a file is modified
+	// during BuildSystemPrompt, its new mtime will be > baseline.maxMtime,
+	// so the next sourceFilesChangedLocked check will correctly trigger a
+	// rebuild. The alternative (baseline after build) risks caching stale
+	// content with a too-new baseline, making the staleness invisible.
+	baseline := cb.buildCacheBaseline()
+	date := cb.currentDate()
+	prompt := cb.BuildSystemPrompt()
+	cb.cachedSystemPrompt = prompt
+	cb.cachedAt = baseline.maxMtime
+	cb.cachedDate = date
+	cb.existedAtCache = baseline.existed
+	cb.skillFilesAtCache = baseline.skillFiles
+
+	logger.DebugCF("agent", "System prompt cached",
+		map[string]any{
+			"length": len(prompt),
+		})
+
+	return prompt
+}
+
+// InvalidateCache clears the cached system prompt.
+// Normally not needed because the cache auto-invalidates via mtime checks,
+// but this is useful for tests or explicit reload commands.
+func (cb *ContextBuilder) InvalidateCache() {
+	cb.systemPromptMutex.Lock()
+	defer cb.systemPromptMutex.Unlock()
+
+	cb.cachedSystemPrompt = ""
+	cb.cachedAt = time.Time{}
+	cb.cachedDate = ""
+	cb.existedAtCache = nil
+	cb.skillFilesAtCache = nil
+
+	logger.DebugCF("agent", "System prompt cache invalidated", nil)
+}
+
+// sourcePaths returns the non-skill source files tracked for cache
+// invalidation (bootstrap files, memory, the character card). Skill roots are handled separately
+// because they require both directory-level and recursive file-level checks.
+func (cb *ContextBuilder) sourcePaths() []string {
+	paths := []string{
+		filepath.Join(cb.workspace, "AGENTS.md"),
+		filepath.Join(cb.workspace, "SOUL.md"),
+		filepath.Join(cb.workspace, "USER.md"),
+		filepath.Join(cb.workspace, "IDENTITY.md"),
+		filepath.Join(cb.workspace, "MEMORY.md"),
+		filepath.Join(cb.workspace, "state", "message-tokens.json"),
+	}
+	if cb.cardPath != "" && cb.cardPrompt == "" {
+		// The character card is a prompt source too: an edit through the
+		// ccv3 tool or an import reaches the agent on its next turn.
+		paths = append(paths, cb.cardPath)
+	}
+	return paths
+}
+
+// skillRoots returns all skill root directories that can affect
+// BuildSkillsSummary output (workspace/global).
+func (cb *ContextBuilder) skillRoots() []string {
+	if cb.skillsLoader == nil {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+
+	roots := cb.skillsLoader.SkillRoots()
+	if len(roots) == 0 {
+		return []string{filepath.Join(cb.workspace, "skills")}
+	}
+	return roots
+}
+
+// cacheBaseline holds the file existence snapshot and the latest observed
+// mtime across all tracked paths. Used as the cache reference point.
+type cacheBaseline struct {
+	existed    map[string]bool
+	skillFiles map[string]time.Time
+	maxMtime   time.Time
+}
+
+// buildCacheBaseline records which tracked paths currently exist and computes
+// the latest mtime across all tracked files + skills directory contents.
+// Called under write lock when the cache is built.
+func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
+	skillRoots := cb.skillRoots()
+
+	// All paths whose existence we track: source files + all skill roots.
+	allPaths := append(cb.sourcePaths(), skillRoots...)
+
+	existed := make(map[string]bool, len(allPaths))
+	skillFiles := make(map[string]time.Time)
+	var maxMtime time.Time
+
+	for _, p := range allPaths {
+		info, err := os.Stat(p)
+		existed[p] = err == nil
+		if err == nil && info.ModTime().After(maxMtime) {
+			maxMtime = info.ModTime()
+		}
+	}
+
+	// Walk all skill roots recursively to snapshot skill files and mtimes.
+	// Use os.Stat (not d.Info) for consistency with sourceFilesChanged checks.
+	for _, root := range skillRoots {
+		if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr == nil && !d.IsDir() {
+				if info, statErr := os.Stat(path); statErr == nil {
+					skillFiles[path] = info.ModTime()
+					if info.ModTime().After(maxMtime) {
+						maxMtime = info.ModTime()
+					}
+				}
+			}
+			return nil
+		}); err != nil {
+			logger.WarnCF("agent", "Failed to walk skills directory", map[string]any{"path": root, "error": err.Error()})
+		}
+	}
+
+	// If no tracked files exist yet (empty workspace), maxMtime is zero.
+	// Use a very old non-zero time so that:
+	// 1. cachedAt.IsZero() won't trigger perpetual rebuilds.
+	// 2. Any real file created afterwards has mtime > cachedAt, so it
+	//    will be detected by fileChangedSince (unlike time.Now() which
+	//    could race with a file whose mtime <= Now).
+	if maxMtime.IsZero() {
+		maxMtime = time.Unix(1, 0)
+	}
+
+	return cacheBaseline{existed: existed, skillFiles: skillFiles, maxMtime: maxMtime}
+}
+
+// sourceFilesChangedLocked checks whether any workspace source file has been
+// modified, created, or deleted since the cache was last built.
+//
+// IMPORTANT: The caller MUST hold at least a read lock on systemPromptMutex.
+// Go's sync.RWMutex is not reentrant, so this function must NOT acquire the
+// lock itself (it would deadlock when called from BuildSystemPromptWithCache
+// which already holds RLock or Lock).
+func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
+	if cb.cachedAt.IsZero() {
+		return true
+	}
+
+	// The prompt carries today's date, which no file mtime reflects. Checked
+	// first because it is a string compare, and because a stale date is the one
+	// staleness here that produces a confidently wrong answer rather than a
+	// merely outdated one.
+	if cb.cachedDate != cb.currentDate() {
+		return true
+	}
+
+	// Check tracked source files (bootstrap + memory).
+	if slices.ContainsFunc(cb.sourcePaths(), cb.fileChangedSince) {
+		return true
+	}
+
+	// --- Skill roots (workspace/global) ---
+	//
+	// For each root:
+	// 1. Creation/deletion and root directory mtime changes are tracked by fileChangedSince.
+	// 2. Nested file create/delete/mtime changes are tracked by the skill file snapshot.
+	if slices.ContainsFunc(cb.skillRoots(), cb.fileChangedSince) {
+		return true
+	}
+	return skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache)
+}
+
+// fileChangedSince returns true if a tracked source file has been modified,
+// newly created, or deleted since the cache was built.
+//
+// Four cases:
+//   - existed at cache time, exists now -> check mtime
+//   - existed at cache time, gone now   -> changed (deleted)
+//   - absent at cache time,  exists now -> changed (created)
+//   - absent at cache time,  gone now   -> no change
+func (cb *ContextBuilder) fileChangedSince(path string) bool {
+	// Defensive: if existedAtCache was never initialized, treat as changed
+	// so the cache rebuilds rather than silently serving stale data.
+	if cb.existedAtCache == nil {
+		return true
+	}
+
+	existedBefore := cb.existedAtCache[path]
+	info, err := os.Stat(path)
+	existsNow := err == nil
+
+	if existedBefore != existsNow {
+		return true // file was created or deleted
+	}
+	if !existsNow {
+		return false // didn't exist before, doesn't exist now
+	}
+	return info.ModTime().After(cb.cachedAt)
+}
+
+// errWalkStop is a sentinel error used to stop filepath.WalkDir early.
+// Using a dedicated error (instead of fs.SkipAll) makes the early-exit
+// intent explicit and avoids the nilerr linter warning that would fire
+// if the callback returned nil when its err parameter is non-nil.
+var errWalkStop = errors.New("walk stop")
+
+// skillFilesChangedSince compares the current recursive skill file tree
+// against the cache-time snapshot. Any create/delete/mtime drift invalidates
+// the cache.
+func skillFilesChangedSince(skillRoots []string, filesAtCache map[string]time.Time) bool {
+	// Defensive: if the snapshot was never initialized, force rebuild.
+	if filesAtCache == nil {
+		return true
+	}
+
+	// Check cached files still exist and keep the same mtime.
+	for path, cachedMtime := range filesAtCache {
+		info, err := os.Stat(path)
+		if err != nil {
+			// A previously tracked file disappeared (or became inaccessible):
+			// either way, cached skill summary may now be stale.
+			return true
+		}
+		if !info.ModTime().Equal(cachedMtime) {
+			return true
+		}
+	}
+
+	// Check no new files appeared under any skill root.
+	changed := false
+	for _, root := range skillRoots {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				// Treat unexpected walk errors as changed to avoid stale cache.
+				if !os.IsNotExist(walkErr) {
+					changed = true
+					return errWalkStop
+				}
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if _, ok := filesAtCache[path]; !ok {
+				changed = true
+				return errWalkStop
+			}
+			return nil
+		})
+
+		if changed {
+			return true
+		}
+		if err != nil && !errors.Is(err, errWalkStop) && !os.IsNotExist(err) {
+			logger.DebugCF("agent", "skills walk error", map[string]any{"error": err.Error()})
+			return true
+		}
+	}
+
+	return false
+}
+
+func (cb *ContextBuilder) LoadBootstrapFiles() string {
+	bootstrapFiles := []string{
+		"AGENTS.md",
+		"SOUL.md",
+		"USER.md",
+		"IDENTITY.md",
+	}
+
+	var sb strings.Builder
+	for _, filename := range bootstrapFiles {
+		filePath := filepath.Join(cb.workspace, filename)
+		if data, err := os.ReadFile(filePath); err == nil { //nolint:gosec // fixed bootstrap filename under the agent workspace
+			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
+		}
+	}
+
+	return sb.String()
+}
+
+// buildDynamicContext returns a short dynamic context string with per-request
+// info that is stable for the life of a conversation: runtime identity, the
+// channel/chat the turn arrived on, and any channel-specific guidance.
+//
+// Nothing here may vary per turn. Every provider ClawEh dispatches to over HTTP
+// caches by longest-common-prefix, and the system message precedes the entire
+// conversation history — so a single per-request byte here invalidates the cache
+// for the whole history behind it, not just for the system prompt. That is why
+// the current time is NOT in this block.
+// See: https://platform.openai.com/docs/guides/prompt-caching
+func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "## Runtime\nServer: %s %s\nOS: %s %s\nGo: %s",
+		app.Name(), app.Version(), runtime.GOOS, runtime.GOARCH, runtime.Version())
+
+	if channel != "" && chatID != "" {
+		fmt.Fprintf(&sb, "\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+	}
+
+	// Channel-specific guidance from <workspace>/<KIND>.md (seeded from
+	// templates, user-editable). Injected here (not in the cached static prompt)
+	// because it varies by channel while the static prompt is shared per agent.
+	if extra := cb.loadChannelPrompt(channel); extra != "" {
+		fmt.Fprintf(&sb, "\n\n%s", extra)
+	}
+
+	// Here, not in the cached static prompt: the registry can gain tools
+	// between turns.
+	if cb.toolsGranted != nil && !cb.toolsGranted() {
+		sb.WriteString("\n\n" + noToolsNotice)
+	}
+
+	return sb.String()
+}
+
+// loadChannelPrompt returns the contents of the prompt file of the channel's
+// kind (<workspace>/<KIND>.md, config.ChannelPromptFile), or "" for a channel
+// of no known kind or a kind without the file.
+func (cb *ContextBuilder) loadChannelPrompt(channel string) string {
+	kindOf := cb.channelKind
+	if kindOf == nil {
+		kindOf = (*config.Config)(nil).ChannelKind
+	}
+	name := config.ChannelPromptFile(kindOf(channel))
+	if name == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(cb.workspace, name)) //nolint:gosec // fixed file name from the channel kind table; fixed workspace dir
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// PromptLayers returns the host's system-prompt layers for one dispatch, in
+// increasing order of volatility: the cached static prompt (identity,
+// bootstrap files, skills, memory, date) and the short per-conversation
+// dynamic context (runtime, channel/chat, channel guidance). The engine places
+// the rendered session summary after these and the after-summary layers
+// (the session token) behind it.
+//
+// Everything is sent as a single system message for provider compatibility:
+// the Anthropic adapter maps messages[0] (Role=="system") to the top-level
+// "system" parameter, Codex maps only the first system message to its
+// instructions field, and OpenAI-compat passes messages through as-is.
+func (cb *ContextBuilder) PromptLayers(channel, chatID string) []ctxengine.Layer {
+	if cb.fixedPrompt != "" {
+		return []ctxengine.Layer{{Name: "static", Text: cb.fixedPrompt}}
+	}
+	// The static part (identity, bootstrap, skills, memory) is cached locally to
+	// avoid repeated file I/O and string building on every call (fixes issue #607).
+	staticPrompt := cb.BuildSystemPromptWithCache()
+	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+
+	cb.systemPromptMutex.RLock()
+	isCached := cb.cachedSystemPrompt != ""
+	cb.systemPromptMutex.RUnlock()
+	logger.DebugCF("agent", "System prompt layers built",
+		map[string]any{
+			"static_chars":  len(staticPrompt),
+			"dynamic_chars": len(dynamicCtx),
+			"cached":        isCached,
+		})
+
+	return []ctxengine.Layer{
+		{Name: "static", Text: staticPrompt},
+		{Name: "dynamic", Text: dynamicCtx},
+	}
+}
+
+// sessionTokenLayer renders the per-session MCP token as the after-summary
+// layer of the system prompt so the LLM can call mcp__claw__* tools. It sits
+// after the static and dynamic prompt and the summary so it is always present
+// regardless of caching. An empty token yields an empty layer, which the
+// engine skips.
+func sessionTokenLayer(token string) ctxengine.Layer {
+	l := ctxengine.Layer{Name: "session_token", AfterSummary: true}
+	if token == "" {
+		return l
+	}
+	l.Text = fmt.Sprintf(
+		"# Session Token\n\nThe following token is confidential — never echo it to users or write it to files. "+
+			"ALL `"+global.HostMCPToolPrefix+"*` tool calls MUST include "+
+			"the literal string below as the `session_token` parameter.\n\nsession_token: %s",
+		token)
+	return l
+}
+
+func (cb *ContextBuilder) AddToolResult(
+	messages []providers.Message,
+	toolCallID, toolName, result string,
+) []providers.Message {
+	messages = append(messages, providers.Message{
+		Role:       "tool",
+		Content:    result,
+		ToolCallID: toolCallID,
+	})
+	return messages
+}
+
+func (cb *ContextBuilder) AddAssistantMessage(
+	messages []providers.Message,
+	content string,
+	toolCalls []map[string]any,
+) []providers.Message {
+	msg := providers.Message{
+		Role:    "assistant",
+		Content: content,
+	}
+	// Always add assistant message, whether or not it has tool calls
+	messages = append(messages, msg)
+	return messages
+}
+
+// matchSkillFilter returns true if name matches any pattern in the filter.
+// An empty filter matches nothing. '*' is a wildcard suffix/prefix/infix.
+func matchSkillFilter(name string, filter []string) bool {
+	for _, pattern := range filter {
+		if matchGlob(pattern, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchGlob matches name against a glob pattern supporting '*' wildcards.
+func matchGlob(pattern, name string) bool {
+	if pattern == "*" {
+		return true
+	}
+	// Split pattern on '*' and verify parts appear in order.
+	parts := strings.SplitN(pattern, "*", 2)
+	if len(parts) == 1 {
+		return pattern == name
+	}
+	prefix, suffix := parts[0], parts[1]
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	return strings.HasSuffix(name, suffix)
+}
+
+// filteredSkills returns the skills the filter names. A nil or empty filter
+// means no skills.
+func (cb *ContextBuilder) filteredSkills() []skills.SkillInfo {
+	if len(cb.skillsFilter) == 0 {
+		return nil
+	}
+	all := cb.skillsLoader.ListSkills()
+	result := make([]skills.SkillInfo, 0, len(all))
+	for _, s := range all {
+		if matchSkillFilter(s.Name, cb.skillsFilter) {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// GetSkillsInfo returns information about loaded skills.
+func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
+	allSkills := cb.filteredSkills()
+	skillNames := make([]string, 0, len(allSkills))
+	for _, s := range allSkills {
+		skillNames = append(skillNames, s.Name)
+	}
+	return map[string]any{
+		"total":     len(allSkills),
+		"available": len(allSkills),
+		"names":     skillNames,
+	}
+}

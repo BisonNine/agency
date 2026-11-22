@@ -1,0 +1,313 @@
+package agents
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/PivotLLM/ClawEh/global"
+	"github.com/PivotLLM/ClawEh/tools"
+)
+
+// GlobalProvider exposes the subagent task tools through the transport-neutral
+// global layer under the "agent" namespace: bare "spawn" → "agent_spawn", bare
+// "status" → "agent_status", bare "list" → "agent_list", and bare "message" →
+// "agent_message" (asks and whispers to other agents, see message.go). The spawn handler
+// launches workers through the robust global.Spawner injected via Deps.Spawn,
+// supporting two modes: callback (background, file-backed, tracked) and wait (run
+// synchronously and return). status/list query tracked callback tasks through
+// global.TaskInspector. The spawn def is flagged Async so the bridge wires the
+// completion pointer through ToolCall.Notify for callback mode.
+var GlobalProvider globalAgentProvider
+
+type globalAgentProvider struct{}
+
+func (globalAgentProvider) Namespace() string   { return "agent" }
+func (globalAgentProvider) Description() string { return "Subagent spawning and task tracking" }
+
+func (globalAgentProvider) Available(cfg any) (bool, string) { return true, "" }
+
+const spawnToolDescription = "Spawn a subagent to handle a task. Use 'mode' to choose how it runs: " +
+	"'callback' (default) runs it in the background and notifies you when done with a pointer to a result file " +
+	"in your workspace (read it with your file tools, or poll agent_status); 'wait' runs it to completion and " +
+	"returns the result immediately. Callback mode requires 'name', a short identifier for the task. " +
+	"'media' attaches media:// refs (from '[attachment ref(s): …]' markers in the conversation) to the subagent's " +
+	"initial message — useful to hand an image you cannot view to a vision-capable agent or model for analysis. " +
+	"With 'kind' it calls a task model instead of a subagent: one call, no tools, no agent. Kinds: 'text' (write, " +
+	"translate or summarise: 'task' is the prompt, text 'files' are added to it), 'image' (generate, or edit the " +
+	"images in 'files'/'media': 'task' is the prompt), 'tts' (speak 'task' aloud; optional 'voice' and 'format'), " +
+	"'stt' (transcribe the one audio file in 'files' or 'media'; 'task' is an optional hint). 'model' then names a " +
+	"task model of that kind; omit it to use the first one that works. Output is saved in your workspace under " +
+	"files/generated/<date>/ and the result gives the paths: images and audio come back as paths only, so send one " +
+	"to the chat with msg_send_file; text and transcripts come back inline too, cut when long, with the full text in " +
+	"a .md file. agent_id and character_card can't be used with kind."
+
+func spawnToolSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task": map[string]any{
+				"type":        "string",
+				"description": "The task for the subagent to complete",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "How to run: 'callback' (default, background) or 'wait' (synchronous)",
+				"enum":        []string{"callback", "wait"},
+			},
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Short identifier for the task (required for callback mode)",
+			},
+			"agent_id": map[string]any{
+				"type":        "string",
+				"description": "Optional target agent ID to delegate the task to",
+			},
+			"model": map[string]any{
+				"type":        "string",
+				"description": "Optional model for the subagent to run, by its model name. Must be one of the executing agent's worker models (yourself on a self-spawn, or the target agent): its configured worker models, else its own models. Omit to use its first worker model. Useful to run a heavier model for a demanding subtask while you stay on a lighter one.",
+			},
+			"media": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Optional media:// refs (from '[attachment ref(s): …]' markers in the conversation) to attach to the subagent's initial message. Use with a vision-capable agent_id/model to have an image you cannot view analyzed for you.",
+			},
+			"character_card": map[string]any{
+				"type":        "string",
+				"description": "Optional character card id from the library: the subagent runs as that character instead of with the agent's own card. The card must exist.",
+			},
+			"kind": map[string]any{
+				"type":        "string",
+				"description": "Call a task model instead of a subagent: text, image, tts (speech) or stt (transcription). You must be allowed that kind.",
+				"enum":        TaskKinds,
+			},
+			"files": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"maxItems":    MaxTaskFiles,
+				"description": "With kind: workspace paths of input files (text to use, images to edit, the audio to transcribe), as the file tools take them. You must be allowed to read them.",
+			},
+			"voice": map[string]any{
+				"type":        "string",
+				"description": "With kind tts: the voice. Omit for the model's default.",
+			},
+			"format": map[string]any{
+				"type":        "string",
+				"description": "With kind tts: the audio format in the API's terms (mp3, wav, …). Omit for the model's default.",
+			},
+		},
+		"required": []string{"task"},
+	}
+}
+
+func statusToolSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"uuid": map[string]any{
+				"type":        "string",
+				"description": "The task uuid returned by agent_spawn (or shown by agent_list)",
+			},
+		},
+		"required": []string{"uuid"},
+	}
+}
+
+func listToolSchema() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+	// Recover the injected robust spawner. nil during deps-free enumeration; the
+	// handlers guard that case.
+	var sp global.Spawner
+	if v, ok := deps.Spawn.(global.Spawner); ok {
+		sp = v
+	}
+	var inspector global.TaskInspector
+	if v, ok := deps.Spawn.(global.TaskInspector); ok {
+		inspector = v
+	}
+
+	return []global.ToolDefinition{
+		{
+			Name:        "spawn",
+			Description: spawnToolDescription,
+			RawSchema:   spawnToolSchema(),
+			Category:    "agents",
+			Async:       true,
+			// Sub-agents may spawn too; runaway recursion is bounded by
+			// MaxSpawnDepth in the Spawner (see depth.go), not by hiding the tool.
+			Handler: func(call *global.ToolCall) (*global.Result, error) {
+				if sp == nil {
+					return &global.Result{IsError: true, ForLLM: "spawn tool not available"}, nil
+				}
+				task := strArg(call.Args, "task")
+				name := strArg(call.Args, "name")
+				agentID := strArg(call.Args, "agent_id")
+				modeStr := strArg(call.Args, "mode")
+				model := strArg(call.Args, "model")
+				characterCard := strArg(call.Args, "character_card")
+				media, badMedia := parseMediaArg(call.Args["media"])
+				if badMedia != "" {
+					return &global.Result{IsError: true, ForLLM: badMedia}, nil
+				}
+				files, badFiles := parseFilesArg(call.Args["files"])
+				if badFiles != "" {
+					return &global.Result{IsError: true, ForLLM: badFiles}, nil
+				}
+
+				mode, onResult := resolveSpawnMode(modeStr, call)
+				// A background result returns to the chat of the spawning
+				// turn; a call that can't be tied to one turn has none.
+				if _, problem := tools.TurnChat(call.Ctx); mode == global.SpawnCallback && problem == tools.ChatAmbiguous {
+					return &global.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: tools.Refusal(errSpawnAmbiguous)}, nil
+				}
+				return sp.Spawn(call.Ctx, global.SpawnRequest{
+					Mode:          mode,
+					Task:          task,
+					Name:          name,
+					Label:         name,
+					TargetAgentID: agentID,
+					Model:         model,
+					CharacterCard: characterCard,
+					Media:         media,
+					Kind:          strArg(call.Args, "kind"),
+					Files:         files,
+					Voice:         strArg(call.Args, "voice"),
+					Format:        strArg(call.Args, "format"),
+					Channel:       call.Channel,
+					ChatID:        call.ChatID,
+					OnResult:      onResult,
+				})
+			},
+		},
+		{
+			Name:        "status",
+			Description: "Check the status of a background task by uuid. Returns one of: unknown, running, done, error — with a pointer to the result file when available.",
+			RawSchema:   statusToolSchema(),
+			Category:    "agents",
+			Handler: func(call *global.ToolCall) (*global.Result, error) {
+				if inspector == nil {
+					return &global.Result{IsError: true, ForLLM: "task status not available"}, nil
+				}
+				id, ok := call.Args["uuid"].(string)
+				if !ok || strings.TrimSpace(id) == "" {
+					return &global.Result{IsError: true, ForLLM: "uuid is required"}, nil
+				}
+				st, err := inspector.TaskStatus(id)
+				if err != nil {
+					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("status lookup failed: %v", err)}, nil
+				}
+				b, err := json.Marshal(st)
+				if err != nil {
+					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("status encode failed: %v", err)}, nil
+				}
+				return &global.Result{ForLLM: string(b), Silent: true}, nil
+			},
+		},
+		{
+			Name:        "list",
+			Description: "List this agent's background tasks. Returns uuid, name, and status for each.",
+			RawSchema:   listToolSchema(),
+			Category:    "agents",
+			Handler: func(call *global.ToolCall) (*global.Result, error) {
+				if inspector == nil {
+					return &global.Result{IsError: true, ForLLM: "task list not available"}, nil
+				}
+				list, err := inspector.TaskList()
+				if err != nil {
+					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("task list failed: %v", err)}, nil
+				}
+				b, err := json.Marshal(map[string]any{"tasks": list})
+				if err != nil {
+					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("task list encode failed: %v", err)}, nil
+				}
+				return &global.Result{ForLLM: string(b), Silent: true}, nil
+			},
+		},
+		messageTool(hostDeps(deps)),
+	}
+}
+
+// strArg returns the string argument under key, or "" when it is absent or
+// not a string.
+func strArg(args map[string]any, key string) string {
+	if s, ok := args[key].(string); ok {
+		return s
+	}
+	return ""
+}
+
+// parseMediaArg converts the tool's "media" argument (a JSON array of strings)
+// into a ref slice. Returns a non-empty error string on malformed input or a
+// non-media:// entry so the model gets actionable feedback.
+func parseMediaArg(v any) ([]string, string) {
+	if v == nil {
+		return nil, ""
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return nil, "media must be an array of media:// ref strings"
+	}
+	var out []string
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok || !strings.HasPrefix(s, "media://") {
+			return nil, fmt.Sprintf("invalid media entry %v: each entry must be a media:// ref (see '[attachment ref(s): …]' markers)", item)
+		}
+		out = append(out, s)
+	}
+	return out, ""
+}
+
+// MaxTaskFiles is the most input files one task-model call takes.
+const MaxTaskFiles = 10
+
+// parseFilesArg reads the tool's "files" argument (workspace paths).
+// Returns a non-empty error string on malformed input.
+func parseFilesArg(v any) ([]string, string) {
+	if v == nil {
+		return nil, ""
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return nil, "files must be an array of workspace paths"
+	}
+	if len(items) > MaxTaskFiles {
+		return nil, fmt.Sprintf("at most %d files can be given", MaxTaskFiles)
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			return nil, fmt.Sprintf("invalid files entry %v: each entry must be a workspace path", item)
+		}
+		out = append(out, strings.TrimSpace(s))
+	}
+	return out, ""
+}
+
+// spawnAmbiguousText refuses a background spawn over the MCP host while more
+// than one turn of the session runs: its result would have no chat to return to.
+const spawnAmbiguousText = "A background task can't be started now: this agent is answering more than one conversation. Use mode \"wait\"."
+
+var errSpawnAmbiguous = errors.New("background spawn while the agent answers more than one conversation")
+
+// resolveSpawnMode maps the tool's "mode" argument to a global.SpawnMode and, for
+// callback mode, the OnResult sink that delivers the worker's completion pointer
+// (via ToolCall.Notify on the agent-loop path). When no async path is offered
+// (Notify == nil, e.g. MCP), callback mode still runs and tracks the task — the
+// result is retrieved via agent_status / the result file — but no push fires.
+func resolveSpawnMode(modeStr string, call *global.ToolCall) (global.SpawnMode, func(*global.Result)) {
+	switch strings.ToLower(strings.TrimSpace(modeStr)) {
+	case "wait", "sync", "synchronous":
+		return global.SpawnAndWait, nil
+	default: // "callback", "", or unknown → background, tracked
+		return global.SpawnCallback, call.Notify
+	}
+}
