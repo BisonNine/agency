@@ -1584,22 +1584,37 @@ next session must know.
     deleting `spawnllm.Worker` affects neither.
 - [x] Move: lint fix, version 0.6.6, module `go.bison9.com/agency`,
       product name Agency (ffeaf07)
-- [ ] Phase 0: adopt the module
-  - SDK half done: identity widened, friendly name (SDK eb27b0c).
-  - Host half in progress in a worktree (`phase0`), on SDK 9d6114e.
-    It also switches Maestro and MCPFusion to their new paths.
+- [x] Phase 0: adopt the module (host 8f1d1b6, SDK eb27b0c). The host
+      requires `go.bison9.com/agent`, `go.bison9.com/maestro` and
+      `go.bison9.com/mcpfusion` by commit (no tags yet, no `replace`).
+      Identity on every call: `global/accounting.go`,
+      `AgentInstance.Identity()`; project is the constant `default`.
+      Accounting output is off (nothing calls `accounting.Start` or
+      `SetLogger`). One slog handler: `logger/sdk.go`.
 - [x] Standards: `slog`, file-permission type (SDK ba24346, 74981c0,
       review fixes 9d6114e). The `logger` package is gone;
       `accounting.SetLogger` is package-level (one sink per process).
-- [ ] Phase 1: `modelspec`
-  - SDK half done (SDK 05010d6). Host aliasing not started. Notes for
-    it: `CooldownConfig` keeps its `CLAW_COOLDOWN_*` tags in the host
-    and converts to `modelspec.Cooldown`; the host registers the
-    `human` protocol as keyless; `modelspec.CLIArgs` returns the
-    ignored flags and the host logs them.
+- [x] Phase 1: `modelspec` (SDK 05010d6, 5cf35a7; host 7ced93d).
+      `CooldownConfig` keeps its `CLAW_COOLDOWN_*` tags in the host; the
+      host registers the `human` protocol (`config/human.go`);
+      `config.ValidateModel` maps the SDK's typed reserved-key error to
+      the host's wording.
 - [ ] Phase 2: `models`
+  - SDK half done: `clock`, `models` (SDK bc1a6fd), reviewed and fixed.
+    Known differences the host must handle are listed in the phase 2
+    host brief: caller deadline now stops the chain; registered clients
+    are never closed by the SDK; clients survive `Adopt` only with
+    unchanged options. The single model-caller types still live in
+    `models`; moving them to a leaf for `ctxengine`/`cogmem` is open.
+  - Host half in progress (worktree `phase2`).
 - [ ] Phase 3: `toolkit`
+  - SDK half done (SDK 2283055), reviewed and fixed: one generation per
+    read, asynchronous change notices.
+  - Host half in progress (worktree `phase3`): aliases and a thin
+    `ToolRegistry` wrapper; shared catalogues, sets and `Adopt` are not
+    used by the host yet.
 - [ ] Phase 4: `discovery`
+  - SDK half in progress (worktree `discovery`).
 - [ ] Phase 5a: callbacks and events in place
 - [ ] Phase 5b: cancellation
 - [ ] Phase 5c: engine moved, root package, conformance suite
