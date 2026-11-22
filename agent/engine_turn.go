@@ -355,8 +355,17 @@ func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 		}
 		e.releaseCompressionManagers()
 		if stage < stageFinished {
+			// The turn still ends as any turn does: AfterTurn sees the
+			// failure, nothing is stored, the marker is cleared.
 			tr = e.turnResult(ctx, fmt.Errorf("turn engine: panic: %v", r))
+			tr.Outcome = hook.OutcomeError
+			if stage >= stageStored && stage < stageAfterTurn {
+				e.hooks.callAfterTurn(context.WithoutCancel(ctx), turn, &tr)
+			}
 			tr.Reply, tr.Stored = "", ""
+			if stage >= stageStored {
+				e.clearPending(tr)
+			}
 			e.finish(ctx, tr)
 		}
 		panic(r)
@@ -379,8 +388,10 @@ func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 		e.releaseCompressionManagers()
 		tr = e.turnResult(ctx, err)
 	}
+	afterLoop := stage >= stageLoop
+	stage = stageAfterTurn
 	e.hooks.callAfterTurn(context.WithoutCancel(ctx), turn, &tr)
-	if stage >= stageLoop {
+	if afterLoop {
 		e.storeReply(ctx, &tr)
 		e.clearPending(tr)
 	}
@@ -394,6 +405,7 @@ const (
 	stageBeforeTurn = iota
 	stageStored
 	stageLoop
+	stageAfterTurn
 	stageFinished
 )
 
@@ -640,7 +652,6 @@ func (e *engineTurn) iterate(ctx context.Context) (bool, error) {
 	defs := e.toolDefinitions()
 	promptEstimate := e.assemble(ctx, defs)
 	d := e.newDispatch(ctx, defs, promptEstimate)
-	e.logRequest(d)
 
 	response, err := e.requestModel(ctx, d)
 	if err != nil {

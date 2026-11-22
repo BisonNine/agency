@@ -284,7 +284,8 @@ func (al *AgentLoop) attachInboundMedia(ctx context.Context, agent *AgentInstanc
 
 // decideModelReply turns the model's reply into the turn's (AfterTurn):
 // intentional silence and empty replies are handled, and what the engine
-// stores and the chat is sent are decided. A turn that failed, or that
+// stores, the chat is sent and whether its typing indicator is cleared
+// (once the turn finished) are decided. A turn that failed, or that
 // BeforeTurn answered, is left as it is.
 func (al *AgentLoop) decideModelReply(agent *AgentInstance, opts processOptions, st *turnState, r *hook.TurnResult) {
 	if r.Err != nil || r.Skipped {
@@ -303,7 +304,7 @@ func (al *AgentLoop) decideModelReply(agent *AgentInstance, opts processOptions,
 	if isNoResponseSentinel(reply.content) {
 		logger.DebugCF("agent", "LLM declined to respond (no-response sentinel)",
 			map[string]any{"agent_id": agent.ID, "session_key": opts.SessionKey})
-		al.stopTyping(opts.Channel, opts.ChatID)
+		st.stopTyping = true
 		opts.setOutcome(bus.OutcomeEmpty)
 		decided = turnReply{outcome: hook.OutcomeEmpty}
 		r.Stored = ""
@@ -322,7 +323,7 @@ func (al *AgentLoop) decideModelReply(agent *AgentInstance, opts processOptions,
 		fallback, outcome := al.emptyReply(agent, opts, reply)
 		opts.setOutcome(outcome)
 		if fallback == "" {
-			al.stopTyping(opts.Channel, opts.ChatID)
+			st.stopTyping = true
 			decided = turnReply{outcome: hook.Outcome(outcome)}
 			r.Stored = ""
 			return
@@ -335,7 +336,7 @@ func (al *AgentLoop) decideModelReply(agent *AgentInstance, opts processOptions,
 		// Images alone, all sent to the chat: a complete reply with no text
 		// to send.
 		opts.setOutcome(bus.OutcomeOK)
-		al.stopTyping(opts.Channel, opts.ChatID)
+		st.stopTyping = true
 		decided.imagesOnly = true
 		return
 	}

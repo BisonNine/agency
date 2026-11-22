@@ -53,6 +53,27 @@ type llmDispatch struct {
 	answered hook.ModelRef
 	// supplied: a BeforeModel or OnModelError callback answered, not a model.
 	supplied bool
+	// calling is the model of the provider call in flight, set from its
+	// ModelCallStarted to its ModelCall.
+	calling *hook.ModelRef
+}
+
+// callStarted reports a provider call about to be made.
+func (e *engineTurn) callStarted(ctx context.Context, d *llmDispatch, model hook.ModelRef) {
+	d.calling = &model
+	e.hooks.emit(ctx, hook.ModelCallStarted{EventHeader: e.header(), Iteration: e.iteration, Model: model})
+}
+
+// callAbandoned ends, with its ModelCall, a provider call that panicked, so
+// every ModelCallStarted has its ModelCall.
+func (e *engineTurn) callAbandoned(ctx context.Context, d *llmDispatch) {
+	if d.calling == nil {
+		return
+	}
+	if r := recover(); r != nil {
+		e.modelCallDone(ctx, d, *d.calling, 0, nil, fmt.Errorf("model call panicked: %v", r))
+		panic(r)
+	}
 }
 
 // newDispatch builds the request for this iteration. The model that will
@@ -101,6 +122,9 @@ func (e *engineTurn) requestModel(ctx context.Context, d *llmDispatch) (*spawnll
 			return nil, perr
 		}
 		e.adoptRequest(d, info)
+		if retry == 0 {
+			e.logRequest(d)
+		}
 		if berr != nil {
 			err = berr
 			break
@@ -276,6 +300,7 @@ func (e *engineTurn) dispatchFailed(ctx context.Context, err error) error {
 // provider's own response and a snapshot of the request the call was given.
 // Once the turn's context has ended the call's error is the context's.
 func (e *engineTurn) modelCallDone(ctx context.Context, d *llmDispatch, model hook.ModelRef, elapsed time.Duration, resp *spawnllm.LLMResponse, err error) {
+	d.calling = nil
 	if err != nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
@@ -306,7 +331,8 @@ func (e *engineTurn) callDefaultModel(ctx context.Context, d *llmDispatch, hasTo
 	defer release()
 	c := e.spec.directModel
 	ref := hook.ModelRef{Name: c.Name, Provider: d.provider, Model: c.Name}
-	e.hooks.emit(ctx, hook.ModelCallStarted{EventHeader: e.header(), Iteration: e.iteration, Model: ref})
+	e.callStarted(ctx, d, ref)
+	defer e.callAbandoned(ctx, d)
 	start := time.Now()
 	d.sent = e.requestMessages(hasTools, isCLIClient(client))
 	resp, err := client.Chat(ctx, e.spec.scope.Identity(),
@@ -335,12 +361,13 @@ func (e *engineTurn) callModel(ctx context.Context, d *llmDispatch) (*spawnllm.L
 		d.sent = e.messages
 		return nil, errNoModelConfigured
 	}
+	defer e.callAbandoned(ctx, d)
 	fbResult, err := e.spec.chain.Chat(ctx, e.spec.scope.Identity(), models.Request{Tools: d.defs},
 		// Image parts are dropped for a candidate whose model cannot take
 		// them: a screenshot in history would otherwise fail every turn on
 		// a non-vision candidate.
 		models.WithPrepare(func(c models.Candidate, client spawnllm.LLMProvider, _ models.Request) models.Request {
-			e.hooks.emit(ctx, hook.ModelCallStarted{EventHeader: e.header(), Iteration: e.iteration, Model: candidateRef(c)})
+			e.callStarted(ctx, d, candidateRef(c))
 			d.sent = e.requestMessages(hasTools, isCLIClient(client))
 			return models.Request{
 				Messages: messagesForModel(d.sent, c.Limits.Vision, c.ProviderSpec.RequireReasoningContent, hasTools),

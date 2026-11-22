@@ -31,7 +31,8 @@ import (
 
 // This file is the host side of the turn engine (engine_*.go): today's turn
 // behaviour expressed as the engine's callbacks and event consumers, all
-// registered in newTurnHooks, in the one order the turn relies on.
+// registered in turnHooksFor (and, when the model loop starts,
+// loopPlugins), in the one order the turn relies on.
 
 // turnState is what a turn's consumers keep between events.
 type turnState struct {
@@ -50,8 +51,13 @@ type turnState struct {
 	// answer.
 	replyLines []string
 	lastImages int
-	// reply is what AfterTurn decided, for the consumers of TurnFinished.
-	reply turnReply
+	// reply is what AfterTurn decided, for the consumers of TurnFinished,
+	// and stopTyping whether the chat's typing indicator is cleared.
+	reply      turnReply
+	stopTyping bool
+	// pendingSource: the turn's pending source was recorded when its model
+	// loop started (with the session store's pending marker).
+	pendingSource bool
 }
 
 // turnReply is the reply AfterTurn decided for a turn that answered.
@@ -68,24 +74,6 @@ type turnReply struct {
 	systemError bool
 	iterations  int
 	images      int
-}
-
-// newTurnHooks registers the callbacks and event consumers of one turn of
-// agent on opts, whose model is model. ctx is the context the turn's
-// notices and stream are published on.
-func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) *turnHooks {
-	h, _ := al.buildTurnHooks(ctx, agent, opts, model)
-	return h
-}
-
-// buildTurnHooks is newTurnHooks with the consumers' state, with the
-// per-chat plugins of the model loop registered at once (loopPlugins).
-func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*turnHooks, *turnState) {
-	h, st := al.turnHooksFor(ctx, agent, &opts, model, nil)
-	for _, p := range al.loopPlugins(ctx, agent, opts, st)(ctx) {
-		h.add(p)
-	}
-	return h, st
 }
 
 // compactionNoticePlugin tells the turn's person of a compaction it waits on
@@ -204,6 +192,17 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 			}
 		case hook.TurnFinished:
 			al.endTurn(ctx, agent, o, st)
+			if st.stopTyping {
+				al.stopTyping(o.Channel, o.ChatID)
+			}
+			if errors.Is(e.Err, errNoModelConfigured) {
+				// A turn with no model makes no provider call, but has always
+				// written its "LLM finish" line.
+				al.emitFinish(evCtx, agent, o, hook.ModelCall{Iteration: e.Iterations, Model: hook.ModelRef{Name: model, Model: model}, Err: errNoModelConfigured})
+			}
+			if st.pendingSource && (e.Err == nil || !errors.Is(e.Cause, hook.ErrShutdown)) {
+				al.clearPendingTurnSource(agent.ID, o.SessionKey)
+			}
 			al.reportStoreRefusal(agent, o.SessionKey, e.Err)
 			al.reportSessionSave(agent, o.SessionKey, e.TurnResult)
 			al.sendModelReply(ctx, agent, o, st, e.TurnResult)
@@ -212,12 +211,17 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 	return h, st
 }
 
-// loopPlugins returns what registers, when the model loop of a turn starts
-// (after its message is stored), the plugins that read per-chat settings
-// there, and starts the progress heartbeat: the streaming of partial text,
-// the fallback notice and the tool breadcrumbs.
+// loopPlugins returns what runs when the model loop of a turn starts, after
+// its message is stored and the turn marked pending: it records the pending
+// turn's source, starts the progress heartbeat and registers the plugins
+// that read per-chat settings there (the streaming of partial text, the
+// fallback notice and the tool breadcrumbs).
 func (al *AgentLoop) loopPlugins(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState) func(context.Context) []hook.Plugin {
-	return func(context.Context) []hook.Plugin {
+	return func(loopCtx context.Context) []hook.Plugin {
+		// The session store has just marked the turn pending: its source is
+		// recorded with it, so a restart's replay still owes the sender.
+		al.recordPendingTurnSource(loopCtx, agent, opts)
+		st.pendingSource = true
 		var plugins []hook.Plugin
 		// Partial-text streaming: a channel that opts in gets the model's
 		// text as it is generated, coalesced into sentence/length chunks. One
@@ -253,24 +257,12 @@ func (al *AgentLoop) loopPlugins(ctx context.Context, agent *AgentInstance, opts
 // turnPlugin readies a turn of agent before anything of it is stored
 // (BeforeTurn): a session_clear handoff releases the session's pins and
 // reissues its token, a single-shot turn starts blank, whispers held for the
-// agent open its message and the inbound media are described and pinned;
-// the turn is recorded as pending with its source. After the turn
-// (AfterTurn) the source is cleared, unless shutdown stopped it.
+// agent open its message and the inbound media are described and pinned.
 func (al *AgentLoop) turnPlugin(agent *AgentInstance, opts *processOptions, cm ctxengine.ContextManager) hook.Plugin {
 	return hook.Plugin{
 		Name: "session",
 		BeforeTurn: func(ctx context.Context, turn *hook.Turn) (*hook.TurnResult, error) {
-			if err := al.prepareSession(ctx, agent, cm, opts, turn); err != nil {
-				return nil, err
-			}
-			al.recordPendingTurnSource(ctx, agent, *opts)
-			return nil, nil
-		},
-		AfterTurn: func(_ context.Context, _ *hook.Turn, r *hook.TurnResult) {
-			if r.Err != nil && errors.Is(r.Cause, hook.ErrShutdown) {
-				return
-			}
-			al.clearPendingTurnSource(agent.ID, opts.SessionKey)
+			return nil, al.prepareSession(ctx, agent, cm, opts, turn)
 		},
 	}
 }
@@ -500,7 +492,11 @@ func (e *llmTurnEnv) compressionManager() (ctxengine.ContextManager, func()) {
 	return e.al.getContextManager(e.agent, e.opts.SessionKey)
 }
 
+// sessionSummary is "" for an agent without a session store.
 func (e *llmTurnEnv) sessionSummary() string {
+	if e.agent.Sessions == nil {
+		return ""
+	}
 	return e.agent.Sessions.GetSummary(e.opts.SessionKey)
 }
 

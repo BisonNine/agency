@@ -149,3 +149,17 @@ func TestLoopPlugins_ReadPerChatSettingsAtLoopStart(t *testing.T) {
 		t.Fatalf("plugins at loop start = %v", names)
 	}
 }
+
+// A step-changing callback's panic ends a host turn as a panic in the turn
+// always has: its value reaches the caller (processMessageSafely turns it
+// into the "internal error while processing the message" reply).
+func TestTurnOutcome_CallbackPanicReachesTheCaller(t *testing.T) {
+	al := &AgentLoop{}
+	defer func() {
+		if r := recover(); r != "Bob's bug" {
+			t.Fatalf("recovered %v, want the callback's panic value", r)
+		}
+	}()
+	_, err := al.turnOutcome(&engineTurn{}, &hook.PanicError{Callback: "AfterModel", Plugin: "images", Value: "Bob's bug"})
+	t.Fatalf("turnOutcome returned %v instead of panicking", err)
+}

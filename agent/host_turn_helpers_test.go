@@ -83,3 +83,20 @@ func (f *firstAssembly) Assemble(ctx context.Context, req ctxengine.AssembleRequ
 	}
 	return f.ContextManager.Assemble(ctx, req)
 }
+
+// newTurnHooks registers the callbacks and event consumers of one turn of
+// agent on opts, whose model is model, for tests that drive them with events.
+func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) *turnHooks {
+	h, _ := al.buildTurnHooks(ctx, agent, opts, model)
+	return h
+}
+
+// buildTurnHooks is newTurnHooks with the consumers' state, with the
+// per-chat plugins of the model loop registered at once (loopPlugins).
+func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*turnHooks, *turnState) {
+	h, st := al.turnHooksFor(ctx, agent, &opts, model, nil)
+	for _, p := range al.loopPlugins(ctx, agent, opts, st)(ctx) {
+		h.add(p)
+	}
+	return h, st
+}

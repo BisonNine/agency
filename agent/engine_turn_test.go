@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
@@ -802,18 +803,19 @@ func TestEngine_ToolCallbackPanicFailsTheCall(t *testing.T) {
 	}
 }
 
-// An observer that panics is logged and skipped: the turn goes on.
+// An observer that panics during the turn is logged and skipped: the turn
+// goes on.
 func TestEngine_ObserverPanicIsSkipped(t *testing.T) {
-	p := modelstest.New().Script("alice-wire", modelstest.Reply("done"))
+	first := modelstest.New().Script("alice-wire", modelstest.Fail(errors.New("503 overloaded")))
+	second := modelstest.New().Script("bob-wire", modelstest.Reply("done"))
 	clk := newFake()
-	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+	_, chain := testChain(t, clk,
+		engineModel{name: "Alice Model", wire: "alice-wire", client: first},
+		engineModel{name: "Bob Model", wire: "bob-wire", client: second})
 	f := newEngineFixture(t, chain, clk)
-	f.cm.evictOnce = true
 	var buf strings.Builder
 	f.spec.hooks.log = slog.New(slog.NewTextHandler(&buf, nil))
-	f.spec.hooks.add(hook.Plugin{Name: "bobs-notice", OnCompaction: func(context.Context, hook.Compaction) { panic("Bob's bug") }})
-	ctx := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
-	engineCompactionStart(ctx, ctxengine.CompactionStart{SessionKey: "s", Blocking: true})
+	f.spec.hooks.add(hook.Plugin{Name: "bobs-notice", OnFallback: func(context.Context, hook.Fallback) { panic("Bob's bug") }})
 	_, res, err := f.run(t)
 	if err != nil || res.content != "done" {
 		t.Fatalf("run = %+v, %v", res, err)
@@ -822,6 +824,53 @@ func TestEngine_ObserverPanicIsSkipped(t *testing.T) {
 		t.Fatalf("log = %s", out)
 	}
 }
+
+// A provider call that panics still gets its ModelCall, and a turn whose
+// loop panics still runs AfterTurn and clears its pending marker before its
+// one TurnFinished with OutcomeError.
+func TestEngine_LoopPanicEndsTheSpan(t *testing.T) {
+	clk := newFake()
+	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: panickyClient{}})
+	f := newEngineFixture(t, chain, clk)
+	var afterTurn bool
+	f.spec.hooks.add(hook.Plugin{Name: "watch", AfterTurn: func(context.Context, *hook.Turn, *hook.TurnResult) { afterTurn = true }})
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("the panic did not reach the caller")
+			}
+		}()
+		_, _, err := f.run(t)
+		t.Errorf("run returned (%v) instead of panicking", err)
+	}()
+	kinds := f.rec.kinds()
+	if countOf(kinds, "TurnFinished") != 1 || f.rec.all()[len(kinds)-1].(hook.TurnFinished).Outcome != hook.OutcomeError {
+		t.Fatalf("events = %v", kinds)
+	}
+	started, calls := 0, 0
+	for _, ev := range f.rec.all() {
+		switch ev.(type) {
+		case hook.ModelCallStarted:
+			started++
+		case hook.ModelCall:
+			calls++
+		}
+	}
+	if started != 1 || calls != 1 {
+		t.Fatalf("%d ModelCallStarted, %d ModelCall", started, calls)
+	}
+	if !afterTurn || !slices.Equal(f.store.events(), []string{"pending", "cleared"}) {
+		t.Fatalf("AfterTurn ran %v, store %v", afterTurn, f.store.events())
+	}
+}
+
+// panickyClient is a provider client that panics.
+type panickyClient struct{}
+
+func (panickyClient) Chat(context.Context, accounting.Identity, []spawnllm.Message, []spawnllm.ToolDefinition, string, map[string]any) (*spawnllm.LLMResponse, error) {
+	panic("Bob's bug")
+}
+func (panickyClient) GetDefaultModel() string { return "alice-wire" }
 
 // An AfterModel that sets the response to nil changes nothing: the turn goes
 // on with the response it was given.
