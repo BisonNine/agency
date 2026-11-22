@@ -1718,13 +1718,19 @@ next session must know.
     do not end merged device runs. Proposed `hook` addition for 5c, not
     yet in the SDK: `TaskRegistrar`/`TaskHandle` (`StartTask`, `Detach`,
     `Finish`), `WithTaskRegistrar`/`TaskRegistrarFrom`, `TaskID(ctx)`.
-  - Queued host steps before 5c: (1) maintainer's rule on empty model
-    lists: an agent whose chat list resolves to nothing fails with "no
-    model configured" (no run on the default model's client), and a
-    summarization entry that does not resolve is skipped in favour of
-    the agent's primary model; inheriting `agents.defaults.models`
-    stays; both BREAKING. (2) Pick up the SDK session-store fixes
-    (8be4016 message loss, 9cc043a key guard) with a `Fixed` entry.
+  - Done after 5b (host aa1317d, 3dd42d6; changelog 0.6.6, two
+    BREAKING and one Fixed): the maintainer's rule on empty model
+    lists. An agent whose chat list resolves to nothing fails with "no
+    model configured" (no run on the default model's client; this also
+    closed a human agent's conversation reaching a model when its human
+    model was disabled), and a memory model that is not in the model
+    list is skipped in favour of the agent's own first model. Check Up
+    marks both states. Kept, decided by the maintainer: inheriting
+    `agents.defaults.models` when an agent defines none, and the prune
+    at load of unknown model names (with its alert), after which such
+    an agent runs on the defaults. The SDK session-store fixes are
+    picked up (message loss on stop or restart; the key guard).
+  - Browser suite: 178/178 on the dev instance at 3dd42d6.
 - [ ] Phase 5c: engine moved, root package, conformance suite
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
