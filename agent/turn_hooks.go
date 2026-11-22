@@ -357,7 +357,7 @@ func (al *AgentLoop) runModelTurn(
 // or its error in the host's words.
 func (al *AgentLoop) turnOutcome(turn *engineTurn, err error) (string, error) {
 	if perr, ok := errors.AsType[*hook.PanicError](err); ok {
-		panic(&callbackPanic{perr: perr})
+		panic(&callbackPanicError{perr: perr})
 	}
 	if se, ok := errors.AsType[*hook.SessionStoreError](err); ok {
 		return "", storeRefusalError(se.What, se.Err)
@@ -368,18 +368,18 @@ func (al *AgentLoop) turnOutcome(turn *engineTurn, err error) (string, error) {
 	return turn.handle.result.Reply, nil
 }
 
-// callbackPanic is a step-changing callback's panic going on to the turn's
+// callbackPanicError is a step-changing callback's panic going on to the turn's
 // caller: it reads as the panic's value, as the panic always has, and keeps
 // the stack of the callback that panicked.
-type callbackPanic struct{ perr *hook.PanicError }
+type callbackPanicError struct{ perr *hook.PanicError }
 
-func (p *callbackPanic) Error() string { return fmt.Sprintf("%v", p.perr.Value) }
-func (p *callbackPanic) Unwrap() error { return p.perr }
+func (p *callbackPanicError) Error() string { return fmt.Sprintf("%v", p.perr.Value) }
+func (p *callbackPanicError) Unwrap() error { return p.perr }
 
 // panicReport is a recovered panic's value and stack as the turn's panic
 // line logs them: a callback's panic with the callback's own stack.
 func panicReport(r any) (value, stack string) {
-	if p, ok := r.(*callbackPanic); ok {
+	if p, ok := r.(*callbackPanicError); ok {
 		return fmt.Sprintf("%v", p.perr.Value), string(p.perr.Stack)
 	}
 	return fmt.Sprintf("%v", r), string(debug.Stack())
