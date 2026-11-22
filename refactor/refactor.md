@@ -1669,16 +1669,18 @@ next session must know.
   - Fixed on the way (changelog 0.6.6): an attachment in a message that
     compacted the context on its first step reached the model as a raw
     reference.
-  - Known bug, same family, NOT fixed yet (also on released code): when
-    a LATER step's assembly compacts or evicts, the stored history with
-    `media://` references is sent unresolved from then on (the media
-    step runs only on the first dispatch).
-  - Three interim seams remain, each waiting for an SDK addition before
-    5c: `responseLogFields` (the host's fields on the engine's "LLM
-    response" line), `formatRequest` (the host-wide no-truncate switch),
-    `directClients`/`spec.direct` (`models.Catalog.Direct` needs options
-    for an empty candidate provider and the agent's own limits). Also
-    `loopPlugins` (per-chat settings read when the model loop starts).
+  - Fixed after 5a (host 956874a, 2efa766; changelog 0.6.6): when a
+    later step's assembly compacted or evicted, attachments went to the
+    model as raw references. `requestMediaPlugin` now acts on
+    `hook.ModelInfo.Rebuilt`.
+  - Interim seams: `responseLogFields` and `formatRequest` are gone
+    (host 2efa766; SDK 81e2628). Two remain, each waiting for an SDK
+    follow-up (branch `seams2`): `directClients`/`spec.direct`
+    (`Catalog.Direct` must accept an empty model id, which
+    `"models": [""]` produces today) and `loopPlugins` (needs a
+    `BeforeLoop` step callback: an event there would change the wire
+    request or the read point of the channel's streaming capability,
+    and would swallow a set-up panic).
   - Decided for now, to confirm with the maintainer: ids unchanged
     (`ident` not adopted by the host, because
     `SameAgentID("!!!","main")` would turn false); the host keeps its
@@ -1688,6 +1690,15 @@ next session must know.
 - [ ] Phase 5c: engine moved, root package, conformance suite
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
+  - SDK half done (SDK 181800b): endpoint, session-token store,
+    authenticator seam, CLI helper; its report has the host adoption
+    checklist. Differences the host adoption must reconcile against
+    `tests/test_mcpserver.sh` before anything lands: a tool panic
+    returns a tool error instead of a protocol error; the nil-result
+    text; published names follow toolkit's no-shadow rule; the session
+    key is on every tool's context.
+  - SDK extras landed for 5c: none yet for the in-memory session store
+    (branch `memstore`, in progress).
 - [x] Background shell (`refactor/bash.md`): SDK `toolbox/shell`
       (2d85433, 34d16bd); host mount f4f9306, old tool removed. The
       capabilities golden changed once, for `shell_ctrl` (the fixture
