@@ -198,19 +198,11 @@ func (r *ToolRegistry) SearchRegex(pattern string, maxSearchResults int) ([]Tool
 		return nil, fmt.Errorf("failed to compile regex pattern %q: %w", pattern, err)
 	}
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	published := r.publishedNamesLocked()
 	var results []ToolSearchResult
-	// Iterate in sorted order for deterministic results across calls.
-	for _, name := range r.sortedToolNames() {
-		entry := r.tools[name]
-		if entry.IsCore {
-			continue // core tools are already loaded
-		}
-		adv := published[name]
-		desc := entry.Tool.Description()
+	// Hidden is sorted by internal name, for deterministic results across calls.
+	for _, info := range r.cat.Hidden() {
+		adv := info.Published
+		desc := info.Tool.Description()
 		if regex.MatchString(adv) || regex.MatchString(desc) {
 			results = append(results, ToolSearchResult{Name: adv, Description: desc})
 			if len(results) >= maxSearchResults {

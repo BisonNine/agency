@@ -23,10 +23,11 @@ toolspec, aliased as global  (transport-neutral, stdlib-only)
         │  ToolProvider / ToolDefinition / Parameter / ToolCall / Result / Deps
         ▼
 tools.NamespacedProvider("<ns>", pkg.GlobalProvider)   ← applies the "<ns>_" prefix
-        │  bridges global.* into the legacy tools.Tool / tools.ToolProvider world
+        │  each definition becomes a tools.Tool through toolkit.FromSpec
         ▼
 tools registry  (RegisterProvider / GetProviders)
         ├──► agent loop  → per-agent *tools.ToolRegistry  → LLM tool calling
+        │                  (a wrapper over a toolkit.Catalog)
         ├──► mcpserver (WithAgentRegistries)               → MCP /mcp
         └──► web/backend/api/agents.go (Describe)          → WebUI catalogue
 ```
@@ -285,6 +286,41 @@ network/LLM tools.
 - **Schema:** prefer `Parameters`; use `RawSchema` only to carry an existing
   hand-written schema during migration.
 
+### The per-agent registry
+
+The tool core — `Tool` and its optional interfaces (`AsyncExecutor`,
+`SessionScoped`, `ExternalNamer`, `DiscoveryGrouped`), `ToolResult` and its
+constructors, `Refusal`, the per-call context helpers (`WithToolContext`,
+`ToolChannel`, `ToolChatID`, `WithSessionKey`, `ToolSessionKey`), the toolspec
+bridge and the tool-call tally — is the SDK's `toolkit` package. `tools`
+re-exports each under its historical name (`tools/toolkit.go`), so tool
+packages import only `tools`.
+
+`tools.ToolRegistry` is one agent's tools: a thin wrapper over a
+`*toolkit.Catalog` that keeps the host's method set and adds its rules.
+
+| Method | Catalogue call |
+|---|---|
+| `Register` | `Put(Entry{Tool})` |
+| `RegisterHidden`, `RegisterHiddenGroup` | `Put(Entry{Hidden: true, Group, RevealTogether})` |
+| `RegisterSuite*` | the same `Put`; the wrapper records the name as suite-exempt |
+| `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (`Hidden = !IsCore`), returning the removed count |
+| `Get`, `List`, `Count`, `Version`, `ExecuteUnattended` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version`, `ExecuteUnattended` |
+| `GetDefinitions`, `GetSummaries` | `Listed()` |
+| `ToProviderDefs` | `Snapshot().List()` (`Name = Published`, `Deferred = Hidden`) |
+| `SnapshotHiddenTools`, `HiddenNamespaces`, discovery | `Snapshot().Hidden()` |
+
+`ExecuteWithContext` looks the tool up, applies the agent's allow checker from
+the context (`WithToolAllowChecker`: a denied tool is refused with
+`NotEnabledMessage`; a suite tool skips the allow list but not the deny list),
+puts the chat (`toolkit.WithChat`) and the agent id of the turn
+(`toolkit.WithAgentID`, which the toolspec bridge hands to handlers as
+`call.AgentID`) on the context, and runs it through the catalogue.
+
+Changes are safe at any time, including mid-turn: a write is visible to the
+next read as soon as it returns, the next `ToProviderDefs` carries it, and a
+call to a tool removed since the model's list returns an ordinary tool error.
+
 ---
 
 ## 5. Importing as an external module
@@ -337,8 +373,11 @@ host supplies the concrete implementation.
 | Thing | Location |
 |---|---|
 | Transport-neutral types | `go.bison9.com/agent/toolspec` (aliases in `global/tools.go`) |
-| Namespacing bridge | `tools/namespaced.go` (`NamespacedProvider`) |
-| Registry | `tools/providers.go` (`RegisterProvider` / `GetProviders`) |
+| Tool core (`Tool`, results, context helpers, bridge) | `go.bison9.com/agent/toolkit` (aliases in `tools/toolkit.go`) |
+| Namespacing adapter | `tools/namespaced.go` (`NamespacedProvider`, over `toolkit.FromSpec`) |
+| Provider list | `tools/providers.go` (`RegisterProvider` / `GetProviders`) |
+| Per-agent registry | `tools/registry.go` (`ToolRegistry`, over a `toolkit.Catalog`) |
+| Untrusted-content marking | `go.bison9.com/agent/toolkit/untrusted` (re-exported by `tools/untrusted`) |
 | **Aggregator (wire new modules here)** | `internal/gateway/tool_providers.go` |
 | Per-module entry points | `tools/<ns>/global_provider.go` (`var GlobalProvider`) |
 | Sub-agent recursion bound | `agents.defaults.max_subagent_depth` (`tools/agents/depth.go`) |

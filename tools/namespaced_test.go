@@ -113,7 +113,12 @@ func TestNamespacedProvider_AsyncAndSessionInterfaces(t *testing.T) {
 		t.Fatalf("expected notify callback to deliver 'done', got %+v", got)
 	}
 	// The non-async, non-session tool must NOT satisfy those interfaces.
-	read := wrapGlobalTool("file", fakeGlobalProvider{}.RegisterTools(global.Deps{})[0])
+	var read Tool
+	for _, tl := range p.Build(ToolDeps{}) {
+		if tl.Name() == "file_read" {
+			read = tl
+		}
+	}
 	if _, ok := read.(AsyncExecutor); ok {
 		t.Fatal("file_read must not be AsyncExecutor")
 	}

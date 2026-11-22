@@ -308,11 +308,9 @@ func TestRegistry_ExecuteWithContext_TruncatesErrorForLLM(t *testing.T) {
 	if errField == "" {
 		t.Fatal("error field not found in failure log line")
 	}
-	if len([]rune(errField)) > 500 {
-		t.Errorf("error field not truncated to 500 runes: got %d", len([]rune(errField)))
-	}
-	if !strings.HasSuffix(errField, "...") {
-		t.Errorf("expected truncation marker, got tail %q", tail(errField, 20))
+	// About 500 runes plus a truncation marker; the exact marker is toolkit's.
+	if n := len([]rune(errField)); n > 503 {
+		t.Errorf("error field not truncated to about 500 runes: got %d (tail %q)", n, tail(errField, 20))
 	}
 }
 

@@ -23,15 +23,6 @@ type MCPManager interface {
 	) (*mcp.CallToolResult, error)
 }
 
-// ExternalNamer is implemented by tools that should be advertised to external MCP
-// clients under a different name than their internal registry name. The MCP host
-// asks the tool for this name structurally rather than inspecting name prefixes,
-// so the published catalogue reads cleanly (e.g. "<server>_<tool>") while internal
-// gating and dispatch keep using the registry name.
-type ExternalNamer interface {
-	ExternalName() string
-}
-
 // MCPTool wraps an MCP tool to implement the Tool interface
 type MCPTool struct {
 	manager    MCPManager

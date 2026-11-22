@@ -10,8 +10,8 @@ import (
 )
 
 // TestSDKImportsNoClawEh enforces the architectural invariant that the agent
-// SDK (go.bison9.com/agent: toolspec, spawnllm, ctxengine, cogmem, accounting,
-// fsmode, modelspec) never imports a host: no package of it may depend on
+// SDK (go.bison9.com/agent: toolspec, toolkit, spawnllm, ctxengine, cogmem,
+// accounting, fsmode, modelspec) never imports a host: no package of it may depend on
 // ClawEh. If this fails, a ClawEh import crept into the SDK and the module
 // dependency graph is at risk of a cycle.
 func TestSDKImportsNoClawEh(t *testing.T) {
@@ -19,17 +19,20 @@ func TestSDKImportsNoClawEh(t *testing.T) {
 	if err != nil {
 		t.Skipf("go list unavailable: %v\n%s", err, out)
 	}
-	sawSpawnllm := false
+	sawSpawnllm, sawToolkit := false, false
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "go.bison9.com/agency") {
 			t.Fatalf("the agent SDK must not import a host, but depends on %q", line)
 		}
-		if line == "go.bison9.com/agent/spawnllm" {
+		switch line {
+		case "go.bison9.com/agent/spawnllm":
 			sawSpawnllm = true
+		case "go.bison9.com/agent/toolkit":
+			sawToolkit = true
 		}
 	}
-	if !sawSpawnllm {
+	if !sawSpawnllm || !sawToolkit {
 		t.Fatalf("go list did not list the SDK's packages; output:\n%s", out)
 	}
 }

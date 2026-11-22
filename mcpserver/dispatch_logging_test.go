@@ -177,23 +177,15 @@ func TestDispatch_NoRegistryEmitsWarn(t *testing.T) {
 	}
 }
 
-// TestRegistry_PanicsOnNilToolResult pins the contract that makes the
+// TestRegistry_NilToolResultIsAnError pins the contract that makes the
 // `result == nil` branch in dispatchToolCall a defence-in-depth guard rather
-// than a reachable path: today *tools.ToolRegistry.Execute panics if the
-// underlying tool returns nil (it dereferences result.IsError before
-// returning). If that contract ever changes, dispatchToolCall is ready to
-// log a WARN instead of NPE'ing — but until then the path is unreachable
-// from a unit test that goes through a real registry.
-func TestRegistry_PanicsOnNilToolResult(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected registry.Execute to panic on nil tool result; if it now returns nil, " +
-				"replace this test with one that exercises dispatchToolCall's nil-result WARN path " +
-				`and asserts reason="nil_result" alongside tool/agent fields`)
-		}
-	}()
-
+// than a reachable path: a tool that returns nil yields an ordinary error
+// result from the registry, never a nil result and never a panic.
+func TestRegistry_NilToolResultIsAnError(t *testing.T) {
 	nilOut := &mockTool{name: "read_file", params: map[string]any{}, result: nil}
 	reg := newRegistryWith(nilOut)
-	_ = reg.Execute(context.Background(), "read_file", map[string]any{})
+	res := reg.Execute(context.Background(), "read_file", map[string]any{})
+	if res == nil || !res.IsError || res.ForLLM != "tool returned no result" {
+		t.Fatalf("nil tool result = %+v, want the error result %q", res, "tool returned no result")
+	}
 }

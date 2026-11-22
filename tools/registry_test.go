@@ -374,28 +374,6 @@ func TestToolRegistry_GetSummaries(t *testing.T) {
 	}
 }
 
-func TestToolToSchema(t *testing.T) {
-	tool := newMockTool("demo", "demo tool")
-	schema := ToolToSchema(tool)
-
-	if schema["type"] != "function" {
-		t.Errorf("expected type 'function', got %v", schema["type"])
-	}
-	fn, ok := schema["function"].(map[string]any)
-	if !ok {
-		t.Fatal("expected 'function' to be a map")
-	}
-	if fn["name"] != "demo" {
-		t.Errorf("expected name 'demo', got %v", fn["name"])
-	}
-	if fn["description"] != "demo tool" {
-		t.Errorf("expected description 'demo tool', got %v", fn["description"])
-	}
-	if fn["parameters"] == nil {
-		t.Error("expected parameters to be set")
-	}
-}
-
 func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 	r := NewToolRegistry()
 	var wg sync.WaitGroup

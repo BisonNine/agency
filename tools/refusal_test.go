@@ -3,41 +3,11 @@ package tools
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
 	"go.bison9.com/agency/logger"
 )
-
-// externalRefusalError is how a package that does not import tools marks a refusal.
-type externalRefusalError struct{ error }
-
-func (externalRefusalError) Refusal() bool { return true }
-
-func TestIsExpectedRefusal(t *testing.T) {
-	base := errors.New("no")
-	for _, tc := range []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"nil", nil, false},
-		{"plain error", base, false},
-		{"marked", Refusal(base), true},
-		{"marked and wrapped", fmt.Errorf("call: %w", Refusal(base)), true},
-		{"marked by another package", externalRefusalError{base}, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := IsExpectedRefusal(tc.err); got != tc.want {
-				t.Fatalf("IsExpectedRefusal = %v, want %v", got, tc.want)
-			}
-		})
-	}
-	if !errors.Is(Refusal(base), base) {
-		t.Fatal("Refusal must wrap its error")
-	}
-}
 
 // An expected refusal is logged as a warning; a genuine failure as an error.
 func TestRegistry_RefusalLoggedAtWarn(t *testing.T) {
