@@ -1,4 +1,4 @@
-# ClawEh — Project Instructions for Claude Code
+# Agency — Project Instructions for Claude Code
 
 ## Keep this file current — that is your job
 
@@ -199,13 +199,13 @@ started with an operator surprised by their own configuration.
 The product will be renamed; a rename must be an edit to `app/app.go` only.
 No other file holds the product name as a string. Three accessors:
 
-- `app.Name()` ("ClawEh") identifies the product: page title, version line,
+- `app.Name()` ("Agency") identifies the product: page title, version line,
   report and Check Up header, About text, User-Agent, copyright lines, the
   Signal linked-device label, MCP client/server implementation name.
-- `app.ShortName()` ("Claw") in running prose: log lines, alert titles and
+- `app.ShortName()` ("Agency") in running prose: log lines, alert titles and
   descriptions, errors and notices, CLI help sentences, WebUI sentences, and
   model-facing text (system prompt header, guides). Written as the constant
-  gives it ("Claw is shutting down").
+  gives it ("Agency is shutting down").
 - `app.BinaryName()` is the name the program was started as (base of
   `os.Args[0]`), for anything telling someone what to type (`<binary> admin`,
   hints in errors and help, the cobra root `Use`). Under `go test` it is the
@@ -1259,14 +1259,13 @@ exported; it exits 2 with a hint otherwise.
   frontend typecheck, oxlint and vitest, none of which load a page.
 
 ## Workflow Rules
-- All work for the version in development lands on one branch, `dev/<version>`
-  (the version in `app/app.go`, e.g. `dev/0.6.1`). Start every worktree from
+- During the refactor (`refactor/refactor.md`) all work lands on one branch,
+  `refactor`. Start every worktree from
   its tip, never from another piece of in-progress work, and land tested work
   back on it (fast-forward push, or a small PR with it as base) as soon as it
   passes, then remove the worktree. Commit and push at logical points (a
   tested, self-contained step) without waiting to be asked.
-- `main` holds released code only: it receives one PR from the dev branch when
-  the release is cut. Never push directly to main.
+- `main` stays empty until the refactor is done. Never push directly to main.
 - **Never create, move, or delete git tags.** Tags are cut by the release build
   process when binaries are uploaded — they are release markers, not commit
   markers. Bumping the `version` constant in `app/app.go` is a normal code
@@ -1282,7 +1281,7 @@ exported; it exits 2 with a hint otherwise.
   `version = "..."` line.
 - Always compile after edits before declaring done: `go build ./...` for Go changes, and `cd web/frontend && pnpm run build:backend` for frontend/TypeScript changes. The frontend bundle lands in `web/backend/dist`, which is embedded by `web/backend/embed.go` into the merged claw binary.
 - When investigating a problem, report findings and wait for approval before implementing.
-- **Finishing a task:** the operator tests from the main checkout, `~/source/claw`
+- **Finishing a task:** the operator tests from the main checkout, `~/source/b9/agency`
   (always written with `~/`, never an absolute home path, so no username or
   directory layout lands in the repository). Before reporting a task done,
   confirm that the finished, committed work is at the tip of the current

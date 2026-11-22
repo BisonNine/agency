@@ -1,6 +1,6 @@
-# ClawEh: Yet another claw - Canadian style
+# Agency
 
-**ClawEh is a self-hosted application for long-running AI assistants: several agents, each with its own models, tools, memory and channels, managed from one web interface.**
+**Agency (formerly ClawEh) is a self-hosted application for long-running AI assistants: several agents, each with its own models, tools, memory and channels, managed from one web interface.**
 
 Written in Go, the code compiles into a single binary that you can download from Github releases, or you can compile it yourself.
 
@@ -30,7 +30,7 @@ Run several named agents side by side. Each has its own workspace, models, tools
 
 ### API and CLI models
 
-Use cloud APIs (Anthropic, OpenAI, Google, x.ai and others), [OpenRouter](manual/providers/openrouter.md), [Amazon Bedrock](manual/providers/bedrock.md) or [local models](manual/providers/local-models.md) through their APIs, or run [CLI agents](manual/providers/cli-providers.md) such as Claude Code, Codex, Antigravity and Cursor as an agent's model. Each agent has an ordered list of models. When one fails or runs into rate limits, ClawEh falls back to the next and keeps the failed one in cooldown. See [Providers, models and fallback](manual/providers/concepts.md).
+Use cloud APIs (Anthropic, OpenAI, Google, x.ai and others), [OpenRouter](manual/providers/openrouter.md), [Amazon Bedrock](manual/providers/bedrock.md) or [local models](manual/providers/local-models.md) through their APIs, or run [CLI agents](manual/providers/cli-providers.md) such as Claude Code, Codex, Antigravity and Cursor as an agent's model. Each agent has an ordered list of models. When one fails or runs into rate limits, Agency falls back to the next and keeps the failed one in cooldown. See [Providers, models and fallback](manual/providers/concepts.md).
 
 ### Coding harness tools
 
@@ -42,11 +42,11 @@ Agents on API models get the tools a modern coding harness provides: `file_glob`
 
 ### Forums
 
-A [forum](manual/forums/index.md) is a structured discussion among agents that one agent sets up and ClawEh runs to the end: independent opinions from several models, a critique-and-revise cycle for a document, or a review panel for a proposal. Built-in templates cover common setups, and responses can be anonymous so that participants judge the content, not the author.
+A [forum](manual/forums/index.md) is a structured discussion among agents that one agent sets up and Agency runs to the end: independent opinions from several models, a critique-and-revise cycle for a document, or a review panel for a proposal. Built-in templates cover common setups, and responses can be anonymous so that participants judge the content, not the author.
 
 ### MCPFusion hub and configuration-defined MCP servers
 
-[MCPFusion](manual/mcpfusion.md) turns a REST API described in a JSON file into tools, with each agent signing in to the service on its own: Microsoft 365, Google Workspace, Trello, weather services and similar APIs. ClawEh also speaks [MCP](manual/mcp.md) in both directions: it serves its tools to CLI agents and other MCP clients, and connects to external MCP servers whose tools you grant agent by agent.
+[MCPFusion](manual/mcpfusion.md) turns a REST API described in a JSON file into tools, with each agent signing in to the service on its own: Microsoft 365, Google Workspace, Trello, weather services and similar APIs. Agency also speaks [MCP](manual/mcp.md) in both directions: it serves its tools to CLI agents and other MCP clients, and connects to external MCP servers whose tools you grant agent by agent.
 
 ### Speech and image conversion
 
@@ -86,7 +86,7 @@ Agents can set [reminders and recurring jobs](manual/agents/scheduling.md), and 
 
 ### Security Check Up and configuration report
 
-The [Check Up](manual/admin/checkup.md) page lists the settings that most need attention, and its **Full report** button downloads a PDF of everything the install can do: listeners, providers, channels, each agent's tools and folder access, external services and devices. Neither ever shows a credential. HTTPS and [sign-in](manual/admin/login.md) are on by default, every tool is granted per agent, and ClawEh keeps an [audit log](manual/admin/audit.md), sends [alerts](manual/admin/alerts.md) on failures and makes nightly [backups](manual/admin/backup.md).
+The [Check Up](manual/admin/checkup.md) page lists the settings that most need attention, and its **Full report** button downloads a PDF of everything the install can do: listeners, providers, channels, each agent's tools and folder access, external services and devices. Neither ever shows a credential. HTTPS and [sign-in](manual/admin/login.md) are on by default, every tool is granted per agent, and Agency keeps an [audit log](manual/admin/audit.md), sends [alerts](manual/admin/alerts.md) on failures and makes nightly [backups](manual/admin/backup.md).
 
 ### Web UI and user manual
 
@@ -96,7 +96,7 @@ Manage agents, providers, models, channels, MCP connections, memory and settings
 
 The **user manual** covers installing, providers and models, agents, channels, forums, Maestro, MCP, security and administration, and a configuration and command reference:
 
-- in a running ClawEh, open **Manual** in the WebUI (served at `/manual/`);
+- in a running Agency, open **Manual** in the WebUI (served at `/manual/`);
 - in this repository, the Markdown source is under [`manual/`](manual/index.md).
 
 Changes in each release are listed in [CHANGELOG.md](CHANGELOG.md).
@@ -107,7 +107,7 @@ Version 0.6.0 represents a significant evolution toward a more secure business-c
 
 ## Installation
 
-The one-line installer installs ClawEh as a background service, asks for the admin account, and opens the setup wizard:
+The one-line installer installs Agency as a background service, asks for the admin account, and opens the setup wizard:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash
@@ -115,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-in
 
 Or download an archive from [GitHub Releases](https://github.com/PivotLLM/ClawEh/releases) (Linux and macOS, amd64 and arm64) and run `./claw install` (`sudo ./claw install` for a service that starts at boot). Then open **http://localhost:18790** and sign in.
 
-Other options (a bare binary with `claweh.sh`, an unattended install, a headless or remote host) are in the manual: [Installing ClawEh](manual/getting-started/install.md), then [Quick start](manual/getting-started/quickstart.md).
+Other options (a bare binary with `claweh.sh`, an unattended install, a headless or remote host) are in the manual: [Installing Agency](manual/getting-started/install.md), then [Quick start](manual/getting-started/quickstart.md).
 
 ## File layout
 
@@ -184,14 +184,14 @@ See [docs/test.md](docs/test.md) for how the suite is organised. Developer notes
 
 ### Shared modules
 
-Several parts of ClawEh are standalone Go modules so they can be reused (e.g. by Maestro) and compiled into one binary without import cycles:
+Several parts of Agency are standalone Go modules so they can be reused (e.g. by Maestro) and compiled into one binary without import cycles:
 
 - **[`toolspec`](https://github.com/PivotLLM/toolspec)** — the transport-neutral tool contract.
 - **[`spawnllm`](https://github.com/PivotLLM/spawnllm)** — the LLM-dispatch core: provider clients and the tool-call loop.
 - **[`ctxengine`](https://github.com/PivotLLM/ctxengine)** — the context engine: transcript, archive, compaction and the session tools.
 - **[`cogmem`](https://github.com/PivotLLM/cogmem)** — cognitive memory.
 
-Policy (model selection, fallback, cooldown, configuration) remains in ClawEh.
+Policy (model selection, fallback, cooldown, configuration) remains in Agency.
 
 ## Why ClawEh exists
 
@@ -202,11 +202,11 @@ It has since evolved into a separate project with different priorities: a smalle
 ClawEh remains grateful to PicoClaw for the original idea and inspiration.
 
 ## Terms of Use and Compliance
-ClawEh supports a wide range of LLM providers. It is your responsibility to ensure that your use of any provider, API, service, or model is consistent with the applicable terms of service, acceptable use policies, contracts, and legal requirements. This includes use-case restrictions, data handling obligations, and any prohibition on accessing non-public or undocumented APIs. We welcome feedback from any LLM providers on this topic.
+Agency supports a wide range of LLM providers. It is your responsibility to ensure that your use of any provider, API, service, or model is consistent with the applicable terms of service, acceptable use policies, contracts, and legal requirements. This includes use-case restrictions, data handling obligations, and any prohibition on accessing non-public or undocumented APIs. We welcome feedback from any LLM providers on this topic.
 
 ## Security Considerations
 
-ClawEh is intended to function as a personal or small-team assistant that runs on a computer the operator controls. It is not designed or intended to provide any kind of public service.
+Agency is intended to function as a personal or small-team assistant that runs on a computer the operator controls. It is not designed or intended to provide any kind of public service.
 
 The WebUI requires an admin login, HTTPS is on by default, and the **Check Up** page lists the settings that need attention. See [Security and administration](manual/admin/index.md) in the manual.
 
@@ -218,7 +218,7 @@ When enabling tools, including connecting MCP servers, users must carefully cons
 
 Users should also understand that data made available to an assistant through connected tools and services may contain malicious or misleading content. Content from email, chat systems, documents, web pages, issue trackers, or other data sources could potentially be interpreted or acted on by the assistant as if it were an instruction. It is the user's responsibility to ensure that they fully understand the risks, that appropriate security controls are in place, and that, where necessary, appropriate testing has been conducted.
 
-ClawEh does not attempt to determine whether your deployment is appropriately secured for your use case. While it is possible to configure external channels so that other individuals can access assistants, doing so is entirely the user's choice and entirely the user's responsibility. You are solely responsible for deciding whether ClawEh is suitable for your application, whether the security posture is acceptable, and for all consequences of how the software is configured and used.
+Agency does not attempt to determine whether your deployment is appropriately secured for your use case. While it is possible to configure external channels so that other individuals can access assistants, doing so is entirely the user's choice and entirely the user's responsibility. You are solely responsible for deciding whether Agency is suitable for your application, whether the security posture is acceptable, and for all consequences of how the software is configured and used.
 
 Users should also carefully consider the financial implications of connecting applications to LLM APIs and other metered services. A bug, a bad configuration, or accidental exposure through channels like Telegram or Slack can potentially result in large numbers of unintended requests and, in turn, unexpectedly large bills. This risk becomes especially serious when assistants are connected to paid APIs, tools, or automated workflows.
 

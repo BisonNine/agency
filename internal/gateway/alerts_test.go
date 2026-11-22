@@ -11,6 +11,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 
+	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 )
 
@@ -47,7 +48,7 @@ func TestNewAlerter(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 	b, err := os.ReadFile(path)
-	if err != nil || !strings.Contains(string(b), " NORMAL ") || !strings.Contains(string(b), "ClawEh@") {
+	if err != nil || !strings.Contains(string(b), " NORMAL ") || !strings.Contains(string(b), app.Name()+"@") {
 		t.Errorf("alerts file = %q, err = %v", b, err)
 	}
 

@@ -451,7 +451,7 @@
       {
         "id": "claw",
         "default": true,
-        "name": "Claw"
+        "name": "Agency"
       }
     ],
     "base_dir": "/claw-home/agents",

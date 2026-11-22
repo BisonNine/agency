@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/report"
 )
@@ -36,7 +37,7 @@ func TestReportPDF(t *testing.T) {
 	if ct := rr.Header().Get("Content-Type"); ct != "application/pdf" {
 		t.Errorf("Content-Type = %q, want application/pdf", ct)
 	}
-	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, `inline; filename="claweh-report-`) {
+	if cd := rr.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, `inline; filename="`+strings.ToLower(app.Name())+`-report-`) {
 		t.Errorf("Content-Disposition = %q", cd)
 	}
 	if cc := rr.Header().Get("Cache-Control"); cc != "no-store" {

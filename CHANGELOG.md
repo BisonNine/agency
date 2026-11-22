@@ -2,6 +2,14 @@
 
 ## [0.6.6]
 
+### Changed
+
+- **The product is now named Agency** in the WebUI,
+  logs, alerts, reports and messages. Nothing on an install changes: the
+  `claw` binary, the `claw` service, the `~/.claw` data directory, the
+  `CLAW_*` environment variables and the `mcp__claw__` tool prefix keep their
+  names, and `claw upgrade` still fetches releases from the same place.
+
 ## [0.6.5]
 
 ### Added

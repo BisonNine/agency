@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agency/app"
 )
 
 // TestAssess_MatchesCollect: the JSON rows are the PDF's assessment table,
@@ -42,7 +44,7 @@ func TestAssess_MatchesCollect(t *testing.T) {
 	}
 
 	id := a.Identity
-	if id.Name != "ClawEh" || id.Version != env.Version || id.Build != env.BuildTime || !id.GeneratedAt.Equal(env.Now) {
+	if id.Name != app.Name() || id.Version != env.Version || id.Build != env.BuildTime || !id.GeneratedAt.Equal(env.Now) {
 		t.Errorf("identity = %+v", id)
 	}
 	if id.Platform != "linux/amd64 on testbox" {

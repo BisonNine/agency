@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	name      = "ClawEh"
-	shortName = "Claw"
+	name      = "Agency"
+	shortName = "Agency"
 	tagLine   = "Personal AI Assistant"
 	copyright = "Copyright (c) 2026 Tenebris Technologies Inc."
 

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agency/app"
 )
 
 var wantSectionOrder = []string{
@@ -18,7 +20,7 @@ var wantSectionOrder = []string{
 func TestCollect_SectionOrder(t *testing.T) {
 	cfg, env := fixtureConfig(t)
 	r := Collect(t.Context(), cfg, env)
-	if r.Product != "ClawEh" || r.Version != env.Version || !r.GeneratedAt.Equal(env.Now) {
+	if r.Product != app.Name() || r.Version != env.Version || !r.GeneratedAt.Equal(env.Now) {
 		t.Errorf("report header = %q %q %v", r.Product, r.Version, r.GeneratedAt)
 	}
 	if len(r.Sections) != len(wantSectionOrder) {
