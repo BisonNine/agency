@@ -213,6 +213,7 @@ func (s *SessionTokenStore) Register(token, agentID, sessionKey, archiveDir stri
 		// Only an empty token is refused here: the store held neither.
 		logger.WarnCF("mcpserver", "session token not registered",
 			map[string]any{"agent": agentID, "session": sessionKey, "error": err.Error()})
+		delete(s.bySess, sessionKey)
 		return
 	}
 	s.bySess[sessionKey] = token
