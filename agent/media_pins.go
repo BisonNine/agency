@@ -29,6 +29,20 @@ func mediaRefsIn(refs []string) []string {
 	return out
 }
 
+// hasMediaRefs reports whether any message's media list still holds a
+// media:// ref, as history read back from the session store does until
+// resolveMediaRefs resolves it.
+func hasMediaRefs(messages []providers.Message) bool {
+	for i := range messages {
+		for _, ref := range messages[i].Media {
+			if strings.HasPrefix(ref, "media://") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // appendMediaRefMarker appends the attachment-ref marker to message content so
 // the ref survives in stored history even when the media itself is described
 // (Flow B) or stripped for a non-vision model. The refs are actionable: they
@@ -91,8 +105,9 @@ func (al *AgentLoop) pinSessionMediaRefs(sessionKey string, refs []string) {
 }
 
 // reconcileSessionPins resets the session's pin set to the refs currently
-// present in its built context. Run once per turn: refs compacted or cleared
-// out of the context are unpinned and age out via the normal TTL sweep.
+// present in its built context. Run each time a turn's request is built from
+// the session store: refs compacted or cleared out of the context are
+// unpinned and age out via the normal TTL sweep.
 func (al *AgentLoop) reconcileSessionPins(sessionKey string, messages []providers.Message) {
 	p := al.refPinner()
 	if p == nil {

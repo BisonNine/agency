@@ -56,6 +56,28 @@ func TestCollectMediaRefs(t *testing.T) {
 	}
 }
 
+// Only a media:// ref in a media list counts: resolved data URLs, paths and
+// refs folded into the text as attachment markers do not.
+func TestHasMediaRefs(t *testing.T) {
+	tests := []struct {
+		name string
+		msgs []providers.Message
+		want bool
+	}{
+		{"none", []providers.Message{{Role: "user", Content: "hi"}}, false},
+		{"resolved", []providers.Message{{Role: "user", Media: []string{"data:image/png;base64,AA=="}}}, false},
+		{"marker only", []providers.Message{{Role: "user", Content: "[attachment ref(s): media://11111111-1111-1111-1111-111111111111]"}}, false},
+		{"stored ref", []providers.Message{{Role: "user"}, {Role: "user", Media: []string{"data:image/png;base64,AA==", "media://11111111-1111-1111-1111-111111111111"}}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasMediaRefs(tt.msgs); got != tt.want {
+				t.Fatalf("hasMediaRefs = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // End-to-end pin reconcile through the AgentLoop helpers: refs present in the
 // context stay pinned, dropped refs become reapable, release drops everything.
 func TestSessionPinLifecycle(t *testing.T) {

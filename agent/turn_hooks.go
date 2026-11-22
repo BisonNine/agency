@@ -150,7 +150,7 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 	images := &turnImages{al: al, agent: agent, opts: o, model: model}
 	h.add(hook.Plugin{Name: "images", AfterModel: images.afterModel})
 	h.add(hook.Plugin{Name: "reasoning-as-content", AfterModel: al.reasoningAsContent})
-	h.add(hook.Plugin{Name: "first-request", BeforeModel: al.firstRequestPlugin()})
+	h.add(hook.Plugin{Name: "request-media", BeforeModel: al.requestMediaPlugin()})
 
 	h.add(hook.Plugin{Name: "tool-record", OnEvent: func(ctx context.Context, ev hook.Event) {
 		if f, ok := ev.(hook.ToolCallFinished); ok {
@@ -269,17 +269,21 @@ func (al *AgentLoop) turnPlugin(agent *AgentInstance, opts *processOptions, cm c
 	}
 }
 
-// firstRequestPlugin makes the session's pins follow the turn's first
-// request, as assembled, and then resolves its media refs for dispatch:
-// images become base64 data URLs, other media local paths in the content.
-// It acts once per turn, on the first dispatch.
-func (al *AgentLoop) firstRequestPlugin() hook.BeforeModelFunc {
-	var done bool
+// requestMediaPlugin makes the session's pins follow the request each time
+// it is built from the session store, and then resolves its media refs for
+// dispatch: images become base64 data URLs, other media local paths in the
+// content. The turn's first request is built from the store; a later one is
+// when an assembly rewrote the history during the turn (a compaction or an
+// eviction), and it then carries the stored media:// refs again. A request
+// kept from the step before has its media resolved already, so nothing is
+// read again.
+func (al *AgentLoop) requestMediaPlugin() hook.BeforeModelFunc {
+	first := true
 	return func(ctx context.Context, call *hook.ModelInfo) (*providers.LLMResponse, error) {
-		if done {
+		if !first && !hasMediaRefs(call.Request.Messages) {
 			return nil, nil
 		}
-		done = true
+		first = false
 		scope, _ := hook.ScopeOf(ctx)
 		// Must run before resolveMediaRefs replaces refs with data URLs.
 		al.reconcileSessionPins(scope.Session, call.Request.Messages)
