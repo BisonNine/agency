@@ -5,7 +5,6 @@ package agent
 
 import (
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -33,15 +32,16 @@ func taskPurpose(use config.TaskUse) models.Purpose { return models.Purpose(use)
 //   - Worker: its worker models (subagents.models), when it has any; with
 //     none the built-in Worker → Chat rule serves its sub-agents;
 //   - Summarize and Memory: its summarization chain (agent list, then the
-//     global one, then its primary model unless listed), the same for both;
+//     global one, then its primary chat model unless listed), the same for
+//     both;
 //   - one host purpose per task-model use, from TaskModelsConfig.Entries,
 //     each entry carried as the assignment's settings.
 //
 // A human agent has its chat model only: no model ever sees a person's
 // conversation. A model c does not have (disabled, or refused when the
-// catalogue was built) is left out. Every purpose is given, empty or not, so
-// ReplaceAll leaves nothing stale.
-func agentModelLists(c *models.Catalog, cfg, current *config.Config, inst *AgentInstance) map[models.Purpose][]models.Assignment {
+// catalogue was built) is left out; nothing stands in for it. Every purpose
+// is given, empty or not, so ReplaceAll leaves nothing stale.
+func agentModelLists(c *models.Catalog, cfg *config.Config, inst *AgentInstance) map[models.Purpose][]models.Assignment {
 	have := func(name string) bool { _, ok := c.Get(name); return ok }
 	list := func(names []string, settings []any) []models.Assignment {
 		out := make([]models.Assignment, 0, len(names))
@@ -57,15 +57,20 @@ func agentModelLists(c *models.Catalog, cfg, current *config.Config, inst *Agent
 		}
 		return out
 	}
+	chat := list(inst.chatModels, nil)
 	lists := map[models.Purpose][]models.Assignment{
-		models.Chat:      list(inst.chatModels, nil),
+		models.Chat:      chat,
 		models.Worker:    nil,
 		models.Summarize: nil,
 		models.Memory:    nil,
 	}
 	if inst.HumanModel == "" {
 		lists[models.Worker] = list(inst.workerModels, nil)
-		summarize := list(summarizationNames(c, cfg, current, inst), nil)
+		names := summarizationNames(cfg, inst)
+		if len(chat) > 0 {
+			names = append(names, chat[0].Name) // the primary chat model
+		}
+		summarize := list(names, nil)
 		lists[models.Summarize], lists[models.Memory] = summarize, summarize
 	}
 	for _, use := range taskUses {
@@ -85,16 +90,10 @@ func agentModelLists(c *models.Catalog, cfg, current *config.Config, inst *Agent
 // assignAgentModels states agent inst's lists (agentModelLists) in c, all in
 // one step: a turn sees the old lists or the new ones, never a mix, and a
 // session's /model choice is kept while its model is still listed. Lists
-// that did not change are left as they are.
+// that did not change are left as they are. cfg is the agent's own
+// configuration.
 func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstance) {
-	assignAgentModelsIn(c, cfg, cfg, inst)
-}
-
-// assignAgentModelsIn is assignAgentModels with the lists from cfg (the
-// agent's own configuration) and any derived summarization model it adds
-// defined by current (the configuration in force).
-func assignAgentModelsIn(c *models.Catalog, cfg, current *config.Config, inst *AgentInstance) {
-	if _, err := c.Set(inst.ID).ReplaceAll(agentModelLists(c, cfg, current, inst)); err != nil {
+	if _, err := c.Set(inst.ID).ReplaceAll(agentModelLists(c, cfg, inst)); err != nil {
 		// The lists hold only models c has, each once; a spent catalogue is
 		// the only way left to fail.
 		logger.WarnCF("agent", "agent's models not assigned",
@@ -120,7 +119,7 @@ func (al *AgentLoop) assignOne(inst *AgentInstance) {
 	if len(al.noteSelectionAgents([]*AgentInstance{inst})) == 0 {
 		return // retired meanwhile
 	}
-	assignAgentModelsIn(al.catalog, inst.builtWith, al.GetConfig(), inst)
+	assignAgentModels(al.catalog, inst.builtWith, inst)
 }
 
 // stateListsAfterCommit states every agent's lists after a reload
@@ -131,22 +130,19 @@ func (al *AgentLoop) stateListsAfterCommit(registry *AgentRegistry, cfg *config.
 	if digest != al.currentDigest() {
 		al.adoptFor(registry, cfg, digest)
 	} else {
-		al.reconcileAll(registry, cfg)
+		al.reconcileAll(registry)
 	}
 }
 
-// reconcileAll is assignOne for every agent the registry holds, after the
-// derived summarization models are brought in line with cfg (the
-// configuration in force) and before the ones no list names any more are
-// removed.
-func (al *AgentLoop) reconcileAll(registry *AgentRegistry, cfg *config.Config) {
+// reconcileAll is assignOne for every agent the registry holds.
+func (al *AgentLoop) reconcileAll(registry *AgentRegistry) {
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
 	// Recorded before the lists: ReplaceAll saves kept choices through the
 	// new instances, not the replaced (closed) ones. One retired meanwhile
 	// is left out.
 	instances := al.noteSelectionAgents(al.liveInstances(registry))
-	assignAll(al.catalog, cfg, instances)
+	assignAll(al.catalog, instances)
 }
 
 // liveInstances are the instances whose sets are stated: every one the
@@ -211,21 +207,11 @@ func (al *AgentLoop) noteSelectionAgents(instances []*AgentInstance) []*AgentIns
 }
 
 // assignAll states the lists of instances in c, each from its own
-// configuration, with the derived summarization models as cfg (the
-// configuration in force) makes them and none left that no list names.
-func assignAll(c *models.Catalog, cfg *config.Config, instances []*AgentInstance) {
+// configuration.
+func assignAll(c *models.Catalog, instances []*AgentInstance) {
 	for _, inst := range instances {
-		assignAgentModelsIn(c, inst.builtWith, cfg, inst)
+		assignAgentModels(c, inst.builtWith, inst)
 	}
-	// A derived model added while an older configuration was in force is
-	// defined as that one made it: bring them in line, which drops a
-	// replaced one from the lists, and state the lists again.
-	if syncDerived(c, cfg) {
-		for _, inst := range instances {
-			assignAgentModelsIn(c, inst.builtWith, cfg, inst)
-		}
-	}
-	pruneDerived(c, instances)
 }
 
 // currentDigest is the digest of the configuration the running catalogue
@@ -245,7 +231,7 @@ func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, diges
 	defer al.assignMu.Unlock()
 	next := al.catalogs.Build(cfg)
 	instances := al.noteSelectionAgents(al.liveInstances(registry))
-	assignAll(next, cfg, instances)
+	assignAll(next, instances)
 	al.adoptCatalog(next, digest)
 }
 
@@ -253,7 +239,7 @@ func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, diges
 // its id the set stays (the agent lives on in a newer instance). Otherwise,
 // when another instance under that id is not retired yet (dropped while in
 // a turn), the set is stated for the latest such one; when none is, the set
-// is removed. Derived summarization models no remaining list names go too.
+// is removed.
 func (al *AgentLoop) removeSet(registry *AgentRegistry, inst *AgentInstance) {
 	if al.removeSetDone != nil {
 		defer al.removeSetDone(inst)
@@ -281,13 +267,12 @@ func (al *AgentLoop) removeSet(registry *AgentRegistry, inst *AgentInstance) {
 		latest := kept[len(kept)-1]
 		if v, ok := al.selectionAgents.Load(id); !ok || v != latest {
 			al.selectionAgents.Store(id, latest)
-			assignAgentModelsIn(al.catalog, latest.builtWith, al.GetConfig(), latest)
+			assignAgentModels(al.catalog, latest.builtWith, latest)
 		}
 	} else {
 		al.selectionAgents.Delete(id)
 		al.catalog.RemoveSet(id)
 	}
-	pruneDerived(al.catalog, al.liveInstances(registry))
 }
 
 // registryInstances are the instances the registry holds now.
@@ -303,13 +288,11 @@ func registryInstances(registry *AgentRegistry) []*AgentInstance {
 }
 
 // summarizationNames is the agent's summarization chain as model names: its
-// summarization_models, then the global summarization.models, de-duplicated,
-// then its primary model unless already listed. A name that resolves to no
-// enabled model is served as it always was, by the agents' default model
-// with that name as its model id: a derived model (DerivedSummaryModel),
-// added to c on first use, defined by current (the configuration in force).
-// Without a default model it is left out.
-func summarizationNames(c *models.Catalog, cfg, current *config.Config, inst *AgentInstance) []string {
+// summarization_models, then the global summarization.models, de-duplicated.
+// A name that names no enabled model is skipped (logCompressModel says so);
+// nothing stands in for it. agentModelLists appends the agent's primary chat
+// model.
+func summarizationNames(cfg *config.Config, inst *AgentInstance) []string {
 	var agentModels, globalModels []string
 	if inst.Config != nil {
 		agentModels = inst.Config.SummarizationModels
@@ -318,18 +301,10 @@ func summarizationNames(c *models.Catalog, cfg, current *config.Config, inst *Ag
 		globalModels = cfg.Summarization.Models
 	}
 	var out []string
-	for _, raw := range append(resolveCompressModelChain(agentModels, globalModels), strings.TrimSpace(inst.Model)) {
-		var name string
-		switch alias, _, ok := resolveCompressModelTarget(cfg, raw); {
-		case ok:
-			name = alias
-		case raw != "" && current != nil && ensureDerived(c, current, raw):
-			name = providers.DerivedSummaryName(raw)
-		default:
-			continue
-		}
-		if !slices.Contains(out, name) {
-			out = append(out, name)
+	for _, raw := range resolveCompressModelChain(agentModels, globalModels) {
+		alias, _, ok := resolveCompressModelTarget(cfg, raw)
+		if ok && !slices.Contains(out, alias) {
+			out = append(out, alias)
 		}
 	}
 	return out
@@ -354,22 +329,15 @@ func (al *AgentLoop) adoptCatalog(next *models.Catalog, digest string) {
 	// Every cooldown is cleared, as when the operator clears them: a model
 	// alerted as failing alerts again at once if it still fails.
 	al.catalogs.Alerts().RearmAll()
-	shown := func(names []string) []string {
-		out := make([]string, 0, len(names))
-		for _, n := range names {
-			out = append(out, providers.DisplayName(n))
-		}
-		return out
-	}
 	fields := map[string]any{}
 	if len(diff.Added) > 0 {
-		fields["added"] = shown(diff.Added)
+		fields["added"] = diff.Added
 	}
 	if len(diff.Removed) > 0 {
-		fields["removed"] = shown(diff.Removed)
+		fields["removed"] = diff.Removed
 	}
 	if len(diff.Changed) > 0 {
-		fields["changed"] = shown(diff.Changed)
+		fields["changed"] = diff.Changed
 	}
 	if len(diff.Reverted) > 0 {
 		reverted := make([]string, 0, len(diff.Reverted))
@@ -377,7 +345,7 @@ func (al *AgentLoop) adoptCatalog(next *models.Catalog, digest string) {
 			if strings.HasPrefix(r.Set, "\x00") {
 				continue // a single-model set: no agent's choice
 			}
-			reverted = append(reverted, r.Set+"/"+string(r.Purpose)+": "+providers.DisplayName(r.Model))
+			reverted = append(reverted, r.Set+"/"+string(r.Purpose)+": "+r.Model)
 		}
 		if len(reverted) > 0 {
 			fields["selections_reverted"] = reverted
@@ -394,9 +362,8 @@ func (al *AgentLoop) listCooldowns() []commands.CooldownEntry {
 		if h.Available {
 			continue
 		}
-		provider, model, key := cooldownIdentity(h)
-		byKey[key] = commands.CooldownEntry{
-			Provider: provider, Model: model, Reason: string(h.Reason), Since: h.Since, Until: h.Until,
+		byKey[h.Key] = commands.CooldownEntry{
+			Provider: h.Provider, Model: h.Model, Reason: string(h.Reason), Since: h.Since, Until: h.Until,
 		}
 	}
 	keys := slices.Sorted(maps.Keys(byKey))
@@ -413,7 +380,7 @@ func (al *AgentLoop) listCooldowns() []commands.CooldownEntry {
 func (al *AgentLoop) clearCooldown(provider, model string) bool {
 	var names []string
 	for _, h := range al.catalog.Health() {
-		if p, m, _ := cooldownIdentity(h); p == provider && m == model {
+		if h.Provider == provider && h.Model == model {
 			names = append(names, h.Name)
 		}
 	}
@@ -495,86 +462,4 @@ func (al *AgentLoop) workerCandidates(a *AgentInstance) []providers.FallbackCand
 		return al.setCandidates(a.ID, models.Worker)
 	}
 	return al.chatCandidates(a)
-}
-
-// ensureDerived adds to c the derived summarization model for raw
-// (providers.DerivedSummaryModel) when c does not have it, and reports
-// whether c has it. One c already has is brought in line with the
-// configuration in force by syncDerived.
-func ensureDerived(c *models.Catalog, cfg *config.Config, raw string) bool {
-	name := providers.DerivedSummaryName(raw)
-	if _, ok := c.Get(name); ok {
-		return true
-	}
-	m, ok := providers.DerivedSummaryModel(cfg, raw)
-	if !ok {
-		return false
-	}
-	if err := c.Add(m); err != nil {
-		_, ok := c.Get(name) // added by a concurrent build
-		return ok
-	}
-	return true
-}
-
-// cooldownIdentity is how /cooldowns names a model's health: its provider,
-// wire model and key, or for a derived summarization model no provider and
-// the raw name, as the summarization chain has always keyed it.
-func cooldownIdentity(h models.Health) (provider, model, key string) {
-	if raw, ok := providers.DerivedRaw(h.Name); ok {
-		return "", raw, providers.ModelKey("", raw)
-	}
-	return h.Provider, h.Model, h.Key
-}
-
-// syncDerived brings every derived summarization model in c in line with
-// cfg: one whose definition differs from what the default model makes it
-// now is replaced, so its client is built anew, as the default provider was
-// rebuilt on every reload; one cfg can no longer derive (no default model)
-// is removed. Their health stays: it is kept by provider and model id.
-func syncDerived(c *models.Catalog, cfg *config.Config) (changed bool) {
-	for _, name := range c.Names() {
-		raw, ok := providers.DerivedRaw(name)
-		if !ok {
-			continue
-		}
-		want, ok := providers.DerivedSummaryModel(cfg, raw)
-		info, _ := c.Get(name)
-		if ok && reflect.DeepEqual(info.Model, want) {
-			continue
-		}
-		if err := c.Remove(name); err != nil {
-			continue
-		}
-		changed = true
-		if ok {
-			if err := c.Add(want); err != nil {
-				logger.WarnCF("agent", "summarization model not replaced",
-					map[string]any{"model": raw, "error": err.Error()})
-			}
-		}
-	}
-	return changed
-}
-
-// pruneDerived removes the derived summarization models no list of the
-// given agents names any more.
-func pruneDerived(c *models.Catalog, instances []*AgentInstance) {
-	used := map[string]bool{}
-	for _, inst := range instances {
-		set := c.Set(inst.ID)
-		for _, p := range []models.Purpose{models.Summarize, models.Memory} {
-			for _, e := range set.List(p) {
-				used[e.Name] = true
-			}
-		}
-	}
-	for _, name := range c.Names() {
-		if _, derived := providers.DerivedRaw(name); derived && !used[name] {
-			if err := c.Remove(name); err != nil {
-				logger.DebugCF("agent", "unused summarization model not removed",
-					map[string]any{"model": providers.DisplayName(name), "error": err.Error()})
-			}
-		}
-	}
 }

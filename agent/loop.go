@@ -93,8 +93,7 @@ type AgentLoop struct {
 	// also reads the registry and al.mu under the gate), by the registry
 	// reload lock its creation holds. The gate stays held over the
 	// registry's post-commit teardown, so turn starts wait for that too.
-	// Only chat selection is gated: a summary that starts while a derived
-	// summarization model is being replaced may run without it once.
+	// Only chat selection is gated.
 	listsGate sync.RWMutex
 	// selectionAgents is the instance each set was last stated for, by
 	// agent id: what the selection store reads and writes choices through.
@@ -430,7 +429,7 @@ func NewAgentLoop(
 		return nil, err
 	}
 	al.registry = registry
-	al.reconcileAll(registry, cfg)
+	al.reconcileAll(registry)
 
 	// Per-agent state managers and message-token managers: config agents only.
 	for _, agentID := range registry.List() {

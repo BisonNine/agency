@@ -83,7 +83,7 @@ func TestModel_NoModels(t *testing.T) {
 		SetActiveModel: func(idx int) (string, error) { return "", nil },
 	}
 	reply := execModel(t, rt, "/model 0")
-	if !strings.Contains(reply, "no configured models") {
+	if !strings.Contains(reply, "has no usable model") {
 		t.Fatalf("reply=%q, want no-models message", reply)
 	}
 }
@@ -104,10 +104,11 @@ func TestListModels_NumberedWithActiveMarker(t *testing.T) {
 
 func TestListModels_NoModels(t *testing.T) {
 	rt := &Runtime{
+		AgentName:      "Alice",
 		GetAgentModels: func() ([]ModelEntry, int) { return nil, 0 },
 	}
 	reply := execModel(t, rt, "/list models")
-	if !strings.Contains(reply, "no configured models") {
-		t.Fatalf("reply=%q, want no-models message", reply)
+	if want := "Alice has no usable model: its models are not in the model list or disabled."; reply != want {
+		t.Fatalf("reply=%q, want %q", reply, want)
 	}
 }

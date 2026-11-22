@@ -207,6 +207,9 @@ func (al *AgentLoop) activeModelInfo(cfg *config.Config, agent *AgentInstance, o
 		sessionKey = opts.SessionKey
 	}
 	active := al.activeModelName(agent, sessionKey)
+	if active == "" {
+		return "none", "", "", "" // no usable model: its turns fail
+	}
 	name = active
 	if mc, err := cfg.GetModelConfig(active); err == nil && mc != nil {
 		if mc.ModelName != "" {

@@ -63,6 +63,22 @@
 
 ### Changed
 
+- **BREAKING: an agent whose models are all disabled or unusable no longer
+  runs on the default model.** This covers a list whose only entries are
+  disabled models or empty names. Its turns now fail with "no model
+  configured — enable a model and add your API key in the configuration",
+  `/model` and `/list models` say it has no usable model and `/status` shows
+  its model as none, until its `models` list (or
+  `agents.defaults.models`, when it has no list of its own) names a model that
+  is in the model list and enabled. Check Up marks each such agent in a
+  **Models** row. To restore service, pick an enabled model for the agent on
+  the Agents page, or enable its model on the Models page.
+- **BREAKING: a memory (summarization) model that is not in the model list is
+  no longer sent to the default provider as a raw model id.** An entry of
+  `summarization.models` or `agents.list[].summarization_models` that names no
+  enabled model is skipped, and the agent's own first model summarizes
+  instead; Check Up lists the skipped entries in a **Memory models** row. To
+  keep using that model, add it on the Models page.
 - **BREAKING: `/cancel` no longer stops a sub-agent the reply was waiting
   on.** A sub-agent spawned in `wait` mode now finishes, and its result
   reaches the agent later as a background result, as a `callback` task's does

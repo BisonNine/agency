@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -132,8 +133,8 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 // resolveCompressModelChain returns the ordered, de-duplicated summarization
 // model chain for an agent: its own summarization_models first, then the global
 // summarization.models. Blank entries are skipped; the first occurrence of each
-// model name wins. The agent's primary model is appended separately by the
-// caller as a final fallback.
+// model name wins. An entry that names no enabled model is skipped later
+// (summarizationNames); the agent's primary chat model is appended there.
 func resolveCompressModelChain(agentModels, globalModels []string) []string {
 	seen := make(map[string]struct{}, len(agentModels)+len(globalModels))
 	var out []string
@@ -195,18 +196,18 @@ func resolveCompressModelTarget(cfg *config.Config, raw string) (alias, modelID 
 	return "", "", false
 }
 
-// logCompressModel logs how one configured summarization model resolves: a
-// name that names no enabled model is served by the agents' default model
+// logCompressModel logs how one configured summarization model resolves, and
+// reports whether it does: a name that names no enabled model is skipped
 // (summarizationNames), and said so.
-func (al *AgentLoop) logCompressModel(agent *AgentInstance, compressModelName, sessionKey string) {
+func (al *AgentLoop) logCompressModel(agent *AgentInstance, compressModelName, sessionKey string) bool {
 	alias, modelID, ok := resolveCompressModelTarget(al.GetConfig(), compressModelName)
 	if !ok {
-		logger.WarnCF("llmcontext", "compression model not found in enabled models; falling back to agent provider", map[string]any{
+		logger.WarnCF("llmcontext", "compression model not found in enabled models; skipping", map[string]any{
 			"agent_id":  agent.ID,
 			"requested": compressModelName,
 			"session":   sessionKey,
 		})
-		return
+		return false
 	}
 	logger.DebugCF("llmcontext", "compression model resolved", map[string]any{
 		"agent_id":  agent.ID,
@@ -215,15 +216,18 @@ func (al *AgentLoop) logCompressModel(agent *AgentInstance, compressModelName, s
 		"model":     modelID,
 		"session":   sessionKey,
 	})
+	return true
 }
 
 // newCompressModelCaller builds the summarization ModelCaller for an agent and
 // session: the agent's own summarization_models first, then the global
-// cfg.Summarization.Models, then the agent's primary model as a last-resort
-// fallback so summarization still works when the lists are empty or every
-// configured model fails. Health is the catalogue's, shared with every other
+// cfg.Summarization.Models (each skipped when it names no enabled model),
+// then the agent's primary chat model, so summarization still works when the
+// lists are empty or every configured model fails; an agent with no chat
+// model has none. Health is the catalogue's, shared with every other
 // path, so a model parked by any path (e.g. an out-of-credits 402) is skipped by
-// both. Also returns the effective (first) model name for the summary stamp.
+// both. Also returns the effective model name for the summary stamp: the
+// first configured entry that is used, else the primary chat model.
 func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey string, purpose models.Purpose) (*compressModelCaller, string) {
 	if agent.HumanModel != "" {
 		// A person's conversation is never given to a model: no
@@ -239,13 +243,17 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 		globalModels = cfg.Summarization.Models
 	}
 
-	effective := ""
-	chainNames := resolveCompressModelChain(agentModels, globalModels)
-	for _, name := range chainNames {
-		if effective == "" {
-			effective = name
+	var used []string
+	for _, name := range resolveCompressModelChain(agentModels, globalModels) {
+		if al.logCompressModel(agent, name, sessionKey) {
+			used = append(used, name)
 		}
-		al.logCompressModel(agent, name, sessionKey)
+	}
+	chain := slices.Clone(used)
+	primary := ""
+	if list := al.catalog.Set(agent.ID).List(models.Chat); len(list) > 0 {
+		primary = list[0].Name
+		chain = append(chain, primary+" (agent default)")
 	}
 
 	// One clear line (in claw.log) showing the whole compression chain that will
@@ -254,15 +262,15 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 	logger.InfoCF("llmcontext", "compression model chain", map[string]any{
 		"agent_id": agent.ID,
 		"session":  sessionKey,
-		"chain":    append(append([]string{}, chainNames...), agent.Model+" (agent default)"),
+		"chain":    chain,
 	})
 
 	// The rendered "Generated: <time> by <model>" line names the effective
-	// compress model; it falls back to the agent's primary model when no
-	// summarization models are configured — that is the model the appended
-	// default client actually runs against.
-	if effective == "" {
-		effective = strings.TrimSpace(agent.Model)
+	// compress model; it is the agent's primary chat model when no
+	// summarization model is used.
+	effective := primary
+	if len(used) > 0 {
+		effective = used[0]
 	}
 	// The chain is the agent's set's list for the purpose (assignAgentModels):
 	// the summarization models in order, then the primary model unless listed.
@@ -507,10 +515,7 @@ func (al *AgentLoop) buildSessionEntry(bk sessionBuildKey, done chan struct{}, a
 }
 
 // summaryModelName is how the finish line names a summarization model: its
-// model_name, or the raw name a derived model stands for.
+// model_name.
 func summaryModelName(c models.Candidate) string {
-	if raw, ok := providers.DerivedRaw(c.Name); ok {
-		return raw
-	}
 	return cmp.Or(c.Name, c.Model)
 }

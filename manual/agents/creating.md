@@ -46,7 +46,7 @@ Other model settings on the card:
 
 The default agent handles messages that do not match any binding. Set it on the **System** page, in **Agent defaults**, under **Default agent**. Without a choice, the first agent in the list is used. An agent that represents a person (a [human agent](./human-agents.md)) is never the default agent.
 
-**Default models** in the same section is the model chain used by every agent whose own model list is empty.
+**Default models** in the same section is the model chain used by every agent whose own model list is empty. An agent whose models are all disabled or not in the model list does not use them: its turns fail until one is enabled, and **Check Up** shows it.
 
 ## Default channel
 

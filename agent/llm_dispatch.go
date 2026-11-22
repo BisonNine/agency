@@ -24,8 +24,10 @@ type turnModel struct {
 // the agent's chat models pinned for the turn, the session's /model choice
 // first and the rest in their order, so a
 // multi-step tool chain never switches model mid-way. A fresh temporary
-// agent's CLI models run isolated in its own workspace. An agent none of
-// whose models resolves runs on the default model's client (directChain).
+// agent's CLI models run isolated in its own workspace. An agent with no
+// chat model (none of its models is in the model list and enabled) gets a
+// chain without candidates, and its turn fails with errNoModelConfigured:
+// it never runs on another model.
 func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *turnModel {
 	// Not while a reload's lists are being stated (listsGate); the chain
 	// is pinned here, so the model call runs without the gate.
@@ -41,59 +43,6 @@ func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *t
 	var model string
 	if len(candidates) > 0 {
 		model = candidates[0].Name
-	} else {
-		// The name status and /model show too (activeModelName).
-		model = al.activeModelName(agent, sessionKey)
-		if direct := al.directChain(agent, model); direct != nil {
-			chain, candidates = direct, direct.Candidates()
-		}
 	}
 	return &turnModel{chain: chain, candidates: candidates, model: model, limits: agent.limitsFor(model)}
-}
-
-// directChain is the chain of a turn of agent none of whose models resolves:
-// one call on the default model's client (defaultModelClient) with model, the
-// agent's first configured name, as the wire id (an empty one included: the
-// client decides), reporting no provider, the agent's own limits for model
-// and its provider's reasoning-content setting; nil when there is no default
-// model (or a reload removed it since), and the turn fails as a
-// configuration without models.
-func (al *AgentLoop) directChain(agent *AgentInstance, model string) *models.Chain {
-	name := al.defaultModelClient()
-	if name == "" {
-		return nil
-	}
-	facts := al.modelFacts(agent, model)
-	l := agent.limitsFor(model)
-	limits := facts.Limits
-	limits.ContextWindow, limits.NoTools = l.contextWindow, l.noTools
-	chain, err := al.catalog.Direct(name, model,
-		models.WithDirectProvider(""),
-		models.WithDirectLimits(limits),
-		models.WithDirectRequireReasoningContent(facts.ProviderSpec.RequireReasoningContent))
-	if err != nil {
-		return nil
-	}
-	return chain
-}
-
-// defaultModelClient is the model an agent none of whose models resolves
-// runs on: the agents' default model (agents.defaults.models[0], by
-// model_name), when the catalogue has it. Its client is called with the
-// agent's first configured name as the model, with no fallback and no
-// health kept, as the agent's own provider always served such an agent.
-// "" when there is none: the turn fails as a configuration without models.
-func (al *AgentLoop) defaultModelClient() string {
-	cfg := al.GetConfig()
-	if cfg == nil {
-		return ""
-	}
-	mc, err := cfg.GetModelConfig(cfg.Agents.Defaults.DefaultModelName())
-	if err != nil || mc == nil {
-		return ""
-	}
-	if _, ok := al.catalog.Get(mc.ModelName); !ok {
-		return ""
-	}
-	return mc.ModelName
 }

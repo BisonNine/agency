@@ -44,7 +44,7 @@ Some commands act on the whole install, not just one agent: `/cooldowns clear` a
 | `/cooldowns clear` | Ends every pause. Reply: "Cleared all provider cooldowns." |
 | `/cooldowns clear <provider>/<model>` | Ends the pause of one model, for example `/cooldowns clear openai/gpt-5`. |
 
-An agent with no models of its own answers `/list models` and `/model` with "This agent has no configured models; it uses the global default model."
+An agent with no usable model answers `/list models` and `/model` with "Alice has no usable model: its models are not in the model list or disabled." Its turns fail until one of its models is enabled.
 
 Example:
 

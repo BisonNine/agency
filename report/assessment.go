@@ -321,6 +321,12 @@ func collectAssessment(ctx context.Context, cfg *config.Config, env Environment)
 		}
 	}
 
+	// An agent with no model to run on, and memory models that are skipped:
+	// nothing stands in for them.
+	for _, r := range agentModelAssessment(cfg) {
+		add(r.action, r.item, r.status)
+	}
+
 	// An agent has only the tools its list names, so one with an empty or
 	// missing list has none. Shown so an agent left without tools (an upgrade
 	// from the implicit default set) is visible. A human agent never runs

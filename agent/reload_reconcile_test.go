@@ -4,7 +4,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"slices"
 	"strings"
@@ -224,27 +223,6 @@ func TestReload_PanicAfterCommitStillAssigns(t *testing.T) {
 	checkAllAssigned(t, al)
 	if got := al.chatModelNames(al.GetRegistry().Default()); !slices.Equal(got, []string{"b", "c"}) {
 		t.Fatalf("main after the committed reload = %v, want [b c]", got)
-	}
-}
-
-// No log line of an adopt names a model by an internal name.
-func TestAdopt_LogShowsNoInternalNames(t *testing.T) {
-	base := t.TempDir()
-	cfg := abcConfig(base, "a")
-	cfg.Summarization.Models = []string{"raw-summarizer"}
-	buf := &bytes.Buffer{}
-	t.Cleanup(logger.RedirectForTest(buf))
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
-	next := abcConfig(base, "a")
-	next.Models[0].RequestTimeout = 3
-	if err := al.ReloadConfig(context.Background(), next); err != nil {
-		t.Fatal(err)
-	}
-	if strings.ContainsAny(buf.String(), "\x00") || strings.Contains(buf.String(), `\u0000`) {
-		t.Fatalf("the log holds an internal name:\n%s", buf.String())
-	}
-	if !strings.Contains(buf.String(), "raw-summarizer") {
-		t.Fatal("the adopt line does not name the summarization model")
 	}
 }
 

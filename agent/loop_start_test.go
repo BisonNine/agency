@@ -4,7 +4,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,49 +27,6 @@ import (
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
-
-// An agent configured with an empty model name and none that resolves runs
-// on the default model's client with that empty name as the model id, as it
-// always has: the client decides what it means. Nothing is recorded against
-// the default model's health, and the finish line names no provider.
-func TestUnresolvedAgent_EmptyModelID(t *testing.T) {
-	cfg := abcConfig(t.TempDir(), "a")
-	cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Name: "Bob", Models: []string{""}})
-	p := &replayProvider{errs: map[string]string{}}
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
-	if err := al.catalog.RegisterClient("a", p); err != nil {
-		t.Fatal(err)
-	}
-	bob, _ := al.GetRegistry().Get("bob")
-
-	buf := &bytes.Buffer{}
-	t.Cleanup(logger.RedirectForTest(buf))
-	tm := al.selectTurnModel(bob, "s")
-	if tm.model != "" || len(tm.candidates) != 1 || tm.candidates[0].Model != "" || tm.candidates[0].Provider != "" {
-		t.Fatalf("turn model = %+v", tm)
-	}
-	turn := hostTurn(t, al, bob, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
-	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
-		t.Fatal(err)
-	}
-	p.errs[""] = "Bob's model is down"
-	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err == nil || err.Error() != "Bob's model is down" {
-		t.Fatalf("error = %v, want the client's", err)
-	}
-	if got := p.calls(); !slices.Equal(got, []string{"", ""}) {
-		t.Fatalf("calls = %q, want the empty model id on the default model's client", got)
-	}
-	fin := finishRecords(t, buf)
-	if len(fin) != 2 {
-		t.Fatalf("finish lines = %d, want 2", len(fin))
-	}
-	assertFields(t, fin[0], map[string]any{"our_provider": "", "our_model": "", "agent_id": "bob"})
-	for _, h := range al.catalog.Health() {
-		if h.Failures != 0 || !h.Available {
-			t.Fatalf("health recorded for the direct call: %+v", h)
-		}
-	}
-}
 
 // toolsOnAtAssembly is a context manager whose first assembly, after the
 // message was stored and before the model loop starts, turns /tools on.

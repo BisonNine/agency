@@ -316,64 +316,11 @@ func CheckDefaultModel(ctx context.Context, cfg *config.Config) error {
 	return errors.Join(defaultModelProblem(cfg, c), c.Close(ctx))
 }
 
-// derivedPrefix marks the models a summarization chain derives for a name
-// that is no configured model; no model_name contains a NUL.
-const derivedPrefix = "\x00summary\x00"
-
-// DerivedSummaryName is the catalogue name of the model a summarization
-// chain uses for raw, a name in it that is no configured model.
-func DerivedSummaryName(raw string) string { return derivedPrefix + raw }
-
-// DerivedRaw returns the raw name a derived summarization model stands for,
-// and whether name is one.
-func DerivedRaw(name string) (string, bool) {
-	return strings.CutPrefix(name, derivedPrefix)
-}
-
-// DerivedSummaryModel is the model a summarization chain calls for raw, a
-// name in it (a summarization model or the agent's primary) that is no
-// enabled model: the agents' default model, as the catalogue has it, with
-// raw as its model id, as the agent's own provider has always served such
-// a name. false when there is no default model.
-func DerivedSummaryModel(cfg *config.Config, raw string) (config.ModelConfig, bool) {
-	def, err := cfg.GetModelConfig(cfg.Agents.Defaults.DefaultModelName())
-	if err != nil || def == nil {
-		return config.ModelConfig{}, false
-	}
-	for _, m := range catalogModels(cfg) {
-		if m.ModelName == def.ModelName {
-			m.ModelName, m.Model = DerivedSummaryName(raw), raw
-			return m, true
-		}
-	}
-	return config.ModelConfig{}, false
-}
-
-// alertKey is the key a model's alerts are raised under: its health key, or
-// for a derived summarization model the key the summarization chain has
-// always used for it (no provider, the raw name).
-func alertKey(name, key string) string {
-	if raw, ok := DerivedRaw(name); ok {
-		return ModelKey("", raw)
-	}
-	return key
-}
-
 // warn logs a build problem, unless the builder is quiet.
 func (b *CatalogBuilder) warn(msg string, fields map[string]any) {
 	if !b.quiet {
 		logger.WarnCF("providers", msg, fields)
 	}
-}
-
-// DisplayName is how a catalogue model's name is shown to an operator (in
-// logs, /cooldowns, alerts): its model_name, or for a derived summarization
-// model the raw name it stands for. An internal name never reaches them.
-func DisplayName(name string) string {
-	if raw, ok := DerivedRaw(name); ok {
-		return raw
-	}
-	return name
 }
 
 // clientProblem is the text operators have always read for a model whose

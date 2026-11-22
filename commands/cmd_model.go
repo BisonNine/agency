@@ -14,11 +14,11 @@ func modelCommand() Definition {
 		Usage:       "/model <n>",
 		Handler: func(_ context.Context, req Request, rt *Runtime) error {
 			if rt == nil || rt.GetAgentModels == nil || rt.SetActiveModel == nil {
-				return req.Reply("This agent has no configured models; it uses the global default model.")
+				return req.Reply(noModelText(rt))
 			}
 			entries, active := rt.GetAgentModels()
 			if len(entries) == 0 {
-				return req.Reply("This agent has no configured models; it uses the global default model.")
+				return req.Reply(noModelText(rt))
 			}
 
 			arg := nthToken(req.Text, 1)
@@ -54,4 +54,15 @@ func renderModelList(entries []ModelEntry, active int) string {
 	}
 	b.WriteString("\nUse /model <n> to switch.")
 	return b.String()
+}
+
+// noModelText is the reply to /model and /list models for an agent with no
+// model to use: its turns fail until one of its models is in the model list
+// and enabled.
+func noModelText(rt *Runtime) string {
+	name := "This agent"
+	if rt != nil && rt.AgentName != "" {
+		name = rt.AgentName
+	}
+	return name + " has no usable model: its models are not in the model list or disabled."
 }

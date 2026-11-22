@@ -38,7 +38,7 @@ func (c *memoryModelCaller) Complete(ctx context.Context, req consolidate.ModelR
 
 // NewMemoryModelCaller builds a consolidate.ModelCaller for the given agent
 // over the agent's summarization model chain (agent.summarization_models →
-// global summarization.models → the agent's primary model as final fallback),
+// global summarization.models → the agent's primary chat model last),
 // on the agent's set for models.Memory, the same list as context compaction.
 // This is the constructor the gateway's WorkerFactory calls per Job.
 func (al *AgentLoop) NewMemoryModelCaller(agent *AgentInstance) consolidate.ModelCaller {

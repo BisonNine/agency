@@ -42,6 +42,7 @@ Each agent has an ordered list of models. On the **Agents** page (see [Creating 
 - The first model in the list is the one normally used.
 - The others are the **fallback chain**: when a model fails in a way another model could fix, ClawEh tries the next one in the same turn.
 - **Set as default** on a model card on the Models page puts that model first in the default list.
+- A model in the list that is not in the model list or is disabled is skipped. When none is left, the agent has no model: its turns fail with "no model configured", and **Check Up** marks it. It never runs on the default model instead.
 
 In a chat, `/model` lists the agent's models and `/model <n>` switches the conversation to model number `n`.
 
@@ -131,7 +132,9 @@ Besides the agent's own models, the memory chain is set on the **System** page a
 
 1. the agent's own **Memory models (optional)** on the Agents page (`agents.list[].summarization_models`),
 2. then the global **Memory models**,
-3. then the agent's own model.
+3. then the agent's own first model.
+
+A memory model that is not in the model list or is disabled is skipped. To use a model there, add it on the Models page first.
 
 Use this to put summarizing on a cheaper model, or on one that will not refuse the agent's subject matter.
 

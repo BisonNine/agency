@@ -132,8 +132,8 @@ func TestCompressCaller_UnresolvedModelsLeftOut(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoModel with today's text", err)
 	}
 
-	// With a resolvable primary it is the chain's last resort.
-	agent = &AgentInstance{ID: "primary-test", Model: "some-model"}
+	// With a chat model, the primary one is the chain's last resort.
+	agent = &AgentInstance{ID: "primary-test", Model: "some-model", chatModels: []string{"primary-target"}}
 	assignAgentModels(al.catalog, cfg, agent)
 	if got := entryNames(al.catalog.Set(agent.ID).List(models.Summarize)); !slices.Equal(got, []string{"primary-target"}) {
 		t.Fatalf("summarize list = %v, want the primary", got)

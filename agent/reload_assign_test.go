@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -85,20 +84,19 @@ func TestActiveModelName_FirstResolvedModel(t *testing.T) {
 	if got := al.activeModelName(agent, "s"); got != "b" {
 		t.Fatalf("active model = %q, want b (what b-wire resolves to)", got)
 	}
-	// With the set's chat list emptied (the catalogue left the models out),
-	// the turn runs on the default model's client under the configured name,
-	// and status names what is sent.
+	// With the set's chat list emptied (the catalogue left the models out)
+	// there is no model: status names none, and the turn has none to call.
 	if _, err := al.catalog.Set(agent.ID).Replace(models.Chat); err != nil {
 		t.Fatal(err)
 	}
-	if got, turn := al.activeModelName(agent, "s"), al.selectTurnModel(agent, "s").model; got != "b-wire" || turn != got {
-		t.Fatalf("active model with no set = %q, the turn's %q; want b-wire for both", got, turn)
+	if got, tm := al.activeModelName(agent, "s"), al.selectTurnModel(agent, "s"); got != "" || tm.model != "" || len(tm.candidates) != 0 {
+		t.Fatalf("active model with no set = %q, the turn's %q on %d models; want none", got, tm.model, len(tm.candidates))
 	}
 }
 
 // A busy temporary agent outlives a reload that removed its models: its
-// next turn runs on the new default model's client under the agent's own
-// configured name, and status names that same name.
+// next turn fails with no model configured, calling no model (not the new
+// default model either), and status names no model.
 func TestReloadAdopt_BusyTemporaryAgentModelsRemoved(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	base := t.TempDir()
@@ -132,191 +130,18 @@ func TestReloadAdopt_BusyTemporaryAgentModelsRemoved(t *testing.T) {
 		t.Fatalf("the clone's configured model = %q, want a-wire", now.Model)
 	}
 	tm := al.selectTurnModel(now, "s")
-	if len(tm.candidates) != 1 || tm.candidates[0].Name != now.Model || tm.candidates[0].Provider != "" || tm.model != now.Model {
-		t.Fatalf("turn model = %+v, want %q on b's client", tm, now.Model)
+	if len(tm.candidates) != 0 || tm.model != "" {
+		t.Fatalf("turn model = %+v, want none", tm)
 	}
-	if got := al.activeModelName(now, "s"); got != now.Model {
-		t.Fatalf("active model = %q, want %q", got, now.Model)
+	if got := al.activeModelName(now, "s"); got != "" {
+		t.Fatalf("active model = %q, want none", got)
 	}
 	turn := hostTurn(t, al, now, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
-	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
-		t.Fatal(err)
+	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); !errors.Is(err, errNoModelConfigured) {
+		t.Fatalf("err = %v, want errNoModelConfigured", err)
 	}
-	if got := p.calls(); !slices.Equal(got, []string{now.Model}) {
-		t.Fatalf("calls = %v, want [%s]", got, now.Model)
-	}
-}
-
-// An agent none of whose models resolves runs, as it always has, on the
-// agents' default model's client with its first configured name as the
-// model and its own limits: one call, one finish line with no provider and
-// that name, nothing parked.
-func TestUnresolvedAgent_RunsOnDefaultModelClient(t *testing.T) {
-	cfg := abcConfig(t.TempDir(), "a")
-	cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Name: "Bob", Models: []string{"no-such-model"}})
-	p := &replayProvider{errs: map[string]string{}}
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
-	if err := al.catalog.RegisterClient("a", p); err != nil {
-		t.Fatal(err)
-	}
-	bob, _ := al.GetRegistry().Get("bob")
-
-	buf := &bytes.Buffer{}
-	t.Cleanup(logger.RedirectForTest(buf))
-	tm := al.selectTurnModel(bob, "s")
-	if len(tm.candidates) != 1 || tm.candidates[0].Name != "no-such-model" || tm.candidates[0].Provider != "" || tm.model != "no-such-model" {
-		t.Fatalf("turn model = %+v", tm)
-	}
-	if tm.limits.maxTokens != cfg.Agents.Defaults.MaxTokens {
-		t.Errorf("max tokens = %d, want the defaults' %d", tm.limits.maxTokens, cfg.Agents.Defaults.MaxTokens)
-	}
-	turn := hostTurn(t, al, bob, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
-	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
-		t.Fatal(err)
-	}
-	if got := p.calls(); !slices.Equal(got, []string{"no-such-model"}) {
-		t.Fatalf("calls = %v, want the configured name on the default model's client", got)
-	}
-	fin := finishRecords(t, buf)
-	if len(fin) != 1 {
-		t.Fatalf("finish lines = %d, want 1", len(fin))
-	}
-	assertFields(t, fin[0], map[string]any{"our_provider": "", "our_model": "no-such-model", "agent_id": "bob"})
-}
-
-// A summarization name that is no configured model runs on the default
-// model's client under that name; its failures are kept and alerted under
-// the key the summarization chain always used (no provider, the name), and
-// /cooldowns shows it so.
-func TestDerivedSummaryModel_KeyAndCooldowns(t *testing.T) {
-	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
-	cfg := abcConfig(t.TempDir(), "a")
-	cfg.Summarization.Models = []string{"raw-summarizer"}
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
-	rec := &alertRecorder{}
-	al.SetAlerter(rec)
-	main := al.GetRegistry().Default()
-	name := providers.DerivedSummaryName("raw-summarizer")
-	if got := entryNames(al.catalog.Set(main.ID).List(models.Summarize)); !slices.Equal(got, []string{name, "a"}) {
-		t.Fatalf("summarize list = %q", got)
-	}
-	if got := al.chatModelNames(main); slices.Contains(got, name) {
-		t.Fatalf("/model lists the derived model: %v", got)
-	}
-	failing := &scriptedProvider{err: errors.New("API request failed:   Status: 402   Body: {}")}
-	if err := al.catalog.RegisterClient(name, failing); err != nil {
-		t.Fatal(err)
-	}
-	c, _ := al.newCompressModelCaller(main, "s", models.Summarize)
-	if _, err := c.Complete(context.Background(), ctxRequest()); err != nil {
-		t.Fatalf("Complete: %v (a should have answered)", err)
-	}
-	if len(rec.alerts) != 1 || rec.alerts[0].EventID != "/raw-summarizer" {
-		t.Fatalf("alerts = %+v, want one keyed /raw-summarizer", rec.alerts)
-	}
-	rt := newCooldownRuntime(al)
-	got := rt.ListCooldowns()
-	if len(got) != 1 || got[0].Provider != "" || got[0].Model != "raw-summarizer" {
-		t.Fatalf("/cooldowns = %+v, want /raw-summarizer", got)
-	}
-	if !rt.ClearCooldown("", "raw-summarizer") || len(rt.ListCooldowns()) != 0 {
-		t.Fatal("/cooldowns clear /raw-summarizer did not clear it")
-	}
-}
-
-// A derived summarization model follows the default model: change only the
-// default model and the next summary call for the raw name goes to the new
-// default's provider and protocol; drop the raw name and no model or
-// /cooldowns entry is left for it.
-func TestDerivedSummaryModel_FollowsDefaultModel(t *testing.T) {
-	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
-	base := t.TempDir()
-	conf := func(def string, summarizers ...string) *config.Config {
-		cfg := abcConfig(base, def)
-		cfg.Providers = append(cfg.Providers, config.Provider{Name: "q", Protocol: "anthropic", BaseURL: "http://127.0.0.1:0", APIKey: "k"})
-		cfg.Models[2].Provider = "q" // c
-		cfg.Summarization.Models = summarizers
-		return cfg
-	}
-	al := mustNewAgentLoop(t, conf("a", "raw-summarizer"), bus.NewMessageBus(), &mockProvider{}, nil)
-	name := providers.DerivedSummaryName("raw-summarizer")
-	first := func() models.Candidate {
-		t.Helper()
-		cands := al.catalog.Set("main").Begin(models.Summarize, "s").Candidates()
-		if len(cands) == 0 || cands[0].Name != name {
-			t.Fatalf("summarize candidates = %+v, want %s first", cands, name)
-		}
-		return cands[0]
-	}
-	if c := first(); c.Provider != "p" || c.Protocol != "openai-chat" || c.Model != "raw-summarizer" {
-		t.Fatalf("before = %s/%s/%s", c.Provider, c.Protocol, c.Model)
-	}
-	if err := al.catalog.RegisterClient(name, &scriptedProvider{err: errors.New("API request failed:   Status: 402   Body: {}")}); err != nil {
-		t.Fatal(err)
-	}
-	caller, _ := al.newCompressModelCaller(al.GetRegistry().Default(), "s", models.Summarize)
-	if _, err := caller.Complete(context.Background(), ctxRequest()); err != nil {
-		t.Fatalf("Complete: %v (a should have answered)", err)
-	}
-	if len(newCooldownRuntime(al).ListCooldowns()) == 0 {
-		t.Fatal("the failing derived model was not parked")
-	}
-
-	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, conf("c", "raw-summarizer")); err != nil {
-		t.Fatal(err)
-	}
-	if c := first(); c.Provider != "q" || c.Protocol != "anthropic" || c.Model != "raw-summarizer" {
-		t.Fatalf("after the default model changed = %s/%s/%s, want q/anthropic/raw-summarizer", c.Provider, c.Protocol, c.Model)
-	}
-
-	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, conf("c")); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := al.catalog.Get(name); ok {
-		t.Fatal("the derived model of a dropped name remains")
-	}
-	for _, cd := range newCooldownRuntime(al).ListCooldowns() {
-		if cd.Model == "raw-summarizer" {
-			t.Fatalf("/cooldowns lists the dropped name: %+v", cd)
-		}
-	}
-}
-
-// A busy temporary agent built while a derived summarization model could be
-// made does not bring it back once the configuration in force can no longer
-// make it (no default model).
-func TestDerivedSummaryModel_NotRestoredFromOldConfig(t *testing.T) {
-	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
-	base := t.TempDir()
-	conf := func(def string) *config.Config {
-		cfg := abcConfig(base, def)
-		cfg.Summarization.Models = []string{"raw-summarizer"}
-		return cfg
-	}
-	al := mustNewAgentLoop(t, conf("a"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
-	r := al.GetRegistry()
-	id, err := r.CreateClone("main")
-	if err != nil {
-		t.Fatal(err)
-	}
-	clone, _ := r.Get(id)
-	end, ok := r.BeginTurn(id, clone)
-	if !ok {
-		t.Fatal("the clone could not begin a turn")
-	}
-	defer end()
-	name := providers.DerivedSummaryName("raw-summarizer")
-	if _, ok := al.catalog.Get(name); !ok {
-		t.Fatal("no derived model to begin with")
-	}
-	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, conf("no-such-model")); err != nil {
-		t.Fatal(err)
-	}
-	if now, _ := r.Get(id); now != clone {
-		t.Fatal("the busy clone was rebuilt")
-	}
-	if _, ok := al.catalog.Get(name); ok {
-		t.Fatal("the derived model came back from the busy clone's configuration")
+	if got := p.calls(); len(got) != 0 {
+		t.Fatalf("calls = %v, want none", got)
 	}
 }
 
@@ -494,60 +319,4 @@ func newCooldownRuntime(al *AgentLoop) *commands.Runtime {
 	rt := &commands.Runtime{}
 	al.addCooldownHooks(rt)
 	return rt
-}
-
-// optsRecorder records the options of each call; cli makes it a CLI client.
-type optsRecorder struct {
-	mu   sync.Mutex
-	opts []map[string]any
-	cli  bool
-}
-
-func (p *optsRecorder) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, _ string, opts map[string]any) (*providers.LLMResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.opts = append(p.opts, opts)
-	return &providers.LLMResponse{Content: "ok"}, nil
-}
-func (p *optsRecorder) GetDefaultModel() string { return "" }
-func (p *optsRecorder) IsCLI() bool             { return p.cli }
-
-// The direct path sends a temperature to an HTTP default model and none to
-// a CLI one, as the default provider's own path did.
-func TestUnresolvedAgent_DefaultModelTemperature(t *testing.T) {
-	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
-	temp := 0.3
-	for _, tc := range []struct {
-		name     string
-		protocol string
-		cli      bool
-		want     bool
-	}{
-		{"http", "openai-chat", false, true},
-		{"cli", "claude-cli", true, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := abcConfig(t.TempDir(), "a")
-			cfg.Providers[0].Protocol = tc.protocol
-			cfg.Agents.Defaults.Temperature = &temp
-			cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Name: "Bob", Models: []string{"nope"}})
-			al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
-			p := &optsRecorder{cli: tc.cli}
-			if err := al.catalog.RegisterClient("a", p); err != nil {
-				t.Fatal(err)
-			}
-			bob, _ := al.GetRegistry().Get("bob")
-			tm := al.selectTurnModel(bob, "s")
-			turn := hostTurn(t, al, bob, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
-			if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
-				t.Fatal(err)
-			}
-			if len(p.opts) != 1 {
-				t.Fatalf("calls = %d", len(p.opts))
-			}
-			if _, got := p.opts[0]["temperature"]; got != tc.want {
-				t.Fatalf("temperature sent = %v, want %v", got, tc.want)
-			}
-		})
-	}
 }
