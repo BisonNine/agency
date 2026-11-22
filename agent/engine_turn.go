@@ -281,14 +281,26 @@ func (h *turnHandle) Cancel(cause error) { h.cancelFrom(h.ctx, cause) }
 // cancelFrom is Cancel for a caller with a context of its own: the
 // OnInterrupt observers get ctx, without its cancellation.
 func (h *turnHandle) cancelFrom(ctx context.Context, cause error) {
-	if cause == nil {
-		cause = hook.ErrInterrupted
-	}
-	running := true
+	h.cancelWith(ctx, cause, h.running())
+}
+
+// running reports whether the turn has not finished yet.
+func (h *turnHandle) running() bool {
 	select {
 	case <-h.done:
-		running = false
+		return false
 	default:
+		return true
+	}
+}
+
+// cancelWith stops the turn with cause (nil means hook.ErrInterrupted) and
+// tells the OnInterrupt observers, on ctx without its cancellation, that a
+// turn was stopped when running says one was (read before the caller
+// started stopping it).
+func (h *turnHandle) cancelWith(ctx context.Context, cause error, running bool) {
+	if cause == nil {
+		cause = hook.ErrInterrupted
 	}
 	h.cancel(cause)
 	h.hooks.callOnInterrupt(hook.WithScope(context.WithoutCancel(ctx), h.scope),

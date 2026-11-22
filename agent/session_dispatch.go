@@ -139,14 +139,16 @@ func (ss *sessionState) cancel(ctx context.Context, cause error) []bus.InboundMe
 	if stopTurn == nil {
 		return dropped
 	}
-	// The engine turn is stopped through its handle (Interrupt, with the
-	// host's cause), outside the session's lock: its OnInterrupt observers
-	// run on this goroutine. The turn's context then ends too, which stops
-	// a turn still waiting for its slot, or past its engine turn.
-	if h != nil {
-		h.cancelFrom(ctx, cause)
-	}
+	// The turn's context ends first, with the cause, so the cause is set
+	// whenever the turn's outcome is decided (and a turn still waiting for
+	// its slot, or past its engine turn, ends too). Then the engine turn is
+	// stopped through its handle and its OnInterrupt observers run, on this
+	// goroutine, outside the session's lock.
+	running := h != nil && h.running()
 	stopTurn(cause)
+	if h != nil {
+		h.cancelWith(ctx, cause, running)
+	}
 	return dropped
 }
 
