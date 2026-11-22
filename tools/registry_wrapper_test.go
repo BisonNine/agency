@@ -283,3 +283,25 @@ func TestWrapper_ConcurrentChangeAndCall(t *testing.T) {
 		t.Errorf("List = %v, want [stable]", r.List())
 	}
 }
+
+// ExecuteUnattended applies the context's allow checker and runs with no
+// chat, whatever the caller's context carries.
+func TestWrapper_ExecuteUnattendedChecksAndClearsChat(t *testing.T) {
+	r := NewToolRegistry()
+	for _, tool := range NamespacedProvider("probe", agentProbe{}).Build(ToolDeps{}) {
+		r.Register(tool)
+	}
+	ctx := WithToolContext(context.Background(), "telegram", "42")
+
+	out, err := r.ExecuteUnattended(ctx, "probe_whoami", nil)
+	if err != nil || out != "agent= chat=/" {
+		t.Errorf("allowed call = %q, %v; want the tool to see no chat", out, err)
+	}
+
+	denied := WithToolAllowChecker(ctx, mockAllowChecker{denied: map[string]bool{"probe_whoami": true}})
+	out, err = r.ExecuteUnattended(denied, "probe_whoami", nil)
+	want := `tool "probe_whoami" failed: ` + NotEnabledMessage("probe_whoami")
+	if err == nil || err.Error() != want || out != "" {
+		t.Errorf("denied call = %q, %v; want error %q", out, err, want)
+	}
+}

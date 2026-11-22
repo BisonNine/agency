@@ -305,7 +305,8 @@ packages import only `tools`.
 | `RegisterHidden`, `RegisterHiddenGroup` | `Put(Entry{Hidden: true, Group, RevealTogether})` |
 | `RegisterSuite*` | the same `Put`; the wrapper records the name as suite-exempt |
 | `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (`Hidden = !IsCore`), returning the removed count |
-| `Get`, `List`, `Count`, `Version`, `ExecuteUnattended` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version`, `ExecuteUnattended` |
+| `Get`, `List`, `Count`, `Version` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version` |
+| `ExecuteUnattended` | refuses an unknown or session-scoped tool, then `ExecuteWithContext` with no chat |
 | `GetDefinitions`, `GetSummaries` | `Listed()` |
 | `ToProviderDefs` | `Snapshot().List()` (`Name = Published`, `Deferred = Hidden`) |
 | `SnapshotHiddenTools`, `HiddenNamespaces`, discovery | `Snapshot().Hidden()` |

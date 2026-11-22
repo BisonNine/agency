@@ -308,9 +308,11 @@ func TestRegistry_ExecuteWithContext_TruncatesErrorForLLM(t *testing.T) {
 	if errField == "" {
 		t.Fatal("error field not found in failure log line")
 	}
-	// About 500 runes plus a truncation marker; the exact marker is toolkit's.
-	if n := len([]rune(errField)); n > 503 {
-		t.Errorf("error field not truncated to about 500 runes: got %d (tail %q)", n, tail(errField, 20))
+	if len([]rune(errField)) > 500 {
+		t.Errorf("error field not truncated to 500 runes: got %d", len([]rune(errField)))
+	}
+	if !strings.HasSuffix(errField, "...") {
+		t.Errorf("expected truncation marker, got tail %q", tail(errField, 20))
 	}
 }
 
@@ -337,4 +339,39 @@ func tail(s string, n int) string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+// With --no-truncate the failure line carries the tool's whole error text.
+func TestRegistry_ExecuteWithContext_NoTruncateKeepsErrorForLLM(t *testing.T) {
+	var buf safeBuf
+	restore := logger.RedirectForTest(&buf)
+	defer restore()
+	utils.SetDisableTruncation(true)
+	defer utils.SetDisableTruncation(false)
+
+	long := strings.Repeat("E", 2000)
+	r := NewToolRegistry()
+	r.Register(&mockRegistryTool{
+		name:   "boom",
+		desc:   "errors",
+		params: map[string]any{},
+		result: ErrorResult(long),
+	})
+
+	r.Execute(context.Background(), "boom", nil)
+
+	var errField string
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		var ev map[string]any
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if msg, ok := ev["message"].(string); ok && msg == "Tool execution failed" {
+			errField, _ = ev["error"].(string)
+			break
+		}
+	}
+	if errField != long {
+		t.Errorf("error field is %d runes, want the full %d", len([]rune(errField)), len(long))
+	}
 }

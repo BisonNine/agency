@@ -11,6 +11,7 @@ import (
 
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/utils"
 )
 
 type ToolEntry struct {
@@ -54,7 +55,7 @@ var toolkitLogger = logger.SDKAs("toolkit", "tool")
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
-		cat:    toolkit.New(toolkit.WithLogger(toolkitLogger)),
+		cat:    toolkit.New(toolkit.WithLogger(toolkitLogger), toolkit.WithTruncate(utils.Truncate)),
 		exempt: make(map[string]bool),
 	}
 }
@@ -127,7 +128,11 @@ func (r *ToolRegistry) RegisterHiddenGroup(tool Tool, group string, revealTogeth
 // Used to drop an upstream MCP server's tools ("mcp_<server>_") as a set before
 // re-registering its current list, so a renamed or removed tool disappears.
 func (r *ToolRegistry) RemoveByPrefix(prefix string) int {
-	return r.ReplaceByPrefix(prefix, nil)
+	removed := r.ReplaceByPrefix(prefix, nil)
+	if removed > 0 {
+		logger.DebugCF("tools", "Removed tools by prefix", map[string]any{"prefix": prefix, "count": removed})
+	}
+	return removed
 }
 
 // ReplaceByPrefix swaps every registered tool whose name starts with prefix for
@@ -284,10 +289,22 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 // ExecuteUnattended runs a registered tool with no session behind it (a
 // scheduled watch probe, a classifier run): it refuses a tool the registry
 // does not hold (ErrToolNotRegistered) and a SessionScoped one
-// (ErrToolSessionScoped), passes no channel, chat or async callback, and turns
+// (ErrToolSessionScoped), runs it through ExecuteWithContext with no channel,
+// chat or async callback (so the context's allow checker applies), and turns
 // an IsError result into an error carrying the tool's ForLLM text.
 func (r *ToolRegistry) ExecuteUnattended(ctx context.Context, name string, args map[string]any) (string, error) {
-	return r.cat.ExecuteUnattended(withCallAgent(ctx), name, args)
+	tool, ok := r.Get(name)
+	if !ok {
+		return "", fmt.Errorf("tool %q: %w", name, ErrToolNotRegistered)
+	}
+	if scoped, isScoped := tool.(SessionScoped); isScoped && scoped.IsSessionScoped() {
+		return "", fmt.Errorf("tool %q: %w", name, ErrToolSessionScoped)
+	}
+	res := r.ExecuteWithContext(ctx, name, args, "", "", nil)
+	if res.IsError {
+		return "", fmt.Errorf("tool %q failed: %s", name, res.ForLLM)
+	}
+	return res.ForLLM, nil
 }
 
 // withCallAgent puts the agent the host's turn runs for (spawnllm's key) on
