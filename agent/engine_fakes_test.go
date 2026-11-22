@@ -34,8 +34,10 @@ type fakeContext struct {
 	observed [][2]int
 	// estimate is every Assembly's prompt-token estimate.
 	estimate int
-	// evictOnce makes the next Assemble report one eviction.
+	// evictOnce makes the next Assemble of the model loop (not the turn's
+	// first request) report one eviction.
 	evictOnce bool
+	assembles int
 	// failAdd makes every add fail with this error.
 	failAdd error
 	// assembled is the history every Assembly returns.
@@ -73,8 +75,9 @@ func (f *fakeContext) Assemble(context.Context, ctxengine.AssembleRequest) (ctxe
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.log = append(f.log, "assemble")
+	f.assembles++
 	a := ctxengine.Assembly{PromptTokenEstimate: f.estimate, Messages: slices.Clone(f.assembled)}
-	if f.evictOnce {
+	if f.evictOnce && f.assembles > 1 {
 		f.evictOnce = false
 		a.Evictions = []ctxengine.EvictionEvent{{Tool: "file_read_lines", Resource: "notes.md", Bytes: 2048, Reason: "superseded"}}
 		a.Messages = slices.Clone(f.stored)
@@ -135,6 +138,9 @@ func (e *fakeEnv) assembleRequest(context.Context, []spawnllm.ToolDefinition, []
 func (e *fakeEnv) compressionManager() (ctxengine.ContextManager, func()) { return e.cm, func() {} }
 
 func (e *fakeEnv) sessionSummary() string            { return "" }
+func (e *fakeEnv) firstRequest(context.Context) ctxengine.AssembleRequest {
+	return ctxengine.AssembleRequest{}
+}
 func (e *fakeEnv) responseLogFields() map[string]any { return nil }
 func (e *fakeEnv) directClient(string) (spawnllm.LLMProvider, func(), error) {
 	return nil, nil, errNoDirectModel
@@ -145,6 +151,30 @@ func (e *fakeEnv) formatRequest([]spawnllm.Message, []spawnllm.ToolDefinition) (
 
 // errNoDirectModel: the engine tests serve no agent on a direct model.
 var errNoDirectModel = errors.New("no direct model")
+
+// fakeStore is a session store's pending-turn marker and save, recording
+// what the engine does with them.
+type fakeStore struct {
+	mu      sync.Mutex
+	log     []string // "pending", "cleared", "save"
+	saveErr error
+}
+
+func (s *fakeStore) record(what string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log = append(s.log, what)
+}
+
+func (s *fakeStore) SetPendingTurn(string) error   { s.record("pending"); return nil }
+func (s *fakeStore) ClearPendingTurn(string) error { s.record("cleared"); return nil }
+func (s *fakeStore) Save(string) error             { s.record("save"); return s.saveErr }
+
+func (s *fakeStore) events() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.log)
+}
 
 // noMemory is a session without long-term memory.
 type noMemory struct{}
@@ -229,16 +259,18 @@ func testChain(t *testing.T, clk clock.Clock, ms ...engineModel) (*models.Catalo
 // engineFixture is a turn of the engine for Alice on session s, with a
 // recorder of every event.
 type engineFixture struct {
-	spec engineSpec
-	env  *fakeEnv
-	cm   *fakeContext
-	rec  *recorder
-	clk  *clock.Fake
+	spec  engineSpec
+	env   *fakeEnv
+	cm    *fakeContext
+	store *fakeStore
+	rec   *recorder
+	clk   *clock.Fake
 }
 
 func newEngineFixture(t *testing.T, chain *models.Chain, clk *clock.Fake) *engineFixture {
 	t.Helper()
-	cm := &fakeContext{}
+	cm := &fakeContext{assembled: []spawnllm.Message{{Role: "user", Content: "hello"}}}
+	store := &fakeStore{}
 	env := &fakeEnv{cm: cm, tools: map[string]func(context.Context, map[string]any) *toolkit.Result{}}
 	rec := &recorder{}
 	hooks := &turnHooks{}
@@ -247,6 +279,10 @@ func newEngineFixture(t *testing.T, chain *models.Chain, clk *clock.Fake) *engin
 		agentID:       "alice",
 		scope:         hook.Scope{AgentID: "alice", AgentName: "Alice", Session: "s", TurnID: "t1"},
 		message:       hook.UserText("hello"),
+		// The message is in the session's history (cm.assembled): the
+		// engine tests drive the turn from its first request.
+		options: hook.RunOptions{AlreadyStored: true},
+		store:   store,
 		maxIterations: 6,
 		retries:       llmMaxRetries,
 		retryBackoff:  time.Second,
@@ -265,7 +301,7 @@ func newEngineFixture(t *testing.T, chain *models.Chain, clk *clock.Fake) *engin
 		}
 	}
 	spec.modelMaxTokens = 4096
-	return &engineFixture{spec: spec, env: env, cm: cm, rec: rec, clk: clk}
+	return &engineFixture{spec: spec, env: env, cm: cm, store: store, rec: rec, clk: clk}
 }
 
 // tool declares a tool and gives it fn.

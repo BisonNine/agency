@@ -622,7 +622,7 @@ func TestEngine_ScopeOnCallsAndIdentity(t *testing.T) {
 		session = toolkit.SessionKey(ctx)
 		return toolkit.SilentResult("ok")
 	})
-	ctx, _ := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
+	ctx := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
 	turn := newEngineTurn(f.spec, []spawnllm.Message{{Role: "user", Content: "hello"}})
 	if _, err := turn.run(ctx); err != nil {
 		t.Fatal(err)
@@ -812,7 +812,7 @@ func TestEngine_ObserverPanicIsSkipped(t *testing.T) {
 	var buf strings.Builder
 	f.spec.hooks.log = slog.New(slog.NewTextHandler(&buf, nil))
 	f.spec.hooks.add(hook.Plugin{Name: "bobs-notice", OnCompaction: func(context.Context, hook.Compaction) { panic("Bob's bug") }})
-	ctx, _ := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
+	ctx := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
 	engineCompactionStart(ctx, ctxengine.CompactionStart{SessionKey: "s", Blocking: true})
 	_, res, err := f.run(t)
 	if err != nil || res.content != "done" {
@@ -885,23 +885,23 @@ func TestEngine_LogLinesNameTheirCallSite(t *testing.T) {
 	}
 }
 
-// A compaction reported on a turn's context reaches the hooks the turn has
-// at that moment: those it was scoped with, then the ones put in place when
-// its model loop starts.
-func TestEngine_CompactionReachesTheTurnsCurrentHooks(t *testing.T) {
+// A compaction reported on a turn's context reaches that turn's hooks, as
+// OnCompaction and a Compaction event; one on a context of no turn reaches
+// none.
+func TestEngine_CompactionReachesTheTurnsHooks(t *testing.T) {
 	var seen []string
-	tap := func(name string) *turnHooks {
-		h := &turnHooks{}
-		h.add(hook.Plugin{Name: name, OnCompaction: func(context.Context, hook.Compaction) { seen = append(seen, name) }})
-		return h
-	}
-	ctx, turn := beginTurnContext(context.Background(), hook.Scope{AgentID: "alice", Session: "s"}, tap("early"), newFake())
+	h := &turnHooks{}
+	h.add(hook.Plugin{Name: "tap", OnCompaction: func(context.Context, hook.Compaction) { seen = append(seen, "callback") },
+		OnEvent: func(_ context.Context, ev hook.Event) {
+			if c, ok := ev.(hook.Compaction); ok && c.Phase == hook.CompactionStarted {
+				seen = append(seen, "event")
+			}
+		}})
+	ctx := beginTurnContext(context.Background(), hook.Scope{AgentID: "alice", Session: "s"}, h, newFake())
 	start := ctxengine.CompactionStart{SessionKey: "s", Blocking: true}
 	engineCompactionStart(ctx, start)
-	turn.use(tap("loop"))
-	engineCompactionStart(ctx, start)
 	engineCompactionStart(context.Background(), start) // no turn: reaches none
-	if !slices.Equal(seen, []string{"early", "loop"}) {
+	if !slices.Equal(seen, []string{"callback", "event"}) {
 		t.Fatalf("reached %v", seen)
 	}
 }

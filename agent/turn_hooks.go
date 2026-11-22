@@ -45,6 +45,29 @@ type turnState struct {
 	evicted []ctxengine.EvictionEvent
 	// streamActivity is stream_tool_activity as read for the current batch.
 	streamActivity bool
+	// replyLines and lastImages follow the turn's answers (ModelAnswer): the
+	// reply lines AfterModel added over the turn, and the images of the last
+	// answer.
+	replyLines []string
+	lastImages int
+	// reply is what AfterTurn decided, for the consumers of TurnFinished.
+	reply turnReply
+}
+
+// turnReply is the reply AfterTurn decided for a turn that answered.
+type turnReply struct {
+	decided bool
+	// outcome is the outcome it decided; the reply is sent only when the
+	// turn finished with it (storing the reply may still fail).
+	outcome hook.Outcome
+	// content is the text sent to the chat and returned to the caller.
+	content string
+	// imagesOnly: a reply of images alone, all already sent.
+	imagesOnly bool
+	// systemError: content is the host's text for an empty reply.
+	systemError bool
+	iterations  int
+	images      int
 }
 
 // newTurnHooks registers the callbacks and event consumers of one turn of
@@ -55,13 +78,14 @@ func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opt
 	return h
 }
 
-// earlyTurnHooks are the hooks a turn has while the host stores its message
-// and assembles its first request, before its model loop is set up: only
-// the compaction notice.
-func (al *AgentLoop) earlyTurnHooks(opts processOptions) *turnHooks {
-	h := &turnHooks{log: logger.SDK()}
-	h.add(al.compactionNoticePlugin(opts))
-	return h
+// buildTurnHooks is newTurnHooks with the consumers' state, with the
+// per-chat plugins of the model loop registered at once (loopPlugins).
+func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*turnHooks, *turnState) {
+	h, st := al.turnHooksFor(ctx, agent, &opts, model, nil)
+	for _, p := range al.loopPlugins(ctx, agent, opts, st)(ctx) {
+		h.add(p)
+	}
+	return h, st
 }
 
 // compactionNoticePlugin tells the turn's person of a compaction it waits on
@@ -81,43 +105,44 @@ func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
 	}}
 }
 
-// buildTurnHooks is newTurnHooks with the consumers' state. What depends on
-// order is each in one consumer, in sequence:
+// turnHooksFor registers the callbacks and event consumers of a turn of
+// agent on *opts (which BeforeTurn may change), whose model is model. What
+// depends on order is each in one consumer, in sequence:
 //
 //   - each provider call: the "LLM finish" line, then the turn's usage,
 //     then the dumps, then the reasoning (modelCall);
-//   - the end of the loop: the stream is flushed, then the eviction notice
+//   - the end of the turn: the stream is flushed, then the eviction notice
 //     posted, then the heartbeat stopped, so no trailing partial text is lost
-//     and no placeholder edit lands after the reply (endTurn);
+//     and no placeholder edit lands after the reply (endTurn); then the
+//     store-fault alert, then the reply sent, then its "Response" line;
 //   - each finished tool call: its statistics, then its audit row, after
 //     the call (recordToolCall); nothing is audited before a call runs;
 //   - AfterModel: generated images are saved and delivered before the
 //     reasoning may stand in for an empty reply, and both run before the
-//     engine stores the assistant message (the notes are in it).
+//     engine stores the assistant message (the notes are in it);
+//   - BeforeModel: the session's pins follow the first request before its
+//     media are resolved.
 //
-// No tool callback is registered: tool calls and results are not changed,
-// and redaction stays on logged and rendered error text.
-func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*turnHooks, *turnState) {
+// The plugins that read per-chat settings are registered when the model
+// loop starts (loopPlugins). No tool callback is registered: tool calls
+// and results are not changed, and redaction stays on logged and rendered
+// error text.
+func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opts *processOptions, model string, cm ctxengine.ContextManager) (*turnHooks, *turnState) {
 	h := &turnHooks{log: logger.SDK()}
 	st := &turnState{}
+	o := *opts // what BeforeTurn does not change
 
-	// Partial-text streaming: a channel that opts in gets the model's text as
-	// it is generated, coalesced into sentence/length chunks. One forwarder
-	// serves every model call in the turn.
-	if streamToolNarration && al.channelManager != nil && al.channelManager.SupportsStreaming(opts.Channel) {
-		channel, chatID := opts.Channel, opts.ChatID
-		st.stream = newStreamCoalescer(func(batch string) {
-			al.channelManager.StreamDelta(ctx, channel, chatID, batch)
-		})
-		h.add(hook.Plugin{Name: "stream", OnTextDelta: func(_ context.Context, ev hook.TextDelta) { st.stream.Add(ev.Text) }})
-	}
-
+	h.add(al.turnPlugin(agent, opts, cm))
 	h.add(hook.Plugin{Name: "model-call", OnEvent: func(evCtx context.Context, ev hook.Event) {
-		if c, ok := ev.(hook.ModelCall); ok {
+		switch c := ev.(type) {
+		case hook.ModelCall:
 			// The reasoning is published on its own goroutine, which may
 			// outlive the model loop: it gets the turn's context, as it always
 			// has, not the loop's.
-			al.modelCall(evCtx, ctx, agent, opts, model, c)
+			al.modelCall(evCtx, ctx, agent, o, model, c)
+		case hook.ModelAnswer:
+			st.replyLines = append(st.replyLines, c.ReplyLines...)
+			st.lastImages = len(c.Response.Images)
 		}
 	}})
 	// Model calls in flight are counted, so a replaced client closes only
@@ -130,38 +155,45 @@ func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, o
 			al.activeRequests.Done()
 		}
 	}})
-	if notify := al.fallbackNotifier(ctx, opts); notify != nil {
-		h.add(hook.Plugin{Name: "fallback-notice", OnFallback: func(_ context.Context, ev hook.Fallback) {
-			notify(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
-		}})
-	}
-	h.add(al.compactionNoticePlugin(opts))
+	h.add(al.compactionNoticePlugin(o))
 
-	images := &turnImages{al: al, agent: agent, opts: opts, model: model}
+	images := &turnImages{al: al, agent: agent, opts: o, model: model}
 	h.add(hook.Plugin{Name: "images", AfterModel: images.afterModel})
 	h.add(hook.Plugin{Name: "reasoning-as-content", AfterModel: al.reasoningAsContent})
+	h.add(hook.Plugin{Name: "first-request", BeforeModel: al.firstRequestPlugin()})
 
-	// Breadcrumbs go to a user chat, never the internal "system" channel.
-	if opts.Channel != "" && opts.Channel != "system" && opts.ChatID != "" && al.getShowToolActivity(agent, opts.SessionKey) {
-		h.add(hook.Plugin{Name: "breadcrumbs", OnEvent: func(ctx context.Context, ev hook.Event) {
-			if s, ok := ev.(hook.ToolCallStarted); ok {
-				al.publishBreadcrumb(ctx, opts, hookToolCall(s.Call))
-			}
-		}})
-	}
 	h.add(hook.Plugin{Name: "tool-record", OnEvent: func(ctx context.Context, ev hook.Event) {
 		if f, ok := ev.(hook.ToolCallFinished); ok {
-			recordToolCall(ctx, agent, opts, f)
+			recordToolCall(ctx, agent, o, f)
 		}
 	}})
-	h.add(hook.Plugin{Name: "turn", OnEvent: func(ctx context.Context, ev hook.Event) {
+	h.add(hook.Plugin{Name: "batch", OnEvent: func(ctx context.Context, ev hook.Event) {
 		switch e := ev.(type) {
-		case hook.TurnStarted:
-			// Progress heartbeat: keep a long turn visibly alive by editing
-			// its placeholder every progress_interval with a running
-			// tool-call count.
-			st.stopProgress = al.startProgressUpdates(ctx, opts.Channel, opts.ChatID,
-				al.GetConfig().Agents.Defaults.GetProgressInterval(), &st.completedTools)
+		case hook.ToolBatchStarted:
+			al.publishNarration(ctx, o, e.Content)
+		case hook.ToolBatchFinished:
+			st.completedTools.Add(int64(e.Calls))
+			st.streamActivity = al.GetConfig().Agents.Defaults.StreamToolActivity
+		case hook.ToolResultStored:
+			// Each tool's own output reaches the user only with
+			// stream_tool_activity; otherwise the user gets just the final
+			// answer.
+			if st.streamActivity && !e.Result.Silent && e.Result.ForUser != "" {
+				al.publishToolForUser(ctx, o, e.Call.Name, e.Result)
+			}
+			if len(e.Result.Media) > 0 {
+				al.publishToolMedia(ctx, o, e.Call.Name, e.Result)
+			}
+		}
+	}})
+	h.add(hook.Plugin{Name: "vision-describe", DescribeImages: func(ctx context.Context, images hook.UnseenImages) (string, bool) {
+		return al.describeToolImages(ctx, agent, *opts, model, images)
+	}})
+	h.add(hook.Plugin{Name: "reply", AfterTurn: func(_ context.Context, _ *hook.Turn, r *hook.TurnResult) {
+		al.decideModelReply(agent, *opts, st, r)
+	}})
+	h.add(hook.Plugin{Name: "turn", OnEvent: func(evCtx context.Context, ev hook.Event) {
+		switch e := ev.(type) {
 		case hook.Compaction:
 			if e.Phase == hook.CompactionEvicted {
 				st.mu.Lock()
@@ -171,37 +203,96 @@ func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, o
 				st.mu.Unlock()
 			}
 		case hook.TurnFinished:
-			al.endTurn(ctx, agent, opts, st)
-		}
-	}})
-	h.add(hook.Plugin{Name: "batch", OnEvent: func(ctx context.Context, ev hook.Event) {
-		switch e := ev.(type) {
-		case hook.ToolBatchStarted:
-			al.publishNarration(ctx, opts, e.Content)
-		case hook.ToolBatchFinished:
-			st.completedTools.Add(int64(e.Calls))
-			st.streamActivity = al.GetConfig().Agents.Defaults.StreamToolActivity
-		case hook.ToolResultStored:
-			// Each tool's own output reaches the user only with
-			// stream_tool_activity; otherwise the user gets just the final
-			// answer.
-			if st.streamActivity && !e.Result.Silent && e.Result.ForUser != "" {
-				al.publishToolForUser(ctx, opts, e.Call.Name, e.Result)
-			}
-			if len(e.Result.Media) > 0 {
-				al.publishToolMedia(ctx, opts, e.Call.Name, e.Result)
-			}
-		}
-	}})
-	h.add(hook.Plugin{Name: "vision-describe", DescribeImages: func(ctx context.Context, images hook.UnseenImages) (string, bool) {
-		return al.describeToolImages(ctx, agent, opts, model, images)
-	}})
-	h.add(hook.Plugin{Name: "store-fault", OnEvent: func(_ context.Context, ev hook.Event) {
-		if f, ok := ev.(hook.TurnFinished); ok {
-			al.reportStoreRefusal(agent, opts.SessionKey, f.Err)
+			al.endTurn(ctx, agent, o, st)
+			al.reportStoreRefusal(agent, o.SessionKey, e.Err)
+			al.reportSessionSave(agent, o.SessionKey, e.TurnResult)
+			al.sendModelReply(ctx, agent, o, st, e.TurnResult)
 		}
 	}})
 	return h, st
+}
+
+// loopPlugins returns what registers, when the model loop of a turn starts
+// (after its message is stored), the plugins that read per-chat settings
+// there, and starts the progress heartbeat: the streaming of partial text,
+// the fallback notice and the tool breadcrumbs.
+func (al *AgentLoop) loopPlugins(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState) func(context.Context) []hook.Plugin {
+	return func(context.Context) []hook.Plugin {
+		var plugins []hook.Plugin
+		// Partial-text streaming: a channel that opts in gets the model's
+		// text as it is generated, coalesced into sentence/length chunks. One
+		// forwarder serves every model call in the turn.
+		if streamToolNarration && al.channelManager != nil && al.channelManager.SupportsStreaming(opts.Channel) {
+			channel, chatID := opts.Channel, opts.ChatID
+			st.stream = newStreamCoalescer(func(batch string) {
+				al.channelManager.StreamDelta(ctx, channel, chatID, batch)
+			})
+			plugins = append(plugins, hook.Plugin{Name: "stream", OnTextDelta: func(_ context.Context, ev hook.TextDelta) { st.stream.Add(ev.Text) }})
+		}
+		if notify := al.fallbackNotifier(ctx, opts); notify != nil {
+			plugins = append(plugins, hook.Plugin{Name: "fallback-notice", OnFallback: func(_ context.Context, ev hook.Fallback) {
+				notify(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
+			}})
+		}
+		// Breadcrumbs go to a user chat, never the internal "system" channel.
+		if opts.Channel != "" && opts.Channel != "system" && opts.ChatID != "" && al.getShowToolActivity(agent, opts.SessionKey) {
+			plugins = append(plugins, hook.Plugin{Name: "breadcrumbs", OnEvent: func(ctx context.Context, ev hook.Event) {
+				if s, ok := ev.(hook.ToolCallStarted); ok {
+					al.publishBreadcrumb(ctx, opts, hookToolCall(s.Call))
+				}
+			}})
+		}
+		// Progress heartbeat: keep a long turn visibly alive by editing its
+		// placeholder every progress_interval with a running tool-call count.
+		st.stopProgress = al.startProgressUpdates(ctx, opts.Channel, opts.ChatID,
+			al.GetConfig().Agents.Defaults.GetProgressInterval(), &st.completedTools)
+		return plugins
+	}
+}
+
+// turnPlugin readies a turn of agent before anything of it is stored
+// (BeforeTurn): a session_clear handoff releases the session's pins and
+// reissues its token, a single-shot turn starts blank, whispers held for the
+// agent open its message and the inbound media are described and pinned;
+// the turn is recorded as pending with its source. After the turn
+// (AfterTurn) the source is cleared, unless shutdown stopped it.
+func (al *AgentLoop) turnPlugin(agent *AgentInstance, opts *processOptions, cm ctxengine.ContextManager) hook.Plugin {
+	return hook.Plugin{
+		Name: "session",
+		BeforeTurn: func(ctx context.Context, turn *hook.Turn) (*hook.TurnResult, error) {
+			if err := al.prepareSession(ctx, agent, cm, opts, turn); err != nil {
+				return nil, err
+			}
+			al.recordPendingTurnSource(ctx, agent, *opts)
+			return nil, nil
+		},
+		AfterTurn: func(_ context.Context, _ *hook.Turn, r *hook.TurnResult) {
+			if r.Err != nil && errors.Is(r.Cause, hook.ErrShutdown) {
+				return
+			}
+			al.clearPendingTurnSource(agent.ID, opts.SessionKey)
+		},
+	}
+}
+
+// firstRequestPlugin makes the session's pins follow the turn's first
+// request, as assembled, and then resolves its media refs for dispatch:
+// images become base64 data URLs, other media local paths in the content.
+// It acts once per turn, on the first dispatch.
+func (al *AgentLoop) firstRequestPlugin() hook.BeforeModelFunc {
+	var done bool
+	return func(ctx context.Context, call *hook.ModelInfo) (*providers.LLMResponse, error) {
+		if done {
+			return nil, nil
+		}
+		done = true
+		scope, _ := hook.ScopeOf(ctx)
+		// Must run before resolveMediaRefs replaces refs with data URLs.
+		al.reconcileSessionPins(scope.Session, call.Request.Messages)
+		maxMediaSize := al.GetConfig().Agents.Defaults.GetMaxMediaSize()
+		call.Request.Messages = resolveMediaRefs(call.Request.Messages, al.mediaStore, maxMediaSize)
+		return nil, nil
+	}
 }
 
 // modelCall handles one provider call: its "LLM finish" line, then for an
@@ -250,48 +341,43 @@ func (al *AgentLoop) turnScope(ctx context.Context, agent *AgentInstance, sessio
 	}
 }
 
-// runLLMIteration executes the LLM call loop with tool handling and returns
-// how it ended: the turn engine, with this turn's callbacks and consumers.
-func (al *AgentLoop) runLLMIteration(
+// runModelTurn runs one turn of agent on opts through the turn engine, its
+// whole span: the message stored, the model loop, the reply decided, stored
+// and, when opts asks, sent. It returns the reply (empty when nothing is to
+// be said) or the error the turn ended with. A step-changing callback's
+// panic ends the turn as a panic in the turn always has: it reaches the
+// caller once the turn has finished.
+func (al *AgentLoop) runModelTurn(
 	ctx context.Context,
 	agent *AgentInstance,
-	messages []providers.Message,
 	opts processOptions,
 	cm ctxengine.ContextManager,
 	mem *cogmem.Session,
-) (modelReply, error) {
-	// Provider error logs name the agent without correlating timestamps.
-	ctx = providers.WithAgentID(ctx, agent.ID)
-	turn, ctx := al.newHostEngineTurn(ctx, agent, messages, opts, cm, mem)
-	res, err := turn.run(ctx)
+) (string, error) {
+	turn, ctx := al.newHostEngineTurn(ctx, agent, nil, opts, cm, mem)
+	_, err := turn.run(ctx)
+	return al.turnOutcome(turn, err)
+}
+
+// turnOutcome is what a finished engine turn returns to the host: its reply,
+// or its error in the host's words.
+func (al *AgentLoop) turnOutcome(turn *engineTurn, err error) (string, error) {
 	if perr, ok := errors.AsType[*hook.PanicError](err); ok {
-		// A step-changing callback's panic ends the turn as a panic in the
-		// turn always has.
 		panic(perr.Value)
 	}
 	if se, ok := errors.AsType[*hook.SessionStoreError](err); ok {
-		err = storeRefusalError(se.What, se.Err)
+		return "", storeRefusalError(se.What, se.Err)
 	}
 	if err != nil {
-		return modelReply{iterations: res.iterations}, err
+		return "", err
 	}
-	return modelReply{
-		content:      res.content,
-		normal:       res.normal,
-		degenerate:   res.degenerate,
-		finishReason: res.finishReason,
-		iterations:   res.iterations,
-		images:       res.images,
-		imageReplies: res.replyLines,
-		lastImages:   res.lastImages,
-		imageNotes:   res.notes,
-	}, nil
+	return turn.handle.result.Reply, nil
 }
 
-// newHostEngineTurn is the engine turn of agent on opts over messages, with
-// the turn's model choice (made now when opts has none) and its callbacks,
-// registered now, at the start of the model loop, and made the hooks of the
-// turn on ctx (scoped now when opts has no turn yet).
+// newHostEngineTurn is the engine turn of agent on opts, with the turn's
+// model choice (made now when opts has none) and its callbacks, over
+// messages until the first request is assembled. The returned context
+// carries the turn's scope and hooks.
 func (al *AgentLoop) newHostEngineTurn(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -304,16 +390,22 @@ func (al *AgentLoop) newHostEngineTurn(
 	if tm == nil {
 		tm = al.selectTurnModel(agent, opts.SessionKey)
 	}
-	if opts.turn == nil {
-		ctx, opts.turn = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), nil, al.clk())
-	}
-	hooks := al.newTurnHooks(ctx, agent, opts, tm.model)
-	opts.turn.use(hooks)
+	o := &opts
+	hooks, st := al.turnHooksFor(ctx, agent, o, tm.model, cm)
+	ctx = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), hooks, al.clk())
 	scope, _ := hook.ScopeOf(ctx)
 	spec := engineSpec{
 		agentID: agent.ID,
 		scope:   scope,
-		message: hook.Message{Text: opts.UserMessage, Media: opts.Media, Source: opts.SenderID},
+		message: turnMessage(opts),
+		options: hook.RunOptions{
+			// A retried message is already in history, unless a single-shot
+			// turn starts blank and stores it again.
+			AlreadyStored: opts.IsRetry && !agent.Spec.SingleShot(),
+			ResetSession:  opts.ResetSession,
+			Depth:         scope.Depth,
+		},
+		loopPlugins: al.loopPlugins(ctx, agent, opts, st),
 
 		maxIterations: agent.MaxIterations,
 		toolTimeout:   func() time.Duration { return al.GetConfig().Agents.Defaults.GetToolTimeout() },
@@ -338,10 +430,28 @@ func (al *AgentLoop) newHostEngineTurn(
 
 		cm:    cm,
 		mem:   mem,
-		env:   &llmTurnEnv{al: al, agent: agent, opts: opts, mem: mem},
+		env:   &llmTurnEnv{al: al, agent: agent, opts: o, mem: mem},
 		hooks: hooks,
 	}
+	if agent.Sessions != nil {
+		spec.store = agent.Sessions
+	}
 	return newEngineTurn(spec, messages), ctx
+}
+
+// turnMessage is the message a turn on opts answers, as the run is given
+// it: its text, media, source and kind.
+func turnMessage(opts processOptions) hook.Message {
+	msg := hook.Message{Text: opts.UserMessage, Media: opts.Media}
+	if opts.SenderName != "" {
+		msg.Source = opts.SenderName
+	} else if opts.SenderID != "" {
+		msg.Source = opts.SenderID
+	}
+	if strings.HasPrefix(opts.SenderID, "callback") {
+		msg.Kind = "callback"
+	}
+	return msg
 }
 
 // fileEditRepeatHint is the steering a model repeating a file_edit call
@@ -358,8 +468,9 @@ func fileEditRepeatHint(toolNames []string) string {
 type llmTurnEnv struct {
 	al    *AgentLoop
 	agent *AgentInstance
-	opts  processOptions
-	mem   *cogmem.Session
+	// opts are the turn's options, as BeforeTurn left them.
+	opts *processOptions
+	mem  *cogmem.Session
 }
 
 func (e *llmTurnEnv) toolDefs() []spawnllm.ToolDefinition {
@@ -371,14 +482,18 @@ func (e *llmTurnEnv) toolDefs() []spawnllm.ToolDefinition {
 // the turn's reply chat, so files a tool sends go where the reply goes. An
 // AsyncExecutor tool's late result is routed by asyncToolCallback.
 func (e *llmTurnEnv) executeTool(ctx context.Context, name string, args map[string]any) *toolkit.Result {
-	asyncCallback := e.al.asyncToolCallback(ctx, e.agent, e.opts, name)
+	asyncCallback := e.al.asyncToolCallback(ctx, e.agent, *e.opts, name)
 	execCtx := tools.WithToolAllowChecker(ctx, e.agent.Config)
 	execCtx = tools.WithReplyChat(execCtx, tools.ReplyChat{Channel: e.opts.Channel, ChatID: e.opts.ChatID})
 	return e.agent.Tools.ExecuteWithContext(execCtx, name, args, e.opts.Channel, e.opts.ChatID, asyncCallback)
 }
 
 func (e *llmTurnEnv) assembleRequest(ctx context.Context, defs []spawnllm.ToolDefinition, history []spawnllm.Message) ctxengine.AssembleRequest {
-	return e.al.assembleRequestWithDefs(ctx, e.agent, e.mem, e.opts, defs, history)
+	return e.al.assembleRequestWithDefs(ctx, e.agent, e.mem, *e.opts, defs, history)
+}
+
+func (e *llmTurnEnv) firstRequest(ctx context.Context) ctxengine.AssembleRequest {
+	return e.al.assembleRequest(ctx, e.agent, e.mem, *e.opts)
 }
 
 func (e *llmTurnEnv) compressionManager() (ctxengine.ContextManager, func()) {

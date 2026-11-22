@@ -7,6 +7,9 @@ import (
 	"context"
 	"testing"
 
+	"go.bison9.com/agent/cogmem"
+	"go.bison9.com/agent/ctxengine"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
 )
@@ -31,4 +34,52 @@ func hostTurn(tb testing.TB, al *AgentLoop, agent *AgentInstance, opts processOp
 // newTestDispatch is the dispatch of turn's next request, with no tools.
 func newTestDispatch(turn *engineTurn) *llmDispatch {
 	return turn.newDispatch(context.Background(), nil, 0)
+}
+
+// runLLMIteration runs a whole engine turn of agent on opts whose first
+// request is messages, as given (the message already stored), and returns
+// how its model loop ended: the model loop over messages, with this turn's
+// callbacks and consumers, as tests of the loop drive it.
+func (al *AgentLoop) runLLMIteration(
+	ctx context.Context,
+	agent *AgentInstance,
+	messages []providers.Message,
+	opts processOptions,
+	cm ctxengine.ContextManager,
+	mem *cogmem.Session,
+) (modelReply, error) {
+	ctx = providers.WithAgentID(ctx, agent.ID)
+	opts.IsRetry = true
+	turn, ctx := al.newHostEngineTurn(ctx, agent, nil, opts, &firstAssembly{ContextManager: cm, first: messages}, mem)
+	turn.spec.options.AlreadyStored = true
+	res, err := turn.run(ctx)
+	if _, herr := al.turnOutcome(turn, err); herr != nil {
+		return modelReply{iterations: res.iterations}, herr
+	}
+	return modelReply{
+		content:      res.content,
+		normal:       res.normal,
+		degenerate:   res.degenerate,
+		finishReason: res.finishReason,
+		iterations:   res.iterations,
+		images:       res.images,
+		imageReplies: res.replyLines,
+		lastImages:   res.lastImages,
+	}, nil
+}
+
+// firstAssembly is a context manager whose first assembly is first, as
+// given; every other call is the manager's own.
+type firstAssembly struct {
+	ctxengine.ContextManager
+	first []providers.Message
+	done  bool
+}
+
+func (f *firstAssembly) Assemble(ctx context.Context, req ctxengine.AssembleRequest) (ctxengine.Assembly, error) {
+	if !f.done {
+		f.done = true
+		return ctxengine.Assembly{Messages: f.first}, nil
+	}
+	return f.ContextManager.Assemble(ctx, req)
 }

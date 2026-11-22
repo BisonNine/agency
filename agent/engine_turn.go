@@ -107,8 +107,19 @@ type turnSession interface {
 	// compressionManager is the session's context manager for a forced
 	// compaction, with its release.
 	compressionManager() (ctxengine.ContextManager, func())
+	// firstRequest is the context engine's request for the turn's first
+	// assembly, before the turn has a request of its own.
+	firstRequest(ctx context.Context) ctxengine.AssembleRequest
 	// sessionSummary is the session's compacted summary, for the logs.
 	sessionSummary() string
+}
+
+// turnStore is what the engine uses of the session store: the pending-turn
+// marker and the save after the reply (session.SessionStore has them).
+type turnStore interface {
+	SetPendingTurn(sessionKey string) error
+	ClearPendingTurn(sessionKey string) error
+	Save(key string) error
 }
 
 // turnHost are host decisions with no hook type (interim).
@@ -130,8 +141,14 @@ type engineSpec struct {
 	// scope is the turn's scope; its Identity is the accounting identity of
 	// every model call.
 	scope hook.Scope
-	// message is what the turn answers, as TurnStarted reports it.
+	// message is what the turn answers, and options the run's options, as
+	// TurnStarted reports them.
 	message hook.Message
+	options hook.RunOptions
+	// loopPlugins, when set, are registered when the model loop starts:
+	// after the message is stored, before the first dispatch (interim: the
+	// host reads some per-chat settings there, see the report of phase 5a).
+	loopPlugins func(ctx context.Context) []hook.Plugin
 
 	maxIterations int
 	// toolTimeout is each tool call's budget, read for each batch; 0 means
@@ -165,6 +182,7 @@ type engineSpec struct {
 	directModel models.Candidate
 
 	cm    ctxengine.ContextManager
+	store turnStore
 	mem   turnMemory
 	env   turnEnv
 	hooks *turnHooks
@@ -201,6 +219,9 @@ type engineTurn struct {
 	// releases are the context managers taken for compression, held until
 	// the turn ends.
 	releases []func()
+
+	// pending: the pending-turn marker was set.
+	pending bool
 
 	iteration    int
 	finalContent string
@@ -291,49 +312,129 @@ func (noTurnMemory) Observe(context.Context, int64, string, string) {}
 func (noTurnMemory) RecordToolUse(...string)                        {}
 
 // errEngineIncomplete ends a turn whose spec lacks the session's context
-// manager or the host's services.
-var errEngineIncomplete = errors.New("turn engine: no context manager or host services")
+// manager or store, or the host's services.
+var errEngineIncomplete = errors.New("turn engine: no context manager, session store or host services")
 
-// run runs the model loop to its end. It emits TurnStarted first and exactly
-// one TurnFinished last, however the loop ends: a panic in the loop or a
-// callback ends the turn with OutcomeError in its TurnFinished, and then
-// goes on to the caller. A spec without a context manager or host services
-// is refused before the turn starts (errEngineIncomplete): no event is
-// emitted and the turn has no handle.
+// run runs one turn, its whole span: TurnStarted; BeforeTurn; the session
+// reset and the message stored (unless the run says it already is); the
+// pending-turn marker; the model loop; AfterTurn; the reply stored and the
+// session saved; the marker cleared (kept for a turn shutdown stopped);
+// exactly one TurnFinished, last. Its error is the TurnResult's Err; the
+// TurnResult is the handle's. A panic in the loop itself (not in a
+// callback) still ends the turn with OutcomeError in its TurnFinished, then
+// goes on to the caller. A spec without host services is refused before the
+// turn starts (errEngineIncomplete): no event is emitted.
 func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
-	if e.spec.cm == nil || e.spec.env == nil {
+	if e.spec.env == nil {
 		return engineResult{}, errEngineIncomplete
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	e.handle = &turnHandle{cancel: cancel, done: make(chan struct{})}
 	defer cancel(nil)
 
-	if t, hooks, ok := turnOf(ctx); ok && hooks == e.hooks {
-		t.live.Store(true)
-		defer t.live.Store(false)
-	}
-	e.hooks.emit(ctx, hook.TurnStarted{
-		EventHeader: e.header(),
-		Message:     e.spec.message,
-		Options:     hook.RunOptions{AlreadyStored: true, Depth: e.spec.scope.Depth},
-	})
+	e.hooks.emit(ctx, hook.TurnStarted{EventHeader: e.header(), Message: e.spec.message, Options: e.spec.options})
+	turn := &hook.Turn{Message: e.spec.message, Options: e.spec.options}
+	var tr hook.TurnResult
+	stage := stageBeforeTurn
 	defer func() {
 		r := recover()
+		if r == nil {
+			return
+		}
 		e.releaseCompressionManagers()
-		tr := e.turnResult(ctx, err)
-		if r != nil {
-			tr.Err = fmt.Errorf("turn engine: panic: %v", r)
-			tr.Outcome = hook.OutcomeError
+		if stage < stageFinished {
+			tr = e.turnResult(ctx, fmt.Errorf("turn engine: panic: %v", r))
 			tr.Reply, tr.Stored = "", ""
+			e.finish(ctx, tr)
 		}
-		e.hooks.emit(ctx, hook.TurnFinished{EventHeader: e.header(), TurnResult: tr})
-		e.handle.result = tr
-		close(e.handle.done)
-		if r != nil {
-			panic(r)
-		}
+		panic(r)
 	}()
 
+	answer, err := e.hooks.callBeforeTurn(ctx, turn)
+	switch {
+	case err != nil:
+		tr = hook.TurnResult{Outcome: hook.OutcomeError, Err: err}
+	case answer != nil:
+		tr = *answer
+		tr.Skipped = true
+	default:
+		stage = stageStored
+		err = e.begin(ctx, turn)
+		if err == nil {
+			stage = stageLoop
+			res, err = e.loop(ctx)
+		}
+		e.releaseCompressionManagers()
+		tr = e.turnResult(ctx, err)
+	}
+	e.hooks.callAfterTurn(context.WithoutCancel(ctx), turn, &tr)
+	if stage >= stageLoop {
+		e.storeReply(ctx, &tr)
+		e.clearPending(tr)
+	}
+	stage = stageFinished
+	e.finish(ctx, tr)
+	return res, tr.Err
+}
+
+// The stages of a turn, for what a panic in the loop still owes.
+const (
+	stageBeforeTurn = iota
+	stageStored
+	stageLoop
+	stageFinished
+)
+
+// finish emits TurnFinished and closes the handle.
+func (e *engineTurn) finish(ctx context.Context, tr hook.TurnResult) {
+	e.hooks.emit(ctx, hook.TurnFinished{EventHeader: e.header(), TurnResult: tr})
+	e.handle.result = tr
+	close(e.handle.done)
+}
+
+// begin readies the session for the model loop: reset when the run asks,
+// the message stored unless it already is, the pending-turn marker set, the
+// first request assembled.
+func (e *engineTurn) begin(ctx context.Context, turn *hook.Turn) error {
+	if e.spec.cm == nil || e.spec.store == nil {
+		return errEngineIncomplete
+	}
+	if turn.Options.ResetSession {
+		if err := e.spec.cm.Reset(ctx); err != nil {
+			e.logAt(slog.LevelWarn, "session_clear: Reset failed", map[string]any{
+				"session_key": e.spec.scope.Session,
+				"error":       err.Error(),
+			})
+		}
+	}
+	if !turn.Options.AlreadyStored {
+		msg := spawnllm.Message{Role: "user", Content: turn.Message.Text, Media: turn.Message.Media, Source: turn.Message.Source, Type: turn.Message.Kind}
+		seq, err := e.spec.cm.AddUserMessage(ctx, msg)
+		if err != nil {
+			return &hook.SessionStoreError{What: "user message", Err: err}
+		}
+		e.spec.mem.Observe(ctx, seq, msg.Role, msg.Content)
+	}
+	asm, err := e.spec.cm.Assemble(ctx, e.spec.env.firstRequest(ctx))
+	if err != nil {
+		return fmt.Errorf("context manager assemble: %w", err)
+	}
+	e.messages = asm.Messages
+	if err := e.spec.store.SetPendingTurn(e.spec.scope.Session); err != nil {
+		e.logAt(slog.LevelWarn, "Failed to set pending turn flag",
+			map[string]any{"error": err.Error(), "session": e.spec.scope.Session})
+	}
+	e.pending = true
+	if e.spec.loopPlugins != nil {
+		for _, p := range e.spec.loopPlugins(ctx) {
+			e.hooks.add(p)
+		}
+	}
+	return nil
+}
+
+// loop runs the model loop to its end.
+func (e *engineTurn) loop(ctx context.Context) (engineResult, error) {
 	e.logDispatchTarget()
 	for e.iteration < e.spec.maxIterations {
 		e.iteration++
@@ -358,9 +459,41 @@ func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 	}, nil
 }
 
-// turnResult is the TurnResult the loop's end reports. The host decides the
-// reply and the outcome it sends after the loop (finishTurn); this is the
-// engine's own view of it.
+// storeReply stores tr.Stored and saves the session, when there is a reply
+// to store: a refused store fails the turn, a failed save is SaveErr.
+func (e *engineTurn) storeReply(ctx context.Context, tr *hook.TurnResult) {
+	if tr.Stored == "" {
+		return
+	}
+	msg := spawnllm.Message{Role: "assistant", Content: tr.Stored}
+	seq, err := e.spec.cm.AddAssistantMessage(ctx, msg)
+	if err != nil {
+		tr.Err = &hook.SessionStoreError{What: "assistant reply", Err: err}
+		tr.SaveErr = tr.Err
+		tr.Outcome = hook.OutcomeError
+		return
+	}
+	e.spec.mem.Observe(ctx, seq, msg.Role, msg.Content)
+	if err := e.spec.store.Save(e.spec.scope.Session); err != nil {
+		tr.SaveErr = &hook.SessionStoreError{What: "session save", Err: err}
+	}
+}
+
+// clearPending clears the pending-turn marker, unless shutdown stopped the
+// turn: a restart replays it.
+func (e *engineTurn) clearPending(tr hook.TurnResult) {
+	if !e.pending || (tr.Err != nil && errors.Is(tr.Cause, hook.ErrShutdown)) {
+		return
+	}
+	if err := e.spec.store.ClearPendingTurn(e.spec.scope.Session); err != nil {
+		e.logAt(slog.LevelWarn, "Failed to clear pending turn flag",
+			map[string]any{"error": err.Error(), "session": e.spec.scope.Session})
+	}
+}
+
+// turnResult is the TurnResult the model loop's end reports, before
+// AfterTurn: its outcome from the error and the cancel cause
+// (hook.CauseOutcome), the reply and what to store.
 func (e *engineTurn) turnResult(ctx context.Context, err error) hook.TurnResult {
 	tr := hook.TurnResult{
 		Err:          err,
@@ -372,13 +505,13 @@ func (e *engineTurn) turnResult(ctx context.Context, err error) hook.TurnResult 
 	}
 	if ctx.Err() != nil {
 		tr.Cause = context.Cause(ctx)
-		if errors.Is(tr.Cause, context.DeadlineExceeded) {
+		if errors.Is(tr.Cause, context.DeadlineExceeded) && !errors.Is(tr.Cause, hook.ErrDeadline) {
 			tr.Cause = fmt.Errorf("%w: %w", hook.ErrDeadline, tr.Cause)
 		}
 	}
 	switch {
-	case err != nil && tr.Cause != nil && !errors.Is(tr.Cause, hook.ErrDeadline):
-		tr.Outcome = hook.OutcomeCancelled
+	case err != nil && tr.Cause != nil:
+		tr.Outcome = hook.CauseOutcome(tr.Cause)
 	case err != nil:
 		tr.Outcome = hook.OutcomeError
 	case e.finalContent == "" && e.lastImages == 0:

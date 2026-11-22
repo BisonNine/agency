@@ -63,14 +63,9 @@ type processOptions struct {
 	// It must not block.
 	OnReplyDelivery func(reply string, err error)
 	// turnModel is the turn's model choice, made by runAgentLoop when the
-	// turn starts; nil when the model loop is entered without one, which
+	// turn starts; nil when the turn engine is entered without one, which
 	// then makes it.
 	turnModel *turnModel
-	// turn is the turn's place on its context (beginTurnContext), made by
-	// runAgentLoop once the session is prepared; nil when the model loop is
-	// entered without it, which then makes it. The model loop registers the
-	// turn's callbacks on it when it starts.
-	turn *turnOnContext
 }
 
 // turnLimits are the limits of the turn's model: the choice made when the
@@ -90,15 +85,14 @@ func (opts processOptions) setOutcome(outcome string) {
 }
 
 // runAgentLoop is the core message processing logic: one turn of agent on
-// opts, from saving the user's message to the reply.
+// opts, from saving the user's message to the reply, run by the turn engine.
 func (al *AgentLoop) runAgentLoop(
 	ctx context.Context,
 	agent *AgentInstance,
 	opts processOptions,
 ) (string, error) {
 	// Every provider call of the turn names the agent in its error logs,
-	// including the compression paths that fan out from here before
-	// runLLMIteration is reached.
+	// including the compression paths that fan out from the turn.
 	ctx = providers.WithAgentID(ctx, agent.ID)
 
 	agent, endTurn, err := al.beginAgentTurn(agent, opts.SessionKey)
@@ -109,7 +103,7 @@ func (al *AgentLoop) runAgentLoop(
 
 	// A human agent's turn is answered by the person, never by a model.
 	if agent.HumanModel != "" {
-		return al.runHumanTurn(ctx, agent, opts)
+		return al.runHumanEngineTurn(ctx, agent, opts)
 	}
 
 	// A single-shot agent keeps nothing between turns: its conversation is
@@ -145,40 +139,34 @@ func (al *AgentLoop) runAgentLoop(
 	defer endTokenTurn()
 	ctx = withCompactionNotice(ctx, agent, opts)
 
-	if err = al.prepareSession(ctx, agent, cm, &opts); err != nil {
-		return "", err
-	}
-	// The turn is scoped before anything of it reaches the context engine,
-	// with the compaction notice as its only hook until the model loop
-	// registers the rest: a compaction while the message is stored tells the
-	// person.
-	ctx, opts.turn = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), al.earlyTurnHooks(opts), al.clk())
-	// A retried message is already in history.
-	if !opts.IsRetry {
-		if err = al.saveUserMessage(ctx, agent, opts, cm, mem); err != nil {
-			return "", err
-		}
-	}
-	messages, err := al.turnRequest(ctx, agent, opts, cm, mem)
-	if err != nil {
-		return "", err
-	}
+	return al.runModelTurn(ctx, agent, opts, cm, mem)
+}
 
-	al.markTurnPending(ctx, agent, opts)
-	// A turn shutdown cancelled stays pending, so a restart replays it.
-	interrupted := false
-	defer func() {
-		if !interrupted {
-			al.clearTurnPending(agent, opts.SessionKey)
+// runHumanEngineTurn runs a human agent's turn through the turn engine: the
+// person answers it (BeforeTurn), nothing is stored.
+func (al *AgentLoop) runHumanEngineTurn(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
+	hooks := &turnHooks{log: logger.SDK()}
+	hooks.add(hook.Plugin{Name: "person", BeforeTurn: func(ctx context.Context, _ *hook.Turn) (*hook.TurnResult, error) {
+		reply, err := al.runHumanTurn(ctx, agent, opts)
+		if err != nil {
+			return nil, err
 		}
-	}()
-
-	reply, err := al.runLLMIteration(ctx, agent, messages, opts, cm, mem)
-	if err != nil {
-		interrupted = shuttingDown(ctx)
-		return "", err
-	}
-	return al.finishTurn(ctx, agent, opts, cm, mem, reply)
+		return &hook.TurnResult{Outcome: hook.OutcomeOK, Reply: reply}, nil
+	}})
+	ctx = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), hooks, al.clk())
+	scope, _ := hook.ScopeOf(ctx)
+	turn := newEngineTurn(engineSpec{
+		agentID: agent.ID,
+		scope:   scope,
+		message: turnMessage(opts),
+		options: hook.RunOptions{AlreadyStored: opts.IsRetry, Depth: scope.Depth},
+		clock:   al.clk(),
+		log:     logger.SDK(),
+		env:     &llmTurnEnv{al: al, agent: agent, opts: &opts},
+		hooks:   hooks,
+	}, nil)
+	_, err := turn.run(ctx)
+	return al.turnOutcome(turn, err)
 }
 
 // beginAgentTurn marks agent in a turn: a temporary agent is never deleted
@@ -234,21 +222,17 @@ func (al *AgentLoop) scopeSessionToken(ctx context.Context, agent *AgentInstance
 	return ctx, sti.BeginTurn(opts.SessionKey, opts.Channel, opts.ChatID)
 }
 
-// prepareSession readies the session for the turn's message, adjusting opts:
-// a session_clear handoff resets it, a single-shot turn starts blank, and
-// whispers held for the agent open its message.
-func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, cm ctxengine.ContextManager, opts *processOptions) error {
+// prepareSession readies the session for the turn's message, adjusting
+// *opts and turn.Message: a session_clear handoff releases the session's
+// pins and reissues its token (the engine resets the session), a
+// single-shot turn starts blank, whispers held for the agent open its
+// message, and the inbound media are described and pinned.
+func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, cm ctxengine.ContextManager, opts *processOptions, turn *hook.Turn) error {
 	// session_clear publishes an inbound tagged metaSessionReset. The reset
-	// happens here, at a clean turn boundary, before the notice is saved, so
-	// this turn starts on a clean (archive-preserved) context; the reissued
+	// happens at a clean turn boundary, before the notice is saved, so this
+	// turn starts on a clean (archive-preserved) context; the reissued
 	// session token reaches the model in this turn's system prompt.
 	if opts.ResetSession {
-		if err := cm.Reset(ctx); err != nil {
-			logger.WarnCF("agent", "session_clear: Reset failed", map[string]any{
-				"session_key": opts.SessionKey,
-				"error":       err.Error(),
-			})
-		}
 		// The cleared history no longer references any media; let its files age out.
 		al.releaseSessionPins(opts.SessionKey)
 		al.reissueSessionToken(agent, opts.SessionKey)
@@ -256,7 +240,7 @@ func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, c
 
 	// Whatever a previous single-shot turn left behind (its discard skipped
 	// because the session was in use) is cleared, and a retried message is
-	// saved again as the turn's only message.
+	// saved again as the turn's only message (AlreadyStored is off).
 	if agent.Spec.SingleShot() {
 		if err := cm.Reset(ctx); err != nil {
 			return fmt.Errorf("single-shot reset: %w", err)
@@ -268,36 +252,13 @@ func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, c
 	// already in history, so they wait for the next one.
 	if !opts.IsRetry {
 		opts.UserMessage = al.prependWhispers(agent, opts.UserMessage)
+		turn.Message.Text = opts.UserMessage
 	}
-	return nil
-}
-
-// saveUserMessage stores the turn's user message, which may trigger
-// compression, and observes it into cognitive memory.
-func (al *AgentLoop) saveUserMessage(
-	ctx context.Context,
-	agent *AgentInstance,
-	opts processOptions,
-	cm ctxengine.ContextManager,
-	mem *cogmem.Session,
-) error {
-	userMsg := providers.Message{Role: "user", Content: opts.UserMessage}
-	if opts.SenderName != "" {
-		userMsg.Source = opts.SenderName
-	} else if opts.SenderID != "" {
-		userMsg.Source = opts.SenderID
+	if len(opts.Media) > 0 && !turn.Options.AlreadyStored {
+		userMsg := providers.Message{Role: "user", Content: turn.Message.Text}
+		al.attachInboundMedia(ctx, agent, *opts, &userMsg)
+		turn.Message.Text, turn.Message.Media = userMsg.Content, userMsg.Media
 	}
-	if strings.HasPrefix(opts.SenderID, "callback") {
-		userMsg.Type = "callback"
-	}
-	if len(opts.Media) > 0 {
-		al.attachInboundMedia(ctx, agent, opts, &userMsg)
-	}
-	seq, err := cm.AddUserMessage(ctx, userMsg)
-	if err != nil {
-		return al.sessionStoreWriteFailed(agent, opts.SessionKey, "user message", err)
-	}
-	mem.Observe(ctx, seq, userMsg.Role, userMsg.Content)
 	return nil
 }
 
@@ -321,51 +282,130 @@ func (al *AgentLoop) attachInboundMedia(ctx context.Context, agent *AgentInstanc
 	}
 }
 
-// turnRequest assembles the turn's first request: eviction sweep, safety-net
-// compaction on both stored history and the built request, and memory placed
-// from the message the user just sent. Media refs are then resolved for
-// dispatch.
-func (al *AgentLoop) turnRequest(
-	ctx context.Context,
-	agent *AgentInstance,
-	opts processOptions,
-	cm ctxengine.ContextManager,
-	mem *cogmem.Session,
-) ([]providers.Message, error) {
-	asm, err := cm.Assemble(ctx, al.assembleRequest(ctx, agent, mem, opts))
-	if err != nil {
-		return nil, fmt.Errorf("context manager assemble: %w", err)
+// decideModelReply turns the model's reply into the turn's (AfterTurn):
+// intentional silence and empty replies are handled, and what the engine
+// stores and the chat is sent are decided. A turn that failed, or that
+// BeforeTurn answered, is left as it is.
+func (al *AgentLoop) decideModelReply(agent *AgentInstance, opts processOptions, st *turnState, r *hook.TurnResult) {
+	if r.Err != nil || r.Skipped {
+		return
 	}
-	messages := asm.Messages
+	reply := modelReplyOf(*r, st)
+	decided := turnReply{decided: true, outcome: hook.OutcomeOK, iterations: r.Iterations, images: r.Images}
+	defer func() {
+		r.Outcome = decided.outcome
+		r.Reply = decided.content
+		st.reply = decided
+	}()
+	// The no-response sentinel (e.g. a group message addressed to someone
+	// else) is intentional silence: the typing indicator is cleared and
+	// nothing is sent or stored, unlike a degenerate empty reply.
+	if isNoResponseSentinel(reply.content) {
+		logger.DebugCF("agent", "LLM declined to respond (no-response sentinel)",
+			map[string]any{"agent_id": agent.ID, "session_key": opts.SessionKey})
+		al.stopTyping(opts.Channel, opts.ChatID)
+		opts.setOutcome(bus.OutcomeEmpty)
+		decided = turnReply{outcome: hook.OutcomeEmpty}
+		r.Stored = ""
+		return
+	}
 
-	// Pins follow what the (possibly compacted) context still references, so
-	// refs compacted out become reapable. Must run before resolveMediaRefs
-	// replaces refs with data URLs in the dispatch copy.
-	al.reconcileSessionPins(opts.SessionKey, messages)
-
-	// Images become base64 data URLs; other media become local paths in the
-	// content.
-	maxMediaSize := al.GetConfig().Agents.Defaults.GetMaxMediaSize()
-	return resolveMediaRefs(messages, al.mediaStore, maxMediaSize), nil
+	// The chat is shown every image of the turn that did not reach it; the
+	// stored reply (r.Stored) notes only the last response's images, since
+	// earlier ones are noted in the tool-call message that carried them.
+	content := withImageNotes(reply.content, reply.imageReplies)
+	// A last response of images alone that ended normally is a complete
+	// reply; an empty, degenerate or cut-off one is not, whatever images
+	// earlier responses of the turn produced.
+	imagesOnly := reply.content == "" && reply.lastImages > 0 && reply.normal && !reply.degenerate
+	if reply.content == "" && !imagesOnly {
+		fallback, outcome := al.emptyReply(agent, opts, reply)
+		opts.setOutcome(outcome)
+		if fallback == "" {
+			al.stopTyping(opts.Channel, opts.ChatID)
+			decided = turnReply{outcome: hook.Outcome(outcome)}
+			r.Stored = ""
+			return
+		}
+		decided.outcome = hook.Outcome(outcome)
+		content = withImageNotes(fallback, reply.imageReplies)
+		decided.systemError = true
+	}
+	if content == "" {
+		// Images alone, all sent to the chat: a complete reply with no text
+		// to send.
+		opts.setOutcome(bus.OutcomeOK)
+		al.stopTyping(opts.Channel, opts.ChatID)
+		decided.imagesOnly = true
+		return
+	}
+	// A system error string is not the model's reply, so it is not stored;
+	// the notes on the last response's images (r.Stored) still are.
+	decided.content = content
 }
 
-// markTurnPending marks the turn in flight, so a restart can detect an
-// interrupted model call and replay it.
-func (al *AgentLoop) markTurnPending(ctx context.Context, agent *AgentInstance, opts processOptions) {
-	if err := agent.Sessions.SetPendingTurn(opts.SessionKey); err != nil {
-		logger.WarnCF("agent", "Failed to set pending turn flag",
-			map[string]any{"error": err.Error(), "session": opts.SessionKey})
+// modelReplyOf is how a turn's model loop ended, from its result and the
+// answers its consumers followed: the model's final content is the reply
+// without the reply lines AfterModel added.
+func modelReplyOf(r hook.TurnResult, st *turnState) modelReply {
+	content := r.Reply
+	if joined := strings.Join(st.replyLines, "\n"); joined != "" {
+		if content == joined {
+			content = ""
+		} else {
+			content = strings.TrimSuffix(content, "\n\n"+joined)
+		}
 	}
-	al.recordPendingTurnSource(ctx, agent, opts)
+	return modelReply{
+		content:      content,
+		normal:       r.Normal,
+		degenerate:   r.Degenerate,
+		finishReason: r.FinishReason,
+		iterations:   r.Iterations,
+		images:       r.Images,
+		lastImages:   st.lastImages,
+		imageReplies: st.replyLines,
+	}
 }
 
-// clearTurnPending clears what markTurnPending recorded.
-func (al *AgentLoop) clearTurnPending(agent *AgentInstance, sessionKey string) {
-	if err := agent.Sessions.ClearPendingTurn(sessionKey); err != nil {
-		logger.WarnCF("agent", "Failed to clear pending turn flag",
-			map[string]any{"error": err.Error(), "session": sessionKey})
+// sendModelReply sends the reply AfterTurn decided once the turn finished
+// with the outcome it was decided for (TurnFinished): to the chat when opts
+// asks for it, then its "Response" line. Nothing is sent when storing it
+// failed.
+func (al *AgentLoop) sendModelReply(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState, f hook.TurnResult) {
+	d := st.reply
+	if !d.decided || f.Err != nil || f.Outcome != d.outcome {
+		return
 	}
-	al.clearPendingTurnSource(agent.ID, sessionKey)
+	if d.imagesOnly {
+		logger.InfoCF("agent", "Response",
+			map[string]any{"agent_id": agent.ID, "session_key": opts.SessionKey, "iterations": d.iterations, "images": d.images})
+		if opts.IterationsOut != nil {
+			*opts.IterationsOut = d.iterations
+		}
+		return
+	}
+	if opts.SendResponse {
+		al.publishTurnReply(ctx, opts, d.content)
+	}
+
+	// Content is logged only with log_message_content, for privacy.
+	logMsg := "Response"
+	if logger.GetLogMessageContent() {
+		logMsg = "Response: " + utils.Truncate(d.content, 120)
+	}
+	logger.InfoCF("agent", logMsg,
+		map[string]any{
+			"agent_id":     agent.ID,
+			"session_key":  opts.SessionKey,
+			"iterations":   d.iterations,
+			"final_length": len(d.content),
+			"system_error": d.systemError,
+		})
+
+	if opts.IterationsOut != nil {
+		*opts.IterationsOut = d.iterations
+	}
 }
 
 // modelReply is how the model loop of a turn ended.
@@ -382,101 +422,6 @@ type modelReply struct {
 	// imageReplies are the lines the reply carries about them (saved paths,
 	// URLs, why one was not sent), from every response of the turn.
 	imageReplies []string
-	// imageNotes tell the model, in its stored reply, of the images of its
-	// last response; those of earlier responses are already noted in the
-	// tool-call message that carried them.
-	imageNotes []string
-}
-
-// finishTurn turns the model's reply into the turn's: intentional silence
-// and empty replies are handled, a real reply is saved to the session, and
-// the reply is published when opts asks for it.
-func (al *AgentLoop) finishTurn(
-	ctx context.Context,
-	agent *AgentInstance,
-	opts processOptions,
-	cm ctxengine.ContextManager,
-	mem *cogmem.Session,
-	reply modelReply,
-) (string, error) {
-	// The no-response sentinel (e.g. a group message addressed to someone
-	// else) is intentional silence: the typing indicator is cleared and
-	// nothing is sent, unlike a degenerate empty reply.
-	if isNoResponseSentinel(reply.content) {
-		logger.DebugCF("agent", "LLM declined to respond (no-response sentinel)",
-			map[string]any{"agent_id": agent.ID, "session_key": opts.SessionKey})
-		al.stopTyping(opts.Channel, opts.ChatID)
-		opts.setOutcome(bus.OutcomeEmpty)
-		return "", nil
-	}
-
-	// The chat is shown every image of the turn that did not reach it; the
-	// stored reply notes only the last response's images, since earlier
-	// ones are noted in the tool-call message that carried them.
-	content := withImageNotes(reply.content, reply.imageReplies)
-	stored := withImageNotes(reply.content, reply.imageNotes)
-	// A last response of images alone that ended normally is a complete
-	// reply; an empty, degenerate or cut-off one is not, whatever images
-	// earlier responses of the turn produced.
-	imagesOnly := reply.content == "" && reply.lastImages > 0 && reply.normal && !reply.degenerate
-	isSystemError := false
-	if reply.content == "" && !imagesOnly {
-		fallback, outcome := al.emptyReply(agent, opts, reply)
-		opts.setOutcome(outcome)
-		if fallback == "" {
-			al.stopTyping(opts.Channel, opts.ChatID)
-			return "", nil
-		}
-		content = withImageNotes(fallback, reply.imageReplies)
-		isSystemError = true
-	}
-	if content == "" {
-		// Images alone, all sent to the chat: a complete reply with no text
-		// to send.
-		opts.setOutcome(bus.OutcomeOK)
-		al.stopTyping(opts.Channel, opts.ChatID)
-		if stored != "" {
-			if err := al.saveAssistantReply(ctx, agent, opts.SessionKey, cm, mem, stored); err != nil {
-				return "", err
-			}
-		}
-		logger.InfoCF("agent", "Response",
-			map[string]any{"agent_id": agent.ID, "session_key": opts.SessionKey, "iterations": reply.iterations, "images": reply.images})
-		if opts.IterationsOut != nil {
-			*opts.IterationsOut = reply.iterations
-		}
-		return "", nil
-	}
-
-	// A system error string is not the model's reply, so it is not saved;
-	// the notes on the last response's images still are.
-	if stored != "" {
-		if err := al.saveAssistantReply(ctx, agent, opts.SessionKey, cm, mem, stored); err != nil {
-			return "", err
-		}
-	}
-	if opts.SendResponse {
-		al.publishTurnReply(ctx, opts, content)
-	}
-
-	// Content is logged only with log_message_content, for privacy.
-	logMsg := "Response"
-	if logger.GetLogMessageContent() {
-		logMsg = "Response: " + utils.Truncate(content, 120)
-	}
-	logger.InfoCF("agent", logMsg,
-		map[string]any{
-			"agent_id":     agent.ID,
-			"session_key":  opts.SessionKey,
-			"iterations":   reply.iterations,
-			"final_length": len(content),
-			"system_error": isSystemError,
-		})
-
-	if opts.IterationsOut != nil {
-		*opts.IterationsOut = reply.iterations
-	}
-	return content, nil
 }
 
 // emptyReply decides what an empty model reply becomes: the text sent in its
@@ -508,35 +453,27 @@ func (al *AgentLoop) emptyReply(agent *AgentInstance, opts processOptions, reply
 	}
 }
 
-// saveAssistantReply stores the turn's final reply and saves the session.
-func (al *AgentLoop) saveAssistantReply(
-	ctx context.Context,
-	agent *AgentInstance,
-	sessionKey string,
-	cm ctxengine.ContextManager,
-	mem *cogmem.Session,
-	content string,
-) error {
-	finalMsg := providers.Message{Role: "assistant", Content: content}
-	seq, err := cm.AddAssistantMessage(ctx, finalMsg)
-	if err != nil {
-		return al.sessionStoreWriteFailed(agent, sessionKey, "assistant reply", err)
+// reportSessionSave reports the save after a turn's reply was stored
+// (TurnFinished): a failed save is logged and alerted; a good one ends the
+// store-fault alerts, since the turn's messages were recorded and saved.
+func (al *AgentLoop) reportSessionSave(agent *AgentInstance, sessionKey string, f hook.TurnResult) {
+	if f.Stored == "" {
+		return
 	}
-	mem.Observe(ctx, seq, finalMsg.Role, finalMsg.Content)
-	if err := agent.Sessions.Save(sessionKey); err != nil {
+	if se, ok := errors.AsType[*hook.SessionStoreError](f.SaveErr); ok && f.SaveErr != f.Err {
 		logger.WarnCF("agent", "Failed to save session",
-			map[string]any{"error": err.Error(), "session": sessionKey})
+			map[string]any{"error": se.Err.Error(), "session": sessionKey})
 		al.alertStoreFault(agent, alerter.Alert{
 			Title:       alertSessionNotSaved,
 			Description: "conversation history is being lost (disk full or unwritable?)",
-			Details:     err.Error(),
+			Details:     se.Err.Error(),
 			EventID:     sessionStoreAlertID,
 		})
-	} else {
-		// The turn's messages were recorded and saved: the store takes writes.
+		return
+	}
+	if f.SaveErr == nil && f.Err == nil {
 		al.storeFaultOver(agent, alertSessionNotSaved, alertSessionWriteFailed)
 	}
-	return nil
 }
 
 // Titles and the shared id of the session-store alerts. One id for every

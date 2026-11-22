@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
-	"sync/atomic"
 
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/ctxengine"
@@ -248,44 +247,29 @@ func toolCallbackFailure(name string, perr *hook.PanicError) *toolkit.Result {
 
 // turnOnContext is what a turn puts on its context: its hooks and clock, so
 // a step reached through another package (the context engine's compaction
-// start) can call back into the turn it runs for. The hooks may be put in
-// place after the context is made (use), so a host can scope the turn before
-// its model loop is set up.
+// start) can call back into the turn it runs for.
 type turnOnContext struct {
-	hooks atomic.Pointer[turnHooks]
+	hooks *turnHooks
 	clock clock.Clock
-	// live is set from TurnStarted to TurnFinished: a step reported outside
-	// it (a compaction while the host stores the turn's message) reaches the
-	// callbacks but emits no event, so TurnStarted stays the first event and
-	// TurnFinished the last.
-	live atomic.Bool
 }
-
-// use makes h the turn's hooks.
-func (t *turnOnContext) use(h *turnHooks) { t.hooks.Store(h) }
 
 type turnOnContextKey struct{}
 
 // beginTurnContext returns ctx carrying the turn's scope (hook.WithScope,
-// which also sets toolkit's agent id and session key) and hooks (which may be
-// nil until use), and the turn's place on it. The host calls it once per
-// turn, before anything of the turn reaches the context engine.
-func beginTurnContext(ctx context.Context, scope hook.Scope, hooks *turnHooks, now clock.Clock) (context.Context, *turnOnContext) {
+// which also sets toolkit's agent id and session key) and hooks. The host
+// calls it once per turn, for the context it runs the turn on.
+func beginTurnContext(ctx context.Context, scope hook.Scope, hooks *turnHooks, now clock.Clock) context.Context {
 	ctx = hook.WithScope(ctx, scope)
-	t := &turnOnContext{clock: now}
-	t.hooks.Store(hooks)
-	return context.WithValue(ctx, turnOnContextKey{}, t), t
+	return context.WithValue(ctx, turnOnContextKey{}, &turnOnContext{hooks: hooks, clock: now})
 }
 
-// turnOf returns the turn ctx belongs to and its hooks; false outside a turn
-// or before the turn has hooks.
-func turnOf(ctx context.Context) (*turnOnContext, *turnHooks, bool) {
+// turnOf returns the turn ctx belongs to; false outside a turn.
+func turnOf(ctx context.Context) (*turnOnContext, bool) {
 	t, ok := ctx.Value(turnOnContextKey{}).(*turnOnContext)
-	if !ok || t == nil {
-		return nil, nil, false
+	if !ok || t == nil || t.hooks == nil {
+		return nil, false
 	}
-	h := t.hooks.Load()
-	return t, h, h != nil
+	return t, true
 }
 
 // engineCompactionStart is the context engine's compaction-start hook
@@ -294,7 +278,7 @@ func turnOf(ctx context.Context) (*turnOnContext, *turnHooks, bool) {
 // before the summary model is called. A pass with no turn on its context (a
 // background pass) reaches no turn.
 func engineCompactionStart(ctx context.Context, info ctxengine.CompactionStart) {
-	t, hooks, ok := turnOf(ctx)
+	t, ok := turnOf(ctx)
 	if !ok {
 		return
 	}
@@ -306,8 +290,6 @@ func engineCompactionStart(ctx context.Context, info ctxengine.CompactionStart) 
 		Reason:      string(info.Reason),
 		Blocking:    info.Blocking,
 	}
-	hooks.callOnCompaction(ctx, ev)
-	if t.live.Load() {
-		hooks.emit(ctx, ev)
-	}
+	t.hooks.callOnCompaction(ctx, ev)
+	t.hooks.emit(ctx, ev)
 }
