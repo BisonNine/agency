@@ -147,6 +147,7 @@ func (e *fakeEnv) sessionSummary() string { return "" }
 func (e *fakeEnv) firstRequest(context.Context) ctxengine.AssembleRequest {
 	return ctxengine.AssembleRequest{}
 }
+
 func (e *fakeEnv) directClient(string) (spawnllm.LLMProvider, func(), error) {
 	return nil, nil, errNoDirectModel
 }

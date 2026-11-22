@@ -33,8 +33,10 @@ func TestLLMResponseLine_PlaceAndFields(t *testing.T) {
 				if model == "a-wire" {
 					return nil, errors.New(rateLimited)
 				}
-				return &providers.LLMResponse{Content: "hello", Reasoning: "thought", Normal: true,
-					Usage: &providers.UsageInfo{PromptTokens: 120, CompletionTokens: 3}}, nil
+				return &providers.LLMResponse{
+					Content: "hello", Reasoning: "thought", Normal: true,
+					Usage: &providers.UsageInfo{PromptTokens: 120, CompletionTokens: 3},
+				}, nil
 			}}
 			for _, name := range []string{"a", "b"} {
 				if err := al.catalog.RegisterClient(name, p); err != nil {

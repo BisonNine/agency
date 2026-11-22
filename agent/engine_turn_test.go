@@ -972,7 +972,9 @@ func TestEngine_RebuiltOnStoreRequests(t *testing.T) {
 		want    []bool
 	}{
 		{"kept", []modelstest.Step{callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done")}, nil, false, []bool{true, false}},
-		{"eviction", []modelstest.Step{callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done")},
+		{
+			"eviction",
+			[]modelstest.Step{callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done")},
 			func(f *engineFixture) {
 				// The second step's assembly evicts.
 				f.spec.hooks.add(hook.Plugin{Name: "evict", OnEvent: func(_ context.Context, ev hook.Event) {
@@ -982,11 +984,21 @@ func TestEngine_RebuiltOnStoreRequests(t *testing.T) {
 						f.cm.mu.Unlock()
 					}
 				}})
-			}, false, []bool{true, true}},
-		{"overflow", []modelstest.Step{modelstest.Fail(errors.New("context_length_exceeded: request too long")), modelstest.Reply("done")},
-			nil, false, []bool{true, true}},
-		{"timeout", []modelstest.Step{modelstest.Fail(fmt.Errorf("request: %w", context.DeadlineExceeded)), modelstest.Reply("done")},
-			nil, true, []bool{true, false}},
+			}, false,
+			[]bool{true, true},
+		},
+		{
+			"overflow",
+			[]modelstest.Step{modelstest.Fail(errors.New("context_length_exceeded: request too long")), modelstest.Reply("done")},
+			nil, false,
+			[]bool{true, true},
+		},
+		{
+			"timeout",
+			[]modelstest.Step{modelstest.Fail(fmt.Errorf("request: %w", context.DeadlineExceeded)), modelstest.Reply("done")},
+			nil, true,
+			[]bool{true, false},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -30,8 +30,10 @@ func TestFormatRequestForLog_TruncationSwitch(t *testing.T) {
 		{Role: "tool", Content: "done", ToolCallID: "c1"},
 	}
 	defs := []providers.ToolDefinition{
-		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "file_read", Description: long,
-			Parameters: map[string]any{"x": strings.Repeat("p", 250)}}},
+		{Type: "function", Function: providers.ToolFunctionDefinition{
+			Name: "file_read", Description: long,
+			Parameters: map[string]any{"x": strings.Repeat("p", 250)},
+		}},
 		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "noop", Description: "nothing"}},
 	}
 	wantMessages := func(text string) string {
