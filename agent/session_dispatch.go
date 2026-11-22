@@ -126,22 +126,27 @@ func (al *AgentLoop) pruneSessions() {
 // messages.
 func (ss *sessionState) cancel(ctx context.Context, cause error) []bus.InboundMessage {
 	ss.mu.Lock()
-	defer ss.mu.Unlock()
 	dropped := ss.pending
 	ss.skipCount += len(ss.pending)
 	ss.pending = nil
-	if ss.turnCancel != nil {
-		// The engine turn is stopped through its handle (Interrupt, with
-		// the host's cause), the turn's context with it: a turn still
-		// waiting for its slot, or past its engine turn, ends too.
-		if h := ss.handles.current(); h != nil {
-			h.cancelFrom(ctx, cause)
-		}
-		ss.turnCancel(cause)
+	h, stopTurn := ss.handles.current(), ss.turnCancel
+	if stopTurn != nil {
 		ss.turnCancel = nil
 		ss.handles = nil
 		ss.cancelledRunning = true
 	}
+	ss.mu.Unlock()
+	if stopTurn == nil {
+		return dropped
+	}
+	// The engine turn is stopped through its handle (Interrupt, with the
+	// host's cause), outside the session's lock: its OnInterrupt observers
+	// run on this goroutine. The turn's context then ends too, which stops
+	// a turn still waiting for its slot, or past its engine turn.
+	if h != nil {
+		h.cancelFrom(ctx, cause)
+	}
+	stopTurn(cause)
 	return dropped
 }
 

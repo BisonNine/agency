@@ -158,10 +158,10 @@ func (sm *SubagentManager) newTaskRecord(name, mode, channel, chatID string, req
 }
 
 // runTaskModel runs the record's call through the injected runner.
-func (sm *SubagentManager) runTaskModel(ctx context.Context, rec *TaskRecord) (*TaskModelResult, error) {
+func (sm *SubagentManager) runTaskModel(ctx context.Context, rec *TaskRecord, mode string) (*TaskModelResult, error) {
 	logger.InfoCF("subagent", "Task model call started", map[string]any{
 		"uuid": rec.UUID, "name": rec.Name, "agent": sm.ownerAgentID, "kind": rec.Kind,
-		"model": rec.Model, "mode": rec.Mode, "files": len(rec.Files) + len(rec.Media),
+		"model": rec.Model, "mode": mode, "files": len(rec.Files) + len(rec.Media),
 	})
 	if sm.taskRunner == nil {
 		return nil, errors.New("task models are not available")

@@ -45,13 +45,15 @@ type cancelFixture struct {
 	// was already gone and its status cancelled when its context ended.
 	atCancel chan bool
 	partial  string
+	// released receives once for each worker whose clone was released.
+	released chan struct{}
 }
 
 func newCancelFixture(t *testing.T) *cancelFixture {
 	t.Helper()
 	f := &cancelFixture{
 		reg: NewTaskRegistry(), live: NewLiveSet(), ws: t.TempDir(),
-		started: make(chan context.Context, 8), atCancel: make(chan bool, 8),
+		started: make(chan context.Context, 8), atCancel: make(chan bool, 8), released: make(chan struct{}, 8),
 	}
 	f.mgr = NewSubagentManager(SubagentManagerConfig{
 		Workspace: f.ws, Live: f.live, Tasks: f.reg, CallerAgentID: "alice",
@@ -61,7 +63,7 @@ func newCancelFixture(t *testing.T) *cancelFixture {
 			id := TaskID(ctx)
 			rec, err := readStatus(tasksDirFor(f.ws), id)
 			f.atCancel <- err == nil && rec.Status == StatusCancelled && !slices.Contains(listRunUUIDs(tasksDirFor(f.ws)), id) && !f.live.Has(id)
-			return &global.SyncResult{Content: f.partial}, func() {}, context.Cause(ctx)
+			return &global.SyncResult{Content: f.partial}, func() { f.released <- struct{}{} }, context.Cause(ctx)
 		},
 	})
 	return f
@@ -110,10 +112,12 @@ func TestCancelTask_SettlesBeforeCancelling(t *testing.T) {
 	if err != nil || r.Status != StatusCancelled || !r.Incomplete {
 		t.Fatalf("results = %+v, want cancelled and incomplete", r)
 	}
+	// Once the worker is gone, nothing more can be delivered.
+	<-f.released
 	select {
 	case <-fired:
 		t.Fatal("a cancelled task's callback fired")
-	case <-time.After(50 * time.Millisecond):
+	default:
 	}
 	if st, err := f.mgr.TaskStatus(id); err != nil || st.Status != StatusCancelled {
 		t.Fatalf("agent_status = %+v (%v), want cancelled", st, err)
@@ -151,17 +155,16 @@ func TestCancelTask_NotRelaunchedAfterRestart(t *testing.T) {
 	<-f.atCancel
 
 	// A restart: a fresh live set and registry over the same workspace.
-	relaunched := false
+	live, reg := NewLiveSet(), NewTaskRegistry()
 	restarted := NewSubagentManager(SubagentManagerConfig{
-		Workspace: f.ws, Live: NewLiveSet(), CallerAgentID: "alice",
+		Workspace: f.ws, Live: live, Tasks: reg, CallerAgentID: "alice",
 		RunFull: func(context.Context, string, string, string, string, []string) (*global.SyncResult, func(), error) {
-			relaunched = true
 			return &global.SyncResult{}, func() {}, nil
 		},
 	})
 	restarted.SuperviseOnce(time.Now().Unix()+3600, nil)
-	time.Sleep(50 * time.Millisecond)
-	if relaunched {
+	// A relaunch registers the task before its worker starts.
+	if live.Has(id) || len(reg.Running("alice")) != 0 {
 		t.Fatal("the cancelled task was relaunched")
 	}
 }
@@ -294,6 +297,29 @@ func TestCancelTool_NotEnumerated(t *testing.T) {
 	for _, d := range GlobalProvider.RegisterTools(global.Deps{}) {
 		if d.Name == "cancel" {
 			t.Fatal("agent_cancel enumerated without an agent")
+		}
+	}
+}
+
+// A wait task that ends before its turn starts waiting still hands its
+// result to the turn.
+func TestRun_WaitTaskEndingAtOnce(t *testing.T) {
+	runner := &fakeTaskRunner{res: &TaskModelResult{Model: "fast", Text: "ok"}}
+	mgr := NewSubagentManager(SubagentManagerConfig{
+		Workspace: t.TempDir(), Live: NewLiveSet(), CallerAgentID: "alice", TaskRunner: runner,
+	})
+	for range 200 {
+		done := make(chan *tools.ToolResult, 1)
+		go func() {
+			done <- mgr.RunTask(context.Background(), "t", "cli", "direct", TaskModelRequest{Kind: TaskKindText, Prompt: "hi"}, nil)
+		}()
+		select {
+		case res := <-done:
+			if res.IsError {
+				t.Fatalf("result = %+v", res)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the waiting turn never got the result")
 		}
 	}
 }

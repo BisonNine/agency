@@ -5,7 +5,11 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -74,6 +78,11 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 	replyStarted := make(chan struct{}, 4)
 	model := chatFunc(func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
 		switch user := lastUser(messages); {
+		case user == "the work" && messages[len(messages)-1].Role != "tool":
+			return &providers.LLMResponse{Content: "first part", ToolCalls: []providers.ToolCall{{
+				ID: "tc-w", Type: "function", Name: "time_now",
+				Function: &providers.FunctionCall{Name: "time_now", Arguments: `{}`},
+			}}}, nil
 		case user == "the work":
 			workerStarted <- struct{}{}
 			<-ctx.Done()
@@ -101,6 +110,7 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 		t.Fatalf("first reply = %+v", out)
 	}
 	awaitSignal(t, workerStarted, "the sub-agent to start")
+	taskID := al.tasks.Running("alice")[0].ID
 	send("m2", "hold on")
 	awaitSignal(t, replyStarted, "the reply to start")
 	send("m3", "/cancel all")
@@ -112,4 +122,22 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 	}
 	al.activeRequests.Wait()
 	noOutbound(t, msgBus)
+
+	// The worker's partial output is kept, marked incomplete.
+	alice, _ := al.GetRegistry().Get("alice")
+	path := filepath.Join(alice.Workspace, "tasks", taskID+"-results.json")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		b, err := os.ReadFile(path)
+		if err == nil && strings.Contains(string(b), "first part") {
+			if !strings.Contains(string(b), `"incomplete": true`) || !strings.Contains(string(b), `"status": "cancelled"`) {
+				t.Fatalf("results = %s", b)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("results file %s: %s (%v)", path, b, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

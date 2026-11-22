@@ -79,10 +79,19 @@ func (sm *SubagentManager) addCancelled(res *global.TaskCancelResult, infos []ho
 // to relaunch): its marker is cleared so it is never relaunched. A task
 // running or relaunched meanwhile is left alone.
 func (sm *SubagentManager) cancelRecord(rec *TaskRecord, cause error) bool {
+	sm.recMu.Lock()
+	defer sm.recMu.Unlock()
 	if sm.live.Has(rec.UUID) || sm.tasks.Owns(sm.ownerAgentID, rec.UUID) {
 		return false
 	}
+	// Read again now that nothing runs it: a worker that has just ended
+	// wrote its final status before leaving the live set.
 	dir := sm.tasksDir()
+	cur, err := readStatus(dir, rec.UUID)
+	if err != nil || cur.Status != StatusRunning {
+		return false
+	}
+	rec = cur
 	clearRun(dir, rec.UUID)
 	rec.Status, rec.Error, rec.FinishedAt = StatusCancelled, cancelledTaskError, nowRFC()
 	sm.persistStatus(dir, rec)

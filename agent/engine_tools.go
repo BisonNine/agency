@@ -51,9 +51,10 @@ func (e *toolPanicError) Error() string { return fmt.Sprintf("tool %s panicked: 
 // transcript never holds a call without a result, and what it returns later
 // is dropped.
 func (e *engineTurn) executeToolCalls(ctx context.Context, calls []spawnllm.ToolCall) []toolCallResult {
-	b := &toolBatch{results: make([]toolCallResult, len(calls)), ended: make([]bool, len(calls))}
+	b := &toolBatch{results: make([]toolCallResult, len(calls)), ended: make([]bool, len(calls)), calls: make([]hook.ToolCall, len(calls))}
 	for i, tc := range calls {
 		b.results[i].tc = tc
+		b.calls[i] = e.hookCall(tc)
 		e.hooks.emit(ctx, hook.ToolCallStarted{EventHeader: e.header(), Call: e.hookCall(tc)})
 	}
 	// Per-tool budget: a tool's context is cancelled at the deadline so a
@@ -82,6 +83,7 @@ func (e *engineTurn) executeToolCalls(ctx context.Context, calls []spawnllm.Tool
 			grace.Stop()
 		case <-grace.C():
 			e.abandon(ctx, b)
+			b.emitting.Wait()
 		}
 	}
 	e.hooks.emit(ctx, hook.ToolBatchFinished{EventHeader: e.header(), Iteration: e.iteration, Calls: len(calls)})
@@ -102,6 +104,11 @@ type toolBatch struct {
 	mu      sync.Mutex
 	results []toolCallResult
 	ended   []bool
+	// calls are the calls as BeforeTool left them, for an abandoned one.
+	calls []hook.ToolCall
+	// emitting counts the calls that ended and are emitting their
+	// ToolCallFinished, so ToolBatchFinished never comes before one.
+	emitting sync.WaitGroup
 }
 
 // take returns the batch's results, each set.
@@ -113,8 +120,8 @@ func (b *toolBatch) take() []toolCallResult {
 
 // abandon ends every call of b still running with hook.InterruptedResult.
 func (e *engineTurn) abandon(ctx context.Context, b *toolBatch) {
+	var events []hook.ToolCallFinished
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	for i := range b.results {
 		if b.ended[i] {
 			continue
@@ -122,11 +129,16 @@ func (e *engineTurn) abandon(ctx context.Context, b *toolBatch) {
 		b.ended[i] = true
 		r := &b.results[i]
 		r.result = hook.InterruptedResult()
-		e.logAt(slog.LevelWarn, "Tool call abandoned: it did not return after the turn was stopped",
-			e.turnFields(map[string]any{"agent_id": e.spec.agentID, "tool": r.tc.Name, "grace": e.cancelGrace().String()}))
 		snapshot := *r.result
-		call := e.hookCall(r.tc)
-		e.hooks.emit(ctx, hook.ToolCallFinished{EventHeader: e.header(), Call: call, Result: &snapshot, Interrupted: true})
+		call := b.calls[i]
+		call.Arguments = maps.Clone(call.Arguments)
+		events = append(events, hook.ToolCallFinished{EventHeader: e.header(), Call: call, Result: &snapshot, Interrupted: true})
+	}
+	b.mu.Unlock()
+	for _, ev := range events {
+		e.logAt(slog.LevelWarn, "Tool call abandoned: it did not return after the turn was stopped",
+			e.turnFields(map[string]any{"agent_id": e.spec.agentID, "tool": ev.Call.Name, "grace": e.cancelGrace().String()}))
+		e.hooks.emit(ctx, ev)
 	}
 }
 
@@ -150,12 +162,15 @@ func (e *engineTurn) runToolCall(ctx context.Context, b *toolBatch, i int, toolT
 		// The call's context is live until its ToolCallFinished is emitted.
 		defer cancelExec()
 		b.mu.Lock()
-		defer b.mu.Unlock()
 		if b.ended[i] {
+			b.mu.Unlock()
 			return
 		}
 		b.ended[i] = true
 		b.results[i].result = slot.result
+		b.emitting.Add(1)
+		b.mu.Unlock()
+		defer b.emitting.Done()
 		ev := hook.ToolCallFinished{
 			EventHeader: e.header(),
 			Call:        hook.ToolCall{ID: call.ID, Name: call.Name, Arguments: maps.Clone(call.Arguments), Iteration: call.Iteration},
@@ -179,6 +194,9 @@ func (e *engineTurn) runToolCall(ctx context.Context, b *toolBatch, i int, toolT
 		}))
 
 	result, perr := e.beforeTool(execCtx, &call)
+	b.mu.Lock()
+	b.calls[i] = hook.ToolCall{ID: call.ID, Name: call.Name, Arguments: maps.Clone(call.Arguments), Iteration: call.Iteration}
+	b.mu.Unlock()
 	if perr != nil {
 		slot.result = e.toolCallbackFailed(tc.Name, perr)
 		return

@@ -38,8 +38,9 @@ type Task struct {
 	reg    *TaskRegistry
 	cancel context.CancelCauseFunc
 	// beforeCancel runs once, before the task's context is cancelled: it
-	// takes the task out of what the supervisor and a restart relaunch.
-	beforeCancel func(cause error)
+	// takes the task out of what the supervisor and a restart relaunch. It
+	// reports false for a task that had already ended.
+	beforeCancel func(cause error) bool
 
 	mu   sync.Mutex
 	info hook.TaskInfo
@@ -62,17 +63,17 @@ func (t *Task) setMode(m hook.TaskMode) {
 
 // stop cancels the task with cause, once: its record is settled first
 // (beforeCancel), then it leaves the registry, then its context is
-// cancelled.
+// cancelled. It reports whether this call cancelled it: false for a task
+// that had already ended (its result is being delivered).
 func (t *Task) stop(cause error) (hook.TaskInfo, bool) {
 	stopped := false
 	t.once.Do(func() {
-		stopped = true
-		if t.beforeCancel != nil {
-			t.beforeCancel(cause)
+		stopped = t.beforeCancel == nil || t.beforeCancel(cause)
+		if stopped {
+			t.mu.Lock()
+			t.info.State, t.info.Cause, t.info.Ended = hook.TaskCancelled, cause, time.Now()
+			t.mu.Unlock()
 		}
-		t.mu.Lock()
-		t.info.State, t.info.Cause, t.info.Ended = hook.TaskCancelled, cause, time.Now()
-		t.mu.Unlock()
 		t.reg.remove(t.info.ID)
 		t.cancel(cause)
 	})
@@ -116,7 +117,7 @@ func (isolatedContext) Value(any) any { return nil }
 // on: nothing of parent's (the turn that started it, or none) but the
 // sub-agent depth and ask chain it is given and the task's own id.
 // beforeCancel is run by a cancel before the context is cancelled.
-func (r *TaskRegistry) start(parent context.Context, info hook.TaskInfo, depth int, askChain []string, beforeCancel func(error)) (context.Context, *Task) {
+func (r *TaskRegistry) start(parent context.Context, info hook.TaskInfo, depth int, askChain []string, beforeCancel func(error) bool) (context.Context, *Task) {
 	ctx := WithSpawnDepth(isolatedContext{context.WithoutCancel(parent)}, depth)
 	if len(askChain) > 0 {
 		ctx = tools.WithAskChain(ctx, askChain)

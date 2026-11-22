@@ -286,7 +286,8 @@ its speech pipeline) and **complete the turn** on `stream:"lifecycle"` with `dat
 
 The socket is not blocked while a reply is pending, so a client may send another `chat.send`
 during a run. ClawEh keeps every run of a connection open by its `runId` until its reply: a
-reply goes to the run it answers (its `runId`), else to the latest open run. Partial text
+reply goes to the run it answers (its `runId`); a reply that names no run goes to the
+latest open run. Partial text
 streams to the latest open run that is not a `/cancel`.
 
 There is no abort request. To stop a reply, a client sends `/cancel` (or `/cancel all`) as a

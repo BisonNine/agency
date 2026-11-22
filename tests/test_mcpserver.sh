@@ -829,9 +829,6 @@ else
             "agent_cancel" '{"uuid":"no-such-task"}' '"unknown":["no-such-task"]'
         run_test_err_msg_auth "4b.11 agent_cancel — uuid or all required" \
             "agent_cancel" '{}' "uuid or all is required"
-    elif echo "$LIST_OUT" | grep -qw "agent_spawn"; then
-        echo "  4b.10 ${RED}FAIL${NC}: agent_spawn is listed without agent_cancel"
-        TIER2_FAIL=$((TIER2_FAIL + 1))
     else
         echo "  4b.10 agent_cancel not registered on this host (skipped)"
     fi

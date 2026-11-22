@@ -1200,7 +1200,7 @@ Hard-won learnings (don't relearn these):
   Hermes bundle). The **R1 (node) uses both**: `chat`/`final` for the on-screen transcript and
   the `agent` `assistant` text for its **speech** pipeline (`lifecycle/end` completes it).
 - **Runs by id.** A connection keeps its open runs by `runId` (`liveConn.runs`, at most
-  16); a reply ends the run its `OriginalMessageID` names (else the latest), partial text
+  16); a reply ends the run its `OriginalMessageID` names (a reply naming none: the latest), partial text
   streams to the latest run that is not a `/cancel`, and the reply to a `/cancel` first ends
   every older run with `agent` lifecycle end and `chat` state `aborted` under its own id
   (`emitAborted`). No abort request exists.

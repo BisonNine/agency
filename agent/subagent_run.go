@@ -146,7 +146,12 @@ func (al *AgentLoop) runSubagentTask(ctx context.Context, agentID, task, model, 
 			"iterations": res.Iterations, "error": err.Error(),
 			"tool_calls": toolCalls, "tool_errors": toolErrors,
 		})
-		return nil, release, err
+		if ctx.Err() == nil {
+			return nil, release, err
+		}
+		// Cancelled: what the worker had written so far is its partial
+		// output, kept in its results file.
+		return &global.SyncResult{Content: partialOutput(clone, sessionKey)}, release, err
 	}
 	res.Content = content
 	res.ToolCalls, res.ToolErrors, res.LastToolError = toolCalls, toolErrors, lastToolError
@@ -158,4 +163,19 @@ func (al *AgentLoop) runSubagentTask(ctx context.Context, agentID, task, model, 
 		"tool_calls": toolCalls, "tool_errors": toolErrors,
 	})
 	return res, release, nil
+}
+
+// partialOutput is what a stopped worker had written: the text of its
+// assistant messages so far, in order.
+func partialOutput(clone *AgentInstance, sessionKey string) string {
+	if clone.Sessions == nil {
+		return ""
+	}
+	var parts []string
+	for _, m := range clone.Sessions.GetHistory(sessionKey) {
+		if m.Role == "assistant" && strings.TrimSpace(m.Content) != "" {
+			parts = append(parts, m.Content)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }

@@ -161,14 +161,16 @@ func (lc *liveConn) streamingRun() *deviceRun {
 	return nil
 }
 
-// endRun closes the run a reply answers: run id, else the latest open run,
-// else a run of that id never opened. When it is a /cancel, the runs
-// started before it end too: they are returned, to be ended as aborted.
+// endRun closes the run a reply answers: run id; for a reply that names no
+// run, the latest open run. A reply naming a run no longer open (it ended
+// already) keeps its id and touches no other run. When the run is a
+// /cancel, the runs started before it end too: they are returned, to be
+// ended as aborted.
 func (lc *liveConn) endRun(id string) (run *deviceRun, aborted []*deviceRun) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 	i := slices.IndexFunc(lc.runs, func(r *deviceRun) bool { return r.id == id })
-	if i < 0 {
+	if i < 0 && id == "" {
 		i = len(lc.runs) - 1
 	}
 	if i < 0 {

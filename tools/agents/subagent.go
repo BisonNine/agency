@@ -22,6 +22,9 @@ type SubagentManager struct {
 	ownerAgentID string
 	live         *LiveSet
 	tasks        *TaskRegistry
+	// recMu serialises the supervisor's relaunch decisions with the cancel
+	// of a record no worker runs (cancelRecord).
+	recMu sync.Mutex
 
 	// Worker model candidates: selfResolver's for self-spawns, or the target
 	// agent's (resolved via candidateResolver). Used to validate a spawn.
@@ -418,6 +421,8 @@ func (sm *SubagentManager) alertRecordNotWritten(uuid string, err error) {
 // (the agent layer wires it to publish a pointer to the task's origin channel).
 // now is unix seconds.
 func (sm *SubagentManager) SuperviseOnce(now int64, cbFor func(rec *TaskRecord) tools.AsyncCallback) {
+	sm.recMu.Lock()
+	defer sm.recMu.Unlock()
 	dir := sm.tasksDir()
 	for _, id := range listRunUUIDs(dir) {
 		if sm.live.Has(id) {

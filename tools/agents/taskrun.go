@@ -25,9 +25,10 @@ type taskRun struct {
 	// cb receives the result of a callback task (and of a wait task its turn
 	// stopped waiting for).
 	cb tools.AsyncCallback
-	// waiter receives the result while a turn waits for it (wait mode);
-	// nil once nobody waits.
-	waiter chan *tools.ToolResult
+	// result receives the result of a wait task (buffered, set at launch,
+	// never changed) while waiting says a turn still waits for it.
+	result  chan *tools.ToolResult
+	waiting bool
 	// ended: the result was recorded, or the task was cancelled.
 	ended     bool
 	cancelled bool
@@ -59,13 +60,13 @@ func taskKind(rec *TaskRecord) string {
 func (sm *SubagentManager) launch(parent context.Context, rec *TaskRecord, cb tools.AsyncCallback, resumed, wait bool, askChain []string) *taskRun {
 	tr := &taskRun{rec: rec, cb: cb}
 	if wait {
-		tr.waiter = make(chan *tools.ToolResult, 1)
+		tr.result, tr.waiting = make(chan *tools.ToolResult, 1), true
 	}
 	info := hook.TaskInfo{
 		ID: rec.UUID, Owner: sm.ownerAgentID, Parent: rec.Parent,
 		Kind: taskKind(rec), Label: rec.Name, Mode: taskMode(rec.Mode),
 	}
-	ctx, task := sm.tasks.start(parent, info, rec.SpawnDepth, askChain, func(cause error) { sm.cancelRun(tr, cause) })
+	ctx, task := sm.tasks.start(parent, info, rec.SpawnDepth, askChain, func(cause error) bool { return sm.cancelRun(tr, cause) })
 	tr.task = task
 	go sm.runRecord(ctx, tr, resumed)
 	return tr
@@ -89,13 +90,13 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 
 	tr.mu.Lock()
 	rec.StartedAt = nowRFC()
-	if tr.waiter == nil {
+	if !tr.waiting {
 		sm.persistStatus(sm.tasksDir(), rec)
 	}
 	tr.mu.Unlock()
 
 	if rec.Kind != "" {
-		res, err := sm.runTaskModel(ctx, rec)
+		res, err := sm.runTaskModel(ctx, rec, string(tr.task.Info().Mode))
 		sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordTaskResults(rec, res, err) }, "", nil)
 		return
 	}
@@ -119,13 +120,13 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 			partial = fr.Content
 		}
 		logger.WarnCF("subagent", "subagent.run.failed", map[string]any{
-			"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": rec.Mode, "error": err.Error(),
+			"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": tr.task.Info().Mode, "error": err.Error(),
 		})
 		sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordResults(rec, "", 0, err) }, partial, release)
 		return
 	}
 	logger.InfoCF("subagent", "subagent.run.finished", map[string]any{
-		"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": rec.Mode,
+		"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": tr.task.Info().Mode,
 		"iterations": fr.Iterations, "content_len": len(fr.Content),
 	})
 	sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordResults(rec, fr.Content, fr.Iterations, nil) }, fr.Content, release)
@@ -156,17 +157,17 @@ func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record fun
 	dir := sm.tasksDir()
 	clearRun(dir, tr.rec.UUID)
 	sm.live.Remove(tr.rec.UUID)
-	waiter, cb := tr.waiter, tr.cb
-	tr.waiter = nil
+	waiting, cb := tr.waiting, tr.cb
+	tr.waiting = false
 	status := tr.rec.Status
 	tr.mu.Unlock()
 	tr.task.finished()
 
 	// A waiting turn gets its result once the clone is gone; a callback is
 	// delivered first, then the clone is released.
-	if waiter != nil {
+	if waiting {
 		release()
-		waiter <- result
+		tr.result <- result
 		return
 	}
 	defer release()
@@ -191,12 +192,13 @@ func cancelledResults(rec *TaskRecord, content string) *TaskResults {
 // cancelRun settles a task being cancelled, before its context is: the
 // record says cancelled, the run marker is cleared and the task leaves the
 // live set, so neither the supervisor nor a restart relaunches it. No
-// callback fires; a turn still waiting for it is told it was cancelled.
-func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) {
+// callback fires; a turn still waiting for it is told it was cancelled. It
+// reports false for a task that had already ended.
+func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) bool {
 	tr.mu.Lock()
 	if tr.ended {
 		tr.mu.Unlock()
-		return
+		return false
 	}
 	tr.ended, tr.cancelled = true, true
 	rec := tr.rec
@@ -206,33 +208,34 @@ func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) {
 	sm.live.Remove(rec.UUID)
 	sm.persistStatus(dir, rec)
 	sm.persistResults(dir, cancelledResults(rec, ""))
-	waiter := tr.waiter
-	tr.waiter = nil
+	waiting := tr.waiting
+	tr.waiting = false
 	tr.mu.Unlock()
 
 	logger.InfoCF("subagent", "Task cancelled", map[string]any{
 		"uuid": rec.UUID, "name": rec.Name, "owner": sm.ownerAgentID, "kind": taskKind(rec),
 		"cause": fmt.Sprint(cause),
 	})
-	if waiter != nil {
-		waiter <- &tools.ToolResult{
+	if waiting {
+		tr.result <- &tools.ToolResult{
 			ForLLM:  fmt.Sprintf("Task '%s' (uuid %s) was cancelled before it finished.", rec.Name, rec.UUID),
 			IsError: true,
 		}
 	}
+	return true
 }
 
 // detach turns a wait task whose turn stopped waiting into a callback task:
 // it goes on, its record says callback and gets a run marker (so a restart
 // relaunches it), and its result goes to cb. It returns false when the task
-// had already ended; its result is then in the waiter.
+// had already ended; its result is then in tr.result.
 func (sm *SubagentManager) detach(tr *taskRun, cb tools.AsyncCallback) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if tr.ended || tr.waiter == nil {
+	if tr.ended || !tr.waiting {
 		return false
 	}
-	tr.waiter, tr.cb = nil, cb
+	tr.waiting, tr.cb = false, cb
 	rec := tr.rec
 	rec.Mode = "callback"
 	rec.RetryAfter = nowEpoch() + retryDelaySecs()
@@ -254,21 +257,18 @@ func (sm *SubagentManager) detach(tr *taskRun, cb tools.AsyncCallback) bool {
 // unless ctx ended for a shutdown, which cancels it (the turn is replayed
 // on restart and starts it again).
 func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tools.AsyncCallback) *tools.ToolResult {
-	tr.mu.Lock()
-	waiter := tr.waiter
-	tr.mu.Unlock()
 	select {
-	case res := <-waiter:
+	case res := <-tr.result:
 		return res
 	case <-ctx.Done():
 	}
 	cause := context.Cause(ctx)
 	if isShutdown(cause) {
 		tr.task.stop(cause)
-		return <-waiter
+		return <-tr.result
 	}
 	if !sm.detach(tr, onDetach) {
-		return <-waiter
+		return <-tr.result
 	}
 	return &tools.ToolResult{ForLLM: fmt.Sprintf(detachedText, tr.rec.Name, tr.rec.UUID, tr.rec.UUID)}
 }

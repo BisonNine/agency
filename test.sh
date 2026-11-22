@@ -677,6 +677,7 @@ PY
       "agent_status",
       "agent_list",
       "agent_message",
+      "agent_cancel",
       "cogmem_domain_get",
       "cogmem_memory_search",
       "cogmem_domain_list",

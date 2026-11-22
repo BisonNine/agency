@@ -191,8 +191,13 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 				mode, onResult := resolveSpawnMode(modeStr, call)
 				// A background result returns to the chat of the spawning
 				// turn; a call that can't be tied to one turn has none.
-				if _, problem := tools.TurnChat(call.Ctx); mode == global.SpawnCallback && problem == tools.ChatAmbiguous {
-					return &global.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: tools.Refusal(errSpawnAmbiguous)}, nil
+				if _, problem := tools.TurnChat(call.Ctx); problem == tools.ChatAmbiguous {
+					if mode == global.SpawnCallback {
+						return &global.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: tools.Refusal(errSpawnAmbiguous)}, nil
+					}
+					// A waited task whose turn stops waiting has no chat to
+					// report to either: its result stays in its record.
+					onResult = nil
 				}
 				return sp.Spawn(call.Ctx, global.SpawnRequest{
 					Mode:          mode,
