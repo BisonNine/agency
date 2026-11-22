@@ -351,6 +351,12 @@ func (al *AgentLoop) retireAgent(spec agentreg.Spec, inst *AgentInstance) error 
 	return nil
 }
 
+// agentClosed is the registry's ClosedFunc: an instance closed without being
+// released is retired from the model lists like any other.
+func (al *AgentLoop) agentClosed(_ agentreg.Spec, inst *AgentInstance) {
+	al.removeSet(al.GetRegistry(), inst)
+}
+
 // registerExtraTools registers on agent the tools added with RegisterTool
 // (the gateway's cron tool), honouring its allowlist.
 func (al *AgentLoop) registerExtraTools(agent *AgentInstance) {

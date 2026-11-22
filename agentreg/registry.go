@@ -205,11 +205,17 @@ type RetireFunc[T Instance] func(spec Spec, inst T) error
 // registered agent (MCP tools) up to date on it.
 type InsertedFunc[T Instance] func(spec Spec, inst T)
 
+// ClosedFunc is told when the registry closes an instance that Retire
+// refused to release and that cannot go back (its id is taken, or the
+// registry has closed), so the host can drop what it keeps for it.
+type ClosedFunc[T Instance] func(spec Spec, inst T)
+
 // Hooks are the host functions the registry calls.
 type Hooks[T Instance] struct {
 	Build    BuildFunc[T]
 	Retire   RetireFunc[T]
 	Inserted InsertedFunc[T]
+	Closed   ClosedFunc[T]
 	// Clock is the time source for idle times and the sweeper; nil means
 	// clock.Real. Tests set a fake.
 	Clock clock.Clock
@@ -282,6 +288,7 @@ type Registry[T Instance] struct {
 
 	retire    RetireFunc[T]
 	inserted  InsertedFunc[T]
+	closedFn  ClosedFunc[T]
 	clock     clock.Clock
 	statePath string // <CLAW_HOME>/internal/temp_agents.json; "" = not persisted
 
@@ -338,6 +345,7 @@ func New[T Instance](ctx context.Context, cfg *config.Config, hooks Hooks[T]) (*
 		build:    hooks.Build,
 		retire:   hooks.Retire,
 		inserted: hooks.Inserted,
+		closedFn: hooks.Closed,
 		clock:    clock.Or(hooks.Clock),
 		resolver: routing.NewRouteResolver(cfg),
 	}
@@ -878,7 +886,7 @@ func (r *Registry[T]) putBack(e *entry[T]) {
 	r.mu.Lock()
 	if r.closed {
 		r.mu.Unlock()
-		closeQuietly(e.inst, e.spec)
+		r.closeUnreleased(e)
 		return
 	}
 	if _, taken := r.entries[e.spec.ID]; taken {
@@ -887,19 +895,20 @@ func (r *Registry[T]) putBack(e *entry[T]) {
 		r.mu.Unlock()
 		logger.WarnCF("agent", "Unreleased temporary agent instance closed: its id is taken",
 			map[string]any{"agent_id": e.spec.ID, "agent": e.spec.Label()})
-		// Every closed instance is retired first; it could not be released
-		// before, so a refusal now changes nothing.
-		if r.retire != nil {
-			if err := r.retire(e.spec, e.inst); err != nil {
-				logger.DebugCF("agent", "Unreleased temporary agent instance not released",
-					map[string]any{"agent_id": e.spec.ID, "error": err.Error()})
-			}
-		}
-		closeQuietly(e.inst, e.spec)
+		r.closeUnreleased(e)
 		return
 	}
 	r.entries[e.spec.ID] = e
 	r.mu.Unlock()
+}
+
+// closeUnreleased tells the host (Closed) and closes an instance Retire
+// refused to release.
+func (r *Registry[T]) closeUnreleased(e *entry[T]) {
+	if r.closedFn != nil {
+		r.closedFn(e.spec, e.inst)
+	}
+	closeQuietly(e.inst, e.spec)
 }
 
 // respec derives a temporary agent's spec against cfg, whose config agents

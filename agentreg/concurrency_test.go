@@ -172,6 +172,8 @@ func TestNonOwner_PrivateRoot(t *testing.T) {
 func TestPutBack_TakenIDClosesInstance(t *testing.T) {
 	h := newFakeHost()
 	r := mustNew(t, testConfig(t), h)
+	var told *fakeInst
+	r.closedFn = func(_ Spec, inst *fakeInst) { told = inst }
 	id := mustFresh(t, r, config.AgentConfig{})
 	r.mu.Lock()
 	e := r.entries[id]
@@ -180,6 +182,9 @@ func TestPutBack_TakenIDClosesInstance(t *testing.T) {
 	r.putBack(e)
 	if !e.inst.closed() {
 		t.Fatal("an instance with nowhere to go back to was leaked")
+	}
+	if told != e.inst {
+		t.Fatal("the host was not told the unreleased instance was closed")
 	}
 }
 

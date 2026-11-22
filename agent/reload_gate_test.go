@@ -472,6 +472,16 @@ func (al *AgentLoop) liveCount(id string) int {
 	return len(al.unretired[id])
 }
 
+// waitChan waits for ch to close, failing after a few seconds.
+func waitChan(t *testing.T, ch <-chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+	}
+}
+
 // noUnretiredLeak fails unless every id with an unretired instance is one
 // the registry holds or one of busy (agents dropped while in a turn).
 func noUnretiredLeak(t *testing.T, al *AgentLoop, busy ...string) {
@@ -524,12 +534,12 @@ func TestRemoveSet_RetirementRacesDrop(t *testing.T) {
 		}
 	}
 	endA()
-	<-stalled
+	waitChan(t, stalled, "A's retirement to reach the registry check")
 	if err := al.ReloadConfig(context.Background(), bobConfig(base, false)); err != nil {
 		t.Fatal(err) // drops bob; B, idle, retires now
 	}
 	close(release)
-	<-done
+	waitChan(t, done, "A's retirement to finish")
 	if p := al.catalog.Set("bob").Purposes(); len(p) != 0 {
 		t.Errorf("bob's set remains: %v", p)
 	}

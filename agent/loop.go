@@ -409,6 +409,7 @@ func NewAgentLoop(
 		Build:    al.agentBuilder(),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
+		Closed:   al.agentClosed,
 		Clock:    registryClock{al},
 		Owner:    lo.ownsDataDir,
 	})

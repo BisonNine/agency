@@ -117,7 +117,9 @@ func (al *AgentLoop) assignOne(inst *AgentInstance) {
 		return
 	}
 	// Before the lists: ReplaceAll saves kept choices through it.
-	al.noteSelectionAgents([]*AgentInstance{inst})
+	if len(al.noteSelectionAgents([]*AgentInstance{inst})) == 0 {
+		return // retired meanwhile
+	}
 	assignAgentModelsIn(al.catalog, inst.builtWith, al.GetConfig(), inst)
 }
 
@@ -140,10 +142,10 @@ func (al *AgentLoop) stateListsAfterCommit(registry *AgentRegistry, cfg *config.
 func (al *AgentLoop) reconcileAll(registry *AgentRegistry, cfg *config.Config) {
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
-	instances := al.liveInstances(registry)
-	// Before the lists: ReplaceAll saves kept choices through the new
-	// instances, not the replaced (closed) ones.
-	al.noteSelectionAgents(instances)
+	// Recorded before the lists: ReplaceAll saves kept choices through the
+	// new instances, not the replaced (closed) ones. One retired meanwhile
+	// is left out.
+	instances := al.noteSelectionAgents(al.liveInstances(registry))
 	assignAll(al.catalog, cfg, instances)
 }
 
@@ -186,22 +188,26 @@ func (al *AgentLoop) retired(inst *AgentInstance) []*AgentInstance {
 }
 
 // noteSelectionAgents records instances as the ones their sets' choices are
-// read and written through, and as not retired. Called with assignMu held.
-func (al *AgentLoop) noteSelectionAgents(instances []*AgentInstance) {
+// read and written through, and as not retired, and returns them less any
+// already retired. Called with assignMu held.
+func (al *AgentLoop) noteSelectionAgents(instances []*AgentInstance) []*AgentInstance {
 	al.unretiredMu.Lock()
 	defer al.unretiredMu.Unlock()
 	if al.unretired == nil {
 		al.unretired = make(map[string][]*AgentInstance)
 	}
+	kept := make([]*AgentInstance, 0, len(instances))
 	for _, inst := range instances {
 		if inst.listsRetired {
 			continue
 		}
+		kept = append(kept, inst)
 		al.selectionAgents.Store(inst.ID, inst)
 		if !slices.Contains(al.unretired[inst.ID], inst) {
 			al.unretired[inst.ID] = append(al.unretired[inst.ID], inst)
 		}
 	}
+	return kept
 }
 
 // assignAll states the lists of instances in c, each from its own
@@ -238,8 +244,7 @@ func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, diges
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
 	next := al.catalogs.Build(cfg)
-	instances := al.liveInstances(registry)
-	al.noteSelectionAgents(instances)
+	instances := al.noteSelectionAgents(al.liveInstances(registry))
 	assignAll(next, cfg, instances)
 	al.adoptCatalog(next, digest)
 }
@@ -258,6 +263,8 @@ func (al *AgentLoop) removeSet(registry *AgentRegistry, inst *AgentInstance) {
 	// sees inst gone whichever way this check goes.
 	al.retired(inst)
 	if _, ok := registry.Get(id); ok {
+		// The hook runs after retired: TestRemoveSet_RetirementRacesDrop
+		// stalls here and relies on that order.
 		if al.removeSetHook != nil {
 			al.removeSetHook(inst)
 		}
