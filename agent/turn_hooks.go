@@ -29,6 +29,7 @@ import (
 	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
+	"go.bison9.com/agency/utils"
 )
 
 // This file is the host side of the turn engine (engine_*.go): today's turn
@@ -433,6 +434,7 @@ func (al *AgentLoop) newHostEngineTurn(
 		log:        logger.SDK(),
 		logContent: logger.GetLogMessageContent,
 		redact:     redactSecrets,
+		truncate:   utils.Truncate,
 
 		chain:          tm.chain,
 		candidates:     tm.candidates,
@@ -532,10 +534,6 @@ func (e *llmTurnEnv) responseLogFields() map[string]any {
 		"target_channel": e.al.targetReasoningChannelID(e.opts.Channel),
 		"channel":        e.opts.Channel,
 	}
-}
-
-func (e *llmTurnEnv) formatRequest(messages []spawnllm.Message, defs []spawnllm.ToolDefinition) (string, string) {
-	return formatMessagesForLog(messages), formatToolsForLog(defs)
 }
 
 // directModel is the model a turn of agent on a direct chain (tm.direct)

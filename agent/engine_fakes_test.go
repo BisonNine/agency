@@ -152,10 +152,6 @@ func (e *fakeEnv) directClient(string) (spawnllm.LLMProvider, func(), error) {
 	return nil, nil, errNoDirectModel
 }
 
-func (e *fakeEnv) formatRequest([]spawnllm.Message, []spawnllm.ToolDefinition) (string, string) {
-	return "", ""
-}
-
 // errNoDirectModel: the engine tests serve no agent on a direct model.
 var errNoDirectModel = errors.New("no direct model")
 

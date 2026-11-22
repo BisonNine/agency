@@ -128,10 +128,6 @@ type turnHost interface {
 	// responseLogFields are the host's fields of the "LLM response" line
 	// (interim: moving them to a line of the host's own would split it).
 	responseLogFields() map[string]any
-	// formatRequest renders a request's messages and tools for the "Full
-	// LLM request" line (interim: the host's rendering follows a host-wide
-	// truncation switch).
-	formatRequest(messages []spawnllm.Message, defs []spawnllm.ToolDefinition) (messagesJSON, toolsJSON string)
 }
 
 // engineSpec is everything one turn of the engine runs with.
@@ -166,6 +162,9 @@ type engineSpec struct {
 	log        *slog.Logger
 	logContent func() bool
 	redact     hook.Redactor
+	// truncate shortens the content the "Full LLM request" line logs; nil
+	// means hook.Truncate.
+	truncate hook.Truncator
 
 	// The turn's model choice: the pinned chain, its candidates, the first
 	// one's name and the limits of that model.
@@ -259,6 +258,9 @@ func newEngineTurn(spec engineSpec, messages []spawnllm.Message) *engineTurn {
 	}
 	if spec.redact == nil {
 		spec.redact = func(s string) string { return s }
+	}
+	if spec.truncate == nil {
+		spec.truncate = hook.Truncate
 	}
 	if spec.mem == nil {
 		spec.mem = noTurnMemory{}
@@ -829,12 +831,11 @@ func (e *engineTurn) logRequest(d *llmDispatch) {
 		})
 
 	if e.spec.logContent() {
-		messagesJSON, toolsJSON := e.spec.env.formatRequest(sent, defs)
 		e.logAt(slog.LevelDebug, "Full LLM request",
 			map[string]any{
 				"iteration":     e.iteration,
-				"messages_json": messagesJSON,
-				"tools_json":    toolsJSON,
+				"messages_json": formatMessagesForLog(sent, e.spec.truncate),
+				"tools_json":    formatToolsForLog(defs, e.spec.truncate),
 			})
 	}
 }
