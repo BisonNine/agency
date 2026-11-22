@@ -1599,20 +1599,33 @@ next session must know.
       host registers the `human` protocol (`config/human.go`);
       `config.ValidateModel` maps the SDK's typed reserved-key error to
       the host's wording.
-- [ ] Phase 2: `models`
-  - SDK: `clock`, `models` landed (SDK bc1a6fd), reviewed and fixed.
-  - Host: built in worktree `phase2` (chat calls on the catalogue, alerts
-    unchanged, digest-gated `Adopt`, `/model` persistence, fallback
-    replay tests) but NOT landed. Its review found that `/model`
-    choices can change across reload + restart and that list rebuilds
-    are not atomic. Waiting on SDK additions (branch `models2`):
-    `Chain.Do` for non-chat calls, a host classification rule, a client
-    handle without health, hooks on `Caller`, atomic list replace, a
-    selection-store contract that covers reorders. Then finish task
-    models, vision describe and the summary caller on `models`, add the
-    restart-after-reorder/removal tests, and rebase over phases 3 and 4.
-  - Caller deadline: checked. The user-visible reply and outcome are
-    the same; only log lines differ. No changelog entry.
+- [x] Phase 2: `models` (SDK bc1a6fd … 34d16bd; host fd2365a). Every
+      model call (chat, summaries, memory, task models, vision describe,
+      classifier, `claw test`) runs on one `models.Catalog`; the old
+      dispatcher, tracker and factory are gone. What the next session
+      must know:
+  - Lists are stated, never tracked: `listsFor(inst)` is a pure function
+    of the instance's own config; `assignOne` on creation,
+    `reconcileAll`/`adoptFor` after a reload commits, all under
+    `assignMu`; `listsGate` keeps turns from selecting a model between
+    the registry swap and the lists being written. The lock order is in
+    `agent/loop.go` and `CLAUDE.md` ("Assigning lists").
+  - `Adopt` (cooldowns cleared, alerts re-armed) only when
+    `providers.Digest` changes: providers, model definitions, cooldown
+    policy, client options. List-only changes use `ReplaceAll` and keep
+    cooldowns.
+  - Two fallbacks of the old code are kept on purpose: an agent whose
+    models all fail to resolve runs on the default model's client; a
+    raw summarization id not in the model list goes to the default
+    provider as a derived model (alert key `/<raw>`, never shown under
+    its internal name).
+  - A removed or replaced instance keeps its set until it is retired.
+  - `/model` is stored as an index in the session (released format);
+    the SDK re-saves through the selection store when a list changes.
+  - Fixed on the way (changelog 0.6.6): with two enabled models sharing
+    a wire id, the default agent could run on the wrong one.
+  - Still in `models`, to move later: the single model-caller types
+    (for `ctxengine`/`cogmem` to share from a leaf).
 - [x] Phase 3: `toolkit` (SDK 2283055 … 1f37a3c; host 03b1b9a).
       `ToolRegistry` is a thin wrapper over one catalogue per agent
       registry. The allow/deny check is a `toolkit.Gate`, so it runs on
