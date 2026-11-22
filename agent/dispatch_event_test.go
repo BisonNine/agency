@@ -13,6 +13,7 @@ import (
 
 	"go.bison9.com/agent/cogmem/consolidate"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/config"
@@ -455,7 +456,8 @@ func sideModelLoop(srv *httptest.Server, alias string) *AgentLoop {
 func TestCompressModelCaller_EmitsFinish(t *testing.T) {
 	al := sideModelLoop(openAIStub(t), "Summarizer")
 	alice := &AgentInstance{ID: "alice", Provider: &mockProvider{}, Model: "Primary"}
-	caller, _ := al.newCompressModelCaller(alice, "agent:alice:main")
+	assignAgentModels(al.catalog, al.cfg, alice)
+	caller, _ := al.newCompressModelCaller(alice, "agent:alice:main", models.Summarize)
 
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
@@ -517,7 +519,8 @@ func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
 	al.cfg.Agents.Defaults.Models = []string{"Main"}
 	al.cfg.Summarization.Models = []string{"bob-summarizer"}
 	alice := &AgentInstance{ID: "alice", Provider: &mockProvider{}, Model: "Main"}
-	caller, _ := al.newCompressModelCaller(alice, "agent:alice:main")
+	assignAgentModels(al.catalog, al.cfg, alice)
+	caller, _ := al.newCompressModelCaller(alice, "agent:alice:main", models.Summarize)
 
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
@@ -543,6 +546,7 @@ func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
 func TestMemoryModelCaller_FinishHasNoSessionKey(t *testing.T) {
 	al := sideModelLoop(openAIStub(t), "Summarizer")
 	alice := &AgentInstance{ID: "alice", Provider: &mockProvider{}, Model: "Primary"}
+	assignAgentModels(al.catalog, al.cfg, alice)
 	caller := al.NewMemoryModelCaller(alice)
 
 	buf := &bytes.Buffer{}

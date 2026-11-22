@@ -206,18 +206,7 @@ func (al *AgentLoop) requestTimeoutFor(agent *AgentInstance) time.Duration {
 	if cfg == nil {
 		return 0
 	}
-	model := agent.Model
-	if len(agent.Candidates) > 0 {
-		idx := al.getActiveModelIndex(agent, routing.BuildAgentMainSessionKey(agent.ID))
-		if idx < 0 || idx >= len(agent.Candidates) {
-			idx = 0
-		}
-		if c := agent.Candidates[idx]; c.Name != "" {
-			model = c.Name
-		} else if c.Model != "" {
-			model = c.Model
-		}
-	}
+	model := al.activeModelName(agent, routing.BuildAgentMainSessionKey(agent.ID))
 	if mc, err := cfg.GetModelConfig(model); err == nil && mc != nil && mc.RequestTimeout > 0 {
 		return time.Duration(mc.RequestTimeout) * time.Second
 	}

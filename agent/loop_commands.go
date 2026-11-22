@@ -171,13 +171,14 @@ func (al *AgentLoop) addModelHooks(rt *commands.Runtime, cfg *config.Config, age
 		return al.activeModelInfo(cfg, agent, opts)
 	}
 	rt.GetAgentModels = func() ([]commands.ModelEntry, int) {
-		entries := make([]commands.ModelEntry, 0, len(agent.Candidates))
-		for _, c := range agent.Candidates {
-			name := c.Name
-			if name == "" {
-				name = c.Model
+		names := al.chatModelNames(agent)
+		entries := make([]commands.ModelEntry, 0, len(names))
+		for _, name := range names {
+			e := commands.ModelEntry{Name: name}
+			if info, ok := al.catalog.Get(name); ok {
+				e.Provider = info.Provider.Name
 			}
-			entries = append(entries, commands.ModelEntry{Name: name, Provider: c.Provider})
+			entries = append(entries, e)
 		}
 		active := 0
 		if opts != nil {
@@ -192,11 +193,7 @@ func (al *AgentLoop) addModelHooks(rt *commands.Runtime, cfg *config.Config, age
 		if err := al.setActiveModelIndex(agent, opts.SessionKey, idx); err != nil {
 			return "", err
 		}
-		name := agent.Candidates[idx].Name
-		if name == "" {
-			name = agent.Candidates[idx].Model
-		}
-		return name, nil
+		return al.chatModelNames(agent)[idx], nil
 	}
 }
 
@@ -205,20 +202,11 @@ func (al *AgentLoop) addModelHooks(rt *commands.Runtime, cfg *config.Config, age
 // model reflect the current choice). The provider name, wire protocol and
 // base URL come from the model's named provider.
 func (al *AgentLoop) activeModelInfo(cfg *config.Config, agent *AgentInstance, opts *processOptions) (name, provider, protocol, apiBase string) {
-	active := agent.Model
-	if len(agent.Candidates) > 0 {
-		idx := 0
-		if opts != nil {
-			idx = al.getActiveModelIndex(agent, opts.SessionKey)
-		}
-		if idx >= 0 && idx < len(agent.Candidates) {
-			if a := agent.Candidates[idx].Name; a != "" {
-				active = a
-			} else if m := agent.Candidates[idx].Model; m != "" {
-				active = m
-			}
-		}
+	sessionKey := ""
+	if opts != nil {
+		sessionKey = opts.SessionKey
 	}
+	active := al.activeModelName(agent, sessionKey)
 	name = active
 	if mc, err := cfg.GetModelConfig(active); err == nil && mc != nil {
 		if mc.ModelName != "" {

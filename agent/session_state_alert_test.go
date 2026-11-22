@@ -55,14 +55,9 @@ func (failingCompactionStore) SetCompactionState(string, memory.CompactionState)
 // refuses the next, so the settings that follow do not alert again until a
 // day has passed or a setting was stored in between.
 func TestSessionState_AlertsWhenPersistFails(t *testing.T) {
-	al := newTestAgentLoop(t).al
+	al, agent := fourModelLoop(t)
 	fc := clock.NewFake(time.Date(2026, time.November, 14, 9, 2, 0, 0, time.UTC))
 	al.clock = fc
-	agent := al.registry.Default()
-	if agent == nil {
-		t.Fatal("no default agent")
-	}
-	agent.Candidates = fourCandidates()
 	rec := &alertRecorder{}
 	al.SetAlerter(rec)
 

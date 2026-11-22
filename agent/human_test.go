@@ -13,6 +13,7 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -552,14 +553,14 @@ func TestHumanAgent_NoModelPathsNoTools(t *testing.T) {
 	if !alice.Config.CognitiveMemoryEnabled() {
 		t.Error("an ordinary agent lost its cognitive memory")
 	}
-	caller, _ := al.newCompressModelCaller(bob, "s")
+	caller, _ := al.newCompressModelCaller(bob, "s", models.Summarize)
 	if len(caller.clients) != 0 {
 		t.Errorf("a human agent has %d summarization clients", len(caller.clients))
 	}
 	if _, _, _, err := caller.complete(context.Background(), "sys", "user", false, nil); err == nil {
 		t.Error("summarizing a human agent's conversation found a model")
 	}
-	if c, _ := al.newCompressModelCaller(alice, "s"); len(c.clients) == 0 {
+	if c, _ := al.newCompressModelCaller(alice, "s", models.Summarize); len(c.clients) == 0 {
 		t.Error("an ordinary agent lost its summarization chain")
 	}
 	bob.VisionClients = []visionClient{panicVision{}}

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/models"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
@@ -275,9 +277,7 @@ func TestContextWindow_BuiltForSavedActiveModel(t *testing.T) {
 		t.Fatalf("setActiveModelIndex: %v", err)
 	}
 	// Read the index back from the session store, as after a restart.
-	al.activeModelMu.Lock()
-	delete(al.activeModelIdx, activeModelCacheKey(agent.ID, sessionKey))
-	al.activeModelMu.Unlock()
+	al.catalog.Set(agent.ID).Forget(models.Scope(sessionKey))
 
 	if got := contextWindowOf(t, al, agent, sessionKey); got != 32000 {
 		t.Fatalf("context window = %d, want Bob Model's 32000", got)

@@ -13,7 +13,6 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // toolRegTestConfig builds a single-agent config that allows all tools.
@@ -109,15 +108,15 @@ func TestReloadProviderAndConfig_RegistersRuntimeTools(t *testing.T) {
 // reports the session's selected model, not always the first candidate.
 func TestGetModelInfo_ReflectsActiveSelection(t *testing.T) {
 	cfg := toolRegTestConfig(t)
+	for i := range cfg.Agents.List {
+		if cfg.Agents.List[i].ID == "main" {
+			cfg.Agents.List[i].Models = []string{"m0", "m1", "m2"}
+		}
+	}
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
 	ag, ok := al.GetRegistry().Get("main")
 	if !ok {
 		t.Fatal("agent 'main' not found")
-	}
-	ag.Candidates = []providers.FallbackCandidate{
-		{Name: "m0", Provider: "P"},
-		{Name: "m1", Provider: "P"},
-		{Name: "m2", Provider: "P"},
 	}
 	const sk = "sess-1"
 	if err := al.setActiveModelIndex(ag, sk, 2); err != nil {

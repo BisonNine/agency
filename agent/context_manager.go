@@ -289,24 +289,6 @@ func (al *AgentLoop) compressClient(agent *AgentInstance, cfg *config.Config, al
 	return cl
 }
 
-// resolveDefaultCompressClient resolves the agent's primary model to a
-// client, the chain walker's last resort; nil when it names no enabled model.
-func (al *AgentLoop) resolveDefaultCompressClient(agent *AgentInstance, sessionKey string) *providerLLMClient {
-	cfg := al.GetConfig()
-	primary := strings.TrimSpace(agent.Model)
-	alias, modelID, ok := resolveCompressModelTarget(cfg, primary)
-	if primary == "" || !ok {
-		return nil
-	}
-	logger.DebugCF("llmcontext", "compression: agent primary appended as final fallback", map[string]any{
-		"agent_id": agent.ID,
-		"alias":    alias,
-		"model":    modelID,
-		"session":  sessionKey,
-	})
-	return al.compressClient(agent, cfg, alias, modelID)
-}
-
 // newCompressModelCaller builds the summarization ModelCaller for an agent and
 // session: the agent's own summarization_models first, then the global
 // cfg.Summarization.Models, then the agent's primary model as a last-resort
@@ -314,7 +296,7 @@ func (al *AgentLoop) resolveDefaultCompressClient(agent *AgentInstance, sessionK
 // configured model fails. Health is the catalogue's, shared with every other
 // path, so a model parked by any path (e.g. an out-of-credits 402) is skipped by
 // both. Also returns the effective (first) model name for the summary stamp.
-func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey string) (*compressModelCaller, string) {
+func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey string, purpose models.Purpose) (*compressModelCaller, string) {
 	if agent.HumanModel != "" {
 		// A person's conversation is never given to a model: no
 		// summarization chain at all, so compaction and consolidation find
@@ -331,17 +313,23 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 
 	effective := ""
 	chainNames := resolveCompressModelChain(agentModels, globalModels)
-	clients := make([]*providerLLMClient, 0, len(chainNames)+1)
+	cfg := al.GetConfig()
 	for _, name := range chainNames {
 		if effective == "" {
 			effective = name
 		}
-		if cl := al.resolveCompressClient(agent, name, sessionKey); cl != nil {
-			clients = append(clients, cl)
-		}
+		// Logs a name that resolves to no enabled model; the set holds the
+		// ones that do.
+		al.resolveCompressClient(agent, name, sessionKey)
 	}
-	if cl := al.resolveDefaultCompressClient(agent, sessionKey); cl != nil {
-		clients = append(clients, cl)
+	// The chain is the agent's set's list for the purpose (assignAgentModels):
+	// the summarization models in order, then the primary model unless listed.
+	list := al.catalog.Set(agent.ID).List(purpose)
+	clients := make([]*providerLLMClient, 0, len(list))
+	for _, e := range list {
+		if info, ok := al.catalog.Get(e.Name); ok {
+			clients = append(clients, al.compressClient(agent, cfg, e.Name, info.Model.Model))
+		}
 	}
 
 	// One clear line (in claw.log) showing the whole compression chain that will
@@ -488,7 +476,7 @@ func (al *AgentLoop) buildSessionEntry(bk sessionBuildKey, done chan struct{}, a
 	// The summarization model chain. Per-agent models let an agent use
 	// specialised summarizers when the default ones refuse its content; see
 	// resolveCompressClient / resolveDefaultCompressClient for per-entry rules.
-	caller, effectiveCompressModel := al.newCompressModelCaller(agent, sessionKey)
+	caller, effectiveCompressModel := al.newCompressModelCaller(agent, sessionKey, models.Summarize)
 
 	// Global debug-capture flag: when on, the manager writes the verbatim
 	// request/response of each summarization call to <workspace>/compact.jsonl.

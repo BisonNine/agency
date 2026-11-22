@@ -39,7 +39,6 @@ import (
 // adopted (buildCatalog).
 func (al *AgentLoop) agentBuilder(
 	provider providers.LLMProvider,
-	dispatcher *providers.ProviderDispatcher,
 ) agentreg.BuildFunc[*AgentInstance] {
 	return func(ctx context.Context, cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
 		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg, provider)
@@ -50,7 +49,7 @@ func (al *AgentLoop) agentBuilder(
 		if next := al.buildCatalog.Load(); next != nil {
 			catalog = next
 		}
-		assignAgentModels(catalog, inst)
+		assignAgentModels(catalog, cfg, inst)
 		if inst.HumanModel != "" {
 			// A human agent runs no model: no vision side-model, no tools.
 			return inst, nil
@@ -61,7 +60,7 @@ func (al *AgentLoop) agentBuilder(
 		if spec.Fresh {
 			return inst, nil
 		}
-		al.registerAgentTools(ctx, inst, provider, dispatcher, cfg)
+		al.registerAgentTools(ctx, inst, cfg)
 		if inst.IsTemp() {
 			// A config agent gets these after the registry is built (the gateway
 			// registers its tools); an agent created later gets them now. Its
@@ -92,8 +91,6 @@ func (al *AgentLoop) agentInserted(_ agentreg.Spec, inst *AgentInstance) {
 func (al *AgentLoop) registerAgentTools(
 	ctx context.Context,
 	currentAgent *AgentInstance,
-	provider providers.LLMProvider,
-	dispatcher *providers.ProviderDispatcher,
 	cfg *config.Config,
 ) {
 	agentID := currentAgent.toolIdentity()
@@ -106,28 +103,25 @@ func (al *AgentLoop) registerAgentTools(
 	spawner := al.newSpawner(currentAgent, agentID, cfg, candidateResolver, spawnAllowlist)
 
 	deps := tools.ToolDeps{
-		Cfg:               cfg,
-		AgentCfg:          currentAgent.Config,
-		AgentID:           agentID,
-		Workspace:         currentAgent.Workspace,
-		StateDir:          currentAgent.StateDir,
-		EphemeralMemory:   currentAgent.Spec.Ephemeral,
-		TempAgent:         currentAgent.IsTemp(),
-		TempPurpose:       currentAgent.Spec.Purpose,
-		CloneMarker:       cloneMarker(currentAgent),
-		Provider:          provider,
-		Dispatcher:        dispatcher,
-		Candidates:        currentAgent.Candidates,
-		SpawnAllowlist:    spawnAllowlist,
-		Agents:            newAgentServices(al, currentAgentID),
-		Messenger:         al,
-		Files:             al,
-		CandidateResolver: candidateResolver,
-		Spawn:             spawner,
-		CompactFn:         al.compactFn(currentAgent),
-		SessionInfoFn:     al.sessionInfoFn(currentAgent),
-		ClearFn:           al.clearFn(currentAgent),
-		MessageTool:       messageTool,
+		Cfg:             cfg,
+		AgentCfg:        currentAgent.Config,
+		AgentID:         agentID,
+		Workspace:       currentAgent.Workspace,
+		StateDir:        currentAgent.StateDir,
+		EphemeralMemory: currentAgent.Spec.Ephemeral,
+		TempAgent:       currentAgent.IsTemp(),
+		TempPurpose:     currentAgent.Spec.Purpose,
+		CloneMarker:     cloneMarker(currentAgent),
+		Models:          al.catalog.Set(currentAgent.ID),
+		SpawnAllowlist:  spawnAllowlist,
+		Agents:          newAgentServices(al, currentAgentID),
+		Messenger:       al,
+		Files:           al,
+		Spawn:           spawner,
+		CompactFn:       al.compactFn(currentAgent),
+		SessionInfoFn:   al.sessionInfoFn(currentAgent),
+		ClearFn:         al.clearFn(currentAgent),
+		MessageTool:     messageTool,
 	}
 
 	// Progressive discovery is a single global switch (default off). When on,

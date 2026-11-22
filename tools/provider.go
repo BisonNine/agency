@@ -3,8 +3,9 @@ package tools
 import (
 	"context"
 
+	"go.bison9.com/agent/models"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // ToolDescriptor holds static metadata for a single tool — no deps required.
@@ -65,12 +66,12 @@ type ToolDeps struct {
 	// for the audit rows its calls write; "" for every other agent.
 	CloneMarker string
 
+	// Models is the agent's models by purpose and priority (its set in the
+	// process's model catalogue).
+	Models *models.Set
+
 	// Spawn/subagent
-	Provider          providers.LLMProvider
-	Dispatcher        *providers.ProviderDispatcher
-	Candidates        []providers.FallbackCandidate
-	SpawnAllowlist    func(callerID, targetID string) bool
-	CandidateResolver func(agentID string) ([]providers.FallbackCandidate, bool)
+	SpawnAllowlist func(callerID, targetID string) bool
 
 	// Agents manages temporary agents on behalf of this agent (see
 	// AgentServices).

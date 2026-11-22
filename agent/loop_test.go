@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
@@ -1703,13 +1704,7 @@ func TestSelectCandidates_Reorder(t *testing.T) {
 
 // TestSetActiveModelIndex_OutOfRange verifies range/empty validation.
 func TestSetActiveModelIndex_OutOfRange(t *testing.T) {
-	al := newTestAgentLoop(t).al
-
-	agent := al.registry.Default()
-	if agent == nil {
-		t.Fatal("no default agent")
-	}
-	agent.Candidates = fourCandidates()
+	al, agent := fourModelLoop(t)
 
 	if err := al.setActiveModelIndex(agent, "s", 4); err == nil {
 		t.Error("expected error for index 4 (out of range), got nil")
@@ -1718,35 +1713,57 @@ func TestSetActiveModelIndex_OutOfRange(t *testing.T) {
 		t.Error("expected error for index -1, got nil")
 	}
 
-	agent.Candidates = nil
+	for _, name := range al.chatModelNames(agent) {
+		al.catalog.Set(agent.ID).Unassign(models.Chat, name)
+	}
 	if err := al.setActiveModelIndex(agent, "s", 0); err == nil {
 		t.Error("expected error when agent has no candidates, got nil")
 	}
 }
 
-// TestActiveModelIndex_Persists verifies the active index survives a cache clear
-// by reloading through the session store's CompactionState.
+// TestActiveModelIndex_Persists: a /model choice survives a restart. It is
+// stored in the session's CompactionState, and a new loop on the same data
+// starts the session's turns on it.
 func TestActiveModelIndex_Persists(t *testing.T) {
-	al := newTestAgentLoop(t).al
-
-	agent := al.registry.Default()
-	if agent == nil {
-		t.Fatal("no default agent")
-	}
-	agent.Candidates = fourCandidates()
+	al, agent := fourModelLoop(t)
 	const sessionKey = "session-persist"
 
-	if err := al.setActiveModelIndex(agent, sessionKey, 3); err != nil {
-		t.Fatalf("setActiveModelIndex(3) failed: %v", err)
+	rt := &commands.Runtime{}
+	al.addModelHooks(rt, al.GetConfig(), agent, &processOptions{SessionKey: sessionKey})
+	if name, err := rt.SetActiveModel(3); err != nil || name != "a3" {
+		t.Fatalf("SetActiveModel(3) = %q, %v", name, err)
 	}
 
-	// Clear the in-memory cache so the next read must come from the store.
-	al.activeModelMu.Lock()
-	al.activeModelIdx = make(map[string]int)
-	al.activeModelMu.Unlock()
+	// Restart: the first loop's agents close their stores, a second loop is
+	// built on the same configuration and data.
+	cfg := al.GetConfig()
+	al.GetRegistry().Close()
+	for _, id := range al.GetRegistry().All() {
+		if inst, ok := al.GetRegistry().Get(id); ok {
+			if err := inst.Close(); err != nil {
+				t.Fatalf("close %s: %v", id, err)
+			}
+		}
+	}
+	restarted := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
+	again := restarted.GetRegistry().Default()
 
-	if got := al.getActiveModelIndex(agent, sessionKey); got != 3 {
-		t.Errorf("reloaded active index = %d, want 3", got)
+	if got := restarted.getActiveModelIndex(again, sessionKey); got != 3 {
+		t.Errorf("active index after restart = %d, want 3", got)
+	}
+	if tm := restarted.selectTurnModel(again, sessionKey); tm.model != "a3" {
+		t.Errorf("first turn after restart runs on %q, want a3", tm.model)
+	}
+	entries, active := func() ([]commands.ModelEntry, int) {
+		rt := &commands.Runtime{}
+		restarted.addModelHooks(rt, cfg, again, &processOptions{SessionKey: sessionKey})
+		return rt.GetAgentModels()
+	}()
+	if len(entries) != 4 || active != 3 {
+		t.Errorf("/model after restart lists %d models with %d active, want 4 and 3", len(entries), active)
+	}
+	if got := restarted.getActiveModelIndex(again, "other-session"); got != 0 {
+		t.Errorf("another session's active index = %d, want 0", got)
 	}
 }
 

@@ -109,18 +109,13 @@ type AgentLoop struct {
 	dumpsDir      dump.Dir
 	startedAt     time.Time
 
-	// activeModelIdx caches the per-session active model index (write-through to
-	// the session store's CompactionState). Key = agent.ID + "\x00" + sessionKey.
-	activeModelMu  sync.Mutex
-	activeModelIdx map[string]int
-
 	// exposeReasoning caches the per-session "expose reasoning to the user" flag
-	// (write-through to CompactionState). Same key scheme as activeModelIdx.
+	// (write-through to CompactionState). Key = agent.ID + "\x00" + sessionKey.
 	exposeReasoningMu    sync.Mutex
 	exposeReasoningCache map[string]bool
 
 	// showToolActivity caches the per-session "post tool-call breadcrumbs" flag
-	// (write-through to CompactionState). Same key scheme as activeModelIdx.
+	// (write-through to CompactionState). Same key scheme.
 	showToolActivityMu    sync.Mutex
 	showToolActivityCache map[string]bool
 
@@ -369,7 +364,6 @@ func NewAgentLoop(
 		mcpRetryStop:          make(chan struct{}),
 		evictTTL:              defaultEvictTTL,
 		evictInterval:         defaultEvictInterval,
-		activeModelIdx:        make(map[string]int),
 		exposeReasoningCache:  make(map[string]bool),
 		showToolActivityCache: make(map[string]bool),
 		taskLive:              toolsagents.NewLiveSet(),
@@ -381,6 +375,7 @@ func NewAgentLoop(
 	// The catalogue runs on the loop's clock, so a test that puts a fake on
 	// the loop moves cooldowns too.
 	al.catalogs = providers.NewCatalogBuilder(modelAlerts, registryClock{al})
+	al.catalogs.SetSelectionStore(sessionSelections{al})
 	al.catalog = al.catalogs.Build(cfg)
 	al.catalogDigest = catalogDigest(cfg)
 
@@ -389,7 +384,7 @@ func NewAgentLoop(
 	// closures, spawn/subagent, msg with shared MessageTool), so it runs once
 	// al exists.
 	registry, err := agentreg.New(ctx, cfg, agentreg.Hooks[*AgentInstance]{
-		Build:    al.agentBuilder(provider, dispatcher),
+		Build:    al.agentBuilder(provider),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
 		Clock:    registryClock{al},
@@ -665,7 +660,7 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	// in the adopted catalogue too; for the others this changes nothing.
 	for _, id := range registry.All() {
 		if inst, ok := registry.Get(id); ok && inst != nil {
-			assignAgentModels(al.catalog, inst)
+			assignAgentModels(al.catalog, cfg, inst)
 		}
 	}
 
@@ -735,7 +730,7 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher), func() bool {
+		err = registry.Reload(ctx, cfg, al.agentBuilder(provider), func() bool {
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}

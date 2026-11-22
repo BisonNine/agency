@@ -440,22 +440,13 @@ type turnModel struct {
 }
 
 // selectTurnModel makes the model choice for a turn of agent on sessionKey:
-// the agent's chat models pinned for the turn, the session's active model
-// (by per-session index, default 0) first and the rest in their order, so a
+// the agent's chat models pinned for the turn, the session's /model choice
+// first and the rest in their order, so a
 // multi-step tool chain never switches model mid-way. A fresh temporary
 // agent's CLI models run isolated in its own workspace.
 func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *turnModel {
 	set := al.catalog.Set(agent.ID)
 	scope := models.Scope(sessionKey)
-	if idx := al.getActiveModelIndex(agent, sessionKey); idx > 0 && idx < len(agent.Candidates) {
-		if err := set.Select(models.Chat, agent.Candidates[idx].Name, scope); err != nil {
-			set.Reset(models.Chat, scope)
-			logger.DebugCF("agent", "active model not in the agent's chain; using its first model",
-				map[string]any{"agent_id": agent.ID, "model": agent.Candidates[idx].Name, "error": err.Error()})
-		}
-	} else {
-		set.Reset(models.Chat, scope)
-	}
 	chain := set.Begin(models.Chat, scope)
 	if agent.Spec.Fresh {
 		chain = chain.Isolated(agent.Workspace)

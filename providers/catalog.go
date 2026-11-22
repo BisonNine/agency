@@ -32,6 +32,15 @@ type CatalogBuilder struct {
 
 	mu     sync.Mutex
 	humans map[string]*HumanProvider // by model name
+	store  models.SelectionStore
+}
+
+// SetSelectionStore sets where the catalogues built from now on persist the
+// sets' selections (models.WithSelectionStore).
+func (b *CatalogBuilder) SetSelectionStore(st models.SelectionStore) {
+	b.mu.Lock()
+	b.store = st
+	b.mu.Unlock()
 }
 
 // NewCatalogBuilder returns a builder whose catalogues report model health
@@ -80,7 +89,11 @@ func limitDefaults(cfg *config.Config) modelspec.LimitDefaults {
 // functions, so their identity is the same in every catalogue (Adopt compares
 // them).
 func (b *CatalogBuilder) options(cfg *config.Config) []models.Option {
+	b.mu.Lock()
+	store := b.store
+	b.mu.Unlock()
 	return []models.Option{
+		models.WithSelectionStore(store),
 		models.WithBaseEnv(childenv.CLI),
 		models.WithFileModesFor(responseLogFileModes),
 		models.WithCooldown(modelspec.Cooldown(cfg.Cooldown)),

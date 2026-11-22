@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/tenebris-tech/alerter"
 	cogmemstore "go.bison9.com/agent/cogmem/store"
 	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/logger"
@@ -31,14 +33,15 @@ func activeModelCacheKey(agentID, sessionKey string) string {
 	return agentID + "\x00" + sessionKey
 }
 
-// forgetSessionCaches drops the per-session flags the loop caches for a
-// session (active model, reasoning, tool activity, session_clear rate limit),
-// for a temporary agent that is being deleted.
+// forgetSessionCaches drops the per-session state the loop holds in memory
+// for a session (its model selection and what serves it, reasoning, tool
+// activity, session_clear rate limit), for a temporary agent that is being
+// deleted.
 func (al *AgentLoop) forgetSessionCaches(agent *AgentInstance, sessionKey string) {
 	key := activeModelCacheKey(agent.ID, sessionKey)
-	al.activeModelMu.Lock()
-	delete(al.activeModelIdx, key)
-	al.activeModelMu.Unlock()
+	if al.catalog != nil {
+		al.catalog.Set(agent.ID).Forget(models.Scope(sessionKey))
+	}
 	al.exposeReasoningMu.Lock()
 	delete(al.exposeReasoningCache, key)
 	al.exposeReasoningMu.Unlock()
@@ -48,84 +51,124 @@ func (al *AgentLoop) forgetSessionCaches(agent *AgentInstance, sessionKey string
 	al.lastSelfClear.Delete(sessionKey)
 }
 
-// getActiveModelIndex returns the session's active model index, loading it from
-// the session store on a cache miss. The result is clamped to a valid candidate
-// index and cached.
+// chatModelNames are the agent's chat models in their order, as its set
+// holds them: what /model lists and indexes.
+func (al *AgentLoop) chatModelNames(agent *AgentInstance) []string {
+	list := al.catalog.Set(agent.ID).List(models.Chat)
+	names := make([]string, 0, len(list))
+	for _, e := range list {
+		names = append(names, e.Name)
+	}
+	return names
+}
+
+// activeModelName is the model the session's turns start on: the one /model
+// selected, else the agent's first; the agent's model when it has none in
+// the catalogue.
+func (al *AgentLoop) activeModelName(agent *AgentInstance, sessionKey string) string {
+	if name := al.catalog.Set(agent.ID).Selected(models.Chat, models.Scope(sessionKey)).Name; name != "" {
+		return name
+	}
+	return agent.Model
+}
+
+// getActiveModelIndex returns the position of the session's active model in
+// the agent's chat models (0 when none is selected).
 func (al *AgentLoop) getActiveModelIndex(agent *AgentInstance, sessionKey string) int {
-	key := activeModelCacheKey(agent.ID, sessionKey)
-
-	al.activeModelMu.Lock()
-	if idx, ok := al.activeModelIdx[key]; ok {
-		al.activeModelMu.Unlock()
-		return idx
-	}
-	al.activeModelMu.Unlock()
-
-	idx := 0
-	if store, ok := agent.Sessions.(compactionStateStore); ok {
-		if st, err := store.GetCompactionState(sessionKey); err == nil {
-			idx = st.ActiveModelIndex
-		}
-	}
-	// Clamp to the valid candidate range.
-	if n := len(agent.Candidates); n == 0 {
-		idx = 0
-	} else if idx < 0 {
-		idx = 0
-	} else if idx >= n {
-		idx = n - 1
-	}
-
-	al.activeModelMu.Lock()
-	al.activeModelIdx[key] = idx
-	al.activeModelMu.Unlock()
-	return idx
+	name := al.catalog.Set(agent.ID).Selected(models.Chat, models.Scope(sessionKey)).Name
+	return max(slices.Index(al.chatModelNames(agent), name), 0)
 }
 
 // sessionLimits are the limits of the model the session's turns run on: the
 // one /model selected, else the agent's first.
 func (al *AgentLoop) sessionLimits(agent *AgentInstance, sessionKey string) runLimits {
-	model := agent.Model
-	if len(agent.Candidates) > 0 {
-		if name := agent.Candidates[al.getActiveModelIndex(agent, sessionKey)].Name; name != "" {
-			model = name
-		}
-	}
-	return agent.limitsFor(model)
+	return agent.limitsFor(al.activeModelName(agent, sessionKey))
 }
 
-// setActiveModelIndex sets the session's active model index, updating the cache
-// and persisting it through the session store's CompactionState. Persistence is
-// best-effort: a store error is logged but does not fail the call.
+// setActiveModelIndex makes the agent's idx-th chat model the session's
+// active one. The set stores the choice through sessionSelections, so it
+// survives a restart.
 func (al *AgentLoop) setActiveModelIndex(agent *AgentInstance, sessionKey string, idx int) error {
-	n := len(agent.Candidates)
+	names := al.chatModelNames(agent)
+	n := len(names)
 	if n == 0 {
 		return errors.New("this agent has no selectable models")
 	}
 	if idx < 0 || idx >= n {
 		return fmt.Errorf("model index out of range (0-%d)", n-1)
 	}
+	return al.catalog.Set(agent.ID).Select(models.Chat, names[idx], models.Scope(sessionKey))
+}
 
-	key := activeModelCacheKey(agent.ID, sessionKey)
-	al.activeModelMu.Lock()
-	al.activeModelIdx[key] = idx
-	al.activeModelMu.Unlock()
+// sessionSelections is the catalogue's models.SelectionStore: a session's
+// chat-model selection is kept as its active model index in the session's
+// CompactionState, as /model has always stored it. Other purposes and the
+// sets' default selections are not stored.
+type sessionSelections struct{ al *AgentLoop }
 
-	if store, ok := agent.Sessions.(compactionStateStore); ok {
-		st, err := store.GetCompactionState(sessionKey)
-		if err != nil {
-			logger.WarnCF("agent", "active model index: load compaction state failed",
-				map[string]any{"session_key": sessionKey, "error": err.Error()})
-			return nil //nolint:nilerr // best-effort: an unreadable compaction state means "no saved index"
-		}
-		st.ActiveModelIndex = idx
-		if err := store.SetCompactionState(sessionKey, st); err != nil {
-			logger.WarnCF("agent", "active model index: persist failed",
-				map[string]any{"session_key": sessionKey, "error": err.Error()})
-			al.alertSessionStateNotPersisted(agent, "active model index", err)
-		} else {
-			al.storeFaultOver(agent, alertSessionStateNotStored)
-		}
+// selectionAgent is the agent whose set is set, with its session store.
+func (s sessionSelections) selectionAgent(set string) (*AgentInstance, compactionStateStore, bool) {
+	r := s.al.GetRegistry()
+	if r == nil {
+		return nil, nil, false
+	}
+	inst, ok := r.Get(set)
+	if !ok || inst == nil {
+		return nil, nil, false
+	}
+	store, ok := inst.Sessions.(compactionStateStore)
+	return inst, store, ok
+}
+
+// LoadSelection reads the session's active model index and names the model
+// at it, clamped to the agent's chat models; index 0 is no selection.
+func (s sessionSelections) LoadSelection(set string, p models.Purpose, scope models.Scope) (string, error) {
+	if p != models.Chat || scope == "" {
+		return "", nil
+	}
+	inst, store, ok := s.selectionAgent(set)
+	if !ok {
+		return "", nil
+	}
+	st, err := store.GetCompactionState(string(scope))
+	if err != nil {
+		return "", nil //nolint:nilerr // an unreadable state means no saved choice, as before
+	}
+	names := s.al.chatModelNames(inst)
+	idx := min(max(st.ActiveModelIndex, 0), len(names)-1)
+	if idx <= 0 {
+		return "", nil
+	}
+	return names[idx], nil
+}
+
+// SaveSelection stores the position of name among the agent's chat models
+// as the session's active model index (0 for no selection). A store error is
+// logged and alerted here, as before; the catalogue keeps the choice in
+// memory either way.
+func (s sessionSelections) SaveSelection(set string, p models.Purpose, scope models.Scope, name string) error {
+	if p != models.Chat || scope == "" {
+		return nil
+	}
+	inst, store, ok := s.selectionAgent(set)
+	if !ok {
+		return nil
+	}
+	sessionKey := string(scope)
+	idx := max(slices.Index(s.al.chatModelNames(inst), name), 0)
+	st, err := store.GetCompactionState(sessionKey)
+	if err != nil {
+		logger.WarnCF("agent", "active model index: load compaction state failed",
+			map[string]any{"session_key": sessionKey, "error": err.Error()})
+		return nil //nolint:nilerr // logged here, as before; the catalogue keeps the choice in memory
+	}
+	st.ActiveModelIndex = idx
+	if err := store.SetCompactionState(sessionKey, st); err != nil {
+		logger.WarnCF("agent", "active model index: persist failed",
+			map[string]any{"session_key": sessionKey, "error": err.Error()})
+		s.al.alertSessionStateNotPersisted(inst, "active model index", err)
+	} else {
+		s.al.storeFaultOver(inst, alertSessionStateNotStored)
 	}
 	return nil
 }

@@ -5,7 +5,9 @@ package agent
 
 import (
 	"maps"
+	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"go.bison9.com/agent/models"
@@ -16,33 +18,107 @@ import (
 	"go.bison9.com/agency/providers"
 )
 
-// assignAgentModels states in c which models agent inst uses for which
-// purpose, in priority order (list position): its chat chain. It changes
-// nothing when the set already holds exactly that, so rebuilding an agent
-// against an unchanged configuration leaves the set alone.
-func assignAgentModels(c *models.Catalog, inst *AgentInstance) {
-	names := make([]string, 0, len(inst.Candidates))
-	for _, cand := range inst.Candidates {
-		names = append(names, cand.Name)
-	}
-	ensureAssigned(c.Set(inst.ID), models.Chat, names, inst.ID)
+// taskUses are the task-model uses, each a purpose of every agent's set.
+var taskUses = []config.TaskUse{
+	config.TaskUseVision, config.TaskUseSTT, config.TaskUseTTS,
+	config.TaskUseImage, config.TaskUseText, config.TaskUseClassify,
 }
 
-// ensureAssigned makes purpose p of s hold exactly names, in that order.
-func ensureAssigned(s *models.Set, p models.Purpose, names []string, agentID string) {
+// taskPurpose is the purpose a task-model use is assigned under.
+func taskPurpose(use config.TaskUse) models.Purpose { return models.Purpose(use) }
+
+// assignAgentModels states in c which models agent inst uses for which
+// purpose, in priority order (list position):
+//   - Chat: its models (agents.list[].models, else the defaults');
+//   - Worker: its worker models (subagents.models), when it has any; with
+//     none the built-in Worker → Chat rule serves its sub-agents;
+//   - Summarize and Memory: its summarization chain (agent list, then the
+//     global one, then its primary model), the same list for both;
+//   - one host purpose per task-model use, from TaskModelsConfig.Entries,
+//     each entry carried as the assignment's settings.
+//
+// It changes nothing when the set already holds exactly that, so rebuilding
+// an agent against an unchanged configuration leaves the set alone. A human
+// agent gets its chat model only: no model ever sees a person's conversation.
+func assignAgentModels(c *models.Catalog, cfg *config.Config, inst *AgentInstance) {
+	set := c.Set(inst.ID)
+	ensureAssigned(set, models.Chat, candidateNames(inst.Candidates), nil, inst.ID)
+	var workers []string
+	if inst.Subagents != nil && len(inst.Subagents.Models) > 0 {
+		workers = candidateNames(inst.WorkerCandidates)
+	}
+	ensureAssigned(set, models.Worker, workers, nil, inst.ID)
+	var summarize []string
+	if inst.HumanModel == "" {
+		summarize = summarizationNames(cfg, inst)
+	}
+	ensureAssigned(set, models.Summarize, summarize, nil, inst.ID)
+	ensureAssigned(set, models.Memory, summarize, nil, inst.ID)
+	for _, use := range taskUses {
+		var names []string
+		var settings []any
+		if inst.HumanModel == "" && cfg != nil {
+			for _, e := range cfg.TaskModels.Entries(use) {
+				names = append(names, e.Model)
+				settings = append(settings, e)
+			}
+		}
+		ensureAssigned(set, taskPurpose(use), names, settings, inst.ID)
+	}
+}
+
+// candidateNames are the model names of a chain.
+func candidateNames(cands []providers.FallbackCandidate) []string {
+	names := make([]string, 0, len(cands))
+	for _, c := range cands {
+		names = append(names, c.Name)
+	}
+	return names
+}
+
+// summarizationNames is the agent's summarization chain as model names: its
+// summarization_models, then the global summarization.models, de-duplicated,
+// then its primary model unless already listed. A name that resolves to no
+// enabled model is left out (the summarization caller logs it).
+func summarizationNames(cfg *config.Config, inst *AgentInstance) []string {
+	var agentModels, globalModels []string
+	if inst.Config != nil {
+		agentModels = inst.Config.SummarizationModels
+	}
+	if cfg != nil {
+		globalModels = cfg.Summarization.Models
+	}
+	var out []string
+	for _, raw := range append(resolveCompressModelChain(agentModels, globalModels), strings.TrimSpace(inst.Model)) {
+		if alias, _, ok := resolveCompressModelTarget(cfg, raw); ok && !slices.Contains(out, alias) {
+			out = append(out, alias)
+		}
+	}
+	return out
+}
+
+// ensureAssigned makes purpose p of s hold exactly names, in that order,
+// each with its settings (settings may be nil, or one per name).
+func ensureAssigned(s *models.Set, p models.Purpose, names []string, settings []any, agentID string) {
 	cur := s.List(p)
 	have := make([]string, 0, len(cur))
+	haveSettings := make([]any, 0, len(cur))
 	for _, e := range cur {
 		have = append(have, e.Name)
+		haveSettings = append(haveSettings, e.Settings)
 	}
-	if slices.Equal(have, names) {
+	if slices.Equal(have, names) && (settings == nil || reflect.DeepEqual(haveSettings, settings)) {
 		return
 	}
 	for _, n := range have {
 		s.Unassign(p, n)
 	}
 	for i, n := range names {
-		if err := s.Assign(p, n, i); err != nil {
+		var opts []models.AssignOption
+		if settings != nil {
+			opts = append(opts, models.WithSettings(settings[i]))
+		}
+		if err := s.Assign(p, n, i, opts...); err != nil {
 			// The catalogue left the model out (and logged why), or the
 			// list names it twice.
 			logger.DebugCF("agent", "model not assigned",

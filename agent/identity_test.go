@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/config"
@@ -174,7 +175,7 @@ func TestCompressModelCaller_BillsTheAgent(t *testing.T) {
 
 	al := newTestAgentLoop(t).al
 	main, _ := al.GetRegistry().Get("main")
-	caller, _ := al.newCompressModelCaller(main, "agent:main:main")
+	caller, _ := al.newCompressModelCaller(main, "agent:main:main", models.Summarize)
 	if caller.id != main.Identity() {
 		t.Fatalf("compression caller identity = %+v, want %+v", caller.id, main.Identity())
 	}

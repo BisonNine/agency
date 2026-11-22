@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/models"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
@@ -160,4 +162,96 @@ func TestCallModel_TurnDeadlineStopsTheChain(t *testing.T) {
 	if got := renderTurnError(ctx, 15*time.Minute, err); !strings.HasPrefix(got, "⚠️ This turn ran past the 15m time limit") {
 		t.Fatalf("reply = %q, want the time-limit message", got)
 	}
+}
+
+// entryNames are the names of a set's list.
+func entryNames(entries []models.Entry) []string {
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
+// Each agent's set holds its models by purpose, in list order: chat, worker
+// (only when configured; else the Worker → Chat rule), the summarization
+// chain for summaries and memory (primary last, once), and every task-model
+// use with its entry as settings.
+func TestAssignAgentModels_Purposes(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	cfg := catalogReloadConfig(t.TempDir(), "Alice")
+	for _, n := range []string{"beta", "gamma", "eyes", "pics"} {
+		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: n, Model: n + "-wire", Provider: "p", Enabled: true})
+	}
+	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "nope", Model: "nope-wire", Provider: "p"}) // disabled
+	cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{
+		ID: "bob", Name: "Bob", Models: []string{"beta", "alpha"},
+		Subagents:           &config.SubagentsConfig{Models: []string{"gamma", "nope"}},
+		SummarizationModels: []string{"gamma", "alpha"},
+	})
+	cfg.Summarization.Models = []string{"beta", "gamma"}
+	cfg.TaskModels.VisionModels = []config.TaskModelRef{{Model: "eyes"}}
+	cfg.TaskModels.ImageModels = []config.ImageTaskModel{{Model: "pics", ImageAPI: config.ImageAPIImages}}
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
+
+	bob := al.catalog.Set("bob")
+	for _, tc := range []struct {
+		purpose models.Purpose
+		want    []string
+	}{
+		{models.Chat, []string{"beta", "alpha"}},
+		{models.Worker, []string{"gamma"}},
+		{models.Summarize, []string{"gamma", "alpha", "beta"}},
+		{models.Memory, []string{"gamma", "alpha", "beta"}},
+		{models.Purpose("vision"), []string{"eyes"}},
+		{models.Purpose("image"), []string{"pics"}},
+		{models.Purpose("tts"), []string{}},
+	} {
+		if got := entryNames(bob.List(tc.purpose)); !slices.Equal(got, tc.want) {
+			t.Errorf("bob %s = %v, want %v", tc.purpose, got, tc.want)
+		}
+	}
+	if e := bob.List(models.Purpose("image")); len(e) != 1 || !imageAPIIs(e[0].Settings, config.ImageAPIImages) {
+		t.Errorf("image entry settings = %+v, want the entry's image_api", e)
+	}
+	alice := al.catalog.Set("alice")
+	if got := entryNames(alice.List(models.Worker)); len(got) != 0 {
+		t.Errorf("alice has worker models %v, want none", got)
+	}
+	if got := alice.Begin(models.Worker).Candidates(); len(got) != 1 || got[0].Name != "alpha" {
+		t.Errorf("alice's workers run on %+v, want her chat model", got)
+	}
+	if got := entryNames(alice.List(models.Summarize)); !slices.Equal(got, []string{"beta", "gamma", "alpha"}) {
+		t.Errorf("alice summarize = %v, want the global list then her primary", got)
+	}
+}
+
+// Deleting a temporary agent's session drops what the catalogue holds for it.
+func TestForgetSessionCaches_ForgetsSelection(t *testing.T) {
+	al, agent := fourModelLoop(t)
+	if err := al.setActiveModelIndex(agent, "s", 2); err != nil {
+		t.Fatal(err)
+	}
+	// Drop the stored choice too, so only memory could still hold it.
+	if store, ok := agent.Sessions.(compactionStateStore); ok {
+		st, err := store.GetCompactionState("s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.ActiveModelIndex = 0
+		if err := store.SetCompactionState("s", st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	al.forgetSessionCaches(agent, "s")
+	if got := al.getActiveModelIndex(agent, "s"); got != 0 {
+		t.Fatalf("active index after forget = %d, want 0", got)
+	}
+}
+
+// imageAPIIs reports whether settings is a task-model entry with that
+// image_api.
+func imageAPIIs(settings any, api string) bool {
+	e, ok := settings.(config.TaskModelEntry)
+	return ok && e.ImageAPI == api
 }

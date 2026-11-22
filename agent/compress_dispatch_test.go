@@ -122,31 +122,6 @@ func TestBuildCompressLLMClient_UnknownModelSkipped(t *testing.T) {
 	}
 }
 
-// TestBuildDefaultCompressLLMClient_UsesCatalogueForPrimary: the agent's
-// primary model, the walk's last resort, is called on its own chain in the
-// catalogue, not through the agent's provider.
-func TestBuildDefaultCompressLLMClient_UsesCatalogueForPrimary(t *testing.T) {
-	cfg := compressTestConfig()
-	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
-	agent := &AgentInstance{ID: "default-compress-test", Provider: &mockProvider{}, Model: "some-model"}
-
-	client := al.resolveDefaultCompressClient(agent, "sess-default")
-	if client == nil || client.alias != "primary-target" || client.model != "some-model" {
-		t.Fatalf("client = %+v, want primary-target / some-model", client)
-	}
-}
-
-// TestBuildDefaultCompressLLMClient_UnresolvedPrimarySkipped: a primary model
-// that names no enabled model adds nothing to the chain.
-func TestBuildDefaultCompressLLMClient_UnresolvedPrimarySkipped(t *testing.T) {
-	cfg := &config.Config{}
-	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
-	agent := &AgentInstance{ID: "default-fallback-test", Provider: &mockProvider{}, Model: "no-such-model"}
-	if client := al.resolveDefaultCompressClient(agent, "sess-default-fallback"); client != nil {
-		t.Fatalf("client = %+v, want none for an unresolved primary", client)
-	}
-}
-
 // TestBuildCompressLLMClient_FreshAgentIsolated: a fresh temporary agent's
 // summarization models run isolated in its own workspace.
 func TestBuildCompressLLMClient_FreshAgentIsolated(t *testing.T) {

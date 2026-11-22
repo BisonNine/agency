@@ -151,8 +151,8 @@ func testCatalog(cfg *config.Config, clients map[string]providers.LLMProvider) *
 // its chain pinned as a turn pins it.
 func catalogTurn(t *testing.T, cfg *config.Config, inst *AgentInstance) *llmTurn {
 	t.Helper()
-	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil), activeModelIdx: map[string]int{}}
-	assignAgentModels(al.catalog, inst)
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
+	assignAgentModels(al.catalog, cfg, inst)
 	tm := al.selectTurnModel(inst, "s")
 	if len(tm.candidates) == 0 {
 		t.Fatal("the agent has no model in the catalogue")
