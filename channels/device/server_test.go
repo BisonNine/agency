@@ -757,8 +757,10 @@ func TestStreamDeltaGoesToItsOwnRun(t *testing.T) {
 	}
 	got := readRunFrames(t, conn, 4)
 	want := []runFrame{
-		{"run-a", "chat:delta"}, {"run-a", "agent:assistant"},
-		{"run-a", "agent:lifecycle:end"}, {"run-a", "chat:final"},
+		{"run-a", "chat:delta"},
+		{"run-a", "agent:assistant"},
+		{"run-a", "agent:lifecycle:end"},
+		{"run-a", "chat:final"},
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("frames = %v, want %v", got, want)
@@ -798,9 +800,13 @@ func TestMergedRunsEndWithTheReply(t *testing.T) {
 	}
 	got := readRunFrames(t, conn, 7)
 	want := []runFrame{
-		{"run-a", "agent:lifecycle:end"}, {"run-a", "chat:final"},
-		{"run-b", "agent:lifecycle:end"}, {"run-b", "chat:final"},
-		{"run-c", "agent:assistant"}, {"run-c", "agent:lifecycle:end"}, {"run-c", "chat:final"},
+		{"run-a", "agent:lifecycle:end"},
+		{"run-a", "chat:final"},
+		{"run-b", "agent:lifecycle:end"},
+		{"run-b", "chat:final"},
+		{"run-c", "agent:assistant"},
+		{"run-c", "agent:lifecycle:end"},
+		{"run-c", "chat:final"},
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("frames = %v, want %v", got, want)

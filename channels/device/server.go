@@ -21,9 +21,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tenebris-tech/alerter"
 
+	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/gatewayproto"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
