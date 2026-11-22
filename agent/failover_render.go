@@ -136,7 +136,7 @@ func formatFallbackNotice(passed []providers.FallbackAttempt, next providers.Fal
 	}
 	failed := passed[0]
 	return fmt.Sprintf("⚠️ %s.\nTrying %s…",
-		attemptText(attemptName(failed), failed.Error, failed.Reason),
+		attemptText(attemptName(failed), failed.Err, failed.Reason),
 		nextName,
 	)
 }
@@ -209,16 +209,16 @@ func formatRemaining(d time.Duration) string {
 
 // candidateName prefers the user-facing alias over the wire model id.
 func candidateName(c providers.FallbackCandidate) string {
-	if c.Alias != "" {
-		return c.Alias
+	if c.Name != "" {
+		return c.Name
 	}
 	return c.Model
 }
 
 // attemptName prefers the user-facing alias over the wire model id.
 func attemptName(a providers.FallbackAttempt) string {
-	if a.Alias != "" {
-		return a.Alias
+	if a.Name != "" {
+		return a.Name
 	}
 	return a.Model
 }
@@ -236,7 +236,7 @@ func renderFailoverError(err error) string {
 			if a.Skipped {
 				continue
 			}
-			attempts = append(attempts, attemptText(a.Model, a.Error, a.Reason))
+			attempts = append(attempts, attemptText(a.Model, a.Err, a.Reason))
 		}
 		if len(attempts) == 0 {
 			return ""

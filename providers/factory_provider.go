@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/fsmode"
+	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm"
 	anthropicmessages "go.bison9.com/agent/spawnllm/anthropic_messages"
 	"go.bison9.com/agent/spawnllm/azure"
@@ -239,29 +240,8 @@ func (g *cliDeclinedGuard) Chat(ctx context.Context, id Identity, messages []Mes
 	return resp, err
 }
 
-// CLIDeclinedError is the guard's error for a CLI that refused a tool call.
-// Its text is written for the user, so the failover renderer shows it verbatim
-// instead of the classification the fallback chain would otherwise report.
-type CLIDeclinedError struct {
-	Message string // what to change, naming the WebUI setting
-	Cause   error  // the CLI's own error (e.g. the denied action), when it gave one
-}
-
-func (e *CLIDeclinedError) Error() string {
-	if e.Cause != nil {
-		return e.Message + ": " + e.Cause.Error()
-	}
-	return e.Message
-}
-
-func (e *CLIDeclinedError) Unwrap() error { return e.Cause }
-
 func (g *cliDeclinedGuard) declinedMessage(denied []string) string {
-	msg := "The " + g.label + " declined to use tools"
-	if len(denied) > 0 {
-		msg += " (" + strings.Join(shortToolNames(denied), ", ") + ")"
-	}
-	return msg + ". Tick *Allow CLI to bypass restrictions* for this CLI on the Providers page, or allow the tools in the CLI's own settings."
+	return declinedMessage(models.Declined{Label: g.label, Protocol: g.protocol, Denied: shortToolNames(denied)})
 }
 
 // shortToolNames strips the MCP client prefix (mcp__<server>__) the CLI puts on

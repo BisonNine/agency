@@ -68,7 +68,6 @@ type ToolDeps struct {
 	// Spawn/subagent
 	Provider          providers.LLMProvider
 	Dispatcher        *providers.ProviderDispatcher
-	Fallback          *providers.FallbackChain
 	Candidates        []providers.FallbackCandidate
 	SpawnAllowlist    func(callerID, targetID string) bool
 	CandidateResolver func(agentID string) ([]providers.FallbackCandidate, bool)

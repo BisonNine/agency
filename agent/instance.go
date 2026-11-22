@@ -319,7 +319,7 @@ func humanAgentConfig(cfg *config.Config, agentCfg *config.AgentConfig) (string,
 // resolveAgentCandidates resolves the agent's models into its fallback
 // chain; an empty chain is logged as an error.
 func resolveAgentCandidates(cfg *config.Config, models []string, agentID string) []providers.FallbackCandidate {
-	candidates := providers.ResolveCandidatesWithLookup(providers.ModelConfig{Models: models}, "", modelListLookup(cfg))
+	candidates := resolveCandidates(cfg, models)
 	if len(candidates) == 0 {
 		var primary string
 		var fallbacks []string
@@ -343,12 +343,46 @@ func resolveWorkerCandidates(cfg *config.Config, subagents *config.SubagentsConf
 	if subagents == nil || len(subagents.Models) == 0 {
 		return own
 	}
-	candidates := providers.ResolveCandidatesWithLookup(providers.ModelConfig{Models: subagents.Models}, "", modelListLookup(cfg))
+	candidates := resolveCandidates(cfg, subagents.Models)
 	if len(candidates) == 0 {
 		logger.ErrorCF("agent", "agent worker model chain is empty after resolving aliases",
 			map[string]any{"agent_id": agentID, "worker_models": subagents.Models})
 	}
 	return candidates
+}
+
+// resolveCandidates resolves a model list into a chain, in order: each
+// entry names a model by model_name or raw model id (modelListLookup). An
+// entry that names no enabled model is dropped and logged, and a model
+// listed twice is kept once.
+func resolveCandidates(cfg *config.Config, names []string) []providers.FallbackCandidate {
+	lookup := modelListLookup(cfg)
+	seen := make(map[string]bool)
+	var out []providers.FallbackCandidate
+	for _, raw := range names {
+		original := strings.TrimSpace(raw)
+		if original == "" {
+			continue
+		}
+		alias, model, provider, ok := lookup(original)
+		if !ok {
+			// The alias names no enabled model (deleted or disabled).
+			logger.WarnCF("providers", "fallback alias dropped (not enabled in models)",
+				map[string]any{"alias": original})
+			continue
+		}
+		key := providers.ModelKey(provider, model) + "#" + alias
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		c := providers.FallbackCandidate{Name: alias, Provider: provider, Model: model}
+		if p, err := cfg.GetProvider(provider); err == nil && p != nil {
+			c.Protocol = p.Protocol
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // agentModes returns the modes for path among an agent's directories: the
@@ -485,8 +519,8 @@ func resolveRunLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConf
 func resolveModelLimits(defaults *config.AgentDefaults, agentCfg *config.AgentConfig, cfg *config.Config, candidates []providers.FallbackCandidate) map[string]runLimits {
 	limits := make(map[string]runLimits, len(candidates))
 	for _, c := range candidates {
-		if c.Alias != "" {
-			limits[c.Alias] = resolveRunLimits(defaults, agentCfg, cfg, c.Alias)
+		if c.Name != "" {
+			limits[c.Name] = resolveRunLimits(defaults, agentCfg, cfg, c.Name)
 		}
 	}
 	return limits

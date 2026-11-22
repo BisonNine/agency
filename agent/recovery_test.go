@@ -401,7 +401,7 @@ func TestRecordPendingTurnSource_AgentAddedByReload(t *testing.T) {
 	tl := newTestAgentLoop(t)
 	next := *tl.cfg
 	next.Agents.List = append(slices.Clone(tl.cfg.Agents.List), config.AgentConfig{ID: "bob", Name: "Bob"})
-	if err := tl.al.ReloadProviderAndConfig(context.Background(), tl.provider, &next); err != nil {
+	if err := reloadForTest(tl.al, context.Background(), tl.provider, &next); err != nil {
 		t.Fatalf("ReloadProviderAndConfig: %v", err)
 	}
 	bob, ok := tl.al.GetRegistry().Get("bob")

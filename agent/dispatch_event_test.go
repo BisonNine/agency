@@ -298,18 +298,10 @@ func (failoverProvider) GetDefaultModel() string { return "primary-wire" }
 // After a failover each call has its line, and the answering one names the
 // candidate that answered: its provider and its model_name, not the primary's.
 func TestRequestModel_FailoverNamesAnsweringModel(t *testing.T) {
-	al := &AgentLoop{cfg: &config.Config{}, fallback: providers.NewFallbackChain(providers.NewCooldownTracker())}
-	turn := &llmTurn{
-		al:    al,
-		agent: &AgentInstance{ID: "bob", Provider: failoverProvider{}},
-		candidates: []providers.FallbackCandidate{
-			{Provider: "Primary Co", Model: "primary-wire", Alias: "Primary"},
-			{Provider: "Backup Co", Model: "backup-wire", Alias: "Backup"},
-		},
-		model:    "Primary",
-		messages: []providers.Message{{Role: "user", Content: "hi"}},
-	}
-	d := &llmDispatch{provider: "Primary Co", runProvider: failoverProvider{}, runModel: "primary-wire"}
+	turn, d := chainTurn(t, failoverProvider{}, nil,
+		providers.FallbackCandidate{Provider: "Primary Co", Model: "primary-wire", Name: "Primary"},
+		providers.FallbackCandidate{Provider: "Backup Co", Model: "backup-wire", Name: "Backup"},
+	)
 
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
@@ -455,7 +447,7 @@ func sideModelLoop(srv *httptest.Server, alias string) *AgentLoop {
 		},
 	}
 	cfg.Summarization.Models = []string{alias}
-	return &AgentLoop{cfg: cfg, dispatcher: providers.NewProviderDispatcher(cfg)}
+	return &AgentLoop{cfg: cfg, dispatcher: providers.NewProviderDispatcher(cfg), catalog: testCatalog(cfg, nil)}
 }
 
 // A compression call (context engine or cognitive memory) leaves one finish
@@ -518,10 +510,9 @@ func TestVisionClient_EmitsFinish(t *testing.T) {
 	}, "iteration", "session_key")
 }
 
-// A summarization model that resolves to no models entry runs on the agent's
-// own provider: the line names it by the configured string and by the
-// defaults' provider.
-func TestCompressModelCaller_UnresolvedModelNamesAgentProvider(t *testing.T) {
+// A summarization model that resolves to no models entry is left out of the
+// chain: the agent's primary model answers, and the line names it.
+func TestCompressModelCaller_UnresolvedModelSkipped(t *testing.T) {
 	al := sideModelLoop(openAIStub(t), "Main")
 	al.cfg.Agents.Defaults.Models = []string{"Main"}
 	al.cfg.Summarization.Models = []string{"bob-summarizer"}
@@ -542,7 +533,7 @@ func TestCompressModelCaller_UnresolvedModelNamesAgentProvider(t *testing.T) {
 	assertFields(t, records[0], map[string]any{
 		"kind":         "compression",
 		"our_provider": "Bob's API",
-		"our_model":    "bob-summarizer",
+		"our_model":    "Main",
 		"session_key":  "agent:alice:main",
 	})
 }

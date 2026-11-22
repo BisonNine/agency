@@ -46,7 +46,7 @@ func TestReload_ClosesReplacedConfigInstanceStore(t *testing.T) {
 		t.Fatalf("ProcessDirect: %v", err)
 	}
 	for range 3 {
-		if err := al.ReloadProviderAndConfig(context.Background(), tl.provider, tl.cfg); err != nil {
+		if err := reloadForTest(al, context.Background(), tl.provider, tl.cfg); err != nil {
 			t.Fatalf("ReloadProviderAndConfig: %v", err)
 		}
 	}

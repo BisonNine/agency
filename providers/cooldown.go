@@ -1,14 +1,9 @@
 package providers
 
 import (
-	"fmt"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/tenebris-tech/alerter"
-
-	"go.bison9.com/agency/alerts"
 )
 
 const (
@@ -107,11 +102,9 @@ func (p CooldownPolicy) cooldownForFailure(errorCount, status int) time.Duration
 // important for OpenRouter, where each model has its own upstream quota.
 // Thread-safe via sync.RWMutex. In-memory only (resets on restart).
 type CooldownTracker struct {
-	// alerter, when set, is told when a model is parked (see alert).
-	alerter alerter.Alerter
-	// incidents holds each model's alerts to one when it starts failing and
-	// one a day while it keeps failing (see alert and recovered).
-	incidents alerts.Incidents
+	// alerts, when set, is told when a model is parked and when it answers
+	// again (ModelAlerts).
+	alerts *ModelAlerts
 
 	mu            sync.RWMutex
 	entries       map[string]*cooldownEntry
@@ -184,83 +177,18 @@ func (ct *CooldownTracker) MarkFailure(provider, model string, reason FailoverRe
 		cooldown = retryAfter
 	}
 	entry.CooldownEnd = now.Add(cooldown)
-	ct.alert(now, provider, model, reason, status, entry.ErrorCount, cooldown)
+	if ct.alerts != nil {
+		ct.alerts.parked(key, reason, status, entry.ErrorCount, entry.ErrorCount > len(cooldownEscalation), cooldown, now)
+	}
 }
 
-// SetAlerter routes cooldown events to an alerter. Safe to call once at
-// startup before the tracker is shared.
-func (ct *CooldownTracker) SetAlerter(a alerter.Alerter) {
+// SetAlerts routes the tracker's parks and recoveries to the model alerts
+// the catalogue reports to, so a model has one incident whichever path saw it
+// fail. Call once, before the tracker is shared.
+func (ct *CooldownTracker) SetAlerts(a *ModelAlerts) {
 	ct.mu.Lock()
-	ct.alerter = a
+	ct.alerts = a
 	ct.mu.Unlock()
-}
-
-// Titles of the model alerts, and the prefixes that key each one's incident
-// by model: a model parked for rate limits that then loses its credit is a
-// second problem, and alerts as one.
-const (
-	alertModelAuth   = "Model authentication or billing failure"
-	alertModelParked = "Model parked after repeated failures"
-	alertModelUp     = "Model working again"
-
-	incidentAuth   = "auth\x00"
-	incidentParked = "parked\x00"
-)
-
-// alert tells the operator when a model is parked. An authentication or
-// billing failure (a CLI logged out, a key revoked, credit exhausted) is
-// reported at once, because no retry fixes it. Anything else is reported
-// only once the escalation has settled into the category
-// cooldown, so a single transient error pages nobody.
-//
-// A model that stays broken is parked again each time its cooldown ends and
-// something tries it, so the alert is raised once when that starts and then
-// at most once every alerts.RemindEvery, saying since when and how many parks
-// were held back. The incident ends when the model answers (recovered).
-// Called with ct.mu held; Send does not block.
-func (ct *CooldownTracker) alert(now time.Time, provider, model string, reason FailoverReason, status, failures int, cooldown time.Duration) {
-	if ct.alerter == nil {
-		return
-	}
-	id := ModelKey(provider, model)
-	var title, incident string
-	switch {
-	case reason == FailoverAuth || reason == FailoverBilling:
-		title, incident = alertModelAuth, incidentAuth+id
-	case failures > len(cooldownEscalation):
-		title, incident = alertModelParked, incidentParked+id
-	default:
-		return
-	}
-	o := ct.incidents.Report(incident, now)
-	if !o.Alert {
-		return
-	}
-	ct.alerter.Send(alerter.Alert{
-		Title: title,
-		Description: fmt.Sprintf("%s parked for %s after %d consecutive failure(s): %s (status %d)%s",
-			id, cooldown.Round(time.Second), failures, reason, status, o.Note()),
-		EventID: id,
-	})
-}
-
-// recovered ends the incidents of the model with key id, which has just
-// answered. When it had been alerted as failing, the operator is told once
-// that it works again, so nothing is left for them to do; a failure after
-// that is a new incident and alerts at once. Called with ct.mu held.
-func (ct *CooldownTracker) recovered(id string) {
-	since, alerted := ct.incidents.Resolve(incidentAuth + id)
-	if parkedSince, parked := ct.incidents.Resolve(incidentParked + id); parked && (!alerted || parkedSince.Before(since)) {
-		since, alerted = parkedSince, true
-	}
-	if !alerted || ct.alerter == nil {
-		return
-	}
-	ct.alerter.Send(alerter.Alert{
-		Title:       alertModelUp,
-		Description: id + " answered again; it had been failing since " + alerts.Stamp(since),
-		EventID:     id + "-up",
-	})
 }
 
 // MarkSuccess resets all counters and cooldowns for a model.
@@ -269,7 +197,9 @@ func (ct *CooldownTracker) MarkSuccess(provider, model string) {
 	defer ct.mu.Unlock()
 
 	key := ModelKey(provider, model)
-	ct.recovered(key)
+	if ct.alerts != nil {
+		ct.alerts.recovered(key)
+	}
 	entry := ct.entries[key]
 	if entry == nil {
 		return
@@ -360,7 +290,9 @@ func (ct *CooldownTracker) Reset() {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	ct.entries = make(map[string]*cooldownEntry)
-	ct.incidents.RearmAll()
+	if ct.alerts != nil {
+		ct.alerts.RearmAll()
+	}
 }
 
 // SetPolicy updates the cooldown durations in place WITHOUT clearing the current
@@ -385,8 +317,9 @@ func (ct *CooldownTracker) Clear(provider, model string) bool {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	key := ModelKey(provider, model)
-	ct.incidents.Rearm(incidentAuth + key)
-	ct.incidents.Rearm(incidentParked + key)
+	if ct.alerts != nil {
+		ct.alerts.Rearm(key)
+	}
 	if _, ok := ct.entries[key]; !ok {
 		return false
 	}

@@ -154,7 +154,7 @@ func TestReload_CloneFollowsSourceAllowlist(t *testing.T) {
 	next := newTestConfig(t)
 	next.Agents.BaseDir = cfg.Agents.BaseDir
 	next.Agents.List[0].Tools = []string{"file_read"}
-	if err := al.ReloadProviderAndConfig(context.Background(), provider, next); err != nil {
+	if err := reloadForTest(al, context.Background(), provider, next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	clone, ok := reg.Get(cloneID)
@@ -180,7 +180,7 @@ func TestReload_HonoursContext(t *testing.T) {
 	before, _ := al.GetRegistry().Get("main")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := al.ReloadProviderAndConfig(ctx, tl.provider, newTestConfig(t))
+	err := reloadForTest(al, ctx, tl.provider, newTestConfig(t))
 	if err == nil || !strings.Contains(err.Error(), "context canceled") {
 		t.Fatalf("reload with an ended context = %v, want a cancellation error", err)
 	}

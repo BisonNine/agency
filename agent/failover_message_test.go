@@ -61,15 +61,15 @@ func TestRenderFailoverErrorShowsProviderMessage(t *testing.T) {
 	}
 
 	exhausted := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverFormat, Error: fable400()},
+		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverFormat, Err: fable400()},
 	}}
 	if got := renderFailoverError(exhausted); got != "All models failed. "+want {
 		t.Fatalf("exhausted render = %q", got)
 	}
 
 	notice := formatFallbackNotice([]providers.FallbackAttempt{
-		{Provider: "Anthropic", Model: "claude-fable-5-1", Alias: "Claude Fable 5.1", Reason: providers.FailoverFormat, Error: fable400()},
-	}, providers.FallbackCandidate{Model: "claude-opus-5-5", Alias: "Claude Opus 5.5"})
+		{Provider: "Anthropic", Model: "claude-fable-5-1", Name: "Claude Fable 5.1", Reason: providers.FailoverFormat, Err: fable400()},
+	}, providers.FallbackCandidate{Model: "claude-opus-5-5", Name: "Claude Opus 5.5"})
 	if !strings.Contains(notice, "Claude Fable 5.1 error HTTP 400 (bad response format): thinking.type: adaptive is required for this model.") {
 		t.Fatalf("fallback notice = %q, want the provider's message", notice)
 	}
@@ -82,7 +82,7 @@ func TestLogPassedLogsProviderMessage(t *testing.T) {
 
 	turn := &llmTurn{agent: &AgentInstance{ID: "alice"}}
 	turn.logPassed([]providers.FallbackAttempt{
-		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverFormat, Error: fable400()},
+		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverFormat, Err: fable400()},
 	})
 	if !strings.Contains(buf.String(), "thinking.type: adaptive is required for this model.") {
 		t.Fatalf("log does not carry the provider's message:\n%s", buf.String())
@@ -122,13 +122,13 @@ func TestProviderMessageRedactsSecrets(t *testing.T) {
 				t.Fatalf("reply carries the secret: %q", reply)
 			}
 			exhausted := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Error: fe},
+				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Err: fe},
 			}}
 			if reply := renderFailoverError(exhausted); strings.Contains(reply, secret) {
 				t.Fatalf("exhausted reply carries the secret: %q", reply)
 			}
 			notice := formatFallbackNotice([]providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Error: fe},
+				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Err: fe},
 			}, providers.FallbackCandidate{Model: "gpt-4o"})
 			if notice == "" || strings.Contains(notice, secret) {
 				t.Fatalf("fallback notice = %q, must not carry the secret", notice)
@@ -139,14 +139,14 @@ func TestProviderMessageRedactsSecrets(t *testing.T) {
 			defer restore()
 			turn := &llmTurn{agent: &AgentInstance{ID: "alice"}}
 			turn.logPassed([]providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Error: fe},
+				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Err: fe},
 			})
 			if strings.Contains(buf.String(), secret) || !strings.Contains(buf.String(), secretRedaction) {
 				t.Fatalf("failure log carries the secret or no redaction:\n%s", buf.String())
 			}
 			buf.Reset()
 			turn.logPassed([]providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverAuth, Skipped: true, Error: fe},
+				{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverAuth, Skipped: true, Err: fe},
 			})
 			if strings.Contains(buf.String(), secret) || !strings.Contains(buf.String(), secretRedaction) {
 				t.Fatalf("skip log carries the secret or no redaction:\n%s", buf.String())
@@ -255,8 +255,9 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		var buf bytes.Buffer
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
-		c := &compressModelCaller{caller: llmCaller{agentID: "alice"}, clients: []*providerLLMClient{
-			compressClient(&scriptedProvider{err: providerErrorWithKey()}, "p1", "model-a"),
+		cat := compressCatalog(map[string]providers.LLMProvider{"model-a": &scriptedProvider{err: providerErrorWithKey()}})
+		c := &compressModelCaller{caller: llmCaller{agentID: "alice"}, id: testIdentity, clients: []*providerLLMClient{
+			compressClient(cat, "model-a"),
 		}}
 		if _, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u"}); err == nil {
 			t.Fatal("Complete succeeded with a failing model")

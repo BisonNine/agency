@@ -15,12 +15,13 @@ import (
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
 
+	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
 )
 
 // TestCompress_E2E_ClaudeCLIReceivesFortification locks in the full compression
 // dispatch chain: Manager.doCompress → compressModelCaller.Complete →
-// providerLLMClient.chat → ClaudeCliProvider.Chat. The provider's stdin must
+// the model's catalogue chain → ClaudeCliProvider.Chat. The provider's stdin must
 // carry the JSON-object fortification because the caller passes the engine's
 // JSONObject request through as ResponseFormatJSONObjectOption. Without that wiring this test fails — see the
 // mutation evidence captured in the worker report.
@@ -42,8 +43,11 @@ EOFMOCK
 		t.Fatal(err)
 	}
 
-	cli := providers.NewClaudeCliProvider(script, t.TempDir(), nil, nil)
-	client := &providerLLMClient{provider: cli, model: "claude-cli", requestJSONObject: true}
+	cfg := &config.Config{
+		Providers: []config.Provider{{Name: "claude", Protocol: "claude-cli", Command: script, BypassRestrictions: true}},
+		Models:    []config.ModelConfig{{ModelName: "claude-cli", Model: "claude-cli", Provider: "claude", Workspace: t.TempDir(), Enabled: true}},
+	}
+	client := &providerLLMClient{catalog: testCatalog(cfg, nil), alias: "claude-cli", model: "claude-cli"}
 
 	sessionKey := "e2e-compress"
 	store, err := session.NewSQLiteStore(t.TempDir())

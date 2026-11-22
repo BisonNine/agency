@@ -100,7 +100,7 @@ func TestRunAgentLoop_StaleTempInstance(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	stale, _ := al.GetRegistry().Get(id)
-	if err = al.ReloadProviderAndConfig(context.Background(), tl.provider, tl.cfg); err != nil {
+	if err = reloadForTest(al, context.Background(), tl.provider, tl.cfg); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	key := routing.BuildAgentMainSessionKey(id)

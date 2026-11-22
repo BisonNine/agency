@@ -11,8 +11,10 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
+	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
 )
 
@@ -48,8 +50,20 @@ func (p *scriptedProvider) callCount() int {
 	return len(p.calls)
 }
 
-func compressClient(p providers.LLMProvider, providerName, model string) *providerLLMClient {
-	return &providerLLMClient{provider: p, model: model, providerName: providerName, requestJSONObject: true}
+// compressCatalog is a catalogue with one model per client, each on its own
+// provider and named as its wire id, answered by that client.
+func compressCatalog(clients map[string]providers.LLMProvider) *models.Catalog {
+	cfg := &config.Config{}
+	for name := range clients {
+		cfg.Providers = append(cfg.Providers, config.Provider{Name: "p-" + name, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
+		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: name, Model: name, Provider: "p-" + name, Enabled: true})
+	}
+	return testCatalog(cfg, clients)
+}
+
+// compressClient is the summarization client of model on cat.
+func compressClient(cat *models.Catalog, model string) *providerLLMClient {
+	return &providerLLMClient{catalog: cat, alias: model, model: model, ourProvider: "p-" + model}
 }
 
 // TestCompressModelCaller_WalksChainAndSkipsExcluded: the first model not in
@@ -57,9 +71,10 @@ func compressClient(p providers.LLMProvider, providerName, model string) *provid
 func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 	first := &scriptedProvider{content: "from-first"}
 	second := &scriptedProvider{content: "from-second"}
+	cat := compressCatalog(map[string]providers.LLMProvider{"model-a": first, "model-b": second})
 	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{
-		compressClient(first, "p1", "model-a"),
-		compressClient(second, "p2", "model-b"),
+		compressClient(cat, "model-a"),
+		compressClient(cat, "model-b"),
 	}}
 
 	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u", JSONObject: true})
@@ -83,22 +98,24 @@ func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 
 // TestCompressModelCaller_ErrorMovesOnAndNamesLastModel: a transport error on
 // one model moves to the next; when every model fails the last error comes
-// back together with the last model tried, so the report can name it.
+// back, as the client returned it, together with the last model tried, so
+// the report can name it.
 func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 	broken := &scriptedProvider{err: errors.New("boom")}
 	good := &scriptedProvider{content: "ok"}
+	cat := compressCatalog(map[string]providers.LLMProvider{"model-a": broken, "model-b": good})
 	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{
-		compressClient(broken, "p1", "model-a"),
-		compressClient(good, "p2", "model-b"),
+		compressClient(cat, "model-a"),
+		compressClient(cat, "model-b"),
 	}}
 	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
 	if err != nil || reply.Model != "model-b" {
 		t.Fatalf("expected the chain to move past the failing model: %+v, %v", reply, err)
 	}
 
-	onlyBroken := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{compressClient(broken, "p1", "model-a")}}
+	onlyBroken := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{compressClient(cat, "model-a")}}
 	reply, err = onlyBroken.Complete(context.Background(), ctxengine.ModelRequest{})
-	if err == nil || reply.Model != "model-a" {
+	if err == nil || err.Error() != "boom" || reply.Model != "model-a" {
 		t.Fatalf("expected the last error with the model named: %+v, %v", reply, err)
 	}
 }
@@ -107,7 +124,8 @@ func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 // becomes the provider's response-format option, and its absence sends none.
 func TestCompressModelCaller_JSONObjectForwarded(t *testing.T) {
 	p := &scriptedProvider{content: "{}"}
-	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{compressClient(p, "p1", "m")}}
+	cat := compressCatalog(map[string]providers.LLMProvider{"m": p})
+	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{compressClient(cat, "m")}}
 	if _, err := c.Complete(context.Background(), ctxengine.ModelRequest{JSONObject: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -122,44 +140,57 @@ func TestCompressModelCaller_JSONObjectForwarded(t *testing.T) {
 	}
 }
 
-// TestCompressModelCaller_SharedCooldownSkipsModel: a model parked in the
-// shared cooldown tracker (e.g. an out-of-credits 402 hit by the main chain)
-// is skipped by the compaction path — not retried — and the error says so.
-func TestCompressModelCaller_SharedCooldownSkipsModel(t *testing.T) {
-	tracker := providers.NewCooldownTrackerWithPolicy(providers.DefaultCooldownPolicy())
-	tracker.MarkFailure("Abliteration", "abliterated-model", providers.FailoverBilling, 402, 0)
-
-	p := &scriptedProvider{content: "{}"}
-	c := &compressModelCaller{
-		clients:  []*providerLLMClient{compressClient(p, "Abliteration", "abliterated-model")},
-		cooldown: tracker,
+// parkModel parks model on cat with a billing failure, as a turn's chain
+// would (the health is the catalogue's, shared by every path).
+func parkModel(t *testing.T, cat *models.Catalog, model string) {
+	t.Helper()
+	failing := &scriptedProvider{err: errors.New("API request failed:   Status: 402   Body: {}")}
+	if err := cat.RegisterClient(model, failing); err != nil {
+		t.Fatal(err)
 	}
+	if _, err := providers.ModelSet(cat, model).Begin(models.Chat).Chat(context.Background(), testIdentity, models.Request{}); err == nil {
+		t.Fatal("the failing call succeeded")
+	}
+	if info, _ := cat.Get(model); info.Health.Available {
+		t.Fatalf("%s should be parked", model)
+	}
+}
+
+// TestCompressModelCaller_SharedCooldownSkipsModel: a model parked by another
+// path (e.g. an out-of-credits 402 hit by a turn's chain) is skipped by the
+// compaction path — not retried — and the error says so.
+func TestCompressModelCaller_SharedCooldownSkipsModel(t *testing.T) {
+	p := &scriptedProvider{content: "{}"}
+	cat := compressCatalog(map[string]providers.LLMProvider{"abliterated-model": p})
+	parkModel(t, cat, "abliterated-model")
+	if err := cat.RegisterClient("abliterated-model", p); err != nil {
+		t.Fatal(err)
+	}
+
+	c := &compressModelCaller{clients: []*providerLLMClient{compressClient(cat, "abliterated-model")}, id: testIdentity}
 	_, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
 	if !errors.Is(err, ctxengine.ErrNoModel) || !strings.Contains(err.Error(), "1 in cooldown") {
 		t.Fatalf("cooled model should be skipped with ErrNoModel naming the cooldown, got %v", err)
 	}
 	if p.callCount() != 0 {
-		t.Fatalf("model cooled in the shared tracker must not be called; calls=%d", p.callCount())
+		t.Fatalf("model parked in the catalogue must not be called; calls=%d", p.callCount())
 	}
 }
 
 // TestCompressModelCaller_BillingFailurePutsModelInCooldown: a summarization
-// model returning a billing (402) error is put in the shared cooldown and not
-// retried on the next call — so an out-of-credits summarizer is not hammered.
+// model returning a billing (402) error is put in cooldown and not retried on
+// the next call — so an out-of-credits summarizer is not hammered.
 func TestCompressModelCaller_BillingFailurePutsModelInCooldown(t *testing.T) {
-	tracker := providers.NewCooldownTrackerWithPolicy(providers.DefaultCooldownPolicy())
 	p := &scriptedProvider{err: errors.New("API request failed:   Status: 402   Body: {\"error\":{\"billing_url\":\"x\"}}")}
-	c := &compressModelCaller{
-		clients:  []*providerLLMClient{compressClient(p, "Abliteration", "abliterated-model")},
-		cooldown: tracker,
-	}
+	cat := compressCatalog(map[string]providers.LLMProvider{"abliterated-model": p})
+	c := &compressModelCaller{clients: []*providerLLMClient{compressClient(cat, "abliterated-model")}, id: testIdentity}
 
 	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{})
 	if err == nil || reply.Model != "abliterated-model" || p.callCount() != 1 {
 		t.Fatalf("first call: reply=%+v err=%v calls=%d", reply, err, p.callCount())
 	}
-	if tracker.IsAvailable("Abliteration", "abliterated-model") {
-		t.Fatal("402 should have parked the model in the shared cooldown")
+	if info, _ := cat.Get("abliterated-model"); info.Health.Available {
+		t.Fatal("402 should have parked the model")
 	}
 
 	_, err = c.Complete(context.Background(), ctxengine.ModelRequest{})

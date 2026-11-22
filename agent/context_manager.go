@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/fsmode"
+	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/bus"
@@ -28,56 +30,52 @@ import (
 	"go.bison9.com/agency/providers"
 )
 
-// providerLLMClient is one resolved provider+model pair of the summarization
-// chain; compressModelCaller walks a list of them.
+// providerLLMClient is one model of the summarization chain;
+// compressModelCaller walks a list of them. Each call is made on the model's
+// single-model chain in the catalogue (begun anew for every call, so it
+// follows a reload), which skips it while it is parked and records a failure
+// against its health.
 //
-// requestJSONObject, when true, asks the underlying provider to honour
-// response_format={"type":"json_object"} on the outbound request. The
-// provider gates emission on protocol capability (see openai_compat.Provider);
-// non-capable providers silently drop the request and log DBG.
+// Every request asks for a JSON-object response; the provider gates that on
+// protocol capability (see openai_compat.Provider), and non-capable
+// providers silently drop it and log DBG.
 type providerLLMClient struct {
-	provider          providers.LLMProvider
-	model             string
-	providerName      string // provider NAME (config), for the shared cooldown key
-	requestJSONObject bool
-	// alias and ourProvider are the model_name and provider name logged on
-	// the finish line; empty when the model resolved to no models entry.
+	catalog *models.Catalog
+	// alias is the model's model_name, model its wire model id and
+	// ourProvider its provider name, as the finish line logs them.
 	alias       string
+	model       string
 	ourProvider string
+	// workspace, when set, runs a CLI model isolated in it (a fresh
+	// temporary agent's).
+	workspace string
 }
 
-// Model returns the model name this client dispatches to, used to label
+// Model returns the wire model this client dispatches to, used to label
 // per-invocation entries in the compaction report.
 func (c *providerLLMClient) Model() string { return c.model }
 
-// CooldownProvider returns the provider name so the compaction path keys
-// cooldown by provider+model identically to the main fallback chain (shared
-// tracker). Empty when unknown (last-resort fallback client).
-func (c *providerLLMClient) CooldownProvider() string { return c.providerName }
-
-// chat dispatches one call to the resolved provider, requesting a JSON-object
-// response format when jsonObject is set.
-func (c *providerLLMClient) chat(ctx context.Context, id global.Identity, messages []providers.Message, jsonObject bool) (*providers.LLMResponse, error) {
-	var opts map[string]any
-	if jsonObject {
-		opts = map[string]any{
-			openai_compat.ResponseFormatJSONObjectOption: true,
-		}
+// chain begins the model's chain for one call.
+func (c *providerLLMClient) chain() *models.Chain {
+	ch := providers.ModelSet(c.catalog, c.alias).Begin(models.Chat)
+	if c.workspace != "" {
+		ch = ch.Isolated(c.workspace)
 	}
-	return c.provider.Chat(ctx, id, messages, nil, c.model, opts)
+	return ch
 }
 
 // compressModelCaller is the host's ctxengine.ModelCaller: it walks the
 // agent's summarization chain in order (agent summarization_models → global
 // summarization.models → the agent's primary model), skipping models the
-// engine excluded and models the shared cooldown tracker has parked, and
-// returns the first reply together with the model that produced it. A
-// transport error moves on to the next model and marks the failure against
-// the cooldown policy, so an out-of-credits summarizer is not hammered on
-// every compaction; the last error is returned when every model fails.
+// engine excluded and models the catalogue has parked, and returns the first
+// reply together with the model that produced it. A transport error moves on
+// to the next model and is recorded against the model's health, so an
+// out-of-credits summarizer is not hammered on every compaction; the last
+// error is returned when every model fails.
 type compressModelCaller struct {
-	clients  []*providerLLMClient
-	cooldown *providers.CooldownTracker
+	clients []*providerLLMClient
+	// clock times the cooldown a skipped model has left.
+	clock clock.Clock
 	// caller and sessionKey label the log lines.
 	caller     llmCaller
 	sessionKey string
@@ -99,26 +97,36 @@ func (c *compressModelCaller) Complete(ctx context.Context, req ctxengine.ModelR
 // (the cognitive-memory consolidation model) can wrap it without an import.
 // It returns the reply and the model that served it; on failure the model is
 // the last one tried (or "" when nothing was), so a report can still name it.
+// When ctx ends the walk stops with ctx's error.
 func (c *compressModelCaller) complete(ctx context.Context, system, user string, jsonObject bool, exclude []string) (content, finishReason, model string, err error) {
 	messages := []providers.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	}
+	var opts map[string]any
+	if jsonObject {
+		opts = map[string]any{
+			openai_compat.ResponseFormatJSONObjectOption: true,
+		}
+	}
 	var lastErr error
 	lastModel := ""
 	excluded, cooling := 0, 0
 	for _, cl := range c.clients {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", "", lastModel, ctxErr
+		}
 		if cl.model != "" && slices.Contains(exclude, cl.model) {
 			excluded++
 			continue
 		}
-		if c.cooldown != nil && cl.model != "" && !c.cooldown.IsAvailable(cl.providerName, cl.model) {
+		if info, ok := cl.catalog.Get(cl.alias); ok && !info.Health.Available {
 			cooling++
 			logger.InfoCF("llmcontext", "compression model in cooldown; skipping", map[string]any{
 				"agent_id":  c.caller.agentID,
 				"session":   c.sessionKey,
 				"model":     cl.model,
-				"remaining": c.cooldown.CooldownRemaining(cl.providerName, cl.model).Round(time.Second).String(),
+				"remaining": max(clock.Or(c.clock).Until(info.Health.Until), 0).Round(time.Second).String(),
 			})
 			continue
 		}
@@ -126,39 +134,44 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 		if c.noSessionKey {
 			sessionKey = ""
 		}
-		start := time.Now()
-		resp, chatErr := cl.chat(ctx, c.id, messages, jsonObject)
-		emitLLMFinishEvent(llmFinish{
-			caller:         c.caller,
-			kind:           llmKindCompression,
-			ourProvider:    cl.ourProvider,
-			ourModel:       cmp.Or(cl.alias, cl.model),
-			requestedModel: cl.model,
-			sessionKey:     sessionKey,
-			turnID:         turnIDFrom(ctx),
-			elapsedMs:      time.Since(start).Milliseconds(),
-			resp:           resp,
-			err:            chatErr,
-		})
+		var last finishRecorder
+		res, chatErr := cl.chain().Chat(ctx, c.id, models.Request{Messages: messages, Options: opts},
+			last.option(func(_ models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+				emitLLMFinishEvent(llmFinish{
+					caller:         c.caller,
+					kind:           llmKindCompression,
+					ourProvider:    cl.ourProvider,
+					ourModel:       cmp.Or(cl.alias, cl.model),
+					requestedModel: cl.model,
+					sessionKey:     sessionKey,
+					turnID:         turnIDFrom(ctx),
+					elapsedMs:      elapsed.Milliseconds(),
+					resp:           resp,
+					err:            err,
+				})
+			}))
 		if chatErr != nil {
-			lastErr, lastModel = chatErr, cl.model
-			// Record the failure against the shared cooldown policy; statuses
-			// that never cool (413, no HTTP status) are ignored internally.
-			if fe := providers.ClassifyError(chatErr, "", cl.model); fe != nil && c.cooldown != nil {
-				c.cooldown.MarkFailure(cl.providerName, cl.model, fe.Reason, fe.Status, fe.RetryAfter)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", "", cl.model, ctxErr
+			}
+			if !last.called {
+				// Parked between the check above and the call.
+				cooling++
+				continue
+			}
+			lastErr, lastModel = last.err, cl.model
+			if lastErr == nil {
+				lastErr = chatErr
 			}
 			logger.WarnCF("llmcontext", "compression model call failed; trying next in chain", map[string]any{
 				"agent_id": c.caller.agentID,
 				"session":  c.sessionKey,
 				"model":    cl.model,
-				"error":    redactedError(chatErr),
+				"error":    redactedError(lastErr),
 			})
 			continue
 		}
-		if c.cooldown != nil {
-			c.cooldown.MarkSuccess(cl.providerName, cl.model) // reset any prior cooldown/escalation
-		}
-		return resp.Content, resp.FinishReason, cl.model, nil
+		return res.Response.Content, res.Response.FinishReason, cl.model, nil
 	}
 	if lastErr != nil {
 		return "", "", lastModel, lastErr
@@ -203,8 +216,8 @@ func resolveCompressModelChain(agentModels, globalModels []string) []string {
 	return out
 }
 
-// compressProviderName resolves the provider NAME for a model alias, so the
-// compaction client keys cooldown by the same provider+model as the main chain.
+// compressProviderName resolves the provider name of a model alias, for the
+// finish line.
 func compressProviderName(cfg *config.Config, alias string) string {
 	if cfg == nil {
 		return ""
@@ -241,85 +254,55 @@ func resolveCompressModelTarget(cfg *config.Config, raw string) (alias, modelID 
 	return "", "", false
 }
 
-// resolveCompressClient resolves one summarization model to a concrete client
-// for the chain walker.
+// resolveCompressClient resolves one summarization model to a client for
+// the chain walker, or nil when it names no enabled model.
 func (al *AgentLoop) resolveCompressClient(agent *AgentInstance, compressModelName, sessionKey string) *providerLLMClient {
 	cfg := al.GetConfig()
 	alias, modelID, ok := resolveCompressModelTarget(cfg, compressModelName)
-	if ok && al.dispatcher != nil {
-		// The dispatcher keys on the model_name alias and resolves the provider
-		// from the model's provider reference.
-		if p, err := al.dispatchProvider(agent, alias); err == nil {
-			logger.DebugCF("llmcontext", "compression model resolved", map[string]any{
-				"agent_id":  agent.ID,
-				"requested": compressModelName,
-				"alias":     alias,
-				"model":     modelID,
-				"session":   sessionKey,
-			})
-			provName := compressProviderName(cfg, alias)
-			return &providerLLMClient{provider: p, model: modelID, providerName: provName, requestJSONObject: true, alias: alias, ourProvider: provName}
-		} else {
-			logger.WarnCF("llmcontext", "compression model dispatch failed; falling back to agent provider", map[string]any{
-				"agent_id":  agent.ID,
-				"requested": compressModelName,
-				"alias":     alias,
-				"model":     modelID,
-				"session":   sessionKey,
-				"error":     err.Error(),
-			})
-		}
-	} else if !ok {
-		logger.WarnCF("llmcontext", "compression model not found in enabled models; falling back to agent provider", map[string]any{
+	if !ok {
+		logger.WarnCF("llmcontext", "compression model not found in enabled models; skipping", map[string]any{
 			"agent_id":  agent.ID,
 			"requested": compressModelName,
 			"session":   sessionKey,
 		})
+		return nil
 	}
-	// Last-resort fallback: use the agent's primary provider with the raw
-	// compress_model string so the existing single-provider configurations
-	// (e.g. all-anthropic, all-openai deployments) keep working without a
-	// models entry.
-	return &providerLLMClient{provider: agent.Provider, model: compressModelName, requestJSONObject: true, ourProvider: defaultProviderName(cfg)}
+	logger.DebugCF("llmcontext", "compression model resolved", map[string]any{
+		"agent_id":  agent.ID,
+		"requested": compressModelName,
+		"alias":     alias,
+		"model":     modelID,
+		"session":   sessionKey,
+	})
+	return al.compressClient(agent, cfg, alias, modelID)
 }
 
-// defaultProviderName is the provider name of the agent defaults' model, the
-// one agent.Provider is built for (providers.CreateProvider); "" when unknown.
-func defaultProviderName(cfg *config.Config) string {
-	if cfg == nil {
-		return ""
+// compressClient is the summarization client of model alias for agent: a
+// fresh temporary agent's CLI model runs isolated in its workspace.
+func (al *AgentLoop) compressClient(agent *AgentInstance, cfg *config.Config, alias, modelID string) *providerLLMClient {
+	cl := &providerLLMClient{catalog: al.catalog, alias: alias, model: modelID, ourProvider: compressProviderName(cfg, alias)}
+	if agent.Spec.Fresh {
+		cl.workspace = agent.Workspace
 	}
-	return compressProviderName(cfg, cfg.Agents.Defaults.DefaultModelName())
+	return cl
 }
 
-// resolveDefaultCompressClient resolves the agent's primary model to a concrete
-// client, the chain walker's last resort.
+// resolveDefaultCompressClient resolves the agent's primary model to a
+// client, the chain walker's last resort; nil when it names no enabled model.
 func (al *AgentLoop) resolveDefaultCompressClient(agent *AgentInstance, sessionKey string) *providerLLMClient {
 	cfg := al.GetConfig()
 	primary := strings.TrimSpace(agent.Model)
-	if primary != "" && al.dispatcher != nil {
-		if alias, modelID, ok := resolveCompressModelTarget(cfg, primary); ok {
-			if p, err := al.dispatchProvider(agent, alias); err == nil {
-				logger.DebugCF("llmcontext", "compression: agent primary appended as final fallback", map[string]any{
-					"agent_id": agent.ID,
-					"alias":    alias,
-					"model":    modelID,
-					"session":  sessionKey,
-				})
-				return &providerLLMClient{provider: p, model: modelID, requestJSONObject: true, alias: alias, ourProvider: compressProviderName(cfg, alias)}
-			} else {
-				logger.WarnCF("llmcontext", "compression: default (agent primary) dispatch failed; using agent provider directly", map[string]any{
-					"agent_id": agent.ID,
-					"alias":    alias,
-					"model":    modelID,
-					"session":  sessionKey,
-					"error":    err.Error(),
-				})
-			}
-		}
+	alias, modelID, ok := resolveCompressModelTarget(cfg, primary)
+	if primary == "" || !ok {
+		return nil
 	}
-	// Last-resort fallback: use the agent's primary provider directly.
-	return &providerLLMClient{provider: agent.Provider, model: primary, requestJSONObject: true, ourProvider: defaultProviderName(cfg)}
+	logger.DebugCF("llmcontext", "compression: agent primary appended as final fallback", map[string]any{
+		"agent_id": agent.ID,
+		"alias":    alias,
+		"model":    modelID,
+		"session":  sessionKey,
+	})
+	return al.compressClient(agent, cfg, alias, modelID)
 }
 
 // newCompressModelCaller builds the summarization ModelCaller for an agent and
@@ -351,9 +334,13 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 		if effective == "" {
 			effective = name
 		}
-		clients = append(clients, al.resolveCompressClient(agent, name, sessionKey))
+		if cl := al.resolveCompressClient(agent, name, sessionKey); cl != nil {
+			clients = append(clients, cl)
+		}
 	}
-	clients = append(clients, al.resolveDefaultCompressClient(agent, sessionKey))
+	if cl := al.resolveDefaultCompressClient(agent, sessionKey); cl != nil {
+		clients = append(clients, cl)
+	}
 
 	// One clear line (in claw.log) showing the whole compression chain that will
 	// be tried in order — the per-client detail above goes to the structured log
@@ -373,7 +360,7 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 	}
 	return &compressModelCaller{
 		clients:    clients,
-		cooldown:   al.cooldownTracker(),
+		clock:      registryClock{al},
 		caller:     callerOf(agent),
 		sessionKey: sessionKey,
 		id:         agent.Identity(),

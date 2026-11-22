@@ -4,7 +4,10 @@
 package agent
 
 import (
+	"context"
 	"testing"
+
+	"go.bison9.com/agent/ctxengine"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
@@ -74,192 +77,84 @@ func TestResolveCompressModelTarget_NilConfig(t *testing.T) {
 	}
 }
 
-// TestBuildCompressLLMClient_UsesDispatcher is the load-bearing assertion for
-// the compress_model defect fix: the compression LLM client must be built via
-// the per-model dispatcher, not against the agent's shared primary provider.
-// Before this fix, an agent whose primary protocol is claude-cli would shell
-// out to claude-cli for compression even when compress_model points at an
-// openai/anthropic/openrouter/xai model.
-func TestBuildCompressLLMClient_UsesDispatcher(t *testing.T) {
-	cfg := &config.Config{
+// compressTestConfig has one model, "compress-target" (wire id
+// "test-compress-model"), and one, "primary-target" ("some-model").
+func compressTestConfig() *config.Config {
+	return &config.Config{
 		Providers: []config.Provider{
 			{Name: "openai", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "dummy"},
 		},
 		Models: []config.ModelConfig{
-			{
-				ModelName: "compress-target",
-				Model:     "test-compress-model",
-				Provider:  "openai",
-				Enabled:   true,
-			},
+			{ModelName: "compress-target", Model: "test-compress-model", Provider: "openai", Enabled: true},
+			{ModelName: "primary-target", Model: "some-model", Provider: "openai", Enabled: true},
 		},
 	}
-	dispatcher := providers.NewProviderDispatcher(cfg)
+}
 
-	primary := &mockProvider{}
-	al := &AgentLoop{
-		cfg:        cfg,
-		dispatcher: dispatcher,
-	}
-	agent := &AgentInstance{
-		ID:       "compress-test",
-		Provider: primary,
-		Model:    "sonnet-4-5",
-	}
+// TestBuildCompressLLMClient_ResolvesThroughCatalogue: a summarization model
+// named by its wire id resolves to its models entry and is called on that
+// model's chain in the catalogue, never through the agent's provider.
+func TestBuildCompressLLMClient_ResolvesThroughCatalogue(t *testing.T) {
+	cfg := compressTestConfig()
+	target := &scriptedProvider{content: "summary"}
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, map[string]providers.LLMProvider{"compress-target": target})}
+	agent := &AgentInstance{ID: "compress-test", Provider: &mockProvider{}, Model: "sonnet-4-5"}
 
 	client := al.resolveCompressClient(agent, "test-compress-model", "sess-1")
-	plc := client
-	if plc.provider == nil {
-		t.Fatal("provider is nil")
+	if client == nil || client.alias != "compress-target" || client.model != "test-compress-model" || client.ourProvider != "openai" {
+		t.Fatalf("client = %+v, want compress-target / test-compress-model on openai", client)
 	}
-	if plc.provider == providers.LLMProvider(primary) {
-		t.Fatal("compress provider equals agent.Provider — dispatcher was bypassed")
-	}
-	if plc.model != "test-compress-model" {
-		t.Fatalf("model = %q; want %q", plc.model, "test-compress-model")
+	c := &compressModelCaller{id: testIdentity, clients: []*providerLLMClient{client}}
+	reply, err := c.Complete(context.Background(), ctxengine.ModelRequest{System: "s", User: "u"})
+	if err != nil || reply.Content != "summary" || target.callCount() != 1 {
+		t.Fatalf("Complete = %+v, %v (calls %d), want the catalogue's client to answer", reply, err, target.callCount())
 	}
 }
 
-// TestBuildCompressLLMClient_FallbackToAgentProvider exercises the last-resort
-// path: when the compress_model name does not resolve against models,
-// fall back to the agent's primary provider rather than fail compression.
-func TestBuildCompressLLMClient_FallbackToAgentProvider(t *testing.T) {
-	cfg := &config.Config{
-		Models: []config.ModelConfig{},
-	}
-	dispatcher := providers.NewProviderDispatcher(cfg)
-
-	primary := &mockProvider{}
-	al := &AgentLoop{
-		cfg:        cfg,
-		dispatcher: dispatcher,
-	}
-	agent := &AgentInstance{
-		ID:       "fallback-test",
-		Provider: primary,
-	}
-
-	client := al.resolveCompressClient(agent, "unknown-model", "sess-2")
-	plc := client
-	if plc.provider != providers.LLMProvider(primary) {
-		t.Fatal("expected fallback to agent.Provider when dispatcher cannot resolve compress_model")
-	}
-	if plc.model != "unknown-model" {
-		t.Fatalf("model = %q; want %q", plc.model, "unknown-model")
+// TestBuildCompressLLMClient_UnknownModelSkipped: a summarization model that
+// names no enabled model is left out of the chain.
+func TestBuildCompressLLMClient_UnknownModelSkipped(t *testing.T) {
+	cfg := &config.Config{}
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
+	agent := &AgentInstance{ID: "fallback-test", Provider: &mockProvider{}}
+	if client := al.resolveCompressClient(agent, "unknown-model", "sess-2"); client != nil {
+		t.Fatalf("client = %+v, want none for a model that is not configured", client)
 	}
 }
 
-// TestBuildDefaultCompressLLMClient_UsesDispatcherForPrimary is the
-// regression test for a compress-routing defect: when no
-// compress_model is configured, the compression LLM client must be built
-// against the agent's primary model via the per-model dispatcher, not the
-// shared agent.Provider. Before this fix, an agent with
-// model.primary = "openai/<x>" and an empty compress_model would still
-// have compression dispatched to the shared agent.Provider (built from
-// agents.defaults.model.primary = "claude-cli" in the shipped default
-// config), causing claude-cli to be invoked with a non-Claude model and
-// 404. If someone reverts to "shared provider when compress_model empty",
-// this test fails on the dispatcher-bypass assertion below.
-func TestBuildDefaultCompressLLMClient_UsesDispatcherForPrimary(t *testing.T) {
-	cfg := &config.Config{
-		Providers: []config.Provider{
-			{Name: "openai", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "dummy"},
-		},
-		Models: []config.ModelConfig{
-			{
-				ModelName: "primary-target",
-				Model:     "some-model",
-				Provider:  "openai",
-				Enabled:   true,
-			},
-		},
-	}
-	dispatcher := providers.NewProviderDispatcher(cfg)
-
-	primary := &mockProvider{}
-	al := &AgentLoop{
-		cfg:        cfg,
-		dispatcher: dispatcher,
-	}
-	agent := &AgentInstance{
-		ID:       "default-compress-test",
-		Provider: primary,
-		Model:    "some-model",
-		Config: &config.AgentConfig{
-			ID:     "default-compress-test",
-			Models: []string{"some-model"},
-			// CompressModel intentionally nil to exercise the default-to-primary path.
-		},
-	}
+// TestBuildDefaultCompressLLMClient_UsesCatalogueForPrimary: the agent's
+// primary model, the walk's last resort, is called on its own chain in the
+// catalogue, not through the agent's provider.
+func TestBuildDefaultCompressLLMClient_UsesCatalogueForPrimary(t *testing.T) {
+	cfg := compressTestConfig()
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
+	agent := &AgentInstance{ID: "default-compress-test", Provider: &mockProvider{}, Model: "some-model"}
 
 	client := al.resolveDefaultCompressClient(agent, "sess-default")
-	plc := client
-	if plc.provider == nil {
-		t.Fatal("provider is nil")
-	}
-	if plc.provider == providers.LLMProvider(primary) {
-		t.Fatal("default compress provider equals agent.Provider — dispatcher was bypassed for the agent primary")
-	}
-	if plc.model != "some-model" {
-		t.Fatalf("model = %q; want %q", plc.model, "some-model")
+	if client == nil || client.alias != "primary-target" || client.model != "some-model" {
+		t.Fatalf("client = %+v, want primary-target / some-model", client)
 	}
 }
 
-// TestBuildDefaultCompressLLMClient_FallbackWhenPrimaryUnresolved confirms
-// that when the agent's primary model cannot be resolved through the
-// dispatcher (no matching enabled models entry), the default-compress
-// path falls back to agent.Provider rather than failing.
-func TestBuildDefaultCompressLLMClient_FallbackWhenPrimaryUnresolved(t *testing.T) {
-	cfg := &config.Config{
-		Models: []config.ModelConfig{},
-	}
-	dispatcher := providers.NewProviderDispatcher(cfg)
-
-	primary := &mockProvider{}
-	al := &AgentLoop{
-		cfg:        cfg,
-		dispatcher: dispatcher,
-	}
-	agent := &AgentInstance{
-		ID:       "default-fallback-test",
-		Provider: primary,
-		Model:    "no-such-model",
-	}
-
-	client := al.resolveDefaultCompressClient(agent, "sess-default-fallback")
-	plc := client
-	if plc.provider != providers.LLMProvider(primary) {
-		t.Fatal("expected fallback to agent.Provider when dispatcher cannot resolve the primary model")
-	}
-	if plc.model != "no-such-model" {
-		t.Fatalf("model = %q; want %q", plc.model, "no-such-model")
+// TestBuildDefaultCompressLLMClient_UnresolvedPrimarySkipped: a primary model
+// that names no enabled model adds nothing to the chain.
+func TestBuildDefaultCompressLLMClient_UnresolvedPrimarySkipped(t *testing.T) {
+	cfg := &config.Config{}
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
+	agent := &AgentInstance{ID: "default-fallback-test", Provider: &mockProvider{}, Model: "no-such-model"}
+	if client := al.resolveDefaultCompressClient(agent, "sess-default-fallback"); client != nil {
+		t.Fatalf("client = %+v, want none for an unresolved primary", client)
 	}
 }
 
-// TestBuildCompressLLMClient_NilDispatcher protects the path where the loop
-// was constructed without a dispatcher (older test setups, smoke tests):
-// fallback to agent.Provider rather than panic.
-func TestBuildCompressLLMClient_NilDispatcher(t *testing.T) {
-	cfg := &config.Config{
-		Providers: []config.Provider{
-			{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "k"},
-		},
-		Models: []config.ModelConfig{
-			{
-				ModelName: "x",
-				Model:     "y",
-				Provider:  "openai",
-				Enabled:   true,
-			},
-		},
-	}
-	primary := &mockProvider{}
-	al := &AgentLoop{cfg: cfg, dispatcher: nil}
-	agent := &AgentInstance{ID: "nil-d", Provider: primary}
-
-	client := al.resolveCompressClient(agent, "y", "sess-3")
-	plc := client
-	if plc.provider != providers.LLMProvider(primary) {
-		t.Fatal("expected fallback to agent.Provider when dispatcher is nil")
+// TestBuildCompressLLMClient_FreshAgentIsolated: a fresh temporary agent's
+// summarization models run isolated in its own workspace.
+func TestBuildCompressLLMClient_FreshAgentIsolated(t *testing.T) {
+	cfg := compressTestConfig()
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
+	agent := &AgentInstance{ID: "fresh", Workspace: "/tmp/fresh-ws"}
+	agent.Spec.Fresh = true
+	if client := al.resolveCompressClient(agent, "compress-target", "s"); client == nil || client.workspace != "/tmp/fresh-ws" {
+		t.Fatalf("client = %+v, want it isolated in the agent's workspace", client)
 	}
 }

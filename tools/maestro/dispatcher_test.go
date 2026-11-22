@@ -146,7 +146,7 @@ func TestDispatcher_PermanentErrors(t *testing.T) {
 // models are all unavailable, fails the task permanently without running a
 // worker.
 func TestDispatcher_WorkerModels(t *testing.T) {
-	workers := []providers.FallbackCandidate{{Provider: "p", Model: "cheap-wire", Alias: "Cheap"}}
+	workers := []providers.FallbackCandidate{{Provider: "p", Model: "cheap-wire", Name: "Cheap"}}
 	tests := []struct {
 		name      string
 		workers   []providers.FallbackCandidate

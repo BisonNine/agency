@@ -12,8 +12,8 @@ import (
 
 func candList() []providers.FallbackCandidate {
 	return []providers.FallbackCandidate{
-		{Provider: "p", Model: "flash-wire", Alias: "Flash"},
-		{Provider: "p", Model: "pro-wire", Alias: "Pro"},
+		{Provider: "p", Model: "flash-wire", Name: "Flash"},
+		{Provider: "p", Model: "pro-wire", Name: "Pro"},
 	}
 }
 
@@ -93,7 +93,7 @@ func TestSpawner_ValidModel_Runs(t *testing.T) {
 // no configured worker models and no models at all runs as before. A
 // targeted spawn checks the target's worker models.
 func TestSpawner_WorkerModelCheck(t *testing.T) {
-	bobCands := []providers.FallbackCandidate{{Provider: "p", Model: "lite-wire", Alias: "Lite"}}
+	bobCands := []providers.FallbackCandidate{{Provider: "p", Model: "lite-wire", Name: "Lite"}}
 	tests := []struct {
 		name    string
 		self    []providers.FallbackCandidate

@@ -288,14 +288,13 @@ func (h *ForumHost) Cooldown(agentID string) (string, time.Duration) {
 	if err != nil {
 		return "", 0
 	}
-	tracker := al.cooldownTracker()
 	a, ok := r.Get(agentID)
-	if !ok || a == nil || tracker == nil || len(a.Candidates) == 0 {
+	if !ok || a == nil || len(a.Candidates) == 0 {
 		return "", 0
 	}
 	model, soonest := "", time.Duration(0)
 	for _, c := range a.Candidates {
-		left := tracker.CooldownRemaining(c.Provider, c.Model)
+		left := al.parkedFor(c.Name)
 		if left <= 0 {
 			return "", 0
 		}

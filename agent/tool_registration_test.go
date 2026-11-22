@@ -92,7 +92,7 @@ func TestReloadProviderAndConfig_RegistersRuntimeTools(t *testing.T) {
 		t.Fatal("no tools registered at construction")
 	}
 
-	if err := al.ReloadProviderAndConfig(context.Background(), &mockProvider{}, toolRegTestConfig(t)); err != nil {
+	if err := reloadForTest(al, context.Background(), &mockProvider{}, toolRegTestConfig(t)); err != nil {
 		t.Fatalf("ReloadProviderAndConfig: %v", err)
 	}
 
@@ -115,9 +115,9 @@ func TestGetModelInfo_ReflectsActiveSelection(t *testing.T) {
 		t.Fatal("agent 'main' not found")
 	}
 	ag.Candidates = []providers.FallbackCandidate{
-		{Alias: "m0", Provider: "P"},
-		{Alias: "m1", Provider: "P"},
-		{Alias: "m2", Provider: "P"},
+		{Name: "m0", Provider: "P"},
+		{Name: "m1", Provider: "P"},
+		{Name: "m2", Provider: "P"},
 	}
 	const sk = "sess-1"
 	if err := al.setActiveModelIndex(ag, sk, 2); err != nil {

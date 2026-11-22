@@ -159,7 +159,7 @@ func normalizeModelName(s string) string {
 }
 
 // MatchCandidate reports whether model names one of the candidates, matching the
-// user-facing Alias (model_name) first, then the wire Model. Matching is
+// user-facing Name (model_name) first, then the wire Model. Matching is
 // case-insensitive and tolerant of surrounding quotes and extra whitespace.
 // Returns the matched candidate.
 func MatchCandidate(candidates []providers.FallbackCandidate, model string) (providers.FallbackCandidate, bool) {
@@ -168,19 +168,19 @@ func MatchCandidate(candidates []providers.FallbackCandidate, model string) (pro
 		return providers.FallbackCandidate{}, false
 	}
 	for _, c := range candidates {
-		if strings.EqualFold(normalizeModelName(c.Alias), m) || strings.EqualFold(normalizeModelName(c.Model), m) {
+		if strings.EqualFold(normalizeModelName(c.Name), m) || strings.EqualFold(normalizeModelName(c.Model), m) {
 			return c, true
 		}
 	}
 	return providers.FallbackCandidate{}, false
 }
 
-// candidateNames lists the user-facing names of the candidates (Alias, falling
+// candidateNames lists the user-facing names of the candidates (Name, falling
 // back to the wire Model) for an error/help message.
 func candidateNames(candidates []providers.FallbackCandidate) string {
 	names := make([]string, 0, len(candidates))
 	for _, c := range candidates {
-		n := c.Alias
+		n := c.Name
 		if n == "" {
 			n = c.Model
 		}

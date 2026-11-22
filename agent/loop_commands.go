@@ -173,7 +173,7 @@ func (al *AgentLoop) addModelHooks(rt *commands.Runtime, cfg *config.Config, age
 	rt.GetAgentModels = func() ([]commands.ModelEntry, int) {
 		entries := make([]commands.ModelEntry, 0, len(agent.Candidates))
 		for _, c := range agent.Candidates {
-			name := c.Alias
+			name := c.Name
 			if name == "" {
 				name = c.Model
 			}
@@ -192,7 +192,7 @@ func (al *AgentLoop) addModelHooks(rt *commands.Runtime, cfg *config.Config, age
 		if err := al.setActiveModelIndex(agent, opts.SessionKey, idx); err != nil {
 			return "", err
 		}
-		name := agent.Candidates[idx].Alias
+		name := agent.Candidates[idx].Name
 		if name == "" {
 			name = agent.Candidates[idx].Model
 		}
@@ -212,7 +212,7 @@ func (al *AgentLoop) activeModelInfo(cfg *config.Config, agent *AgentInstance, o
 			idx = al.getActiveModelIndex(agent, opts.SessionKey)
 		}
 		if idx >= 0 && idx < len(agent.Candidates) {
-			if a := agent.Candidates[idx].Alias; a != "" {
+			if a := agent.Candidates[idx].Name; a != "" {
 				active = a
 			} else if m := agent.Candidates[idx].Model; m != "" {
 				active = m
@@ -379,38 +379,12 @@ func (al *AgentLoop) retriggerLastMessage(ctx context.Context, agent *AgentInsta
 	return nil
 }
 
-// addCooldownHooks lets commands list and clear model cooldowns.
+// addCooldownHooks lets commands list and clear model cooldowns: the
+// catalogue's, and the task models' tracker's.
 func (al *AgentLoop) addCooldownHooks(rt *commands.Runtime) {
-	rt.ResetCooldown = func() {
-		if fallback := al.fallbackChain(); fallback != nil {
-			fallback.Reset()
-		}
-	}
-	rt.ClearCooldown = func(provider, model string) bool {
-		fallback := al.fallbackChain()
-		if fallback == nil {
-			return false
-		}
-		return fallback.Clear(provider, model)
-	}
-	rt.ListCooldowns = func() []commands.CooldownEntry {
-		fallback := al.fallbackChain()
-		if fallback == nil {
-			return nil
-		}
-		snap := fallback.CooldownSnapshot()
-		out := make([]commands.CooldownEntry, 0, len(snap))
-		for _, s := range snap {
-			out = append(out, commands.CooldownEntry{
-				Provider: s.Provider,
-				Model:    s.Model,
-				Reason:   string(s.Reason),
-				Since:    s.Since,
-				Until:    s.Until,
-			})
-		}
-		return out
-	}
+	rt.ResetCooldown = func() { al.clearCooldowns() }
+	rt.ClearCooldown = func(provider, model string) bool { return al.clearCooldown(provider, model) }
+	rt.ListCooldowns = func() []commands.CooldownEntry { return al.listCooldowns() }
 }
 
 // addTokenQuotaHooks lets commands show and reset the agent's message-token

@@ -23,9 +23,17 @@ func mustNewAgentLoop(
 	opts ...LoopOption,
 ) *AgentLoop {
 	t.Helper()
+	added := withTestModels(cfg)
 	al, err := NewAgentLoop(t.Context(), cfg, msgBus, provider, dispatcher, opts...)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
+	}
+	if dispatcher == nil {
+		// Without a dispatcher every model call went to the agent's
+		// Provider; it still does.
+		routeAllModels(al, provider)
+	} else {
+		routeTestModels(al, provider, added)
 	}
 	// Closing the registry removes a non-owner's private temp root.
 	t.Cleanup(al.GetRegistry().Close)

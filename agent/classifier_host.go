@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier"
@@ -294,52 +295,48 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 	if err != nil || prov == nil {
 		return "", "", fmt.Errorf("model %s has no usable provider: %w", alias, classifier.ErrNoModel)
 	}
-	tracker := al.cooldownTracker()
-	if tracker != nil && !tracker.IsAvailable(mc.Provider, mc.Model) {
-		return "", "", &classifier.CooldownError{Model: alias, Remaining: tracker.CooldownRemaining(mc.Provider, mc.Model)}
-	}
-	if al.dispatcher == nil {
-		return "", "", fmt.Errorf("no model dispatcher: %w", classifier.ErrNoModel)
+	if left := al.parkedFor(alias); left > 0 {
+		return "", "", &classifier.CooldownError{Model: alias, Remaining: left}
 	}
 
-	var provider providers.LLMProvider
+	chain := providers.ModelSet(al.catalog, alias).Begin(models.Chat)
 	if config.CLIAgentByProtocol(prov.Protocol) != nil {
 		dir, cleanup, derr := h.isolatedFolder(ctx, al, cfg, agentID)
 		if derr != nil {
 			return "", "", derr
 		}
 		defer cleanup()
-		provider, err = al.dispatcher.GetIsolated(alias, dir)
-	} else {
-		provider, err = al.dispatcher.Get(alias)
-	}
-	if err != nil {
-		return "", "", fmt.Errorf("model %s: %w", alias, err)
+		chain = chain.Isolated(dir)
 	}
 
-	start := time.Now()
-	resp, chatErr := provider.Chat(ctx, a.Identity(), []providers.Message{
+	// The chain records a failure against the model's health, and an answer
+	// clears it, as for any other call.
+	var last finishRecorder
+	_, chatErr := chain.Chat(ctx, a.Identity(), models.Request{Messages: []providers.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
-	}, nil, mc.Model, nil)
-	emitLLMFinishEvent(llmFinish{
-		caller:         llmCaller{agentID: a.ID, label: a.DisplayName()},
-		kind:           llmKindClassifier,
-		ourProvider:    mc.Provider,
-		ourModel:       alias,
-		requestedModel: mc.Model,
-		elapsedMs:      time.Since(start).Milliseconds(),
-		resp:           resp,
-		err:            chatErr,
-	})
+	}}, last.option(func(c models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+		emitLLMFinishEvent(llmFinish{
+			caller:         llmCaller{agentID: a.ID, label: a.DisplayName()},
+			kind:           llmKindClassifier,
+			ourProvider:    c.Provider,
+			ourModel:       alias,
+			requestedModel: c.Model,
+			elapsedMs:      elapsed.Milliseconds(),
+			resp:           resp,
+			err:            err,
+		})
+	}))
+	resp := last.resp
 	if chatErr != nil {
+		if left := al.parkedFor(alias); !last.called && left > 0 {
+			return "", "", &classifier.CooldownError{Model: alias, Remaining: left}
+		}
+		if last.called && last.err != nil {
+			chatErr = last.err
+		}
 		if resp != nil && resp.Status != nil && resp.Status.CostUSD != nil {
 			al.recordSpend(*resp.Status.CostUSD)
-		}
-		if ctx.Err() == nil && tracker != nil {
-			if fe := providers.ClassifyError(chatErr, mc.Provider, mc.Model); fe != nil {
-				tracker.MarkFailure(mc.Provider, mc.Model, fe.Reason, fe.Status, fe.RetryAfter)
-			}
 		}
 		logger.WarnCF("classifier", "Classifier model call failed", map[string]any{
 			"agent_id":   a.ID,
@@ -348,9 +345,6 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 			"error":      redactedError(chatErr),
 		})
 		return "", alias, fmt.Errorf("model %s: %w", alias, chatErr)
-	}
-	if tracker != nil {
-		tracker.MarkSuccess(mc.Provider, mc.Model)
 	}
 	if resp != nil && resp.Status != nil && resp.Status.CostUSD != nil {
 		al.recordSpend(*resp.Status.CostUSD)

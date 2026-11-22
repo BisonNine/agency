@@ -23,6 +23,7 @@ func TestProcessSystemMessage_CapsAsyncResult(t *testing.T) {
 		t.Fatal("no default agent")
 	}
 	agent.ContextWindow = 8000 // cap floors at 16 KiB
+	agent.modelLimits = nil    // the agent's own window, whatever model serves
 	sp := &sequenceProvider{
 		responses: []*providers.LLMResponse{{Content: "noted", FinishReason: "stop"}},
 		errors:    []error{nil},

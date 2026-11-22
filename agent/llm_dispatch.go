@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/clock"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -38,9 +39,6 @@ type llmDispatch struct {
 	// maxTokensHalvings is how many times a context-window retry halved
 	// max_tokens; each call halves its model's max_tokens that many times.
 	maxTokensHalvings int
-	// runProvider and runModel serve the request when no fallback chain runs.
-	runProvider providers.LLMProvider
-	runModel    string
 	// provider is the config provider name serving the dispatch, updated when
 	// the fallback chain lands on another candidate.
 	provider string
@@ -48,19 +46,23 @@ type llmDispatch struct {
 	promptEstimate int
 }
 
-// newDispatch builds the request for this iteration. The provider that will
-// actually serve it decides which options apply, rather than the shared
-// agent.Provider (claude-cli for every agent on the default config).
+// newDispatch builds the request for this iteration. The model that will
+// serve it first decides which options apply: a CLI takes no HTTP request
+// parameters.
 func (t *llmTurn) newDispatch(defs []providers.ToolDefinition, promptEstimate int) *llmDispatch {
 	agent := t.agent
-	runProvider, runModel := t.al.resolveRunProvider(agent, t.candidates, t.model)
 
 	llmOpts := map[string]any{
 		"prompt_cache_key": agent.ID,
 	}
+	provider, isCLI := "", false
+	if len(t.candidates) > 0 {
+		provider = t.candidates[0].Provider
+		isCLI = config.CLIAgentByProtocol(t.candidates[0].Protocol) != nil
+	}
 	// CLI providers run a subprocess and take no HTTP request parameters.
 	// With no temperature configured none is sent: the model's default applies.
-	if _, isCLI := runProvider.(providers.CLIProvider); !isCLI && agent.Temperature != nil {
+	if !isCLI && agent.Temperature != nil {
 		llmOpts["temperature"] = *agent.Temperature
 	}
 	// Providers that cannot stream text deltas (CLI, Anthropic) ignore this.
@@ -68,15 +70,9 @@ func (t *llmTurn) newDispatch(defs []providers.ToolDefinition, promptEstimate in
 		llmOpts[providers.TextDeltaOption] = t.stream.Add
 	}
 
-	provider := ""
-	if len(t.candidates) > 0 {
-		provider = t.candidates[0].Provider
-	}
 	return &llmDispatch{
 		defs:           defs,
 		llmOpts:        llmOpts,
-		runProvider:    runProvider,
-		runModel:       runModel,
 		provider:       provider,
 		promptEstimate: promptEstimate,
 	}
@@ -259,39 +255,41 @@ func (t *llmTurn) dispatchFailed(ctx context.Context, err error) error {
 	return fmt.Errorf("LLM call failed after retries: %w", err)
 }
 
-// callModel makes one call for the dispatch: through the fallback chain when
-// the turn has candidates, else straight to the provider resolved for the
-// agent's primary model, so a non-default protocol is never routed through
-// the shared agent.Provider. Every provider call it makes writes its own
-// "LLM finish" line, and each candidate passed over is logged as the chain
-// moves on.
+// errNoModelConfigured ends a turn whose agent has no model to call. Its
+// text is the one a configuration without models has always answered with.
+var errNoModelConfigured = errors.New("no model configured — enable a model and add your API key in the configuration")
+
+// callModel makes one call for the dispatch through the turn's pinned chain:
+// each model in turn, skipping parked ones, until one answers. Every provider
+// call it makes writes its own "LLM finish" line, and each candidate passed
+// over is logged as the chain moves on.
 func (t *llmTurn) callModel(ctx context.Context, d *llmDispatch) (*providers.LLMResponse, error) {
 	al := t.al
 	al.activeRequests.Add(1)
 	defer al.activeRequests.Done()
-	// Counted on the agent instance's provider: the one a reload replaces
-	// and closes once its calls are done.
-	defer al.modelCalls.begin(t.agent.Provider)()
 
 	hasTools := len(d.defs) > 0
-	fallback := al.fallbackChain()
-	if len(t.candidates) == 0 || fallback == nil {
-		start := time.Now()
-		t.sent = t.requestMessages(hasTools, d.runProvider)
-		resp, err := d.runProvider.Chat(ctx, t.agent.Identity(), al.messagesForModel(t.sent, d.runModel, hasTools), d.defs, d.runModel, t.requestOptions(d, hasTools, d.runProvider, t.model))
-		t.emitFinish(ctx, d.provider, t.model, d.runModel, time.Since(start), resp, err)
-		return resp, err
+	if t.chain == nil || len(t.candidates) == 0 {
+		t.sent = t.messages
+		t.emitFinish(ctx, d.provider, t.model, t.model, 0, nil, errNoModelConfigured)
+		return nil, errNoModelConfigured
 	}
-	fbResult, err := fallback.ExecuteWithNotify(
-		ctx,
-		t.candidates,
-		func(ctx context.Context, c providers.FallbackCandidate) (*providers.LLMResponse, error) {
-			start := time.Now()
-			resp, err := t.chatCandidate(ctx, d, c, hasTools)
-			t.emitFinish(ctx, c.Provider, candidateModelName(c), c.Model, time.Since(start), resp, err)
-			return resp, err
-		},
-		t.loggingNotifier(),
+	fbResult, err := t.chain.Chat(ctx, t.agent.Identity(), models.Request{Tools: d.defs},
+		// Image parts are dropped for a candidate whose model cannot take
+		// them: a screenshot in history would otherwise fail every turn on
+		// a non-vision candidate.
+		models.WithPrepare(func(c models.Candidate, client providers.LLMProvider, _ models.Request) models.Request {
+			t.sent = t.requestMessages(hasTools, isCLIClient(client))
+			return models.Request{
+				Messages: al.messagesForModel(t.sent, c.Name, hasTools),
+				Tools:    d.defs,
+				Options:  t.requestOptions(d, hasTools, client, c.Name),
+			}
+		}),
+		models.WithNotify(t.loggingNotifier()),
+		models.WithFinish(func(c models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+			t.emitFinish(ctx, c.Provider, c.Name, c.Model, elapsed, resp, err)
+		}),
 	)
 	if err != nil {
 		// Cooldown skips at the tail of the chain reach no notifier.
@@ -300,44 +298,16 @@ func (t *llmTurn) callModel(ctx context.Context, d *llmDispatch) (*providers.LLM
 		}
 		return nil, err
 	}
-	if fbResult.Provider != "" {
-		d.provider = fbResult.Provider
-		if len(fbResult.Attempts) > 0 {
-			logger.InfoCF(
-				"agent",
-				fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
-					fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
-				map[string]any{"agent_id": t.agent.ID, "iteration": t.iteration},
-			)
-		}
+	d.provider = fbResult.Candidate.Provider
+	if len(fbResult.Attempts) > 0 {
+		logger.InfoCF(
+			"agent",
+			fmt.Sprintf("Fallback: succeeded with %s/%s after %d attempts",
+				fbResult.Candidate.Provider, fbResult.Candidate.Model, len(fbResult.Attempts)+1),
+			map[string]any{"agent_id": t.agent.ID, "iteration": t.iteration},
+		)
 	}
 	return fbResult.Response, nil
-}
-
-// chatCandidate makes one call to fallback candidate c.
-func (t *llmTurn) chatCandidate(
-	ctx context.Context,
-	d *llmDispatch,
-	c providers.FallbackCandidate,
-	hasTools bool,
-) (*providers.LLMResponse, error) {
-	al := t.al
-	provider := t.agent.Provider
-	if al.dispatcher != nil {
-		key := c.Alias
-		if key == "" {
-			key = c.Provider + "/" + c.Model
-		}
-		if p, getErr := al.dispatchProvider(t.agent, key); getErr == nil {
-			provider = p
-		}
-	}
-	// Image parts are dropped for a candidate whose model cannot take
-	// them: a screenshot in history would otherwise fail every turn on
-	// a non-vision candidate. Keyed by alias like GetModelConfig.
-	t.sent = t.requestMessages(hasTools, provider)
-	msgs := al.messagesForModel(t.sent, candidateModelName(c), hasTools)
-	return provider.Chat(ctx, t.agent.Identity(), msgs, d.defs, c.Model, t.requestOptions(d, hasTools, provider, candidateModelName(c)))
 }
 
 // requestOptions are the options for one provider call to model (a
@@ -365,11 +335,17 @@ func (t *llmTurn) requestOptions(d *llmDispatch, hasTools bool, provider provide
 	if !hasTools || t.iteration != t.agent.MaxIterations {
 		return opts
 	}
-	if _, isCLI := provider.(providers.CLIProvider); isCLI {
+	if isCLIClient(provider) {
 		return opts
 	}
 	opts[providers.ToolChoiceOption] = providers.ToolChoiceNone
 	return opts
+}
+
+// isCLIClient reports whether the client runs a CLI subprocess.
+func isCLIClient(p providers.LLMProvider) bool {
+	c, ok := p.(providers.CLIProvider)
+	return ok && c.IsCLI()
 }
 
 // minHalvedMaxTokens is the max_tokens at or below which a context-window
@@ -387,15 +363,6 @@ func (d *llmDispatch) maxTokens(base int) int {
 		base /= 2
 	}
 	return base
-}
-
-// candidateModelName is the candidate's model_name, or its wire model when it
-// has none.
-func candidateModelName(c providers.FallbackCandidate) string {
-	if c.Alias != "" {
-		return c.Alias
-	}
-	return c.Model
 }
 
 // loggingNotifier wraps the turn's fallback notifier so each candidate the
@@ -434,7 +401,7 @@ func (t *llmTurn) logPassed(attempts []providers.FallbackAttempt) {
 					"model":    attempt.Model,
 					"reason":   attempt.Reason,
 					"duration": attempt.Duration.Round(time.Millisecond),
-					"error":    redactedError(attempt.Error),
+					"error":    redactedError(attempt.Err),
 				})
 			continue
 		}
@@ -445,14 +412,15 @@ func (t *llmTurn) logPassed(attempts []providers.FallbackAttempt) {
 				"model":     attempt.Model,
 				"reason":    attempt.Reason,
 				"remaining": attempt.Remaining.Round(time.Second),
-				"error":     redactedError(attempt.Error),
+				"error":     redactedError(attempt.Err),
 			})
 	}
 }
 
 // dispatchProvider resolves the model alias to a provider for agent through
-// the dispatcher. A fresh temporary agent gets an isolated provider: a CLI
-// model runs in its own workspace without bypass flags (GetIsolated).
+// the dispatcher, for the task models' describe-images list. A fresh
+// temporary agent gets an isolated provider: a CLI model runs in its own
+// workspace without bypass flags (GetIsolated).
 func (al *AgentLoop) dispatchProvider(agent *AgentInstance, alias string) (providers.LLMProvider, error) {
 	if agent != nil && agent.Spec.Fresh {
 		return al.dispatcher.GetIsolated(alias, agent.Workspace)
@@ -460,89 +428,43 @@ func (al *AgentLoop) dispatchProvider(agent *AgentInstance, alias string) (provi
 	return al.dispatcher.Get(alias)
 }
 
-// resolveRunProvider returns the LLMProvider (and matching model id) that will
-// serve this turn's primary chat dispatch. When activeCandidates has at least
-// one entry the first candidate's (protocol, model) pair is resolved through
-// the per-model dispatcher; otherwise the agent's primary model is resolved
-// through the dispatcher in the same way resolveDefaultCompressClient does.
-//
-// Falls back to (agent.Provider, activeModel) only when the dispatcher cannot
-// satisfy the request — mirroring the compress-empty-fallback safety net in
-// context_manager.go. This prevents the type-assertion + dispatch sites from
-// silently consulting the shared agent.Provider (which on the shipped default
-// config is claude-cli for every agent) for non-claude-cli primaries.
-func (al *AgentLoop) resolveRunProvider(
-	agent *AgentInstance,
-	activeCandidates []providers.FallbackCandidate,
-	activeModel string,
-) (providers.LLMProvider, string) {
-	if al.dispatcher != nil {
-		var alias, modelID string
-		if len(activeCandidates) > 0 {
-			alias = strings.TrimSpace(activeCandidates[0].Alias)
-			modelID = strings.TrimSpace(activeCandidates[0].Model)
-		} else if a, m, ok := resolveCompressModelTarget(al.GetConfig(), strings.TrimSpace(agent.Model)); ok {
-			alias, modelID = a, m
-		}
-		if alias != "" {
-			if p, err := al.dispatchProvider(agent, alias); err == nil {
-				return p, modelID
-			}
-		}
-	}
-	return agent.Provider, activeModel
-}
-
 // turnModel is a turn's model choice, made once when the turn starts so its
 // assembly, tools, context window and requests all follow the same model:
-// the candidates with the active one first, its model_name, and its limits.
+// the chain pinned for the turn (the active model first), its candidates,
+// the first one's model_name, and its limits.
 type turnModel struct {
+	chain      *models.Chain
 	candidates []providers.FallbackCandidate
 	model      string
 	limits     runLimits
 }
 
-// selectTurnModel makes the model choice for a turn of agent on sessionKey.
+// selectTurnModel makes the model choice for a turn of agent on sessionKey:
+// the agent's chat models pinned for the turn, the session's active model
+// (by per-session index, default 0) first and the rest in their order, so a
+// multi-step tool chain never switches model mid-way. A fresh temporary
+// agent's CLI models run isolated in its own workspace.
 func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *turnModel {
-	candidates, model := al.selectCandidates(agent, sessionKey)
-	return &turnModel{candidates: candidates, model: model, limits: agent.limitsFor(model)}
-}
-
-// selectCandidates returns the model candidates and resolved model name to use
-// for a conversation turn, honouring the session's active model selection.
-//
-// The active model (by per-session index, default 0) is moved to the front of a
-// copy of the agent's candidate list; the remaining candidates keep their
-// original order so the fallback chain still applies. agent.Candidates is never
-// mutated.
-//
-// The returned (candidates, model) pair is used for all LLM calls within one
-// turn so that a multi-step tool chain doesn't switch models mid-way.
-func (al *AgentLoop) selectCandidates(
-	agent *AgentInstance,
-	sessionKey string,
-) (candidates []providers.FallbackCandidate, model string) {
-	if len(agent.Candidates) == 0 {
-		return agent.Candidates, agent.Model
-	}
-
-	idx := al.getActiveModelIndex(agent, sessionKey)
-
-	// Move-to-front of idx: selected first, then the rest in original order.
-	reordered := make([]providers.FallbackCandidate, 0, len(agent.Candidates))
-	reordered = append(reordered, agent.Candidates[idx])
-	for i := range agent.Candidates {
-		if i == idx {
-			continue
+	set := al.catalog.Set(agent.ID)
+	scope := models.Scope(sessionKey)
+	if idx := al.getActiveModelIndex(agent, sessionKey); idx > 0 && idx < len(agent.Candidates) {
+		if err := set.Select(models.Chat, agent.Candidates[idx].Name, scope); err != nil {
+			logger.DebugCF("agent", "active model not in the agent's chain; using its first model",
+				map[string]any{"agent_id": agent.ID, "model": agent.Candidates[idx].Name, "error": err.Error()})
 		}
-		reordered = append(reordered, agent.Candidates[i])
+	} else {
+		set.Reset(models.Chat, scope)
 	}
-
-	model = reordered[0].Alias
-	if model == "" {
-		model = agent.Model
+	chain := set.Begin(models.Chat, scope)
+	if agent.Spec.Fresh {
+		chain = chain.Isolated(agent.Workspace)
 	}
-	return reordered, model
+	candidates := chain.Candidates()
+	model := agent.Model
+	if len(candidates) > 0 {
+		model = candidates[0].Name
+	}
+	return &turnModel{chain: chain, candidates: candidates, model: model, limits: agent.limitsFor(model)}
 }
 
 // reasoningPlaceholder is what backfillReasoningContent writes into an empty

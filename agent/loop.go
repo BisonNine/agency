@@ -14,6 +14,7 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/alerts"
@@ -45,7 +46,6 @@ type AgentLoop struct {
 	// compaction running in the background (runDeferredCompaction), so a
 	// session never has two.
 	deferredCompactions sync.Map
-	fallback            *providers.FallbackChain
 	channelManager      *channels.Manager
 	mediaStore          media.MediaStore
 	// transcriber is swapped by the gateway on every reload while turns
@@ -56,13 +56,20 @@ type AgentLoop struct {
 	mu          sync.RWMutex
 	// activeRequests counts the turns and model calls in flight, for WaitTurns.
 	activeRequests sync.WaitGroup
-	// modelCalls counts the model calls in flight per provider, for
-	// closeReplacedProvider.
-	modelCalls providerCalls
+	// catalog is the process's model catalogue: every provider and model,
+	// their clients and health, and each agent's models by purpose. The
+	// pointer never changes; a reload that changes models hands it a new
+	// catalogue (Adopt). catalogs builds them; catalogDigest is the digest of
+	// the configuration the running one was built from (reloads are
+	// serialized, so it needs no lock).
+	catalog       *models.Catalog
+	catalogs      *providers.CatalogBuilder
+	catalogDigest string
+	// dispatcher serves the task models and the describe-images models,
+	// which call clients the catalogue does not hand out.
 	dispatcher *providers.ProviderDispatcher
-	// cooldown is the shared per-model cooldown tracker used by BOTH the main
-	// fallback chain and the compaction path, so a model parked by either (e.g.
-	// an out-of-credits 402) is skipped by both. Swapped under mu on reload.
+	// cooldown is the task models' cooldown tracker. It reports to the same
+	// model alerts as the catalogue.
 	cooldown *providers.CooldownTracker
 	// alerter receives operator alerts (parked models, dead MCP servers, …);
 	// nil until SetAlerter, in which case Alerter() hands out a Nop.
@@ -310,9 +317,11 @@ func NewAgentLoop(
 	for _, opt := range opts {
 		opt(&lo)
 	}
-	// Set up shared fallback chain with the config-driven cooldown policy.
+	// The task models' cooldown tracker reports to the model alerts every
+	// catalogue reports to.
+	modelAlerts := providers.NewModelAlerts()
 	cooldown := providers.NewCooldownTrackerWithPolicy(cooldownPolicy(cfg))
-	fallbackChain := providers.NewFallbackChain(cooldown)
+	cooldown.SetAlerts(modelAlerts)
 
 	// Load the long-lived named message-API token store from the data dir. An
 	// empty data dir (only happens in tests that build a bare Config) yields an
@@ -344,7 +353,6 @@ func NewAgentLoop(
 	al := &AgentLoop{
 		bus:                   msgBus,
 		cfg:                   cfg,
-		fallback:              fallbackChain,
 		cooldown:              cooldown,
 		cmdRegistry:           commands.NewRegistry(commands.BuiltinDefinitions()),
 		dispatcher:            dispatcher,
@@ -366,13 +374,18 @@ func NewAgentLoop(
 	if n := cfg.Agents.Defaults.MaxConcurrentTurns; n > 0 {
 		al.turnSem = make(chan struct{}, n)
 	}
+	// The catalogue runs on the loop's clock, so a test that puts a fake on
+	// the loop moves cooldowns too.
+	al.catalogs = providers.NewCatalogBuilder(modelAlerts, registryClock{al})
+	al.catalog = al.catalogs.Build(cfg)
+	al.catalogDigest = catalogDigest(cfg)
 
 	// Build the registry: every config agent, then the temporary agents saved
 	// by the previous run. The builder registers each agent's tools (session
 	// closures, spawn/subagent, msg with shared MessageTool), so it runs once
 	// al exists.
 	registry, err := agentreg.New(ctx, cfg, agentreg.Hooks[*AgentInstance]{
-		Build:    al.agentBuilder(provider, dispatcher, fallbackChain),
+		Build:    al.agentBuilder(provider, dispatcher, al.catalog),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
 		Clock:    registryClock{al},
@@ -618,16 +631,29 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	registry := al.GetRegistry()
 	oldProvider, hadProvider := extractProvider(registry)
 
-	// The new fallback chain is built here so it is shared between the tools the
-	// rebuilt agents register and the swapped-in al.fallback. Reuse the existing
-	// cooldown tracker so its state (notably out-of-credits parks) PERSISTS
-	// across the reload; only refresh its policy from the new config. The shared
-	// tracker continues to back both the new fallback chain and the rebuilt
-	// compaction managers.
+	// The task models' tracker keeps its state (notably out-of-credits
+	// parks) across the reload; only its policy is refreshed.
 	al.cooldown.SetPolicy(cooldownPolicy(cfg))
-	newFallback := providers.NewFallbackChain(al.cooldown)
 
-	if err := al.reloadRegistry(ctx, registry, provider, cfg, newFallback); err != nil {
+	// A reload that changes the model settings builds a new catalogue, the
+	// rebuilt agents' models are assigned in it, and it is adopted when the
+	// new agents are swapped in; its models start with no cooldown. Any
+	// other reload keeps the running catalogue, and with it the cooldowns:
+	// most saves do not touch models, and clearing them would alert again
+	// about a model that is still out of credit.
+	digest := catalogDigest(cfg)
+	var next *models.Catalog
+	target := al.catalog
+	if digest != al.catalogDigest {
+		next = al.catalogs.Build(cfg)
+		target = next
+	}
+
+	if err := al.reloadRegistry(ctx, registry, provider, cfg, target, func() {
+		if next != nil {
+			al.adoptCatalog(next, digest)
+		}
+	}); err != nil {
 		return err
 	}
 
@@ -650,8 +676,10 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	// session token until released, then rebuild on their next access.
 	al.invalidateContextManagers(ctx)
 
-	if hadProvider {
-		al.closeReplacedProvider(ctx, oldProvider)
+	// The replaced default provider serves no model call (the catalogue
+	// does), so nothing is in flight on it.
+	if stateful, ok := oldProvider.(providers.StatefulProvider); hadProvider && ok {
+		stateful.Close()
 	}
 
 	logger.InfoCF("agent", "Provider and config reloaded successfully",
@@ -666,8 +694,8 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 // (config agents from the config, temporary agents against it too), each
 // with its tools registered the same way as at start. Nothing changes until
 // all are built; then the registry swaps them in one step and, in the same
-// step, the config and fallback chain are swapped here, so readers see a
-// consistent pair. A ctx that ends first returns at once: the rebuild is
+// step, the config is swapped here and committed runs (it adopts a new model
+// catalogue), so readers see a consistent pair. A ctx that ends first returns at once: the rebuild is
 // abandoned (the commit refuses) and closes what it built. Whichever of the
 // commit and the abandonment comes first wins. Panics are recovered and
 // reported as a failed reload.
@@ -676,7 +704,8 @@ func (al *AgentLoop) reloadRegistry(
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
 	cfg *config.Config,
-	newFallback *providers.FallbackChain,
+	catalog *models.Catalog,
+	committed func(),
 ) error {
 	const (
 		reloadPending int32 = iota
@@ -695,14 +724,14 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher, newFallback), func() bool {
+		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher, catalog), func() bool {
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}
 			al.mu.Lock()
 			al.cfg = cfg
-			al.fallback = newFallback
 			al.mu.Unlock()
+			committed()
 			return true
 		})
 	}()
@@ -739,41 +768,7 @@ func (al *AgentLoop) replaceMessageManagers(registry *AgentRegistry, cfg *config
 	}
 }
 
-// providerCloseWait bounds how long closeReplacedProvider waits for the
-// calls still in flight on the replaced provider.
-const providerCloseWait = 30 * time.Second
-
-// closeReplacedProvider closes the provider the reload replaced, once the
-// model calls in flight on it have finished (at most providerCloseWait on
-// the loop's clock, or until ctx ends). It runs after the swap, so readers
-// are never blocked by it, and it leaves nothing running behind it.
-func (al *AgentLoop) closeReplacedProvider(ctx context.Context, oldProvider providers.LLMProvider) {
-	stateful, ok := oldProvider.(providers.StatefulProvider)
-	if !ok {
-		return
-	}
-	timer := al.clk().NewTimer(providerCloseWait)
-	defer timer.Stop()
-	select {
-	case <-al.modelCalls.idle(oldProvider):
-	case <-timer.C():
-		logger.WarnCF("agent", "Timeout waiting for in-flight requests during provider close; forcing close", nil)
-	case <-ctx.Done():
-		logger.WarnCF("agent", "Context canceled waiting for in-flight requests; forcing close", nil)
-	}
-	stateful.Close()
-}
-
-// fallbackChain returns the current fallback chain (thread-safe); a reload
-// replaces it.
-func (al *AgentLoop) fallbackChain() *providers.FallbackChain {
-	al.mu.RLock()
-	defer al.mu.RUnlock()
-	return al.fallback
-}
-
-// cooldownTracker returns the shared cooldown tracker (thread-safe). Compaction
-// managers use it so cooldowns are unified with the main fallback chain.
+// cooldownTracker returns the task models' cooldown tracker (thread-safe).
 func (al *AgentLoop) cooldownTracker() *providers.CooldownTracker {
 	al.mu.RLock()
 	defer al.mu.RUnlock()
@@ -851,14 +846,15 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	return info
 }
 
-// SetAlerter installs the operator alerter: on the cooldown tracker, and on
-// anything created later that alerts (the MCP manager). Call once at startup.
+// SetAlerter installs the operator alerter: on the model alerts (the
+// catalogue's and the task models' cooldowns), and on anything created later
+// that alerts (the MCP manager). Call once at startup.
 func (al *AgentLoop) SetAlerter(a alerter.Alerter) {
 	al.alerterMu.Lock()
 	al.alerter = a
 	al.alerterMu.Unlock()
-	if al.cooldown != nil {
-		al.cooldown.SetAlerter(a)
+	if al.catalogs != nil {
+		al.catalogs.Alerts().SetAlerter(a)
 	}
 }
 

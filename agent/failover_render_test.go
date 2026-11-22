@@ -29,11 +29,11 @@ func TestRenderFailoverErrorExhausted(t *testing.T) {
 	err := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
 		{
 			Provider: "x", Model: "grok-2", Reason: providers.FailoverBilling,
-			Error: &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
+			Err: &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
 		},
 		{
 			Provider: "y", Model: "gpt-4o", Reason: providers.FailoverOverloaded,
-			Error: &providers.FailoverError{Reason: providers.FailoverOverloaded, Status: 529},
+			Err: &providers.FailoverError{Reason: providers.FailoverOverloaded, Status: 529},
 		},
 	}}
 	out := renderFailoverError(err)
@@ -63,11 +63,11 @@ func TestRenderFailoverErrorKeepsCLIDeclinedMessage(t *testing.T) {
 	exhausted := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
 		{
 			Provider: "Claude CLI", Model: "claude-cli", Reason: providers.FailoverUnknown,
-			Error: &providers.FailoverError{Reason: providers.FailoverUnknown, Model: "claude-cli", Wrapped: declined},
+			Err: &providers.FailoverError{Reason: providers.FailoverUnknown, Model: "claude-cli", Wrapped: declined},
 		},
 		{
 			Provider: "x", Model: "grok-2", Reason: providers.FailoverBilling,
-			Error: &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
+			Err: &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
 		},
 	}}
 	out := renderFailoverError(exhausted)
@@ -85,8 +85,8 @@ func TestRenderFailoverErrorKeepsCLIDeclinedMessage(t *testing.T) {
 
 	notice := formatFallbackNotice(
 		[]providers.FallbackAttempt{{
-			Model: "claude-cli", Alias: "Claude", Reason: providers.FailoverUnknown,
-			Error: &providers.FailoverError{Reason: providers.FailoverUnknown, Wrapped: declined},
+			Model: "claude-cli", Name: "Claude", Reason: providers.FailoverUnknown,
+			Err: &providers.FailoverError{Reason: providers.FailoverUnknown, Wrapped: declined},
 		}},
 		providers.FallbackCandidate{Model: "gpt-4o"},
 	)
@@ -116,9 +116,9 @@ func TestFormatFallbackNotice(t *testing.T) {
 	failed := providers.FallbackAttempt{
 		Model:  "grok-2",
 		Reason: providers.FailoverBilling,
-		Error:  &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
+		Err:    &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
 	}
-	next := providers.FallbackCandidate{Model: "gpt-4o", Alias: "smart"}
+	next := providers.FallbackCandidate{Model: "gpt-4o", Name: "smart"}
 	got := formatFallbackNotice([]providers.FallbackAttempt{failed}, next)
 	// Alias preferred for the next model; HTTP code surfaced for the failed one;
 	// period + newline before "Trying".
@@ -151,15 +151,15 @@ func TestFallbackNotifier_DedupsAcrossTurn(t *testing.T) {
 	}()
 
 	failA := providers.FallbackAttempt{
-		Model: "deepseek-v4-pro", Alias: "DeepSeek 4 Pro",
+		Model: "deepseek-v4-pro", Name: "DeepSeek 4 Pro",
 		Reason: providers.FailoverFormat,
-		Error:  &providers.FailoverError{Reason: providers.FailoverFormat, Status: 400},
+		Err:    &providers.FailoverError{Reason: providers.FailoverFormat, Status: 400},
 	}
-	nextW := providers.FallbackCandidate{Model: "deepseek-v4-pro", Alias: "DeepSeek V4 Pro Writing"}
+	nextW := providers.FallbackCandidate{Model: "deepseek-v4-pro", Name: "DeepSeek V4 Pro Writing"}
 	failB := providers.FallbackAttempt{
-		Model: "grok", Alias: "Grok",
+		Model: "grok", Name: "Grok",
 		Reason: providers.FailoverRateLimit,
-		Error:  &providers.FailoverError{Reason: providers.FailoverRateLimit, Status: 429},
+		Err:    &providers.FailoverError{Reason: providers.FailoverRateLimit, Status: 429},
 	}
 
 	batchA := []providers.FallbackAttempt{failA}
@@ -203,17 +203,17 @@ func TestFallbackNotifier_OncePerModelChange(t *testing.T) {
 		}
 	}()
 
-	luna := providers.FallbackCandidate{Model: "luna", Alias: "Luna"}
+	luna := providers.FallbackCandidate{Model: "luna", Name: "Luna"}
 	haikuFailed := providers.FallbackAttempt{
-		Model: "haiku", Alias: "Haiku", Reason: providers.FailoverFormat,
-		Error: &providers.FailoverError{Reason: providers.FailoverFormat, Status: 404},
+		Model: "haiku", Name: "Haiku", Reason: providers.FailoverFormat,
+		Err: &providers.FailoverError{Reason: providers.FailoverFormat, Status: 404},
 	}
 	notifier([]providers.FallbackAttempt{haikuFailed}, luna)
 	for _, left := range []time.Duration{59 * time.Second, 41 * time.Second, 17 * time.Second, 3 * time.Second} {
-		notifier([]providers.FallbackAttempt{{Model: "haiku", Alias: "Haiku", Skipped: true, Reason: providers.FailoverFormat, Remaining: left}}, luna)
+		notifier([]providers.FallbackAttempt{{Model: "haiku", Name: "Haiku", Skipped: true, Reason: providers.FailoverFormat, Remaining: left}}, luna)
 	}
-	notifier([]providers.FallbackAttempt{haikuFailed, {Model: "luna", Alias: "Luna", Reason: providers.FailoverRateLimit}},
-		providers.FallbackCandidate{Model: "scout", Alias: "Scout"})
+	notifier([]providers.FallbackAttempt{haikuFailed, {Model: "luna", Name: "Luna", Reason: providers.FailoverRateLimit}},
+		providers.FallbackCandidate{Model: "scout", Name: "Scout"})
 
 	var got []string
 	deadline := time.After(2 * time.Second)
@@ -238,12 +238,12 @@ func TestFallbackNotifier_OncePerModelChange(t *testing.T) {
 func TestFormatFallbackNotice_Skip(t *testing.T) {
 	skipped := providers.FallbackAttempt{
 		Model:     "deepseek-v4-pro",
-		Alias:     "DeepSeek V4 Pro Writing",
+		Name:      "DeepSeek V4 Pro Writing",
 		Skipped:   true,
 		Reason:    providers.FailoverRateLimit,
 		Remaining: 9 * time.Minute,
 	}
-	next := providers.FallbackCandidate{Model: "abliterated-model", Alias: "Abliteration"}
+	next := providers.FallbackCandidate{Model: "abliterated-model", Name: "Abliteration"}
 	got := formatFallbackNotice([]providers.FallbackAttempt{skipped}, next)
 	want := "⚠️ DeepSeek V4 Pro Writing unavailable — rate limited (retry in 9m). Using Abliteration."
 	if got != want {
@@ -257,19 +257,19 @@ func TestFormatFallbackNotice_Skip(t *testing.T) {
 func TestFormatFallbackNotice_SkipBatchCoalesced(t *testing.T) {
 	skips := []providers.FallbackAttempt{
 		{
-			Model: "deepseek-v4-flash", Alias: "OR Chat DeepSeek V4 Flash", Skipped: true,
+			Model: "deepseek-v4-flash", Name: "OR Chat DeepSeek V4 Flash", Skipped: true,
 			Reason: providers.FailoverBilling, Remaining: 41 * time.Minute,
 		},
 		{
-			Model: "deepseek-v4-pro", Alias: "OR Chat DeepSeek V4 Pro", Skipped: true,
+			Model: "deepseek-v4-pro", Name: "OR Chat DeepSeek V4 Pro", Skipped: true,
 			Reason: providers.FailoverBilling, Remaining: 58 * time.Minute,
 		},
 		{
-			Model: "glm-5.2", Alias: "OR GLM 5.2", Skipped: true,
+			Model: "glm-5.2", Name: "OR GLM 5.2", Skipped: true,
 			Reason: providers.FailoverBilling, Remaining: 12 * time.Minute,
 		},
 	}
-	next := providers.FallbackCandidate{Model: "grok-medium", Alias: "Grok Medium"}
+	next := providers.FallbackCandidate{Model: "grok-medium", Name: "Grok Medium"}
 	got := formatFallbackNotice(skips, next)
 	want := "⚠️ 3 models unavailable — out of credits (retry in up to 58m). Using Grok Medium."
 	if got != want {

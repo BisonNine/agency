@@ -85,7 +85,12 @@ func (al *AgentLoop) getActiveModelIndex(agent *AgentInstance, sessionKey string
 // sessionLimits are the limits of the model the session's turns run on: the
 // one /model selected, else the agent's first.
 func (al *AgentLoop) sessionLimits(agent *AgentInstance, sessionKey string) runLimits {
-	_, model := al.selectCandidates(agent, sessionKey)
+	model := agent.Model
+	if len(agent.Candidates) > 0 {
+		if name := agent.Candidates[al.getActiveModelIndex(agent, sessionKey)].Name; name != "" {
+			model = name
+		}
+	}
 	return agent.limitsFor(model)
 }
 

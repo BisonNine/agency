@@ -13,6 +13,7 @@ import (
 
 	sdkdiscovery "go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/toolkit"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -33,16 +34,20 @@ import (
 // tools exactly once, from one place. cfg is the one being built against (on
 // reload, al.cfg is still the old one at this point). A fresh temporary agent
 // gets no tools at all.
+//
+// The agent's models are assigned in catalog: the running catalogue, or on a
+// reload that changes models the one about to be adopted.
 func (al *AgentLoop) agentBuilder(
 	provider providers.LLMProvider,
 	dispatcher *providers.ProviderDispatcher,
-	fallbackChain *providers.FallbackChain,
+	catalog *models.Catalog,
 ) agentreg.BuildFunc[*AgentInstance] {
 	return func(ctx context.Context, cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
 		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg, provider)
 		if err != nil {
 			return nil, err
 		}
+		assignAgentModels(catalog, inst)
 		if inst.HumanModel != "" {
 			// A human agent runs no model: no vision side-model, no tools.
 			return inst, nil
@@ -53,7 +58,7 @@ func (al *AgentLoop) agentBuilder(
 		if spec.Fresh {
 			return inst, nil
 		}
-		al.registerAgentTools(ctx, inst, provider, dispatcher, fallbackChain, cfg)
+		al.registerAgentTools(ctx, inst, provider, dispatcher, cfg)
 		if inst.IsTemp() {
 			// A config agent gets these after the registry is built (the gateway
 			// registers its tools); an agent created later gets them now. Its
@@ -86,7 +91,6 @@ func (al *AgentLoop) registerAgentTools(
 	currentAgent *AgentInstance,
 	provider providers.LLMProvider,
 	dispatcher *providers.ProviderDispatcher,
-	fallbackChain *providers.FallbackChain,
 	cfg *config.Config,
 ) {
 	agentID := currentAgent.toolIdentity()
@@ -110,7 +114,6 @@ func (al *AgentLoop) registerAgentTools(
 		CloneMarker:       cloneMarker(currentAgent),
 		Provider:          provider,
 		Dispatcher:        dispatcher,
-		Fallback:          fallbackChain,
 		Candidates:        currentAgent.Candidates,
 		SpawnAllowlist:    spawnAllowlist,
 		Agents:            newAgentServices(al, currentAgentID),
@@ -498,7 +501,7 @@ func (al *AgentLoop) superviseTasks(ctx context.Context) {
 		case <-al.superStop:
 			return
 		case <-ticker.C:
-			al.runTaskSupervision() //nolint:contextcheck // relaunched callback tasks run detached from the supervisor, like fresh spawns
+			al.runTaskSupervision()
 		}
 	}
 }

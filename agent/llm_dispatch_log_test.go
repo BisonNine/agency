@@ -5,10 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/models/modelstest"
 	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/config"
@@ -28,9 +31,9 @@ func (p modelScriptProvider) Chat(ctx context.Context, _ providers.Identity, _ [
 func (modelScriptProvider) GetDefaultModel() string { return "alice-wire" }
 
 var (
-	candOpus  = providers.FallbackCandidate{Provider: "Anthropic", Model: "opus-wire", Alias: "Claude Opus"}
-	candBob   = providers.FallbackCandidate{Provider: "Bob's API", Model: "bob-wire", Alias: "Bob Model"}
-	candAlice = providers.FallbackCandidate{Provider: "Alice's API", Model: "alice-wire", Alias: "Alice Model"}
+	candOpus  = providers.FallbackCandidate{Provider: "Anthropic", Model: "opus-wire", Name: "Claude Opus"}
+	candBob   = providers.FallbackCandidate{Provider: "Bob's API", Model: "bob-wire", Name: "Bob Model"}
+	candAlice = providers.FallbackCandidate{Provider: "Alice's API", Model: "alice-wire", Name: "Alice Model"}
 )
 
 const rateLimited = "status 429: rate limit exceeded"
@@ -43,18 +46,66 @@ func answerOK(model string) *providers.LLMResponse {
 	}
 }
 
-// chainTurn is a turn for alice running candidates through a fallback chain
-// whose cooldowns are tracked by cooldown.
-func chainTurn(p providers.LLMProvider, cooldown *providers.CooldownTracker, candidates ...providers.FallbackCandidate) (*llmTurn, *llmDispatch) {
-	al := &AgentLoop{cfg: &config.Config{}, fallback: providers.NewFallbackChain(cooldown)}
+// chainCatalog is a catalogue holding the candidates (each on its provider,
+// p answering for all of them), with the parked ones parked by a rate-limit
+// failure, as a turn's chain would have left them.
+func chainCatalog(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) *models.Catalog {
+	t.Helper()
+	cfg := &config.Config{}
+	clients := map[string]providers.LLMProvider{}
+	for _, c := range append(slices.Clone(candidates), parked...) {
+		if _, ok := clients[c.Name]; ok {
+			continue
+		}
+		if _, err := cfg.GetProvider(c.Provider); err != nil {
+			cfg.Providers = append(cfg.Providers, config.Provider{Name: c.Provider, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
+		}
+		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: c.Name, Model: c.Model, Provider: c.Provider, Enabled: true})
+		clients[c.Name] = p
+	}
+	cat := testCatalog(cfg, nil)
+	for _, c := range parked {
+		failing := modelstest.New().Script(c.Model, modelstest.Status(429, 0))
+		if err := cat.RegisterClient(c.Name, failing); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := providers.ModelSet(cat, c.Name).Begin(models.Chat).Chat(context.Background(), testIdentity, models.Request{}); err == nil {
+			t.Fatalf("the failing call to %s succeeded", c.Name)
+		}
+		if info, _ := cat.Get(c.Name); info.Health.Available {
+			t.Fatalf("%s is not parked", c.Name)
+		}
+	}
+	for name, cl := range clients {
+		if err := cat.RegisterClient(name, cl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return cat
+}
+
+// chainTurn is a turn for alice whose chain holds candidates, in order,
+// answered by p, with the parked ones in cooldown.
+func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) (*llmTurn, *llmDispatch) {
+	t.Helper()
+	cat := chainCatalog(t, p, parked, candidates...)
+	set := cat.Set("alice")
+	for i, c := range candidates {
+		if err := set.Assign(models.Chat, c.Name, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chain := set.Begin(models.Chat)
+	al := &AgentLoop{cfg: &config.Config{}, catalog: cat}
 	turn := &llmTurn{
 		al:         al,
 		agent:      &AgentInstance{ID: "alice", Provider: p},
-		candidates: candidates,
-		model:      candidates[0].Alias,
+		chain:      chain,
+		candidates: chain.Candidates(),
+		model:      candidates[0].Name,
 		messages:   []providers.Message{{Role: "user", Content: "hi"}},
 	}
-	d := &llmDispatch{provider: candidates[0].Provider, runProvider: p, runModel: candidates[0].Model}
+	d := &llmDispatch{provider: candidates[0].Provider}
 	return turn, d
 }
 
@@ -101,7 +152,7 @@ func TestCallModel_FailedCandidateLoggedAsItFails(t *testing.T) {
 		}
 		return answerOK(model), nil
 	}}
-	turn, d := chainTurn(p, providers.NewCooldownTracker(), candOpus, candBob)
+	turn, d := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
@@ -155,7 +206,7 @@ func TestCallModel_CancelledCallLogsRunningCandidate(t *testing.T) {
 		cancel(errShuttingDown)
 		return nil, ctx.Err()
 	}}
-	turn, d := chainTurn(p, providers.NewCooldownTracker(), candOpus, candBob)
+	turn, d := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
@@ -182,7 +233,7 @@ func TestCallModel_AllCandidatesFail(t *testing.T) {
 	p := modelScriptProvider{answer: func(context.Context, string) (*providers.LLMResponse, error) {
 		return nil, errors.New(rateLimited)
 	}}
-	turn, d := chainTurn(p, providers.NewCooldownTracker(), candOpus, candBob)
+	turn, d := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
@@ -229,20 +280,13 @@ func TestCallModel_CooldownSkipLoggedOnceWithoutFinish(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cooldown := providers.NewCooldownTracker()
-			for _, c := range tt.parked {
-				cooldown.MarkFailure(c.Provider, c.Model, providers.FailoverRateLimit, 429, 0)
-				if cooldown.IsAvailable(c.Provider, c.Model) {
-					t.Fatalf("%s is not parked", c.Alias)
-				}
-			}
 			p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
 				if tt.failing[model] {
 					return nil, errors.New(rateLimited)
 				}
 				return answerOK(model), nil
 			}}
-			turn, d := chainTurn(p, cooldown, candOpus, candBob)
+			turn, d := chainTurn(t, p, tt.parked, candOpus, candBob)
 
 			buf := &bytes.Buffer{}
 			t.Cleanup(logger.RedirectForTest(buf))
@@ -261,8 +305,8 @@ func TestCallModel_CooldownSkipLoggedOnceWithoutFinish(t *testing.T) {
 				switch rec["message"] {
 				case msgFinish:
 					for _, c := range tt.parked {
-						if rec["our_model"] == c.Alias {
-							t.Errorf("finish line for parked %s", c.Alias)
+						if rec["our_model"] == c.Name {
+							t.Errorf("finish line for parked %s", c.Name)
 						}
 					}
 				case msgSkipped:
@@ -275,18 +319,12 @@ func TestCallModel_CooldownSkipLoggedOnceWithoutFinish(t *testing.T) {
 	}
 }
 
-// With no fallback chain the one provider call writes exactly one line.
+// A chain of one model that answers writes exactly one line.
 func TestCallModel_DirectPathOneFinish(t *testing.T) {
 	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
 		return answerOK(model), nil
 	}}
-	turn := &llmTurn{
-		al:       &AgentLoop{cfg: &config.Config{}},
-		agent:    &AgentInstance{ID: "alice", Provider: p},
-		model:    "Alice Model",
-		messages: []providers.Message{{Role: "user", Content: "hi"}},
-	}
-	d := &llmDispatch{provider: "Alice Co", runProvider: p, runModel: "alice-wire"}
+	turn, d := chainTurn(t, p, nil, providers.FallbackCandidate{Provider: "Alice Co", Model: "alice-wire", Name: "Alice Model"})
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
@@ -348,18 +386,13 @@ func TestRequestModel_ContextWindowRetryOneFinishPerCall(t *testing.T) {
 // and is answered by Alice's model.
 func failSkipAnswer(t *testing.T) (*llmTurn, *llmDispatch) {
 	t.Helper()
-	cooldown := providers.NewCooldownTracker()
-	cooldown.MarkFailure(candBob.Provider, candBob.Model, providers.FailoverRateLimit, 429, 0)
-	if cooldown.IsAvailable(candBob.Provider, candBob.Model) {
-		t.Fatal("Bob Model is not parked")
-	}
 	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
 		if model == candOpus.Model {
 			return nil, errors.New(rateLimited)
 		}
 		return answerOK(model), nil
 	}}
-	return chainTurn(p, cooldown, candOpus, candBob, candAlice)
+	return chainTurn(t, p, []providers.FallbackCandidate{candBob}, candOpus, candBob, candAlice)
 }
 
 // The turn's own notifier still hears of each candidate passed over: the
@@ -383,10 +416,10 @@ func TestCallModel_ForwardsToTurnNotifier(t *testing.T) {
 		t.Fatalf("notices = %d, want 2: %+v", len(notices), notices)
 	}
 	first, second := notices[0], notices[1]
-	if len(first.passed) != 1 || first.passed[0].Skipped || first.passed[0].Model != candOpus.Model || first.next != candBob {
+	if len(first.passed) != 1 || first.passed[0].Skipped || first.passed[0].Model != candOpus.Model || first.next.Name != candBob.Name {
 		t.Errorf("first notice = %+v, want Opus's failure then Bob", first)
 	}
-	if len(second.passed) != 1 || !second.passed[0].Skipped || second.passed[0].Model != candBob.Model || second.next != candAlice {
+	if len(second.passed) != 1 || !second.passed[0].Skipped || second.passed[0].Model != candBob.Model || second.next.Name != candAlice.Name {
 		t.Errorf("second notice = %+v, want Bob's skip then Alice", second)
 	}
 }
@@ -421,7 +454,7 @@ func TestCallModel_SameModelRetryNoWarn(t *testing.T) {
 		}
 		return answerOK(model), nil
 	}}
-	turn, d := chainTurn(p, providers.NewCooldownTracker(), candOpus, candBob)
+	turn, d := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))

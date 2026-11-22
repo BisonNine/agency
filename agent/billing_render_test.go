@@ -78,7 +78,7 @@ func TestRenderBillingError_FallbackExhausted_MultipleBilling(t *testing.T) {
 				Provider: "openrouter",
 				Model:    "auto",
 				Reason:   providers.FailoverBilling,
-				Error: &providers.FailoverError{
+				Err: &providers.FailoverError{
 					Reason:  providers.FailoverBilling,
 					Wrapped: &common.HTTPStatusError{StatusCode: 402, BodyPreview: a1Body},
 				},
@@ -87,7 +87,7 @@ func TestRenderBillingError_FallbackExhausted_MultipleBilling(t *testing.T) {
 				Provider: "openai",
 				Model:    "gpt-4",
 				Reason:   providers.FailoverBilling,
-				Error: &providers.FailoverError{
+				Err: &providers.FailoverError{
 					Reason:  providers.FailoverBilling,
 					Wrapped: &common.HTTPStatusError{StatusCode: 429, BodyPreview: a2Body},
 				},
@@ -217,7 +217,7 @@ func TestRenderBillingError_LabelUsesFailureRecordProvider(t *testing.T) {
 					Provider: attemptProviderA,
 					Model:    "model-a",
 					Reason:   providers.FailoverBilling,
-					Error: &providers.FailoverError{
+					Err: &providers.FailoverError{
 						Reason:  providers.FailoverBilling,
 						Wrapped: &common.HTTPStatusError{StatusCode: 402, BodyPreview: "{}"},
 					},
@@ -226,7 +226,7 @@ func TestRenderBillingError_LabelUsesFailureRecordProvider(t *testing.T) {
 					Provider: attemptProviderB,
 					Model:    "model-b",
 					Reason:   providers.FailoverBilling,
-					Error: &providers.FailoverError{
+					Err: &providers.FailoverError{
 						Reason:  providers.FailoverBilling,
 						Wrapped: &common.HTTPStatusError{StatusCode: 402, BodyPreview: "{}"},
 					},

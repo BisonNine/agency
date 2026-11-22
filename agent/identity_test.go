@@ -180,7 +180,8 @@ func TestCompressModelCaller_BillsTheAgent(t *testing.T) {
 	}
 
 	rec := &identityRecorder{}
-	c := &compressModelCaller{id: main.Identity(), clients: []*providerLLMClient{{provider: rec, model: "m"}}}
+	cat := compressCatalog(map[string]providers.LLMProvider{"m": rec})
+	c := &compressModelCaller{id: main.Identity(), clients: []*providerLLMClient{compressClient(cat, "m")}}
 	if _, _, _, err := c.complete(context.Background(), "sys", "user", false, nil); err != nil {
 		t.Fatalf("complete: %v", err)
 	}

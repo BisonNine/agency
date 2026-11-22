@@ -112,7 +112,7 @@ func TestAgentTools_NoToolsNotice(t *testing.T) {
 	next := noToolsConfig(t)
 	next.Agents.BaseDir = cfg.Agents.BaseDir
 	next.Agents.List[0].Tools = []string{"agent_message"}
-	if err := al.ReloadProviderAndConfig(context.Background(), &countingProvider{}, next); err != nil {
+	if err := reloadForTest(al, context.Background(), &countingProvider{}, next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	alice, _ = al.GetRegistry().Get("alice")

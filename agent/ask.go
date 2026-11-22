@@ -212,8 +212,8 @@ func (al *AgentLoop) requestTimeoutFor(agent *AgentInstance) time.Duration {
 		if idx < 0 || idx >= len(agent.Candidates) {
 			idx = 0
 		}
-		if c := agent.Candidates[idx]; c.Alias != "" {
-			model = c.Alias
+		if c := agent.Candidates[idx]; c.Name != "" {
+			model = c.Name
 		} else if c.Model != "" {
 			model = c.Model
 		}

@@ -265,7 +265,7 @@ func TestClassifierHost_Complete(t *testing.T) {
 	if srv.count() != sent {
 		t.Error("a model in cooldown was called")
 	}
-	al.cooldownTracker().MarkSuccess("p", "alpha-wire")
+	al.catalog.ResetHealth("alpha")
 
 	// An item still in flight after the switch was turned off is asked on
 	// the agent's model as before.
@@ -635,7 +635,7 @@ func TestClassifierHost_Ceilings(t *testing.T) {
 
 	next := *cfg
 	next.Classifiers = config.ClassifiersConfig{Limits: config.ClassifierLimitsConfig{MaxRules: 9, MaxItemChars: 1000, MinEverySeconds: 60}}
-	if err := al.ReloadProviderAndConfig(context.Background(), &mockProvider{}, &next); err != nil {
+	if err := reloadForTest(al, context.Background(), &mockProvider{}, &next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	want = defaults

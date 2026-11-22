@@ -1618,29 +1618,43 @@ func TestRunLLMIteration_MaxIterations(t *testing.T) {
 	}
 }
 
-// fourCandidates returns a deterministic 4-element candidate list for reorder tests.
-func fourCandidates() []providers.FallbackCandidate {
-	return []providers.FallbackCandidate{
-		{Provider: "p0", Model: "m0", Alias: "a0"},
-		{Provider: "p1", Model: "m1", Alias: "a1"},
-		{Provider: "p2", Model: "m2", Alias: "a2"},
-		{Provider: "p3", Model: "m3", Alias: "a3"},
+// fourModelLoop is a loop whose default agent's models are fourCandidates,
+// each defined on its own provider, in that order.
+func fourModelLoop(t *testing.T) (*AgentLoop, *AgentInstance) {
+	t.Helper()
+	cfg := newTestConfig(t)
+	names := make([]string, 0, 4)
+	for _, c := range fourCandidates() {
+		cfg.Providers = append(cfg.Providers, config.Provider{Name: c.Provider, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
+		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: c.Name, Model: c.Model, Provider: c.Provider, Enabled: true})
+		names = append(names, c.Name)
 	}
-}
-
-// TestSelectCandidates_DefaultOrder verifies that with the default active index
-// (0) selectCandidates returns the candidate list in its original order.
-func TestSelectCandidates_DefaultOrder(t *testing.T) {
-	al := newTestAgentLoop(t).al
-
+	cfg.Agents.List[0].Models = names
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
 	agent := al.registry.Default()
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	agent.Candidates = fourCandidates()
-	agent.Model = "primary"
+	return al, agent
+}
 
-	candidates, model := al.selectCandidates(agent, "session-default")
+// fourCandidates returns a deterministic 4-element candidate list for reorder tests.
+func fourCandidates() []providers.FallbackCandidate {
+	return []providers.FallbackCandidate{
+		{Provider: "p0", Model: "m0", Name: "a0"},
+		{Provider: "p1", Model: "m1", Name: "a1"},
+		{Provider: "p2", Model: "m2", Name: "a2"},
+		{Provider: "p3", Model: "m3", Name: "a3"},
+	}
+}
+
+// TestSelectCandidates_DefaultOrder verifies that with the default active index
+// (0) selectTurnModel pins the candidate list in its original order.
+func TestSelectCandidates_DefaultOrder(t *testing.T) {
+	al, agent := fourModelLoop(t)
+
+	tm := al.selectTurnModel(agent, "session-default")
+	candidates, model := tm.candidates, tm.model
 
 	if model != "a0" {
 		t.Errorf("expected model %q, got %q", "a0", model)
@@ -1655,14 +1669,7 @@ func TestSelectCandidates_DefaultOrder(t *testing.T) {
 // TestSelectCandidates_Reorder verifies move-to-front semantics: selecting index
 // 2 returns [2,0,1,3] and never mutates agent.Candidates.
 func TestSelectCandidates_Reorder(t *testing.T) {
-	al := newTestAgentLoop(t).al
-
-	agent := al.registry.Default()
-	if agent == nil {
-		t.Fatal("no default agent")
-	}
-	agent.Candidates = fourCandidates()
-	agent.Model = "primary"
+	al, agent := fourModelLoop(t)
 
 	orig := fourCandidates()
 	const sessionKey = "session-reorder"
@@ -1671,7 +1678,8 @@ func TestSelectCandidates_Reorder(t *testing.T) {
 		t.Fatalf("setActiveModelIndex(2) failed: %v", err)
 	}
 
-	candidates, model := al.selectCandidates(agent, sessionKey)
+	tm := al.selectTurnModel(agent, sessionKey)
+	candidates, model := tm.candidates, tm.model
 	wantOrder := []string{"m2", "m0", "m1", "m3"}
 	if len(candidates) != len(wantOrder) {
 		t.Fatalf("got %d candidates, want %d", len(candidates), len(wantOrder))
@@ -2091,7 +2099,7 @@ func TestReloadProviderAndConfig_NilProvider(t *testing.T) {
 	tl := newTestAgentLoop(t)
 	al, cfg := tl.al, tl.cfg
 
-	err := al.ReloadProviderAndConfig(context.Background(), nil, cfg)
+	err := reloadForTest(al, context.Background(), nil, cfg)
 	if err == nil {
 		t.Fatal("expected error for nil provider, got nil")
 	}
@@ -2103,7 +2111,7 @@ func TestReloadProviderAndConfig_NilConfig(t *testing.T) {
 	tl := newTestAgentLoop(t)
 	al, provider := tl.al, tl.provider
 
-	err := al.ReloadProviderAndConfig(context.Background(), provider, nil)
+	err := reloadForTest(al, context.Background(), provider, nil)
 	if err == nil {
 		t.Fatal("expected error for nil config, got nil")
 	}
@@ -2126,7 +2134,7 @@ func TestReloadProviderAndConfig_Success(t *testing.T) {
 		},
 	}
 
-	err := al.ReloadProviderAndConfig(context.Background(), provider, newCfg)
+	err := reloadForTest(al, context.Background(), provider, newCfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

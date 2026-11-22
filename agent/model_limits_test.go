@@ -151,34 +151,6 @@ func TestRequestLimits_FollowModelCalled(t *testing.T) {
 	}
 }
 
-// Without a fallback chain the request goes straight to the turn's model,
-// with that model's max_tokens and thinking level.
-func TestRequestLimits_DirectPath(t *testing.T) {
-	tests := []struct {
-		name   string
-		active int
-		want   limitsCall
-	}{
-		{"first model", 0, limitsCall{"Alice Model", 32768, "high"}},
-		{"model selected with /model", 1, limitsCall{"Bob Model", 4096, nil}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &limitsProvider{}
-			al, agent := newLimitsLoop(t, p)
-			al.fallback = nil
-			const sessionKey = "direct"
-			if err := al.setActiveModelIndex(agent, sessionKey, tt.active); err != nil {
-				t.Fatalf("setActiveModelIndex: %v", err)
-			}
-			runLimitsTurn(t, al, agent, sessionKey)
-			if len(p.calls) != 1 || p.calls[0] != tt.want {
-				t.Fatalf("calls = %v, want [%v]", p.calls, tt.want)
-			}
-		})
-	}
-}
-
 // A model's no_tools follows /model both ways: an agent whose first model
 // takes no tools sends them after /model to one that does, and the reverse.
 func TestNoTools_FollowsActiveModel(t *testing.T) {

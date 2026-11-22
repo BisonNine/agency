@@ -522,24 +522,6 @@ func TestHumanAgent_BufferedAnswerSurvivesCancel(t *testing.T) {
 	}
 }
 
-// The dispatched model must be a person's model.
-func TestHumanAgent_RefusesNonHumanProvider(t *testing.T) {
-	restore := logger.RedirectForTest(&safeBufLoop{})
-	defer restore()
-	cfg := humanLoopConfig(t, 60)
-	other := humanLoopConfig(t, 60)
-	other.Providers = []config.Provider{{Name: "People", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:1", APIKey: "k"}}
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &countingProvider{}, providers.NewProviderDispatcher(other))
-	bob, _ := al.GetRegistry().Get("bob")
-	al.asks.open("ask-1", "Alice", al.clk().Now().Add(time.Minute), false)
-	_, err := al.runAgentLoop(context.Background(), bob, processOptions{
-		SessionKey: "agent:bob:main", Channel: constants.AgentMessageChannel, ChatID: "ask-1", UserMessage: "q", ReplyRequired: true,
-	})
-	if err == nil || !strings.Contains(err.Error(), "is not a person's model") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // A human agent has no tools (not even ones registered later, nor MCP tools)
 // and no cognitive memory, and none of the host's model paths
 // (summarization, consolidation, vision) has a model for it.

@@ -101,6 +101,7 @@ func newForumRig(t *testing.T, cfg *config.Config, model providers.LLMProvider) 
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
+	routeAllModels(al, model)
 	host.Bind(al)
 	ctx, cancel := context.WithCancel(context.Background())
 	al.running.Store(true)
@@ -574,16 +575,14 @@ func TestForumHost_Cooldown(t *testing.T) {
 		t.Fatalf("bob's candidates: %+v", bob)
 	}
 	c := bob.Candidates[0]
-	tracker := r.al.cooldownTracker()
-	tracker.MarkFailure(c.Provider, c.Model, providers.FailoverRateLimit, 429, 30*time.Second)
-	t.Cleanup(tracker.ClearAll)
+	parkFor(t, r.al.catalog, c.Name, 30*time.Second, &agentProviderClient{al: r.al, fallback: &forumModel{}})
 	if model, left := h.Cooldown("bob"); model != "alpha" || left <= 0 || left > 30*time.Second {
 		t.Errorf("Cooldown(bob) = %q, %v in cooldown; want alpha and up to 30s", model, left)
 	}
 	if model, left := h.Cooldown("nobody"); model != "" || left != 0 {
 		t.Errorf("Cooldown(nobody) = %q, %v; want none", model, left)
 	}
-	tracker.Clear(c.Provider, c.Model)
+	r.al.catalog.ResetHealth(c.Name)
 	if model, left := h.Cooldown("bob"); model != "" || left != 0 {
 		t.Errorf("Cooldown(bob) = %q, %v after the cooldown was cleared; want none", model, left)
 	}
@@ -959,7 +958,7 @@ func TestForumHost_Ceilings(t *testing.T) {
 	next := forumConfig(t, true, false)
 	next.Agents.BaseDir = cfg.Agents.BaseDir
 	next.Forum.Limits.MaxCalls = 10
-	if err := r.al.ReloadProviderAndConfig(context.Background(), model, next); err != nil {
+	if err := reloadForTest(r.al, context.Background(), model, next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	if got := r.svc.Ceilings().MaxCalls; got != 10 {

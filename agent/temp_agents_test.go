@@ -299,7 +299,7 @@ func TestReload_RebuildsTempAgents(t *testing.T) {
 	}
 	before, _ := reg.Get(cloneID)
 
-	if err := al.ReloadProviderAndConfig(context.Background(), tl.provider, tl.cfg); err != nil {
+	if err := reloadForTest(al, context.Background(), tl.provider, tl.cfg); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	after, ok := reg.Get(cloneID)

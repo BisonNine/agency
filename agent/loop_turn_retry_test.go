@@ -59,10 +59,10 @@ func TestClassifyLLMError(t *testing.T) {
 
 		// Fallback chain exhausted with every candidate at its context limit.
 		{"fallback all context limit", &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-			{Provider: "p", Model: "m", Error: errors.New("boom"), Reason: providers.FailoverContextLimit},
+			{Provider: "p", Model: "m", Err: errors.New("boom"), Reason: providers.FailoverContextLimit},
 		}}, false, true},
 		{"fallback mixed reasons", &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-			{Provider: "p", Model: "m", Error: errors.New("boom"), Reason: providers.FailoverAuth},
+			{Provider: "p", Model: "m", Err: errors.New("boom"), Reason: providers.FailoverAuth},
 		}}, false, false},
 
 		// Neither: returned to the caller unchanged.

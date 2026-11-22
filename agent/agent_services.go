@@ -66,7 +66,7 @@ func (s *agentServices) AllowedModels() []string {
 	}
 	names := make([]string, 0, len(a.Candidates))
 	for _, c := range a.Candidates {
-		name := c.Alias
+		name := c.Name
 		if name == "" {
 			name = c.Model
 		}

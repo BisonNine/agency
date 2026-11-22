@@ -125,6 +125,7 @@ func TestGeneratedImages_FreshAgentAnsweringAgentKeepsNothing(t *testing.T) {
 	cfg := l.al.GetConfig()
 	cfg.Providers = []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
 	cfg.Models = []config.ModelConfig{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}}
+	adoptTestCatalog(l.al, &mockProvider{})
 	id, err := l.al.GetRegistry().CreateFresh(config.AgentConfig{Name: "Bob", Models: []string{"alpha"}})
 	if err != nil {
 		t.Fatalf("CreateFresh: %v", err)

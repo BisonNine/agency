@@ -34,7 +34,7 @@ func renderBillingError(err error) string {
 			summaries = append(summaries, billingSummary{
 				Provider: a.Provider,
 				Model:    a.Model,
-				URL:      sniffBillingURL(extractBodyPreview(a.Error)),
+				URL:      sniffBillingURL(extractBodyPreview(a.Err)),
 			})
 		}
 	} else {

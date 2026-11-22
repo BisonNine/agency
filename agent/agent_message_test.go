@@ -734,7 +734,7 @@ func TestWhispers_KeptAcrossRebuildDroppedOnRemoval(t *testing.T) {
 	next := messagingConfig(t)
 	next.Agents.BaseDir = cfg.Agents.BaseDir
 	next.Agents.List = next.Agents.List[:2] // helper removed
-	if err := al.ReloadProviderAndConfig(context.Background(), model, next); err != nil {
+	if err := reloadForTest(al, context.Background(), model, next); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
 	if after, ok := reg.Get(cloneID); !ok || after == before {

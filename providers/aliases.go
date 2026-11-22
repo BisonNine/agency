@@ -16,6 +16,7 @@ package providers
 import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm"
 )
 
@@ -115,3 +116,25 @@ var (
 	IsImageSizeError        = spawnllm.IsImageSizeError
 	JSONObjectFortification = spawnllm.JSONObjectFortification
 )
+
+// The model catalogue's types under their historical names.
+type (
+	// FallbackCandidate is one model of a chain (Name is its model_name).
+	FallbackCandidate = models.Candidate
+	// FallbackAttempt is one model a call passed over (Name is its
+	// model_name, Err its error).
+	FallbackAttempt = models.Attempt
+	// FallbackResult is a chain call's answer.
+	FallbackResult = models.Result
+	// FallbackExhaustedError is the error of a call that tried every model.
+	FallbackExhaustedError = models.ExhaustedError
+	// CLIDeclinedError is the error of a CLI that declined to use tools. Its
+	// text is written for the user, so the failover renderer shows it
+	// verbatim.
+	CLIDeclinedError = models.CLIDeclinedError
+)
+
+// FallbackNotify is called when a chain moves past one or more models: the
+// attempts just passed (one failure, or a run of cooldown skips) and the
+// model tried next (models.WithNotify).
+type FallbackNotify = func(passed []FallbackAttempt, next FallbackCandidate)

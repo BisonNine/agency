@@ -15,8 +15,10 @@ import (
 
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
@@ -72,8 +74,10 @@ type llmTurn struct {
 	// sent is what the latest provider call was given before per-model
 	// adjustments: messages plus any per-request note. The dumps record it.
 	sent []providers.Message
-	// candidates and model are the turn's model choice. It is sticky for every
-	// iteration, so a multi-step tool chain never switches model mid-way.
+	// chain, candidates and model are the turn's model choice. It is sticky
+	// for every iteration, so a multi-step tool chain never switches model
+	// mid-way.
+	chain      *models.Chain
 	candidates []providers.FallbackCandidate
 	model      string
 	// limits are model's: its tools setting and context window, and the
@@ -192,7 +196,7 @@ func (al *AgentLoop) newLLMTurn(
 	if tm == nil {
 		tm = al.selectTurnModel(agent, opts.SessionKey)
 	}
-	t.candidates, t.model, t.limits = tm.candidates, tm.model, tm.limits
+	t.chain, t.candidates, t.model, t.limits = tm.chain, tm.candidates, tm.model, tm.limits
 	t.notifier = al.fallbackNotifier(ctx, opts)
 	// Breadcrumbs go to a user chat, never the internal "system" channel.
 	t.showToolActivity = opts.Channel != "" && opts.Channel != "system" && opts.ChatID != "" &&
@@ -287,11 +291,8 @@ func (t *llmTurn) iterate(ctx context.Context) (bool, error) {
 // each request carries only its own count and history never sees it. A
 // dispatch without tools has no steps to count, and a CLI provider finishes
 // the turn in one call, so neither gets the note.
-func (t *llmTurn) requestMessages(hasTools bool, provider providers.LLMProvider) []providers.Message {
-	if !hasTools {
-		return t.messages
-	}
-	if _, isCLI := provider.(providers.CLIProvider); isCLI {
+func (t *llmTurn) requestMessages(hasTools, isCLI bool) []providers.Message {
+	if !hasTools || isCLI {
 		return t.messages
 	}
 	note := lowStepsNote(t.iteration, t.agent.MaxIterations)
@@ -344,7 +345,8 @@ func (t *llmTurn) assemble(ctx context.Context, defs []providers.ToolDefinition)
 // log_message_content allows it.
 func (t *llmTurn) logRequest(d *llmDispatch) {
 	defs := d.defs
-	sent := t.requestMessages(len(defs) > 0, d.runProvider)
+	isCLI := len(t.candidates) > 0 && config.CLIAgentByProtocol(t.candidates[0].Protocol) != nil
+	sent := t.requestMessages(len(defs) > 0, isCLI)
 	sessionSummary := t.agent.Sessions.GetSummary(t.opts.SessionKey)
 	logger.InfoCF("agent", "Session status",
 		map[string]any{

@@ -65,17 +65,11 @@ func TestNewDispatch_TemperatureInRequest(t *testing.T) {
 			agentCfg := &config.AgentConfig{ID: "alice", Temperature: tt.agentTemp}
 			inst := mustNewAgentInstance(t, agentCfg, &cfg.Agents.Defaults, cfg, &mockProvider{})
 
-			al := &AgentLoop{cfg: cfg, dispatcher: providers.NewProviderDispatcher(cfg)}
-			turn := &llmTurn{
-				al:         al,
-				agent:      inst,
-				candidates: []providers.FallbackCandidate{{Provider: "test", Model: "test-model", Alias: "alice-model"}},
-				model:      "alice-model",
-			}
+			turn := catalogTurn(t, cfg, inst)
 			d := turn.newDispatch(nil, 0)
 
-			msgs := []providers.Message{{Role: "user", Content: "hi"}}
-			if _, err := d.runProvider.Chat(context.Background(), testIdentity, msgs, nil, d.runModel, turn.requestOptions(d, false, d.runProvider, turn.model)); err != nil {
+			turn.messages = []providers.Message{{Role: "user", Content: "hi"}}
+			if _, err := turn.callModel(context.Background(), d); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			got, present := body["temperature"]
@@ -144,17 +138,11 @@ func TestNewDispatch_AnthropicRequest(t *testing.T) {
 			agentCfg := &config.AgentConfig{ID: "alice", Temperature: tt.agentTemp}
 			inst := mustNewAgentInstance(t, agentCfg, &cfg.Agents.Defaults, cfg, &mockProvider{})
 
-			al := &AgentLoop{cfg: cfg, dispatcher: providers.NewProviderDispatcher(cfg)}
-			turn := &llmTurn{
-				al:         al,
-				agent:      inst,
-				candidates: []providers.FallbackCandidate{{Provider: "test", Model: "claude-test", Alias: "alice-model"}},
-				model:      "alice-model",
-			}
+			turn := catalogTurn(t, cfg, inst)
 			d := turn.newDispatch(nil, 0)
 
-			msgs := []providers.Message{{Role: "user", Content: "hi"}}
-			if _, err := d.runProvider.Chat(context.Background(), testIdentity, msgs, nil, d.runModel, turn.requestOptions(d, false, d.runProvider, turn.model)); err != nil {
+			turn.messages = []providers.Message{{Role: "user", Content: "hi"}}
+			if _, err := turn.callModel(context.Background(), d); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			if got, present := body["temperature"]; present {

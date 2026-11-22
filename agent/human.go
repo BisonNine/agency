@@ -417,14 +417,7 @@ func (al *AgentLoop) runHumanTurn(ctx context.Context, agent *AgentInstance, opt
 	if !ok {
 		return "", fmt.Errorf("%s has no chat to reach the person in", agent.DisplayName())
 	}
-	if al.dispatcher == nil {
-		return "", errors.New("no provider dispatcher")
-	}
-	p, err := al.dispatchProvider(agent, agent.HumanModel)
-	if err != nil {
-		return "", err
-	}
-	hp, ok := p.(*providers.HumanProvider)
+	hp, ok := al.catalogs.HumanClient(agent.HumanModel)
 	if !ok {
 		return "", fmt.Errorf("model %q is not a person's model", agent.HumanModel)
 	}
