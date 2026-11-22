@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/mcphost"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
@@ -798,7 +799,8 @@ func (cb *ContextBuilder) PromptLayers(channel, chatID string) []ctxengine.Layer
 	}
 }
 
-// sessionTokenLayer renders the per-session MCP token as the after-summary
+// sessionTokenLayer renders the per-session MCP token (mcphost.TokenPrompt
+// under the host's tool prefix) as the after-summary
 // layer of the system prompt so the LLM can call mcp__claw__* tools. It sits
 // after the static and dynamic prompt and the summary so it is always present
 // regardless of caching. An empty token yields an empty layer, which the
@@ -808,11 +810,7 @@ func sessionTokenLayer(token string) ctxengine.Layer {
 	if token == "" {
 		return l
 	}
-	l.Text = fmt.Sprintf(
-		"# Session Token\n\nThe following token is confidential — never echo it to users or write it to files. "+
-			"ALL `"+global.HostMCPToolPrefix+"*` tool calls MUST include "+
-			"the literal string below as the `session_token` parameter.\n\nsession_token: %s",
-		token)
+	l.Text = mcphost.TokenPrompt(global.HostMCPToolPrefix, token)
 	return l
 }
 
