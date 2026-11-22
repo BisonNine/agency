@@ -1,0 +1,34 @@
+[
+  {
+    "name": "file_read",
+    "description": ""
+  },
+  {
+    "name": "fusion_svc_list",
+    "description": ""
+  },
+  {
+    "name": "get_tool_details",
+    "description": "Show the full input schema of a tool found via search_tools. Pass the exact tool name from the search results."
+  },
+  {
+    "name": "mcp_alpha_read",
+    "description": ""
+  },
+  {
+    "name": "mcp_alpha_write",
+    "description": ""
+  },
+  {
+    "name": "mcp_bob_fetch",
+    "description": ""
+  },
+  {
+    "name": "search_tools",
+    "description": "Search for available tools by capability. Returns matching tool names with one-line descriptions and makes those tools available: call one directly, or call get_tool_details on a name to see its full schema. Natural-language query by default; set regex:true to match a regular expression if the natural-language search can't find the tool. Discoverable tool groups: fusion, mcp."
+  },
+  {
+    "name": "time_now",
+    "description": ""
+  }
+]
