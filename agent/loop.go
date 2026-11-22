@@ -694,7 +694,7 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher, newFallback), func() bool {
+		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher, newFallback), func() bool { //nolint:contextcheck // building an agent registers its discovery tools, whose toolset ignores the context it is listed with
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}

@@ -11,7 +11,7 @@ import (
 func TestRemoveByPrefix(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(&mockRegistryTool{name: "mcp_alice_search"})
-	r.RegisterHidden(&mockRegistryTool{name: "mcp_alice_fetch"})
+	registerHidden(r, &mockRegistryTool{name: "mcp_alice_fetch"})
 	r.Register(&mockRegistryTool{name: "mcp_bob_search"})
 	r.Register(&mockRegistryTool{name: "file_read"})
 
@@ -51,13 +51,13 @@ func TestRemoveByPrefix(t *testing.T) {
 func TestReplaceByPrefix(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(&mockRegistryTool{name: "mcp_alice_search"})
-	r.RegisterHidden(&mockRegistryTool{name: "mcp_alice_fetch"})
+	registerHidden(r, &mockRegistryTool{name: "mcp_alice_fetch"})
 	r.Register(&mockRegistryTool{name: "mcp_bob_search"})
 
 	before := r.Version()
 	removed := r.ReplaceByPrefix("mcp_alice_", []ToolEntry{
-		{Tool: &mockRegistryTool{name: "mcp_alice_search"}, IsCore: true},
-		{Tool: &mockRegistryTool{name: "mcp_alice_lookup"}, Group: "alice", RevealTogether: true},
+		listedEntry(&mockRegistryTool{name: "mcp_alice_search"}),
+		hiddenEntry(&mockRegistryTool{name: "mcp_alice_lookup"}, "alice", true),
 	})
 	if removed != 2 {
 		t.Fatalf("ReplaceByPrefix removed %d, want 2", removed)
@@ -70,7 +70,7 @@ func TestReplaceByPrefix(t *testing.T) {
 		t.Fatalf("tools = %v, want %v", got, want)
 	}
 	deferred := make(map[string]bool)
-	for _, d := range r.ToProviderDefs() {
+	for _, d := range r.ToolDefs(nil).Send {
 		deferred[d.Function.Name] = d.Deferred
 	}
 	if v, ok := deferred["mcp_alice_search"]; !ok || v {

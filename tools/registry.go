@@ -3,9 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
 
+	"go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
@@ -13,24 +12,19 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
+// ToolEntry is one tool to register: its catalogue entry and whether it is
+// suite-exempt. A tool hidden by progressive discovery has an entry from
+// discovery.HideEntries (Hidden, with its Group and RevealTogether): it is
+// still offered to the model on every call, but deferred (loaded only once a
+// search_tools or get_tool_details result references it), and it may be called
+// at any time. The entry's Meta is the registry's own and is replaced.
 type ToolEntry struct {
-	Tool Tool
-	// IsCore is false for a tool hidden by progressive discovery: it is still
-	// offered to the model on every call, but deferred (loaded only once a
-	// search_tools or get_tool_details result references it), and it may be
-	// called at any time.
-	IsCore bool
+	toolkit.Entry
 	// SuiteExempt marks a tool that belongs to an all-or-nothing suite (cogmem,
 	// maestro). Suites are gated as a unit by the per-agent suite flag at
 	// registration time, so their tools must also bypass the execution-time
 	// per-tool allowlist check (which has no entry for them).
 	SuiteExempt bool
-	// Group names the discovery set this tool belongs to (MCP server or fusion
-	// service). RevealTogether, when set, makes get_tool_details on one of the
-	// Group's hidden tools reference every hidden tool of the Group, so a small
-	// cohesive set loads in one call. Both empty/false for ungrouped tools.
-	Group          string
-	RevealTogether bool
 }
 
 // ToolRegistry is one agent's tools: a thin wrapper over a toolkit catalogue
@@ -95,33 +89,45 @@ func (r *ToolRegistry) RegisterSuite(tool Tool) {
 	r.put(toolkit.Entry{Tool: tool}, true, "suite tool")
 }
 
-// RegisterSuiteHidden registers a suite tool that is ALSO hidden behind
-// progressive discovery: suite-exempt from the per-tool allowlist (the suite flag
-// is the allow decision) yet hidden like any discovery tool, so it is offered
-// deferred until a discovery result references it. Used for the fusion
-// and maestro suites when an agent has progressive discovery on.
-func (r *ToolRegistry) RegisterSuiteHidden(tool Tool) {
-	r.RegisterSuiteHiddenGroup(tool, "", false)
+// RegisterEntries registers each entry as it is: a tool hidden by discovery
+// (an entry from discovery.HideEntries) is offered deferred until a discovery
+// result references it; a suite-exempt one skips the per-tool allowlist (its
+// suite flag is the allow decision). The fusion and maestro suites register
+// this way when progressive discovery is on.
+func (r *ToolRegistry) RegisterEntries(entries ...ToolEntry) {
+	for _, e := range entries {
+		what := "core tool"
+		switch {
+		case e.Hidden && e.SuiteExempt:
+			what = "hidden suite tool"
+		case e.Hidden:
+			what = "hidden tool"
+		case e.SuiteExempt:
+			what = "suite tool"
+		}
+		r.put(e.Entry, e.SuiteExempt, what)
+	}
 }
 
-// RegisterSuiteHiddenGroup is RegisterSuiteHidden with a discovery group and
-// reveal-together flag, so a suite's tools can be loaded as a set.
-func (r *ToolRegistry) RegisterSuiteHiddenGroup(tool Tool, group string, revealTogether bool) {
-	r.put(toolkit.Entry{Tool: tool, Hidden: true, Group: group, RevealTogether: revealTogether},
-		true, "hidden suite tool")
-}
-
-// RegisterHidden saves a hidden tool: offered to the model deferred, loaded
-// once a discovery result references it.
-func (r *ToolRegistry) RegisterHidden(tool Tool) {
-	r.RegisterHiddenGroup(tool, "", false)
-}
-
-// RegisterHiddenGroup is RegisterHidden with a discovery group and reveal-together
-// flag, so an upstream server's (or service's) tools can be loaded as a set.
-func (r *ToolRegistry) RegisterHiddenGroup(tool Tool, group string, revealTogether bool) {
-	r.put(toolkit.Entry{Tool: tool, Hidden: true, Group: group, RevealTogether: revealTogether},
-		false, "hidden tool")
+// RegisterDiscoveryTools registers progressive discovery's meta-tools,
+// search_tools and get_tool_details (discovery.MetaTools), answering from
+// this registry's hidden tools with at most maxResults hits per search. They
+// are suite-exempt (gated by the discovery switch, not the per-tool
+// allowlist); one that skip reports true for (the agent's deny list) is left
+// out.
+func (r *ToolRegistry) RegisterDiscoveryTools(maxResults int, skip func(name string) bool) {
+	ix := discovery.NewIndex(r.cat, discovery.MaxResults(maxResults), discovery.WithLogger(logger.SDK()))
+	entries, err := ix.MetaTools().Tools(context.Background())
+	if err != nil {
+		logger.ErrorCF("tools", "Tool registration refused", map[string]any{"error": err.Error()})
+		return
+	}
+	for _, e := range entries {
+		if skip != nil && skip(e.Tool.Name()) {
+			continue
+		}
+		r.put(e, true, "suite tool")
+	}
 }
 
 // RemoveByPrefix removes every registered tool, visible or hidden, whose name
@@ -146,13 +152,9 @@ func (r *ToolRegistry) RemoveByPrefix(prefix string) int {
 func (r *ToolRegistry) ReplaceByPrefix(prefix string, entries []ToolEntry) int {
 	conv := make([]toolkit.Entry, 0, len(entries))
 	for _, e := range entries {
-		conv = append(conv, toolkit.Entry{
-			Tool:           e.Tool,
-			Hidden:         !e.IsCore,
-			Group:          e.Group,
-			RevealTogether: e.RevealTogether,
-			Meta:           entryMeta(e.SuiteExempt),
-		})
+		ce := e.Entry
+		ce.Meta = entryMeta(e.SuiteExempt)
+		conv = append(conv, ce)
 	}
 	_, removed := r.cat.ReplaceEntries(prefix, conv)
 	return removed
@@ -165,58 +167,6 @@ func (r *ToolRegistry) Version() uint64 {
 	return r.cat.Version()
 }
 
-// HiddenToolSnapshot holds a consistent snapshot of hidden tools and the
-// registry version at which it was taken. Used by BM25SearchTool cache.
-type HiddenToolSnapshot struct {
-	Docs    []HiddenToolDoc
-	Version uint64
-}
-
-// HiddenToolDoc is a lightweight representation of a hidden tool for search indexing.
-type HiddenToolDoc struct {
-	Name        string
-	Description string
-}
-
-// SnapshotHiddenTools returns all hidden tools and the registry version they
-// were read at, both from one catalogue snapshot, so the two always agree.
-func (r *ToolRegistry) SnapshotHiddenTools() HiddenToolSnapshot {
-	snap := r.cat.Snapshot()
-	hidden := snap.Hidden()
-	docs := make([]HiddenToolDoc, 0, len(hidden))
-	for _, info := range hidden {
-		docs = append(docs, HiddenToolDoc{
-			// The name ToProviderDefs offers the tool under, so a search hit
-			// can be referenced and called as is.
-			Name:        info.Published,
-			Description: info.Tool.Description(),
-		})
-	}
-	return HiddenToolSnapshot{Docs: docs, Version: snap.Version()}
-}
-
-// HiddenNamespaces returns the sorted, distinct leading namespaces of the
-// currently hidden tools (e.g. "trello", "maestro", "browser") — the groups a
-// model can discover via search_tools. Used to hint the available surface without
-// listing every tool.
-func (r *ToolRegistry) HiddenNamespaces() []string {
-	set := make(map[string]struct{})
-	for _, info := range r.cat.Hidden() {
-		adv := advertisedName(info.Tool, info.Name)
-		ns := adv
-		if i := strings.IndexByte(adv, '_'); i > 0 {
-			ns = adv[:i]
-		}
-		set[ns] = struct{}{}
-	}
-	out := make([]string, 0, len(set))
-	for ns := range set {
-		out = append(out, ns)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // Get returns the tool registered under name (the internal registry key),
 // hidden or not: progressive discovery only defers loading a tool's
 // definition, it never makes a registered tool uncallable.
@@ -226,46 +176,6 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 		return nil, false
 	}
 	return info.Tool, true
-}
-
-// advertisedName is a tool's bare ExternalName for MCP tools, else the
-// internal registry name.
-func advertisedName(t Tool, internal string) string {
-	if en, ok := t.(ExternalNamer); ok {
-		if ext := en.ExternalName(); ext != "" {
-			return ext
-		}
-	}
-	return internal
-}
-
-// toolDetails returns a tool's provider schema, the name it is offered under
-// and the tool references a get_tool_details result carries for it. name may
-// be the internal registry key or a bare ExternalName. A hidden tool is
-// referenced, together with every other hidden tool of its group when the
-// group is reveal-together (sorted after it); a core tool, already loaded,
-// is not. ok is false when there is no such tool.
-func (r *ToolRegistry) toolDetails(name string) (schema map[string]any, published string, refs []string, ok bool) {
-	snap := r.cat.Snapshot()
-	info, found := snap.Lookup(name)
-	if !found {
-		return nil, "", nil, false
-	}
-	published = info.Published
-	if info.Hidden {
-		refs = append(refs, published)
-		if info.RevealTogether && info.Group != "" {
-			var group []string
-			for _, sib := range snap.Hidden() {
-				if sib.Name != info.Name && sib.Group == info.Group {
-					group = append(group, sib.Published)
-				}
-			}
-			sort.Strings(group)
-			refs = append(refs, group...)
-		}
-	}
-	return ToolToSchema(info.Tool), published, refs, true
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
@@ -343,16 +253,31 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 	return definitions
 }
 
-// ToProviderDefs converts tool definitions to provider-compatible format.
-// This is the format expected by LLM provider APIs.
+// ToolDefs is the tool list for one model call (discovery.Defs in the
+// provider type).
+type ToolDefs struct {
+	// Send is the list given to the provider.
+	Send []providers.ToolDefinition
+	// InContext is what reaches the model's context, and so what the tool
+	// schemas cost: the tools that are not deferred, then the deferred ones
+	// revealed has seen, in order of first reveal.
+	InContext []providers.ToolDefinition
+}
+
+// ToolDefs returns the tool list for one model call, from one snapshot of the
+// registry (discovery.ToolDefs). revealed is what the conversation's tool
+// results have referenced (nil for nothing); it only shapes InContext.
 //
-// Every registered tool is included, sorted by internal name, so the list is
-// the same on every call while the registered set is unchanged (a stable
-// prompt-cache prefix). A tool hidden by progressive discovery is marked
-// Deferred: spawnllm loads it once a tool result references it
-// (ToolResult.ToolReferences), natively where the provider can and otherwise
-// by sending it as an ordinary tool from then on. search_tools is marked
-// ToolSearch. With discovery off every tool is core and neither flag is set.
+// Send is every registered tool, sorted by internal name, so it is the same
+// on every call while the registered set is unchanged (a stable prompt-cache
+// prefix). A tool hidden by progressive discovery is marked Deferred, as for
+// a provider that loads deferred tools natively: the list is built before the
+// fallback chain picks the provider, and spawnllm loads a deferred tool once a
+// tool result references it (ToolResult.ToolReferences), natively where the
+// provider can and otherwise by sending it as an ordinary tool from then on.
+// search_tools is marked ToolSearch and its description names the hidden
+// namespaces. With discovery off nothing is hidden and only ToolSearch can
+// be set.
 //
 // MCP tools are advertised under their bare ExternalName ("<server>_<tool>") so a
 // model sees a single naming convention across native, fusion, and upstream-MCP
@@ -360,43 +285,27 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 // internal "mcp_" prefix here made it the lone prefixed outlier, so models routinely
 // dropped it and the call was then rejected as unknown/not-permitted. The
 // catalogue maps the bare name back for dispatch and gating.
-func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
-	// One snapshot; schemas are built from it outside any lock, as a tool's
-	// Description may read the registry itself (search_tools lists the hidden
-	// namespaces).
-	list := r.cat.Snapshot().List()
-	definitions := make([]providers.ToolDefinition, 0, len(list))
-	for _, info := range list {
-		schema := ToolToSchema(info.Tool)
+func (r *ToolRegistry) ToolDefs(revealed *discovery.Session) ToolDefs {
+	defs := discovery.ToolDefs(r.cat.Snapshot(), revealed, true)
+	return ToolDefs{Send: providerDefs(defs.Send), InContext: providerDefs(defs.InContext)}
+}
 
-		// Safely extract nested values with type checks
-		fn, ok := schema["function"].(map[string]any)
-		if !ok {
-			continue
-		}
-
-		var desc string
-		if v, ok := fn["description"].(string); ok {
-			desc = v
-		}
-		var params map[string]any
-		if v, ok := fn["parameters"].(map[string]any); ok {
-			params = v
-		}
-
-		_, isSearch := info.Tool.(*SearchTool)
-		definitions = append(definitions, providers.ToolDefinition{
+// providerDefs copies discovery's definitions into the provider type.
+func providerDefs(in []discovery.Def) []providers.ToolDefinition {
+	out := make([]providers.ToolDefinition, 0, len(in))
+	for _, d := range in {
+		out = append(out, providers.ToolDefinition{
 			Type: "function",
 			Function: providers.ToolFunctionDefinition{
-				Name:        info.Published,
-				Description: desc,
-				Parameters:  params,
+				Name:        d.Name,
+				Description: d.Description,
+				Parameters:  d.Parameters,
 			},
-			Deferred:   info.Hidden,
-			ToolSearch: isSearch,
+			Deferred:   d.Deferred,
+			ToolSearch: d.ToolSearch,
 		})
 	}
-	return definitions
+	return out
 }
 
 // List returns a list of all registered tool names.

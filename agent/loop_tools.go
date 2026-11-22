@@ -11,6 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	sdkdiscovery "go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -302,15 +305,13 @@ func (al *AgentLoop) registerProviderTools(currentAgent *AgentInstance, cfg *con
 			case suite == suiteCogmem:
 				currentAgent.Tools.RegisterSuite(t) // cogmem: always-on, never hidden
 			case discoveryHidesTool(discovery, currentAgent.AlwaysShownNamespaces, t.Name()):
-				// fusion/maestro behind discovery; carry any reveal-together group
-				// (e.g. a fusion service) so get_tool_details loads the whole set.
-				// A namespace pinned via always_shown_namespaces skips this and
-				// falls through to RegisterSuite (always visible to the model).
-				if g, ok := t.(tools.DiscoveryGrouped); ok {
-					group, revealTogether := g.DiscoveryGroup()
-					currentAgent.Tools.RegisterSuiteHiddenGroup(t, group, revealTogether)
-				} else {
-					currentAgent.Tools.RegisterSuiteHidden(t)
+				// fusion/maestro behind discovery; HideEntries carries any
+				// reveal-together group (e.g. a fusion service) so
+				// get_tool_details loads the whole set. A namespace pinned via
+				// always_shown_namespaces skips this and falls through to
+				// RegisterSuite (always visible to the model).
+				for _, e := range sdkdiscovery.HideEntries([]toolkit.Entry{{Tool: t}}) {
+					currentAgent.Tools.RegisterEntries(tools.ToolEntry{Entry: e, SuiteExempt: true})
 				}
 			default:
 				// Non-discovery suites, plus discovery-pinned always-shown suites.
@@ -402,15 +403,7 @@ func (al *AgentLoop) registerDiscoveryMetaTools(agent *AgentInstance, cfg *confi
 		maxHits = config.DefaultDiscoveryMaxSearchHits
 	}
 	// Suite-exempt from the allow list, but the agent's deny list still applies.
-	for _, t := range []tools.Tool{
-		tools.NewSearchTool(agent.Tools, maxHits),
-		tools.NewToolDetailsTool(agent.Tools),
-	} {
-		if agent.Config.IsToolDenied(t.Name()) {
-			continue
-		}
-		agent.Tools.RegisterSuite(t)
-	}
+	agent.Tools.RegisterDiscoveryTools(maxHits, agent.Config.IsToolDenied)
 }
 
 // RegisterTool registers a host-built tool (the gateway's cron tool) on every

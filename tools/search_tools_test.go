@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agent/discovery"
 )
 
 // Dummy tool to fill the registry in our tests.
@@ -35,15 +37,15 @@ func setupPopulatedRegistry() *ToolRegistry {
 	})
 
 	// Hidden tools (must be found by searches)
-	reg.RegisterHidden(&mockSearchableTool{
+	registerHidden(reg, &mockSearchableTool{
 		name: "mcp_read_file",
 		desc: "Read the contents of a system file",
 	})
-	reg.RegisterHidden(&mockSearchableTool{
+	registerHidden(reg, &mockSearchableTool{
 		name: "mcp_list_dir",
 		desc: "List directories and files in the system",
 	})
-	reg.RegisterHidden(&mockSearchableTool{
+	registerHidden(reg, &mockSearchableTool{
 		name: "mcp_fetch_net",
 		desc: "Fetch data from a network database",
 	})
@@ -53,7 +55,7 @@ func setupPopulatedRegistry() *ToolRegistry {
 
 func TestSearchTool_RegexMode(t *testing.T) {
 	reg := setupPopulatedRegistry()
-	tool := NewSearchTool(reg, 10)
+	tool, _ := discoveryTools(reg, 10)
 	ctx := context.Background()
 
 	t.Run("Empty Query Error", func(t *testing.T) {
@@ -99,7 +101,7 @@ func TestSearchTool_RegexMode(t *testing.T) {
 
 func TestSearchTool_BM25Mode(t *testing.T) {
 	reg := setupPopulatedRegistry()
-	tool := NewSearchTool(reg, 3)
+	tool, _ := discoveryTools(reg, 3)
 	ctx := context.Background()
 
 	t.Run("Empty Query Error", func(t *testing.T) {
@@ -137,7 +139,7 @@ func TestSearchTool_BM25Mode(t *testing.T) {
 
 func TestToolDetailsTool_Details(t *testing.T) {
 	reg := setupPopulatedRegistry()
-	details := NewToolDetailsTool(reg)
+	_, details := discoveryTools(reg, 10)
 	ctx := context.Background()
 
 	t.Run("Unknown tool errors", func(t *testing.T) {
@@ -173,123 +175,53 @@ func TestToolDetailsTool_Details(t *testing.T) {
 
 func TestSearchTool_PatternTooLong(t *testing.T) {
 	reg := setupPopulatedRegistry()
-	tool := NewSearchTool(reg, 10)
+	tool, _ := discoveryTools(reg, 10)
 	ctx := context.Background()
 
-	longPattern := strings.Repeat("a", MaxRegexPatternLength+1)
+	longPattern := strings.Repeat("a", discovery.MaxRegexPatternLength+1)
 	res := tool.Execute(ctx, map[string]any{"query": longPattern, "regex": true})
 	if !res.IsError || !strings.Contains(res.ForLLM, "Pattern too long") {
 		t.Errorf("Expected pattern too long error, got: %v", res.ForLLM)
 	}
 }
 
-func TestSearchRegex_ZeroMaxResults(t *testing.T) {
-	reg := setupPopulatedRegistry()
-
-	res, err := reg.SearchRegex("mcp", 0)
-	if err != nil {
-		t.Fatalf("SearchRegex failed: %v", err)
-	}
-	if len(res) != 0 {
-		t.Errorf("Expected 0 results with maxSearchResults=0, got %d", len(res))
-	}
-}
-
-func TestSearchBM25_ZeroMaxResults(t *testing.T) {
-	reg := setupPopulatedRegistry()
-
-	res := reg.SearchBM25("read file", 0)
-	if len(res) != 0 {
-		t.Errorf("Expected 0 results with maxSearchResults=0, got %d", len(res))
-	}
-}
-
-func TestSearchRegex_DeterministicOrder(t *testing.T) {
-	reg := NewToolRegistry()
-	for i := range 20 {
-		reg.RegisterHidden(&mockSearchableTool{
-			name: fmt.Sprintf("tool_%02d", i),
-			desc: "searchable tool",
+// search_tools returns at most the configured number of hits, and never a
+// listed tool.
+func TestSearchTool_LimitsAndCoreFiltering(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		max   int
+		regex bool
+	}{
+		{"regex", 4, true},
+		{"bm25", 3, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := NewToolRegistry()
+			reg.Register(&mockSearchableTool{"core_match", "I am core with match"})
+			for i := range 10 {
+				registerHidden(reg, &mockSearchableTool{
+					name: fmt.Sprintf("hidden_match_%d", i),
+					desc: "this has a match",
+				})
+			}
+			search, _ := discoveryTools(reg, tc.max)
+			res := search.Execute(context.Background(), map[string]any{"query": "match", "regex": tc.regex})
+			if len(res.ToolReferences) != tc.max {
+				t.Errorf("%d hits, want exactly %d", len(res.ToolReferences), tc.max)
+			}
+			if slices.Contains(res.ToolReferences, "core_match") {
+				t.Error("search returned a listed tool")
+			}
 		})
 	}
-
-	// Run the same search multiple times and verify order is stable
-	var firstRun []string
-	for attempt := range 10 {
-		res, err := reg.SearchRegex("searchable", 20)
-		if err != nil {
-			t.Fatalf("SearchRegex failed: %v", err)
-		}
-
-		names := make([]string, len(res))
-		for i, r := range res {
-			names[i] = r.Name
-		}
-
-		if attempt == 0 {
-			firstRun = names
-		} else {
-			for i, name := range names {
-				if name != firstRun[i] {
-					t.Fatalf("Non-deterministic order at attempt %d, index %d: got %q, want %q",
-						attempt, i, name, firstRun[i])
-				}
-			}
-		}
-	}
-}
-
-func TestToolRegistry_SearchLimitsAndCoreFiltering(t *testing.T) {
-	reg := NewToolRegistry()
-
-	// Add 1 Core and 10 Hidden, all containing the word "match"
-	reg.Register(&mockSearchableTool{"core_match", "I am core with match"})
-	for i := range 10 {
-		reg.RegisterHidden(&mockSearchableTool{
-			name: fmt.Sprintf("hidden_match_%d", i),
-			desc: "this has a match",
-		})
-	}
-
-	t.Run("Regex limits and core filtering", func(t *testing.T) {
-		// Search with Regex and a limit of maxSearchResults = 4
-		res, err := reg.SearchRegex("match", 4)
-		if err != nil {
-			t.Fatalf("SearchRegex failed: %v", err)
-		}
-
-		if len(res) != 4 {
-			t.Errorf("Expected exactly 4 results due to limit, got %d", len(res))
-		}
-
-		for _, r := range res {
-			if r.Name == "core_match" {
-				t.Errorf("SearchRegex returned a Core tool, which should be excluded")
-			}
-		}
-	})
-
-	t.Run("BM25 limits and core filtering", func(t *testing.T) {
-		// Search with BM25 and a limit of maxSearchResults = 3
-		res := reg.SearchBM25("match", 3)
-
-		if len(res) != 3 {
-			t.Errorf("Expected exactly 3 results due to limit, got %d", len(res))
-		}
-
-		for _, r := range res {
-			if r.Name == "core_match" {
-				t.Errorf("SearchBM25 returned a Core tool, which should be excluded")
-			}
-		}
-	})
 }
 
 func TestBM25CacheInvalidation(t *testing.T) {
 	reg := NewToolRegistry()
-	reg.RegisterHidden(&mockSearchableTool{name: "tool_alpha", desc: "alpha functionality"})
+	registerHidden(reg, &mockSearchableTool{name: "tool_alpha", desc: "alpha functionality"})
 
-	tool := NewSearchTool(reg, 10)
+	tool, _ := discoveryTools(reg, 10)
 	ctx := context.Background()
 
 	// First search should find tool_alpha
@@ -299,7 +231,7 @@ func TestBM25CacheInvalidation(t *testing.T) {
 	}
 
 	// Register a new hidden tool
-	reg.RegisterHidden(&mockSearchableTool{name: "tool_beta", desc: "beta functionality"})
+	registerHidden(reg, &mockSearchableTool{name: "tool_beta", desc: "beta functionality"})
 
 	// Cache should be invalidated; new tool should be findable
 	res = tool.Execute(ctx, map[string]any{"query": "beta"})

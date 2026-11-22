@@ -47,7 +47,7 @@ func TestToolRegistry_GetSummaries_WithHidden(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(&mockTool{name: "alpha"})
 	r.Register(&mockTool{name: "beta"})
-	r.RegisterHidden(&mockTool{name: "hidden"}) // not core, should not appear
+	registerHidden(r, &mockTool{name: "hidden"}) // not core, should not appear
 
 	summaries := r.GetSummaries()
 	if len(summaries) != 2 {
@@ -55,13 +55,13 @@ func TestToolRegistry_GetSummaries_WithHidden(t *testing.T) {
 	}
 }
 
-func TestToolRegistry_ToProviderDefs_WithTools(t *testing.T) {
+func TestToolRegistry_ToolDefs_WithTools(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(&mockTool{name: "tool_x"})
 
-	defs := r.ToProviderDefs()
+	defs := r.ToolDefs(nil).Send
 	if len(defs) != 1 {
-		t.Fatalf("ToProviderDefs() len = %d, want 1", len(defs))
+		t.Fatalf("ToolDefs len = %d, want 1", len(defs))
 	}
 	if defs[0].Function.Name != "tool_x" {
 		t.Errorf("Function.Name = %q, want tool_x", defs[0].Function.Name)
@@ -97,7 +97,7 @@ func TestToolRegistry_CountWithRegistrations(t *testing.T) {
 
 func TestToolRegistry_HiddenTool_Gettable(t *testing.T) {
 	r := NewToolRegistry()
-	r.RegisterHidden(&mockTool{name: "hidden"})
+	registerHidden(r, &mockTool{name: "hidden"})
 
 	tool, ok := r.Get("hidden")
 	if !ok {
@@ -105,21 +105,6 @@ func TestToolRegistry_HiddenTool_Gettable(t *testing.T) {
 	}
 	if tool.Name() != "hidden" {
 		t.Errorf("Name() = %q, want hidden", tool.Name())
-	}
-}
-
-func TestToolRegistry_SnapshotHiddenTools(t *testing.T) {
-	r := NewToolRegistry()
-	r.RegisterHidden(&mockTool{name: "snap1"})
-	r.RegisterHidden(&mockTool{name: "snap2"})
-	r.Register(&mockTool{name: "core"})
-
-	snap := r.SnapshotHiddenTools()
-	if len(snap.Docs) != 2 {
-		t.Errorf("SnapshotHiddenTools() len = %d, want 2 (hidden only)", len(snap.Docs))
-	}
-	if snap.Version == 0 {
-		t.Error("Version should be non-zero after registrations")
 	}
 }
 
@@ -168,7 +153,7 @@ func TestToolRegistry_ShellIsAnOrdinaryTool(t *testing.T) {
 	}
 
 	hidden := NewToolRegistry()
-	hidden.RegisterHidden(&mockTool{name: config.ShellExecTool})
+	registerHidden(hidden, &mockTool{name: config.ShellExecTool})
 	res := hidden.Execute(ctx, config.ShellExecTool, nil)
 	if res.IsError || res.ForLLM != "tool executed: "+config.ShellExecTool {
 		t.Errorf("hidden: %+v, want it run", res)

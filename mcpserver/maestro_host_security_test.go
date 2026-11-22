@@ -24,7 +24,7 @@ func maestroRegistryFor(t *testing.T, agentID string) *tools.ToolRegistry {
 	})
 	reg := tools.NewToolRegistry()
 	for _, tl := range built {
-		reg.RegisterSuiteHidden(tl)
+		reg.RegisterEntries(hiddenSuiteEntry(tl))
 	}
 	return reg
 }

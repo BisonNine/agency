@@ -43,7 +43,7 @@ func TestHost_ServesRealMaestroSuiteInFull(t *testing.T) {
 	}
 	reg := tools.NewToolRegistry()
 	for _, tl := range built {
-		reg.RegisterSuiteHidden(tl)
+		reg.RegisterEntries(hiddenSuiteEntry(tl))
 	}
 
 	regs := map[string]*tools.ToolRegistry{"alice": reg}

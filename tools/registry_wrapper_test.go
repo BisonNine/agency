@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -28,11 +29,11 @@ func exempt(r *ToolRegistry, name string) bool {
 func TestWrapper_RegisterMapsEntries(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("core", "core tool"))
-	r.RegisterHidden(newMockTool("hidden", "hidden tool"))
-	r.RegisterHiddenGroup(newMockTool("grouped", "grouped tool"), "trello", true)
+	registerHidden(r, newMockTool("hidden", "hidden tool"))
+	r.RegisterEntries(hiddenEntry(newMockTool("grouped", "grouped tool"), "trello", true))
 	r.RegisterSuite(newMockTool("suite", "suite tool"))
-	r.RegisterSuiteHidden(newMockTool("suite_hidden", "hidden suite tool"))
-	r.RegisterSuiteHiddenGroup(newMockTool("suite_grouped", "grouped suite tool"), "fusion", false)
+	r.RegisterEntries(suiteEntry(hiddenEntry(newMockTool("suite_hidden", "hidden suite tool"), "", false)))
+	r.RegisterEntries(suiteEntry(hiddenEntry(newMockTool("suite_grouped", "grouped suite tool"), "fusion", false)))
 
 	for _, tc := range []struct {
 		name           string
@@ -79,9 +80,9 @@ func TestWrapper_ReplaceByPrefixMapsEntries(t *testing.T) {
 	r.Register(newMockTool("other", "other"))
 
 	removed := r.ReplaceByPrefix("mcp_a_", []ToolEntry{
-		{Tool: newMockTool("mcp_a_listed", "listed"), IsCore: true},
-		{Tool: newMockTool("mcp_a_deferred", "deferred"), Group: "a", RevealTogether: true},
-		{Tool: newMockTool("mcp_a_suite", "suite"), IsCore: true, SuiteExempt: true},
+		listedEntry(newMockTool("mcp_a_listed", "listed")),
+		hiddenEntry(newMockTool("mcp_a_deferred", "deferred"), "a", true),
+		suiteEntry(listedEntry(newMockTool("mcp_a_suite", "suite"))),
 	})
 	if removed != 1 {
 		t.Errorf("removed = %d, want 1", removed)
@@ -90,7 +91,7 @@ func TestWrapper_ReplaceByPrefixMapsEntries(t *testing.T) {
 		t.Fatalf("List = %v, want %v", got, want)
 	}
 	if info, _ := r.cat.Get("mcp_a_listed"); info.Hidden {
-		t.Error("an IsCore entry must be listed")
+		t.Error("a listed entry must be listed")
 	}
 	if info, _ := r.cat.Get("mcp_a_deferred"); !info.Hidden || info.Group != "a" || !info.RevealTogether {
 		t.Errorf("deferred entry = %+v, want hidden in reveal-together group a", info)
@@ -111,7 +112,7 @@ func TestWrapper_ReadMethods(t *testing.T) {
 	r := NewToolRegistry()
 	v0 := r.Version()
 	r.Register(newMockTool("b_core", "core"))
-	r.RegisterHidden(&mockExternalTool{
+	registerHidden(r, &mockExternalTool{
 		mockRegistryTool: *newMockTool("mcp_srv_find", "find things"),
 		external:         "srv_find",
 	})
@@ -134,9 +135,9 @@ func TestWrapper_ReadMethods(t *testing.T) {
 		t.Errorf("GetSummaries = %v", sums)
 	}
 
-	defs := r.ToProviderDefs()
+	defs := r.ToolDefs(nil).Send
 	if len(defs) != 2 {
-		t.Fatalf("ToProviderDefs = %d defs, want 2", len(defs))
+		t.Fatalf("ToolDefs = %d defs, want 2", len(defs))
 	}
 	if defs[0].Function.Name != "b_core" || defs[0].Deferred {
 		t.Errorf("defs[0] = %+v, want listed b_core", defs[0])
@@ -145,12 +146,12 @@ func TestWrapper_ReadMethods(t *testing.T) {
 		t.Errorf("defs[1] = %+v, want deferred srv_find", defs[1])
 	}
 
-	snap := r.SnapshotHiddenTools()
-	if snap.Version != r.Version() || len(snap.Docs) != 1 || snap.Docs[0].Name != "srv_find" {
-		t.Errorf("SnapshotHiddenTools = %+v", snap)
+	search, _ := discoveryTools(r, 10)
+	if res := search.Execute(context.Background(), map[string]any{"query": "find", "regex": true}); !slices.Equal(res.ToolReferences, []string{"srv_find"}) {
+		t.Errorf("search references = %v, want the published srv_find", res.ToolReferences)
 	}
-	if ns := r.HiddenNamespaces(); !slices.Equal(ns, []string{"srv"}) {
-		t.Errorf("HiddenNamespaces = %v", ns)
+	if desc := search.Description(); !strings.HasSuffix(desc, " Discoverable tool groups: srv.") {
+		t.Errorf("search_tools description = %q, want the srv namespace", desc)
 	}
 }
 
@@ -233,7 +234,7 @@ func TestWrapper_AddRemoveMidTurn(t *testing.T) {
 	r.Register(newMockTool("keep", "keep"))
 	r.Register(newMockTool("gone", "gone"))
 
-	offered := r.ToProviderDefs() // the model's list for this call
+	offered := r.ToolDefs(nil).Send // the model's list for this call
 	if len(offered) != 2 {
 		t.Fatalf("offered %d tools, want 2", len(offered))
 	}
@@ -245,7 +246,7 @@ func TestWrapper_AddRemoveMidTurn(t *testing.T) {
 		t.Errorf("call to a removed tool = %+v", res)
 	}
 
-	defs := r.ToProviderDefs()
+	defs := r.ToolDefs(nil).Send
 	next := make([]string, 0, len(defs))
 	for _, d := range defs {
 		next = append(next, d.Function.Name)
@@ -267,8 +268,8 @@ func TestWrapper_ConcurrentChangeAndCall(t *testing.T) {
 			defer wg.Done()
 			for j := range 50 {
 				name := fmt.Sprintf("dyn_%d_%d", i, j)
-				r.RegisterHidden(newMockTool(name, "dynamic"))
-				r.ReplaceByPrefix(fmt.Sprintf("dyn_%d_", i), []ToolEntry{{Tool: newMockTool(name, "again"), SuiteExempt: true}})
+				registerHidden(r, newMockTool(name, "dynamic"))
+				r.ReplaceByPrefix(fmt.Sprintf("dyn_%d_", i), []ToolEntry{suiteEntry(hiddenEntry(newMockTool(name, "again"), "", false))})
 				r.RemoveByPrefix(name)
 			}
 		}(i)
@@ -278,7 +279,7 @@ func TestWrapper_ConcurrentChangeAndCall(t *testing.T) {
 				if res := r.ExecuteWithContext(context.Background(), fmt.Sprintf("dyn_%d_%d", i, j), nil, "", "", nil); res == nil {
 					t.Error("nil result")
 				}
-				_ = r.ToProviderDefs()
+				_ = r.ToolDefs(nil).Send
 			}
 		}(i)
 	}
@@ -340,8 +341,8 @@ func TestWrapper_GateChecksTheToolThatRuns(t *testing.T) {
 				return
 			default:
 			}
-			r.ReplaceByPrefix("mcp_s_", []ToolEntry{{Tool: exemptTool, IsCore: true, SuiteExempt: true}})
-			r.ReplaceByPrefix("mcp_s_", []ToolEntry{{Tool: plainTool, IsCore: true}})
+			r.ReplaceByPrefix("mcp_s_", []ToolEntry{suiteEntry(listedEntry(exemptTool))})
+			r.ReplaceByPrefix("mcp_s_", []ToolEntry{listedEntry(plainTool)})
 		}
 	})
 	var callers sync.WaitGroup

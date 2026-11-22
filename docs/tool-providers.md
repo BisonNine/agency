@@ -302,14 +302,30 @@ packages import only `tools`.
 | Method | Catalogue call |
 |---|---|
 | `Register` | `Put(Entry{Tool})` |
-| `RegisterHidden`, `RegisterHiddenGroup` | `Put(Entry{Hidden: true, Group, RevealTogether})` |
-| `RegisterSuite*` | the same `Put`, with `Meta` marking the tool suite-exempt |
-| `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (`Hidden = !IsCore`, `SuiteExempt` in `Meta`), returning the removed count |
+| `RegisterEntries` | `Put(entry)` as given (a hidden one from `discovery.HideEntries`), with `Meta` marking a `SuiteExempt` one |
+| `RegisterSuite` | the same `Put`, with `Meta` marking the tool suite-exempt |
+| `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (entries as given, `SuiteExempt` in `Meta`), returning the removed count |
 | `Get`, `List`, `Count`, `Version` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version` |
 | `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
 | `GetDefinitions`, `GetSummaries` | `Listed()` |
-| `ToProviderDefs` | `Snapshot().List()` (`Name = Published`, `Deferred = Hidden`) |
-| `SnapshotHiddenTools`, `HiddenNamespaces`, discovery | `Snapshot().Hidden()` |
+| `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `providers.ToolDefinition` |
+| `RegisterDiscoveryTools` | `discovery.NewIndex(catalogue).MetaTools()`, each tool `Put` suite-exempt unless denied |
+
+Progressive discovery is the SDK's `discovery` package. The agent decides
+which tools are discovery-eligible (fusion, maestro, upstream MCP) and which
+of them `always_shown_namespaces` and the Maestro entry tool pin
+(`discoveryHidesTool`, matching the internal name with
+`config.MatchVisibility`); `discovery.HideEntries` hides the rest, taking a
+tool's group from `DiscoveryGrouped` when it has none. Each registry has its
+own `discovery.Index` behind `search_tools` and `get_tool_details`, so a
+search answers from that agent's tools only, and the index rebuilds when the
+catalogue changes. `ToolDefs.Send` is every tool, hidden ones `Deferred`,
+whatever the provider: the list is built before the fallback chain picks
+one, and spawnllm leaves out what a provider cannot load natively.
+`ToolDefs.InContext`, for the tool-schema estimate, is the listed tools plus
+those the request's history has revealed: the host keeps no revealed-tools
+state, it builds a `discovery.Session` from the history's
+`ToolReferences` for each estimate (`agent.revealedIn`).
 
 `ExecuteWithContext` runs the tool with `ExecuteGated`: the gate applies the
 agent's allow checker from the context to exactly the tool that will run
@@ -319,7 +335,7 @@ suite tool skips the allow list but not the deny list). It also puts the chat (`
 `call.AgentID`) on the context, and runs it through the catalogue.
 
 Changes are safe at any time, including mid-turn: a write is visible to the
-next read as soon as it returns, the next `ToProviderDefs` carries it, and a
+next read as soon as it returns, the next `ToolDefs` carries it, and a
 call to a tool removed since the model's list returns an ordinary tool error.
 
 ---

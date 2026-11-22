@@ -132,7 +132,7 @@ func capture(t *testing.T, v variant) []byte {
 
 // sentToolList is the list the agent's turn hands the provider.
 func sentToolList(inst *agent.AgentInstance) []providers.ToolDefinition {
-	return inst.Tools.ToProviderDefs()
+	return inst.Tools.ToolDefs(nil).Send
 }
 
 func toDefs(in []providers.ToolDefinition) []def {
@@ -181,7 +181,11 @@ func copyFile(t *testing.T, src, dst string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer in.Close()
+	defer func() {
+		if cerr := in.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		t.Fatal(err)

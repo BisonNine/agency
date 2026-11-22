@@ -18,19 +18,16 @@ import (
 // two core tools, the two discovery tools (suite-registered, core), and
 // hidden tools: Alice's server (reveal-together), Bob's server (not), and an
 // MCP tool offered under a bare ExternalName.
-func discoveryOnRegistry() (*ToolRegistry, *SearchTool, *ToolDetailsTool) {
+func discoveryOnRegistry() (*ToolRegistry, metaTool, metaTool) {
 	r := NewToolRegistry()
 	r.Register(&mockTool{name: "file_read"})
 	r.Register(&mockTool{name: "time_now"})
-	search := NewSearchTool(r, 10)
-	details := NewToolDetailsTool(r)
-	r.RegisterSuite(search)
-	r.RegisterSuite(details)
-	r.RegisterHiddenGroup(newMockTool("mcp_alice_read", "Read a note from Alice's notebook"), "alice", true)
-	r.RegisterHiddenGroup(newMockTool("mcp_alice_write", "Write a note to Alice's notebook"), "alice", true)
-	r.RegisterHiddenGroup(newMockTool("mcp_bob_fetch", "Fetch a page for Bob"), "bob", false)
-	r.RegisterHiddenGroup(newMockTool("mcp_bob_post", "Post a page for Bob"), "bob", false)
-	r.RegisterHidden(&mockExternalTool{
+	search, details := discoveryTools(r, 10)
+	r.RegisterEntries(hiddenEntry(newMockTool("mcp_alice_read", "Read a note from Alice's notebook"), "alice", true))
+	r.RegisterEntries(hiddenEntry(newMockTool("mcp_alice_write", "Write a note to Alice's notebook"), "alice", true))
+	r.RegisterEntries(hiddenEntry(newMockTool("mcp_bob_fetch", "Fetch a page for Bob"), "bob", false))
+	r.RegisterEntries(hiddenEntry(newMockTool("mcp_bob_post", "Post a page for Bob"), "bob", false))
+	registerHidden(r, &mockExternalTool{
 		mockRegistryTool: *newMockTool("mcp_x_weather", "Weather forecast for a city"),
 		external:         "x_weather",
 	})
@@ -49,11 +46,11 @@ func defNames(defs []providers.ToolDefinition) []string {
 // same definitions: core tools plain, search_tools marked as the tool-search
 // tool, hidden tools deferred. Searching and asking for details change
 // nothing.
-func TestToProviderDefs_DiscoveryOn_FullStableFlaggedList(t *testing.T) {
+func TestToolDefs_DiscoveryOn_FullStableFlaggedList(t *testing.T) {
 	r, search, details := discoveryOnRegistry()
 	ctx := context.Background()
 
-	first := r.ToProviderDefs()
+	first := r.ToolDefs(nil).Send
 	wantNames := []string{
 		"file_read", "get_tool_details", "mcp_alice_read", "mcp_alice_write",
 		"mcp_bob_fetch", "mcp_bob_post", "x_weather", "search_tools", "time_now",
@@ -94,7 +91,7 @@ func TestToProviderDefs_DiscoveryOn_FullStableFlaggedList(t *testing.T) {
 		if res := step.run(); res.IsError {
 			t.Fatalf("%s: %s", step.name, res.ForLLM)
 		}
-		if got := r.ToProviderDefs(); !reflect.DeepEqual(got, first) {
+		if got := r.ToolDefs(nil).Send; !reflect.DeepEqual(got, first) {
 			t.Fatalf("after %s the definitions changed:\n got %+v\nwant %+v", step.name, got, first)
 		}
 	}
@@ -103,7 +100,7 @@ func TestToProviderDefs_DiscoveryOn_FullStableFlaggedList(t *testing.T) {
 // With discovery off every tool is core and there are no discovery tools: the
 // list carries no Deferred or ToolSearch flag and is exactly the plain
 // definitions.
-func TestToProviderDefs_DiscoveryOff_NoFlags(t *testing.T) {
+func TestToolDefs_DiscoveryOff_NoFlags(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("time_now", "Current time"))
 	r.Register(&mockExternalTool{
@@ -124,7 +121,7 @@ func TestToProviderDefs_DiscoveryOff_NoFlags(t *testing.T) {
 		}},
 	}
 	for range 3 {
-		if got := r.ToProviderDefs(); !reflect.DeepEqual(got, want) {
+		if got := r.ToolDefs(nil).Send; !reflect.DeepEqual(got, want) {
 			t.Fatalf("defs =\n %+v\nwant\n %+v", got, want)
 		}
 	}
@@ -153,9 +150,9 @@ func TestSearchTool_ReferencesHits(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("core_match", "core match tool"))
 	for i := range 10 {
-		r.RegisterHidden(newMockTool(fmt.Sprintf("hidden_match_%d", i), "this has a match\nsecond line"))
+		registerHidden(r, newMockTool(fmt.Sprintf("hidden_match_%d", i), "this has a match\nsecond line"))
 	}
-	search := NewSearchTool(r, 4)
+	search, _ := discoveryTools(r, 4)
 	ctx := context.Background()
 
 	for _, args := range []map[string]any{
@@ -198,7 +195,7 @@ func TestSearchTool_ReferencesHits(t *testing.T) {
 func TestDiscovery_ReferencesUsePublishedNames(t *testing.T) {
 	r, search, details := discoveryOnRegistry()
 	ctx := context.Background()
-	offered := defNames(r.ToProviderDefs())
+	offered := defNames(r.ToolDefs(nil).Send)
 
 	res := search.Execute(ctx, map[string]any{"query": "weather forecast city"})
 	if !slices.Contains(res.ToolReferences, "x_weather") {

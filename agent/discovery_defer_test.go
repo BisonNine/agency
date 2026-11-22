@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
@@ -89,9 +91,8 @@ func TestDiscovery_TurnSendsSameToolsAndRunsFoundTool(t *testing.T) {
 		t.Fatal("no default agent")
 	}
 	notebook := &notebookTool{}
-	agent.Tools.RegisterSuiteHidden(notebook)
-	agent.Tools.RegisterSuite(tools.NewSearchTool(agent.Tools, 5))
-	agent.Tools.RegisterSuite(tools.NewToolDetailsTool(agent.Tools))
+	registerHiddenSuite(agent, notebook)
+	agent.Tools.RegisterDiscoveryTools(5, nil)
 
 	provider := &defsRecordingProvider{responses: []*providers.LLMResponse{
 		toolCallResponse("tc-search", "search_tools", `{"query":"Alice notebook page"}`),
@@ -258,18 +259,17 @@ func TestAssembleRequest_EstimatesOnlySentTools(t *testing.T) {
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	agent.Tools.RegisterSuite(tools.NewSearchTool(agent.Tools, 5))
-	agent.Tools.RegisterSuite(tools.NewToolDetailsTool(agent.Tools))
-	coreDefs := agent.Tools.ToProviderDefs()
+	agent.Tools.RegisterDiscoveryTools(5, nil)
+	coreDefs := agent.Tools.ToolDefs(nil).Send
 
 	for i := range 200 {
-		agent.Tools.RegisterHidden(bulkyTool{name: fmt.Sprintf("mcp_bob_tool_%03d", i)})
+		agent.Tools.RegisterEntries(tools.ToolEntry{Entry: discovery.HideEntries([]toolkit.Entry{{Tool: bulkyTool{name: fmt.Sprintf("mcp_bob_tool_%03d", i)}}})[0]})
 	}
 	// search_tools' description lists the hidden namespaces, so the core
 	// cost is taken again with the hidden tools registered.
 	var coreNow []providers.ToolDefinition
 	var referenced providers.ToolDefinition
-	for _, d := range agent.Tools.ToProviderDefs() {
+	for _, d := range agent.Tools.ToolDefs(nil).Send {
 		if !d.Deferred {
 			coreNow = append(coreNow, d)
 		}
@@ -318,11 +318,19 @@ func TestAssembleRequest_EstimatesOnlySentTools(t *testing.T) {
 	if got := al.assembleRequest(ctx, agent, nil, opts).ToolDefinitionTokens; got != wantOne {
 		t.Errorf("one stored reference: tool tokens = %d, want %d (core plus that tool)", got, wantOne)
 	}
-	defs := agent.Tools.ToProviderDefs()
+	defs := agent.Tools.ToolDefs(nil).Send
 	if got := al.assembleRequestWithDefs(ctx, agent, nil, opts, defs, history).ToolDefinitionTokens; got != wantOne {
 		t.Errorf("in-turn messages with one reference: tool tokens = %d, want %d", got, wantOne)
 	}
 	if got := al.assembleRequestWithDefs(ctx, agent, nil, opts, defs, history[:1]).ToolDefinitionTokens; got != coreTokens {
 		t.Errorf("in-turn messages without references: tool tokens = %d, want %d", got, coreTokens)
+	}
+}
+
+// registerHiddenSuite registers t on agent as a discovery-hidden suite tool,
+// as registerProviderTools does for fusion and maestro.
+func registerHiddenSuite(agent *AgentInstance, t tools.Tool) {
+	for _, e := range discovery.HideEntries([]toolkit.Entry{{Tool: t}}) {
+		agent.Tools.RegisterEntries(tools.ToolEntry{Entry: e, SuiteExempt: true})
 	}
 }

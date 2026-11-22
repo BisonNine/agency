@@ -64,8 +64,9 @@ func TestDiscovery_MCPToolListsUnchanged(t *testing.T) {
 				{Role: "tool", ToolCallID: "tc-1", ToolReferences: []string{"bob_post", "alpha_read"}},
 				{Role: "tool", ToolCallID: "tc-2", ToolReferences: []string{"alpha_read", "mcp_alpha_scan"}},
 			}
-			var inContext []string
-			for _, d := range inContextToolList(agent, sent, history) {
+			inDefs := inContextToolList(agent, sent, history)
+			inContext := make([]string, 0, len(inDefs))
+			for _, d := range inDefs {
 				inContext = append(inContext, d.Function.Name)
 			}
 			got, err := json.MarshalIndent(map[string]any{"sent": sent, "deferred": deferredNames(sent), "in_context": inContext}, "", "  ")
@@ -75,8 +76,8 @@ func TestDiscovery_MCPToolListsUnchanged(t *testing.T) {
 			got = append(got, '\n')
 			path := filepath.Join("testdata", "discovery_mcp_"+v.name+".json")
 			if os.Getenv("UPDATE_TOOLLIST") == "1" {
-				if err := os.WriteFile(path, got, 0o644); err != nil {
-					t.Fatal(err)
+				if werr := os.WriteFile(path, got, 0o644); werr != nil {
+					t.Fatal(werr)
 				}
 				return
 			}
@@ -108,10 +109,10 @@ func deferredNames(defs []providers.ToolDefinition) []string {
 
 // sentToolList is the list a turn hands the provider.
 func sentToolList(agent *AgentInstance) []providers.ToolDefinition {
-	return agent.Tools.ToProviderDefs()
+	return agent.Tools.ToolDefs(nil).Send
 }
 
 // inContextToolList is what the tool-schema estimate counts for history.
-func inContextToolList(_ *AgentInstance, sent []providers.ToolDefinition, history []providers.Message) []providers.ToolDefinition {
-	return sentToolDefs(sent, history)
+func inContextToolList(agent *AgentInstance, sent []providers.ToolDefinition, history []providers.Message) []providers.ToolDefinition {
+	return sentToolDefs(agent, sent, history)
 }

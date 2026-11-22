@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/server"
+	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/mcpserver/acl"
 	"go.bison9.com/agency/tools"
@@ -15,11 +17,17 @@ import (
 
 // regWithHiddenSuiteTool returns a registry holding one suite tool registered
 // hidden behind discovery — exactly how the maestro/fusion suites register when
-// progressive discovery is enabled (RegisterSuiteHidden ⇒ IsCore=false).
+// progressive discovery is enabled (a suite-exempt entry from discovery.HideEntries).
 func regWithHiddenSuiteTool(tool tools.Tool) *tools.ToolRegistry {
 	r := tools.NewToolRegistry()
-	r.RegisterSuiteHidden(tool)
+	r.RegisterEntries(hiddenSuiteEntry(tool))
 	return r
+}
+
+// hiddenSuiteEntry is tool registered as a suite tool hidden by discovery.
+func hiddenSuiteEntry(tool tools.Tool) tools.ToolEntry {
+	e := discovery.HideEntries([]toolkit.Entry{{Tool: tool}})
+	return tools.ToolEntry{Entry: e[0], SuiteExempt: true}
 }
 
 // TestHost_ListsAndDispatchesHiddenSuiteTool is the regression for the Alice

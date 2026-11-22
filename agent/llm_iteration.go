@@ -311,7 +311,7 @@ func (t *llmTurn) toolDefinitions() []providers.ToolDefinition {
 	if t.limits.noTools {
 		return nil
 	}
-	return t.agent.Tools.ToProviderDefs()
+	return t.agent.Tools.ToolDefs(nil).Send
 }
 
 // assemble prepares the context for this dispatch: the LLM-free eviction

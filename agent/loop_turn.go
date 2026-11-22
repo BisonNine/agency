@@ -15,6 +15,7 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/bus"
@@ -692,7 +693,7 @@ func (al *AgentLoop) evictionNotifyUser(agent *AgentInstance) bool {
 // this turn, and the channel the compaction reporter should answer on. mem
 // may be nil.
 func (al *AgentLoop) assembleRequest(ctx context.Context, agent *AgentInstance, mem *cogmem.Session, opts processOptions) ctxengine.AssembleRequest {
-	defs := agent.Tools.ToProviderDefs()
+	defs := agent.Tools.ToolDefs(nil).Send
 	if al.turnLimits(agent, opts).noTools {
 		defs = nil
 	}
@@ -709,7 +710,7 @@ func (al *AgentLoop) assembleRequest(ctx context.Context, agent *AgentInstance, 
 // this dispatch's tool definitions and the messages it will send (history).
 func (al *AgentLoop) assembleRequestWithDefs(ctx context.Context, agent *AgentInstance, mem *cogmem.Session, opts processOptions, defs []providers.ToolDefinition, history []providers.Message) ctxengine.AssembleRequest {
 	return ctxengine.AssembleRequest{
-		ToolDefinitionTokens: ctxengine.EstimateToolDefinitionTokens(sentToolDefs(defs, history)),
+		ToolDefinitionTokens: ctxengine.EstimateToolDefinitionTokens(sentToolDefs(agent, defs, history)),
 		Layers:               al.promptLayers(agent, opts),
 		Injections:           recallInjections(ctx, mem, opts.UserMessage),
 		Channel:              opts.Channel,
@@ -717,14 +718,31 @@ func (al *AgentLoop) assembleRequestWithDefs(ctx context.Context, agent *AgentIn
 	}
 }
 
-// sentToolDefs is the part of defs a request with history actually carries,
-// and so what its tool schemas cost: the tools that are not deferred, plus
-// the deferred ones a message in history references. An unreferenced
-// deferred tool is not sent at all (a provider without native deferred tools
-// leaves it out; a native one loads only referenced ones). This is the
-// selection spawnllm makes on the non-native path.
-func sentToolDefs(defs []providers.ToolDefinition, history []providers.Message) []providers.ToolDefinition {
-	return common.RequestTools(defs, history)
+// sentToolDefs is the part of the agent's tool list a request with history
+// actually carries, and so what its tool schemas cost: the tools that are not
+// deferred, plus the deferred ones a message in history references
+// (discovery's InContext). An unreferenced deferred tool is not sent at all (a
+// provider without native deferred tools leaves it out; a native one loads
+// only referenced ones). defs is the dispatch's list: none means no tools are
+// offered, so none cost anything.
+func sentToolDefs(agent *AgentInstance, defs []providers.ToolDefinition, history []providers.Message) []providers.ToolDefinition {
+	if len(defs) == 0 {
+		return nil
+	}
+	return agent.Tools.ToolDefs(revealedIn(history)).InContext
+}
+
+// revealedIn is what history's tool results have revealed. The host keeps no
+// revealed-tools state of its own: it is rebuilt from the messages a request
+// carries, so it follows a restart and a compaction that drops messages.
+func revealedIn(history []providers.Message) *discovery.Session {
+	refs := make([][]string, 0, len(history))
+	for _, m := range history {
+		if len(m.ToolReferences) > 0 {
+			refs = append(refs, m.ToolReferences)
+		}
+	}
+	return discovery.NewSession(refs...)
 }
 
 // hasDeferredTool reports whether any definition is deferred.

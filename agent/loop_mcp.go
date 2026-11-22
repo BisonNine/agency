@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/mcp"
 	"go.bison9.com/agency/tools"
@@ -339,6 +342,7 @@ func mcpServerToolEntries(agent *AgentInstance, mgr *mcp.Manager, serverName str
 		return nil
 	}
 	var entries []tools.ToolEntry
+	var hidden []toolkit.Entry
 	for _, tool := range conn.Tools {
 		// Gate on the dedicated per-agent MCP allow-list (mcp_tools), which
 		// matches <server>_<tool> by equality-or-prefix. This is separate
@@ -357,11 +361,11 @@ func mcpServerToolEntries(agent *AgentInstance, mgr *mcp.Manager, serverName str
 		// Hidden ones are grouped by server so a reveal-together server
 		// loads as a set.
 		if discoveryHidesTool(agent.DiscoveryActive, agent.AlwaysShownNamespaces, mcpTool.Name()) {
-			entries = append(entries, tools.ToolEntry{
+			hidden = append(hidden, toolkit.Entry{
 				Tool: mcpTool, Group: serverName, RevealTogether: conn.RevealTogether(),
 			})
 		} else {
-			entries = append(entries, tools.ToolEntry{Tool: mcpTool, IsCore: true})
+			entries = append(entries, tools.ToolEntry{Tool: mcpTool})
 		}
 
 		logger.DebugCF("agent", "Registered MCP tool",
@@ -371,6 +375,9 @@ func mcpServerToolEntries(agent *AgentInstance, mgr *mcp.Manager, serverName str
 				"tool":     tool.Name,
 				"name":     mcpTool.Name(),
 			})
+	}
+	for _, e := range discovery.HideEntries(hidden) {
+		entries = append(entries, tools.ToolEntry{Entry: e})
 	}
 	return entries
 }

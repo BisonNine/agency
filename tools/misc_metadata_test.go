@@ -40,31 +40,20 @@ func TestMessageTool_HasSentInRound_Initial(t *testing.T) {
 	}
 }
 
-func TestSearchTool_Metadata(t *testing.T) {
+func TestDiscoveryTools_Metadata(t *testing.T) {
 	registry := tools.NewToolRegistry()
-	tool := tools.NewSearchTool(registry, 10)
-	if tool.Name() != "search_tools" {
-		t.Errorf("Name() = %q, want search_tools", tool.Name())
-	}
-	if tool.Description() == "" {
-		t.Error("Description() should not be empty")
-	}
-	if tool.Parameters() == nil {
-		t.Error("Parameters() should not be nil")
-	}
-}
-
-func TestToolDetailsTool_Metadata(t *testing.T) {
-	registry := tools.NewToolRegistry()
-	tool := tools.NewToolDetailsTool(registry)
-	if tool.Name() != "get_tool_details" {
-		t.Errorf("Name() = %q, want get_tool_details", tool.Name())
-	}
-	if tool.Description() == "" {
-		t.Error("Description() should not be empty")
-	}
-	if tool.Parameters() == nil {
-		t.Error("Parameters() should not be nil")
+	registry.RegisterDiscoveryTools(10, nil)
+	for _, name := range []string{"search_tools", "get_tool_details"} {
+		tool, ok := registry.Get(name)
+		if !ok {
+			t.Fatalf("%s not registered", name)
+		}
+		if tool.Description() == "" {
+			t.Errorf("%s: Description() should not be empty", name)
+		}
+		if tool.Parameters() == nil {
+			t.Errorf("%s: Parameters() should not be nil", name)
+		}
 	}
 }
 

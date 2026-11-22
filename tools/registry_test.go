@@ -115,7 +115,7 @@ func TestExternalName_AdvertisedBareAndDispatched(t *testing.T) {
 	r.Register(tool)
 
 	// Advertised under the bare name.
-	defs := r.ToProviderDefs()
+	defs := r.ToolDefs(nil).Send
 	var advertised string
 	for _, d := range defs {
 		if d.Function.Description == "navigate" {
@@ -286,7 +286,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	}
 }
 
-func TestToolRegistry_ToProviderDefs(t *testing.T) {
+func TestToolRegistry_ToolDefs(t *testing.T) {
 	r := NewToolRegistry()
 	params := map[string]any{"type": "object", "properties": map[string]any{}}
 	r.Register(&mockRegistryTool{
@@ -296,7 +296,7 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
 		result: SilentResult("ok"),
 	})
 
-	defs := r.ToProviderDefs()
+	defs := r.ToolDefs(nil).Send
 	if len(defs) != 1 {
 		t.Fatalf("expected 1 provider def, got %d", len(defs))
 	}

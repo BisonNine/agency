@@ -8,11 +8,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/spawnllm/common"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
@@ -21,16 +23,14 @@ import (
 
 // spawnllmRegistry is a discovery-on registry with core tools, the two
 // discovery tools and three hidden upstream tools.
-func spawnllmRegistry() (*ToolRegistry, *SearchTool) {
+func spawnllmRegistry() (*ToolRegistry, metaTool) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("file_read", "Read a file"))
 	r.Register(newMockTool("time_now", "Current time"))
-	search := NewSearchTool(r, 5)
-	r.RegisterSuite(search)
-	r.RegisterSuite(NewToolDetailsTool(r))
-	r.RegisterHidden(newMockTool("mcp_x_read", "Read a record from X"))
-	r.RegisterHidden(newMockTool("mcp_x_write", "Write a record to X"))
-	r.RegisterHidden(newMockTool("mcp_bob_fetch", "Fetch a page for Bob"))
+	search, _ := discoveryTools(r, 5)
+	registerHidden(r, newMockTool("mcp_x_read", "Read a record from X"))
+	registerHidden(r, newMockTool("mcp_x_write", "Write a record to X"))
+	registerHidden(r, newMockTool("mcp_bob_fetch", "Fetch a page for Bob"))
 	return r, search
 }
 
@@ -50,7 +50,7 @@ func history(refs []string) []providers.Message {
 
 // searchReferences runs search_tools for exactly mcp_x_read and returns the
 // references it produced.
-func searchReferences(t *testing.T, search *SearchTool) []string {
+func searchReferences(t *testing.T, search metaTool) []string {
 	t.Helper()
 	res := search.Execute(context.Background(), map[string]any{"query": "^mcp_x_read$", "regex": true})
 	if res.IsError {
@@ -67,7 +67,7 @@ func searchReferences(t *testing.T, search *SearchTool) []string {
 // tool, with no other hidden tool; without references, only the core tools.
 func TestSpawnllmRequestTools_ClawEhDefinitions(t *testing.T) {
 	r, search := spawnllmRegistry()
-	defs := r.ToProviderDefs()
+	defs := r.ToolDefs(nil).Send
 	refs := searchReferences(t, search)
 
 	tests := []struct {
@@ -125,7 +125,7 @@ func TestSpawnllmOpenAICompat_ClawEhDefinitions(t *testing.T) {
 	defer server.Close()
 
 	r, search := spawnllmRegistry()
-	defs := r.ToProviderDefs()
+	defs := r.ToolDefs(nil).Send
 	refs := searchReferences(t, search)
 	p := openai_compat.NewProvider("test-key", server.URL, "")
 
@@ -172,6 +172,31 @@ func TestSpawnllmOpenAICompat_ClawEhDefinitions(t *testing.T) {
 			}
 			if strings.Contains(toolText, "mcp_bob_fetch") {
 				t.Errorf("unreferenced hidden tool named in %q", toolText)
+			}
+		})
+	}
+}
+
+// What the tool schemas are estimated to cost (InContext, for a session of
+// the history's references) is exactly what spawnllm sends a provider without
+// native deferred tools for that history: the listed tools, then each
+// referenced hidden tool in order of first reference.
+func TestToolDefsInContext_MatchesSpawnllmRequestTools(t *testing.T) {
+	r, search := spawnllmRegistry()
+	refs := searchReferences(t, search)
+	for name, msgs := range map[string][]providers.Message{
+		"referenced":     history(refs),
+		"no references":  history(nil),
+		"two references": append(history([]string{"mcp_bob_fetch", "mcp_x_read"}), history([]string{"mcp_x_write", "mcp_bob_fetch"})...),
+	} {
+		t.Run(name, func(t *testing.T) {
+			var seen [][]string
+			for _, m := range msgs {
+				seen = append(seen, m.ToolReferences)
+			}
+			defs := r.ToolDefs(discovery.NewSession(seen...))
+			if want := common.RequestTools(defs.Send, msgs); !reflect.DeepEqual(defs.InContext, want) {
+				t.Errorf("InContext = %v, want spawnllm's %v", defNames(defs.InContext), defNames(want))
 			}
 		})
 	}
