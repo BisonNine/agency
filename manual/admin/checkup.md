@@ -77,10 +77,10 @@ The PDF has these sections, in order:
 | Providers and models | API and CLI providers, enabled models, and which model does what. |
 | Credentials and tokens | Each credential as set or not set. |
 | Channels | Enabled channels, who may message them, and which agents answer. |
-| Agents | Per agent: its settings (models, memory, sub-agents, suites, **Forum**, **Character card** with a missing or ignored card marked, **Character card tools**, **Allow classifiers**, **Classifier model** with an unusable model marked), tools (with `forum_launch` listed when **Allow forum** is on), folder access, MCP access, and its [classifiers](../agents/classifiers.md#check-up) with invalid ones marked. |
+| Agents | Per agent: its settings (models, memory, sub-agents, suites, **Forum**, **Character card** with a missing or ignored card marked, **Character card tools**, **Allow classifiers**, **Classifier model** with an unusable model marked, **Shell jobs (shell_ctrl)** with the job limits), tools (with `forum_launch` listed when **Allow forum** is on and `shell_ctrl` "with shell_exec"), folder access, MCP access, and its [classifiers](../agents/classifiers.md#check-up) with invalid ones marked. |
 | External services | MCP servers and skills. |
 | Devices | Paired devices and pending pairings. |
-| Data | Where the config, logs, conversations, memory, character cards, classifiers and other data are stored. |
+| Data | Where the config, logs, conversations, memory, character cards, classifiers, shell job logs and other data are stored. |
 | Scheduled activity | Scheduled jobs, task orchestration, and background tasks. |
 
 A part that cannot be read shows as "unavailable" with the reason; the rest of the report is still produced.

@@ -669,6 +669,7 @@ PY
       "session_summary_get",
       "session_clear",
       "shell_exec",
+      "shell_ctrl",
       "skill_find",
       "skill_install",
       "cron_schedule",

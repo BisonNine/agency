@@ -5164,6 +5164,93 @@
         "type": "object"
       },
       "tool_search": true
+    },
+    {
+      "type": "function",
+      "name": "shell_ctrl",
+      "description": "Manage jobs started by shell_exec. list: your jobs. wait: block until the job ends, a new output line matches until, or seconds pass; returns the new output. input: write text to the job's standard input. stop: end the job, or all your jobs with all. A job's full output is a log file: read it with the file tools.",
+      "parameters": {
+        "properties": {
+          "action": {
+            "description": "What to do",
+            "enum": [
+              "list",
+              "wait",
+              "input",
+              "stop"
+            ],
+            "type": "string"
+          },
+          "all": {
+            "description": "stop: stop all your running jobs",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Job id (wait, input, stop)",
+            "type": "string"
+          },
+          "raw": {
+            "description": "input: send text exactly as given",
+            "type": "boolean"
+          },
+          "seconds": {
+            "default": 30,
+            "description": "wait: most seconds to block (default 30)",
+            "maximum": 600,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "text": {
+            "description": "input: text for the job's standard input; a newline is added unless raw",
+            "type": "string"
+          },
+          "until": {
+            "description": "wait: return when a new output line matches this regular expression",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "shell_exec",
+      "description": "Run a command-line program: git, builds and tests, and Unix tools such as grep, sed, awk and jq for pipelines. Long output is cut to its head and tail and the full log file is named. A command still running at its timeout is kept as a job; background starts one and returns at once. Manage jobs with shell_ctrl. To find, read or edit files, the file tools are usually better: their output is numbered and limited in size.",
+      "parameters": {
+        "properties": {
+          "background": {
+            "description": "Start as a job and return at once",
+            "type": "boolean"
+          },
+          "command": {
+            "description": "The shell command to run",
+            "type": "string"
+          },
+          "notify": {
+            "default": true,
+            "description": "For a job: tell you when it ends",
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "default": 60,
+            "description": "How long to wait for the command before returning (default 60, at most 600)",
+            "maximum": 600,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "working_dir": {
+            "description": "Directory to run in; relative paths start at your workspace. Default: where your previous command ended, else your workspace",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      }
     }
   ]
 }

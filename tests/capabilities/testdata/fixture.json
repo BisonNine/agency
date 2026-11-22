@@ -28,7 +28,7 @@
        "classifiers": {"enabled": true, "model": "Claude CLI Opus"},
        "mcp_tools": ["simpledoc"]},
       {"id": "carol", "name": "Carol",
-       "tools": ["file_read_lines"],
+       "tools": ["file_read_lines", "shell_exec"],
        "mcp_tools": ["wxca"]}
     ]
   },

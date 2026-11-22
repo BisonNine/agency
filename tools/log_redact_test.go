@@ -377,3 +377,17 @@ func TestRegistry_ExecuteWithContext_NoTruncateKeepsErrorForLLM(t *testing.T) {
 		t.Errorf("error field is %d runes, want the full %d", len([]rune(errField)), len(long))
 	}
 }
+
+// Input sent to a shell job is logged and audited by its length only.
+func TestRedactArgs_ShellCtrlInput(t *testing.T) {
+	got, ok := RedactArgs("shell_ctrl", map[string]any{"action": "input", "id": "j0123abcd", "text": "secret words"}).(map[string]any)
+	if !ok {
+		t.Fatalf("RedactArgs returned %T", got)
+	}
+	if got["text_bytes"] != len("secret words") || got["action"] != "input" || got["id"] != "j0123abcd" {
+		t.Errorf("RedactArgs = %v", got)
+	}
+	if _, has := got["text"]; has {
+		t.Errorf("the input text is kept: %v", got)
+	}
+}

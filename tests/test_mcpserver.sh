@@ -67,7 +67,7 @@ BEARER_URL="${SERVER_URL}${BEARER_ENDPOINT}"
 # model required). agent_spawn/agent_status/agent_list/agent_message (subagent capability) are
 # also exposed but only probed when actually present in the catalogue, so this
 # script stays portable.
-EXPECTED_TOOLS="file_read_bytes file_read_lines file_count file_view_image file_write file_edit file_edit_lines file_edit_bytes file_insert_lines file_insert_bytes file_delete_lines file_delete_bytes file_append file_list file_glob file_search_lines file_search_bytes file_copy file_delete file_move file_mkdir file_rmdir web_fetch web_search msg_send msg_send_file session_messages session_search session_compact session_info session_summary_list session_summary_get session_clear shell_exec skill_find skill_install cron_schedule cogmem_domain_get cogmem_memory_search cogmem_domain_list cogmem_explain cogmem_memory_create cogmem_memory_attach cogmem_domain_update cogmem_memory_retire cogmem_domain_create cogmem_domain_archive cogmem_domain_migrate cogmem_memory_forget cogmem_consolidate cogmem_status cogmem_export common_list common_get common_put common_delete time_now"
+EXPECTED_TOOLS="file_read_bytes file_read_lines file_count file_view_image file_write file_edit file_edit_lines file_edit_bytes file_insert_lines file_insert_bytes file_delete_lines file_delete_bytes file_append file_list file_glob file_search_lines file_search_bytes file_copy file_delete file_move file_mkdir file_rmdir web_fetch web_search msg_send msg_send_file session_messages session_search session_compact session_info session_summary_list session_summary_get session_clear shell_exec shell_ctrl skill_find skill_install cron_schedule cogmem_domain_get cogmem_memory_search cogmem_domain_list cogmem_explain cogmem_memory_create cogmem_memory_attach cogmem_domain_update cogmem_memory_retire cogmem_domain_create cogmem_domain_archive cogmem_domain_migrate cogmem_memory_forget cogmem_consolidate cogmem_status cogmem_export common_list common_get common_put common_delete time_now"
 EXPECTED_TOOL_COUNT=38
 
 # Namespace prefixes that must have at least one tool in the catalogue.
@@ -711,6 +711,31 @@ else
     else
         echo "    ${RED}FAIL${NC}: NOSHELL_SERVICE_TOKEN is not set (the service token of Bob, whose tools leave out shell_exec)"
         tier2_fail
+    fi
+
+    # Background jobs: shell_exec with background returns a job at once, and
+    # shell_ctrl (which comes with shell_exec) lists it, waits on a line of
+    # its output, and stops it.
+    echo "  4b.1d shell_exec with background starts a job"
+    bg=$(probe_call_auth shell_exec '{"command":"for i in 1 2 3 4 5 6 7 8 9 10; do echo mcp-job-line-$i; sleep 1; done","background":true,"notify":false}')
+    JOB_ID=$(printf '%s' "$bg" | grep -o 'job j[0-9a-f]\{8\}' | head -1 | cut -d' ' -f2)
+    if echo "$bg" | grep -q "Tool call succeeded" && [ -n "$JOB_ID" ] && echo "$bg" | grep -qF "state/shell/${JOB_ID}.log"; then
+        echo "    ${GREEN}PASS${NC}: job $JOB_ID started, its log named"
+        tier2_pass
+    else
+        echo "    ${RED}FAIL${NC}: no background job"
+        echo "$bg" | head -5 | sed 's/^/      /'
+        tier2_fail
+    fi
+    if [ -n "$JOB_ID" ]; then
+        run_test_ok_auth "4b.1e shell_ctrl list shows the job" \
+            "shell_ctrl" '{"action":"list"}' "$JOB_ID running"
+        run_test_ok_auth "4b.1f shell_ctrl wait returns at the matching line" \
+            "shell_ctrl" "$(printf '{"action":"wait","id":"%s","until":"mcp-job-line-2","seconds":20}' "$JOB_ID")" "printed a line matching until: mcp-job-line-2"
+        run_test_ok_auth "4b.1g shell_ctrl stop ends the job" \
+            "shell_ctrl" "$(printf '{"action":"stop","id":"%s"}' "$JOB_ID")" "Stopped job $JOB_ID"
+        run_test_ok_auth "4b.1h shell_ctrl list shows it stopped" \
+            "shell_ctrl" '{"action":"list"}' "$JOB_ID stopped"
     fi
 
     # "*" does not include shell_exec: alice's tools are "*" without naming it.

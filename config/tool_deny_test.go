@@ -241,6 +241,47 @@ func TestAgentConfig_IsToolAllowed_ShellExplicitOnly(t *testing.T) {
 	}
 }
 
+// shell_ctrl comes with shell_exec and only with it: naming it, a wildcard or
+// a prefix never grants it, and deny_tools removes it (alone, or with
+// shell_exec).
+func TestAgentConfig_IsToolAllowed_ShellCtrlImplied(t *testing.T) {
+	tests := []struct {
+		name      string
+		tools     []string
+		deny      []string
+		wantAllow bool
+	}{
+		{"with shell_exec", []string{"shell_exec"}, nil, true},
+		{"with shell_exec, different case", []string{"SHELL_EXEC"}, nil, true},
+		{"named alone", []string{"shell_ctrl"}, nil, false},
+		{"wildcard", []string{"*"}, nil, false},
+		{"prefix shell_*", []string{"shell_*"}, nil, false},
+		{"no tools", nil, nil, false},
+		{"denied by name", []string{"shell_exec"}, []string{"shell_ctrl"}, false},
+		{"denied by prefix", []string{"shell_exec"}, []string{"shell_*"}, false},
+		{"shell_exec denied", []string{"shell_exec", "shell_ctrl"}, []string{"shell_exec"}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &AgentConfig{Tools: tc.tools, DenyTools: tc.deny}
+			if got := a.IsToolAllowed(ShellCtrlTool); got != tc.wantAllow {
+				t.Errorf("IsToolAllowed(shell_ctrl) with tools=%v deny=%v = %v, want %v", tc.tools, tc.deny, got, tc.wantAllow)
+			}
+		})
+	}
+	// Denying shell_ctrl leaves shell_exec.
+	a := &AgentConfig{Tools: []string{"shell_exec"}, DenyTools: []string{"shell_ctrl"}}
+	if !a.IsToolAllowed(ShellExecTool) {
+		t.Error("denying shell_ctrl removed shell_exec")
+	}
+	if g, ok := GrantingTool("Shell_Ctrl"); !ok || g != ShellExecTool {
+		t.Errorf("GrantingTool(shell_ctrl) = %q, %v", g, ok)
+	}
+	if _, ok := GrantingTool(ShellExecTool); ok {
+		t.Error("shell_exec reported as granted by implication")
+	}
+}
+
 // A config that still sets the removed tools.tool_overrides loads, the key is
 // reported as unknown, and it changes nobody's tools: each agent's own tools
 // list alone decides.

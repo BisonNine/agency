@@ -63,6 +63,8 @@ func collectData(_ context.Context, cfg *config.Config, env Environment) Section
 		row("Character cards", cfg.CardsPath(), cardCount(cfg)),
 		row("Classifiers", "<workspace>/"+classifierfs.BaseDirName, "definitions and run state per agent; processed items remembered "+
 			days(cfg.Classifiers.Effective().ProcessedDays, "")),
+		row("Shell job logs", "<workspace>/"+config.ShellJobsDir, "output of each shell job; kept "+
+			days(cfg.Tools.Exec.Effective().JobLogDays, "")+" after the job ends; not in backups"),
 		row("Cron store", filepath.Join(cfg.CronPath(), "jobs.json"), ""),
 		row("Internal state", cfg.InternalPath(), app.ShortName()+"'s own state: service tokens, integration tokens, device pairing database, audit log"),
 		row("Fusion", cfg.FusionPath(), "REST-API tool definitions; OAuth tokens in "+cfg.FusionTokensPath()),

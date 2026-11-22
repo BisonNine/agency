@@ -12,6 +12,7 @@ The audit log records every tool an agent runs, every configuration save, every 
 | **Restart** | ClawEh is restarted from the WebUI. | The WebUI username and client address. |
 | **Classifier change** | A [classifier](../agents/classifiers.md) is created, changed or deleted through the classifier tools. | The agent. |
 | **Classification** | A classifier handles an item: its category, the action and its outcome. | The agent that owns the classifier. |
+| **Shell start**, **Shell input**, **Shell stop** (`shell_ctrl_start`, `shell_ctrl_input`, `shell_ctrl_stop`) | An agent starts a [shell command or job](../agents/shell.md), sends a job input (its length, never its content), or stops one. | The agent, marked as a clone when one did it. |
 | **Card import**, **Card delete** | A [character card](../agents/character-cards.md) is imported, replaced or deleted on the Cards page. Edits an agent makes with the `ccv3` tool are tool calls. | The WebUI username and client address. |
 
 What is kept, and what is not:

@@ -123,6 +123,16 @@ func render(t *testing.T, cfg *config.Config) string {
 				native = append(native, name)
 			}
 		}
+		// Tools granted only with another (shell_ctrl with shell_exec) are
+		// not in the catalogue's list.
+		for _, implied := range config.ImpliedTools {
+			for _, name := range implied {
+				if a.IsToolAllowed(name) {
+					native = append(native, name)
+				}
+			}
+		}
+		sort.Strings(native)
 		w("  native tools: %s\n", list(native))
 
 		defs := fusion.GlobalProvider.RegisterTools(global.Deps{Cfg: cfg, AgentID: a.ID})

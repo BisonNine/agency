@@ -4,6 +4,7 @@ package tools_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"go.bison9.com/agency/config"
@@ -72,20 +73,23 @@ func TestSendFileTool_Metadata(t *testing.T) {
 	}
 }
 
-func TestExecTool_Metadata(t *testing.T) {
+func TestShellTools_Metadata(t *testing.T) {
 	cfg := config.DefaultConfig()
-	tool, err := toolsshell.NewExecToolWithConfig(t.TempDir(), cfg)
-	if err != nil {
-		t.Fatalf("NewExecToolWithConfig() error = %v", err)
+	agent := &config.AgentConfig{ID: "alice", Tools: []string{"shell_exec"}}
+	built := tools.NamespacedProvider("shell", toolsshell.GlobalProvider).Build(tools.ToolDeps{
+		Cfg: cfg, AgentCfg: agent, AgentID: "alice", Workspace: t.TempDir(),
+	})
+	names := make([]string, 0, len(built))
+	for _, tool := range built {
+		names = append(names, tool.Name())
+		if tool.Description() == "" {
+			t.Errorf("%s: Description() should not be empty", tool.Name())
+		}
+		if tool.Parameters() == nil {
+			t.Errorf("%s: Parameters() should not be nil", tool.Name())
+		}
 	}
-	if tool.Name() != "shell_exec" {
-		t.Errorf("Name() = %q, want shell_exec", tool.Name())
-	}
-	if tool.Description() == "" {
-		t.Error("Description() should not be empty")
-	}
-	params := tool.Parameters()
-	if params == nil {
-		t.Error("Parameters() should not be nil")
+	if strings.Join(names, ",") != "shell_exec,shell_ctrl" {
+		t.Errorf("tools = %v, want shell_exec and shell_ctrl", names)
 	}
 }

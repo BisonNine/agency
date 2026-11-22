@@ -2,8 +2,73 @@
 
 ## [0.6.6]
 
+### Added
+
+- **Agents can run shell commands in the background with the new
+  `shell_ctrl` tool.** `shell_exec` can start a command as a job that keeps
+  running while the agent carries on, and `shell_ctrl` lists the agent's jobs
+  (`list`), waits for one to end or to print a line matching a pattern
+  (`wait`, with `seconds` and `until`), sends it input (`input`), and stops
+  one or all of them (`stop`). A job's whole output is written to
+  `state/shell/<job id>.log` in the agent's workspace, which the agent reads
+  and searches with the file tools (they may read that folder, never write
+  it). When a job ends the agent is told in its conversation, as for a
+  sub-agent running in the background, and its answer goes to the chat the
+  job was started from. A job belongs to the agent that started it (a
+  sub-agent clone acts as that agent), is stopped when the service stops, and
+  is never started again: one found running after a crash or restart is
+  marked lost and the agent is told once. Classifiers and watch jobs cannot
+  start jobs. Each start, input (its length only) and stop is in the audit
+  log (`shell_ctrl_start`, `shell_ctrl_input`, `shell_ctrl_stop`); job logs
+  are not in the backup; Check Up shows each agent's job limits and the log
+  folder. See the manual's "Shell commands and jobs" page.
+- **New `shell_exec` arguments:** `timeout_seconds` (how long to wait for the
+  command; default `tools.exec.timeout_seconds`, at most
+  `tools.exec.max_timeout_seconds`), `background` (start the command as a job
+  and return at once with its id and output file) and `notify` (for a job:
+  tell the agent when it ends; default true). A call without them works as
+  before, except as listed under Changed.
+- **Five settings under `tools.exec` bound the jobs:** `max_timeout_seconds`
+  (default 600: the most `timeout_seconds` a call may ask for),
+  `max_jobs` (default 8: running jobs per agent; a start beyond it is refused,
+  naming the running ones), `max_job_seconds` (default 86400: a job is
+  stopped after this long), `max_job_output_bytes` (default 10485760, 10 MiB:
+  past it the middle of the job's log is dropped and the job keeps running)
+  and `job_log_days` (default 7: a finished job's log and record are removed
+  after this). Leaving a key out or setting it to 0 uses the default. A
+  negative value, now also for `timeout_seconds`, is refused when the config
+  is loaded or saved; a `timeout_seconds` above `max_timeout_seconds` is used
+  as `max_timeout_seconds`. Changes to these timeouts and limits take effect
+  at the next start.
+
 ### Changed
 
+- **BREAKING: an agent granted `shell_exec` now also has `shell_ctrl`.** It
+  comes with `shell_exec` and is not a separate box on the Agents page or an
+  entry in the agent's `tools` list; Check Up lists it "with shell_exec". To
+  restore the previous access, add `shell_ctrl` to the agent's `deny_tools`:
+  the agent then has `shell_exec` alone and its commands behave as before,
+  including the timeout below. An MCP host whose `internal_tools` or
+  `external_tools` names its tools one by one publishes `shell_ctrl` only
+  when it is added there.
+- **BREAKING: a `shell_exec` command that reaches its timeout is kept running
+  as a background job instead of being killed.** The call returns at the
+  timeout with the output so far, the job's id and its output file; the agent
+  can wait on it or stop it with `shell_ctrl`, and is told when it ends.
+  `max_job_seconds` (24 hours) and `max_jobs` (8 per agent) are the backstop
+  against commands that never end. An agent without `shell_ctrl` keeps the
+  old behaviour: its command is stopped at the timeout ("Command timed out
+  after 1m0s and was stopped."). To restore the old behaviour for an agent,
+  add `shell_ctrl` to its `deny_tools`.
+- **Long `shell_exec` output is returned as its head and its tail**, with the
+  middle left out and the file holding all of it named, instead of the first
+  10,000 characters: the end of a build log, where the error usually is, is
+  no longer lost. Standard output and standard error now come in the order
+  they were written, instead of standard error after a `STDERR:` line.
+- **`shell_exec` starts where the agent's previous command ended.** Without
+  `working_dir`, a command runs in the folder the agent's previous command in
+  the same conversation ended in (after a `cd`), else in the workspace as
+  before.
 - **The product is now named Agency** in the WebUI,
   logs, alerts, reports and messages. Nothing on an install changes: the
   `claw` binary, the `claw` service, the `~/.claw` data directory, the

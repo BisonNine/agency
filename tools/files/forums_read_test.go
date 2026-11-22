@@ -9,7 +9,7 @@ import (
 )
 
 // TestEffectiveReadSubdirs_AddsAlwaysReadable checks that a configured read
-// scope always gains tasks/, tmp/ and forums/, without duplicates, and that an
+// scope always gains tasks/, tmp/, forums/, classifiers/ and state/shell/, without duplicates, and that an
 // empty scope (workspace-wide reads) is left empty.
 func TestEffectiveReadSubdirs_AddsAlwaysReadable(t *testing.T) {
 	tests := []struct {
@@ -17,8 +17,8 @@ func TestEffectiveReadSubdirs_AddsAlwaysReadable(t *testing.T) {
 		configured []string
 		want       []string
 	}{
-		{name: "default scope", configured: []string{"files", "skills"}, want: []string{"files", "skills", "tasks", "tmp", "forums", "classifiers"}},
-		{name: "already listed", configured: []string{"files", "forums"}, want: []string{"files", "forums", "tasks", "tmp", "classifiers"}},
+		{name: "default scope", configured: []string{"files", "skills"}, want: []string{"files", "skills", "tasks", "tmp", "forums", "classifiers", "state/shell"}},
+		{name: "already listed", configured: []string{"files", "forums"}, want: []string{"files", "forums", "tasks", "tmp", "classifiers", "state/shell"}},
 		{name: "workspace-wide", configured: nil, want: nil},
 	}
 	for _, tt := range tests {
@@ -79,5 +79,37 @@ func TestForumsFolder_ReadOnlyForOwnAgent(t *testing.T) {
 		if r := read.Execute(ctx, map[string]any{"path": p}); !r.IsError {
 			t.Errorf("another agent's forum must not be readable via %q", p)
 		}
+	}
+}
+
+// TestShellJobsFolder_ReadOnly: the agent's file tools may read and search
+// its shell job logs, by relative or absolute path, and may not write there;
+// the rest of state/ stays unreadable.
+func TestShellJobsFolder_ReadOnly(t *testing.T) {
+	alice := t.TempDir()
+	log := filepath.Join(alice, "state", "shell", "j0123abcd.log")
+	mustWrite(t, log, "line 1\nbuild ok\n")
+	mustWrite(t, filepath.Join(alice, "state", "other.json"), "{}")
+
+	SetReadScopeSubdirs(effectiveReadSubdirs([]string{"files", "skills"}))
+	defer SetReadScopeSubdirs(nil)
+
+	ctx := context.Background()
+	read := NewReadFileTool(alice, true, MaxReadFileSize)
+	write := NewWriteFileToolScoped(alice, true, "files")
+
+	for _, p := range []string{"state/shell/j0123abcd.log", log} {
+		if r := read.Execute(ctx, map[string]any{"path": p}); r.IsError {
+			t.Errorf("job log should be readable via %q: %s", p, r.ForLLM)
+		}
+	}
+	if r := read.Execute(ctx, map[string]any{"path": "state/other.json"}); !r.IsError {
+		t.Error("the rest of state/ must not be readable")
+	}
+	if r := write.Execute(ctx, map[string]any{"path": "state/shell/j0123abcd.log", "content": "tampered"}); !r.IsError {
+		t.Fatal("writing into state/shell/ should be refused")
+	}
+	if b, err := os.ReadFile(log); err != nil || string(b) != "line 1\nbuild ok\n" {
+		t.Fatalf("job log changed: %q err=%v", b, err)
 	}
 }

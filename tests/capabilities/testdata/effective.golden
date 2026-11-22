@@ -26,7 +26,7 @@ agent carol
   suites: cogmem=on maestro=off fusion=off forum=off ccv3=off classifiers=off
   character card: (none)
   task models: (none)
-  native tools: file_read_lines
+  native tools: file_read_lines, shell_ctrl, shell_exec
   fusion tools: (none)
   forum tools: (none)
   ccv3 tool: (none)

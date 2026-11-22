@@ -54,6 +54,7 @@ export default defineConfig({
         items: [
           { text: "Creating and editing agents", link: "/agents/creating" },
           { text: "Tools and skills", link: "/agents/tools-and-skills" },
+          { text: "Shell commands and jobs", link: "/agents/shell" },
           { text: "Web search and fetch", link: "/agents/web-search" },
           { text: "Conversation and memory", link: "/agents/memory" },
           { text: "Files and allowed folders", link: "/agents/allowed-folders" },

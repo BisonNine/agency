@@ -27,7 +27,10 @@
 #     from the shell), and file_write and file_edit there are refused as
 #     read-only for this app, leaving it unchanged;
 #   - a tool outside the ten (file_append) is not offered to Alice, and a
-#     shell deny pattern still refuses.
+#     shell deny pattern still refuses;
+#   - a background job (shell_ctrl comes with shell_exec): its log read and
+#     searched with the file tools and refused to file_write, a wait until a
+#     line, a stop, and the jobs folder and files at the agents area's modes.
 #
 # Usage: tests/test_coding_harness.sh <claw-binary>
 # Environment: PROBE_PATH (default probe), KEEP=1 keeps the temporary folder.
@@ -240,6 +243,7 @@ cat >"$HOME_DIR/config.json" <<EOF
   },
   "channels": {"webui": {"enabled": true, "token": "coding-harness-e2e"}},
   "tools": {"exec": {"enable_deny_patterns": true}},
+  "security": {"permissions": {"agents": {"dir_mode": "0750", "file_mode": "0640"}}},
   "gateway": {"host": "127.0.0.1", "port": $GW_PORT, "tls": {"mode": "off"}},
   "mcp_host": {"enabled": true, "listen": "127.0.0.1:$MCP_PORT", "endpoint_path": "/mcp", "external_tools": ["*"]}
 }
@@ -350,6 +354,33 @@ refuse "a tool outside the coding tools is not offered" "$OUT" "Tool 'file_appen
 OUT="$(mcp shell_exec "$(json command "rm -rf $REPO")")"
 refuse "shell_exec: a deny pattern still refuses" "$OUT" "dangerous pattern"
 if [ -f "$REPO/main.go" ]; then pass "shell_exec: the denied command did not run"; else fail "shell_exec: the denied command ran"; fi
+
+# ---- 8. A background job: started by shell_exec, its log read with the file
+# tools, waited on until a line, stopped, and its files at the agents
+# area's modes. ----
+OUT="$(mcp shell_exec "$(json command 'for i in 1 2 3 4 5 6 7 8; do echo harness-line-$i; sleep 1; done' background true notify false)")"
+expect "shell_exec: background starts a job" "$OUT" "Started job" "state/shell/"
+JOB="$(echo "$OUT" | grep -o 'job j[0-9a-f]\{8\}' | head -1 | cut -d' ' -f2)"
+LOG="state/shell/$JOB.log"
+OUT="$(mcp shell_ctrl "$(json action wait id "$JOB" until 'harness-line-3' seconds 30)")"
+expect "shell_ctrl: wait returns at the line matching until" "$OUT" "printed a line matching until: harness-line-3" "It is still running."
+OUT="$(mcp file_read_lines "$(json path "$LOG")")"
+expect "file_read_lines: reads the job's log" "$OUT" "harness-line-1" "harness-line-3"
+OUT="$(mcp file_search_lines "$(json query 'harness-line-2' path state/shell)")"
+expect "file_search_lines: searches the job logs" "$OUT" "harness-line-2"
+OUT="$(mcp file_write "$(json path "$LOG" content tampered overwrite true)")"
+refuse "file_write: a job log is not writable" "$OUT" "write denied"
+OUT="$(mcp shell_ctrl "$(json action stop id "$JOB")")"
+expect "shell_ctrl: stop ends the job" "$OUT" "Stopped job $JOB"
+OUT="$(mcp shell_ctrl '{"action":"list"}')"
+expect "shell_ctrl: the job is listed as stopped" "$OUT" "$JOB stopped"
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null; }
+MODES="$(mode_of "$WS/state/shell") $(mode_of "$WS/$LOG") $(mode_of "$WS/state/shell/$JOB.json")"
+if [ "$MODES" = "750 640 640" ]; then
+    pass "shell jobs: folder and files at the agents area's modes"
+else
+    fail "shell jobs: modes (folder, log, record) are $MODES, want 750 640 640"
+fi
 
 echo "  Coding harness end to end: $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

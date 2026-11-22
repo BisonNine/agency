@@ -55,6 +55,16 @@ const (
 	// KindTaskModel is one task-model call made for an agent through
 	// agent_spawn's kind: the kind, the model and the files written.
 	KindTaskModel = "task_model"
+	// KindShellStart is a shell command started by shell_exec, in the
+	// foreground or as a background job: the command, the working directory
+	// and whether it was started in the background.
+	KindShellStart = "shell_ctrl_start"
+	// KindShellInput is input sent to a shell job with shell_ctrl: its
+	// length, never its content.
+	KindShellInput = "shell_ctrl_input"
+	// KindShellStop is a shell job stopped by shell_ctrl, or a foreground
+	// command stopped at its timeout.
+	KindShellStop = "shell_ctrl_stop"
 )
 
 // Outcome values.

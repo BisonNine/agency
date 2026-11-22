@@ -149,7 +149,8 @@ ClawEh is an independent Go project forked from sipeed/picoclaw on 2026-03-20.
   `*.lock`/`*.tmp`, databases there via `VACUUM INTO`, `collectMaestro`; every
   agent's `classifiers/` without `.tmp-*` and database sidecars, `state.db` via
   `VACUUM INTO`, `collectClassifiers`; all
-  through `collectAgentFolder`, which never follows a symlink); `claw backup` / `claw restore`. See
+  through `collectAgentFolder`, which never follows a symlink; shell job logs,
+  `state/shell/`, are left out); `claw backup` / `claw restore`. See
   `manual/admin/backup.md`.
 - Data dir constant: `global.DefaultDataDir` = `.claw` (global/defaults.go)
 - Env override constant: `global.EnvVarHome` = `CLAW_HOME`
@@ -384,7 +385,13 @@ shortcoming in the module, never here.
   `tools.DefaultEnabledToolNames()` (each tool's `DefaultAllow`) is only what the Agents
   page's "Default tools" button writes into a list (`GET /api/agents/tools`
   `default_tools`). Suites (`forum`, `fusion`, `maestro`, `cogmem`, `ccv3`, `classifiers`) and
-  `mcp_tools` have their own switches. Check Up lists each enabled agent with no
+  `mcp_tools` have their own switches. **Implied tools:** a tool in
+  `config.ImpliedTools` (today only `shell_ctrl`, implied by `shell_exec`) is
+  granted only with the tool that implies it (`config.GrantingTool`): naming it
+  in `tools`, `"*"` or a prefix never grants it, `deny_tools` removes it, and
+  it is not in the catalogue's tool list (`Describe`, the Agents page,
+  `CODING_TOOLS`); Check Up lists it "yes (with shell_exec)" and the
+  capabilities golden file shows it. Check Up lists each enabled agent with no
   tools. An agent whose registry is empty (no native, suite or MCP tool) gets
   `noToolsNotice` in its dynamic prompt layer (`ContextBuilder.WithToolsGranted`,
   read every turn; not for fresh temporary or human agents). Skills follow the
@@ -394,7 +401,9 @@ shortcoming in the module, never here.
   setting, off by default: `shell_exec` named in its own `tools` list (WebUI: its box
   under Internal tools, with a warning icon, "Full access to this app's account") and
   not in `deny_tools` (`AgentConfig.IsToolAllowed`,
-  `config.ShellExecTool`). A `"*"` or prefix entry never includes it. Clones inherit it. There is no channel rule: it applies on every channel and to
+  `config.ShellExecTool`). A `"*"` or prefix entry never includes it. An agent granted
+  it also has `shell_ctrl` (`config.ShellCtrlTool`, implied; see Tool grants and
+  Shell jobs), which `deny_tools` can remove. Clones inherit it. There is no channel rule: it applies on every channel and to
   everything acting as the agent (clones, asks, forum turns, MCP session and service
   tokens, cron watch probes). Fresh temporary and human agents have no tools. It is
   an ordinary tool: an agent without the grant never has it registered, so it is
@@ -984,11 +993,46 @@ shortcoming in the module, never here.
   characters, 10 `{` groups), and every walk stops on a cancelled context. Both read through
   `buildFs` like the other reading tools. `file_search_bytes` keeps its own `walk` and
   has none of these but the cancellation check.
-- **Shell guard** (`tools/shell`): `shell_exec` refuses commands only by the deny
-  patterns, the allow patterns and the custom allow patterns; it does not look at the
-  paths a command names, and `working_dir` may be any directory (relative to the
-  workspace; default the workspace). `restrict_to_workspace` does not affect it: a
-  command runs with the app account's full access.
+- **Shell guard** (`tools/shell/guard.go`): `shell_exec` refuses commands (foreground
+  or job) only by the deny patterns and the custom allow patterns of `tools.exec`,
+  read at every tool build, so a reload applies them; it does not look at the paths a
+  command names, and `working_dir` may be any directory (relative to the workspace;
+  default where the agent's previous command in the conversation ended, else the
+  workspace). `restrict_to_workspace` does not affect it: a command runs with the app
+  account's full access. Input sent to a job is not screened (it is audited). An
+  invalid pattern builds no shell tools for the agent (ERROR line).
+- **Shell jobs** (`tools/shell`, design `refactor/bash.md`; `manual/agents/shell.md`):
+  a thin mount of the SDK's `toolbox/shell` (`shell_exec`, `shell_ctrl`; the
+  SDK runs the commands, the jobs and their texts). `shell.Host` (one per process)
+  keeps one SDK `Tools` per workspace (`<workspace>/state/shell`,
+  `config.ShellJobsDir`), created at the first build for an agent granted
+  `shell_exec` with `tools.exec`'s effective limits (`ExecConfig.Effective`; the
+  SDK cannot change them later, so a change applies to an existing workspace at the
+  next start) and the agents-area modes (`cfg.AgentModes`); jobs found running
+  there are marked `lost` then. The host supplies: the guard, `childenv.Base()`,
+  the workspace, the owner (`ToolDeps.AgentID`, a clone's source), `CtrlAvailable`
+  (the agent's `IsToolAllowed("shell_ctrl")`; without it a foreground timeout
+  kills and `background` is refused), `Unattended` (`tools.IsUnattended`, set by
+  `ToolRegistry.ExecuteUnattended`: classifiers and watch probes get no jobs and no
+  `shell_ctrl`), audit rows (`shell_ctrl_start`/`_input` with the byte count/`_stop`,
+  turn id from `Hooks.TurnID`; `RedactArgs` logs `shell_ctrl`'s `text` as
+  `text_bytes`) and the notice. The notice goes through the starting call's async
+  callback (the definitions are marked `Async`, so the bridge passes
+  `ToolCall.Notify`, kept per job at the start's audit event and dropped at its end):
+  the loop's `asyncToolCallback` or the MCP host's `publishMCPAsyncToLLM`, i.e.
+  the path of a callback `agent_spawn`, with its turn-chat rules. A lost job's
+  notice has no call: `Hooks.Deliver` (`AgentLoop.deliverShellNotice`) queues it
+  as a `system` message (`async:shell_exec`) for the owner's main conversation,
+  answered in its default chat (`CronTarget`) or kept there. The gateway binds the
+  hooks once the loop has `Started()` (`bindShellTools`; notices found before are
+  held) and `shutdownGateway` calls `closeShellJobs` (`Host.Close`: every job
+  terminated, then killed after 5 s) before the loop stops. `/cancel` does not
+  touch jobs yet: for the agent task list of phase 5b, `Host.Running(owner)`
+  counts an agent's running jobs and `Host.StopAll(owner)` stops them. The folder
+  is in `AlwaysReadableWorkspaceDirs` (read, never written, by the file tools) and
+  not in the backup (only databases are taken from workspaces). Check Up: the
+  per-agent "Shell jobs (shell_ctrl)" row with the limits, `shell_ctrl` "with
+  shell_exec" in the tools table, and a "Shell job logs" Data row.
 - **Agent registry** (`agentreg`): every agent the loop can run, with its origin.
   Config agents are built from config and rebuilt on reload (`Reload` builds the
   whole new set, then swaps it in one step with `al.cfg`; a replaced instance is
@@ -1167,7 +1211,7 @@ Hard-won learnings (don't relearn these):
 - A change is not done until its tests are updated AND passing. Run `make test` before calling anything done — it is the whole suite, lint included, and the thing a pipeline would gate on. `go test ./...` is the fast Go-only loop for iterating.
 - **Add tests for new behavior.** New config flags, gating, and branches need a test for both the on and off paths — not just a tweak that makes existing tests compile.
 - **Keep test fixtures in sync with renames/refactors.** When tool names, config keys, or APIs change, grep the whole repo (including `*_test.go`, `test.sh`, `tests/`) and update every reference. A rename that compiles can still break integration tests.
-- **MCP integration tests are part of the suite.** `make test` runs `test.sh`, which runs `tests/test_mcpserver.sh` via the external `probe` binary against an ephemeral ClawEh instance. Every provider tool must be exposed in the test config and probed: success for hermetic tools, graceful-error probes for network/LLM tools (web, skill, agent_spawn). Add a probe case when you add a tool. After it, `test.sh` runs `tests/test_classifier.sh`, the classifiers end to end on a gateway of its own: `tests/testdata/classifierllm` is the stub model (a fixed category per marker in the item) and a stub Telegram Bot API for the agent's chat (it also writes the admin account, `-admin-credentials`); the script checks the moved files, `state.db`, the activity log, no reprocessing, a dry run, the problem summary, an invalid hand-edited definition (log and Check Up), a paged source (the stub's MCP `pages` tool: listed to its end, and one item per run with the early stop), the argument check (undeclared, wrong type, undeclared paging and fetch arguments refused by `classifier_validate`) and the agents-area modes. Then `tests/test_task_models.sh` runs task models end to end on a gateway of its own: `tests/testdata/taskmodelsllm` is the stub vendor (OpenAI-style chat with text and image output, `/images/generations` and `/images/edits`, `/audio/speech`, `/audio/transcriptions`, and Gemini `generateContent` TTS returning L16 PCM; a model `down-1` answers 503); the script drives `agent_spawn` with `kind` over the MCP host with service tokens for every kind (wait mode, one callback) and checks the result text, the files under `files/generated/<date>/` with the agents-area modes, the WAV header, the fallback past the 503 model, the grant refusal, the `task_model` audit rows and that nothing is written outside the workspaces. Then `tests/test_coding_harness.sh` runs the coding harness end to end on a gateway of its own (needs `git`): one agent whose `tools` are exactly the ten coding tools, a git repository in its `files/` (root and nested `.gitignore`, ignored copies of the function it looks for) and a read-only allowed folder outside the workspace; over the MCP host with the agent's service token it globs, searches with `include`/`context`, reads, edits and counts, writes a file and edits it with the line tools, runs `git diff --stat`/`git status` through `shell_exec`, reads the allowed folder by absolute path and checks that writes there are refused as read-only, that a tool outside the ten is not offered and that a deny pattern still refuses. Its unit-level counterpart is `tools/files/harness_matrix_test.go` (every coding file tool in every place it can be pointed at).
+- **MCP integration tests are part of the suite.** `make test` runs `test.sh`, which runs `tests/test_mcpserver.sh` via the external `probe` binary against an ephemeral ClawEh instance. Every provider tool must be exposed in the test config and probed: success for hermetic tools, graceful-error probes for network/LLM tools (web, skill, agent_spawn). Add a probe case when you add a tool. After it, `test.sh` runs `tests/test_classifier.sh`, the classifiers end to end on a gateway of its own: `tests/testdata/classifierllm` is the stub model (a fixed category per marker in the item) and a stub Telegram Bot API for the agent's chat (it also writes the admin account, `-admin-credentials`); the script checks the moved files, `state.db`, the activity log, no reprocessing, a dry run, the problem summary, an invalid hand-edited definition (log and Check Up), a paged source (the stub's MCP `pages` tool: listed to its end, and one item per run with the early stop), the argument check (undeclared, wrong type, undeclared paging and fetch arguments refused by `classifier_validate`) and the agents-area modes. Then `tests/test_task_models.sh` runs task models end to end on a gateway of its own: `tests/testdata/taskmodelsllm` is the stub vendor (OpenAI-style chat with text and image output, `/images/generations` and `/images/edits`, `/audio/speech`, `/audio/transcriptions`, and Gemini `generateContent` TTS returning L16 PCM; a model `down-1` answers 503); the script drives `agent_spawn` with `kind` over the MCP host with service tokens for every kind (wait mode, one callback) and checks the result text, the files under `files/generated/<date>/` with the agents-area modes, the WAV header, the fallback past the 503 model, the grant refusal, the `task_model` audit rows and that nothing is written outside the workspaces. Then `tests/test_coding_harness.sh` runs the coding harness end to end on a gateway of its own (needs `git`): one agent whose `tools` are exactly the ten coding tools, a git repository in its `files/` (root and nested `.gitignore`, ignored copies of the function it looks for) and a read-only allowed folder outside the workspace; over the MCP host with the agent's service token it globs, searches with `include`/`context`, reads, edits and counts, writes a file and edits it with the line tools, runs `git diff --stat`/`git status` through `shell_exec`, reads the allowed folder by absolute path and checks that writes there are refused as read-only, that a tool outside the ten is not offered and that a deny pattern still refuses; then it starts a background job (`shell_ctrl` comes with `shell_exec`), reads and searches its log with the file tools, checks a `file_write` there is refused, waits on it with `until`, stops it and checks the jobs folder and files at the agents-area modes the config sets (0750/0640). Its unit-level counterpart is `tools/files/harness_matrix_test.go` (every coding file tool in every place it can be pointed at).
 - **A test gateway must never alert the operator.** Any script that starts a gateway outside production sources `tests/lib/gateway_env.sh` (or exports the same `ALERTER_*` variables empty), so the operator's `~/.alerter` is not used and alerts go only to `<CLAW_HOME>/logs/alerts.log`.
 - After implementing, do a final grep for the old name/symbol to confirm nothing stale remains in code, tests, scripts, or docs.
 

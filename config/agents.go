@@ -337,6 +337,9 @@ func MatchToolPattern(patterns []string, name string) bool {
 //
 // DenyTools is applied after the allow list, with the same matching rule as
 // that list; a denied tool is never allowed.
+//
+// shell_exec is allowed only when the list names it exactly, and a tool in
+// ImpliedTools (shell_ctrl) only through the tool that implies it.
 func (a *AgentConfig) IsToolAllowed(name string) bool {
 	if a == nil {
 		return false
@@ -351,6 +354,11 @@ func (a *AgentConfig) IsToolAllowed(name string) bool {
 	if IsShellTool(name) {
 		return namesTool(allow, name) && !a.IsToolDenied(name)
 	}
+	// A tool granted by implication comes with the tool that implies it,
+	// never from the list itself; deny_tools can still remove it.
+	if granting, ok := GrantingTool(name); ok {
+		return a.IsToolAllowed(granting) && !a.IsToolDenied(name)
+	}
 	// DenyTools is checked after the allow list, under the same rule; deny wins.
 	return MatchToolPattern(allow, name) && !a.IsToolDenied(name)
 }
@@ -363,6 +371,33 @@ const ShellExecTool = "shell_exec"
 // IsShellTool reports whether name, in any case, is the shell tool.
 func IsShellTool(name string) bool {
 	return strings.EqualFold(name, ShellExecTool)
+}
+
+// ShellCtrlTool is the published name of the shell job tool. It is never
+// granted on its own: an agent granted shell_exec has it too (see
+// ImpliedTools), and deny_tools can remove it.
+const ShellCtrlTool = "shell_ctrl"
+
+// ImpliedTools lists the tools a grant brings with it: an agent allowed the
+// key tool is allowed each tool in its list, unless deny_tools names it. A
+// tool listed here is granted only that way; naming it in the tools list, a
+// "*" or a prefix entry does not grant it. Check Up shows each with the tool
+// it came with.
+var ImpliedTools = map[string][]string{
+	ShellExecTool: {ShellCtrlTool},
+}
+
+// GrantingTool returns the tool whose grant implies name, if name is granted
+// only by implication (ImpliedTools).
+func GrantingTool(name string) (string, bool) {
+	for granting, implied := range ImpliedTools {
+		for _, t := range implied {
+			if strings.EqualFold(t, name) {
+				return granting, true
+			}
+		}
+	}
+	return "", false
 }
 
 // namesTool reports whether patterns names the tool exactly

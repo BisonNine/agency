@@ -69,7 +69,7 @@ A forum that is running during the backup is copied file by file. After a restor
 ## What is not included
 
 - Agent `files/` and `skills/` folders. Back these up like any other folder you own.
-- Logs, the media cache, each agent's `tmp/`.
+- Logs, the media cache, each agent's `tmp/` and its [shell job logs](../agents/shell.md#output-files) (`state/shell/`).
 - [Temporary agents](../agents/subagents.md#temporary-agents) (sub-agent runs).
 - Earlier backups.
 

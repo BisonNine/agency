@@ -144,6 +144,9 @@ per-tool switch. `DefaultAllow: global.Allow(true)` only puts the tool in the
 standard set the Agents page's **Default tools** button writes into a list
 (`tools.DefaultEnabledToolNames`). Omit it for tools few agents need. `shell_exec`
 is granted only by naming it: `"*"` and prefix entries never include it.
+`shell_ctrl` is granted only with `shell_exec` (`config.ImpliedTools`), so the
+shell provider's enumeration (`RegisterTools` with zero `Deps`) returns
+`shell_exec` alone and its real build returns both.
 
 ### Sub-agents and the full toolset
 

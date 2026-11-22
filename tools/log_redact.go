@@ -56,6 +56,17 @@ func redactArgs(toolName string, args map[string]any) any {
 			"old_text_bytes": byteLen(args["old_text"]),
 			"new_text_bytes": byteLen(args["new_text"]),
 		}
+	case "shell_ctrl":
+		// Input sent to a job is data for a program: its length only.
+		out := map[string]any{}
+		for k, v := range args {
+			if k == "text" {
+				out["text_bytes"] = byteLen(v)
+				continue
+			}
+			out[k] = v
+		}
+		return out
 	case "file_edit_lines", "file_edit_bytes", "file_insert_lines", "file_insert_bytes",
 		"file_delete_lines", "file_delete_bytes":
 		out := map[string]any{"path": args["path"]}

@@ -142,6 +142,7 @@ func gatewayCmd(debug bool) error {
 	}()
 	recoverForums(ctx, forumSvc, forumHost.Scopes, agentLoop.Started(), nil)
 	startClassifiers(ctx, classifierSvc, agentLoop.Started(), nil)
+	bindShellTools(ctx, agentLoop)
 
 	run, stopWatchers := startGatewayRun(cfg, debug, agentLoop, services, msgBus, provider, store, refAlerts, fatal)
 	defer stopWatchers()

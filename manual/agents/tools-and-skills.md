@@ -54,7 +54,7 @@ The **Coding tools** button beside **Default tools** adds the tools an agent nee
 | `file_read_lines` | Read the lines found |
 | `file_edit`, `file_edit_lines`, `file_insert_lines`, `file_delete_lines` | Change text |
 | `file_write` | Create a file or replace a whole file |
-| `shell_exec` | Run any command-line program: git, builds, tests and Unix tools such as grep, sed and jq (see [Shell commands](#shell-commands)) |
+| `shell_exec` | Run any command-line program: git, builds, tests and Unix tools such as grep, sed and jq, in the foreground or in the background (see [Shell commands](#shell-commands)) |
 | `agent_spawn` | Hand work to a sub-agent |
 
 - The button only adds: every one the agent does not already have is ticked, and nothing is unticked or removed. A tool already granted, also through `"*"` or an entry such as `file_*`, is not added twice. Untick single tools afterwards to take them away.
@@ -70,7 +70,8 @@ The `shell_exec` box under **Internal tools** lets the agent run commands on thi
 - Ticking it, or **Coding tools**, is the only way to grant `shell_exec`: **Default tools**, `"*"` and `file_*`-style entries never include it.
 - It applies everywhere the agent acts: every chat, its sub-agents and clones, questions from other agents, forum turns and its MCP tokens.
 - Shell commands run with the full access of the account ClawEh runs as. They are **not** confined to the agent's folder or its allowed folders, even when file tools are, and **Restrict to workspace** does not apply to them. The deny patterns still block dangerous commands.
-- `working_dir` may be any existing folder; the default is the agent's workspace.
+- `working_dir` may be any existing folder; the default is where the agent's previous command ended, else its workspace.
+- `shell_ctrl` comes with `shell_exec`: it manages the commands the agent runs in the background. Add it to **Denied tools** to withhold it. See [Shell commands and jobs](./shell.md).
 - If `shell_exec` is also in **Denied tools**, its row shows "Ignored: blocked by Denied tools." and the agent cannot run commands.
 - An agent allowed to message or spawn another agent that has shell commands can have that agent run them. **Check Up** lists both under **Shell access**.
 

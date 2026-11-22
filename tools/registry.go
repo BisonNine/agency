@@ -188,8 +188,9 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 // (ErrToolSessionScoped), applies the context's allow checker as
 // ExecuteWithContext does, passes no channel, chat or async callback, and
 // turns an IsError result into an error carrying the tool's ForLLM text.
+// The tool can tell such a call by IsUnattended.
 func (r *ToolRegistry) ExecuteUnattended(ctx context.Context, name string, args map[string]any) (string, error) {
-	ctx = withCallAgent(toolkit.WithChat(ctx, "", ""))
+	ctx = withUnattended(withCallAgent(toolkit.WithChat(ctx, "", "")))
 	return r.cat.ExecuteUnattendedGated(ctx, name, args, allowGate(name))
 }
 

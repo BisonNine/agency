@@ -5,6 +5,7 @@ package report
 
 import (
 	"context"
+	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -73,6 +74,7 @@ var alwaysReadableNotes = map[string]string{
 	"tmp":                    "inbound attachments",
 	forumfs.BaseDirName:      "the agent's forums",
 	classifierfs.BaseDirName: "the agent's classifiers",
+	config.ShellJobsDir:      "the agent's shell job logs",
 }
 
 func (f *folderAccess) add(path string, read, write bool, note string) {
@@ -215,6 +217,15 @@ func agentToolsTable(a *config.AgentConfig) Table {
 	if a.Forum && !a.IsToolDenied(forumfs.LaunchTool) {
 		cells = append(cells, row(forumfs.LaunchTool, "yes (Allow forum)"))
 	}
+	// A tool granted with another (shell_ctrl with shell_exec) is listed with
+	// the tool it came with.
+	for _, granting := range slices.Sorted(maps.Keys(config.ImpliedTools)) {
+		for _, implied := range config.ImpliedTools[granting] {
+			if !explicit[implied] && a.IsToolAllowed(implied) {
+				cells = append(cells, row(implied, "yes (with "+granting+")"))
+			}
+		}
+	}
 	for i := 0; i < len(cells); i += 2 {
 		r := row(cells[i][0], cells[i][1], "", "")
 		if i+1 < len(cells) {
@@ -311,6 +322,7 @@ func agentSection(ctx context.Context, cfg *config.Config, env Environment, a *c
 		row("Task models (agent_spawn kinds allowed)", taskModelGrant(a)),
 		row("Character card", card),
 		row("Character card tools (edits the card library)", onOff(a.CCv3)),
+		row("Shell jobs ("+config.ShellCtrlTool+")", shellJobs(cfg, a)),
 		row("Shared common directory", onOff(a.SharesCommon())),
 		row("Global cron (schedules for other agents)", onOff(a.GlobalCron)),
 	)

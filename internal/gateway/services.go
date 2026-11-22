@@ -546,6 +546,9 @@ func shutdownGateway(
 		closeClassifiers(services.Classifiers)
 		phases.done("classifiers stopped")
 	}
+	// Shell jobs too, terminated then killed, before the process exits.
+	closeShellJobs()
+	phases.done("shell jobs stopped")
 	agentLoop.BeginMCPShutdown()
 
 	if cp, ok := provider.(providers.StatefulProvider); ok && fullShutdown {

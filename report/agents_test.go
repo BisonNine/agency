@@ -131,19 +131,30 @@ func TestCollectAgents_ToolsAndSensitivity(t *testing.T) {
 	if alice["file_write"] != "yes (by pattern)" {
 		t.Errorf("file_write marker = %q", alice["file_write"])
 	}
-	if m, ok := alice["shell_exec"]; ok {
-		t.Errorf(`shell_exec listed for "*" (marker %q): "*" does not include it`, m)
+	for _, shellTool := range []string{"shell_exec", "shell_ctrl"} {
+		if m, ok := alice[shellTool]; ok {
+			t.Errorf(`%s listed for "*" (marker %q): "*" does not include it`, shellTool, m)
+		}
 	}
 
-	// bob lists two tools explicitly: one row holding both pairs.
+	// bob lists two tools explicitly, and has shell_ctrl with shell_exec:
+	// two rows.
 	bobTable := findTable(t, agentSub(t, s, "bob"), "Internal tools")
 	bob := toolMarkers(bobTable)
-	if bob["file_read"] != "no" || bob["shell_exec"] != "yes" {
+	if bob["file_read"] != "no" || bob["shell_exec"] != "yes" || bob["shell_ctrl"] != "yes (with shell_exec)" {
 		t.Errorf("bob markers = %v", bob)
 	}
-	if len(bobTable.Rows) != 1 {
+	if len(bobTable.Rows) != 2 {
 		t.Errorf("bob tools rows = %v", bobTable.Rows)
 	}
+
+	// deny_tools removes shell_ctrl from the list.
+	cfg.Agents.List[1].DenyTools = []string{"shell_ctrl"}
+	bob = toolMarkers(findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "bob"), "Internal tools"))
+	if m, ok := bob["shell_ctrl"]; ok {
+		t.Errorf("denied shell_ctrl listed as %q", m)
+	}
+	cfg.Agents.List[1].DenyTools = nil
 
 	// An empty tools list means no tools.
 	empty := []string{}
