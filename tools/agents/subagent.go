@@ -496,7 +496,7 @@ func (sm *SubagentManager) superviseOne(dir, id string, now int64, cbFor func(re
 	if cbFor != nil {
 		cb = cbFor(rec)
 	}
-	sm.launch(context.Background(), rec, cb, true, false, nil)
+	sm.launchTask(context.Background(), rec, cb, true, false, nil, true)
 }
 
 // TaskStatus returns the task with the given uuid, or status "unknown".

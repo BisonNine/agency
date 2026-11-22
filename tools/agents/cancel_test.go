@@ -458,3 +458,31 @@ func TestRun_WaitTaskCancelledWhileShuttingDown(t *testing.T) {
 		t.Fatalf("record = %+v (%v)", rec, err)
 	}
 }
+
+// The supervisor relaunching a task whose parent was cancelled cancels it
+// at once, without waiting on itself.
+func TestSupervise_OrphanRelaunchIsCancelled(t *testing.T) {
+	f := newCancelFixture(t)
+	dir := tasksDirFor(f.ws)
+	rec := &TaskRecord{UUID: "child", Name: "child", OwnerAgentID: "alice", Mode: "callback", Task: "work", Status: StatusRunning, Parent: "gone", ResultsPath: relResultsPath("child")}
+	if err := writeStatus(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := markRun(dir, "child"); err != nil {
+		t.Fatal(err)
+	}
+	f.reg.CancelChildren("gone", errCancelledByAgent)
+	done := make(chan struct{})
+	go func() {
+		f.mgr.SuperviseOnce(time.Now().Unix()+3600, nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the supervisor deadlocked")
+	}
+	if got, err := readStatus(dir, "child"); err != nil || got.Status != StatusCancelled {
+		t.Fatalf("record = %+v (%v)", got, err)
+	}
+}

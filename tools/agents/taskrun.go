@@ -32,6 +32,9 @@ type taskRun struct {
 	// ended: the result was recorded, or the task was cancelled.
 	ended     bool
 	cancelled bool
+	// settleHeld: the task is being started by a caller holding the
+	// settle lock (launchTask).
+	settleHeld bool
 }
 
 // cancelledTaskError is the error a cancelled task's record carries.
@@ -58,7 +61,14 @@ func taskKind(rec *TaskRecord) string {
 // returned run's waiter; any other to cb. askChain is the ask chain of the
 // turn that started it.
 func (sm *SubagentManager) launch(parent context.Context, rec *TaskRecord, cb tools.AsyncCallback, resumed, wait bool, askChain []string) *taskRun {
-	tr := &taskRun{rec: rec, cb: cb}
+	return sm.launchTask(parent, rec, cb, resumed, wait, askChain, false)
+}
+
+// launchTask is launch; settleHeld says the caller holds the settle lock
+// (the supervisor), which a task cancelled as it starts (its parent was
+// cancelled) must then not take again.
+func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, cb tools.AsyncCallback, resumed, wait bool, askChain []string, settleHeld bool) *taskRun {
+	tr := &taskRun{rec: rec, cb: cb, settleHeld: settleHeld}
 	if wait {
 		tr.result, tr.waiting = make(chan *tools.ToolResult, 1), true
 	}
@@ -67,7 +77,9 @@ func (sm *SubagentManager) launch(parent context.Context, rec *TaskRecord, cb to
 		Kind: taskKind(rec), Label: rec.Name, Mode: taskMode(rec.Mode),
 	}
 	ctx, task := sm.tasks.start(parent, info, rec.SpawnDepth, askChain, func(cause error) bool { return sm.cancelRun(tr, cause) })
-	tr.task = task
+	tr.mu.Lock()
+	tr.task, tr.settleHeld = task, false
+	tr.mu.Unlock()
 	go sm.runRecord(ctx, tr, resumed)
 	return tr
 }
@@ -214,12 +226,16 @@ func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) bool {
 	// The record says cancelled before the marker goes and the task leaves
 	// the live set, all under the settle lock: the supervisor never sees it
 	// unmarked-live yet running.
-	sm.live.settle.Lock()
+	if !tr.settleHeld {
+		sm.live.settle.Lock()
+	}
 	sm.persistStatus(dir, rec)
 	sm.persistResults(dir, cancelledResults(rec, ""))
 	clearRun(dir, rec.UUID)
 	sm.live.Remove(rec.UUID)
-	sm.live.settle.Unlock()
+	if !tr.settleHeld {
+		sm.live.settle.Unlock()
+	}
 	waiting := tr.waiting
 	tr.waiting = false
 	tr.mu.Unlock()
