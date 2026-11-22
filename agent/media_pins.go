@@ -105,9 +105,10 @@ func (al *AgentLoop) pinSessionMediaRefs(sessionKey string, refs []string) {
 }
 
 // reconcileSessionPins resets the session's pin set to the refs currently
-// present in its built context. Run each time a turn's request is built from
-// the session store: refs compacted or cleared out of the context are
-// unpinned and age out via the normal TTL sweep.
+// present in its built context. Run on a turn's first request and on any
+// later one rebuilt from the session store with media refs: refs compacted or
+// cleared out of the context are unpinned and age out via the normal TTL
+// sweep.
 func (al *AgentLoop) reconcileSessionPins(sessionKey string, messages []providers.Message) {
 	p := al.refPinner()
 	if p == nil {

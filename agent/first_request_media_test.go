@@ -323,6 +323,9 @@ func TestRequestMedia_ResolvedAfterSecondStepRebuild(t *testing.T) {
 			}
 			mt.runWithCM(cm)
 
+			if cm.assembles != 3 {
+				t.Fatalf("assemblies = %d, want 3 (the first request and two steps)", cm.assembles)
+			}
 			if len(mt.provider.calls) != 2 {
 				t.Fatalf("model calls = %d, want 2", len(mt.provider.calls))
 			}
@@ -334,6 +337,11 @@ func TestRequestMedia_ResolvedAfterSecondStepRebuild(t *testing.T) {
 			defer mt.store.mu.Unlock()
 			if len(mt.store.pins) == 0 || !slices.Equal(mt.store.pins[len(mt.store.pins)-1], []string{mt.kept}) {
 				t.Fatalf("pins set = %v, want only %s", mt.store.pins, mt.kept)
+			}
+			// Both images for the first request, the one still present for
+			// the rebuilt one.
+			if mt.store.resolves != 3 {
+				t.Fatalf("refs resolved = %d, want 3", mt.store.resolves)
 			}
 		})
 	}
@@ -350,6 +358,9 @@ func TestRequestMedia_ResolvedOnceWithoutRebuild(t *testing.T) {
 	}
 	mt.runWithCM(cm)
 
+	if cm.assembles != 3 {
+		t.Fatalf("assemblies = %d, want 3 (the first request and two steps)", cm.assembles)
+	}
 	if len(mt.provider.calls) != 2 {
 		t.Fatalf("model calls = %d, want 2", len(mt.provider.calls))
 	}
