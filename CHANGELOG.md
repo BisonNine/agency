@@ -83,6 +83,10 @@
 
 ### Fixed
 
+- **An image or file in a message could reach the model as an unreadable
+  reference.** When the message started a context compaction during the same
+  turn, the model could get the attachment's internal reference instead of the
+  image or file. Attachments are now resolved after the compaction.
 - **A Maestro task tool called right after a task finished could fail with
   "failed to create lock file".** When a dispatched task ended, its lock file
   was deleted just after the agent was told, so a `maestro_task_list`,

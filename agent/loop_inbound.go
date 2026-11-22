@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -118,18 +117,25 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 func (al *AgentLoop) processMessageSafely(ctx context.Context, msg bus.InboundMessage, outcome *string) (resp string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.ErrorCF("agent", "panic while processing message",
-				map[string]any{
-					"channel": msg.Channel,
-					"chat_id": msg.ChatID,
-					"panic":   fmt.Sprintf("%v", r),
-					"stack":   string(debug.Stack()),
-				})
-			resp = ""
-			err = fmt.Errorf("internal error while processing the message: %v", r)
+			resp, err = "", messagePanicked(msg, r)
 		}
 	}()
 	return al.processMessageOutcome(ctx, msg, outcome)
+}
+
+// messagePanicked logs a panic recovered while processing msg, with the
+// stack of the code that panicked (a callback's own, for a callback's
+// panic), and returns the error the sender is told.
+func messagePanicked(msg bus.InboundMessage, r any) error {
+	value, stack := panicReport(r)
+	logger.ErrorCF("agent", "panic while processing message",
+		map[string]any{
+			"channel": msg.Channel,
+			"chat_id": msg.ChatID,
+			"panic":   value,
+			"stack":   stack,
+		})
+	return fmt.Errorf("internal error while processing the message: %s", value)
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {

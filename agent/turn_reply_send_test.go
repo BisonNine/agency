@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -151,15 +152,35 @@ func TestLoopPlugins_ReadPerChatSettingsAtLoopStart(t *testing.T) {
 }
 
 // A step-changing callback's panic ends a host turn as a panic in the turn
-// always has: its value reaches the caller (processMessageSafely turns it
-// into the "internal error while processing the message" reply).
+// always has: it reaches the caller, whose panic line carries the
+// callback's own stack, and the sender's error text is today's.
 func TestTurnOutcome_CallbackPanicReachesTheCaller(t *testing.T) {
-	al := &AgentLoop{}
-	defer func() {
-		if r := recover(); r != "Bob's bug" {
-			t.Fatalf("recovered %v, want the callback's panic value", r)
-		}
+	buf := &safeBufLoop{}
+	t.Cleanup(logger.RedirectForTest(buf))
+	perr := protect("AfterModel", "images", bobsPanickingCallback)
+	if perr == nil {
+		t.Fatal("the callback did not panic")
+	}
+	var err error
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("turnOutcome did not panic")
+			}
+			err = messagePanicked(bus.InboundMessage{Channel: "telegram", ChatID: "alice"}, r)
+		}()
+		_, rerr := (&AgentLoop{}).turnOutcome(&engineTurn{}, perr)
+		t.Fatalf("turnOutcome returned %v instead of panicking", rerr)
 	}()
-	_, err := al.turnOutcome(&engineTurn{}, &hook.PanicError{Callback: "AfterModel", Plugin: "images", Value: "Bob's bug"})
-	t.Fatalf("turnOutcome returned %v instead of panicking", err)
+	if err == nil || err.Error() != "internal error while processing the message: Bob's bug" {
+		t.Fatalf("error = %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "panic while processing message") || !strings.Contains(out, "bobsPanickingCallback") {
+		t.Fatalf("log does not carry the callback's stack: %s", out)
+	}
 }
+
+// bobsPanickingCallback is a callback with a bug.
+func bobsPanickingCallback() { panic("Bob's bug") }
