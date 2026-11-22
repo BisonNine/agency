@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"context"
 	"testing"
 
 	"go.bison9.com/agency/agentreg"
@@ -22,7 +23,7 @@ func mustNewAgentLoop(
 	opts ...LoopOption,
 ) *AgentLoop {
 	t.Helper()
-	al, err := NewAgentLoop(cfg, msgBus, provider, dispatcher, opts...)
+	al, err := NewAgentLoop(t.Context(), cfg, msgBus, provider, dispatcher, opts...)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -35,8 +36,8 @@ func mustNewAgentLoop(
 // loop) or fails the test.
 func mustNewAgentRegistry(t *testing.T, cfg *config.Config, provider providers.LLMProvider) *AgentRegistry {
 	t.Helper()
-	registry, err := agentreg.New(cfg, agentreg.Hooks[*AgentInstance]{
-		Build: func(c *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
+	registry, err := agentreg.New(t.Context(), cfg, agentreg.Hooks[*AgentInstance]{
+		Build: func(_ context.Context, c *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
 			return newAgentInstance(spec, &c.Agents.Defaults, c, provider)
 		},
 	})

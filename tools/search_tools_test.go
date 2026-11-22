@@ -2,12 +2,16 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
 
 	"go.bison9.com/agent/discovery"
+
+	"go.bison9.com/agency/logger"
 )
 
 // Dummy tool to fill the registry in our tests.
@@ -237,5 +241,42 @@ func TestBM25CacheInvalidation(t *testing.T) {
 	res = tool.Execute(ctx, map[string]any{"query": "beta"})
 	if !strings.Contains(res.ForLLM, "tool_beta") {
 		t.Errorf("Expected 'tool_beta' after cache invalidation, got: %v", res.ForLLM)
+	}
+}
+
+// A search with hits is logged as the host logged it before discovery moved
+// to the SDK: "Tool search completed" at info under the discovery component,
+// with the query, whether it was a regex and the number of hits.
+func TestSearchTool_LogsQuery(t *testing.T) {
+	reg := setupPopulatedRegistry()
+	search, _ := discoveryTools(reg, 10)
+
+	var buf safeBuf
+	restore := logger.RedirectForTest(&buf)
+	defer restore()
+	search.Execute(context.Background(), map[string]any{"query": "system", "regex": true})
+
+	var rec map[string]any
+	for l := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		if strings.Contains(l, `"message":"Tool search completed"`) {
+			if err := json.Unmarshal([]byte(l), &rec); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if rec == nil {
+		t.Fatalf("no search line in:\n%s", buf.String())
+	}
+	if caller := fmt.Sprint(rec["caller"]); !strings.HasPrefix(caller, "discovery ") {
+		t.Errorf("component: caller = %q, want the discovery component", caller)
+	}
+	delete(rec, "caller")
+	delete(rec, "time")
+	want := map[string]any{
+		"level": "info", "message": "Tool search completed",
+		"query": "system", "regex": true, "results": float64(2),
+	}
+	if !maps.Equal(rec, want) {
+		t.Errorf("record = %v, want %v", rec, want)
 	}
 }

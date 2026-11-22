@@ -57,6 +57,6 @@ func (m metaTool) Description() string {
 // discoveryTools registers r's discovery meta-tools with at most maxResults
 // hits per search and returns them.
 func discoveryTools(r *ToolRegistry, maxResults int) (search, details metaTool) {
-	r.RegisterDiscoveryTools(maxResults, nil)
+	r.RegisterDiscoveryTools(context.Background(), maxResults, nil)
 	return metaTool{r, discovery.SearchToolName}, metaTool{r, discovery.DetailsToolName}
 }

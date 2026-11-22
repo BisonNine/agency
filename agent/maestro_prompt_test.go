@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 )
@@ -61,10 +64,13 @@ func TestDiscoveryPins_MaestroEntryTool(t *testing.T) {
 
 	// The pin keeps exactly the entry tool visible; the rest stays hidden.
 	pins := discoveryPins(on, withMaestro)
-	if discoveryHidesTool(true, pins, global.MaestroEntryTool) {
+	hidden := func(name string) bool {
+		return discovery.HideEntries([]toolkit.Entry{{Tool: namedTool{Tool: &mockCustomTool{}, name: name}}}, alwaysShown(pins))[0].Hidden
+	}
+	if hidden(global.MaestroEntryTool) {
 		t.Error("entry tool hidden despite the pin")
 	}
-	if !discoveryHidesTool(true, pins, "maestro_file_list") {
+	if !hidden("maestro_file_list") {
 		t.Error("other maestro tools must stay hidden under discovery")
 	}
 }

@@ -3,6 +3,7 @@
 package tools_test
 
 import (
+	"context"
 	"testing"
 
 	"go.bison9.com/agency/config"
@@ -42,7 +43,7 @@ func TestMessageTool_HasSentInRound_Initial(t *testing.T) {
 
 func TestDiscoveryTools_Metadata(t *testing.T) {
 	registry := tools.NewToolRegistry()
-	registry.RegisterDiscoveryTools(10, nil)
+	registry.RegisterDiscoveryTools(context.Background(), 10, nil)
 	for _, name := range []string{"search_tools", "get_tool_details"} {
 		tool, ok := registry.Get(name)
 		if !ok {

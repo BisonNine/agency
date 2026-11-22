@@ -159,7 +159,7 @@ func TestChannelBuildHook_AppliedToRebuiltDeviceChannel(t *testing.T) {
 
 	mb := bus.NewMessageBus()
 	defer mb.Close()
-	al, err := agent.NewAgentLoop(cfg, mb, providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, mb, providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestChannelBuildHook_WebUIOperatorName(t *testing.T) {
 	cfg.Operator.Name = "Alice"
 	mb := bus.NewMessageBus()
 	defer mb.Close()
-	al, err := agent.NewAgentLoop(cfg, mb, providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, mb, providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

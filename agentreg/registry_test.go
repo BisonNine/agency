@@ -57,7 +57,7 @@ type fakeHost struct {
 
 func newFakeHost() *fakeHost { return &fakeHost{builds: map[string]int{}} }
 
-func (h *fakeHost) build(_ *config.Config, spec Spec) (*fakeInst, error) {
+func (h *fakeHost) build(_ context.Context, _ *config.Config, spec Spec) (*fakeInst, error) {
 	if h.onBuild != nil {
 		h.onBuild(spec)
 	}
@@ -119,7 +119,7 @@ func testConfig(t *testing.T) *config.Config {
 
 func mustNew(t *testing.T, cfg *config.Config, h *fakeHost) *Registry[*fakeInst] {
 	t.Helper()
-	r, err := New(cfg, h.hooks())
+	r, err := New(t.Context(), cfg, h.hooks())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestCreate_InsertedHookSeesAgent(t *testing.T) {
 		seen = append(seen, spec.ID)
 	}
 	var err error
-	if r, err = New(testConfig(t), hooks); err != nil {
+	if r, err = New(t.Context(), testConfig(t), hooks); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	id := mustClone(t, r, "alice")
@@ -680,7 +680,7 @@ func TestSweep_DeletesIdleSkipsBusy(t *testing.T) {
 	h := newFakeHost()
 	hooks := h.hooks()
 	hooks.Clock = fc
-	r, err := New(testConfig(t), hooks)
+	r, err := New(t.Context(), testConfig(t), hooks)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -843,7 +843,7 @@ func TestRunSweeper_SweepsOnEachTick(t *testing.T) {
 	h := newFakeHost()
 	hooks := h.hooks()
 	hooks.Clock = fc
-	r, err := New(testConfig(t), hooks)
+	r, err := New(t.Context(), testConfig(t), hooks)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

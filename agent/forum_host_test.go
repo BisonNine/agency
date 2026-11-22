@@ -97,7 +97,7 @@ func newForumRig(t *testing.T, cfg *config.Config, model providers.LLMProvider) 
 	}, forum.WithCeilings(host.Ceilings))
 	toolsforum.SetService(svc)
 	msgBus := bus.NewMessageBus()
-	al, err := NewAgentLoop(cfg, msgBus, model, nil, OwnsDataDir())
+	al, err := NewAgentLoop(t.Context(), cfg, msgBus, model, nil, OwnsDataDir())
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

@@ -66,7 +66,7 @@ func agentCmd(message, model string, debug bool) error {
 	dispatcher := providers.NewProviderDispatcher(cfg)
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
-	agentLoop, err := agent.NewAgentLoop(cfg, msgBus, provider, dispatcher)
+	agentLoop, err := agent.NewAgentLoop(context.Background(), cfg, msgBus, provider, dispatcher)
 	if err != nil {
 		return fmt.Errorf("error creating agent loop: %w", err)
 	}

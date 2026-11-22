@@ -285,7 +285,7 @@ func newGatewayAgentLoop(
 	classifierHost *agent.ClassifierHost,
 	operatorAlerter alerter.Alerter,
 ) (*agent.AgentLoop, error) {
-	agentLoop, err := agent.NewAgentLoop(cfg, msgBus, provider, dispatcher, agent.OwnsDataDir())
+	agentLoop, err := agent.NewAgentLoop(context.Background(), cfg, msgBus, provider, dispatcher, agent.OwnsDataDir())
 	if err != nil {
 		return nil, fmt.Errorf("error creating agent loop: %w", err)
 	}

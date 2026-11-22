@@ -115,9 +115,9 @@ func (r *ToolRegistry) RegisterEntries(entries ...ToolEntry) {
 // are suite-exempt (gated by the discovery switch, not the per-tool
 // allowlist); one that skip reports true for (the agent's deny list) is left
 // out.
-func (r *ToolRegistry) RegisterDiscoveryTools(maxResults int, skip func(name string) bool) {
-	ix := discovery.NewIndex(r.cat, discovery.MaxResults(maxResults), discovery.WithLogger(logger.SDK()))
-	entries, err := ix.MetaTools().Tools(context.Background())
+func (r *ToolRegistry) RegisterDiscoveryTools(ctx context.Context, maxResults int, skip func(name string) bool) {
+	ix := discovery.NewIndex(r.cat, discovery.MaxResults(maxResults), discovery.WithLogger(logger.SDK()), discovery.LogQueries(true))
+	entries, err := ix.MetaTools().Tools(ctx)
 	if err != nil {
 		logger.ErrorCF("tools", "Tool registration refused", map[string]any{"error": err.Error()})
 		return

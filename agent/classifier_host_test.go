@@ -292,9 +292,9 @@ func TestClassifierHost_Complete(t *testing.T) {
 			cfg := classifierHostConfig(t, ts.URL)
 			cfg.Agents.List[0].Classifiers.Model = tc.model
 			cfg.Agents.List[0].Classifiers.Enabled = !tc.off
-			_, host, _ := newClassifierHostLoop(t, cfg) //nolint:contextcheck // as in AgentLoop's reload: registering discovery tools takes no context
+			_, host, _ := newClassifierHostLoop(t, cfg)
 			before := srv.count()
-			_, _, err := host.Complete(ctx, "alice", "s", "u")
+			_, _, err := host.Complete(t.Context(), "alice", "s", "u")
 			if !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Complete = %v, want ErrNoModel with %q", err, tc.want)
 			}

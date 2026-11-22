@@ -63,7 +63,7 @@ func TestNewClassifierService(t *testing.T) {
 	svc := newClassifierService(host)
 	t.Cleanup(func() { closeClassifiers(svc) })
 
-	al, loopErr := agent.NewAgentLoop(cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, loopErr := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
 	if loopErr != nil {
 		t.Fatalf("NewAgentLoop: %v", loopErr)
 	}

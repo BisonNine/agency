@@ -342,7 +342,7 @@ func mcpServerToolEntries(agent *AgentInstance, mgr *mcp.Manager, serverName str
 		return nil
 	}
 	var entries []tools.ToolEntry
-	var hidden []toolkit.Entry
+	var eligible []toolkit.Entry
 	for _, tool := range conn.Tools {
 		// Gate on the dedicated per-agent MCP allow-list (mcp_tools), which
 		// matches <server>_<tool> by equality-or-prefix. This is separate
@@ -357,13 +357,8 @@ func mcpServerToolEntries(agent *AgentInstance, mgr *mcp.Manager, serverName str
 		// MCP tools are discovery-eligible: when the agent's effective
 		// discovery is on (decided during provider registration and stored on
 		// the instance), hide them behind search_tools; otherwise advertise.
-		// A namespace pinned via always_shown_namespaces stays visible.
-		// Hidden ones are grouped by server so a reveal-together server
-		// loads as a set.
-		if discoveryHidesTool(agent.DiscoveryActive, agent.AlwaysShownNamespaces, mcpTool.Name()) {
-			hidden = append(hidden, toolkit.Entry{
-				Tool: mcpTool, Group: serverName, RevealTogether: conn.RevealTogether(),
-			})
+		if agent.DiscoveryActive {
+			eligible = append(eligible, toolkit.Entry{Tool: mcpTool})
 		} else {
 			entries = append(entries, tools.ToolEntry{Tool: mcpTool})
 		}
@@ -376,7 +371,12 @@ func mcpServerToolEntries(agent *AgentInstance, mgr *mcp.Manager, serverName str
 				"name":     mcpTool.Name(),
 			})
 	}
-	for _, e := range discovery.HideEntries(hidden) {
+	// A namespace pinned via always_shown_namespaces stays listed. Hidden
+	// tools are grouped by server so a reveal-together server loads as a set.
+	for _, e := range discovery.HideEntries(eligible, alwaysShown(agent.AlwaysShownNamespaces)) {
+		if e.Hidden {
+			e.Group, e.RevealTogether = serverName, conn.RevealTogether()
+		}
 		entries = append(entries, tools.ToolEntry{Entry: e})
 	}
 	return entries

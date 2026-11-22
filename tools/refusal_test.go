@@ -2,7 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,34 +45,57 @@ func TestRegistry_RefusalLoggedAtWarn(t *testing.T) {
 	}
 }
 
-// A call the agent's allow checker refuses logs one line, the host's denial
-// warning naming the tool, and nothing else: the catalogue does not log the
-// gate's refusal again.
-func TestRegistry_DeniedCallLogsOneWarning(t *testing.T) {
-	r := NewToolRegistry()
-	r.Register(&mockRegistryTool{name: "probe", params: map[string]any{}, result: SilentResult("ran")})
+// A refused call logs what the host logged before the tool core moved to the
+// SDK: the start line, then the refusal, and nothing else. A call the agent's
+// allow checker denies is refused with the denial warning (no second
+// "Tool call refused"); an unknown tool with "Tool not found".
+func TestRegistry_RefusedCallLogs(t *testing.T) {
+	type line struct {
+		level, message, tool string
+	}
+	for _, tc := range []struct {
+		name string
+		call string
+		ctx  context.Context
+		want []line
+	}{
+		{"denied", "probe", WithToolAllowChecker(context.Background(), denyAllChecker{}), []line{
+			{"info", "Tool execution started", "probe"},
+			{"warn", "Tool execution denied by agent allowlist", "probe"},
+		}},
+		{"not found", "missing", context.Background(), []line{
+			{"info", "Tool execution started", "missing"},
+			{"error", "Tool not found", "missing"},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewToolRegistry()
+			r.Register(&mockRegistryTool{name: "probe", params: map[string]any{}, result: SilentResult("ran")})
 
-	var buf safeBuf
-	restore := logger.RedirectForTest(&buf)
-	defer restore()
-	ctx := WithToolAllowChecker(context.Background(), denyAllChecker{})
-	res := r.ExecuteWithContext(ctx, "probe", nil, "", "", nil)
-	if res == nil || !res.IsError || !IsExpectedRefusal(res.Err) {
-		t.Fatalf("want a refusal, got %+v", res)
-	}
+			var buf safeBuf
+			restore := logger.RedirectForTest(&buf)
+			defer restore()
+			res := r.ExecuteWithContext(tc.ctx, tc.call, nil, "", "", nil)
+			if res == nil || !res.IsError {
+				t.Fatalf("want a refusal, got %+v", res)
+			}
 
-	var lines []string
-	for l := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
-		if l != "" {
-			lines = append(lines, l)
-		}
-	}
-	if len(lines) != 1 {
-		t.Fatalf("want exactly one log line, got %d:\n%s", len(lines), buf.String())
-	}
-	for _, want := range []string{`"level":"warn"`, "Tool execution denied by agent allowlist", `"tool":"probe"`} {
-		if !strings.Contains(lines[0], want) {
-			t.Errorf("log line lacks %s: %s", want, lines[0])
-		}
+			var got []line
+			for l := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+				var rec map[string]any
+				if err := json.Unmarshal([]byte(l), &rec); err != nil {
+					t.Fatalf("log line %q: %v", l, err)
+				}
+				delete(rec, "caller")
+				delete(rec, "time")
+				if len(rec) != 3 {
+					t.Errorf("fields %v, want level, message and tool only", rec)
+				}
+				got = append(got, line{fmt.Sprint(rec["level"]), fmt.Sprint(rec["message"]), fmt.Sprint(rec["tool"])})
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("log = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }

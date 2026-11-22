@@ -71,7 +71,7 @@ func TestTouch(t *testing.T) {
 	h := newFakeHost()
 	hooks := h.hooks()
 	hooks.Clock = fc
-	r, err := New(testConfig(t), hooks)
+	r, err := New(t.Context(), testConfig(t), hooks)
 	if err != nil {
 		t.Fatal(err)
 	}

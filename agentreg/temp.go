@@ -249,7 +249,7 @@ func (r *Registry[T]) create(cfg config.AgentConfig, o createOptions, inTurn boo
 	if src != nil {
 		snapshotMemory(src.spec, spec)
 	}
-	inst, err := build(current, spec)
+	inst, err := build(context.Background(), current, spec)
 	if err != nil {
 		removeDir(spec.StateDir)
 		return "", nil, fmt.Errorf("agentreg: build %s: %w", spec.Label(), err)

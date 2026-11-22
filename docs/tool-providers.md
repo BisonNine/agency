@@ -309,14 +309,14 @@ packages import only `tools`.
 | `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
 | `GetDefinitions`, `GetSummaries` | `Listed()` |
 | `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `providers.ToolDefinition` |
-| `RegisterDiscoveryTools` | `discovery.NewIndex(catalogue).MetaTools()`, each tool `Put` suite-exempt unless denied |
+| `RegisterDiscoveryTools(ctx, …)` | `discovery.NewIndex(catalogue, LogQueries(true)).MetaTools()`, each tool `Put` suite-exempt unless denied |
 
 Progressive discovery is the SDK's `discovery` package. The agent decides
-which tools are discovery-eligible (fusion, maestro, upstream MCP) and which
-of them `always_shown_namespaces` and the Maestro entry tool pin
-(`discoveryHidesTool`, matching the internal name with
-`config.MatchVisibility`); `discovery.HideEntries` hides the rest, taking a
-tool's group from `DiscoveryGrouped` when it has none. Each registry has its
+which tools are discovery-eligible (fusion, maestro, upstream MCP);
+`discovery.HideEntries` hides them, taking a tool's group from
+`DiscoveryGrouped` when it has none, except those `always_shown_namespaces`
+and the Maestro entry tool pin (`discovery.AlwaysShownFunc` asked with the
+internal name, matched by `config.MatchVisibility`). Each registry has its
 own `discovery.Index` behind `search_tools` and `get_tool_details`, so a
 search answers from that agent's tools only, and the index rebuilds when the
 catalogue changes. `ToolDefs.Send` is every tool, hidden ones `Deferred`,

@@ -38,7 +38,7 @@ func (al *AgentLoop) agentBuilder(
 	dispatcher *providers.ProviderDispatcher,
 	fallbackChain *providers.FallbackChain,
 ) agentreg.BuildFunc[*AgentInstance] {
-	return func(cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
+	return func(ctx context.Context, cfg *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
 		inst, err := newAgentInstance(spec, &cfg.Agents.Defaults, cfg, provider)
 		if err != nil {
 			return nil, err
@@ -53,7 +53,7 @@ func (al *AgentLoop) agentBuilder(
 		if spec.Fresh {
 			return inst, nil
 		}
-		al.registerAgentTools(inst, provider, dispatcher, fallbackChain, cfg)
+		al.registerAgentTools(ctx, inst, provider, dispatcher, fallbackChain, cfg)
 		if inst.IsTemp() {
 			// A config agent gets these after the registry is built (the gateway
 			// registers its tools); an agent created later gets them now. Its
@@ -82,6 +82,7 @@ func (al *AgentLoop) agentInserted(_ agentreg.Spec, inst *AgentInstance) {
 // every allowed provider tool on it. A clone's tools act as its source (see
 // toolIdentity) but are bound to the clone's own state directory and session.
 func (al *AgentLoop) registerAgentTools(
+	ctx context.Context,
 	currentAgent *AgentInstance,
 	provider providers.LLMProvider,
 	dispatcher *providers.ProviderDispatcher,
@@ -134,7 +135,7 @@ func (al *AgentLoop) registerAgentTools(
 	}
 	al.registerProviderTools(currentAgent, cfg, deps, discovery)
 	if discovery {
-		al.registerDiscoveryMetaTools(currentAgent, cfg)
+		al.registerDiscoveryMetaTools(ctx, currentAgent, cfg)
 	}
 }
 
@@ -304,16 +305,15 @@ func (al *AgentLoop) registerProviderTools(currentAgent *AgentInstance, cfg *con
 					map[string]any{"agent_id": deps.AgentID, "tool": t.Name(), "suite": suite})
 			case suite == suiteCogmem:
 				currentAgent.Tools.RegisterSuite(t) // cogmem: always-on, never hidden
-			case discoveryHidesTool(discovery, currentAgent.AlwaysShownNamespaces, t.Name()):
-				// fusion/maestro behind discovery; HideEntries carries any
-				// reveal-together group (e.g. a fusion service) so
-				// get_tool_details loads the whole set. A namespace pinned via
-				// always_shown_namespaces skips this and falls through to
-				// RegisterSuite (always visible to the model).
-				hidden := sdkdiscovery.HideEntries([]toolkit.Entry{{Tool: t}})[0]
-				currentAgent.Tools.RegisterEntries(tools.ToolEntry{Entry: hidden, SuiteExempt: true})
+			case discovery:
+				// fusion/maestro behind discovery unless a namespace pinned via
+				// always_shown_namespaces keeps it listed; HideEntries carries
+				// any reveal-together group (e.g. a fusion service) so
+				// get_tool_details loads the whole set.
+				e := sdkdiscovery.HideEntries([]toolkit.Entry{{Tool: t}}, alwaysShown(currentAgent.AlwaysShownNamespaces))[0]
+				currentAgent.Tools.RegisterEntries(tools.ToolEntry{Entry: e, SuiteExempt: true})
 			default:
-				// Non-discovery suites, plus discovery-pinned always-shown suites.
+				// Non-discovery suites.
 				currentAgent.Tools.RegisterSuite(t)
 			}
 		}
@@ -371,12 +371,12 @@ func (al *AgentLoop) registerExtraTools(agent *AgentInstance) {
 // cognitive memory is fundamental to how the agent works, so it stays always-on.
 const suiteCogmem = "cogmem"
 
-// discoveryHidesTool reports whether a discovery-eligible tool (a fusion/maestro
-// suite tool or an upstream MCP tool) should be hidden from the in-loop model: it
-// is hidden only when discovery is active AND the tool's namespace is not pinned
-// via always_shown_namespaces. A pinned namespace keeps the tool always visible.
-func discoveryHidesTool(active bool, alwaysShown []string, toolName string) bool {
-	return active && !config.MatchVisibility(alwaysShown, toolName)
+// alwaysShown keeps a discovery-eligible tool (a fusion/maestro suite tool or
+// an upstream MCP tool) listed when its internal name matches one of pins
+// (always_shown_namespaces and the Maestro entry tool) under MatchVisibility,
+// which strips the mcp_ prefix and matches a namespace prefix.
+func alwaysShown(pins []string) sdkdiscovery.HideOption {
+	return sdkdiscovery.AlwaysShownFunc(func(name string) bool { return config.MatchVisibility(pins, name) })
 }
 
 // discoveryPins returns the visibility pins for an agent's in-loop tool list:
@@ -396,13 +396,13 @@ func discoveryPins(cfg *config.Config, agentCfg *config.AgentConfig) []string {
 // registerDiscoveryMetaTools registers the search_tools / get_tool_details entry
 // points. They are suite-exempt (gated by the discovery decision, not the per-tool
 // allowlist) and present only when discovery is active for the agent.
-func (al *AgentLoop) registerDiscoveryMetaTools(agent *AgentInstance, cfg *config.Config) {
+func (al *AgentLoop) registerDiscoveryMetaTools(ctx context.Context, agent *AgentInstance, cfg *config.Config) {
 	maxHits := cfg.Tools.Discovery.MaxSearchResults
 	if maxHits <= 0 {
 		maxHits = config.DefaultDiscoveryMaxSearchHits
 	}
 	// Suite-exempt from the allow list, but the agent's deny list still applies.
-	agent.Tools.RegisterDiscoveryTools(maxHits, agent.Config.IsToolDenied)
+	agent.Tools.RegisterDiscoveryTools(ctx, maxHits, agent.Config.IsToolDenied)
 }
 
 // RegisterTool registers a host-built tool (the gateway's cron tool) on every

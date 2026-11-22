@@ -83,7 +83,7 @@ func TestDeviceQuerier_HidesHumanAgents(t *testing.T) {
 		Providers: []config.Provider{{Name: "People", Protocol: config.HumanProtocol}},
 		Models:    []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true}},
 	}
-	al, err := agent.NewAgentLoop(cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

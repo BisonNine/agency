@@ -92,7 +92,7 @@ func TestDiscovery_TurnSendsSameToolsAndRunsFoundTool(t *testing.T) {
 	}
 	notebook := &notebookTool{}
 	registerHiddenSuite(agent, notebook)
-	agent.Tools.RegisterDiscoveryTools(5, nil)
+	agent.Tools.RegisterDiscoveryTools(context.Background(), 5, nil)
 
 	provider := &defsRecordingProvider{responses: []*providers.LLMResponse{
 		toolCallResponse("tc-search", "search_tools", `{"query":"Alice notebook page"}`),
@@ -259,7 +259,7 @@ func TestAssembleRequest_EstimatesOnlySentTools(t *testing.T) {
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
-	agent.Tools.RegisterDiscoveryTools(5, nil)
+	agent.Tools.RegisterDiscoveryTools(context.Background(), 5, nil)
 	coreDefs := agent.Tools.ToolDefs(nil).Send
 
 	for i := range 200 {

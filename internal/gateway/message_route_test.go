@@ -149,7 +149,7 @@ func TestMessageRoute_RateLimited429(t *testing.T) {
 			List: []config.AgentConfig{{ID: "main", Name: "Main", Default: true}},
 		},
 	}
-	al, err := agent.NewAgentLoop(cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

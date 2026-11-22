@@ -191,7 +191,7 @@ type Info struct {
 }
 
 // BuildFunc builds the instance for spec against cfg, tools included.
-type BuildFunc[T Instance] func(cfg *config.Config, spec Spec) (T, error)
+type BuildFunc[T Instance] func(ctx context.Context, cfg *config.Config, spec Spec) (T, error)
 
 // RetireFunc releases what the host caches for an instance (open sessions,
 // tokens) before the registry closes it. An error refuses the close; the
@@ -327,7 +327,7 @@ func (r *Registry[T]) TempRoot() string {
 
 // New builds the config agents of cfg, then restores the temporary agents
 // saved by a previous run.
-func New[T Instance](cfg *config.Config, hooks Hooks[T]) (*Registry[T], error) {
+func New[T Instance](ctx context.Context, cfg *config.Config, hooks Hooks[T]) (*Registry[T], error) {
 	if hooks.Build == nil {
 		return nil, errors.New("agentreg: Build hook is required")
 	}
@@ -346,19 +346,19 @@ func New[T Instance](cfg *config.Config, hooks Hooks[T]) (*Registry[T], error) {
 		// first use.
 		r.privateRoot = true
 	}
-	entries, order, defaultID, err := buildConfigEntries(cfg, hooks.Build, r.clock.Now())
+	entries, order, defaultID, err := buildConfigEntries(ctx, cfg, hooks.Build, r.clock.Now())
 	if err != nil {
 		return nil, err
 	}
 	r.entries, r.order, r.defaultID = entries, order, defaultID
-	r.restore()
+	r.restore(ctx)
 	return r, nil
 }
 
 // buildConfigEntries builds every enabled config agent. The first enabled
 // agent is the default unless one is marked default. On error the instances
 // already built are closed.
-func buildConfigEntries[T Instance](cfg *config.Config, build BuildFunc[T], now time.Time) (map[string]*entry[T], []string, string, error) {
+func buildConfigEntries[T Instance](ctx context.Context, cfg *config.Config, build BuildFunc[T], now time.Time) (map[string]*entry[T], []string, string, error) {
 	entries := make(map[string]*entry[T])
 	var order []string
 	defaultID := ""
@@ -370,7 +370,7 @@ func buildConfigEntries[T Instance](cfg *config.Config, build BuildFunc[T], now 
 			continue
 		}
 		spec := configSpec(cfg, ac)
-		inst, err := build(cfg, spec)
+		inst, err := build(ctx, cfg, spec)
 		if err != nil {
 			for _, e := range entries {
 				closeQuietly(e.inst, e.spec)
@@ -691,7 +691,7 @@ func (r *Registry[T]) Reload(ctx context.Context, cfg *config.Config, build Buil
 	defer r.reloadMu.Unlock()
 
 	now := r.clock.Now()
-	entries, order, defaultID, err := buildConfigEntries(cfg, build, now)
+	entries, order, defaultID, err := buildConfigEntries(ctx, cfg, build, now)
 	if err != nil {
 		return err
 	}
@@ -721,7 +721,7 @@ func (r *Registry[T]) Reload(ctx context.Context, cfg *config.Config, build Buil
 		}
 		var inst T
 		if err == nil {
-			inst, err = build(cfg, spec)
+			inst, err = build(ctx, cfg, spec)
 		}
 		if err != nil {
 			// Says nothing about the configuration (an I/O error, a store

@@ -120,7 +120,7 @@ func startLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, extraTo
 		t.Fatalf("CreateProviderFromConfig: %v", err)
 	}
 	dispatcher := providers.NewProviderDispatcher(cfg)
-	al, err := agent.NewAgentLoop(cfg, msgBus, provider, dispatcher)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus, provider, dispatcher)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

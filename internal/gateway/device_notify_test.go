@@ -29,7 +29,7 @@ func notifyTestLoop(t *testing.T, bindings []config.AgentBinding) *agent.AgentLo
 		},
 		Bindings: bindings,
 	}
-	al, err := agent.NewAgentLoop(cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus(), providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}

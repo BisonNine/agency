@@ -299,6 +299,7 @@ type loopOptions struct {
 func OwnsDataDir() LoopOption { return func(o *loopOptions) { o.ownsDataDir = true } }
 
 func NewAgentLoop(
+	ctx context.Context,
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
@@ -370,7 +371,7 @@ func NewAgentLoop(
 	// by the previous run. The builder registers each agent's tools (session
 	// closures, spawn/subagent, msg with shared MessageTool), so it runs once
 	// al exists.
-	registry, err := agentreg.New(cfg, agentreg.Hooks[*AgentInstance]{
+	registry, err := agentreg.New(ctx, cfg, agentreg.Hooks[*AgentInstance]{
 		Build:    al.agentBuilder(provider, dispatcher, fallbackChain),
 		Retire:   al.retireAgent,
 		Inserted: al.agentInserted,
@@ -694,7 +695,7 @@ func (al *AgentLoop) reloadRegistry(
 			}
 			done <- err
 		}()
-		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher, newFallback), func() bool { //nolint:contextcheck // building an agent registers its discovery tools, whose toolset ignores the context it is listed with
+		err = registry.Reload(ctx, cfg, al.agentBuilder(provider, al.dispatcher, newFallback), func() bool {
 			if !outcome.CompareAndSwap(reloadPending, reloadCommitted) {
 				return false
 			}

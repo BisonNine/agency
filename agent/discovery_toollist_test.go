@@ -56,7 +56,7 @@ func TestDiscovery_MCPToolListsUnchanged(t *testing.T) {
 				agent.Tools.ReplaceByPrefix(tools.MCPServerPrefix(srv.name), mcpServerToolEntries(agent, nil, srv.name, conn))
 			}
 			if v.active {
-				al.registerDiscoveryMetaTools(agent, al.GetConfig())
+				al.registerDiscoveryMetaTools(t.Context(), agent, al.GetConfig())
 			}
 
 			sent := sentToolList(agent)

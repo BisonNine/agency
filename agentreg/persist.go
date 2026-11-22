@@ -4,6 +4,7 @@
 package agentreg
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,7 +113,7 @@ func (r *Registry[T]) persist() {
 // left as it is, and so is every directory under the temp root: nothing is
 // restored, nothing is deleted, and the file is not rewritten while this
 // process runs.
-func (r *Registry[T]) restore() {
+func (r *Registry[T]) restore(ctx context.Context) {
 	if r.statePath == "" {
 		return
 	}
@@ -161,7 +162,7 @@ func (r *Registry[T]) restore() {
 		}
 		var inst T
 		if err == nil {
-			inst, err = r.build(r.cfg, spec)
+			inst, err = r.build(ctx, r.cfg, spec)
 		}
 		if err != nil {
 			// Says nothing about the configuration: keep the record and the

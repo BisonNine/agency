@@ -107,9 +107,9 @@ func TestCreate_OrderedAfterReload(t *testing.T) {
 	reloaded := make(chan struct{})
 	go func() {
 		defer close(reloaded)
-		build := func(c *config.Config, s Spec) (*fakeInst, error) {
+		build := func(ctx context.Context, c *config.Config, s Spec) (*fakeInst, error) {
 			g.onBuild(s)
-			return h.build(c, s)
+			return h.build(ctx, c, s)
 		}
 		if err := r.Reload(context.Background(), next, build, commitOK); err != nil {
 			t.Errorf("Reload: %v", err)
@@ -145,7 +145,7 @@ func TestCreate_OrderedAfterReload(t *testing.T) {
 func TestNonOwner_PrivateRoot(t *testing.T) {
 	cfg := testConfig(t)
 	shared := filepath.Join(cfg.DataDir(), global.InternalDir, TempDirName)
-	r, err := New(cfg, Hooks[*fakeInst]{Build: newFakeHost().build})
+	r, err := New(t.Context(), cfg, Hooks[*fakeInst]{Build: newFakeHost().build})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestOwner_OnlyOwnerTouchesSharedState(t *testing.T) {
 	}
 
 	// A second, non-owner process on the same data directory.
-	other, err := New(cfg, Hooks[*fakeInst]{Build: newFakeHost().build})
+	other, err := New(t.Context(), cfg, Hooks[*fakeInst]{Build: newFakeHost().build})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

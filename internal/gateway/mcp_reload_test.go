@@ -34,7 +34,7 @@ func TestStartMCPServer_ReloadKeepsSessionTokens(t *testing.T) {
 	cfg.MCPHost.Listen = "127.0.0.1:0"
 
 	msgBus := bus.NewMessageBus()
-	al, err := agent.NewAgentLoop(cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestStartMCPServer_TokensLoadedBeforeListening(t *testing.T) {
 	cfg.MCPHost.Listen = ln.Addr().String()
 
 	msgBus := bus.NewMessageBus()
-	al, err := agent.NewAgentLoop(cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRestartMCPHost_Readiness(t *testing.T) {
 			}
 
 			msgBus := bus.NewMessageBus()
-			al, err := agent.NewAgentLoop(cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
+			al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
 			if err != nil {
 				t.Fatalf("NewAgentLoop: %v", err)
 			}
@@ -236,7 +236,7 @@ func TestRestartMCPHost_ReadyAgainAfterFailedRestart(t *testing.T) {
 	cfg.MCPHost.Listen = taken.Addr().String()
 
 	msgBus := bus.NewMessageBus()
-	al, err := agent.NewAgentLoop(cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
+	al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus, providers.NewUnconfiguredProvider(), nil)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
