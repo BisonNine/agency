@@ -56,7 +56,8 @@ func (al *AgentLoop) selectTurnModel(agent *AgentInstance, sessionKey string) *t
 // agent's first configured name, as the wire id (an empty one included: the
 // client decides), reporting no provider, the agent's own limits for model
 // and its provider's reasoning-content setting; nil when there is no default
-// model, and the turn fails as a configuration without models.
+// model (or a reload removed it since), and the turn fails as a
+// configuration without models.
 func (al *AgentLoop) directChain(agent *AgentInstance, model string) *models.Chain {
 	name := al.defaultModelClient()
 	if name == "" {

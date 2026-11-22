@@ -132,7 +132,14 @@ func TestLoopStart_ReadPerChatSettingsAtLoopStart(t *testing.T) {
 	if st.breadcrumbs || st.notifyFallback != nil || st.stream != nil || st.stopProgress != nil || st.pendingSource {
 		t.Fatal("per-chat settings read before the loop starts")
 	}
+	// Until the loop starts the consumers do nothing, even with /tools on.
 	al.setShowToolActivity(agent, opts.SessionKey, true)
+	h.emit(context.Background(), hook.ToolCallStarted{Call: hook.ToolCall{ID: "c1", Name: "display_tool"}})
+	peek, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if msg, ok := tl.msgBus.SubscribeOutbound(peek); ok {
+		t.Fatalf("published before the loop started: %q", msg.Content)
+	}
 	loop := &hook.Loop{TextDeltas: len(h.onTextDelta) > 0}
 	if !loop.TextDeltas {
 		t.Fatal("the stream consumer is not registered when the turn is built")

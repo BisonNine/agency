@@ -251,8 +251,10 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 }
 
 // startModelLoop sets up a turn's model loop when it starts (BeforeLoop),
-// after its message is stored and the turn marked pending, on the turn's
-// context: it records the pending turn's source, reads the per-chat settings
+// after its message is stored and the turn marked pending, on the context
+// BeforeLoop is given (the scoped turn context the engine runs on, ended
+// when the turn's run returns, after TurnFinished stopped the heartbeat and
+// flushed the stream): it records the pending turn's source, reads the per-chat settings
 // (whether the channel streams partial text, the fallback notice, the tool
 // breadcrumbs) and starts the progress heartbeat.
 func (al *AgentLoop) startModelLoop(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState, loop *hook.Loop) {

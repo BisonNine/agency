@@ -294,8 +294,9 @@ func (c *armAtAssembly) Assemble(ctx context.Context, req ctxengine.AssembleRequ
 func TestLoopStart_PanicEndsTheTurn(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		// inHost: the host's own loop-start set-up panics (its /tools read);
-		// otherwise a BeforeLoop after it does, once the heartbeat runs.
+		// inHost: the host's own loop-start set-up panics (its /tools read,
+		// before the heartbeat would start); otherwise a BeforeLoop after it
+		// does, once the heartbeat has edited the placeholder.
 		inHost bool
 		want   string
 	}{
@@ -335,6 +336,13 @@ func TestLoopStart_PanicEndsTheTurn(t *testing.T) {
 			}})
 			if !tc.inHost {
 				turn.hooks.add(hook.Plugin{Name: "later", BeforeLoop: func(context.Context, *hook.Loop) error {
+					// The heartbeat runs: it edits the placeholder.
+					for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+						if _, edits := ch.recorded(); len(edits) > 0 {
+							panic("Bob's later bug")
+						}
+					}
+					t.Error("the heartbeat never edited the placeholder")
 					panic("Bob's later bug")
 				}})
 			}
@@ -367,9 +375,10 @@ func TestLoopStart_PanicEndsTheTurn(t *testing.T) {
 			if _, recorded := testStateManager(t, al, agent.ID).GetPendingTurn(opts.SessionKey); recorded {
 				t.Fatal("the pending source was left recorded")
 			}
+			_, before := ch.recorded()
 			time.Sleep(1500 * time.Millisecond)
-			if _, edits := ch.recorded(); len(edits) != 0 {
-				t.Fatalf("the heartbeat kept editing the placeholder: %q", edits)
+			if _, edits := ch.recorded(); len(edits) != len(before) {
+				t.Fatalf("the heartbeat kept editing the placeholder after the turn: %q", edits[len(before):])
 			}
 		})
 	}

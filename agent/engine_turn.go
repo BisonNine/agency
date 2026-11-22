@@ -310,10 +310,10 @@ var errEngineIncomplete = errors.New("turn engine: no context manager, session s
 // reset and the message stored (unless the run says it already is); the
 // pending-turn marker; BeforeLoop and LoopStarted; the model loop;
 // AfterTurn; the reply stored and the session saved; the marker cleared
-// (kept for a turn shutdown stopped); exactly one TurnFinished, last. Its error is the TurnResult's Err; the
-// TurnResult is the handle's. A panic in the loop itself (not in a
-// callback) still ends the turn with OutcomeError in its TurnFinished, then
-// goes on to the caller. A spec without host services is refused before the
+// (kept for a turn shutdown stopped); exactly one TurnFinished, last. Its
+// error is the TurnResult's Err; the TurnResult is the handle's. A panic in
+// the loop itself (not in a callback) still ends the turn with OutcomeError
+// in its TurnFinished, then goes on to the caller. A spec without host services is refused before the
 // turn starts (errEngineIncomplete): no event is emitted.
 func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 	if e.spec.env == nil {
