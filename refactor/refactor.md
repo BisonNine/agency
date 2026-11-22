@@ -1600,21 +1600,43 @@ next session must know.
       `config.ValidateModel` maps the SDK's typed reserved-key error to
       the host's wording.
 - [ ] Phase 2: `models`
-  - SDK half done: `clock`, `models` (SDK bc1a6fd), reviewed and fixed.
-    Known differences the host must handle are listed in the phase 2
-    host brief: caller deadline now stops the chain; registered clients
-    are never closed by the SDK; clients survive `Adopt` only with
-    unchanged options. The single model-caller types still live in
-    `models`; moving them to a leaf for `ctxengine`/`cogmem` is open.
-  - Host half in progress (worktree `phase2`).
-- [ ] Phase 3: `toolkit`
-  - SDK half done (SDK 2283055), reviewed and fixed: one generation per
-    read, asynchronous change notices.
-  - Host half in progress (worktree `phase3`): aliases and a thin
-    `ToolRegistry` wrapper; shared catalogues, sets and `Adopt` are not
-    used by the host yet.
-- [ ] Phase 4: `discovery`
-  - SDK half in progress (worktree `discovery`).
+  - SDK: `clock`, `models` landed (SDK bc1a6fd), reviewed and fixed.
+  - Host: built in worktree `phase2` (chat calls on the catalogue, alerts
+    unchanged, digest-gated `Adopt`, `/model` persistence, fallback
+    replay tests) but NOT landed. Its review found that `/model`
+    choices can change across reload + restart and that list rebuilds
+    are not atomic. Waiting on SDK additions (branch `models2`):
+    `Chain.Do` for non-chat calls, a host classification rule, a client
+    handle without health, hooks on `Caller`, atomic list replace, a
+    selection-store contract that covers reorders. Then finish task
+    models, vision describe and the summary caller on `models`, add the
+    restart-after-reorder/removal tests, and rebase over phases 3 and 4.
+  - Caller deadline: checked. The user-visible reply and outcome are
+    the same; only log lines differ. No changelog entry.
+- [x] Phase 3: `toolkit` (SDK 2283055 … 1f37a3c; host 03b1b9a).
+      `ToolRegistry` is a thin wrapper over one catalogue per agent
+      registry. The allow/deny check is a `toolkit.Gate`, so it runs on
+      the exact tool executed; the suite exemption rides in `Entry.Meta`.
+      Unattended calls apply the same gate with an empty chat. Shared
+      catalogues, sets, `Adopt` and enable/disable are not used by the
+      host yet. Two log details changed: overwrite warnings are under
+      component `tool`, and hidden suite tools get the "Hidden tool…"
+      wording.
+- [x] Phase 4: `discovery` (SDK a48dc33, 1f37a3c; host 10152ad). Tool
+      lists are asserted against fixtures captured before the change
+      (`tests/toollist`, `agent/discovery_toollist_test.go`). Agent
+      construction now takes a context (`agentreg.BuildFunc`,
+      `NewAgentLoop`).
+- [ ] Known bug, pre-existing since Maestro 0.5.7, found by a flaky
+      test (`TestIntegration_ModelHintAndPermanentFailure`): Maestro
+      deletes a taskset's lock file after a dispatch, so a call right
+      after the completion notice can fail with "failed to create lock
+      file". Fix belongs in Maestro (`runner/runner.go`
+      `runDispatchExecution`, `tasks/tasksets.go`
+      `RemoveTaskSetLock`); waiting for the maintainer's go-ahead.
+- [ ] Phase 5 groundwork: `hook` and `ident` landed in the SDK
+      (765f25e). `hook/DESIGN.md` there is the brief for 5a and holds
+      the open questions for the maintainer.
 - [ ] Phase 5a: callbacks and events in place
 - [ ] Phase 5b: cancellation
 - [ ] Phase 5c: engine moved, root package, conformance suite
