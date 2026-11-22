@@ -116,7 +116,7 @@ func TestCompressCaller_ResolvesThroughCatalogue(t *testing.T) {
 }
 
 // An unresolved summarization model and an unresolved primary are left out
-// of the chain; with nothing left, the call is ErrNoModel.
+// of the chain; with nothing left, the call is ErrNoModelAvailable.
 func TestCompressCaller_UnresolvedModelsLeftOut(t *testing.T) {
 	cfg := compressTestConfig()
 	cfg.Summarization.Models = []string{"unknown-model"}
@@ -129,7 +129,7 @@ func TestCompressCaller_UnresolvedModelsLeftOut(t *testing.T) {
 	c, _ := al.newCompressModelCaller(agent, "s", models.Summarize)
 	_, err := c.Complete(context.Background(), hook.CompleteRequest{})
 	if !errors.Is(err, hook.ErrNoModelAvailable) || err.Error() != "no summarization model available: 0 excluded, 0 in cooldown" {
-		t.Fatalf("err = %v, want ErrNoModel with today's text", err)
+		t.Fatalf("err = %v, want ErrNoModelAvailable with today's text", err)
 	}
 
 	// With a chat model, the primary one is the chain's last resort.

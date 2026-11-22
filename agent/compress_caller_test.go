@@ -98,8 +98,8 @@ func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 	}
 
 	_, err = c.Complete(context.Background(), hook.CompleteRequest{Exclude: []string{"model-a", "model-b"}})
-	if !errors.Is(err, hook.ErrNoModelAvailable) || !strings.Contains(err.Error(), "2 excluded") {
-		t.Fatalf("every model excluded should yield ErrNoModel with the count, got %v", err)
+	if !errors.Is(err, hook.ErrNoModelAvailable) || !strings.HasPrefix(err.Error(), "no summarization model available: ") || !strings.Contains(err.Error(), "2 excluded") {
+		t.Fatalf("every model excluded should yield ErrNoModelAvailable in today's words with the count, got %v", err)
 	}
 }
 
@@ -174,7 +174,7 @@ func TestCompressModelCaller_SharedCooldownSkipsModel(t *testing.T) {
 	c := compressCaller(cat, "abliterated-model")
 	_, err := c.Complete(context.Background(), hook.CompleteRequest{})
 	if !errors.Is(err, hook.ErrNoModelAvailable) || !strings.Contains(err.Error(), "1 in cooldown") {
-		t.Fatalf("cooled model should be skipped with ErrNoModel naming the cooldown, got %v", err)
+		t.Fatalf("cooled model should be skipped with ErrNoModelAvailable naming the cooldown, got %v", err)
 	}
 	if p.callCount() != 0 {
 		t.Fatalf("model parked in the catalogue must not be called; calls=%d", p.callCount())
