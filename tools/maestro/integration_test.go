@@ -28,10 +28,23 @@ type scriptedRunner struct {
 	prompts []string
 	models  []string
 	depths  []int
+	// started, when set, is sent to as a dispatch starts; hold, when set,
+	// keeps it running until closed. ctxErrs records each dispatch's context
+	// error once hold has released it.
+	started chan struct{}
+	hold    chan struct{}
+	ctxErrs []error
 }
 
 func (r *scriptedRunner) RunSync(ctx context.Context, task, model string) (*global.SyncResult, error) {
+	if r.started != nil {
+		r.started <- struct{}{}
+	}
+	if r.hold != nil {
+		<-r.hold
+	}
 	r.mu.Lock()
+	r.ctxErrs = append(r.ctxErrs, ctx.Err())
 	r.prompts = append(r.prompts, task)
 	r.models = append(r.models, model)
 	r.depths = append(r.depths, toolsagents.SpawnDepth(ctx))

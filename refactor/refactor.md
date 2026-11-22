@@ -151,14 +151,23 @@ is the exception: it depends only on `toolspec`.
 Check each before relying on it.
 
 - What a Maestro dispatch (`RunSync`) does when its calling turn is
-  cancelled.
+  cancelled. *Verified in 5b:* `maestro_task_run` and
+  `maestro_task_dispatch` return at once and run their tasks on
+  `context.WithoutCancel` of the tool call's context (Maestro's
+  `detachContext`), so a cancelled turn does not reach a dispatched worker:
+  it finishes and the task is done (`tools/maestro/cancel_test.go`). The one
+  synchronous dispatch, `llm_dispatch`, is not built under host dispatch.
+  Phase 5b leaves it so: a Maestro run is owned by Maestro, like a forum
+  run, and `/cancel` and `/cancel all` do not touch it.
 - Whether Maestro or MCPFusion use `spawnllm.Worker` (they still depend on
   the old `PivotLLM/spawnllm` module), which this plan deletes.
 - That clearing cooldowns on every config save would repeat the
   model-parked alert (the reason `Adopt` is called only when model
   settings changed).
 - The device listener's run-id defect on a `/cancel` sent during a run:
-  found by reading the code, not reproduced on a device.
+  found by reading the code, not reproduced on a device. *Reproduced in 5b*
+  in a server test: run 1 gets no terminal event, the `/cancel` reply's
+  events carry run 2's id, and a reply after it carries an empty run id.
 - That a second instance on one machine must be set up by hand (the
   installer registers one fixed service name; not tried).
 - Name availability: "Agency" was checked by web search only. Two Go
@@ -342,8 +351,9 @@ maintainer, nothing consumes the repository yet.
 | Restart | The supervisor relaunches tasks still marked running. | `SuperviseOnce` |
 | Asked agent (`agent_message`) | The asked turn is not stopped when the asker stops (only the forum's asks stop theirs). | `agent/ask.go` |
 
-Not verified: what a Maestro dispatch (`RunSync`) does when the calling turn
-is cancelled. Phase 5b establishes it before deciding.
+Maestro dispatch (verified in 5b, see 0.8): a Maestro run continues when the
+turn that started it is cancelled; its workers run on a context detached from
+the tool call.
 
 ## 3. Target layout
 
