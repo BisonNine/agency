@@ -1549,7 +1549,23 @@ next session must know.
 
 - [ ] 0.3 maintainer answers recorded here (repository, version, SDK
       versioning, releases, dev instance)
-- [ ] Baseline `make test` recorded for both repositories
+  - Repository: answered. `BisonNine/agency`, private. All work lands on
+    the branch `refactor`; `main` stays empty until the refactoring is
+    done. ClawEh `main` (ee944b3) was merged into `refactor` with its
+    history (fa4f1ed). This plan lives in `refactor/`, not the root.
+  - Version, SDK versioning, releases, dev instance: not answered yet.
+- [x] Baseline `make test` recorded for both repositories
+  - SDK (`dev/0.0.1`, 5bbfa3a): passes, 0 failed, 1 skipped.
+  - Host (fa4f1ed, same tree as ClawEh ee944b3): 96 Go packages pass
+    with the race detector, coverage 78.4%, frontend passes, MCP
+    integration 21/21, CLI smoke skipped. **`make test` itself fails at
+    lint** on the released code: one `errcheck` finding,
+    `internal/gateway/mcp_reload_test.go:225` (golangci-lint 2.15.0).
+    The steps after lint were run by hand to get the figures above.
+  - A fresh checkout needs `make manual-deps` and `make frontend-deps`
+    first, with `pnpm` on the PATH.
+  - 0.8, checked: neither Maestro nor MCPFusion imports `spawnllm`, so
+    deleting `spawnllm.Worker` affects neither.
 - [ ] Phase 0: adopt the module
 - [ ] Standards: `slog`, file-permission type
 - [ ] Phase 1: `modelspec`
