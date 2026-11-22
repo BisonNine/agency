@@ -111,8 +111,13 @@ func (al *AgentLoop) assignOne(inst *AgentInstance) {
 	defer al.listsGate.RUnlock()
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
+	// Deleted (and retired) since its insertion: nothing to state, and
+	// nothing would ever remove what was stated for it.
+	if cur, ok := al.GetRegistry().Get(inst.ID); !ok || cur != inst {
+		return
+	}
 	// Before the lists: ReplaceAll saves kept choices through it.
-	al.selectionAgents.Store(inst.ID, inst)
+	al.noteSelectionAgents([]*AgentInstance{inst})
 	assignAgentModelsIn(al.catalog, inst.builtWith, al.GetConfig(), inst)
 }
 
@@ -142,31 +147,56 @@ func (al *AgentLoop) reconcileAll(registry *AgentRegistry, cfg *config.Config) {
 	assignAll(al.catalog, cfg, instances)
 }
 
-// liveInstances are the instances whose sets must be complete: every one
-// the registry holds, and every agent the registry no longer has that is not
-// retired yet (a configured agent dropped while in a turn, kept until the
-// turn ends; retiring it removes its set, removeSet). Called with assignMu
-// held.
+// liveInstances are the instances whose sets are stated: every one the
+// registry holds, and for an id it no longer has, the latest instance under
+// that id not retired yet (a configured agent dropped while in a turn, kept
+// until the turn ends; removeSet). Each gets its own configuration's lists
+// of the models the catalogue has. Called with assignMu held.
 func (al *AgentLoop) liveInstances(registry *AgentRegistry) []*AgentInstance {
 	instances := registryInstances(registry)
-	al.selectionAgents.Range(func(_, v any) bool {
-		inst, ok := v.(*AgentInstance)
-		if !ok || inst == nil {
-			return true
+	al.unretiredMu.Lock()
+	latest := make(map[string]*AgentInstance, len(al.unretired))
+	for id, kept := range al.unretired {
+		if len(kept) > 0 {
+			latest[id] = kept[len(kept)-1]
 		}
-		if _, held := registry.Get(inst.ID); !held {
+	}
+	al.unretiredMu.Unlock()
+	for id, inst := range latest {
+		if _, held := registry.Get(id); !held {
 			instances = append(instances, inst)
 		}
-		return true
-	})
+	}
 	return instances
 }
 
+// retired drops inst from the unretired instances and returns those still
+// unretired under its id, oldest first.
+func (al *AgentLoop) retired(inst *AgentInstance) []*AgentInstance {
+	al.unretiredMu.Lock()
+	defer al.unretiredMu.Unlock()
+	kept := slices.DeleteFunc(al.unretired[inst.ID], func(i *AgentInstance) bool { return i == inst })
+	if len(kept) == 0 {
+		delete(al.unretired, inst.ID)
+		return nil
+	}
+	al.unretired[inst.ID] = kept
+	return slices.Clone(kept)
+}
+
 // noteSelectionAgents records instances as the ones their sets' choices are
-// read and written through.
+// read and written through, and as not retired. Called with assignMu held.
 func (al *AgentLoop) noteSelectionAgents(instances []*AgentInstance) {
+	al.unretiredMu.Lock()
+	defer al.unretiredMu.Unlock()
+	if al.unretired == nil {
+		al.unretired = make(map[string][]*AgentInstance)
+	}
 	for _, inst := range instances {
 		al.selectionAgents.Store(inst.ID, inst)
+		if !slices.Contains(al.unretired[inst.ID], inst) {
+			al.unretired[inst.ID] = append(al.unretired[inst.ID], inst)
+		}
 	}
 }
 
@@ -210,23 +240,34 @@ func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, diges
 	al.adoptCatalog(next, digest)
 }
 
-// removeSet drops the set of retired instance inst, and the derived
-// summarization models no remaining list names, once the registry no longer
-// has its id and no later instance under that id holds the set (one dropped
-// and re-added while inst was still in a turn).
+// removeSet is told that instance inst is retired. While the registry has
+// its id the set stays (the agent lives on in a newer instance). Otherwise,
+// when another instance under that id is not retired yet (dropped while in
+// a turn), the set is stated for the latest such one; when none is, the set
+// is removed. Derived summarization models no remaining list names go too.
 func (al *AgentLoop) removeSet(registry *AgentRegistry, inst *AgentInstance) {
-	al.assignMu.Lock()
-	defer al.assignMu.Unlock()
-	if _, ok := registry.Get(inst.ID); ok {
+	id := inst.ID
+	if _, ok := registry.Get(id); ok {
+		// A replaced instance: only the bookkeeping, no list changes.
+		al.retired(inst)
 		return
 	}
-	if v, ok := al.selectionAgents.Load(inst.ID); ok {
-		if v != inst {
-			return
-		}
-		al.selectionAgents.Delete(inst.ID)
+	al.assignMu.Lock()
+	defer al.assignMu.Unlock()
+	kept := al.retired(inst)
+	if _, ok := registry.Get(id); ok {
+		return
 	}
-	al.catalog.RemoveSet(inst.ID)
+	if len(kept) > 0 {
+		latest := kept[len(kept)-1]
+		if v, ok := al.selectionAgents.Load(id); !ok || v != latest {
+			al.selectionAgents.Store(id, latest)
+			assignAgentModelsIn(al.catalog, latest.builtWith, al.GetConfig(), latest)
+		}
+	} else {
+		al.selectionAgents.Delete(id)
+		al.catalog.RemoveSet(id)
+	}
 	pruneDerived(al.catalog, al.liveInstances(registry))
 }
 

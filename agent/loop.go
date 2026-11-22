@@ -84,8 +84,9 @@ type AgentLoop struct {
 	// model call is made under it. assignMu's holders (reconcileAll,
 	// adoptFor, removeSet) do read the registry: safe because the commit,
 	// the only holder of the registry lock that waits on either, is kept
-	// from them by the reload serialisation and, for agentInserted, by the
-	// registry reload lock its creation holds. The gate stays held over the
+	// from them by the reload serialisation and, for agentInserted (which
+	// also reads the registry and al.mu under the gate), by the registry
+	// reload lock its creation holds. The gate stays held over the
 	// registry's post-commit teardown, so turn starts wait for that too.
 	// Only chat selection is gated: a summary that starts while a derived
 	// summarization model is being replaced may run without it once.
@@ -93,6 +94,11 @@ type AgentLoop struct {
 	// selectionAgents is the instance each set was last stated for, by
 	// agent id: what the selection store reads and writes choices through.
 	selectionAgents sync.Map
+	// unretired are the instances, by agent id and oldest first, whose sets
+	// were stated and that are not retired yet. unretiredMu guards it and is
+	// a leaf: nothing else is locked while it is held.
+	unretiredMu sync.Mutex
+	unretired   map[string][]*AgentInstance
 	// alerter receives operator alerts (parked models, dead MCP servers, …);
 	// nil until SetAlerter, in which case Alerter() hands out a Nop.
 	alerterMu       sync.RWMutex

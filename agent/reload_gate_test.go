@@ -402,3 +402,67 @@ func TestReload_ReaddedAgentSetSurvivesOldRetirement(t *testing.T) {
 		t.Fatalf("re-added bob's turn = %q, want b", tm.model)
 	}
 }
+
+// Two instances of bob dropped while in turns, in either retirement order:
+// the set holds the lists of the latest one not retired, and goes once both
+// are retired.
+func TestReload_DroppedTwiceUnderOneID(t *testing.T) {
+	for _, order := range []string{"older retires first", "newer retires first"} {
+		t.Run(order, func(t *testing.T) {
+			t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+			base := t.TempDir()
+			al := mustNewAgentLoop(t, bobConfig(base, false, "c"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+			r := al.GetRegistry()
+			begin := func() (*AgentInstance, func()) {
+				t.Helper()
+				inst, _ := r.Get("bob")
+				end, ok := r.BeginTurn("bob", inst)
+				if !ok {
+					t.Fatal("bob could not begin a turn")
+				}
+				return inst, end
+			}
+			reload := func(cfg *config.Config) {
+				t.Helper()
+				if err := al.ReloadConfig(context.Background(), cfg); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wantLists := func(what string, chat string) {
+				t.Helper()
+				for p, want := range map[models.Purpose][]string{
+					models.Chat: {chat}, models.Summarize: {chat}, taskPurpose(config.TaskUseText): {"b"},
+				} {
+					if got := setNames(al, "bob", p); !slices.Equal(got, want) {
+						t.Errorf("%s: bob's %s = %v, want %v", what, p, got, want)
+					}
+				}
+			}
+			_, endA := begin()
+			reload(bobConfig(base, true))       // drop A (adopting)
+			reload(bobConfig(base, false, "a")) // re-add as B, on a
+			_, endB := begin()
+			reload(bobConfig(base, true)) // drop B
+			wantLists("both dropped", "a")
+			if order == "older retires first" {
+				endA()
+				waitFor(t, "A's retirement", func() bool { return al.liveCount("bob") == 1 })
+				wantLists("A retired", "a")
+				endB()
+			} else {
+				endB()
+				waitFor(t, "B's retirement", func() bool { return al.liveCount("bob") == 1 })
+				wantLists("B retired", "c")
+				endA()
+			}
+			waitFor(t, "bob's set to go", func() bool { return len(al.catalog.Set("bob").Purposes()) == 0 })
+		})
+	}
+}
+
+// liveCount is how many instances under id are not retired.
+func (al *AgentLoop) liveCount(id string) int {
+	al.unretiredMu.Lock()
+	defer al.unretiredMu.Unlock()
+	return len(al.unretired[id])
+}

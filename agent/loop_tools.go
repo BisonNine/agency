@@ -326,9 +326,7 @@ func (al *AgentLoop) retireAgent(spec agentreg.Spec, inst *AgentInstance) error 
 		}
 		// An agent the configuration no longer has loses its models; one
 		// rebuilt keeps them on its new instance.
-		if _, ok := al.GetRegistry().Get(inst.ID); !ok {
-			al.removeSet(al.GetRegistry(), inst)
-		}
+		al.removeSet(al.GetRegistry(), inst)
 		return nil
 	}
 	sessionKey := routing.BuildAgentMainSessionKey(inst.ID)
@@ -348,8 +346,8 @@ func (al *AgentLoop) retireAgent(spec agentreg.Spec, inst *AgentInstance) error 
 	// new instance); a deletion drops them.
 	if _, ok := al.GetRegistry().Get(inst.ID); !ok {
 		al.whispers.drop(inst.ID)
-		al.removeSet(al.GetRegistry(), inst)
 	}
+	al.removeSet(al.GetRegistry(), inst)
 	return nil
 }
 
