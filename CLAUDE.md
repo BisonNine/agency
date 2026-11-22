@@ -1029,8 +1029,12 @@ shortcoming in the module, never here.
   hooks once the loop has `Started()` (`bindShellTools`; notices found before are
   held) and `shutdownGateway` calls `closeShellJobs` (`Host.Close`: every job
   terminated, then killed after 5 s) before the loop stops; it delivers no notice (the SDK
-  announces those jobs at the next start), and no tools are built until it
-  returns. `/cancel` does not
+  announces those jobs at the next start) and closes the mount for good: no
+  tools are built afterwards. Restart notices are delivered one at a time in
+  order once bound. A workspace whose agent has no shell tools built (grant
+  removed, path changed) is not read, so its jobs are announced only when an
+  agent with `shell_exec` uses it again. A failed `Tools.Update` keeps the
+  previous settings (ERROR line). `/cancel` does not
   touch jobs yet: for the agent task list of phase 5b, `Host.Running(owner)`
   counts an agent's running jobs and `Host.StopAll(owner)` stops them. The folder
   is in `AlwaysReadableWorkspaceDirs` (read, never written, by the file tools) and

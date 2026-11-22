@@ -203,8 +203,13 @@ func agentToolsTable(a *config.AgentConfig) Table {
 	var cells [][]string
 	explicit := map[string]bool{}
 	for _, e := range tools {
-		if _, implied := config.GrantingTool(e); implied {
-			continue // listed below, only when its granting tool brings it
+		if granting, implied := config.GrantingTool(e); implied {
+			// Granted only with its granting tool (listed below then); named
+			// alone it does nothing, which the row says.
+			if !a.IsToolAllowed(e) {
+				cells = append(cells, row(e, "ignored (comes with "+granting+")"))
+			}
+			continue
 		}
 		explicit[strings.ToLower(e)] = true
 		cells = append(cells, row(e, yesNo(isSensitive(e))))
@@ -224,7 +229,7 @@ func agentToolsTable(a *config.AgentConfig) Table {
 	// the tool it came with.
 	for _, granting := range slices.Sorted(maps.Keys(config.ImpliedTools)) {
 		for _, implied := range config.ImpliedTools[granting] {
-			if !explicit[implied] && a.IsToolAllowed(implied) {
+			if a.IsToolAllowed(implied) {
 				cells = append(cells, row(implied, "yes (with "+granting+")"))
 			}
 		}

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	sdkshell "go.bison9.com/agent/toolbox/shell"
 	"go.bison9.com/agent/toolbox/shell/proc"
 
 	"go.bison9.com/agency/config"
@@ -460,18 +461,10 @@ func TestLostAfterRestart(t *testing.T) {
 	second := testMount(t)
 	again := build(t, second, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
 
-	var mu sync.Mutex
-	var told []string
-	second.Bind(Hooks{Deliver: func(owner, text string) {
-		mu.Lock()
-		defer mu.Unlock()
-		told = append(told, owner+": "+text)
-	}})
-	mu.Lock()
+	told := bindRecorder(t, second, 1)
 	if len(told) != 1 || !strings.HasPrefix(told[0], "alice: Shell job "+id+" was lost") {
 		t.Errorf("told = %q, want one lost notice for alice", told)
 	}
-	mu.Unlock()
 
 	res = again.run("shell_ctrl", map[string]any{"action": "list"}, nil)
 	if !strings.Contains(res.ForLLM, id+" lost") {
@@ -565,8 +558,7 @@ func TestShutdownStoppedJobToldAtNextStart(t *testing.T) {
 
 	second := testMount(t)
 	build(t, second, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
-	var told []string
-	second.Bind(Hooks{Deliver: func(owner, text string) { told = append(told, owner+": "+text) }})
+	told := bindRecorder(t, second, 1)
 	want := "alice: Shell job " + id + " was stopped when the service restarted"
 	if len(told) != 1 || !strings.HasPrefix(told[0], want) {
 		t.Errorf("told = %q, want one notice starting %q", told, want)
@@ -589,4 +581,68 @@ func TestReloadUpdatesTimeout(t *testing.T) {
 	if res := alice.run("shell_exec", map[string]any{"command": "sleep 3; echo slept"}, nil); !strings.Contains(res.ForLLM, "kept as job") {
 		t.Errorf("after the reload = %q, want kept at the 1s timeout", res.ForLLM)
 	}
+}
+
+// bindRecorder binds hooks that record the delivered notices, waits for n
+// of them, and returns what was delivered a moment later (so a duplicate
+// would show).
+func bindRecorder(t *testing.T, m *Mount, n int) []string {
+	t.Helper()
+	var mu sync.Mutex
+	var told []string
+	m.Bind(Hooks{Deliver: func(owner, text string) {
+		mu.Lock()
+		defer mu.Unlock()
+		told = append(told, owner+": "+text)
+	}})
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(told) >= n
+	})
+	time.Sleep(200 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]string(nil), told...)
+}
+
+// After Close no tools are built: nothing can start a job or re-read the
+// stopped jobs' records before the process exits.
+func TestClosedMountBuildsNothing(t *testing.T) {
+	m := newMount()
+	ws := t.TempDir()
+	build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := m.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if a := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws}); len(a.names) != 0 {
+		t.Errorf("tools %v built after Close", a.names)
+	}
+	if a := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("bob"), Workspace: t.TempDir()}); len(a.names) != 0 {
+		t.Errorf("tools %v built for a new workspace after Close", a.names)
+	}
+}
+
+// Notices kept before the hooks are bound wait for a Deliver hook, and are
+// then delivered in the order they came.
+func TestPendingNoticesKeptAndOrdered(t *testing.T) {
+	m := testMount(t)
+	for _, text := range []string{"Shell job j1 was lost", "Shell job j2 was lost", "Shell job j3 was lost"} {
+		m.notice(sdkshellNotice("alice", text))
+	}
+	m.Bind(Hooks{TurnID: func(context.Context) string { return "" }})
+	if m.Pending() != 3 {
+		t.Fatalf("pending = %d after binding without Deliver, want 3", m.Pending())
+	}
+	told := bindRecorder(t, m, 3)
+	want := []string{"alice: Shell job j1 was lost", "alice: Shell job j2 was lost", "alice: Shell job j3 was lost"}
+	if strings.Join(told, "|") != strings.Join(want, "|") {
+		t.Errorf("told = %q, want %q", told, want)
+	}
+}
+
+func sdkshellNotice(owner, text string) sdkshell.Notice {
+	return sdkshell.Notice{Owner: owner, JobID: "j1", State: proc.StateLost, Text: text}
 }

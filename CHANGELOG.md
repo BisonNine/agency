@@ -17,7 +17,7 @@
   job was started from. A job belongs to the agent that started it (a
   sub-agent clone acts as that agent), is stopped when the service stops, and
   is never started again: at the next start the agent is told once of each
-  job the stop ended, or that was running when the service crashed (marked
+  job the stop ended (unless `notify` was false), or that was running when the service crashed (marked
   lost). Classifiers and watch jobs cannot
   start jobs. Each start, input (its length only) and stop is in the audit
   log (`shell_ctrl_start`, `shell_ctrl_input`, `shell_ctrl_stop`; the Audit

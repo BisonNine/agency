@@ -46,3 +46,14 @@ func TestCollectData_ShellJobLogs(t *testing.T) {
 		t.Errorf("row with job_log_days 2 = %q", r)
 	}
 }
+
+// shell_ctrl named in tools without shell_exec grants nothing; Check Up says
+// so where it is listed.
+func TestCollectAgents_ShellCtrlNamedAlone(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Agents.List[1].Tools = []string{"file_read", "shell_ctrl"}
+	m := toolMarkers(findTable(t, agentSub(t, collectAgents(t.Context(), cfg, env), "bob"), "Internal tools"))
+	if m["shell_ctrl"] != "ignored (comes with shell_exec)" {
+		t.Errorf("shell_ctrl marker = %q", m["shell_ctrl"])
+	}
+}

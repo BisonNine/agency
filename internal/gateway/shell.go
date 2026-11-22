@@ -23,6 +23,10 @@ func bindShellTools(ctx context.Context, loop *agent.AgentLoop) {
 		select {
 		case <-loop.Started():
 		case <-ctx.Done():
+			if n := shell.Host.Pending(); n > 0 {
+				logger.WarnCF("shell", "Shell job notices not delivered: stopped before the agents started",
+					map[string]any{"count": n})
+			}
 			return
 		}
 		shell.Host.Bind(loop.ShellHooks())

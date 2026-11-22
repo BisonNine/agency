@@ -52,16 +52,17 @@ const maxPending = 256
 type Mount struct {
 	mu      sync.Mutex
 	byDir   map[string]*sdkshell.Tools // per absolute jobs directory
-	closing bool                       // Close is stopping the jobs: build nothing
+	closing bool                       // Close was called: build nothing
 
 	guard atomic.Pointer[guard]
 
 	// nmu guards the hooks and the notices kept until they are bound;
 	// never held while calling out.
-	nmu     sync.Mutex
-	hooks   Hooks
-	bound   bool
-	pending []pendingNotice
+	nmu      sync.Mutex
+	hooks    Hooks
+	bound    bool
+	pending  []pendingNotice // in arrival order, delivered once bound
+	draining bool            // a goroutine is delivering pending
 }
 
 type pendingNotice struct{ owner, text string }
@@ -129,14 +130,14 @@ func (m *Mount) definitions(deps global.Deps) []global.ToolDefinition {
 			map[string]any{"agent_id": td.AgentID, "error": err.Error()})
 		return nil
 	}
-	logGuardState(exec)
-	m.guard.Store(g)
 	t, err := m.toolsFor(td.Cfg, td.Workspace)
 	if err != nil {
 		logger.ErrorCF("shell", "Shell tools not built",
 			map[string]any{"agent_id": td.AgentID, "workspace": td.Workspace, "error": err.Error()})
 		return nil
 	}
+	logGuardState(exec)
+	m.guard.Store(g)
 	defs := t.Definitions()
 	for i := range defs {
 		d := &defs[i]
@@ -173,7 +174,9 @@ func (m *Mount) toolsFor(cfg *config.Config, workspace string) (*sdkshell.Tools,
 	if t := m.byDir[dir]; t != nil {
 		// A reload: the current tools.exec settings apply from the next call.
 		if uerr := t.Update(set); uerr != nil {
-			return nil, uerr
+			// Keep the settings in force rather than lose the tools.
+			logger.ErrorCF("shell", "Shell settings not applied; the previous ones stay",
+				map[string]any{"dir": dir, "error": uerr.Error()})
 		}
 		return t, nil
 	}
@@ -278,20 +281,49 @@ func (m *Mount) notice(n sdkshell.Notice) {
 		return
 	}
 	m.nmu.Lock()
-	deliver := m.hooks.Deliver
-	if !m.bound {
-		deliver = nil
-		if len(m.pending) < maxPending {
-			m.pending = append(m.pending, pendingNotice{owner: n.Owner, text: n.Text})
-		} else {
-			logger.WarnCF("shell", "Shell job notice not kept: too many waiting",
-				map[string]any{"agent_id": n.Owner, "job": n.JobID})
+	defer m.nmu.Unlock()
+	if len(m.pending) >= maxPending {
+		logger.WarnCF("shell", "Shell job notice not kept: too many waiting",
+			map[string]any{"agent_id": n.Owner, "job": n.JobID})
+		return
+	}
+	m.pending = append(m.pending, pendingNotice{owner: n.Owner, text: n.Text})
+	m.startDrainLocked()
+}
+
+// startDrainLocked starts delivering the pending notices, in order, once
+// the hooks are bound. Caller holds nmu. Delivery is never done under a
+// lock: Notice is called with the mount's lock held while a manager is
+// created.
+func (m *Mount) startDrainLocked() {
+	if !m.bound || m.draining || len(m.pending) == 0 {
+		return
+	}
+	m.draining = true
+	go m.drain()
+}
+
+func (m *Mount) drain() {
+	for {
+		m.nmu.Lock()
+		if len(m.pending) == 0 || !m.bound {
+			m.draining = false
+			m.nmu.Unlock()
+			return
 		}
+		p := m.pending[0]
+		m.pending = m.pending[1:]
+		deliver := m.hooks.Deliver
+		m.nmu.Unlock()
+		deliver(p.owner, p.text)
 	}
-	m.nmu.Unlock()
-	if deliver != nil {
-		go deliver(n.Owner, n.Text)
-	}
+}
+
+// Pending returns how many notices wait for the hooks to be bound.
+func (m *Mount) Pending() int {
+	m.nmu.Lock()
+	defer m.nmu.Unlock()
+	return len(m.pending)
 }
 
 // audit records a start, an input or a stop.
@@ -341,19 +373,13 @@ func (m *Mount) audit(e sdkshell.AuditEvent) {
 	store.Record(ev)
 }
 
-// Bind installs the loop's hooks and delivers the notices kept until now.
+// Bind installs the loop's hooks and starts delivering, in order, the
+// notices kept until now.
 func (m *Mount) Bind(h Hooks) {
 	m.nmu.Lock()
+	defer m.nmu.Unlock()
 	m.hooks, m.bound = h, h.Deliver != nil
-	pending := m.pending
-	m.pending = nil
-	m.nmu.Unlock()
-	if h.Deliver == nil {
-		return
-	}
-	for _, p := range pending {
-		h.Deliver(p.owner, p.text)
-	}
+	m.startDrainLocked()
 }
 
 func (m *Mount) all() []*sdkshell.Tools {
@@ -387,10 +413,10 @@ func (m *Mount) StopAll(owner string) int {
 	return int(n.Load())
 }
 
-// Close stops every job of every workspace (terminate, grace, kill), builds
-// no tools meanwhile, and
-// then forgets the managers and the hooks, so a gateway started again in this
-// process starts afresh. It returns when the jobs have ended or ctx ends.
+// Close stops every job of every workspace (terminate, grace, kill) and
+// closes the mount for good: no tools are built afterwards, so nothing can
+// start a job or re-read the stopped jobs' records before the process
+// exits. It returns when the jobs have ended or ctx ends.
 func (m *Mount) Close(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true
@@ -406,13 +432,5 @@ func (m *Mount) Close(ctx context.Context) error {
 		wg.Go(func() { errs[i] = t.Close(ctx) })
 	}
 	wg.Wait()
-
-	m.mu.Lock()
-	m.byDir = make(map[string]*sdkshell.Tools)
-	m.closing = false
-	m.mu.Unlock()
-	m.nmu.Lock()
-	m.hooks, m.bound = Hooks{}, false
-	m.nmu.Unlock()
 	return errors.Join(errs...)
 }
