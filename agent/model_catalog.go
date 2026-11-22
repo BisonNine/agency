@@ -135,11 +135,31 @@ func (al *AgentLoop) stateListsAfterCommit(registry *AgentRegistry, cfg *config.
 func (al *AgentLoop) reconcileAll(registry *AgentRegistry, cfg *config.Config) {
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
-	instances := registryInstances(registry)
+	instances := al.liveInstances(registry)
 	// Before the lists: ReplaceAll saves kept choices through the new
 	// instances, not the replaced (closed) ones.
 	al.noteSelectionAgents(instances)
 	assignAll(al.catalog, cfg, instances)
+}
+
+// liveInstances are the instances whose sets must be complete: every one
+// the registry holds, and every agent the registry no longer has that is not
+// retired yet (a configured agent dropped while in a turn, kept until the
+// turn ends; retiring it removes its set, removeSet). Called with assignMu
+// held.
+func (al *AgentLoop) liveInstances(registry *AgentRegistry) []*AgentInstance {
+	instances := registryInstances(registry)
+	al.selectionAgents.Range(func(_, v any) bool {
+		inst, ok := v.(*AgentInstance)
+		if !ok || inst == nil {
+			return true
+		}
+		if _, held := registry.Get(inst.ID); !held {
+			instances = append(instances, inst)
+		}
+		return true
+	})
+	return instances
 }
 
 // noteSelectionAgents records instances as the ones their sets' choices are
@@ -184,22 +204,30 @@ func (al *AgentLoop) adoptFor(registry *AgentRegistry, cfg *config.Config, diges
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
 	next := al.catalogs.Build(cfg)
-	instances := registryInstances(registry)
+	instances := al.liveInstances(registry)
 	al.noteSelectionAgents(instances)
 	assignAll(next, cfg, instances)
 	al.adoptCatalog(next, digest)
 }
 
-// removeSet drops the set of agent id, once the registry no longer has it,
-// and the derived summarization models no remaining list names.
-func (al *AgentLoop) removeSet(registry *AgentRegistry, id string) {
+// removeSet drops the set of retired instance inst, and the derived
+// summarization models no remaining list names, once the registry no longer
+// has its id and no later instance under that id holds the set (one dropped
+// and re-added while inst was still in a turn).
+func (al *AgentLoop) removeSet(registry *AgentRegistry, inst *AgentInstance) {
 	al.assignMu.Lock()
 	defer al.assignMu.Unlock()
-	if _, ok := registry.Get(id); !ok {
-		al.selectionAgents.Delete(id)
-		al.catalog.RemoveSet(id)
-		pruneDerived(al.catalog, registryInstances(registry))
+	if _, ok := registry.Get(inst.ID); ok {
+		return
 	}
+	if v, ok := al.selectionAgents.Load(inst.ID); ok {
+		if v != inst {
+			return
+		}
+		al.selectionAgents.Delete(inst.ID)
+	}
+	al.catalog.RemoveSet(inst.ID)
+	pruneDerived(al.catalog, al.liveInstances(registry))
 }
 
 // registryInstances are the instances the registry holds now.

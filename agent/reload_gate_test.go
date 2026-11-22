@@ -52,9 +52,10 @@ func gapConfig(base string) *config.Config {
 }
 
 // Between an adopting reload's commit and the adopt, a turn for an agent the
-// reload added and a turn for an existing agent wait (listsGate), then get
-// exactly their new configuration's lists, with wire ids; a clone created in
-// the gap is returned to its creator with its new lists stated.
+// reload added, a turn for an existing agent and a turn on a clone created
+// in the gap all wait (listsGate), then get exactly their own new
+// configuration's lists, with wire ids; the clone's creator gets it with its
+// lists stated.
 func TestReload_TurnsWaitForListsAfterCommit(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	base := t.TempDir()
@@ -73,7 +74,7 @@ func TestReload_TurnsWaitForListsAfterCommit(t *testing.T) {
 		t.Fatal("bob is not registered after the commit")
 	}
 	main := r.Default()
-	turns := map[string]chan *turnModel{"bob": make(chan *turnModel, 1), "main": make(chan *turnModel, 1)}
+	turns := map[string]chan *turnModel{"bob": make(chan *turnModel, 1), "main": make(chan *turnModel, 1), "clone": make(chan *turnModel, 1)}
 	for id, inst := range map[string]*AgentInstance{"bob": bob, "main": main} {
 		go func() { turns[id] <- al.selectTurnModel(inst, "s") }()
 	}
@@ -91,23 +92,43 @@ func TestReload_TurnsWaitForListsAfterCommit(t *testing.T) {
 		}
 		clone <- c
 	}()
-	// The clone waits for the adopt in its insert hook, once inserted.
+	// The clone waits for the adopt in its insert hook, once inserted; a
+	// turn started on it from elsewhere waits too (listsGate, not assignMu:
+	// selecting a model takes no assignMu).
 	waitFor(t, "the clone's insertion", func() bool { return len(r.All()) == 3 })
+	var cloned *AgentInstance
+	for _, inst := range registryInstances(r) {
+		if inst.ID != "main" && inst.ID != "bob" {
+			cloned = inst
+		}
+	}
+	if cloned == nil {
+		t.Fatal("the clone is not in the registry")
+	}
+	go func() { turns["clone"] <- al.selectTurnModel(cloned, "s") }()
+	time.Sleep(20 * time.Millisecond) // a window for an ungated selection to finish
+	for id, ch := range turns {
+		select {
+		case tm := <-ch:
+			t.Errorf("%s's turn chose %+v before its lists were stated", id, tm)
+			ch <- tm
+		default:
+		}
+	}
 	select {
-	case tm := <-turns["bob"]:
-		t.Fatalf("bob's turn chose %+v before its lists were stated", tm)
-	case tm := <-turns["main"]:
-		t.Fatalf("main's turn chose %+v before its lists were stated", tm)
 	case c := <-clone:
 		t.Fatalf("the clone was created before its lists were stated: %+v", c)
-	case <-time.After(20 * time.Millisecond):
+	default:
+	}
+	if t.Failed() {
+		t.FailNow()
 	}
 	al.assignMu.Unlock()
 	if err := <-reloaded; err != nil {
 		t.Fatal(err)
 	}
 
-	for id, want := range map[string]string{"bob": "c", "main": "b"} {
+	for id, want := range map[string]string{"bob": "c", "main": "b", "clone": "b"} {
 		tm := <-turns[id]
 		names, wires := candidateWires(tm)
 		if !slices.Equal(names, []string{want}) || !slices.Equal(wires, []string{want + "-wire"}) || tm.model != want {
@@ -280,5 +301,104 @@ func TestReload_ChoiceSavedThroughNewInstance(t *testing.T) {
 	}
 	if got := storedIndex(t, now, "s"); got != 1 {
 		t.Fatalf("stored index = %d, want 1 (c in [b c a])", got)
+	}
+}
+
+// bobConfig is abcConfig on a with bob on bobModels added (none: no bob) and
+// a text task model, b; adopt changes a model setting.
+func bobConfig(base string, adopt bool, bobModels ...string) *config.Config {
+	cfg := abcConfig(base, "a")
+	cfg.TaskModels.TextModels = []config.TaskModelRef{{Model: "b"}}
+	if adopt {
+		cfg.Models[0].RequestTimeout = 21
+	}
+	if len(bobModels) > 0 {
+		cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Name: "Bob", Models: bobModels})
+	}
+	return cfg
+}
+
+// setNames are the candidates set id offers for purpose p.
+func setNames(al *AgentLoop, id string, p models.Purpose) []string {
+	cands := al.catalog.Set(id).Begin(p, "s").Candidates()
+	out := make([]string, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, c.Name)
+	}
+	return out
+}
+
+// A configured agent dropped by an adopting reload while in a turn keeps its
+// own lists for the rest of the turn (chat, summary, task model); its set is
+// removed once the turn ends and it is retired.
+func TestReload_DroppedBusyAgentKeepsSetUntilRetired(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	al := mustNewAgentLoop(t, bobConfig(base, false, "c"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	r := al.GetRegistry()
+	bob, _ := r.Get("bob")
+	end, ok := r.BeginTurn("bob", bob)
+	if !ok {
+		t.Fatal("bob could not begin a turn")
+	}
+	if err := al.ReloadConfig(context.Background(), bobConfig(base, true)); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := al.catalog.Get("a"); info.Model.RequestTimeout != 21 {
+		t.Fatal("the reload did not adopt a new catalogue")
+	}
+	if _, ok := r.Get("bob"); ok {
+		t.Fatal("bob is still registered")
+	}
+	for p, want := range map[models.Purpose][]string{
+		models.Chat: {"c"}, models.Summarize: {"c"}, taskPurpose(config.TaskUseText): {"b"},
+	} {
+		if got := setNames(al, "bob", p); !slices.Equal(got, want) {
+			t.Errorf("bob's %s after the adopt = %v, want %v", p, got, want)
+		}
+	}
+	if tm := al.selectTurnModel(bob, "s"); tm.model != "c" || len(tm.candidates) != 1 {
+		t.Errorf("bob's next step = %q on %d models, want c", tm.model, len(tm.candidates))
+	}
+	end()
+	waitFor(t, "bob's retirement", func() bool { return len(al.catalog.Set("bob").Purposes()) == 0 })
+}
+
+// An agent dropped while in a turn and re-added under the same id by a later
+// reload: the new instance's lists are stated and survive the old
+// instance's retirement.
+func TestReload_ReaddedAgentSetSurvivesOldRetirement(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	base := t.TempDir()
+	al := mustNewAgentLoop(t, bobConfig(base, false, "c"), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+	r := al.GetRegistry()
+	old, _ := r.Get("bob")
+	state, ok := old.Sessions.(compactionStateStore)
+	if !ok {
+		t.Fatal("no compaction state store")
+	}
+	closing := &closedWriteStore{SessionStore: old.Sessions, state: state}
+	old.Sessions = closing
+	end, ok := r.BeginTurn("bob", old)
+	if !ok {
+		t.Fatal("bob could not begin a turn")
+	}
+	if err := al.ReloadConfig(context.Background(), bobConfig(base, true)); err != nil {
+		t.Fatal(err)
+	}
+	if err := al.ReloadConfig(context.Background(), bobConfig(base, false, "b")); err != nil {
+		t.Fatal(err)
+	}
+	readded, ok := r.Get("bob")
+	if !ok || readded == old {
+		t.Fatal("bob was not re-added on a new instance")
+	}
+	end()
+	waitFor(t, "the old instance's retirement", closing.closed.Load)
+	if got := setNames(al, "bob", models.Chat); !slices.Equal(got, []string{"b"}) {
+		t.Fatalf("re-added bob's chat list after the old one retired = %v, want [b]", got)
+	}
+	if tm := al.selectTurnModel(readded, "s"); tm.model != "b" {
+		t.Fatalf("re-added bob's turn = %q, want b", tm.model)
 	}
 }

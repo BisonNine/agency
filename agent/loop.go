@@ -88,10 +88,7 @@ type AgentLoop struct {
 	// registry reload lock its creation holds. The gate stays held over the
 	// registry's post-commit teardown, so turn starts wait for that too.
 	// Only chat selection is gated: a summary that starts while a derived
-	// summarization model is being replaced may run without it once. A
-	// configured agent dropped by an adopting reload while in a turn keeps
-	// no set in the new catalogue: a model it then selects is chosen as for
-	// an agent with no chat model.
+	// summarization model is being replaced may run without it once.
 	listsGate sync.RWMutex
 	// selectionAgents is the instance each set was last stated for, by
 	// agent id: what the selection store reads and writes choices through.
