@@ -37,7 +37,7 @@ func (sm *SubagentManager) CancelTask(id string) *global.TaskCancelResult {
 		res.Unknown = append(res.Unknown, id)
 		return res
 	}
-	if rec.Status == StatusRunning && sm.cancelRecord(rec) {
+	if rec.Status == StatusRunning && sm.cancelRecord(rec, errCancelledByAgent) {
 		res.Cancelled++
 		res.Tasks = append(res.Tasks, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: StatusCancelled})
 		return res
@@ -47,12 +47,18 @@ func (sm *SubagentManager) CancelTask(id string) *global.TaskCancelResult {
 }
 
 // CancelAllTasks cancels every running task of the owner, with the tasks
-// they started.
+// they started (agent_cancel with all).
 func (sm *SubagentManager) CancelAllTasks() *global.TaskCancelResult {
+	return sm.CancelAllWith(errCancelledByAgent)
+}
+
+// CancelAllWith is CancelAllTasks with the cause the tasks are cancelled
+// with (/cancel all gives its own).
+func (sm *SubagentManager) CancelAllWith(cause error) *global.TaskCancelResult {
 	res := &global.TaskCancelResult{}
-	sm.addCancelled(res, sm.tasks.CancelAll(sm.ownerAgentID, errCancelledByAgent))
+	sm.addCancelled(res, sm.tasks.CancelAll(sm.ownerAgentID, cause))
 	for _, rec := range listStatusRecords(sm.tasksDir()) {
-		if rec.Status == StatusRunning && config.SameAgentID(rec.OwnerAgentID, sm.ownerAgentID) && sm.cancelRecord(rec) {
+		if rec.Status == StatusRunning && config.SameAgentID(rec.OwnerAgentID, sm.ownerAgentID) && sm.cancelRecord(rec, cause) {
 			res.Cancelled++
 			res.Tasks = append(res.Tasks, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: StatusCancelled})
 		}
@@ -72,7 +78,7 @@ func (sm *SubagentManager) addCancelled(res *global.TaskCancelResult, infos []ho
 // that runs nowhere in this process (a restart left it for the supervisor
 // to relaunch): its marker is cleared so it is never relaunched. A task
 // running or relaunched meanwhile is left alone.
-func (sm *SubagentManager) cancelRecord(rec *TaskRecord) bool {
+func (sm *SubagentManager) cancelRecord(rec *TaskRecord, cause error) bool {
 	if sm.live.Has(rec.UUID) || sm.tasks.Owns(sm.ownerAgentID, rec.UUID) {
 		return false
 	}
@@ -83,7 +89,7 @@ func (sm *SubagentManager) cancelRecord(rec *TaskRecord) bool {
 	sm.persistResults(dir, cancelledResults(rec, ""))
 	logger.InfoCF("subagent", "Task cancelled", map[string]any{
 		"uuid": rec.UUID, "name": rec.Name, "owner": sm.ownerAgentID, "kind": taskKind(rec),
-		"cause": errCancelledByAgent.Error(),
+		"cause": cause.Error(),
 	})
 	return true
 }
