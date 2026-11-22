@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.6.6]
+
 ## [0.6.5]
 
 ### Added
@@ -3981,6 +3983,7 @@ on, and breaking one is a deliberate decision rather than a free move.
   entered, and the entry had to be worked around rather than typed. Affects the
   Telegram, Slack and generic channel forms.
 
+[0.6.6]: https://github.com/PivotLLM/ClawEh/compare/0.6.5...0.6.6
 [0.6.5]: https://github.com/PivotLLM/ClawEh/compare/0.6.4...0.6.5
 [0.6.4]: https://github.com/PivotLLM/ClawEh/compare/0.6.3...0.6.4
 [0.6.3]: https://github.com/PivotLLM/ClawEh/compare/0.6.2...0.6.3
