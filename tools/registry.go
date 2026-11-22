@@ -74,7 +74,11 @@ func (r *ToolRegistry) put(e toolkit.Entry, suiteExempt bool, what string) {
 	} else {
 		delete(r.exempt, name)
 	}
-	logger.DebugCF("tools", "Registered "+what, map[string]any{"name": name, "group": e.Group})
+	fields := map[string]any{"name": name}
+	if e.Hidden {
+		fields["group"] = e.Group
+	}
+	logger.DebugCF("tools", "Registered "+what, fields)
 }
 
 func (r *ToolRegistry) Register(tool Tool) {

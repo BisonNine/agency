@@ -241,8 +241,9 @@ func TestWrapper_AddRemoveMidTurn(t *testing.T) {
 		t.Errorf("call to a removed tool = %+v", res)
 	}
 
-	var next []string
-	for _, d := range r.ToProviderDefs() {
+	defs := r.ToProviderDefs()
+	next := make([]string, 0, len(defs))
+	for _, d := range defs {
 		next = append(next, d.Function.Name)
 	}
 	if !slices.Equal(next, []string{"added", "keep"}) {

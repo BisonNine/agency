@@ -33,14 +33,12 @@ var (
 	OpenObjectProperties = toolkit.OpenObjectProperties
 	ResultToGlobal       = toolkit.ResultToSpec
 
-	// Who a call is for, on its context.
 	WithToolContext = toolkit.WithChat
 	ToolChannel     = toolkit.Channel
 	ToolChatID      = toolkit.ChatID
 	WithSessionKey  = toolkit.WithSessionKey
 	ToolSessionKey  = toolkit.SessionKey
 
-	// ExecuteUnattended's refusals.
 	ErrToolNotRegistered = toolkit.ErrToolNotRegistered
 	ErrToolSessionScoped = toolkit.ErrToolSessionScoped
 )
