@@ -88,9 +88,25 @@ type SubagentManagerConfig struct {
 	ShuttingDown func() bool
 }
 
+// parentCancelled reports that rec was started in a task whose record, in
+// the same tasks folder, says cancelled.
+func (sm *SubagentManager) parentCancelled(dir string, rec *TaskRecord) bool {
+	if rec.Parent == "" {
+		return false
+	}
+	parent, err := readStatus(dir, rec.Parent)
+	return err == nil && parent.Status == StatusCancelled
+}
+
 // managerHooks are test seams at the points where a cancel and the
 // supervisor interleave.
 type managerHooks struct {
+	// decided runs when the supervisor has decided to relaunch id, before
+	// it writes the record (under the settle lock).
+	decided func(id string)
+	// settling runs inside a cancel's settle section, once the record says
+	// cancelled and before its marker is cleared.
+	settling func(id string)
 	// settled runs once a cancel has settled a running task's record.
 	settled func(id string)
 	// listed runs once the supervisor has listed a task's run marker.
@@ -483,8 +499,20 @@ func (sm *SubagentManager) superviseOne(dir, id string, now int64, cbFor func(re
 		clearRun(dir, id)
 		return
 	}
+	if sm.parentCancelled(dir, rec) {
+		// Its parent was cancelled while it waited to be relaunched: it is
+		// cancelled with it.
+		rec.Status, rec.Error, rec.FinishedAt = StatusCancelled, cancelledTaskError, nowRFC()
+		sm.persistStatus(dir, rec)
+		sm.persistResults(dir, cancelledResults(rec, ""))
+		clearRun(dir, id)
+		return
+	}
 	if now < rec.RetryAfter {
 		return // cooling down
+	}
+	if sm.hooks.decided != nil {
+		sm.hooks.decided(id)
 	}
 	// Eligible: relaunch.
 	rec.Restarts++

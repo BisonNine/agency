@@ -278,7 +278,7 @@ func mergeMessages(batch []bus.InboundMessage) bus.InboundMessage {
 	}
 	merged.Content = strings.Join(parts, "\n")
 	merged.Media = media
-	merged.Merged = nil
+	merged.Merged = slices.Clone(merged.Merged)
 	for _, m := range batch[:len(batch)-1] {
 		merged.Merged = append(merged.Merged, m.Merged...)
 		if m.MessageID != "" {

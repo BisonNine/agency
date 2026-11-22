@@ -486,3 +486,91 @@ func TestSupervise_OrphanRelaunchIsCancelled(t *testing.T) {
 		t.Fatalf("record = %+v (%v)", got, err)
 	}
 }
+
+// The supervisor decides a relaunch, and a cancel settles a record, under
+// the settle lock every manager shares; a cancel writes cancelled before it
+// clears the marker.
+func TestSettleLockHeldWhereItMatters(t *testing.T) {
+	f := newCancelFixture(t)
+	leftRecord(t, f.ws, "left")
+	held := func(where string) {
+		if f.live.settle.TryLock() {
+			f.live.settle.Unlock()
+			t.Errorf("%s: the settle lock is not held", where)
+		}
+	}
+	f.mgr.hooks.decided = func(string) { held("supervisor decision") }
+	f.mgr.SuperviseOnce(time.Now().Unix()+3600, nil)
+	<-f.started
+
+	f.mgr.hooks.settling = func(id string) {
+		held("cancel settling")
+		if rec, err := readStatus(tasksDirFor(f.ws), id); err != nil || rec.Status != StatusCancelled {
+			t.Errorf("record = %+v (%v): the marker would go before the record says cancelled", rec, err)
+		}
+		if !slices.Contains(listRunUUIDs(tasksDirFor(f.ws)), id) {
+			t.Error("the marker was cleared before the record said cancelled")
+		}
+	}
+	f.mgr.CancelTask("left")
+	<-f.atCancel
+}
+
+// A child a restart left waiting for its relaunch is cancelled, not
+// relaunched, once its parent's record says cancelled.
+func TestSupervise_ChildOfCancelledParentIsNotRelaunched(t *testing.T) {
+	f := newCancelFixture(t)
+	dir := tasksDirFor(f.ws)
+	parent := &TaskRecord{UUID: "p", Name: "p", OwnerAgentID: "alice", Mode: "callback", Status: StatusCancelled}
+	child := &TaskRecord{UUID: "c", Name: "c", OwnerAgentID: "alice", Mode: "callback", Task: "work", Status: StatusRunning, Parent: "p", ResultsPath: relResultsPath("c")}
+	for _, rec := range []*TaskRecord{parent, child} {
+		if err := writeStatus(dir, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := markRun(dir, "c"); err != nil {
+		t.Fatal(err)
+	}
+	f.mgr.SuperviseOnce(time.Now().Unix()+3600, nil)
+	if f.live.Has("c") {
+		t.Fatal("the child was relaunched")
+	}
+	if rec, err := readStatus(dir, "c"); err != nil || rec.Status != StatusCancelled {
+		t.Fatalf("record = %+v (%v)", rec, err)
+	}
+}
+
+// A task started under a task of a cascade after the cascade took its
+// snapshot, before that task itself was stopped, is cancelled too.
+func TestTaskRegistry_NothingEscapesACascade(t *testing.T) {
+	reg := NewTaskRegistry()
+	var late context.Context
+	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "r", Owner: "alice"}, 0, nil, nil)
+	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "c", Owner: "alice", Parent: "r"}, 0, nil, func(error) bool {
+		// While the child is being cancelled, the root starts another.
+		late, _ = reg.start(context.Background(), hook.TaskInfo{ID: "late", Owner: "alice", Parent: "r"}, 0, nil, nil)
+		return true
+	})
+	reg.Cancel("alice", "r", errCancelledByAgent)
+	if late == nil || late.Err() == nil {
+		t.Fatal("a task started during the cascade escaped it")
+	}
+	if n := len(reg.Running("alice")); n != 0 {
+		t.Fatalf("%d tasks still running", n)
+	}
+}
+
+// A cancel losing to the task's own end leaves the end event to it.
+func TestTaskRegistry_EndEventSurvivesALostCancel(t *testing.T) {
+	reg := NewTaskRegistry()
+	var last hook.TaskInfo
+	reg.Observe(func(info hook.TaskInfo) { last = info })
+	_, task := reg.start(context.Background(), hook.TaskInfo{ID: "t", Owner: "alice"}, 0, nil, func(error) bool { return false })
+	if _, stopped := task.stop(errCancelledByAgent); stopped {
+		t.Fatal("an ended task reported as cancelled")
+	}
+	task.finished(hook.TaskDone)
+	if last.State != hook.TaskDone {
+		t.Fatalf("last event = %+v, want done", last)
+	}
+}

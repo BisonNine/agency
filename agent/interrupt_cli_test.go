@@ -200,8 +200,8 @@ func TestCancelTask_CLIWorkerKilledAndTokenRevoked(t *testing.T) {
 	if !processGone(pid) || !processGone(child) {
 		t.Fatalf("the worker's CLI is still running (%d, %d)", pid, child)
 	}
-	<-cancelled // the cancel
-	<-cancelled // the worker unwound
+	recv(t, cancelled, "the cancel")
+	recv(t, cancelled, "the worker to unwind")
 	if _, ok := store.Resolve(token); ok {
 		t.Fatal("the cancelled worker's token is still accepted")
 	}

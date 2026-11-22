@@ -28,8 +28,9 @@ func (e *cancelCauseError) Unwrap() error { return hook.ErrInterrupted }
 // relaunched is settled as cancelled.
 func (sm *SubagentManager) CancelTask(id string) *global.TaskCancelResult {
 	res := &global.TaskCancelResult{}
-	// A task relaunched between the two looks is caught by the next round.
-	for range 3 {
+	// A task relaunched between the two looks is caught by the next round;
+	// each relaunch is bounded by the restart cap.
+	for {
 		if infos := sm.tasks.Cancel(sm.ownerAgentID, id, errCancelledByAgent); len(infos) > 0 {
 			sm.addCancelled(res, infos)
 			return res
@@ -54,11 +55,6 @@ func (sm *SubagentManager) CancelTask(id string) *global.TaskCancelResult {
 			return res
 		}
 	}
-	rec, err := readStatus(sm.tasksDir(), id)
-	if err == nil {
-		res.AlreadyFinished = append(res.AlreadyFinished, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: rec.Status})
-	}
-	return res
 }
 
 // CancelAllTasks cancels every running task of the owner, with the tasks
@@ -104,6 +100,10 @@ func (sm *SubagentManager) addCancelled(res *global.TaskCancelResult, infos []ho
 // decides under the process's settle lock, so a relaunch is never
 // overtaken: a task running or relaunched meanwhile is left alone (false).
 func (sm *SubagentManager) cancelRecord(rec *TaskRecord, cause error) ([]hook.TaskInfo, bool) {
+	// Only a task still unfinished takes its children with it.
+	if cur, err := readStatus(sm.tasksDir(), rec.UUID); err != nil || cur.Status != StatusRunning {
+		return nil, false
+	}
 	children := sm.tasks.CancelChildren(rec.UUID, cause)
 	sm.live.settle.Lock()
 	defer sm.live.settle.Unlock()

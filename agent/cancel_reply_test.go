@@ -132,8 +132,8 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 
 	// Once the worker has unwound, its partial output is kept, marked
 	// incomplete.
-	<-unwound // the cancel
-	<-unwound // the worker unwound
+	recv(t, unwound, "the cancel")
+	recv(t, unwound, "the worker to unwind")
 	alice, _ := al.GetRegistry().Get("alice")
 	b, err := os.ReadFile(filepath.Join(alice.Workspace, "tasks", taskID+"-results.json"))
 	if err != nil || !strings.Contains(string(b), "first part") ||

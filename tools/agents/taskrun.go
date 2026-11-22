@@ -231,6 +231,9 @@ func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) bool {
 	}
 	sm.persistStatus(dir, rec)
 	sm.persistResults(dir, cancelledResults(rec, ""))
+	if sm.hooks.settling != nil {
+		sm.hooks.settling(rec.UUID)
+	}
 	clearRun(dir, rec.UUID)
 	sm.live.Remove(rec.UUID)
 	if !tr.settleHeld {

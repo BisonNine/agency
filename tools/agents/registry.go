@@ -5,7 +5,6 @@ package agents
 
 import (
 	"context"
-	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -106,15 +105,17 @@ func (t *Task) setMode(m hook.TaskMode) {
 // cancelled. It reports whether this call cancelled it: false for a task
 // that had already ended (its result is being delivered).
 func (t *Task) stop(cause error) (hook.TaskInfo, bool) {
+	t.reg.markStopped(t.info.ID)
+	if t.beforeCancel != nil && !t.beforeCancel(cause) {
+		// It ended already: its own end (finished) says how.
+		return t.Info(), false
+	}
 	stopped := false
 	t.once.Do(func() {
-		t.reg.markStopped(t.info.ID)
-		stopped = t.beforeCancel == nil || t.beforeCancel(cause)
-		if stopped {
-			t.mu.Lock()
-			t.info.State, t.info.Cause, t.info.Ended = hook.TaskCancelled, cause, time.Now()
-			t.mu.Unlock()
-		}
+		stopped = true
+		t.mu.Lock()
+		t.info.State, t.info.Cause, t.info.Ended = hook.TaskCancelled, cause, time.Now()
+		t.mu.Unlock()
 		t.reg.remove(t.info.ID)
 		t.cancel(cause)
 		t.reg.notify(t.Info())
@@ -267,15 +268,13 @@ func (r *TaskRegistry) CancelAll(owner string, cause error) []hook.TaskInfo {
 // after the tasks it started.
 func (r *TaskRegistry) subtree(roots []string) []*Task {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	children := make(map[string][]string, len(r.tasks))
 	for id, t := range r.tasks {
 		if p := t.Info().Parent; p != "" {
 			children[p] = append(children[p], id)
 		}
 	}
-	tasks := maps.Clone(r.tasks)
-	r.mu.Unlock()
-
 	var out []*Task
 	seen := make(map[string]bool)
 	var visit func(id string)
@@ -287,12 +286,21 @@ func (r *TaskRegistry) subtree(roots []string) []*Task {
 		for _, c := range children[id] {
 			visit(c)
 		}
-		if t := tasks[id]; t != nil {
+		if t := r.tasks[id]; t != nil {
 			out = append(out, t)
 		}
 	}
 	for _, id := range roots {
 		visit(id)
+	}
+	// Everything about to be cancelled counts as stopped from now, in the
+	// same critical section: a task one of them starts meanwhile is
+	// cancelled as it starts (start checks under this lock).
+	for id := range seen {
+		r.stopped = append(r.stopped, id)
+	}
+	if n := len(r.stopped); n > maxStopped {
+		r.stopped = slices.Delete(r.stopped, 0, n-maxStopped)
 	}
 	return out
 }

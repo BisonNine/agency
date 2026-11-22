@@ -72,7 +72,7 @@ func TestInterrupt_WaitTaskFinishesAndReports(t *testing.T) {
 	awaitSignal(t, detached, "the waiting task to be detached")
 
 	close(releaseWorker)
-	got := <-reported
+	got := recv(t, reported, "the background result")
 	if !strings.Contains(got, "status: done") {
 		t.Fatalf("background result = %q", got)
 	}
@@ -129,11 +129,11 @@ func TestInterrupt_WaitTaskDuringShutdownIsCancelled(t *testing.T) {
 	awaitSignal(t, workerStarted, "the sub-agent to start")
 	al.Stop()
 	endRequest() // the killed CLI's MCP request ends: a plain cancel
-	if res := <-done; !res.IsError || !strings.Contains(res.ForLLM, "was cancelled") {
+	if res := recv(t, done, "the waiting call to return"); !res.IsError || !strings.Contains(res.ForLLM, "was cancelled") {
 		t.Fatalf("result = %+v, want cancelled", res)
 	}
-	<-unwound // the cancel
-	<-unwound // the worker unwound: nothing of it outlives the test
+	recv(t, unwound, "the cancel")
+	recv(t, unwound, "the worker to unwind") // nothing of it outlives the test
 	if markers, err := filepath.Glob(filepath.Join(alice.Workspace, "tasks", "*.run")); err != nil || len(markers) != 0 {
 		t.Fatalf("run markers = %v: the task would be relaunched", markers)
 	}
