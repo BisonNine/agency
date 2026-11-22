@@ -1,0 +1,3229 @@
+{
+  "alice": [
+    {
+      "type": "function",
+      "name": "cogmem_consolidate",
+      "description": "Ask the background process to review the recent conversation and update memory now. Returns immediately; the work runs in the background.",
+      "parameters": {
+        "properties": {
+          "scope": {
+            "description": "Optional scope hint (currently advisory).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_archive",
+      "description": "Archive a domain so it is no longer used in prompting.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_create",
+      "description": "Create a new memory domain and return its assigned id. A domain groups related memories; register each ongoing project/topic as its own domain. Names must be unique — creating one with an existing name returns an error (reuse or rename instead).",
+      "parameters": {
+        "properties": {
+          "keyword_triggers": {
+            "description": "Optional keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). Prefer multi-word phrases like \"morning routine\"; common words are rejected. Use this to pull a workflow's context up when a cron job fires.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Domain name (must be unique).",
+            "type": "string"
+          },
+          "sticky": {
+            "description": "true = always inject this domain into context every turn (use sparingly). Default false: loaded only when relevant.",
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "Optional one-line summary.",
+            "type": "string"
+          },
+          "triggers": {
+            "description": "Optional tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_get",
+      "description": "Load a domain by id, with its active memories as readable text (each memory's id included).",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id (e.g. d3K9P).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_list",
+      "description": "List memory domains (id, name, summary, status; sticky ones are marked). Optionally filter by status. To see everything you're tracking, list with no filter.",
+      "parameters": {
+        "properties": {
+          "status": {
+            "description": "Filter by status.",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_migrate",
+      "description": "Merge two domains: move every memory from the 'from' domain into the 'to' domain, then permanently delete the 'from' domain. Use this to consolidate duplicate/overlapping domains into one.",
+      "parameters": {
+        "properties": {
+          "from": {
+            "description": "Source domain id — its memories are moved out and the domain is deleted.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Destination domain id — receives the moved memories.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_update",
+      "description": "Update a domain — a patch: pass only the fields you want to change (rename, summary, state, sticky, triggers). No version needed.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id.",
+            "type": "string"
+          },
+          "set_blockers": {
+            "description": "Replace the blockers list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_constraints": {
+            "description": "Replace the constraints list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_keyword_triggers": {
+            "description": "Replace keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). This is the full list domain_get shows, including keyword triggers added automatically; leave one out to remove it. Prefer multi-word phrases like \"morning routine\"; common words are rejected. Empty list clears.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_name": {
+            "description": "Rename the domain. Names must be unique; rejected if another domain already uses it.",
+            "type": "string"
+          },
+          "set_next_actions": {
+            "description": "Replace the next-actions list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_sticky": {
+            "description": "true = always inject this domain into context every turn; false = routed only when relevant. Use sticky sparingly.",
+            "type": "boolean"
+          },
+          "set_summary": {
+            "description": "Replace the domain summary.",
+            "type": "string"
+          },
+          "set_triggers": {
+            "description": "Replace tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*). Empty string clears.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_explain",
+      "description": "Summarize the status, origin, and evidence of a domain or memory id.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "A domain id (d…) or memory id (h…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_export",
+      "description": "Dump the agent's entire memory — every domain and memory, with all their fields — to files/MEMORY_EXPORT.yaml, and report the path and counts. The format can be read back in, so it works as a backup or to hand your memory to another assistant.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_attach",
+      "description": "Attach a markdown file to an existing memory, or detach the current one. The attached file's FULL contents load into your context whenever that memory does. Use this to point a memory at a different document (e.g. the file moved or was rewritten) or to remove the document while keeping the memory — memory text itself is not editable; retire and re-create for that.",
+      "parameters": {
+        "properties": {
+          "file": {
+            "description": "Path to a markdown file you can read with the file tools (e.g. \"files/voice.md\", \"maestro/style-guide.md\"). Omit or pass an empty string to detach the current file.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Memory id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_create",
+      "description": "Record a memory. With NO domain_id and NO domain_hint it records to your sticky 'General' domain (always in context). Give a domain_hint to use (or create) a topic domain by name, or a domain_id to target a specific one. Choose the type carefully — it decides whether the memory is in your context every turn or only reachable by search.",
+      "parameters": {
+        "properties": {
+          "confidence": {
+            "description": "Confidence 0..1 (default 0.9).",
+            "type": "number"
+          },
+          "domain_hint": {
+            "description": "A domain name: an existing domain with that name is reused, otherwise a new (non-sticky) one is created. Omit to use General.",
+            "type": "string"
+          },
+          "domain_id": {
+            "description": "Target domain id. If omitted and no domain_hint is given, records to the sticky General domain.",
+            "type": "string"
+          },
+          "file": {
+            "description": "Optional path to a markdown file (e.g. \"files/voice.md\", \"maestro/style-guide.md\") whose FULL contents are injected into your context whenever this memory is in context. Use it for reference material too long to put in the memory text, such as a writing-voice description; keep the memory text as a one-line description of what the document is and when to use it. The path must be one you can read with the file tools, and the file is read fresh each turn.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The memory content to store.",
+            "type": "string"
+          },
+          "type": {
+            "description": "fact = something true that stays true. preference = how the user likes things done. rule = a hard directive governing your output or behaviour toward the user. operational = your OWN housekeeping: where you file things, how you work, a rule you set for your own method. event = something that happened at a point in time (a trip, a delivery, a scheduled run, a status as of a date). Use event for anything with a timestamp or that will be stale next week — events are NEVER loaded into your context and are reached only by memory_search, which is what keeps recurring notes from crowding out everything else.",
+            "enum": [
+              "fact",
+              "preference",
+              "rule",
+              "operational",
+              "event"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_forget",
+      "description": "Retire all active memories matching a query (optionally limited to one domain). Reports how many were retired.",
+      "parameters": {
+        "properties": {
+          "domain_id": {
+            "description": "Restrict to this domain.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Substring to match against active memory text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_retire",
+      "description": "Retire a memory so it is no longer used (it stays in the audit history). To change a memory, retire the old one and create a new one.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Memory id.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it is being retired.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reason"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_search",
+      "description": "Search your active memories by a word or phrase in their text (case-insensitive). Use it to look something up when the answer may be in memory but is not currently shown in your context. Event memories are excluded unless you pass include_events — they are never in your context, so search is the ONLY way to reach them.",
+      "parameters": {
+        "properties": {
+          "include_events": {
+            "description": "Include event memories (things that happened at a point in time: trips, deliveries, scheduled runs). Default false. Set true when the question is about the past — \"when did we last…\", \"what happened on…\".",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Max results (default 20).",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Word or phrase to match against memory text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_status",
+      "description": "Report memory status: database path, the last background update, and how many domains and memories are held.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_list",
+      "description": "See what is in a folder: lists its files and subfolders, one level by default; recursive=true lists the whole tree. To find files by name, use file_glob.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Path to list",
+            "type": "string"
+          },
+          "recursive": {
+            "default": false,
+            "description": "List the entire tree under path (paths shown relative to the workspace). Hidden directories are skipped. Default false (one level).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_read_lines",
+      "description": "Read the lines you found: reads a file by line number from `start_line` (1-based; a line number from file_search_lines) for `line_count` lines. Lines come back numbered and the status block gives the next `start_line`. Use it to get the exact text before file_edit. (To page by raw bytes instead, use file_read_bytes.)",
+      "parameters": {
+        "properties": {
+          "line_count": {
+            "default": 250,
+            "description": "Number of lines to read from start_line (default 250). Still capped to the byte limit.",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to the file to read.",
+            "type": "string"
+          },
+          "start_line": {
+            "default": 1,
+            "description": "1-based line to start from (default 1).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "get_tool_details",
+      "description": "Show the full input schema of a tool found via search_tools. Pass the exact tool name from the search results.",
+      "parameters": {
+        "properties": {
+          "name": {
+            "description": "Exact tool name from search_tools results.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "search_tools",
+      "description": "Search for available tools by capability. Returns matching tool names with one-line descriptions and makes those tools available: call one directly, or call get_tool_details on a name to see its full schema. Natural-language query by default; set regex:true to match a regular expression if the natural-language search can't find the tool. Discoverable tool groups: wxca.",
+      "parameters": {
+        "properties": {
+          "query": {
+            "description": "What you want to do (natural language), or a regex pattern when regex is true.",
+            "type": "string"
+          },
+          "regex": {
+            "description": "Treat query as a regex over tool name/description instead of a natural-language search.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "tool_search": true
+    },
+    {
+      "type": "function",
+      "name": "time_now",
+      "description": "Get the current date, time, and timezone. The system prompt carries today's date only, so call this whenever you need the time of day, the timezone or UTC offset, or a precise timestamp — for example to work out how long until something, or to convert between zones.",
+      "parameters": {
+        "properties": {
+          "timezone": {
+            "description": "Optional IANA timezone name (e.g. \"America/Toronto\", \"UTC\"). Defaults to the server's local timezone.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "web_search",
+      "description": "Search the web for current information. Returns titles, URLs, and snippets from search results.",
+      "parameters": {
+        "properties": {
+          "count": {
+            "description": "Number of results (1-10)",
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Search query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "wxca_city_current",
+      "description": "Environment and Climate Change Canada Weather: Get only the compact English current observations for one forecast-location feature ID, such as on-118 or qc-147: temperature, condition, wind direction/speed/gust, wind chill, humidity, dewpoint, pressure, station, observation time, and any active warnings. No forecast is included; use city_get for the 7-day day/night outlook or city_hourly for the next 24 hours.",
+      "parameters": {
+        "properties": {
+          "identifier": {
+            "description": "Weather Canada city-page feature ID returned by city_search or city_list, for example on-118, qc-147, bc-74, or ns-19. (length: 4-32) (pattern: ^[a-z]{2}-[a-z0-9]+$)",
+            "examples": [
+              "on-118",
+              "qc-147",
+              "bc-74"
+            ],
+            "maxLength": 32,
+            "minLength": 4,
+            "pattern": "^[a-z]{2}-[a-z0-9]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "identifier"
+        ],
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "type": "function",
+      "name": "wxca_city_get",
+      "description": "Environment and Climate Change Canada Weather: Get a compact English city-page weather record for one forecast-location feature ID, such as on-118 or qc-147. Returns current observations (temperature, condition, wind, gust, humidity, dewpoint, pressure, wind chill, station, observation time) and the official day/night forecast periods covering about seven days (forecast text plus high/low temperatures), with sunrise/sunset and any active warnings. Hourly forecasts are not included here; use city_hourly for those.",
+      "parameters": {
+        "properties": {
+          "identifier": {
+            "description": "Weather Canada city-page feature ID returned by city_search or city_list, for example on-118, qc-147, bc-74, or ns-19. (length: 4-32) (pattern: ^[a-z]{2}-[a-z0-9]+$)",
+            "examples": [
+              "on-118",
+              "qc-147",
+              "bc-74"
+            ],
+            "maxLength": 32,
+            "minLength": 4,
+            "pattern": "^[a-z]{2}-[a-z0-9]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "identifier"
+        ],
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "type": "function",
+      "name": "wxca_city_list",
+      "description": "Environment and Climate Change Canada Weather: List Weather Canada city-page locations and their feature IDs. Use this when free-text search is unavailable or when resolving an ambiguous place name. Page with limit and offset, then call city_get with the chosen feature ID.",
+      "parameters": {
+        "properties": {
+          "bbox": {
+            "description": "Optional west,south,east,north bounding box in longitude/latitude. (pattern: ^-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?$)",
+            "pattern": "^-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?$",
+            "type": "string"
+          },
+          "lang": {
+            "default": "en",
+            "description": "Metadata language. (default: en) (valid: [en fr])",
+            "enum": [
+              "en",
+              "fr"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "description": "Number of locations to return. (default: 100) (range: 1-500)",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "number"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Zero-based result offset. (default: 0) (min: 0)",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "type": "function",
+      "name": "wxca_city_near_coordinates",
+      "description": "Environment and Climate Change Canada Weather: Find Weather Canada city-page forecast locations near known coordinates. Supply a small west,south,east,north bounding box around the point. Select the closest returned feature by geometry, then call city_get with its ID.",
+      "parameters": {
+        "properties": {
+          "bbox": {
+            "description": "Required bounding box as west,south,east,north in longitude/latitude. For a point, start with roughly ±0.5 degrees and widen if no location is returned. (pattern: ^-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?$)",
+            "examples": [
+              "-76.2,44.9,-75.2,45.9"
+            ],
+            "pattern": "^-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?$",
+            "type": "string"
+          },
+          "lang": {
+            "default": "en",
+            "description": "Metadata language. (default: en) (valid: [en fr])",
+            "enum": [
+              "en",
+              "fr"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "description": "Maximum nearby forecast locations. (default: 20) (range: 1-100)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number"
+          }
+        },
+        "required": [
+          "bbox"
+        ],
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "type": "function",
+      "name": "wxca_city_schema",
+      "description": "Environment and Climate Change Canada Weather: Return the current schema for the experimental city-page weather collection. Use this to interpret fields or diagnose upstream schema changes.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "type": "function",
+      "name": "wxca_city_search",
+      "description": "Environment and Climate Change Canada Weather: Find Weather Canada city-page forecast locations. Use q for a city or community name when supported by the API. A bbox can instead restrict results geographically. Returns only the feature id, name, region, and coordinates for each match (not the full weather record); pass a selected id to city_get. For ambiguous names, inspect name and region before choosing.",
+      "parameters": {
+        "properties": {
+          "bbox": {
+            "description": "Optional bounding box as west,south,east,north in longitude/latitude (EPSG:4326), for example -75.9,45.2,-75.4,45.6 for the Ottawa area. (pattern: ^-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?$)",
+            "examples": [
+              "-75.9,45.2,-75.4,45.6"
+            ],
+            "pattern": "^-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?,-?\\d+(\\.\\d+)?$",
+            "type": "string"
+          },
+          "lang": {
+            "default": "en",
+            "description": "Metadata language. (default: en) (valid: [en fr])",
+            "enum": [
+              "en",
+              "fr"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "description": "Maximum number of matching locations to return. (default: 20) (range: 1-100)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Zero-based result offset for paging. (default: 0) (min: 0)",
+            "minimum": 0,
+            "type": "number"
+          },
+          "q": {
+            "description": "Free-text location search, such as Ottawa, Montréal, Saint John, or Yellowknife. If the server does not support free-text search for this collection, use bbox or city_list instead.",
+            "examples": [
+              "Ottawa",
+              "Montréal",
+              "Saint John"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "deferred": true
+    }
+  ],
+  "bob": [
+    {
+      "type": "function",
+      "name": "agent_list",
+      "description": "List this agent's background tasks. Returns uuid, name, and status for each.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "agent_message",
+      "description": "Send a message to another agent. wait_seconds 0 whispers: the message is added privately to the start of the agent's next message, and this returns at once. wait_seconds above 0 asks: the agent handles the message in a normal turn, with its own tools, and this returns its reply (or says it did not reply in time). Only agents in your subagents.allow_agents can be messaged.",
+      "parameters": {
+        "properties": {
+          "agent": {
+            "description": "The agent to message, by id or name",
+            "type": "string"
+          },
+          "message": {
+            "description": "The message",
+            "type": "string"
+          },
+          "wait_seconds": {
+            "description": "0 to whisper (no reply); more than 0 to ask and wait up to this many seconds for the reply",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent",
+          "message",
+          "wait_seconds"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "agent_spawn",
+      "description": "Spawn a subagent to handle a task. Use 'mode' to choose how it runs: 'callback' (default) runs it in the background and notifies you when done with a pointer to a result file in your workspace (read it with your file tools, or poll agent_status); 'wait' runs it to completion and returns the result immediately. Callback mode requires 'name', a short identifier for the task. 'media' attaches media:// refs (from '[attachment ref(s): …]' markers in the conversation) to the subagent's initial message — useful to hand an image you cannot view to a vision-capable agent or model for analysis. With 'kind' it calls a task model instead of a subagent: one call, no tools, no agent. Kinds: 'text' (write, translate or summarise: 'task' is the prompt, text 'files' are added to it), 'image' (generate, or edit the images in 'files'/'media': 'task' is the prompt), 'tts' (speak 'task' aloud; optional 'voice' and 'format'), 'stt' (transcribe the one audio file in 'files' or 'media'; 'task' is an optional hint). 'model' then names a task model of that kind; omit it to use the first one that works. Output is saved in your workspace under files/generated/\u003cdate\u003e/ and the result gives the paths: images and audio come back as paths only, so send one to the chat with msg_send_file; text and transcripts come back inline too, cut when long, with the full text in a .md file. agent_id and character_card can't be used with kind.",
+      "parameters": {
+        "properties": {
+          "agent_id": {
+            "description": "Optional target agent ID to delegate the task to",
+            "type": "string"
+          },
+          "character_card": {
+            "description": "Optional character card id from the library: the subagent runs as that character instead of with the agent's own card. The card must exist.",
+            "type": "string"
+          },
+          "files": {
+            "description": "With kind: workspace paths of input files (text to use, images to edit, the audio to transcribe), as the file tools take them. You must be allowed to read them.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "format": {
+            "description": "With kind tts: the audio format in the API's terms (mp3, wav, …). Omit for the model's default.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Call a task model instead of a subagent: text, image, tts (speech) or stt (transcription). You must be allowed that kind.",
+            "enum": [
+              "text",
+              "image",
+              "tts",
+              "stt"
+            ],
+            "type": "string"
+          },
+          "media": {
+            "description": "Optional media:// refs (from '[attachment ref(s): …]' markers in the conversation) to attach to the subagent's initial message. Use with a vision-capable agent_id/model to have an image you cannot view analyzed for you.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "description": "How to run: 'callback' (default, background) or 'wait' (synchronous)",
+            "enum": [
+              "callback",
+              "wait"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "description": "Optional model for the subagent to run, by its model name. Must be one of the executing agent's worker models (yourself on a self-spawn, or the target agent): its configured worker models, else its own models. Omit to use its first worker model. Useful to run a heavier model for a demanding subtask while you stay on a lighter one.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Short identifier for the task (required for callback mode)",
+            "type": "string"
+          },
+          "task": {
+            "description": "The task for the subagent to complete",
+            "type": "string"
+          },
+          "voice": {
+            "description": "With kind tts: the voice. Omit for the model's default.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "agent_status",
+      "description": "Check the status of a background task by uuid. Returns one of: unknown, running, done, error — with a pointer to the result file when available.",
+      "parameters": {
+        "properties": {
+          "uuid": {
+            "description": "The task uuid returned by agent_spawn (or shown by agent_list)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "ccv3",
+      "description": "Manage the character-card library (Character Card V3). A card describes a character an agent can play: who it is, how it speaks, its world. Actions: list; get {id}; create {id, card}; update {id, changes}; rename {id, new_id}; copy {id, new_id}; delete {id}. Ids are 1 to 64 letters, digits, - and _, starting with a letter or digit; case does not matter. Fields of card: name (required); nickname; description; personality; scenario; first_mes, alternate_greetings, group_only_greetings (greetings); mes_example (example dialogue, \u003cSTART\u003e between examples); system_prompt, post_history_instructions (instructions for the model); tags, creator, character_version, source, creator_notes, creator_notes_multilingual (about the card); character_book (lorebook entries: keys, content, enabled, insertion_order); assets, extensions (kept, not used). creation_date and modification_date are set automatically. In card text {{char}} becomes the character's name, {{user}} becomes \"the user\" and {{// note}} is removed. The schema is strict: unknown fields are refused. changes is an RFC 7386 merge patch: null removes a field, objects merge, arrays are replaced whole. Cards are attached to agents by the operator in the WebUI, by agent_spawn's character_card, or by a forum participant's character_card; an attached card cannot be renamed or deleted.",
+      "parameters": {
+        "properties": {
+          "action": {
+            "description": "list, get, create, update, rename, copy or delete",
+            "enum": [
+              "list",
+              "get",
+              "create",
+              "update",
+              "rename",
+              "copy",
+              "delete"
+            ],
+            "type": "string"
+          },
+          "card": {
+            "additionalProperties": false,
+            "description": "create: the card's data object",
+            "properties": {
+              "alternate_greetings": {
+                "description": "Other first messages",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "assets": {
+                "description": "Images and other files the card refers to; kept, not used",
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "ext": {
+                      "description": "The file type, such as png",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "The asset's name",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "What the asset is, such as icon or background",
+                      "type": "string"
+                    },
+                    "uri": {
+                      "description": "Where the asset is",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "character_book": {
+                "additionalProperties": false,
+                "description": "The lorebook: background entries about the character and its world",
+                "properties": {
+                  "description": {
+                    "description": "What the lorebook covers",
+                    "type": "string"
+                  },
+                  "entries": {
+                    "description": "The lorebook's entries",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "case_sensitive": {
+                          "description": "Whether keys match case",
+                          "type": "boolean"
+                        },
+                        "comment": {
+                          "description": "A note about the entry; not shown to the model",
+                          "type": "string"
+                        },
+                        "constant": {
+                          "description": "Always use the entry, whatever the keys",
+                          "type": "boolean"
+                        },
+                        "content": {
+                          "description": "The entry's text; required",
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "description": "Whether the entry is used; required",
+                          "type": "boolean"
+                        },
+                        "extensions": {
+                          "additionalProperties": true,
+                          "description": "Data other apps keep with the entry; kept as is",
+                          "type": "object"
+                        },
+                        "id": {
+                          "description": "The entry's id: a whole number or text",
+                          "type": [
+                            "integer",
+                            "string"
+                          ]
+                        },
+                        "insertion_order": {
+                          "description": "Lower numbers are placed first; required",
+                          "type": "integer"
+                        },
+                        "keys": {
+                          "description": "Words that trigger the entry; required",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "name": {
+                          "description": "The entry's name",
+                          "type": "string"
+                        },
+                        "position": {
+                          "description": "Where the entry is placed relative to the character",
+                          "enum": [
+                            "before_char",
+                            "after_char"
+                          ],
+                          "type": "string"
+                        },
+                        "priority": {
+                          "description": "Which entries are dropped first when over budget (lower first)",
+                          "type": "integer"
+                        },
+                        "secondary_keys": {
+                          "description": "Further keys, used when selective is true",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "selective": {
+                          "description": "Whether secondary_keys must also match",
+                          "type": "boolean"
+                        },
+                        "use_regex": {
+                          "description": "Whether keys are regular expressions",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "keys",
+                        "content",
+                        "enabled",
+                        "insertion_order"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "extensions": {
+                    "additionalProperties": true,
+                    "description": "Data other apps keep with the lorebook; kept as is",
+                    "type": "object"
+                  },
+                  "name": {
+                    "description": "The lorebook's name",
+                    "type": "string"
+                  },
+                  "recursive_scanning": {
+                    "description": "Whether entry content is scanned for further keys",
+                    "type": "boolean"
+                  },
+                  "scan_depth": {
+                    "description": "How many recent messages are scanned for keys",
+                    "type": "integer"
+                  },
+                  "token_budget": {
+                    "description": "Token budget for inserted entries",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "character_version": {
+                "description": "The card's own version label",
+                "type": "string"
+              },
+              "creation_date": {
+                "description": "Set automatically (Unix seconds); leave it out",
+                "type": "integer"
+              },
+              "creator": {
+                "description": "Who made the card",
+                "type": "string"
+              },
+              "creator_notes": {
+                "description": "Notes from the creator for people using the card; not shown to the model",
+                "type": "string"
+              },
+              "creator_notes_multilingual": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "creator_notes by language code (such as fr)",
+                "type": "object"
+              },
+              "description": {
+                "description": "Who the character is: appearance, history, situation",
+                "type": "string"
+              },
+              "extensions": {
+                "additionalProperties": true,
+                "description": "Data other apps keep with the card; kept as is",
+                "type": "object"
+              },
+              "first_mes": {
+                "description": "The character's first message (greeting)",
+                "type": "string"
+              },
+              "group_only_greetings": {
+                "description": "First messages used only in group chats",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mes_example": {
+                "description": "Example dialogue showing how the character speaks; separate examples with \u003cSTART\u003e",
+                "type": "string"
+              },
+              "modification_date": {
+                "description": "Set automatically (Unix seconds); leave it out",
+                "type": "integer"
+              },
+              "name": {
+                "description": "The character's name; required, not blank",
+                "type": "string"
+              },
+              "nickname": {
+                "description": "What the character is called in text; replaces name for {{char}} when set",
+                "type": "string"
+              },
+              "personality": {
+                "description": "A short summary of the character's personality",
+                "type": "string"
+              },
+              "post_history_instructions": {
+                "description": "Instructions placed after the conversation history",
+                "type": "string"
+              },
+              "scenario": {
+                "description": "The circumstances and context of the conversation",
+                "type": "string"
+              },
+              "source": {
+                "description": "Where the card came from, as a list (such as URLs)",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "system_prompt": {
+                "description": "Instructions for the model, placed before the character",
+                "type": "string"
+              },
+              "tags": {
+                "description": "Labels for finding the card",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "changes": {
+            "additionalProperties": false,
+            "description": "update: an RFC 7386 merge patch over the card's data object; null removes a field, arrays are replaced whole",
+            "properties": {
+              "alternate_greetings": {
+                "description": "Other first messages",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "assets": {
+                "description": "Images and other files the card refers to; kept, not used",
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "ext": {
+                      "description": "The file type, such as png",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "The asset's name",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "What the asset is, such as icon or background",
+                      "type": "string"
+                    },
+                    "uri": {
+                      "description": "Where the asset is",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "character_book": {
+                "additionalProperties": false,
+                "description": "The lorebook: background entries about the character and its world",
+                "properties": {
+                  "description": {
+                    "description": "What the lorebook covers",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "entries": {
+                    "description": "The lorebook's entries",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "case_sensitive": {
+                          "description": "Whether keys match case",
+                          "type": "boolean"
+                        },
+                        "comment": {
+                          "description": "A note about the entry; not shown to the model",
+                          "type": "string"
+                        },
+                        "constant": {
+                          "description": "Always use the entry, whatever the keys",
+                          "type": "boolean"
+                        },
+                        "content": {
+                          "description": "The entry's text; required",
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "description": "Whether the entry is used; required",
+                          "type": "boolean"
+                        },
+                        "extensions": {
+                          "additionalProperties": true,
+                          "description": "Data other apps keep with the entry; kept as is",
+                          "type": "object"
+                        },
+                        "id": {
+                          "description": "The entry's id: a whole number or text",
+                          "type": [
+                            "integer",
+                            "string"
+                          ]
+                        },
+                        "insertion_order": {
+                          "description": "Lower numbers are placed first; required",
+                          "type": "integer"
+                        },
+                        "keys": {
+                          "description": "Words that trigger the entry; required",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "name": {
+                          "description": "The entry's name",
+                          "type": "string"
+                        },
+                        "position": {
+                          "description": "Where the entry is placed relative to the character",
+                          "enum": [
+                            "before_char",
+                            "after_char"
+                          ],
+                          "type": "string"
+                        },
+                        "priority": {
+                          "description": "Which entries are dropped first when over budget (lower first)",
+                          "type": "integer"
+                        },
+                        "secondary_keys": {
+                          "description": "Further keys, used when selective is true",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "selective": {
+                          "description": "Whether secondary_keys must also match",
+                          "type": "boolean"
+                        },
+                        "use_regex": {
+                          "description": "Whether keys are regular expressions",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "keys",
+                        "content",
+                        "enabled",
+                        "insertion_order"
+                      ],
+                      "type": "object"
+                    },
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "extensions": {
+                    "additionalProperties": true,
+                    "description": "Data other apps keep with the lorebook; kept as is",
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "name": {
+                    "description": "The lorebook's name",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "recursive_scanning": {
+                    "description": "Whether entry content is scanned for further keys",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "scan_depth": {
+                    "description": "How many recent messages are scanned for keys",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "token_budget": {
+                    "description": "Token budget for inserted entries",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "character_version": {
+                "description": "The card's own version label",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "creator": {
+                "description": "Who made the card",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "creator_notes": {
+                "description": "Notes from the creator for people using the card; not shown to the model",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "creator_notes_multilingual": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "creator_notes by language code (such as fr)",
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "description": {
+                "description": "Who the character is: appearance, history, situation",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "extensions": {
+                "additionalProperties": true,
+                "description": "Data other apps keep with the card; kept as is",
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "first_mes": {
+                "description": "The character's first message (greeting)",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "group_only_greetings": {
+                "description": "First messages used only in group chats",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "mes_example": {
+                "description": "Example dialogue showing how the character speaks; separate examples with \u003cSTART\u003e",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "The character's name; required, not blank",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nickname": {
+                "description": "What the character is called in text; replaces name for {{char}} when set",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "personality": {
+                "description": "A short summary of the character's personality",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "post_history_instructions": {
+                "description": "Instructions placed after the conversation history",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scenario": {
+                "description": "The circumstances and context of the conversation",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "description": "Where the card came from, as a list (such as URLs)",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "system_prompt": {
+                "description": "Instructions for the model, placed before the character",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tags": {
+                "description": "Labels for finding the card",
+                "items": {
+                  "type": "string"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "description": "The card id; every action but list",
+            "type": "string"
+          },
+          "new_id": {
+            "description": "rename and copy: the new card id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "deferred": true
+    },
+    {
+      "type": "function",
+      "name": "cogmem_consolidate",
+      "description": "Ask the background process to review the recent conversation and update memory now. Returns immediately; the work runs in the background.",
+      "parameters": {
+        "properties": {
+          "scope": {
+            "description": "Optional scope hint (currently advisory).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_archive",
+      "description": "Archive a domain so it is no longer used in prompting.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_create",
+      "description": "Create a new memory domain and return its assigned id. A domain groups related memories; register each ongoing project/topic as its own domain. Names must be unique — creating one with an existing name returns an error (reuse or rename instead).",
+      "parameters": {
+        "properties": {
+          "keyword_triggers": {
+            "description": "Optional keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). Prefer multi-word phrases like \"morning routine\"; common words are rejected. Use this to pull a workflow's context up when a cron job fires.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Domain name (must be unique).",
+            "type": "string"
+          },
+          "sticky": {
+            "description": "true = always inject this domain into context every turn (use sparingly). Default false: loaded only when relevant.",
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "Optional one-line summary.",
+            "type": "string"
+          },
+          "triggers": {
+            "description": "Optional tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_get",
+      "description": "Load a domain by id, with its active memories as readable text (each memory's id included).",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id (e.g. d3K9P).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_list",
+      "description": "List memory domains (id, name, summary, status; sticky ones are marked). Optionally filter by status. To see everything you're tracking, list with no filter.",
+      "parameters": {
+        "properties": {
+          "status": {
+            "description": "Filter by status.",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_migrate",
+      "description": "Merge two domains: move every memory from the 'from' domain into the 'to' domain, then permanently delete the 'from' domain. Use this to consolidate duplicate/overlapping domains into one.",
+      "parameters": {
+        "properties": {
+          "from": {
+            "description": "Source domain id — its memories are moved out and the domain is deleted.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Destination domain id — receives the moved memories.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_update",
+      "description": "Update a domain — a patch: pass only the fields you want to change (rename, summary, state, sticky, triggers). No version needed.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id.",
+            "type": "string"
+          },
+          "set_blockers": {
+            "description": "Replace the blockers list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_constraints": {
+            "description": "Replace the constraints list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_keyword_triggers": {
+            "description": "Replace keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). This is the full list domain_get shows, including keyword triggers added automatically; leave one out to remove it. Prefer multi-word phrases like \"morning routine\"; common words are rejected. Empty list clears.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_name": {
+            "description": "Rename the domain. Names must be unique; rejected if another domain already uses it.",
+            "type": "string"
+          },
+          "set_next_actions": {
+            "description": "Replace the next-actions list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_sticky": {
+            "description": "true = always inject this domain into context every turn; false = routed only when relevant. Use sticky sparingly.",
+            "type": "boolean"
+          },
+          "set_summary": {
+            "description": "Replace the domain summary.",
+            "type": "string"
+          },
+          "set_triggers": {
+            "description": "Replace tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*). Empty string clears.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_explain",
+      "description": "Summarize the status, origin, and evidence of a domain or memory id.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "A domain id (d…) or memory id (h…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_export",
+      "description": "Dump the agent's entire memory — every domain and memory, with all their fields — to files/MEMORY_EXPORT.yaml, and report the path and counts. The format can be read back in, so it works as a backup or to hand your memory to another assistant.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_attach",
+      "description": "Attach a markdown file to an existing memory, or detach the current one. The attached file's FULL contents load into your context whenever that memory does. Use this to point a memory at a different document (e.g. the file moved or was rewritten) or to remove the document while keeping the memory — memory text itself is not editable; retire and re-create for that.",
+      "parameters": {
+        "properties": {
+          "file": {
+            "description": "Path to a markdown file you can read with the file tools (e.g. \"files/voice.md\", \"maestro/style-guide.md\"). Omit or pass an empty string to detach the current file.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Memory id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_create",
+      "description": "Record a memory. With NO domain_id and NO domain_hint it records to your sticky 'General' domain (always in context). Give a domain_hint to use (or create) a topic domain by name, or a domain_id to target a specific one. Choose the type carefully — it decides whether the memory is in your context every turn or only reachable by search.",
+      "parameters": {
+        "properties": {
+          "confidence": {
+            "description": "Confidence 0..1 (default 0.9).",
+            "type": "number"
+          },
+          "domain_hint": {
+            "description": "A domain name: an existing domain with that name is reused, otherwise a new (non-sticky) one is created. Omit to use General.",
+            "type": "string"
+          },
+          "domain_id": {
+            "description": "Target domain id. If omitted and no domain_hint is given, records to the sticky General domain.",
+            "type": "string"
+          },
+          "file": {
+            "description": "Optional path to a markdown file (e.g. \"files/voice.md\", \"maestro/style-guide.md\") whose FULL contents are injected into your context whenever this memory is in context. Use it for reference material too long to put in the memory text, such as a writing-voice description; keep the memory text as a one-line description of what the document is and when to use it. The path must be one you can read with the file tools, and the file is read fresh each turn.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The memory content to store.",
+            "type": "string"
+          },
+          "type": {
+            "description": "fact = something true that stays true. preference = how the user likes things done. rule = a hard directive governing your output or behaviour toward the user. operational = your OWN housekeeping: where you file things, how you work, a rule you set for your own method. event = something that happened at a point in time (a trip, a delivery, a scheduled run, a status as of a date). Use event for anything with a timestamp or that will be stale next week — events are NEVER loaded into your context and are reached only by memory_search, which is what keeps recurring notes from crowding out everything else.",
+            "enum": [
+              "fact",
+              "preference",
+              "rule",
+              "operational",
+              "event"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_forget",
+      "description": "Retire all active memories matching a query (optionally limited to one domain). Reports how many were retired.",
+      "parameters": {
+        "properties": {
+          "domain_id": {
+            "description": "Restrict to this domain.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Substring to match against active memory text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_retire",
+      "description": "Retire a memory so it is no longer used (it stays in the audit history). To change a memory, retire the old one and create a new one.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Memory id.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it is being retired.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reason"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_search",
+      "description": "Search your active memories by a word or phrase in their text (case-insensitive). Use it to look something up when the answer may be in memory but is not currently shown in your context. Event memories are excluded unless you pass include_events — they are never in your context, so search is the ONLY way to reach them.",
+      "parameters": {
+        "properties": {
+          "include_events": {
+            "description": "Include event memories (things that happened at a point in time: trips, deliveries, scheduled runs). Default false. Set true when the question is about the past — \"when did we last…\", \"what happened on…\".",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Max results (default 20).",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Word or phrase to match against memory text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_status",
+      "description": "Report memory status: database path, the last background update, and how many domains and memories are held.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "common_delete",
+      "description": "Delete a file from the shared common directory.",
+      "parameters": {
+        "properties": {
+          "name": {
+            "description": "File name (or relative path) within the common directory to delete.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "common_get",
+      "description": "Copy a file from the shared common directory into this agent's workspace files/ directory.",
+      "parameters": {
+        "properties": {
+          "as": {
+            "description": "Optional destination name (relative path) under the workspace files/ directory. Defaults to the source basename.",
+            "type": "string"
+          },
+          "name": {
+            "description": "File name (or relative path) within the common directory to copy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "common_list",
+      "description": "List files in the shared common directory (optionally under a subdir).",
+      "parameters": {
+        "properties": {
+          "subdir": {
+            "description": "Optional subdirectory under the common directory to list.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "common_put",
+      "description": "Copy a file from this agent's workspace into the shared common directory.",
+      "parameters": {
+        "properties": {
+          "as": {
+            "description": "Optional destination name (relative path) within the common directory. Defaults to the source basename.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Relative path within the agent workspace to copy into the common directory.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_append",
+      "description": "Append content to the end of a file (parent directories created as needed)",
+      "parameters": {
+        "properties": {
+          "backup": {
+            "default": false,
+            "description": "If true and the target file exists, copy it to \u003cfile\u003e.NNNN (next unused 4-digit suffix, starting at 0001) before modification. Silently skipped when the target does not exist.",
+            "type": "boolean"
+          },
+          "content": {
+            "description": "The content to append",
+            "type": "string"
+          },
+          "display": {
+            "default": false,
+            "description": "If true, after the operation, send the written/edited/appended content to the user as a fenced block separated by `---` markers.",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "The file path to append to",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_copy",
+      "description": "Copy a file from source_path to destination_path (parent directories created as needed). Preserves source file mode. Refuses directories.",
+      "parameters": {
+        "properties": {
+          "destination_path": {
+            "description": "Workspace-relative path to copy the file to.",
+            "type": "string"
+          },
+          "display": {
+            "default": false,
+            "description": "If true, after the operation, send the copied content to the user as a fenced block separated by `---` markers.",
+            "type": "boolean"
+          },
+          "overwrite": {
+            "default": false,
+            "description": "If true, replace destination when it exists. If false (default), error when destination exists.",
+            "type": "boolean"
+          },
+          "source_path": {
+            "description": "Workspace-relative path of the file to copy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path",
+          "destination_path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_count",
+      "description": "Count the lines, words, characters and bytes in a file, like the Unix `wc` command. Use this to size a file before reading it, or to check whether it changed. Counts match wc exactly: `lines` is the number of newline characters, so a file whose last line has no trailing newline reports one fewer than you might count by eye — `final_newline` in the result tells you which case you are in. `characters` counts Unicode characters and `bytes` counts bytes; they differ for non-ASCII text. The file is streamed, so this works on files too large to read.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Path to the file to count, relative to the workspace.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_delete",
+      "description": "Delete a file (files only; remove folders with file_rmdir), or a link (the link itself is removed, its target is not touched). Requires sure=true. Makes no backup, and refuses to delete backup files (\u003cname\u003e.NNNN).",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Path of the file to delete.",
+            "type": "string"
+          },
+          "sure": {
+            "description": "Must be true to confirm deletion.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "sure"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_delete_bytes",
+      "description": "Delete bytes start..end (0-based, inclusive). Omit end to delete just the start byte; pass end=\"end\" for end of file.",
+      "parameters": {
+        "properties": {
+          "backup": {
+            "default": true,
+            "description": "Copy the file to \u003cfile\u003e.NNNN before modifying.",
+            "type": "boolean"
+          },
+          "display": {
+            "default": false,
+            "description": "Also show the affected content to the user.",
+            "type": "boolean"
+          },
+          "end": {
+            "description": "Last byte (0-based, inclusive). Omit to affect only the start byte; pass \"end\" for end of file.",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "path": {
+            "description": "File to modify.",
+            "type": "string"
+          },
+          "start": {
+            "description": "First byte (0-based; 0 = start of file).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "start"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_delete_lines",
+      "description": "Remove lines by number: deletes lines start..end (1-based). Omit end to delete just the start line; pass end=\"end\" for end of file.",
+      "parameters": {
+        "properties": {
+          "backup": {
+            "default": true,
+            "description": "Copy the file to \u003cfile\u003e.NNNN before modifying.",
+            "type": "boolean"
+          },
+          "display": {
+            "default": false,
+            "description": "Also show the affected content to the user.",
+            "type": "boolean"
+          },
+          "end": {
+            "description": "Last line (1-based, inclusive). Omit to affect only the start line; pass \"end\" for end of file.",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "path": {
+            "description": "File to modify.",
+            "type": "string"
+          },
+          "start": {
+            "description": "First line (1-based; 0 = start of file).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "start"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_edit",
+      "description": "Change text in a file: replaces old_text with new_text. old_text must appear exactly once, exactly as in the file (copy it from file_read_lines).",
+      "parameters": {
+        "properties": {
+          "backup": {
+            "default": false,
+            "description": "If true and the target file exists, copy it to \u003cfile\u003e.NNNN (next unused 4-digit suffix, starting at 0001) before modification. Silently skipped when the target does not exist.",
+            "type": "boolean"
+          },
+          "display": {
+            "default": false,
+            "description": "If true, after the operation, send the written/edited/appended content to the user as a fenced block separated by `---` markers.",
+            "type": "boolean"
+          },
+          "new_text": {
+            "description": "The text to replace with",
+            "type": "string"
+          },
+          "old_text": {
+            "description": "The exact text to find and replace",
+            "type": "string"
+          },
+          "path": {
+            "description": "The file path to edit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "old_text",
+          "new_text"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_edit_bytes",
+      "description": "Replace bytes start..end (0-based, inclusive) with `replace`. Omit end to replace just the start byte; pass end=\"end\" for end of file. To remove bytes use file_delete_bytes.",
+      "parameters": {
+        "properties": {
+          "backup": {
+            "default": true,
+            "description": "Copy the file to \u003cfile\u003e.NNNN before modifying.",
+            "type": "boolean"
+          },
+          "display": {
+            "default": false,
+            "description": "Also show the affected content to the user.",
+            "type": "boolean"
+          },
+          "end": {
+            "description": "Last byte (0-based, inclusive). Omit to affect only the start byte; pass \"end\" for end of file.",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "path": {
+            "description": "File to modify.",
+            "type": "string"
+          },
+          "replace": {
+            "description": "Replacement content (non-empty; use file_delete_bytes to remove).",
+            "type": "string"
+          },
+          "start": {
+            "description": "First byte (0-based; 0 = start of file).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "start",
+          "replace"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_edit_lines",
+      "description": "Change lines by number: replaces lines start..end (1-based) with `replace`. Omit end to replace just the start line; pass end=\"end\" for end of file. To remove lines use file_delete_lines.",
+      "parameters": {
+        "properties": {
+          "backup": {
+            "default": true,
+            "description": "Copy the file to \u003cfile\u003e.NNNN before modifying.",
+            "type": "boolean"
+          },
+          "display": {
+            "default": false,
+            "description": "Also show the affected content to the user.",
+            "type": "boolean"
+          },
+          "end": {
+            "description": "Last line (1-based, inclusive). Omit to affect only the start line; pass \"end\" for end of file.",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "path": {
+            "description": "File to modify.",
+            "type": "string"
+          },
+          "replace": {
+            "description": "Replacement content (non-empty; use file_delete_lines to remove).",
+            "type": "string"
+          },
+          "start": {
+            "description": "First line (1-based; 0 = start of file).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "start",
+          "replace"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_glob",
+      "description": "Find files by name pattern, e.g. **/*.go or src/**/test_*.py. Searches under path (default: all workspace folders you can read). Returns matching file paths, newest first, at most 200. Folders whose name starts with a dot (.git) are skipped. To find text inside files, use file_search_lines.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Folder to search under, relative to the workspace or absolute. Default: all workspace folders you can read, with the pattern matched from the workspace (files/**/*.md).",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Glob matched against each file's path below `path`: * matches within one folder, ** any number of folders (**/*.go finds Go files everywhere), ? one character, {a,b} either.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_insert_bytes",
+      "description": "Insert `text` at a byte offset (0 = top of file). Nothing is removed.",
+      "parameters": {
+        "properties": {
+          "at_offset": {
+            "description": "Insert at this 0-based byte offset (0 = top of file).",
+            "type": "integer"
+          },
+          "backup": {
+            "default": false,
+            "description": "Copy the file to \u003cfile\u003e.NNNN before modifying.",
+            "type": "boolean"
+          },
+          "display": {
+            "default": false,
+            "description": "Also show the affected content to the user.",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "File to modify.",
+            "type": "string"
+          },
+          "text": {
+            "description": "Content to insert (non-empty).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "at_offset",
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_insert_lines",
+      "description": "Add lines without removing any: inserts `text` after a line number (0 = top of file).",
+      "parameters": {
+        "properties": {
+          "after_line": {
+            "description": "Insert after this 1-based line (0 = top of file).",
+            "type": "integer"
+          },
+          "backup": {
+            "default": false,
+            "description": "Copy the file to \u003cfile\u003e.NNNN before modifying.",
+            "type": "boolean"
+          },
+          "display": {
+            "default": false,
+            "description": "Also show the affected content to the user.",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "File to modify.",
+            "type": "string"
+          },
+          "text": {
+            "description": "Content to insert (non-empty).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "after_line",
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_list",
+      "description": "See what is in a folder: lists its files and subfolders, one level by default; recursive=true lists the whole tree. To find files by name, use file_glob.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Path to list",
+            "type": "string"
+          },
+          "recursive": {
+            "default": false,
+            "description": "List the entire tree under path (paths shown relative to the workspace). Hidden directories are skipped. Default false (one level).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_mkdir",
+      "description": "Create a folder, and any missing parent folders. Succeeds if the folder already exists.",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Path of the folder to create.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_move",
+      "description": "Move a file or a folder from source_path to destination_path to organize files (parent directories created as needed; works across mount boundaries; no content enters context).",
+      "parameters": {
+        "properties": {
+          "destination_path": {
+            "description": "New path for the file or folder.",
+            "type": "string"
+          },
+          "overwrite": {
+            "default": false,
+            "description": "Replace destination if it exists (default false). For a folder, its files are merged into the existing destination folder.",
+            "type": "boolean"
+          },
+          "source_path": {
+            "description": "Path of the file or folder to move.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path",
+          "destination_path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_read_bytes",
+      "description": "Read a file by BYTE offset. Pass `offset` and optional `length` to read a byte range; the status block tells you the next `offset`. Best for binary or very large files. Byte offsets from file_search_bytes feed directly into this tool. (For human-readable line addressing, use file_read_lines.)",
+      "parameters": {
+        "properties": {
+          "length": {
+            "default": 32768,
+            "description": "Maximum number of bytes to read.",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Byte offset to start reading from.",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to the file to read.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_read_lines",
+      "description": "Read the lines you found: reads a file by line number from `start_line` (1-based; a line number from file_search_lines) for `line_count` lines. Lines come back numbered and the status block gives the next `start_line`. Use it to get the exact text before file_edit. (To page by raw bytes instead, use file_read_bytes.)",
+      "parameters": {
+        "properties": {
+          "line_count": {
+            "default": 250,
+            "description": "Number of lines to read from start_line (default 250). Still capped to the byte limit.",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to the file to read.",
+            "type": "string"
+          },
+          "start_line": {
+            "default": 1,
+            "description": "1-based line to start from (default 1).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_rmdir",
+      "description": "Remove a folder (folders only; delete files with file_delete), or a link (the link itself is removed, its target is not touched). Requires sure=true. Removes only an empty folder unless recursive=true. Makes no backup, and refuses to remove backup files (\u003cname\u003e.NNNN).",
+      "parameters": {
+        "properties": {
+          "path": {
+            "description": "Path of the folder to remove.",
+            "type": "string"
+          },
+          "recursive": {
+            "default": false,
+            "description": "Also remove everything inside the folder (default false).",
+            "type": "boolean"
+          },
+          "sure": {
+            "description": "Must be true to confirm removal.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "sure"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_search_bytes",
+      "description": "Search file contents and return each match's BYTE position (start–end) and a snippet — like grep with byte offsets. Pass a match's start byte as `offset` to `file_read_bytes` to read from there. Use this when you page files by bytes; for human-readable line references use `file_search_lines` instead. Searches a single file or a directory tree (recursively). Literal, case-insensitive match by default; set regex=true for a regular expression.",
+      "parameters": {
+        "properties": {
+          "max_results": {
+            "default": 50,
+            "description": "Maximum matches to return (default 50, max 200).",
+            "type": "integer"
+          },
+          "path": {
+            "default": ".",
+            "description": "File or directory to search (directories are searched recursively). Defaults to the workspace root.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Text to find (literal substring, case-insensitive) or a regular expression when regex=true.",
+            "type": "string"
+          },
+          "regex": {
+            "default": false,
+            "description": "Treat query as a regular expression (case-sensitive as written). Default false.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_search_lines",
+      "description": "Find text in files: returns matching lines with their path and line number, like grep. Then read around a match with file_read_lines (start_line = the line number). Searches one file or a folder and everything below it (default: all workspace folders you can read), skipping files .gitignore ignores. Literal, case-insensitive by default; regex=true for a regular expression. To find files by name, use file_glob.",
+      "parameters": {
+        "properties": {
+          "context": {
+            "default": 0,
+            "description": "Lines to show before and after each match (default 0, max 10). A result shows at most 2000 lines.",
+            "type": "integer"
+          },
+          "include": {
+            "description": "Only search files whose path matches this glob, e.g. *.go or src/**/*.ts. A pattern without / matches the file name in any folder; with no path, one with / matches paths from the workspace (files/**/*.go).",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 50,
+            "description": "Maximum matches to return, or files with output=files or count (default 50, max 200).",
+            "type": "integer"
+          },
+          "output": {
+            "default": "lines",
+            "description": "lines (default): the matching lines; files: only the paths of files that match; count: the number of matching lines in each file.",
+            "enum": [
+              "lines",
+              "files",
+              "count"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "File or folder to search (folders are searched recursively), relative to the workspace or absolute. Default: all workspace folders you can read.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Text to find (literal substring, case-insensitive) or a regular expression when regex=true.",
+            "type": "string"
+          },
+          "regex": {
+            "default": false,
+            "description": "Treat query as a regular expression (case-sensitive as written). Default false.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_view_image",
+      "description": "View an image file so you can actually see it (requires a vision-capable model). Reads an image from the workspace (png, jpeg, gif, webp) and attaches it for you to look at — use this instead of file_read_lines/file_read_bytes, which return unusable binary for images. Large images are automatically downscaled. Max source size 10 MB.",
+      "parameters": {
+        "properties": {
+          "focus": {
+            "description": "Optional: what to look for / the question to answer about the image.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Path to the image file, relative to the workspace (or an allowed absolute path).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_write",
+      "description": "Create a file, or replace a whole file: writes content (parent folders created as needed). Refuses to replace an existing file unless overwrite is true. To change part of a file, use file_edit.",
+      "parameters": {
+        "properties": {
+          "backup": {
+            "default": false,
+            "description": "If true and the target file exists, copy it to \u003cfile\u003e.NNNN (next unused 4-digit suffix, starting at 0001) before modification. Silently skipped when the target does not exist.",
+            "type": "boolean"
+          },
+          "content": {
+            "description": "Content to write to the file",
+            "type": "string"
+          },
+          "display": {
+            "default": false,
+            "description": "If true, after the operation, send the written/edited/appended content to the user as a fenced block separated by `---` markers.",
+            "type": "boolean"
+          },
+          "overwrite": {
+            "default": false,
+            "description": "If the target file already exists and overwrite is not true, the call fails. Set overwrite: true to replace an existing file.",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "Path to the file to write",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "get_tool_details",
+      "description": "Show the full input schema of a tool found via search_tools. Pass the exact tool name from the search results.",
+      "parameters": {
+        "properties": {
+          "name": {
+            "description": "Exact tool name from search_tools results.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "msg_send",
+      "description": "Send a message to the user in the current conversation. Use this when you want to say something to the user.",
+      "parameters": {
+        "properties": {
+          "content": {
+            "description": "The message content to send",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "msg_send_file",
+      "description": "Send files to the chat you are answering. You can only send files you're allowed to read with the file tools.",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "description": "The files to send, in order (1 to 10).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "filename": {
+                  "description": "Name the chat shows. Defaults to the file's own name.",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "Path of the file, as the file tools take it.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "type": "object"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "search_tools",
+      "description": "Search for available tools by capability. Returns matching tool names with one-line descriptions and makes those tools available: call one directly, or call get_tool_details on a name to see its full schema. Natural-language query by default; set regex:true to match a regular expression if the natural-language search can't find the tool. Discoverable tool groups: ccv3.",
+      "parameters": {
+        "properties": {
+          "query": {
+            "description": "What you want to do (natural language), or a regex pattern when regex is true.",
+            "type": "string"
+          },
+          "regex": {
+            "description": "Treat query as a regex over tool name/description instead of a natural-language search.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "tool_search": true
+    },
+    {
+      "type": "function",
+      "name": "session_clear",
+      "description": "Clear your active conversation and start fresh. Long-term memory is preserved — past messages stay retrievable via session_messages / session_search and past summaries via session_summary_get. Use between unrelated short tasks to reset working context. Pass an optional `message` as a handoff note to your fresh self (e.g. the next task to do). After calling this, stop and end your turn: the clear happens at the turn boundary and a new turn begins with your handoff.",
+      "parameters": {
+        "properties": {
+          "message": {
+            "description": "Optional handoff note delivered to you on the fresh turn after the clear — e.g. the next task or relevant context.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "session_compact",
+      "description": "Trigger an immediate context compaction for the current session. Use after completing a major task to summarise prior messages and free context window space. The result returns the compaction report and the new summary now in your context; pass an optional `message` to append a note to yourself (e.g. what to do next).",
+      "parameters": {
+        "properties": {
+          "message": {
+            "description": "Optional note appended to the result — e.g. a reminder of what to do next after compaction.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "session_info",
+      "description": "Return metadata about the current session: session key, start time, channel, message count, archive sequence range, and the seq range covered by the current summary. Use to orient yourself after a context compression or to understand how much history is available.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "session_messages",
+      "description": "Retrieve historical messages from the current session archive by sequence number. Returns messages in the requested seq range, capped to the most recent 5000. Request smaller ranges for efficiency. Use when the context summary references a seq number and you need the full message content.",
+      "parameters": {
+        "properties": {
+          "seq": {
+            "description": "Single message sequence number. Takes precedence over seq_start/seq_end.",
+            "type": "integer"
+          },
+          "seq_end": {
+            "description": "End of sequence range (inclusive). Used when seq is absent.",
+            "type": "integer"
+          },
+          "seq_start": {
+            "description": "Start of sequence range (inclusive). Used when seq is absent.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "session_search",
+      "description": "Search archived session messages using FTS5 full-text search. FTS5 syntax examples: cat AND dog, \"exact phrase\", cat OR dog, NOT cat, cat*, NEAR(cat dog, 5). Default 20 results, maximum 100. Role filter values: \"user\", \"assistant\", \"tool\". Omit for all roles. Use when you need to find past messages by topic rather than by sequence number. Maximum query length: 500 characters.",
+      "parameters": {
+        "properties": {
+          "limit": {
+            "description": "Maximum number of results to return. Default 20, maximum 100.",
+            "type": "integer"
+          },
+          "query": {
+            "description": "FTS5 search expression. Supports AND, OR, NOT, phrase queries (\"exact phrase\"), prefix (word*), and NEAR(cat dog, 5). Maximum 500 characters.",
+            "type": "string"
+          },
+          "role": {
+            "description": "Filter results by role: \"user\", \"assistant\", or \"tool\". Omit to return all roles.",
+            "enum": [
+              "user",
+              "assistant",
+              "tool"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "session_summary_get",
+      "description": "Retrieve the full text of one context-summary checkpoint for the current session by id. Use session_summary_list to discover available ids. Returns the summary rendered as Markdown (goals, progress, pending, constraints, key moments) with the message sequence references it cites.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "The checkpoint id to retrieve (from session_summary_list).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "session_summary_list",
+      "description": "List the context-summary checkpoints recorded for the current session. Each entry shows its id, the covered message sequence range, when it was generated, and the model that produced it. Use session_summary_get with an id to read the full summary. Newest checkpoints have the highest ids.",
+      "parameters": {
+        "properties": {
+          "limit": {
+            "description": "Maximum number of checkpoints to return (most recent first). Omit for all.",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Number of most-recent checkpoints to skip before listing. Default 0.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "time_now",
+      "description": "Get the current date, time, and timezone. The system prompt carries today's date only, so call this whenever you need the time of day, the timezone or UTC offset, or a precise timestamp — for example to work out how long until something, or to convert between zones.",
+      "parameters": {
+        "properties": {
+          "timezone": {
+            "description": "Optional IANA timezone name (e.g. \"America/Toronto\", \"UTC\"). Defaults to the server's local timezone.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "web_fetch",
+      "description": "Fetch a URL and extract readable content (HTML to text). Use this to get weather info, news, articles, or any web content.",
+      "parameters": {
+        "properties": {
+          "maxChars": {
+            "description": "Maximum characters to extract",
+            "minimum": 100,
+            "type": "integer"
+          },
+          "url": {
+            "description": "URL to fetch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "web_search",
+      "description": "Search the web for current information. Returns titles, URLs, and snippets from search results.",
+      "parameters": {
+        "properties": {
+          "count": {
+            "description": "Number of results (1-10)",
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "description": "Search query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "carol": [
+    {
+      "type": "function",
+      "name": "cogmem_consolidate",
+      "description": "Ask the background process to review the recent conversation and update memory now. Returns immediately; the work runs in the background.",
+      "parameters": {
+        "properties": {
+          "scope": {
+            "description": "Optional scope hint (currently advisory).",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_archive",
+      "description": "Archive a domain so it is no longer used in prompting.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_create",
+      "description": "Create a new memory domain and return its assigned id. A domain groups related memories; register each ongoing project/topic as its own domain. Names must be unique — creating one with an existing name returns an error (reuse or rename instead).",
+      "parameters": {
+        "properties": {
+          "keyword_triggers": {
+            "description": "Optional keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). Prefer multi-word phrases like \"morning routine\"; common words are rejected. Use this to pull a workflow's context up when a cron job fires.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Domain name (must be unique).",
+            "type": "string"
+          },
+          "sticky": {
+            "description": "true = always inject this domain into context every turn (use sparingly). Default false: loaded only when relevant.",
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "Optional one-line summary.",
+            "type": "string"
+          },
+          "triggers": {
+            "description": "Optional tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_get",
+      "description": "Load a domain by id, with its active memories as readable text (each memory's id included).",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id (e.g. d3K9P).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_list",
+      "description": "List memory domains (id, name, summary, status; sticky ones are marked). Optionally filter by status. To see everything you're tracking, list with no filter.",
+      "parameters": {
+        "properties": {
+          "status": {
+            "description": "Filter by status.",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_migrate",
+      "description": "Merge two domains: move every memory from the 'from' domain into the 'to' domain, then permanently delete the 'from' domain. Use this to consolidate duplicate/overlapping domains into one.",
+      "parameters": {
+        "properties": {
+          "from": {
+            "description": "Source domain id — its memories are moved out and the domain is deleted.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Destination domain id — receives the moved memories.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_domain_update",
+      "description": "Update a domain — a patch: pass only the fields you want to change (rename, summary, state, sticky, triggers). No version needed.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Domain id.",
+            "type": "string"
+          },
+          "set_blockers": {
+            "description": "Replace the blockers list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_constraints": {
+            "description": "Replace the constraints list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_keyword_triggers": {
+            "description": "Replace keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). This is the full list domain_get shows, including keyword triggers added automatically; leave one out to remove it. Prefer multi-word phrases like \"morning routine\"; common words are rejected. Empty list clears.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_name": {
+            "description": "Rename the domain. Names must be unique; rejected if another domain already uses it.",
+            "type": "string"
+          },
+          "set_next_actions": {
+            "description": "Replace the next-actions list.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "set_sticky": {
+            "description": "true = always inject this domain into context every turn; false = routed only when relevant. Use sticky sparingly.",
+            "type": "boolean"
+          },
+          "set_summary": {
+            "description": "Replace the domain summary.",
+            "type": "string"
+          },
+          "set_triggers": {
+            "description": "Replace tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*). Empty string clears.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_explain",
+      "description": "Summarize the status, origin, and evidence of a domain or memory id.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "A domain id (d…) or memory id (h…).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_export",
+      "description": "Dump the agent's entire memory — every domain and memory, with all their fields — to files/MEMORY_EXPORT.yaml, and report the path and counts. The format can be read back in, so it works as a backup or to hand your memory to another assistant.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_attach",
+      "description": "Attach a markdown file to an existing memory, or detach the current one. The attached file's FULL contents load into your context whenever that memory does. Use this to point a memory at a different document (e.g. the file moved or was rewritten) or to remove the document while keeping the memory — memory text itself is not editable; retire and re-create for that.",
+      "parameters": {
+        "properties": {
+          "file": {
+            "description": "Path to a markdown file you can read with the file tools (e.g. \"files/voice.md\", \"maestro/style-guide.md\"). Omit or pass an empty string to detach the current file.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Memory id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_create",
+      "description": "Record a memory. With NO domain_id and NO domain_hint it records to your sticky 'General' domain (always in context). Give a domain_hint to use (or create) a topic domain by name, or a domain_id to target a specific one. Choose the type carefully — it decides whether the memory is in your context every turn or only reachable by search.",
+      "parameters": {
+        "properties": {
+          "confidence": {
+            "description": "Confidence 0..1 (default 0.9).",
+            "type": "number"
+          },
+          "domain_hint": {
+            "description": "A domain name: an existing domain with that name is reused, otherwise a new (non-sticky) one is created. Omit to use General.",
+            "type": "string"
+          },
+          "domain_id": {
+            "description": "Target domain id. If omitted and no domain_hint is given, records to the sticky General domain.",
+            "type": "string"
+          },
+          "file": {
+            "description": "Optional path to a markdown file (e.g. \"files/voice.md\", \"maestro/style-guide.md\") whose FULL contents are injected into your context whenever this memory is in context. Use it for reference material too long to put in the memory text, such as a writing-voice description; keep the memory text as a one-line description of what the document is and when to use it. The path must be one you can read with the file tools, and the file is read fresh each turn.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The memory content to store.",
+            "type": "string"
+          },
+          "type": {
+            "description": "fact = something true that stays true. preference = how the user likes things done. rule = a hard directive governing your output or behaviour toward the user. operational = your OWN housekeeping: where you file things, how you work, a rule you set for your own method. event = something that happened at a point in time (a trip, a delivery, a scheduled run, a status as of a date). Use event for anything with a timestamp or that will be stale next week — events are NEVER loaded into your context and are reached only by memory_search, which is what keeps recurring notes from crowding out everything else.",
+            "enum": [
+              "fact",
+              "preference",
+              "rule",
+              "operational",
+              "event"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_forget",
+      "description": "Retire all active memories matching a query (optionally limited to one domain). Reports how many were retired.",
+      "parameters": {
+        "properties": {
+          "domain_id": {
+            "description": "Restrict to this domain.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Substring to match against active memory text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_retire",
+      "description": "Retire a memory so it is no longer used (it stays in the audit history). To change a memory, retire the old one and create a new one.",
+      "parameters": {
+        "properties": {
+          "id": {
+            "description": "Memory id.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it is being retired.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reason"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_memory_search",
+      "description": "Search your active memories by a word or phrase in their text (case-insensitive). Use it to look something up when the answer may be in memory but is not currently shown in your context. Event memories are excluded unless you pass include_events — they are never in your context, so search is the ONLY way to reach them.",
+      "parameters": {
+        "properties": {
+          "include_events": {
+            "description": "Include event memories (things that happened at a point in time: trips, deliveries, scheduled runs). Default false. Set true when the question is about the past — \"when did we last…\", \"what happened on…\".",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Max results (default 20).",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Word or phrase to match against memory text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "cogmem_status",
+      "description": "Report memory status: database path, the last background update, and how many domains and memories are held.",
+      "parameters": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "file_read_lines",
+      "description": "Read the lines you found: reads a file by line number from `start_line` (1-based; a line number from file_search_lines) for `line_count` lines. Lines come back numbered and the status block gives the next `start_line`. Use it to get the exact text before file_edit. (To page by raw bytes instead, use file_read_bytes.)",
+      "parameters": {
+        "properties": {
+          "line_count": {
+            "default": 250,
+            "description": "Number of lines to read from start_line (default 250). Still capped to the byte limit.",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to the file to read.",
+            "type": "string"
+          },
+          "start_line": {
+            "default": 1,
+            "description": "1-based line to start from (default 1).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "get_tool_details",
+      "description": "Show the full input schema of a tool found via search_tools. Pass the exact tool name from the search results.",
+      "parameters": {
+        "properties": {
+          "name": {
+            "description": "Exact tool name from search_tools results.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "search_tools",
+      "description": "Search for available tools by capability. Returns matching tool names with one-line descriptions and makes those tools available: call one directly, or call get_tool_details on a name to see its full schema. Natural-language query by default; set regex:true to match a regular expression if the natural-language search can't find the tool.",
+      "parameters": {
+        "properties": {
+          "query": {
+            "description": "What you want to do (natural language), or a regex pattern when regex is true.",
+            "type": "string"
+          },
+          "regex": {
+            "description": "Treat query as a regex over tool name/description instead of a natural-language search.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "tool_search": true
+    }
+  ]
+}

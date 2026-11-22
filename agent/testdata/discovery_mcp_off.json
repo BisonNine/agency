@@ -1,0 +1,471 @@
+{
+  "deferred": null,
+  "in_context": [
+    "cogmem_consolidate",
+    "cogmem_domain_archive",
+    "cogmem_domain_create",
+    "cogmem_domain_get",
+    "cogmem_domain_list",
+    "cogmem_domain_migrate",
+    "cogmem_domain_update",
+    "cogmem_explain",
+    "cogmem_export",
+    "cogmem_memory_attach",
+    "cogmem_memory_create",
+    "cogmem_memory_forget",
+    "cogmem_memory_retire",
+    "cogmem_memory_search",
+    "cogmem_status",
+    "alpha_read",
+    "alpha_write",
+    "bob_fetch",
+    "bob_post",
+    "mcp_alpha_scan"
+  ],
+  "sent": [
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_consolidate",
+        "description": "Ask the background process to review the recent conversation and update memory now. Returns immediately; the work runs in the background.",
+        "parameters": {
+          "properties": {
+            "scope": {
+              "description": "Optional scope hint (currently advisory).",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_domain_archive",
+        "description": "Archive a domain so it is no longer used in prompting.",
+        "parameters": {
+          "properties": {
+            "id": {
+              "description": "Domain id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_domain_create",
+        "description": "Create a new memory domain and return its assigned id. A domain groups related memories; register each ongoing project/topic as its own domain. Names must be unique — creating one with an existing name returns an error (reuse or rename instead).",
+        "parameters": {
+          "properties": {
+            "keyword_triggers": {
+              "description": "Optional keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). Prefer multi-word phrases like \"morning routine\"; common words are rejected. Use this to pull a workflow's context up when a cron job fires.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "name": {
+              "description": "Domain name (must be unique).",
+              "type": "string"
+            },
+            "sticky": {
+              "description": "true = always inject this domain into context every turn (use sparingly). Default false: loaded only when relevant.",
+              "type": "boolean"
+            },
+            "summary": {
+              "description": "Optional one-line summary.",
+              "type": "string"
+            },
+            "triggers": {
+              "description": "Optional tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_domain_get",
+        "description": "Load a domain by id, with its active memories as readable text (each memory's id included).",
+        "parameters": {
+          "properties": {
+            "id": {
+              "description": "Domain id (e.g. d3K9P).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_domain_list",
+        "description": "List memory domains (id, name, summary, status; sticky ones are marked). Optionally filter by status. To see everything you're tracking, list with no filter.",
+        "parameters": {
+          "properties": {
+            "status": {
+              "description": "Filter by status.",
+              "enum": [
+                "active",
+                "archived"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_domain_migrate",
+        "description": "Merge two domains: move every memory from the 'from' domain into the 'to' domain, then permanently delete the 'from' domain. Use this to consolidate duplicate/overlapping domains into one.",
+        "parameters": {
+          "properties": {
+            "from": {
+              "description": "Source domain id — its memories are moved out and the domain is deleted.",
+              "type": "string"
+            },
+            "to": {
+              "description": "Destination domain id — receives the moved memories.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_domain_update",
+        "description": "Update a domain — a patch: pass only the fields you want to change (rename, summary, state, sticky, triggers). No version needed.",
+        "parameters": {
+          "properties": {
+            "id": {
+              "description": "Domain id.",
+              "type": "string"
+            },
+            "set_blockers": {
+              "description": "Replace the blockers list.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "set_constraints": {
+              "description": "Replace the constraints list.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "set_keyword_triggers": {
+              "description": "Replace keyword triggers: words/phrases that load this domain when they appear in the incoming message (whole-phrase, word-boundary). This is the full list domain_get shows, including keyword triggers added automatically; leave one out to remove it. Prefer multi-word phrases like \"morning routine\"; common words are rejected. Empty list clears.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "set_name": {
+              "description": "Rename the domain. Names must be unique; rejected if another domain already uses it.",
+              "type": "string"
+            },
+            "set_next_actions": {
+              "description": "Replace the next-actions list.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "set_sticky": {
+              "description": "true = always inject this domain into context every turn; false = routed only when relevant. Use sticky sparingly.",
+              "type": "boolean"
+            },
+            "set_summary": {
+              "description": "Replace the domain summary.",
+              "type": "string"
+            },
+            "set_triggers": {
+              "description": "Replace tool triggers: comma-separated name fragments that auto-load this domain whenever you use a tool whose name contains one (substring, case-insensitive). E.g. \"mail,github\"; for an MCP server use its name (\"github\" matches mcp_github_*). Empty string clears.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_explain",
+        "description": "Summarize the status, origin, and evidence of a domain or memory id.",
+        "parameters": {
+          "properties": {
+            "id": {
+              "description": "A domain id (d…) or memory id (h…).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_export",
+        "description": "Dump the agent's entire memory — every domain and memory, with all their fields — to files/MEMORY_EXPORT.yaml, and report the path and counts. The format can be read back in, so it works as a backup or to hand your memory to another assistant.",
+        "parameters": {
+          "properties": {},
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_memory_attach",
+        "description": "Attach a markdown file to an existing memory, or detach the current one. The attached file's FULL contents load into your context whenever that memory does. Use this to point a memory at a different document (e.g. the file moved or was rewritten) or to remove the document while keeping the memory — memory text itself is not editable; retire and re-create for that.",
+        "parameters": {
+          "properties": {
+            "file": {
+              "description": "Path to a markdown file you can read with the file tools (e.g. \"files/voice.md\", \"maestro/style-guide.md\"). Omit or pass an empty string to detach the current file.",
+              "type": "string"
+            },
+            "id": {
+              "description": "Memory id.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_memory_create",
+        "description": "Record a memory. With NO domain_id and NO domain_hint it records to your sticky 'General' domain (always in context). Give a domain_hint to use (or create) a topic domain by name, or a domain_id to target a specific one. Choose the type carefully — it decides whether the memory is in your context every turn or only reachable by search.",
+        "parameters": {
+          "properties": {
+            "confidence": {
+              "description": "Confidence 0..1 (default 0.9).",
+              "type": "number"
+            },
+            "domain_hint": {
+              "description": "A domain name: an existing domain with that name is reused, otherwise a new (non-sticky) one is created. Omit to use General.",
+              "type": "string"
+            },
+            "domain_id": {
+              "description": "Target domain id. If omitted and no domain_hint is given, records to the sticky General domain.",
+              "type": "string"
+            },
+            "file": {
+              "description": "Optional path to a markdown file (e.g. \"files/voice.md\", \"maestro/style-guide.md\") whose FULL contents are injected into your context whenever this memory is in context. Use it for reference material too long to put in the memory text, such as a writing-voice description; keep the memory text as a one-line description of what the document is and when to use it. The path must be one you can read with the file tools, and the file is read fresh each turn.",
+              "type": "string"
+            },
+            "text": {
+              "description": "The memory content to store.",
+              "type": "string"
+            },
+            "type": {
+              "description": "fact = something true that stays true. preference = how the user likes things done. rule = a hard directive governing your output or behaviour toward the user. operational = your OWN housekeeping: where you file things, how you work, a rule you set for your own method. event = something that happened at a point in time (a trip, a delivery, a scheduled run, a status as of a date). Use event for anything with a timestamp or that will be stale next week — events are NEVER loaded into your context and are reached only by memory_search, which is what keeps recurring notes from crowding out everything else.",
+              "enum": [
+                "fact",
+                "preference",
+                "rule",
+                "operational",
+                "event"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_memory_forget",
+        "description": "Retire all active memories matching a query (optionally limited to one domain). Reports how many were retired.",
+        "parameters": {
+          "properties": {
+            "domain_id": {
+              "description": "Restrict to this domain.",
+              "type": "string"
+            },
+            "query": {
+              "description": "Substring to match against active memory text.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_memory_retire",
+        "description": "Retire a memory so it is no longer used (it stays in the audit history). To change a memory, retire the old one and create a new one.",
+        "parameters": {
+          "properties": {
+            "id": {
+              "description": "Memory id.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Why it is being retired.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "reason"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_memory_search",
+        "description": "Search your active memories by a word or phrase in their text (case-insensitive). Use it to look something up when the answer may be in memory but is not currently shown in your context. Event memories are excluded unless you pass include_events — they are never in your context, so search is the ONLY way to reach them.",
+        "parameters": {
+          "properties": {
+            "include_events": {
+              "description": "Include event memories (things that happened at a point in time: trips, deliveries, scheduled runs). Default false. Set true when the question is about the past — \"when did we last…\", \"what happened on…\".",
+              "type": "boolean"
+            },
+            "limit": {
+              "description": "Max results (default 20).",
+              "type": "integer"
+            },
+            "query": {
+              "description": "Word or phrase to match against memory text.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cogmem_status",
+        "description": "Report memory status: database path, the last background update, and how many domains and memories are held.",
+        "parameters": {
+          "properties": {},
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "alpha_read",
+        "description": "[MCP:alpha] The read tool of alpha.\nSecond line.",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "alpha_write",
+        "description": "[MCP:alpha] The write tool of alpha.\nSecond line.",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "bob_fetch",
+        "description": "[MCP:bob] The fetch tool of bob.\nSecond line.",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "bob_post",
+        "description": "[MCP:bob] The post tool of bob.\nSecond line.",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "mcp_alpha_scan",
+        "description": "[MCP:mcp_alpha] The scan tool of mcp_alpha.\nSecond line.",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object"
+        }
+      }
+    }
+  ]
+}
