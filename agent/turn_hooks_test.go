@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -12,76 +13,91 @@ import (
 
 	"go.bison9.com/agent/hook"
 
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/dump"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/audit"
+	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
-// streamingEchoChannel is the echo channel with partial-text streaming.
-type streamingEchoChannel struct{ echoChannel }
-
-func (*streamingEchoChannel) StreamDelta(context.Context, string, string) error { return nil }
-
-// The turn's callbacks and consumers are registered in one place, in one
-// order, and the order is behaviour:
-//
-//   - TurnFinished: the stream is flushed, then the eviction notice posted,
-//     then the heartbeat stopped, as the model loop's deferred steps always
-//     ran;
-//   - ModelCall: the finish line, the usage, the dumps, then the reasoning;
-//   - AfterModel: generated images are handled before reasoning may stand in
-//     for an empty reply, and both before the assistant message is stored
-//     (TestEngine_AfterModelBeforeStorage);
-//   - ToolCallFinished: statistics then the audit row, after the call; no
-//     BeforeTool audits a call before it runs, and no AfterTool or
-//     OnToolError changes a result: tool output is stored as the tool
-//     returned it, and redaction stays on logged and rendered error text.
-func TestTurnHooksOrder(t *testing.T) {
+// At the end of the model loop the stream is flushed before the eviction
+// notice is posted, and the notice before the progress heartbeat stops.
+func TestEndTurn_FlushThenNoticeThenStop(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	tl := newTestAgentLoop(t)
 	al := tl.al
-	withEchoChannel(t, al, tl.msgBus)
-	streaming := &streamingEchoChannel{}
-	al.channelManager.RegisterChannel("stream", streaming)
-
 	agent := al.registry.Default()
-	opts := processOptions{SessionKey: "s", Channel: "stream", ChatID: "c1"}
-	al.setShowToolActivity(agent, opts.SessionKey, true)
+	notify := true
+	agent.Config.ContextEviction = &config.ContextEvictionConfig{NotifyUser: &notify}
+	opts := processOptions{SessionKey: "s", Channel: "telegram", ChatID: "c1"}
+	h, st := al.buildTurnHooks(context.Background(), agent, opts, "m")
 
+	// noticeQueued waits up to d for an outbound message (the notice).
+	noticeQueued := func(d time.Duration) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), d)
+		defer cancel()
+		_, ok := tl.msgBus.SubscribeOutbound(ctx)
+		return ok
+	}
+	var steps []string
+	st.stream = newStreamCoalescer(func(string) {
+		if noticeQueued(20 * time.Millisecond) {
+			t.Error("the eviction notice was posted before the stream was flushed")
+		}
+		steps = append(steps, "flush")
+	})
+	st.stream.Add("Hi Bob")
+	st.stopProgress = func() {
+		if !noticeQueued(2 * time.Second) {
+			t.Error("the heartbeat stopped before the eviction notice was posted")
+		}
+		steps = append(steps, "stop")
+	}
+
+	h.emit(context.Background(), hook.Compaction{Phase: hook.CompactionEvicted, Evictions: []hook.Eviction{{Tool: "file_read_lines", Resource: "notes.md", Bytes: 2048}}})
+	h.emit(context.Background(), hook.TurnFinished{})
+	if !slices.Equal(steps, []string{"flush", "stop"}) {
+		t.Fatalf("steps = %v", steps)
+	}
+}
+
+// Each provider call writes its finish line; an answer also adds to the
+// turn's usage, is dumped and has its reasoning delivered.
+func TestModelCall_FinishUsageDumpsReasoning(t *testing.T) {
+	buf := &safeBufLoop{}
+	t.Cleanup(logger.RedirectForTest(buf))
+	tl := newTestAgentLoop(t)
+	al := tl.al
+	al.dumpsDir = dump.Dir{Path: t.TempDir()}
+	al.cfg.Logging.DumpAll = true
+	agent := al.registry.Default()
+	usage := &global.TurnUsage{}
+	opts := processOptions{SessionKey: "s", Channel: "telegram", ChatID: "c1", UsageOut: usage}
+	al.setExposeReasoning(agent, opts.SessionKey, true)
 	h := al.newTurnHooks(context.Background(), agent, opts, "m")
-	want := []string{
-		"OnTextDelta:stream", "OnEvent:stream",
-		"OnEvent:llm-finish", "OnEvent:usage", "OnEvent:dumps", "OnEvent:reasoning",
-		"OnFallback:fallback-notice",
-		"OnCompaction:compaction-notice",
-		"AfterModel:images", "AfterModel:reasoning-as-content",
-		"OnEvent:breadcrumbs",
-		"OnEvent:tool-record",
-		"OnEvent:evictions",
-		"OnEvent:progress",
-		"Interim.ToolsReturned:progress",
-		"Interim.Narrate:narration",
-		"Interim.ToolsReturned:tool-output", "Interim.ToolResult:tool-output",
-		"Interim.DescribeImages:vision-describe",
-	}
-	if !slices.Equal(h.order, want) {
-		t.Fatalf("registration order:\n got %s\nwant %s", strings.Join(h.order, ", "), strings.Join(want, ", "))
-	}
-	for _, kind := range []string{"BeforeTool:", "AfterTool:", "OnToolError:"} {
-		if slices.ContainsFunc(h.order, func(s string) bool { return strings.HasPrefix(s, kind) }) {
-			t.Errorf("a %s callback is registered: tool calls and results are not changed today", strings.TrimSuffix(kind, ":"))
-		}
-	}
 
-	// A turn with no chat to stream to, show tools to or warn of a fallback
-	// in registers neither, and the others in the same order.
-	quiet := al.newTurnHooks(context.Background(), agent, processOptions{SessionKey: "s2", Channel: "system", ChatID: "c1"}, "m")
-	var rest []string
-	for _, s := range want {
-		if !strings.HasSuffix(s, ":stream") && s != "OnEvent:breadcrumbs" && s != "OnFallback:fallback-notice" {
-			rest = append(rest, s)
-		}
+	h.emit(context.Background(), hook.ModelCall{
+		Iteration: 1, Model: hook.ModelRef{Name: "m", Provider: "Alice's API", Model: "m-wire"},
+		Request:  &hook.ModelRequest{Messages: []providers.Message{{Role: "user", Content: "hi"}}},
+		Response: &providers.LLMResponse{Content: "hello", Reasoning: "Bob asked", Status: &providers.DispatchStatus{Success: true, Model: "m-wire"}},
+	})
+
+	if !strings.Contains(buf.String(), "LLM finish") {
+		t.Error("no finish line")
 	}
-	if !slices.Equal(quiet.order, rest) {
-		t.Fatalf("quiet turn order:\n got %s\nwant %s", strings.Join(quiet.order, ", "), strings.Join(rest, ", "))
+	if usage.Provider != "Alice's API" || usage.Model != "m-wire" {
+		t.Errorf("usage = %+v, want the answering call's", usage)
+	}
+	if entries, err := os.ReadDir(al.dumpsDir.Path); err != nil || len(entries) == 0 {
+		t.Error("no dump written")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	msg, ok := tl.msgBus.SubscribeOutbound(ctx)
+	if !ok || !strings.Contains(msg.Content, "Bob asked") {
+		t.Errorf("reasoning delivered = %q, %v", msg.Content, ok)
 	}
 }
 

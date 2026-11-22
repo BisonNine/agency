@@ -69,8 +69,9 @@ func TestTurnConfigReads_RaceWithReload(t *testing.T) {
 		}
 	})
 	for range 200 {
-		resp := &providers.LLMResponse{Content: "hi"}
-		hooks.emit(context.Background(), hook.ModelCall{Response: resp, Request: &hook.ModelRequest{}})
+		hooks.emit(context.Background(), hook.ModelCall{Response: &providers.LLMResponse{Content: "hi"}, Request: &hook.ModelRequest{}})
+		// Reasoning with no content: the reasoning-as-content setting is read.
+		resp := &providers.LLMResponse{Reasoning: "thinking"}
 		hooks.callAfterModel(context.Background(), &hook.ModelInfo{}, &hook.ModelResponse{Response: resp})
 	}
 	close(stop)

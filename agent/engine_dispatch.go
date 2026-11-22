@@ -4,8 +4,8 @@
 package agent
 
 // This file is part of the turn engine (the engine_*.go files): it imports no
-// host package and uses no host identifier, so phase 5c can move it to the
-// SDK unchanged. engine_guard_test.go enforces that.
+// host package and uses no host identifier, so it can live in a package of
+// its own. engine_guard_test.go enforces that.
 
 import (
 	"context"

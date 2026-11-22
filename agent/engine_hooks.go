@@ -4,8 +4,8 @@
 package agent
 
 // This file is part of the turn engine (the engine_*.go files): it imports no
-// host package and uses no host identifier, so phase 5c can move it to the
-// SDK unchanged. engine_guard_test.go enforces that.
+// host package and uses no host identifier, so it can live in a package of
+// its own. engine_guard_test.go enforces that.
 
 import (
 	"context"
@@ -24,35 +24,41 @@ import (
 // order it was registered. The host builds one per turn (newTurnHooks) and
 // the engine calls it; the engine never reaches host behaviour any other way
 // than through these and turnEnv.
+//
+// Panics: a callback (AfterModel, OnFallback, OnCompaction, OnTextDelta, the
+// tool callbacks, the interim steps) changes a step or produces the turn's
+// state, so a panic in one is not recovered: it ends the turn, as a panic in
+// the loop always has. An event consumer only watches, so a panic in one is
+// recovered and logged at error level with the consumer's name and stack,
+// and the turn goes on.
 type turnHooks struct {
-	beforeTurn   []hook.BeforeTurnFunc
-	afterTurn    []hook.AfterTurnFunc
-	beforeModel  []hook.BeforeModelFunc
 	afterModel   []hook.AfterModelFunc
-	onModelError []hook.OnModelErrorFunc
 	onFallback   []hook.OnFallbackFunc
 	beforeTool   []hook.BeforeToolFunc
 	afterTool    []hook.AfterToolFunc
 	onToolError  []hook.OnToolErrorFunc
 	onCompaction []hook.OnCompactionFunc
 	onTextDelta  []hook.OnTextDeltaFunc
-	onInterrupt  []hook.OnInterruptFunc
-	onEvent      []hook.OnEventFunc
+	onEvent      []namedConsumer
 
-	// interim are the steps the hook package has no type for yet; see
+	// interim are the steps the hook package has no type for; see
 	// interimHooks.
 	interim []interimHooks
 
-	// order records every registration as "Kind:plugin", in order, so a test
-	// can pin the order the host registers in.
-	order []string
-	// log receives the panics recovered from callbacks and consumers.
+	// log receives the panics recovered from event consumers.
 	log *slog.Logger
 }
 
-// interimHooks are host steps the hook package has no callback or event for
-// yet. Each keeps a behaviour exactly where it happens today; each is a
-// requested SDK addition (see the phase 5a report) and goes when that lands.
+// namedConsumer is an event consumer with the name of the plugin that
+// registered it, for the log of a recovered panic.
+type namedConsumer struct {
+	name string
+	fn   hook.OnEventFunc
+}
+
+// interimHooks are host steps the hook package has no callback or event for.
+// Each keeps a behaviour exactly where it happens in the loop; a hook type
+// that carries it replaces it.
 type interimHooks struct {
 	Name string
 	// Narrate is told the text a model sent with its tool calls, once the
@@ -72,188 +78,125 @@ type interimHooks struct {
 	DescribeImages func(ctx context.Context, images, focus []string) (content string, described, add bool)
 }
 
-// add registers p's callbacks, each at the end of its kind.
+// add registers p's callbacks, each at the end of its kind. A callback of a
+// kind the engine does not call yet (BeforeTurn, AfterTurn, BeforeModel,
+// OnModelError, OnInterrupt) is refused with a panic, so none is ever
+// registered and silently ignored.
 func (h *turnHooks) add(p hook.Plugin) {
-	reg := func(kind string, set bool) {
-		if set {
-			h.order = append(h.order, kind+":"+p.Name)
+	for _, k := range []struct {
+		kind string
+		set  bool
+	}{
+		{"BeforeTurn", p.BeforeTurn != nil},
+		{"AfterTurn", p.AfterTurn != nil},
+		{"BeforeModel", p.BeforeModel != nil},
+		{"OnModelError", p.OnModelError != nil},
+		{"OnInterrupt", p.OnInterrupt != nil},
+	} {
+		if k.set {
+			panic(fmt.Sprintf("turn engine: plugin %q registers a %s callback, which the engine does not call", p.Name, k.kind))
 		}
 	}
-	if p.BeforeTurn != nil {
-		h.beforeTurn = append(h.beforeTurn, p.BeforeTurn)
-	}
-	reg("BeforeTurn", p.BeforeTurn != nil)
-	if p.AfterTurn != nil {
-		h.afterTurn = append(h.afterTurn, p.AfterTurn)
-	}
-	reg("AfterTurn", p.AfterTurn != nil)
-	if p.BeforeModel != nil {
-		h.beforeModel = append(h.beforeModel, p.BeforeModel)
-	}
-	reg("BeforeModel", p.BeforeModel != nil)
 	if p.AfterModel != nil {
 		h.afterModel = append(h.afterModel, p.AfterModel)
 	}
-	reg("AfterModel", p.AfterModel != nil)
-	if p.OnModelError != nil {
-		h.onModelError = append(h.onModelError, p.OnModelError)
-	}
-	reg("OnModelError", p.OnModelError != nil)
 	if p.OnFallback != nil {
 		h.onFallback = append(h.onFallback, p.OnFallback)
 	}
-	reg("OnFallback", p.OnFallback != nil)
 	if p.BeforeTool != nil {
 		h.beforeTool = append(h.beforeTool, p.BeforeTool)
 	}
-	reg("BeforeTool", p.BeforeTool != nil)
 	if p.AfterTool != nil {
 		h.afterTool = append(h.afterTool, p.AfterTool)
 	}
-	reg("AfterTool", p.AfterTool != nil)
 	if p.OnToolError != nil {
 		h.onToolError = append(h.onToolError, p.OnToolError)
 	}
-	reg("OnToolError", p.OnToolError != nil)
 	if p.OnCompaction != nil {
 		h.onCompaction = append(h.onCompaction, p.OnCompaction)
 	}
-	reg("OnCompaction", p.OnCompaction != nil)
 	if p.OnTextDelta != nil {
 		h.onTextDelta = append(h.onTextDelta, p.OnTextDelta)
 	}
-	reg("OnTextDelta", p.OnTextDelta != nil)
-	if p.OnInterrupt != nil {
-		h.onInterrupt = append(h.onInterrupt, p.OnInterrupt)
-	}
-	reg("OnInterrupt", p.OnInterrupt != nil)
 	if p.OnEvent != nil {
-		h.onEvent = append(h.onEvent, p.OnEvent)
+		h.onEvent = append(h.onEvent, namedConsumer{name: p.Name, fn: p.OnEvent})
 	}
-	reg("OnEvent", p.OnEvent != nil)
 }
 
 // addInterim registers interim host steps (interimHooks), after those
 // already registered.
 func (h *turnHooks) addInterim(i interimHooks) {
 	h.interim = append(h.interim, i)
-	for _, k := range []struct {
-		kind string
-		set  bool
-	}{
-		{"Narrate", i.Narrate != nil},
-		{"ToolsReturned", i.ToolsReturned != nil},
-		{"ToolResult", i.ToolResult != nil},
-		{"DescribeImages", i.DescribeImages != nil},
-	} {
-		if k.set {
-			h.order = append(h.order, "Interim."+k.kind+":"+i.Name)
-		}
-	}
 }
 
-// recovered logs a panic recovered from a callback or consumer; the turn goes
-// on as if the callback had returned nothing (hook's callback rules).
-func (h *turnHooks) recovered(kind string, r any) {
-	if h == nil || h.log == nil {
-		return
-	}
-	h.log.Error("panic in turn callback", "component", "agent", "callback", kind,
-		"panic", fmt.Sprintf("%v", r), "stack", string(debug.Stack()))
-}
-
-// emit delivers ev to every OnEvent consumer, in order, synchronously.
+// emit delivers ev to every OnEvent consumer, in order, synchronously. A
+// consumer that panics is logged and skipped.
 func (h *turnHooks) emit(ctx context.Context, ev hook.Event) {
 	if h == nil {
 		return
 	}
-	for _, fn := range h.onEvent {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					h.recovered("OnEvent", r)
-				}
-			}()
-			fn(ctx, ev)
-		}()
+	for _, c := range h.onEvent {
+		h.deliver(ctx, c, ev)
 	}
 }
 
-// callAfterModel runs the AfterModel callbacks on resp.
+func (h *turnHooks) deliver(ctx context.Context, c namedConsumer, ev hook.Event) {
+	defer func() {
+		if r := recover(); r != nil && h.log != nil {
+			h.log.Error("panic in turn event consumer", "component", "agent", "consumer", c.name,
+				"event", fmt.Sprintf("%T", ev), "panic", fmt.Sprintf("%v", r), "stack", string(debug.Stack()))
+		}
+	}()
+	c.fn(ctx, ev)
+}
+
+// callAfterModel runs the AfterModel callbacks on resp. A callback that sets
+// resp.Response to nil changes nothing: the response it was given stays.
 func (h *turnHooks) callAfterModel(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) {
 	for _, fn := range h.afterModel {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					h.recovered("AfterModel", r)
-				}
-			}()
-			fn(ctx, call, resp)
-		}()
+		given := resp.Response
+		fn(ctx, call, resp)
+		if resp.Response == nil {
+			resp.Response = given
+		}
 	}
 }
 
 // callOnFallback runs the OnFallback taps.
 func (h *turnHooks) callOnFallback(ctx context.Context, ev hook.Fallback) {
 	for _, fn := range h.onFallback {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					h.recovered("OnFallback", r)
-				}
-			}()
-			fn(ctx, ev)
-		}()
+		fn(ctx, ev)
 	}
 }
 
 // callOnCompaction runs the OnCompaction taps.
 func (h *turnHooks) callOnCompaction(ctx context.Context, ev hook.Compaction) {
 	for _, fn := range h.onCompaction {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					h.recovered("OnCompaction", r)
-				}
-			}()
-			fn(ctx, ev)
-		}()
+		fn(ctx, ev)
 	}
 }
 
 // callOnTextDelta runs the OnTextDelta taps.
 func (h *turnHooks) callOnTextDelta(ctx context.Context, ev hook.TextDelta) {
 	for _, fn := range h.onTextDelta {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					h.recovered("OnTextDelta", r)
-				}
-			}()
-			fn(ctx, ev)
-		}()
+		fn(ctx, ev)
 	}
 }
 
-// eachInterim runs fn for every registered interim set, recovering a panic.
-func (h *turnHooks) eachInterim(kind string, fn func(i interimHooks)) {
+// eachInterim runs fn for every registered interim set, in order.
+func (h *turnHooks) eachInterim(fn func(i interimHooks)) {
 	for _, i := range h.interim {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					h.recovered("Interim."+kind, r)
-				}
-			}()
-			fn(i)
-		}()
+		fn(i)
 	}
 }
 
-// turnOnContext is what a turn puts on its context: its hooks and scope, so
+// turnOnContext is what a turn puts on its context: its hooks and clock, so
 // a step reached through another package (the context engine's compaction
-// start) can call back into the turn it runs for.
+// start) can call back into the turn it runs for. The hooks may be put in
+// place after the context is made (use), so a host can scope the turn before
+// its model loop is set up.
 type turnOnContext struct {
-	hooks *turnHooks
+	hooks atomic.Pointer[turnHooks]
 	clock clock.Clock
 	// live is set from TurnStarted to TurnFinished: a step reported outside
 	// it (a compaction while the host stores the turn's message) reaches the
@@ -262,21 +205,31 @@ type turnOnContext struct {
 	live atomic.Bool
 }
 
+// use makes h the turn's hooks.
+func (t *turnOnContext) use(h *turnHooks) { t.hooks.Store(h) }
+
 type turnOnContextKey struct{}
 
 // beginTurnContext returns ctx carrying the turn's scope (hook.WithScope,
-// which also sets toolkit's agent id and session key) and its hooks. The host
-// calls it once per turn, before anything of the turn reaches the context
-// engine.
-func beginTurnContext(ctx context.Context, scope hook.Scope, hooks *turnHooks, now clock.Clock) context.Context {
+// which also sets toolkit's agent id and session key) and hooks (which may be
+// nil until use), and the turn's place on it. The host calls it once per
+// turn, before anything of the turn reaches the context engine.
+func beginTurnContext(ctx context.Context, scope hook.Scope, hooks *turnHooks, now clock.Clock) (context.Context, *turnOnContext) {
 	ctx = hook.WithScope(ctx, scope)
-	return context.WithValue(ctx, turnOnContextKey{}, &turnOnContext{hooks: hooks, clock: now})
+	t := &turnOnContext{clock: now}
+	t.hooks.Store(hooks)
+	return context.WithValue(ctx, turnOnContextKey{}, t), t
 }
 
-// turnHooksOf returns the hooks of the turn ctx belongs to, nil outside one.
-func turnHooksOf(ctx context.Context) (*turnOnContext, bool) {
+// turnOf returns the turn ctx belongs to and its hooks; false outside a turn
+// or before the turn has hooks.
+func turnOf(ctx context.Context) (*turnOnContext, *turnHooks, bool) {
 	t, ok := ctx.Value(turnOnContextKey{}).(*turnOnContext)
-	return t, ok && t != nil && t.hooks != nil
+	if !ok || t == nil {
+		return nil, nil, false
+	}
+	h := t.hooks.Load()
+	return t, h, h != nil
 }
 
 // engineCompactionStart is the context engine's compaction-start hook
@@ -285,7 +238,7 @@ func turnHooksOf(ctx context.Context) (*turnOnContext, bool) {
 // before the summary model is called. A pass with no turn on its context (a
 // background pass) reaches no turn.
 func engineCompactionStart(ctx context.Context, info ctxengine.CompactionStart) {
-	t, ok := turnHooksOf(ctx)
+	t, hooks, ok := turnOf(ctx)
 	if !ok {
 		return
 	}
@@ -298,8 +251,8 @@ func engineCompactionStart(ctx context.Context, info ctxengine.CompactionStart) 
 		Reason:      string(info.Reason),
 		Blocking:    info.Blocking,
 	}
-	t.hooks.callOnCompaction(ctx, ev)
+	hooks.callOnCompaction(ctx, ev)
 	if t.live.Load() {
-		t.hooks.emit(ctx, ev)
+		hooks.emit(ctx, ev)
 	}
 }

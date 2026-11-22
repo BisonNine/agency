@@ -47,23 +47,56 @@ type turnState struct {
 }
 
 // newTurnHooks registers the callbacks and event consumers of one turn of
-// agent on opts, whose model is model. The order is behaviour, and
-// TestTurnHooksOrder pins it:
-//
-//   - TurnFinished: the stream is flushed, then the eviction notice posted,
-//     then the progress heartbeat stopped (so no trailing partial text is
-//     lost and no placeholder edit lands after the reply);
-//   - ModelCall: the "LLM finish" line, then the turn's usage, then the
-//     dumps, then the reasoning (as each provider call ends);
-//   - AfterModel: generated images are saved and delivered before the
-//     reasoning can stand in for an empty reply, and both run before the
-//     engine stores the assistant message (the notes are in it);
-//   - ToolCallFinished: the tool's statistics, then its audit row, after
-//     the call (the audit row has the call's outcome and duration; nothing
-//     is audited before a call runs);
-//   - redaction applies to logged and rendered error text only, as before;
-//     tool output is stored as the tool returned it.
+// agent on opts, whose model is model. ctx is the context the turn's
+// notices and stream are published on.
 func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) *turnHooks {
+	h, _ := al.buildTurnHooks(ctx, agent, opts, model)
+	return h
+}
+
+// earlyTurnHooks are the hooks a turn has while the host stores its message
+// and assembles its first request, before its model loop is set up: only
+// the compaction notice.
+func (al *AgentLoop) earlyTurnHooks(opts processOptions) *turnHooks {
+	h := &turnHooks{log: logger.SDK()}
+	h.add(al.compactionNoticePlugin(opts))
+	return h
+}
+
+// compactionNoticePlugin tells the turn's person of a compaction it waits on
+// and of a request that overflowed the context window.
+func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
+	return hook.Plugin{Name: "compaction-notice", OnCompaction: func(ctx context.Context, ev hook.Compaction) {
+		switch ev.Phase {
+		case hook.CompactionStarted:
+			al.compactionStarted(ctx, ctxengine.CompactionStart{
+				SessionKey: ev.Scope.Session, Reason: ctxengine.CompactionReason(ev.Reason), Blocking: ev.Blocking,
+			})
+		case hook.CompactionOverflow:
+			al.publishOverflowNotice(ctx, opts)
+		case hook.CompactionEvicted:
+			// Collected by the evictions consumer for one notice at the end.
+		}
+	}}
+}
+
+// buildTurnHooks is newTurnHooks with the consumers' state. What depends on
+// order is each in one consumer, in sequence:
+//
+//   - each provider call: the "LLM finish" line, then the turn's usage,
+//     then the dumps, then the reasoning (modelCall);
+//   - the end of the loop: the stream is flushed, then the eviction notice
+//     posted, then the heartbeat stopped, so no trailing partial text is lost
+//     and no placeholder edit lands after the reply (endTurn);
+//   - each finished tool call: its statistics, then its audit row, after
+//     the call (recordToolCall); nothing is audited before a call runs;
+//   - AfterModel: generated images are saved and delivered before the
+//     reasoning may stand in for an empty reply, and both run before the
+//     engine stores the assistant message (the notes are in it).
+//
+// No tool callback is registered: tool calls and results are not changed,
+// and redaction stays on logged and rendered error text.
+func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*turnHooks, *turnState) {
 	h := &turnHooks{log: logger.SDK()}
 	st := &turnState{}
 
@@ -75,60 +108,23 @@ func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opt
 		st.stream = newStreamCoalescer(func(batch string) {
 			al.channelManager.StreamDelta(ctx, channel, chatID, batch)
 		})
-		h.add(hook.Plugin{
-			Name:        "stream",
-			OnTextDelta: func(_ context.Context, ev hook.TextDelta) { st.stream.Add(ev.Text) },
-			// Any buffered remainder that never hit a boundary is flushed
-			// before the turn's reply is published.
-			OnEvent: func(_ context.Context, ev hook.Event) {
-				if _, ok := ev.(hook.TurnFinished); ok {
-					st.stream.Flush()
-				}
-			},
-		})
+		h.add(hook.Plugin{Name: "stream", OnTextDelta: func(_ context.Context, ev hook.TextDelta) { st.stream.Add(ev.Text) }})
 	}
 
-	h.add(hook.Plugin{Name: "llm-finish", OnEvent: func(ctx context.Context, ev hook.Event) {
+	h.add(hook.Plugin{Name: "model-call", OnEvent: func(evCtx context.Context, ev hook.Event) {
 		if c, ok := ev.(hook.ModelCall); ok {
-			al.emitFinish(ctx, agent, opts, c)
+			// The reasoning is published on its own goroutine, which may
+			// outlive the model loop: it gets the turn's context, as it always
+			// has, not the loop's.
+			al.modelCall(evCtx, ctx, agent, opts, model, c)
 		}
 	}})
-	h.add(hook.Plugin{Name: "usage", OnEvent: func(_ context.Context, ev hook.Event) {
-		if c, ok := ev.(hook.ModelCall); ok && c.Err == nil && c.Response != nil {
-			addTurnUsage(opts.UsageOut, c.Response, c.Model.Provider, model)
-		}
-	}})
-	h.add(hook.Plugin{Name: "dumps", OnEvent: func(_ context.Context, ev hook.Event) {
-		if c, ok := ev.(hook.ModelCall); ok && c.Err == nil && c.Response != nil {
-			al.dumpResponse(agent, opts, model, c)
-		}
-	}})
-	// The reasoning is published on its own goroutine, which may outlive the
-	// model loop: it gets the context the turn was started with, as it
-	// always has, not the loop's.
-	h.add(hook.Plugin{Name: "reasoning", OnEvent: func(_ context.Context, ev hook.Event) {
-		if c, ok := ev.(hook.ModelCall); ok && c.Err == nil && c.Response != nil {
-			al.deliverReasoning(ctx, agent, opts, c.Response.Reasoning)
-		}
-	}})
-
 	if notify := al.fallbackNotifier(ctx, opts); notify != nil {
 		h.add(hook.Plugin{Name: "fallback-notice", OnFallback: func(_ context.Context, ev hook.Fallback) {
 			notify(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
 		}})
 	}
-	h.add(hook.Plugin{Name: "compaction-notice", OnCompaction: func(ctx context.Context, ev hook.Compaction) {
-		switch ev.Phase {
-		case hook.CompactionStarted:
-			al.compactionStarted(ctx, ctxengine.CompactionStart{
-				SessionKey: ev.Scope.Session, Reason: ctxengine.CompactionReason(ev.Reason), Blocking: ev.Blocking,
-			})
-		case hook.CompactionOverflow:
-			al.publishOverflowNotice(ctx, opts)
-		case hook.CompactionEvicted:
-			// Collected by the evictions consumer for one notice at the end.
-		}
-	}})
+	h.add(al.compactionNoticePlugin(opts))
 
 	images := &turnImages{al: al, agent: agent, opts: opts, model: model}
 	h.add(hook.Plugin{Name: "images", AfterModel: images.afterModel})
@@ -147,8 +143,14 @@ func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opt
 			recordToolCall(ctx, agent, opts, f)
 		}
 	}})
-	h.add(hook.Plugin{Name: "evictions", OnEvent: func(ctx context.Context, ev hook.Event) {
+	h.add(hook.Plugin{Name: "turn", OnEvent: func(ctx context.Context, ev hook.Event) {
 		switch e := ev.(type) {
+		case hook.TurnStarted:
+			// Progress heartbeat: keep a long turn visibly alive by editing
+			// its placeholder every progress_interval with a running
+			// tool-call count.
+			st.stopProgress = al.startProgressUpdates(ctx, opts.Channel, opts.ChatID,
+				al.GetConfig().Agents.Defaults.GetProgressInterval(), &st.completedTools)
 		case hook.Compaction:
 			if e.Phase == hook.CompactionEvicted {
 				st.mu.Lock()
@@ -158,23 +160,7 @@ func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opt
 				st.mu.Unlock()
 			}
 		case hook.TurnFinished:
-			st.mu.Lock()
-			evicted := st.evicted
-			st.mu.Unlock()
-			al.publishEvictionNotice(ctx, agent, opts, evicted)
-		}
-	}})
-	// Progress heartbeat: keep a long turn visibly alive by editing its
-	// placeholder every progress_interval with a running tool-call count.
-	h.add(hook.Plugin{Name: "progress", OnEvent: func(ctx context.Context, ev hook.Event) {
-		switch ev.(type) {
-		case hook.TurnStarted:
-			st.stopProgress = al.startProgressUpdates(ctx, opts.Channel, opts.ChatID,
-				al.GetConfig().Agents.Defaults.GetProgressInterval(), &st.completedTools)
-		case hook.TurnFinished:
-			if st.stopProgress != nil {
-				st.stopProgress()
-			}
+			al.endTurn(ctx, agent, opts, st)
 		}
 	}})
 	h.addInterim(interimHooks{
@@ -208,7 +194,36 @@ func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opt
 			return al.describeToolImages(ctx, agent, opts, images, focus)
 		},
 	})
-	return h
+	return h, st
+}
+
+// modelCall handles one provider call: its "LLM finish" line, then for an
+// answer the turn's usage, the dumps and the reasoning, in that order.
+// turnCtx is the turn's context, which the reasoning is published on.
+func (al *AgentLoop) modelCall(ctx, turnCtx context.Context, agent *AgentInstance, opts processOptions, model string, c hook.ModelCall) {
+	al.emitFinish(ctx, agent, opts, c)
+	if c.Err != nil || c.Response == nil {
+		return
+	}
+	addTurnUsage(opts.UsageOut, c.Response, c.Model.Provider, model)
+	al.dumpResponse(agent, opts, model, c)
+	al.deliverReasoning(turnCtx, agent, opts, c.Response.Reasoning)
+}
+
+// endTurn ends a model loop: any buffered partial text that never hit a
+// boundary is streamed, then the eviction notice posted, then the heartbeat
+// stopped.
+func (al *AgentLoop) endTurn(ctx context.Context, agent *AgentInstance, opts processOptions, st *turnState) {
+	if st.stream != nil {
+		st.stream.Flush()
+	}
+	st.mu.Lock()
+	evicted := st.evicted
+	st.mu.Unlock()
+	al.publishEvictionNotice(ctx, agent, opts, evicted)
+	if st.stopProgress != nil {
+		st.stopProgress()
+	}
 }
 
 // turnScope is the scope of a turn of agent on sessionKey: its accounting
@@ -257,8 +272,9 @@ func (al *AgentLoop) runLLMIteration(
 }
 
 // newHostEngineTurn is the engine turn of agent on opts over messages, with
-// the turn's model choice (made now when opts has none) and its callbacks
-// (registered and put on the returned context now when opts has none).
+// the turn's model choice (made now when opts has none) and its callbacks,
+// registered now, at the start of the model loop, and made the hooks of the
+// turn on ctx (scoped now when opts has no turn yet).
 func (al *AgentLoop) newHostEngineTurn(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -271,10 +287,11 @@ func (al *AgentLoop) newHostEngineTurn(
 	if tm == nil {
 		tm = al.selectTurnModel(agent, opts.SessionKey)
 	}
-	if opts.turnHooks == nil {
-		opts.turnHooks = al.newTurnHooks(ctx, agent, opts, tm.model)
-		ctx = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), opts.turnHooks, al.clk())
+	if opts.turn == nil {
+		ctx, opts.turn = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), nil, al.clk())
 	}
+	hooks := al.newTurnHooks(ctx, agent, opts, tm.model)
+	opts.turn.use(hooks)
 	scope, _ := hook.ScopeOf(ctx)
 	spec := engineSpec{
 		agentID: agent.ID,
@@ -304,7 +321,7 @@ func (al *AgentLoop) newHostEngineTurn(
 		cm:    cm,
 		mem:   mem,
 		env:   &llmTurnEnv{al: al, agent: agent, opts: opts, mem: mem},
-		hooks: opts.turnHooks,
+		hooks: hooks,
 	}
 	return newEngineTurn(spec, messages), ctx
 }

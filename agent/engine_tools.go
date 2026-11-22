@@ -4,8 +4,8 @@
 package agent
 
 // This file is part of the turn engine (the engine_*.go files): it imports no
-// host package and uses no host identifier, so phase 5c can move it to the
-// SDK unchanged. engine_guard_test.go enforces that.
+// host package and uses no host identifier, so it can live in a package of
+// its own. engine_guard_test.go enforces that.
 
 import (
 	"context"
@@ -28,6 +28,9 @@ import (
 type toolCallResult struct {
 	tc     spawnllm.ToolCall
 	result *toolkit.Result
+	// callbackPanic is a panic of a tool callback during the call, carried
+	// to the turn's goroutine, where it ends the turn.
+	callbackPanic any
 }
 
 // toolPanicError is the error of a tool call whose tool panicked. Its text is
@@ -43,6 +46,7 @@ func (e *toolPanicError) Error() string { return fmt.Sprintf("tool %s panicked: 
 // executeToolCalls runs a batch of tool calls in parallel and returns their
 // results in call order. ToolCallStarted is emitted for every call, in call
 // order, before the first call runs; each call's ToolCallFinished as it ends.
+// A tool callback that panicked ends the turn here, once every call ended.
 func (e *engineTurn) executeToolCalls(ctx context.Context, calls []spawnllm.ToolCall) []toolCallResult {
 	results := make([]toolCallResult, len(calls))
 	for i, tc := range calls {
@@ -61,26 +65,37 @@ func (e *engineTurn) executeToolCalls(ctx context.Context, calls []spawnllm.Tool
 	for i := range calls {
 		wg.Go(func() { e.runToolCall(ctx, &results[i], toolTimeout) })
 	}
-	// Phase 5b's seam: today every call is waited for, as the turn always
-	// has. An interrupt will wait hook.Limits.CancelGrace here and then give
-	// each call still running hook.InterruptedResult and its
-	// ToolCallFinished (Interrupted set), so every result is still stored.
+	// Every call is waited for, however the turn's context ended, so each
+	// has its result and its ToolCallFinished before the batch is stored.
+	// Abandoning calls on an interrupt (hook.Limits.CancelGrace, then
+	// hook.InterruptedResult) belongs here.
 	wg.Wait()
+	for _, r := range results {
+		if r.callbackPanic != nil {
+			panic(r.callbackPanic)
+		}
+	}
 	return results
 }
 
 // runToolCall runs one tool call through the tool callbacks and stores its
 // result in slot. A panicking tool becomes an error result, so it neither
-// crashes the process nor wedges the batch; every call ends with one
+// crashes the process nor wedges the batch; a panicking callback is carried
+// to the turn (slot.callbackPanic). Every call ends with one
 // ToolCallFinished.
 func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, toolTimeout time.Duration) {
 	tc := slot.tc
 	call := e.hookCall(tc)
-	finished := false
 	answered := false
 	start := time.Now()
-	finish := func(execCtx context.Context) {
-		finished = true
+	execCtx := ctx
+	defer func() {
+		if r := recover(); r != nil {
+			slot.callbackPanic = r
+			if slot.result == nil {
+				slot.result = toolkit.ErrorResult(fmt.Sprintf("Tool %s failed with an internal error.", tc.Name))
+			}
+		}
 		ev := hook.ToolCallFinished{
 			EventHeader: e.header(),
 			Call:        hook.ToolCall{ID: tc.ID, Name: tc.Name, Arguments: maps.Clone(tc.Arguments), Iteration: call.Iteration},
@@ -92,24 +107,6 @@ func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, tool
 			ev.Result = &snapshot
 		}
 		e.hooks.emit(execCtx, ev)
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			e.logAt(slog.LevelError, "panic in tool call",
-				map[string]any{
-					"tool":  tc.Name,
-					"panic": fmt.Sprintf("%v", r),
-					"stack": string(debug.Stack()),
-				})
-			if finished {
-				return
-			}
-			slot.result = &toolkit.Result{
-				Err:    &toolPanicError{tool: tc.Name, value: r},
-				ForLLM: fmt.Sprintf("Tool %s failed with an internal error.", tc.Name),
-			}
-			finish(ctx)
-		}
 	}()
 
 	// Arguments are not logged: they routinely carry memory content, file
@@ -121,7 +118,6 @@ func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, tool
 			"iteration": e.iteration,
 		}))
 
-	execCtx := ctx
 	if toolTimeout > 0 {
 		var toolCancel context.CancelFunc
 		execCtx, toolCancel = context.WithTimeout(ctx, toolTimeout)
@@ -131,27 +127,37 @@ func (e *engineTurn) runToolCall(ctx context.Context, slot *toolCallResult, tool
 	result := e.beforeTool(execCtx, &call)
 	answered = result != nil
 	if !answered {
-		result = e.spec.env.executeTool(execCtx, tc.Name, call.Arguments)
+		result = e.execute(execCtx, tc.Name, call.Arguments)
 	}
-	result = e.afterTool(execCtx, &call, result)
 	slot.result = result
-	finish(execCtx)
+	slot.result = e.afterTool(execCtx, &call, result)
+}
+
+// execute runs the tool. A panicking tool is logged and becomes an error
+// result.
+func (e *engineTurn) execute(ctx context.Context, name string, args map[string]any) (result *toolkit.Result) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.logAt(slog.LevelError, "panic in tool call",
+				map[string]any{
+					"tool":  name,
+					"panic": fmt.Sprintf("%v", r),
+					"stack": string(debug.Stack()),
+				})
+			result = &toolkit.Result{
+				Err:    &toolPanicError{tool: name, value: r},
+				ForLLM: fmt.Sprintf("Tool %s failed with an internal error.", name),
+			}
+		}
+	}()
+	return e.spec.env.executeTool(ctx, name, args)
 }
 
 // beforeTool runs the BeforeTool callbacks; a non-nil result answers the
-// call instead of the tool.
-func (e *engineTurn) beforeTool(ctx context.Context, call *hook.ToolCall) (result *toolkit.Result) {
+// call instead of the tool, an error refuses it.
+func (e *engineTurn) beforeTool(ctx context.Context, call *hook.ToolCall) *toolkit.Result {
 	for _, fn := range e.hooks.beforeTool {
-		var err error
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					e.hooks.recovered("BeforeTool", r)
-					err = fmt.Errorf("tool call refused: %v", r)
-				}
-			}()
-			result, err = fn(ctx, call)
-		}()
+		result, err := fn(ctx, call)
 		if err != nil {
 			return toolkit.ErrorResult(err.Error()).WithError(err)
 		}
@@ -166,27 +172,13 @@ func (e *engineTurn) beforeTool(ctx context.Context, call *hook.ToolCall) (resul
 func (e *engineTurn) afterTool(ctx context.Context, call *hook.ToolCall, result *toolkit.Result) *toolkit.Result {
 	if result != nil && (result.IsError || result.Err != nil) {
 		for _, fn := range e.hooks.onToolError {
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						e.hooks.recovered("OnToolError", r)
-					}
-				}()
-				if r := fn(ctx, call, result); r != nil {
-					result = r
-				}
-			}()
+			if r := fn(ctx, call, result); r != nil {
+				result = r
+			}
 		}
 	}
 	for _, fn := range e.hooks.afterTool {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					e.hooks.recovered("AfterTool", r)
-				}
-			}()
-			fn(ctx, call, result)
-		}()
+		fn(ctx, call, result)
 	}
 	return result
 }
@@ -228,7 +220,7 @@ func (ti *toolImages) route(result *toolkit.Result, msg *spawnllm.Message) {
 func (e *engineTurn) addToolResults(ctx context.Context, results []toolCallResult) error {
 	images := toolImages{mode: e.spec.env.modelFacts(e.spec.model).vision}
 	for _, r := range results {
-		e.hooks.eachInterim("ToolResult", func(i interimHooks) {
+		e.hooks.eachInterim(func(i interimHooks) {
 			if i.ToolResult != nil {
 				i.ToolResult(ctx, e.hookCall(r.tc), r.result)
 			}
@@ -306,7 +298,7 @@ func (e *engineTurn) describeUnseenImages(ctx context.Context, images toolImages
 	}
 	var content string
 	var described, add bool
-	e.hooks.eachInterim("DescribeImages", func(i interimHooks) {
+	e.hooks.eachInterim(func(i interimHooks) {
 		if add || i.DescribeImages == nil {
 			return
 		}

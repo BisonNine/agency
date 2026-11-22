@@ -4,8 +4,8 @@
 package agent
 
 // This file is part of the turn engine (the engine_*.go files): it imports no
-// host package and uses no host identifier, so phase 5c can move it to the
-// SDK unchanged. engine_guard_test.go enforces that.
+// host package and uses no host identifier, so it can live in a package of
+// its own. engine_guard_test.go enforces that.
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -256,6 +257,9 @@ func newEngineTurn(spec engineSpec, messages []spawnllm.Message) *engineTurn {
 	if spec.redact == nil {
 		spec.redact = func(s string) string { return s }
 	}
+	if spec.mem == nil {
+		spec.mem = noTurnMemory{}
+	}
 	return &engineTurn{
 		spec:         spec,
 		hooks:        spec.hooks,
@@ -265,9 +269,8 @@ func newEngineTurn(spec engineSpec, messages []spawnllm.Message) *engineTurn {
 }
 
 // turnHandle is a running turn's handle: the means to stop it with a cause,
-// and its end. Phase 5b builds the interrupt, the session queue and the task
-// registry on it; today the host stops a turn by cancelling the context it
-// passes in, which reaches the turn's context the same way.
+// and its end. The host does not call it yet: it stops a turn by cancelling
+// the context it passes in, which reaches the turn's context the same way.
 type turnHandle struct {
 	cancel context.CancelCauseFunc
 	done   chan struct{}
@@ -299,14 +302,29 @@ func (e *engineTurn) header() hook.EventHeader {
 	return hook.EventHeader{Scope: e.spec.scope, At: e.spec.clock.Now()}
 }
 
+// noTurnMemory is a session without long-term memory.
+type noTurnMemory struct{}
+
+func (noTurnMemory) Observe(context.Context, int64, string, string) {}
+func (noTurnMemory) RecordToolUse(...string)                        {}
+
+// errEngineIncomplete ends a turn whose spec lacks the session's context
+// manager or the host's services.
+var errEngineIncomplete = errors.New("turn engine: no context manager or host services")
+
 // run runs the model loop to its end. It emits TurnStarted first and exactly
-// one TurnFinished last, however the loop ends.
+// one TurnFinished last, however the loop ends: a panic in the loop or a
+// callback ends the turn with OutcomeError in its TurnFinished, and then
+// goes on to the caller.
 func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
+	if e.spec.cm == nil || e.spec.env == nil {
+		return engineResult{}, errEngineIncomplete
+	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	e.handle = &turnHandle{cancel: cancel, done: make(chan struct{})}
 	defer cancel(nil)
 
-	if t, ok := turnHooksOf(ctx); ok && t.hooks == e.hooks {
+	if t, hooks, ok := turnOf(ctx); ok && hooks == e.hooks {
 		t.live.Store(true)
 		defer t.live.Store(false)
 	}
@@ -316,11 +334,20 @@ func (e *engineTurn) run(ctx context.Context) (res engineResult, err error) {
 		Options:     hook.RunOptions{AlreadyStored: true, Depth: e.spec.scope.Depth},
 	})
 	defer func() {
+		r := recover()
 		e.releaseCompressionManagers()
 		tr := e.turnResult(ctx, err)
+		if r != nil {
+			tr.Err = fmt.Errorf("turn engine: panic: %v", r)
+			tr.Outcome = hook.OutcomeError
+			tr.Reply, tr.Stored = "", ""
+		}
 		e.hooks.emit(ctx, hook.TurnFinished{EventHeader: e.header(), TurnResult: tr})
 		e.handle.result = tr
 		close(e.handle.done)
+		if r != nil {
+			panic(r)
+		}
 	}()
 
 	e.logDispatchTarget()
@@ -391,26 +418,24 @@ func (e *engineTurn) releaseCompressionManagers() {
 	e.releases = nil
 }
 
-// logAt writes one engine line under component "agent".
+// logAt writes one engine line under component "agent", recording the call
+// site of the logAt call as the line's source.
+//
+//nolint:contextcheck,nolintlint // a log line carries its fields, not the turn's context (contextcheck reports this only on some runs)
 func (e *engineTurn) logAt(level slog.Level, msg string, fields map[string]any) {
-	logAt(e.spec.log, level, msg, fields)
-}
-
-func logAt(log *slog.Logger, level slog.Level, msg string, fields map[string]any) {
-	args := make([]any, 0, 2+2*len(fields))
-	args = append(args, "component", "agent")
-	for k, v := range fields {
-		args = append(args, k, v)
+	ctx := context.Background()
+	if !e.spec.log.Enabled(ctx, level) {
+		return
 	}
-	switch level {
-	case slog.LevelDebug:
-		log.Debug(msg, args...)
-	case slog.LevelWarn:
-		log.Warn(msg, args...)
-	case slog.LevelError:
-		log.Error(msg, args...)
-	default:
-		log.Info(msg, args...)
+	var pcs [1]uintptr
+	runtime.Callers(2, pcs[:]) // skip runtime.Callers and logAt
+	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
+	r.AddAttrs(slog.String("component", "agent"))
+	for k, v := range fields {
+		r.AddAttrs(slog.Any(k, v))
+	}
+	if err := e.spec.log.Handler().Handle(ctx, r); err != nil {
+		return // a line the handler cannot write is lost, as with slog.Logger
 	}
 }
 
@@ -722,7 +747,7 @@ func (e *engineTurn) runToolCalls(ctx context.Context, response *spawnllm.LLMRes
 			"count":     len(calls),
 			"iteration": e.iteration,
 		})
-	e.hooks.eachInterim("Narrate", func(i interimHooks) {
+	e.hooks.eachInterim(func(i interimHooks) {
 		if i.Narrate != nil {
 			i.Narrate(ctx, e.iteration, response.Content)
 		}
@@ -730,14 +755,14 @@ func (e *engineTurn) runToolCalls(ctx context.Context, response *spawnllm.LLMRes
 
 	// The model is told what became of what AfterModel handled alongside
 	// these calls (generated images), in the message that carried them.
-	callMsg := assistantToolCallMessage(e, response, calls)
+	callMsg := e.assistantToolCallMessage(response, calls)
 	callMsg.Content = withImageNotes(callMsg.Content, e.pendingNotes)
 	e.pendingNotes = nil
 	if err := e.keep(ctx, e.spec.cm.AddToolCallMessage, callMsg, "tool call message"); err != nil {
 		return false, err
 	}
 	results := e.executeToolCalls(ctx, calls)
-	e.hooks.eachInterim("ToolsReturned", func(i interimHooks) {
+	e.hooks.eachInterim(func(i interimHooks) {
 		if i.ToolsReturned != nil {
 			i.ToolsReturned(ctx, len(calls))
 		}
@@ -820,7 +845,7 @@ func (e *engineTurn) keep(
 
 // assistantToolCallMessage is the assistant message carrying a response's
 // tool calls, in the wire form stored in history.
-func assistantToolCallMessage(e *engineTurn, response *spawnllm.LLMResponse, calls []spawnllm.ToolCall) spawnllm.Message {
+func (e *engineTurn) assistantToolCallMessage(response *spawnllm.LLMResponse, calls []spawnllm.ToolCall) spawnllm.Message {
 	msg := spawnllm.Message{
 		Role:             "assistant",
 		Content:          response.Content,

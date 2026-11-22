@@ -11,6 +11,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -618,7 +620,7 @@ func TestEngine_ScopeOnCallsAndIdentity(t *testing.T) {
 		session = toolkit.SessionKey(ctx)
 		return toolkit.SilentResult("ok")
 	})
-	ctx := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
+	ctx, _ := beginTurnContext(context.Background(), f.spec.scope, f.spec.hooks, clk)
 	turn := newEngineTurn(f.spec, []spawnllm.Message{{Role: "user", Content: "hello"}})
 	if _, err := turn.run(ctx); err != nil {
 		t.Fatal(err)
@@ -628,5 +630,185 @@ func TestEngine_ScopeOnCallsAndIdentity(t *testing.T) {
 	}
 	if id := p.Calls()[0].Identity; id != engineIdentity {
 		t.Fatalf("identity = %+v, want %+v", id, engineIdentity)
+	}
+}
+
+// A panicking event consumer only watches: it is logged at error level with
+// its name, and the turn goes on.
+func TestEngine_ConsumerPanicIsLogged(t *testing.T) {
+	p := modelstest.New().Script("alice-wire", modelstest.Reply("done"))
+	clk := newFake()
+	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+	f := newEngineFixture(t, chain, clk)
+	var buf strings.Builder
+	f.spec.hooks.log = slog.New(slog.NewTextHandler(&buf, nil))
+	f.spec.hooks.add(hook.Plugin{Name: "bobs-watcher", OnEvent: func(context.Context, hook.Event) { panic("Bob's bug") }})
+	_, res, err := f.run(t)
+	if err != nil || res.content != "done" {
+		t.Fatalf("run = %+v, %v; want the turn to go on", res, err)
+	}
+	if out := buf.String(); !strings.Contains(out, "level=ERROR") || !strings.Contains(out, "consumer=bobs-watcher") || !strings.Contains(out, "stack=") {
+		t.Fatalf("log = %s", out)
+	}
+}
+
+// A panic in a callback or interim step that changes the turn ends it: the
+// panic reaches run's caller, after exactly one TurnFinished with
+// OutcomeError.
+func TestEngine_CallbackPanicEndsTheTurn(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(f *engineFixture)
+	}{
+		{"AfterModel", func(f *engineFixture) {
+			f.spec.hooks.add(hook.Plugin{Name: "images", AfterModel: func(context.Context, *hook.ModelInfo, *hook.ModelResponse) { panic("Bob's bug") }})
+		}},
+		{"AfterTool", func(f *engineFixture) {
+			f.spec.hooks.add(hook.Plugin{Name: "redact", AfterTool: func(context.Context, *hook.ToolCall, *toolkit.Result) { panic("Bob's bug") }})
+		}},
+		{"interim ToolResult", func(f *engineFixture) {
+			f.spec.hooks.addInterim(interimHooks{Name: "tool-output", ToolResult: func(context.Context, hook.ToolCall, *toolkit.Result) { panic("Bob's bug") }})
+		}},
+		{"tool environment", func(f *engineFixture) { f.spec.env = panickyEnv{f.env} }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := modelstest.New().Script("alice-wire", callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done"))
+			clk := newFake()
+			_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+			f := newEngineFixture(t, chain, clk)
+			f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
+			tt.setup(f)
+			func() {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Fatal("the panic did not reach the caller")
+					}
+				}()
+				_, _, err := f.run(t)
+				t.Errorf("run returned (%v) instead of panicking", err)
+			}()
+			kinds := f.rec.kinds()
+			if countOf(kinds, "TurnFinished") != 1 || kinds[len(kinds)-1] != "TurnFinished" {
+				t.Fatalf("events = %v", kinds)
+			}
+			evs := f.rec.all()
+			if fin, ok := evs[len(evs)-1].(hook.TurnFinished); !ok || fin.Outcome != hook.OutcomeError || fin.Err == nil {
+				t.Fatalf("TurnFinished = %+v, want an error", fin.TurnResult)
+			}
+		})
+	}
+}
+
+// panickyEnv is a host whose tool list panics.
+type panickyEnv struct{ *fakeEnv }
+
+func (panickyEnv) toolDefs() []spawnllm.ToolDefinition { panic("Bob's bug") }
+
+// A panicking tool is not a callback: its call gets an error result and the
+// turn goes on (TestEngine_EventGuarantees). A tool whose callback panics
+// still gets its ToolCallFinished before the turn ends.
+func TestEngine_ToolCallbackPanicFinishesTheCall(t *testing.T) {
+	p := modelstest.New().Script("alice-wire", callStep(toolCall("c1", "noop", nil)))
+	clk := newFake()
+	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+	f := newEngineFixture(t, chain, clk)
+	f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
+	f.spec.hooks.add(hook.Plugin{Name: "gate", BeforeTool: func(context.Context, *hook.ToolCall) (*toolkit.Result, error) { panic("Bob's bug") }})
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("the callback's panic did not reach the caller")
+			}
+		}()
+		_, _, err := f.run(t)
+		t.Errorf("run returned (%v) instead of panicking", err)
+	}()
+	if countOf(f.rec.kinds(), "ToolCallStarted") != 1 || countOf(f.rec.kinds(), "ToolCallFinished") != 1 {
+		t.Fatalf("events = %v", f.rec.kinds())
+	}
+}
+
+// A callback of a kind the engine does not call is refused when it is
+// registered.
+func TestEngine_RefusesCallbacksItDoesNotCall(t *testing.T) {
+	plugins := []hook.Plugin{
+		{Name: "a", BeforeTurn: func(context.Context, *hook.Turn) (*hook.TurnResult, error) { return nil, nil }},
+		{Name: "b", AfterTurn: func(context.Context, *hook.Turn, *hook.TurnResult) {}},
+		{Name: "c", BeforeModel: func(context.Context, *hook.ModelInfo) (*spawnllm.LLMResponse, error) { return nil, nil }},
+		{Name: "d", OnModelError: func(context.Context, *hook.ModelInfo, error) (*spawnllm.LLMResponse, error) { return nil, nil }},
+		{Name: "e", OnInterrupt: func(context.Context, hook.Interrupted) {}},
+	}
+	for _, p := range plugins {
+		func() {
+			defer func() {
+				if r := recover(); r == nil || !strings.Contains(fmt.Sprint(r), `plugin "`+p.Name+`"`) {
+					t.Errorf("plugin %s: recovered %v, want a refusal naming it", p.Name, r)
+				}
+			}()
+			(&turnHooks{}).add(p)
+		}()
+	}
+}
+
+// An AfterModel that sets the response to nil changes nothing: the turn goes
+// on with the response it was given.
+func TestEngine_AfterModelNilResponseIsNoChange(t *testing.T) {
+	p := modelstest.New().Script("alice-wire", modelstest.Reply("done"))
+	clk := newFake()
+	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+	f := newEngineFixture(t, chain, clk)
+	f.spec.hooks.add(hook.Plugin{Name: "drop", AfterModel: func(_ context.Context, _ *hook.ModelInfo, resp *hook.ModelResponse) { resp.Response = nil }})
+	_, res, err := f.run(t)
+	if err != nil || res.content != "done" {
+		t.Fatalf("run = %+v, %v", res, err)
+	}
+}
+
+// A spec without memory runs without it; one without a context manager or
+// host services is refused, not run into a nil.
+func TestEngine_IncompleteSpec(t *testing.T) {
+	p := modelstest.New().Script("alice-wire", callStep(toolCall("c1", "noop", nil)), modelstest.Reply("done"))
+	clk := newFake()
+	_, chain := testChain(t, clk, engineModel{name: "Alice Model", wire: "alice-wire", client: p})
+	f := newEngineFixture(t, chain, clk)
+	f.tool("noop", func(context.Context, map[string]any) *toolkit.Result { return toolkit.SilentResult("ok") })
+	f.spec.mem = nil
+	if _, res, err := f.run(t); err != nil || res.content != "done" {
+		t.Fatalf("without memory: %+v, %v", res, err)
+	}
+	for name, mutate := range map[string]func(*engineSpec){
+		"no context manager": func(s *engineSpec) { s.cm = nil },
+		"no host services":   func(s *engineSpec) { s.env = nil },
+	} {
+		spec := f.spec
+		mutate(&spec)
+		if _, err := newEngineTurn(spec, nil).run(context.Background()); !errors.Is(err, errEngineIncomplete) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}
+
+// pcHandler records the function each record was logged from.
+type pcHandler struct{ funcs *[]string }
+
+func (pcHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h pcHandler) Handle(_ context.Context, r slog.Record) error {
+	frame, _ := runtime.CallersFrames([]uintptr{r.PC}).Next()
+	*h.funcs = append(*h.funcs, r.Message+"@"+frame.Function)
+	return nil
+}
+func (h pcHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h pcHandler) WithGroup(string) slog.Handler      { return h }
+
+// An engine line names the engine function that logged it, not the logging
+// helper.
+func TestEngine_LogLinesNameTheirCallSite(t *testing.T) {
+	var funcs []string
+	f := newEngineFixture(t, nil, newFake())
+	f.spec.log = slog.New(pcHandler{funcs: &funcs})
+	newEngineTurn(f.spec, nil).logDispatchTarget()
+	if len(funcs) != 1 || !strings.HasSuffix(funcs[0], ".(*engineTurn).logDispatchTarget") || !strings.HasPrefix(funcs[0], "Dispatching to model@") {
+		t.Fatalf("logged from %v", funcs)
 	}
 }
