@@ -95,6 +95,13 @@ type ExecConfig struct {
 	CustomDenyPatterns  []string `                                 env:"CLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
 	CustomAllowPatterns []string `                                 env:"CLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
 	TimeoutSeconds      int      `                                 env:"CLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
+	// The limits of the shell tools' jobs (see ExecConfig.Effective). 0 or
+	// absent is the default; a negative value is refused at load and on save.
+	MaxTimeoutSeconds int `json:"max_timeout_seconds,omitempty"  env:"CLAW_TOOLS_EXEC_MAX_TIMEOUT_SECONDS"`
+	MaxJobs           int `json:"max_jobs,omitempty"             env:"CLAW_TOOLS_EXEC_MAX_JOBS"`
+	MaxJobSeconds     int `json:"max_job_seconds,omitempty"      env:"CLAW_TOOLS_EXEC_MAX_JOB_SECONDS"`
+	MaxJobOutputBytes int `json:"max_job_output_bytes,omitempty" env:"CLAW_TOOLS_EXEC_MAX_JOB_OUTPUT_BYTES"`
+	JobLogDays        int `json:"job_log_days,omitempty"         env:"CLAW_TOOLS_EXEC_JOB_LOG_DAYS"`
 }
 
 type SkillsToolsConfig struct {

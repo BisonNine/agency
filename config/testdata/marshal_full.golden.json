@@ -589,7 +589,12 @@
       "custom_allow_patterns": [
         "x"
       ],
-      "timeout_seconds": 1
+      "timeout_seconds": 1,
+      "max_timeout_seconds": 1,
+      "max_jobs": 1,
+      "max_job_seconds": 1,
+      "max_job_output_bytes": 1,
+      "job_log_days": 1
     },
     "skills": {
       "registry": {
