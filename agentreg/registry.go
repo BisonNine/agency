@@ -190,7 +190,8 @@ type Info struct {
 	InTurn   bool
 }
 
-// BuildFunc builds the instance for spec against cfg, tools included.
+// BuildFunc builds the instance for spec against cfg, tools included. ctx
+// bounds the build only: the instance outlives it and must not keep it.
 type BuildFunc[T Instance] func(ctx context.Context, cfg *config.Config, spec Spec) (T, error)
 
 // RetireFunc releases what the host caches for an instance (open sessions,

@@ -371,11 +371,17 @@ func mcpServerToolEntries(agent *AgentInstance, mgr *mcp.Manager, serverName str
 				"name":     mcpTool.Name(),
 			})
 	}
-	// A namespace pinned via always_shown_namespaces stays listed. Hidden
-	// tools are grouped by server so a reveal-together server loads as a set.
-	for _, e := range discovery.HideEntries(eligible, alwaysShown(agent.AlwaysShownNamespaces)) {
+	return append(entries, hideMCPEntries(eligible, agent.AlwaysShownNamespaces, serverName, conn.RevealTogether())...)
+}
+
+// hideMCPEntries hides one server's discovery-eligible tools, except those a
+// namespace pinned via always_shown_namespaces keeps listed. Hidden tools are
+// grouped by server, so a reveal-together server loads as a set.
+func hideMCPEntries(eligible []toolkit.Entry, pins []string, serverName string, revealTogether bool) []tools.ToolEntry {
+	entries := make([]tools.ToolEntry, 0, len(eligible))
+	for _, e := range discovery.HideEntries(eligible, alwaysShown(pins)) {
 		if e.Hidden {
-			e.Group, e.RevealTogether = serverName, conn.RevealTogether()
+			e.Group, e.RevealTogether = serverName, revealTogether
 		}
 		entries = append(entries, tools.ToolEntry{Entry: e})
 	}

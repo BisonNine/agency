@@ -249,6 +249,8 @@ func (r *Registry[T]) create(cfg config.AgentConfig, o createOptions, inTurn boo
 	if src != nil {
 		snapshotMemory(src.spec, spec)
 	}
+	// Not the creating call's context: the agent outlives the call (and the
+	// turn) that created it.
 	inst, err := build(context.Background(), current, spec)
 	if err != nil {
 		removeDir(spec.StateDir)
