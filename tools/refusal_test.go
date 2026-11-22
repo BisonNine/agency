@@ -41,3 +41,35 @@ func TestRegistry_RefusalLoggedAtWarn(t *testing.T) {
 		})
 	}
 }
+
+// A call the agent's allow checker refuses logs one line, the host's denial
+// warning naming the tool, and nothing else: the catalogue does not log the
+// gate's refusal again.
+func TestRegistry_DeniedCallLogsOneWarning(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&mockRegistryTool{name: "probe", params: map[string]any{}, result: SilentResult("ran")})
+
+	var buf safeBuf
+	restore := logger.RedirectForTest(&buf)
+	defer restore()
+	ctx := WithToolAllowChecker(context.Background(), denyAllChecker{})
+	res := r.ExecuteWithContext(ctx, "probe", nil, "", "", nil)
+	if res == nil || !res.IsError || !IsExpectedRefusal(res.Err) {
+		t.Fatalf("want a refusal, got %+v", res)
+	}
+
+	var lines []string
+	for l := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) != 1 {
+		t.Fatalf("want exactly one log line, got %d:\n%s", len(lines), buf.String())
+	}
+	for _, want := range []string{`"level":"warn"`, "Tool execution denied by agent allowlist", `"tool":"probe"`} {
+		if !strings.Contains(lines[0], want) {
+			t.Errorf("log line lacks %s: %s", want, lines[0])
+		}
+	}
+}
