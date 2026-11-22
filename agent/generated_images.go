@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/h2non/filetype"
+	"go.bison9.com/agent/hook"
 
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/fileutil"
@@ -36,25 +37,34 @@ type imageResult struct {
 	note string
 }
 
-// handleImages saves and delivers the images of one model response, in
-// order: each image with data is saved in the agent's workspace and, when
-// the turn answers a chat that can receive files, sent there through the
+// turnImages handles the images a turn's model generates: it is the
+// AfterModel callback that saves and delivers them (newTurnHooks).
+type turnImages struct {
+	al    *AgentLoop
+	agent *AgentInstance
+	opts  processOptions
+	// model is the turn's model, named in the log.
+	model string
+}
+
+// afterModel saves and delivers the images of one model response, in order:
+// each image with data is saved in the agent's workspace and, when the turn
+// answers a chat that can receive files, sent there through the
 // msg_send_file path (SendFiles); an image given as a URL is never fetched,
-// only named in the reply. The results are kept on the turn for its reply
-// and its stored messages.
-func (t *llmTurn) handleImages(ctx context.Context, images []providers.GeneratedImage) {
-	for _, img := range images {
+// only named in the reply. What became of each is added to the response's
+// notes (for the model) and reply lines (for the reply).
+func (t *turnImages) afterModel(ctx context.Context, _ *hook.ModelInfo, resp *hook.ModelResponse) {
+	for _, img := range resp.Response.Images {
 		r := t.handleImage(ctx, img)
-		t.imageCount++
-		t.iterationNotes = append(t.iterationNotes, r)
+		resp.Notes = append(resp.Notes, r.note)
 		if r.reply != "" {
-			t.imageReplies = append(t.imageReplies, r.reply)
+			resp.ReplyLines = append(resp.ReplyLines, r.reply)
 		}
 	}
 }
 
 // handleImage handles one generated image and logs what became of it.
-func (t *llmTurn) handleImage(ctx context.Context, img providers.GeneratedImage) imageResult {
+func (t *turnImages) handleImage(ctx context.Context, img providers.GeneratedImage) imageResult {
 	fields := map[string]any{"agent_id": t.agent.ID, "agent": t.agent.Label(), "model": t.model, "size": img.Size}
 	if len(img.Data) == 0 {
 		if len(img.URL) >= len("data:") && strings.EqualFold(img.URL[:len("data:")], "data:") {
@@ -100,7 +110,7 @@ func (t *llmTurn) handleImage(ctx context.Context, img providers.GeneratedImage)
 
 // deliverImage sends a saved image to the turn's chat when it can go there,
 // returning the outcome for the log and the result.
-func (t *llmTurn) deliverImage(ctx context.Context, img providers.GeneratedImage, path string) (string, imageResult) {
+func (t *turnImages) deliverImage(ctx context.Context, img providers.GeneratedImage, path string) (string, imageResult) {
 	saved := "Image saved as " + path + "."
 	channel, chatID := t.opts.Channel, t.opts.ChatID
 	switch {
@@ -145,7 +155,7 @@ func (t *llmTurn) deliverImage(ctx context.Context, img providers.GeneratedImage
 
 // imageCanReachChat reports whether the turn answers a chat an image could
 // be sent to: not another agent, and not an internal channel.
-func (t *llmTurn) imageCanReachChat() bool {
+func (t *turnImages) imageCanReachChat() bool {
 	channel := t.opts.Channel
 	return !constants.RepliesToAgent(channel) && channel != "" && t.opts.ChatID != "" &&
 		!constants.IsInternalChannel(channel)
@@ -153,7 +163,7 @@ func (t *llmTurn) imageCanReachChat() bool {
 
 // workspaceOwner names the agent whose workspace the images are saved in:
 // the agent's name, or for a clone its source's (whose workspace it uses).
-func (t *llmTurn) workspaceOwner() string {
+func (t *turnImages) workspaceOwner() string {
 	if t.agent.Spec.IsClone() && strings.TrimSpace(t.agent.Name) == "" {
 		return t.agent.Spec.SourceID
 	}
@@ -174,7 +184,7 @@ func capImageURL(url string) string {
 
 // saveImage writes img's data in the agent's workspace, under a folder for
 // the day, with the area's exact modes; it returns the workspace path.
-func (t *llmTurn) saveImage(img providers.GeneratedImage) (string, error) {
+func (t *turnImages) saveImage(img providers.GeneratedImage) (string, error) {
 	now := t.al.clk().Now()
 	name := fmt.Sprintf("image-%s%03d-%s%s", now.Format("150405"), now.Nanosecond()/1e6,
 		uuid.NewString()[:8], imageExtension(img))
@@ -210,26 +220,4 @@ func imageExtension(img providers.GeneratedImage) string {
 		return "." + kind.Extension
 	}
 	return ".bin"
-}
-
-// withImageNotes is content followed by lines, one per line, after a blank
-// line.
-func withImageNotes(content string, lines []string) string {
-	if len(lines) == 0 {
-		return content
-	}
-	joined := strings.Join(lines, "\n")
-	if content == "" {
-		return joined
-	}
-	return content + "\n\n" + joined
-}
-
-// notesFor is the model notes of results.
-func notesFor(results []imageResult) []string {
-	notes := make([]string, 0, len(results))
-	for _, r := range results {
-		notes = append(notes, r.note)
-	}
-	return notes
 }

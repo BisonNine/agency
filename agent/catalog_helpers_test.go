@@ -172,7 +172,7 @@ func testCatalog(cfg *config.Config, clients map[string]providers.LLMProvider) *
 
 // catalogTurn is a turn of inst on the catalogue cfg builds (real clients),
 // its chain pinned as a turn pins it.
-func catalogTurn(t *testing.T, cfg *config.Config, inst *AgentInstance) *llmTurn {
+func catalogTurn(t *testing.T, cfg *config.Config, inst *AgentInstance) *engineTurn {
 	t.Helper()
 	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, nil)}
 	assignAgentModels(al.catalog, cfg, inst)
@@ -180,7 +180,7 @@ func catalogTurn(t *testing.T, cfg *config.Config, inst *AgentInstance) *llmTurn
 	if len(tm.candidates) == 0 {
 		t.Fatal("the agent has no model in the catalogue")
 	}
-	return &llmTurn{al: al, agent: inst, chain: tm.chain, candidates: tm.candidates, model: tm.model, limits: tm.limits}
+	return hostTurn(t, al, inst, processOptions{}, tm)
 }
 
 // parkFor parks model name in cat for d (a 429 with that Retry-After, at

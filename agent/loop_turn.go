@@ -64,6 +64,11 @@ type processOptions struct {
 	// turn starts; nil when the model loop is entered without one, which
 	// then makes it.
 	turnModel *turnModel
+	// turnHooks are the turn's callbacks and consumers, registered by
+	// runAgentLoop once the session is prepared and put on the turn's
+	// context with its scope; nil when the model loop is entered without
+	// them, which then registers them.
+	turnHooks *turnHooks
 }
 
 // turnLimits are the limits of the turn's model: the choice made when the
@@ -141,6 +146,11 @@ func (al *AgentLoop) runAgentLoop(
 	if err = al.prepareSession(ctx, agent, cm, &opts); err != nil {
 		return "", err
 	}
+	// The turn's callbacks see the message as prepared, and are on the
+	// context before anything of the turn reaches the context engine (a
+	// compaction while the message is stored tells the person).
+	opts.turnHooks = al.newTurnHooks(ctx, agent, opts, opts.turnModel.model)
+	ctx = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), opts.turnHooks, al.clk())
 	// A retried message is already in history.
 	if !opts.IsRetry {
 		if err = al.saveUserMessage(ctx, agent, opts, cm, mem); err != nil {

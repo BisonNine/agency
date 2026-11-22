@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
@@ -160,7 +161,7 @@ func TestCallModel_TurnDeadlineStopsTheChain(t *testing.T) {
 	p := &deadlineProvider{}
 	turn, d := chainTurn(t, p, nil, replayGPT, replayClaude)
 	var notices int
-	turn.notifier = func([]providers.FallbackAttempt, providers.FallbackCandidate) { notices++ }
+	turn.hooks.add(hook.Plugin{Name: "test", OnFallback: func(context.Context, hook.Fallback) { notices++ }})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()

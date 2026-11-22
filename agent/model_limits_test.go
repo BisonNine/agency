@@ -233,7 +233,7 @@ func TestRequestOptions_HalvedMaxTokensPerModel(t *testing.T) {
 		"Alice Model": {maxTokens: 32768, thinkingLevel: ThinkingOff},
 		"Bob Model":   {maxTokens: 600, thinkingLevel: ThinkingOff},
 	}}
-	turn := &llmTurn{agent: agent}
+	turn := hostTurn(t, nil, agent, processOptions{}, nil)
 	d := &llmDispatch{llmOpts: map[string]any{"prompt_cache_key": "main"}, maxTokensHalvings: 2}
 	for model, want := range map[string]int{"Alice Model": 8192, "Bob Model": 300, "Other Model": 500} {
 		if got := turn.requestOptions(d, false, &mockProvider{}, model)["max_tokens"]; got != want {

@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/hook"
+
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
@@ -164,9 +166,9 @@ func TestFallbackReplay(t *testing.T) {
 			p := &replayProvider{errs: tt.errs}
 			turn, d := chainTurn(t, p, tt.parked, tt.chain...)
 			var notices [][]string
-			turn.notifier = func(passed []providers.FallbackAttempt, _ providers.FallbackCandidate) {
-				notices = append(notices, attemptSeq(passed))
-			}
+			turn.hooks.add(hook.Plugin{Name: "test", OnFallback: func(_ context.Context, ev hook.Fallback) {
+				notices = append(notices, attemptSeq(fallbackAttempts(ev.Passed)))
+			}})
 			resp, err := turn.callModel(context.Background(), d)
 
 			switch {
@@ -232,12 +234,9 @@ func TestFallbackReplay_StickyTurn(t *testing.T) {
 	if err := al.setActiveModelIndex(agent, session, 2); err != nil {
 		t.Fatal(err)
 	}
-	turn := &llmTurn{
-		al: al, agent: agent, chain: first.chain, candidates: first.candidates, model: first.model,
-		messages: []providers.Message{{Role: "user", Content: "hi"}},
-	}
+	turn := hostTurn(t, al, agent, processOptions{}, first, providers.Message{Role: "user", Content: "hi"})
 	for range 2 {
-		if _, err := turn.callModel(context.Background(), turn.newDispatch(nil, 0)); err != nil {
+		if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
 			t.Fatal(err)
 		}
 	}

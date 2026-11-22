@@ -138,11 +138,8 @@ func TestReloadAdopt_BusyTemporaryAgentModelsRemoved(t *testing.T) {
 	if got := al.activeModelName(now, "s"); got != now.Model {
 		t.Fatalf("active model = %q, want %q", got, now.Model)
 	}
-	turn := &llmTurn{
-		al: al, agent: now, chain: tm.chain, candidates: tm.candidates, model: tm.model, limits: tm.limits, direct: tm.direct,
-		messages: []providers.Message{{Role: "user", Content: "hi"}},
-	}
-	if _, err := turn.callModel(context.Background(), turn.newDispatch(nil, 0)); err != nil {
+	turn := hostTurn(t, al, now, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
+	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
 		t.Fatal(err)
 	}
 	if got := p.calls(); !slices.Equal(got, []string{now.Model}) {
@@ -173,11 +170,8 @@ func TestUnresolvedAgent_RunsOnDefaultModelClient(t *testing.T) {
 	if tm.limits.maxTokens != cfg.Agents.Defaults.MaxTokens {
 		t.Errorf("max tokens = %d, want the defaults' %d", tm.limits.maxTokens, cfg.Agents.Defaults.MaxTokens)
 	}
-	turn := &llmTurn{
-		al: al, agent: bob, chain: tm.chain, candidates: tm.candidates, model: tm.model, limits: tm.limits, direct: tm.direct,
-		messages: []providers.Message{{Role: "user", Content: "hi"}},
-	}
-	if _, err := turn.callModel(context.Background(), turn.newDispatch(nil, 0)); err != nil {
+	turn := hostTurn(t, al, bob, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
+	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
 		t.Fatal(err)
 	}
 	if got := p.calls(); !slices.Equal(got, []string{"no-such-model"}) {
@@ -544,11 +538,8 @@ func TestUnresolvedAgent_DefaultModelTemperature(t *testing.T) {
 			}
 			bob, _ := al.GetRegistry().Get("bob")
 			tm := al.selectTurnModel(bob, "s")
-			turn := &llmTurn{
-				al: al, agent: bob, chain: tm.chain, candidates: tm.candidates, model: tm.model, limits: tm.limits, direct: tm.direct,
-				messages: []providers.Message{{Role: "user", Content: "hi"}},
-			}
-			if _, err := turn.callModel(context.Background(), turn.newDispatch(nil, 0)); err != nil {
+			turn := hostTurn(t, al, bob, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
+			if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
 				t.Fatal(err)
 			}
 			if len(p.opts) != 1 {

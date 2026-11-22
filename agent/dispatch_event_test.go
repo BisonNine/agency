@@ -13,6 +13,7 @@ import (
 
 	"go.bison9.com/agent/cogmem/consolidate"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/agentreg"
@@ -226,14 +227,12 @@ func TestLLMTurnEmitFinish_MainAgent(t *testing.T) {
 	restore := logger.RedirectForTest(buf)
 	defer restore()
 
-	turn := &llmTurn{
-		agent:     &AgentInstance{ID: "alice"},
-		model:     "Sonnet",
-		iteration: 2,
-		opts:      processOptions{SessionKey: "agent:alice:main", Channel: "telegram", ChatID: "42"},
-	}
+	opts := processOptions{SessionKey: "agent:alice:main", Channel: "telegram", ChatID: "42"}
 	resp := &providers.LLMResponse{Status: &providers.DispatchStatus{Success: true, Model: "claude-sonnet-4-5", InputTokens: 7}}
-	turn.emitFinish(withTurnID(context.Background(), "abcd1234"), "Claude CLI", "Sonnet", "Sonnet", 10*time.Millisecond, resp, nil)
+	(&AgentLoop{}).emitFinish(withTurnID(context.Background(), "abcd1234"), &AgentInstance{ID: "alice"}, opts, hook.ModelCall{
+		Iteration: 2, Model: hook.ModelRef{Provider: "Claude CLI", Name: "Sonnet", Model: "Sonnet"},
+		Elapsed: 10 * time.Millisecond, Response: resp,
+	})
 
 	records := finishRecords(t, buf)
 	if len(records) != 1 {
@@ -259,12 +258,13 @@ func TestLLMTurnEmitFinish_MainAgent(t *testing.T) {
 // and naming the agent it was cloned from. Empty session fields are left off.
 func TestLLMTurnEmitFinish_Subagent(t *testing.T) {
 	clone := cloneOfAlice()
-	turn := &llmTurn{agent: clone, model: "Haiku", iteration: 1}
 
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
 	defer restore()
-	turn.emitFinish(context.Background(), "Anthropic", "Haiku", "Haiku", 5*time.Millisecond, nil, nil)
+	(&AgentLoop{}).emitFinish(context.Background(), clone, processOptions{}, hook.ModelCall{
+		Iteration: 1, Model: hook.ModelRef{Provider: "Anthropic", Name: "Haiku", Model: "Haiku"}, Elapsed: 5 * time.Millisecond,
+	})
 
 	records := finishRecords(t, buf)
 	if len(records) != 1 {

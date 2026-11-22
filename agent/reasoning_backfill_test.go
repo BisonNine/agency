@@ -42,7 +42,7 @@ func mixedHistory() []providers.Message {
 // agent switched from a CLI model to DeepSeek replays a history with no
 // reasoning_content, and DeepSeek rejects it with a 400 on every turn.
 func TestBackfill_FillsEmptyAssistantReasoning(t *testing.T) {
-	out := backfillLoop().messagesForModel(mixedHistory(), "ds-pro", true)
+	out := messagesForModel(mixedHistory(), backfillLoop().modelFactsFor(nil, "ds-pro"), true)
 
 	for i, m := range out {
 		if m.Role != "assistant" {
@@ -68,7 +68,7 @@ func TestBackfill_FillsEmptyAssistantReasoning(t *testing.T) {
 // TestBackfill_OnlyAssistantMessages keeps the placeholder off user and tool
 // turns, which have no such field in the wire contract.
 func TestBackfill_OnlyAssistantMessages(t *testing.T) {
-	out := backfillLoop().messagesForModel(mixedHistory(), "ds-pro", true)
+	out := messagesForModel(mixedHistory(), backfillLoop().modelFactsFor(nil, "ds-pro"), true)
 	for i, m := range out {
 		if m.Role != "assistant" && m.ReasoningContent != "" {
 			t.Errorf("message %d (%s): reasoning_content set on a non-assistant turn", i, m.Role)
@@ -80,7 +80,7 @@ func TestBackfill_OnlyAssistantMessages(t *testing.T) {
 // without tools in the request the field is ignored entirely, so there is
 // nothing to satisfy and nothing to add.
 func TestBackfill_RequiresTools(t *testing.T) {
-	out := backfillLoop().messagesForModel(mixedHistory(), "ds-pro", false)
+	out := messagesForModel(mixedHistory(), backfillLoop().modelFactsFor(nil, "ds-pro"), false)
 	if out[4].ReasoningContent != "" {
 		t.Errorf("no tools in the request: expected no backfill, got %q", out[4].ReasoningContent)
 	}
@@ -89,7 +89,7 @@ func TestBackfill_RequiresTools(t *testing.T) {
 // TestBackfill_OnlyWhenProviderOptsIn is the off path — an endpoint that never
 // asked for this must see history exactly as stored.
 func TestBackfill_OnlyWhenProviderOptsIn(t *testing.T) {
-	out := backfillLoop().messagesForModel(mixedHistory(), "other", true)
+	out := messagesForModel(mixedHistory(), backfillLoop().modelFactsFor(nil, "other"), true)
 	if out[4].ReasoningContent != "" {
 		t.Errorf("provider did not opt in: expected no backfill, got %q", out[4].ReasoningContent)
 	}
@@ -102,13 +102,13 @@ func TestBackfill_DoesNotMutateInput(t *testing.T) {
 	al := backfillLoop()
 	msgs := mixedHistory()
 
-	_ = al.messagesForModel(msgs, "ds-pro", true)
+	_ = messagesForModel(msgs, al.modelFactsFor(nil, "ds-pro"), true)
 
 	if msgs[4].ReasoningContent != "" {
 		t.Errorf("input history was mutated: %q", msgs[4].ReasoningContent)
 	}
 	// And the next candidate, on a provider that rejects the field, sees it clean.
-	out := al.messagesForModel(msgs, "other", true)
+	out := messagesForModel(msgs, al.modelFactsFor(nil, "other"), true)
 	if out[4].ReasoningContent != "" {
 		t.Errorf("placeholder leaked to a provider that did not ask for it: %q", out[4].ReasoningContent)
 	}
@@ -122,7 +122,7 @@ func TestBackfill_NoCopyWhenNothingToFill(t *testing.T) {
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", Content: "there", ReasoningContent: "thought"},
 	}
-	out := backfillLoop().messagesForModel(msgs, "ds-pro", true)
+	out := messagesForModel(msgs, backfillLoop().modelFactsFor(nil, "ds-pro"), true)
 	if &out[0] != &msgs[0] {
 		t.Error("expected the same backing slice when there is nothing to backfill")
 	}
@@ -131,7 +131,7 @@ func TestBackfill_NoCopyWhenNothingToFill(t *testing.T) {
 // TestBackfill_UnknownModelIsSafe covers a model key that does not resolve —
 // the dispatch path must not panic or guess a provider.
 func TestBackfill_UnknownModelIsSafe(t *testing.T) {
-	out := backfillLoop().messagesForModel(mixedHistory(), "no-such-model", true)
+	out := messagesForModel(mixedHistory(), backfillLoop().modelFactsFor(nil, "no-such-model"), true)
 	if out[4].ReasoningContent != "" {
 		t.Errorf("unknown model: expected no backfill, got %q", out[4].ReasoningContent)
 	}

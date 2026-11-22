@@ -66,7 +66,7 @@ func TestNewDispatch_TemperatureInRequest(t *testing.T) {
 			inst := mustNewAgentInstance(t, agentCfg, &cfg.Agents.Defaults, cfg, &mockProvider{})
 
 			turn := catalogTurn(t, cfg, inst)
-			d := turn.newDispatch(nil, 0)
+			d := newTestDispatch(turn)
 
 			turn.messages = []providers.Message{{Role: "user", Content: "hi"}}
 			if _, err := turn.callModel(context.Background(), d); err != nil {
@@ -139,7 +139,7 @@ func TestNewDispatch_AnthropicRequest(t *testing.T) {
 			inst := mustNewAgentInstance(t, agentCfg, &cfg.Agents.Defaults, cfg, &mockProvider{})
 
 			turn := catalogTurn(t, cfg, inst)
-			d := turn.newDispatch(nil, 0)
+			d := newTestDispatch(turn)
 
 			turn.messages = []providers.Message{{Role: "user", Content: "hi"}}
 			if _, err := turn.callModel(context.Background(), d); err != nil {

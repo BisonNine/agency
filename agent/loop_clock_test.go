@@ -21,8 +21,10 @@ import (
 func TestWaitToRetry_OnTheClock(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	fc := clock.NewFake(time.Now())
+	turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
+	turn.spec.clock = fc
 	done := make(chan error, 1)
-	go func() { done <- waitToRetry(context.Background(), fc, errors.New("timed out"), 0) }()
+	go func() { done <- turn.waitToRetry(context.Background(), errors.New("timed out"), 0) }()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := fc.BlockUntil(ctx, 1); err != nil {
@@ -43,7 +45,7 @@ func TestWaitToRetry_OnTheClock(t *testing.T) {
 
 	ended, stop := context.WithCancel(context.Background())
 	stop()
-	if err := waitToRetry(ended, fc, errors.New("timed out"), 0); !errors.Is(err, context.Canceled) {
+	if err := turn.waitToRetry(ended, errors.New("timed out"), 0); !errors.Is(err, context.Canceled) {
 		t.Fatalf("with an ended context = %v, want context.Canceled", err)
 	}
 }

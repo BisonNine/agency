@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
 	"go.bison9.com/agent/spawnllm/common"
@@ -86,7 +87,7 @@ func chainCatalog(t *testing.T, p providers.LLMProvider, parked []providers.Fall
 
 // chainTurn is a turn for alice whose chain holds candidates, in order,
 // answered by p, with the parked ones in cooldown.
-func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) (*llmTurn, *llmDispatch) {
+func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) (*engineTurn, *llmDispatch) {
 	t.Helper()
 	cat := chainCatalog(t, p, parked, candidates...)
 	set := cat.Set("alice")
@@ -97,14 +98,9 @@ func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.Fallbac
 	}
 	chain := set.Begin(models.Chat)
 	al := &AgentLoop{cfg: &config.Config{}, catalog: cat}
-	turn := &llmTurn{
-		al:         al,
-		agent:      &AgentInstance{ID: "alice"},
-		chain:      chain,
-		candidates: chain.Candidates(),
-		model:      candidates[0].Name,
-		messages:   []providers.Message{{Role: "user", Content: "hi"}},
-	}
+	turn := hostTurn(t, al, &AgentInstance{ID: "alice"}, processOptions{},
+		&turnModel{chain: chain, candidates: chain.Candidates(), model: candidates[0].Name},
+		providers.Message{Role: "user", Content: "hi"})
 	d := &llmDispatch{provider: candidates[0].Provider}
 	return turn, d
 }
@@ -384,7 +380,7 @@ func TestRequestModel_ContextWindowRetryOneFinishPerCall(t *testing.T) {
 
 // failSkipAnswer is a turn whose chain fails Opus, skips Bob (in cooldown)
 // and is answered by Alice's model.
-func failSkipAnswer(t *testing.T) (*llmTurn, *llmDispatch) {
+func failSkipAnswer(t *testing.T) (*engineTurn, *llmDispatch) {
 	t.Helper()
 	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
 		if model == candOpus.Model {
@@ -404,9 +400,9 @@ func TestCallModel_ForwardsToTurnNotifier(t *testing.T) {
 		next   providers.FallbackCandidate
 	}
 	var notices []notice
-	turn.notifier = func(passed []providers.FallbackAttempt, next providers.FallbackCandidate) {
-		notices = append(notices, notice{passed: passed, next: next})
-	}
+	turn.hooks.add(hook.Plugin{Name: "test", OnFallback: func(_ context.Context, ev hook.Fallback) {
+		notices = append(notices, notice{passed: fallbackAttempts(ev.Passed), next: fallbackCandidate(ev.Next)})
+	}})
 	t.Cleanup(logger.RedirectForTest(&bytes.Buffer{}))
 	if _, err := turn.requestModel(context.Background(), d); err != nil {
 		t.Fatalf("requestModel: %v", err)

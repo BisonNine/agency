@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/hook"
+
 	"go.bison9.com/agency/commands"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/dump"
@@ -51,7 +53,7 @@ func TestTurnConfigReads_RaceWithReload(t *testing.T) {
 	al := &AgentLoop{cfg: &config.Config{}, dumpsDir: dump.Dir{Path: t.TempDir()}}
 	agent := &AgentInstance{ID: "alice"}
 	al.exposeReasoningCache = map[string]bool{activeModelCacheKey(agent.ID, "s"): false}
-	turn := &llmTurn{al: al, agent: agent, opts: processOptions{SessionKey: "s"}}
+	hooks := al.newTurnHooks(context.Background(), agent, processOptions{SessionKey: "s"}, "")
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Go(func() {
@@ -68,8 +70,8 @@ func TestTurnConfigReads_RaceWithReload(t *testing.T) {
 	})
 	for range 200 {
 		resp := &providers.LLMResponse{Content: "hi"}
-		turn.recordResponse(context.Background(), resp)
-		turn.directAnswer(resp)
+		hooks.emit(context.Background(), hook.ModelCall{Response: resp, Request: &hook.ModelRequest{}})
+		hooks.callAfterModel(context.Background(), &hook.ModelInfo{}, &hook.ModelResponse{Response: resp})
 	}
 	close(stop)
 	wg.Wait()

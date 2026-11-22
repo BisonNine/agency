@@ -174,7 +174,7 @@ func TestDiscovery_TurnSendsSameToolsAndRunsFoundTool(t *testing.T) {
 // and leaves them empty when the result has none.
 func TestToolResultMessage_ToolReferences(t *testing.T) {
 	al := newTestAgentLoop(t).al
-	turn := &llmTurn{al: al, agent: al.registry.Default()}
+	turn := hostTurn(t, al, al.registry.Default(), processOptions{}, nil)
 	tc := providers.ToolCall{ID: "tc-1", Name: "search_tools"}
 
 	res := tools.SilentResult("Found 2 tool(s)")

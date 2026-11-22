@@ -80,7 +80,7 @@ func TestLogPassedLogsProviderMessage(t *testing.T) {
 	restore := logger.RedirectForTest(&buf)
 	defer restore()
 
-	turn := &llmTurn{agent: &AgentInstance{ID: "alice"}}
+	turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
 	turn.logPassed([]providers.FallbackAttempt{
 		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverFormat, Err: fable400()},
 	})
@@ -137,7 +137,7 @@ func TestProviderMessageRedactsSecrets(t *testing.T) {
 			var buf bytes.Buffer
 			restore := logger.RedirectForTest(&buf)
 			defer restore()
-			turn := &llmTurn{agent: &AgentInstance{ID: "alice"}}
+			turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
 			turn.logPassed([]providers.FallbackAttempt{
 				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Err: fe},
 			})
@@ -227,7 +227,7 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		var buf bytes.Buffer
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
-		turn := &llmTurn{agent: &AgentInstance{ID: "alice"}, model: "gpt-4o"}
+		turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, &turnModel{model: "gpt-4o"})
 		if err := turn.dispatchFailed(context.Background(), providerErrorWithKey()); err == nil {
 			t.Fatal("dispatchFailed returned nil")
 		}
@@ -240,7 +240,9 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		defer restore()
 		clk := clock.NewFake(time.Unix(0, 0))
 		done := make(chan error, 1)
-		go func() { done <- waitToRetry(context.Background(), clk, providerErrorWithKey(), 0) }()
+		turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
+		turn.spec.clock = clk
+		go func() { done <- turn.waitToRetry(context.Background(), providerErrorWithKey(), 0) }()
 		if err := clk.BlockUntil(context.Background(), 1); err != nil {
 			t.Fatal(err)
 		}
