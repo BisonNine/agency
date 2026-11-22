@@ -27,5 +27,5 @@ An agent with no tools at all is told so in its instructions, and asks the perso
 | [Human agents](./human-agents.md) | An agent that is a person, answering by hand |
 | [Character cards](./character-cards.md) | Giving an agent a character to play, the card library and the `ccv3` tool |
 | [Classifiers](./classifiers.md) | Sorting email, files or tickets with one model call per item |
-| [Sub-agents](./subagents.md) | `agent_spawn`, the depth limit, temporary agents and clones |
+| [Sub-agents](./subagents.md) | `agent_spawn`, stopping sub-agents (`agent_cancel`, `/cancel all`), the depth limit, temporary agents and clones |
 | [Scheduled jobs](./scheduling.md) | Reminders, recurring jobs, watches and listeners |

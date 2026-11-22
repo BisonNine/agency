@@ -21,7 +21,8 @@ Some commands act on the whole install, not just one agent: `/cooldowns clear` a
 
 | Command | What it does |
 |---|---|
-| `/cancel` | Stops the request the agent is working on and drops the messages queued behind it. Replies, for example, "Cancelled the current request and 2 pending message(s)." or "No pending messages to cancel." |
+| `/cancel` | Stops the reply the agent is working on and drops the messages queued behind it. The agent's background tasks (sub-agents, task-model calls, shell jobs) keep running, a sub-agent the reply was waiting on included: its result arrives later. One reply says what happened, for example "Alice: stopped. 2 background tasks are still running — /cancel all stops them too." or "No pending messages to cancel." |
+| `/cancel all` | Does what `/cancel` does and also stops every background task of the agent, and the tasks they started. Reply, for example: "Alice: stopped, and cancelled 2 background tasks." |
 | `/clear` | Starts the conversation afresh and cancels messages waiting behind it. Long-term memory and the archive are kept. Reply: "Context cleared, but long-term memory preserved." Alias: `/reset`. |
 | `/compact` | Summarizes the conversation now, and replies with what was tried and the result. When there is nothing to summarize: "Already compact — nothing to summarize." |
 | `/retry` | Clears every model pause ([cooldowns](../providers/concepts.md#cooldowns)) and sends your last message again. |

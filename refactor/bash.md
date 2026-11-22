@@ -1,6 +1,6 @@
 # Background shell: design for a later phase
 
-Status: **implemented** (SDK `toolbox/shell`; host mount in `tools/shell`), except the task-list integration in rule 4.2, which waits for refactoring phase 5b. Written with
+Status: **implemented** (SDK `toolbox/shell`; host mount in `tools/shell`), including the cancel rules of 4.2 (phase 5b: `/cancel` counts jobs, `/cancel all` stops them). Written with
 `refactor.md` in the repository root (its section 4.11 points here). It is self-contained:
 a worker can build from this file without the conversation behind it.
 Verified against ClawEh 0.6.5.

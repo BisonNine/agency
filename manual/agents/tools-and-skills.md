@@ -72,6 +72,7 @@ The `shell_exec` box under **Internal tools** lets the agent run commands on thi
 - Shell commands run with the full access of the account ClawEh runs as. They are **not** confined to the agent's folder or its allowed folders, even when file tools are, and **Restrict to workspace** does not apply to them. The deny patterns still block dangerous commands.
 - `working_dir` may be any existing folder; the default is where the agent's previous command ended, else its workspace.
 - `shell_ctrl` comes with `shell_exec`: it manages the commands the agent runs in the background. Add it to **Denied tools** to withhold it. See [Shell commands and jobs](./shell.md).
+- `agent_cancel` comes with `agent_spawn`: the agent cancels its own sub-agents with it. Add it to **Denied tools** to withhold it. See [Sub-agents](./subagents.md#stopping-sub-agents).
 - If `shell_exec` is also in **Denied tools**, its row shows "Ignored: blocked by Denied tools." and the agent cannot run commands.
 - An agent allowed to message or spawn another agent that has shell commands can have that agent run them. **Check Up** lists both under **Shell access**.
 

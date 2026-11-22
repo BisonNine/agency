@@ -53,7 +53,7 @@ Also in **Context management**:
 | `/clear` (or `/reset`) | Starts the conversation afresh and cancels messages waiting behind it. Reply: "Context cleared, but long-term memory preserved." The archive is kept. |
 | `/compact` | Summarizes the conversation now and replies with what happened. |
 | `/memory` | Shows the agent's memory status: domains, pending messages, last consolidation. |
-| `/cancel` | Stops the request in progress and drops the messages queued behind it. |
+| `/cancel` | Stops the reply in progress and drops the messages queued behind it; `/cancel all` also stops the agent's background tasks. |
 
 Because there is one conversation per agent, `/clear` from any chat clears it for every chat that talks to that agent.
 

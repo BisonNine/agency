@@ -64,7 +64,7 @@ BEARER_URL="${SERVER_URL}${BEARER_ENDPOINT}"
 # Note: search_tools and get_tool_details are omitted here because they only register
 # when tools.discovery.enabled=true, which the test config does not set.
 # Every tool the test config exposes that is guaranteed to register (no live
-# model required). agent_spawn/agent_status/agent_list/agent_message (subagent capability) are
+# model required). agent_spawn/agent_status/agent_list/agent_message/agent_cancel (subagent capability) are
 # also exposed but only probed when actually present in the catalogue, so this
 # script stays portable.
 EXPECTED_TOOLS="file_read_bytes file_read_lines file_count file_view_image file_write file_edit file_edit_lines file_edit_bytes file_insert_lines file_insert_bytes file_delete_lines file_delete_bytes file_append file_list file_glob file_search_lines file_search_bytes file_copy file_delete file_move file_mkdir file_rmdir web_fetch web_search msg_send msg_send_file session_messages session_search session_compact session_info session_summary_list session_summary_get session_clear shell_exec shell_ctrl skill_find skill_install cron_schedule cogmem_domain_get cogmem_memory_search cogmem_domain_list cogmem_explain cogmem_memory_create cogmem_memory_attach cogmem_domain_update cogmem_memory_retire cogmem_domain_create cogmem_domain_archive cogmem_domain_migrate cogmem_memory_forget cogmem_consolidate cogmem_status cogmem_export common_list common_get common_put common_delete time_now"
@@ -819,6 +819,21 @@ else
             "agent_spawn" '{"kind":"text","task":"probe","mode":"wait"}' "is not allowed to use task models for text"
     else
         echo "  4b.9 agent_spawn not registered on this host (skipped)"
+    fi
+
+    # agent_cancel comes with agent_spawn: a task the agent does not own (here
+    # none at all) is reported unknown, not an error; a call naming nothing
+    # is refused.
+    if echo "$LIST_OUT" | grep -qw "agent_cancel"; then
+        run_test_ok_auth "4b.10 agent_cancel — unknown task" \
+            "agent_cancel" '{"uuid":"no-such-task"}' '"unknown":["no-such-task"]'
+        run_test_err_msg_auth "4b.11 agent_cancel — uuid or all required" \
+            "agent_cancel" '{}' "uuid or all is required"
+    elif echo "$LIST_OUT" | grep -qw "agent_spawn"; then
+        echo "  4b.10 ${RED}FAIL${NC}: agent_spawn is listed without agent_cancel"
+        TIER2_FAIL=$((TIER2_FAIL + 1))
+    else
+        echo "  4b.10 agent_cancel not registered on this host (skipped)"
     fi
 
     #---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ Sub-agents are useful for self-contained work (research, a long file review) or 
 
 ## Allow an agent to spawn
 
-1. Tick `agent_spawn` under **Internal tools** on the agent's card. Tick `agent_status` and `agent_list` too if the agent should check on its background tasks.
+1. Tick `agent_spawn` under **Internal tools** on the agent's card. Tick `agent_status` and `agent_list` too if the agent should check on its background tasks. `agent_cancel` comes with `agent_spawn` (it is not a box of its own); add it to the agent's **Denied tools** (`deny_tools`) to withhold it.
 2. To let Alice spawn a copy of **another** agent, tick that agent under **May message** on her card (`subagents.allow_agents`; see [Messages between agents](./messaging.md#who-may-message-whom)). An agent may always spawn copies of itself once it has the tool.
 
 ## How the agent uses it
@@ -35,7 +35,15 @@ The `agent_spawn` tool takes:
 | `model` | One of the copied agent's sub-agent models to run instead of the first one. |
 | `character_card` | A [character card](./character-cards.md) the sub-agent runs as, instead of the copied agent's own. The card must exist. |
 
-In `callback` mode the result is written to the agent's `tasks/` folder and the agent is told where; `agent_status` and `agent_list` show progress.
+In `callback` mode the result is written to the agent's `tasks/` folder and the agent is told where; `agent_status` and `agent_list` show progress. A task's status is `running`, `done`, `error` or `cancelled`.
+
+## Stopping sub-agents
+
+- `/cancel` stops only the reply the agent is working on. Its sub-agents keep running, including one the reply was waiting on in `wait` mode: that one finishes and its result reaches the agent later, as a background result, like a `callback` task's. The reply to `/cancel` says how many background tasks are still running.
+- `/cancel all` also stops every running task of the agent, and the tasks they started.
+- The agent cancels its own tasks with `agent_cancel`: `{"uuid": "<task id>"}` for one, `{"all": true}` for all. The tasks each one started are cancelled with it. It answers how many were cancelled and which had already finished; another agent's task is unknown to it, as with `agent_status`.
+
+A cancelled task's status is `cancelled` and it sends no result. What it had written so far stays in its results file, marked incomplete. It is not started again after a restart. [Task model](../providers/task-models.md) calls made with `agent_spawn` are tasks too and stop the same way. Shell jobs are not sub-agents: `agent_cancel` never stops them; `/cancel all` does (see [Shell commands and jobs](./shell.md)). [Maestro](../maestro.md) runs are left alone by both commands.
 
 [Maestro](../maestro.md) tasks also run as sub-agents of the agent that dispatches them.
 

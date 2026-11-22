@@ -1696,7 +1696,15 @@ next session must know.
     `SameAgentID("!!!","main")` would turn false); the host keeps its
     session queue through 5b; task registration is designed in 5b; tool
     output is not redacted before storage.
-- [ ] Phase 5b: cancellation
+- [x] Phase 5b: cancellation (branch `phase5b`). Task contexts and the
+      process task registry are host-side (`tools/agents/registry.go`); the
+      engine hands its turn handle to `engineSpec.onHandle`, abandons tools
+      after the cancel grace, and `/cancel` stops a turn through the handle.
+      `wait` tasks detach; one reply per cancel; `agent_cancel` (implied by
+      `agent_spawn`; the capabilities golden changed once, for it) and
+      `/cancel all`; device runs kept by id. Maestro dispatch verified and
+      left alone (0.8). The SDK `hook` addition for "how a tool registers a
+      task" is proposed in the phase report, not made.
 - [ ] Phase 5c: engine moved, root package, conformance suite
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
