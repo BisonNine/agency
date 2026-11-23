@@ -399,11 +399,12 @@ func TestShutdownIsNotAFailure(t *testing.T) {
 		def := definition()
 		def["limits"] = map[string]any{"parallel": 2, "stop_after_failures": 1}
 		e.create(def)
-		// m1's audit row is written after handleItem's interruption check,
-		// so once it is recorded m1 counts as a failure whatever the
-		// context does next; m2 (in flight, parallel 2) waits for it and
-		// then stops the service.
-		m1Failed := make(chan struct{})
+		// m1 fails only once m2 is in flight (parallel 2): a failure before
+		// m2 starts would stop the run before it ever took m2. m1's audit
+		// row is written after handleItem's interruption check, so once it
+		// is recorded m1 counts as a failure whatever the context does
+		// next; m2 waits for it and then stops the service.
+		m2Started, m1Failed := make(chan struct{}), make(chan struct{})
 		e.svc.host.Auditor = auditFunc(func(ev AuditEvent) {
 			if ev.ItemID == "m1" && ev.Outcome == OutcomeFailed {
 				close(m1Failed)
@@ -412,8 +413,10 @@ func TestShutdownIsNotAFailure(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		e.tools.set("mail_read", func(args map[string]any) (string, error) {
 			if args["id"] == "m1" {
+				<-m2Started
 				return "", errors.New("403 Forbidden")
 			}
+			close(m2Started)
 			<-m1Failed
 			cancel()
 			return "", context.Canceled
