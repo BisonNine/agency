@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/server"
-
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/mcpserver/acl"
@@ -50,9 +48,7 @@ func TestHost_ServesRealMaestroSuiteInFull(t *testing.T) {
 	st, tok := seedSessionToken("alice")
 	resolver := resolverFor(regs)
 
-	srv := server.NewMCPServer("t", "0")
-	addToolsToServer(srv, bearerAuthMode, regs, []string{"*"}, st, resolver, nil, acl.Default, nil, nil, nil)
-	listed := srv.ListTools()
+	listed := listTools(t, hostFor(t, regs, st), DefaultEndpointPath, tok)
 	n := 0
 	for name := range listed {
 		if strings.HasPrefix(name, "maestro_") {

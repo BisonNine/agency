@@ -6,7 +6,6 @@
 package mcpserver
 
 import (
-	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -37,7 +36,7 @@ func TestToolsList_PublishesForumConfigSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := json.Marshal(srv.srv.HandleMessage(context.Background(), body))
+	raw, err := postBody(srv, InternalEndpointPath, "", body)
 	if err != nil {
 		t.Fatal(err)
 	}

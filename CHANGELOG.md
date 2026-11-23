@@ -148,6 +148,9 @@
 
 ### Fixed
 
+- **An MCP client now sees its own agent's tools.** On the `/mcp` endpoint,
+  a tool two agents both have could be described with the other agent's
+  description; each client now sees its own agent's tool.
 - **Messages written while the service was stopping or restarting are no
   longer lost.** An interrupted reply, a tool result or a message queued at
   that moment could overwrite another in the conversation history, so one of

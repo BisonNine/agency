@@ -11,11 +11,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/server"
 	"go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/toolkit"
 
-	"go.bison9.com/agency/mcpserver/acl"
 	"go.bison9.com/agency/tools"
 )
 
@@ -29,11 +27,8 @@ func TestHost_DiscoveryListingUnchanged(t *testing.T) {
 		"alice": discoveryListingRegistry([]string{"mcp_alpha_read", "mcp_alpha_write", "fusion_svc_list"}, []string{"time_now"}),
 		"bob":   discoveryListingRegistry([]string{"mcp_bob_fetch"}, []string{"file_read"}),
 	}
-	srv := server.NewMCPServer("t", "0")
 	st, _ := seedSessionToken("alice")
-	addToolsToServer(srv, bearerAuthMode, regs, []string{"*"}, st, resolverFor(regs), nil, acl.Default, nil, nil, nil)
-
-	listed := srv.ListTools()
+	listed := listTools(t, hostFor(t, regs, st), InternalEndpointPath, "")
 	names := make([]string, 0, len(listed))
 	for n := range listed {
 		names = append(names, n)

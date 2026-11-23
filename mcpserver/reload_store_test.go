@@ -29,7 +29,7 @@ func callTool(t *testing.T, srv *MCPServer, tool, token string) (string, bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := json.Marshal(srv.srv.HandleMessage(context.Background(), body))
+	raw, err := postBody(srv, InternalEndpointPath, "", body)
 	if err != nil {
 		t.Fatal(err)
 	}

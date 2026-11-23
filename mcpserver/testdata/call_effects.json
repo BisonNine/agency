@@ -1,0 +1,91 @@
+{
+  "responses": [
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"saved AGT[REDACTED]\"}]}}\n",
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"saved AGT[REDACTED]\"}]}}\n",
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"started in the background\"}]}}\n",
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Permission denied: the tool \\\"denied_tool\\\" is not enabled for this agent. This is a configured access restriction, not a bug or an outage. Do not retry this call, and do not attempt to work around it by other means. If this tool is needed, tell the user it must be enabled for this agent.\"}],\"isError\":true}}\n",
+    "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"invalid or missing session_token; supply your assigned token (format: SST\\u003c64 hex\\u003e)\"}],\"isError\":true}}\n"
+  ],
+  "outbound": [
+    {
+      "channel": "telegram",
+      "chat_id": "chat-1",
+      "content": "tool write_note for alice"
+    },
+    {
+      "channel": "telegram",
+      "chat_id": "chat-1",
+      "content": "Note saved"
+    },
+    {
+      "channel": "telegram",
+      "chat_id": "chat-1",
+      "content": "tool write_note for alice"
+    },
+    {
+      "channel": "telegram",
+      "chat_id": "chat-1",
+      "content": "Note saved"
+    },
+    {
+      "channel": "telegram",
+      "chat_id": "chat-1",
+      "content": "tool bg_tool for alice"
+    },
+    {
+      "channel": "telegram",
+      "chat_id": "chat-1",
+      "content": "background for the user"
+    }
+  ],
+  "inbound": [
+    {
+      "channel": "system",
+      "sender_id": "async:bg_tool",
+      "sender": {},
+      "chat_id": "chat-1",
+      "content": "background done",
+      "peer": {
+        "kind": "",
+        "id": ""
+      },
+      "session_key": "agent:alice:main",
+      "metadata": {
+        "origin_channel": "telegram",
+        "preresolved_agent_id": "alice",
+        "spawn_depth": "1"
+      },
+      "internal": true
+    }
+  ],
+  "audit": null,
+  "tally": [
+    4,
+    1,
+    "denied_tool: Permission denied: the tool \"denied_tool\" is not enabled for this agent. This is a configured access restriction, not a bug or an outage. Do not retry this call, and do not attempt to work around it by other means. If this tool is needed, tell the user it must be enabled for this agent."
+  ],
+  "logs": [
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"session token issued\",\"session\":\"agent:alice:main\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"Agent registry bound\",\"tools\":3,\"workspace\":\"/ws/alice\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP session token verified\",\"session\":\"agent:alice:main\",\"tool\":\"write_note\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP tool authorized\",\"tool\":\"write_note\",\"workspace\":\"/ws/alice\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP call from agent\",\"workspace\":\"/ws/alice\"}",
+    "{\"level\":\"info\",\"message\":\"Tool execution started\",\"tool\":\"write_note\"}",
+    "{\"duration_ms\":0,\"level\":\"info\",\"message\":\"Tool execution completed\",\"result_length\":73,\"tool\":\"write_note\"}",
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":10,\"level\":\"info\",\"message\":\"mcp.foruser.delivered\",\"session_key\":\"agent:alice:main\",\"tool\":\"write_note\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP session token verified\",\"session\":\"agent:alice:main\",\"tool\":\"write_note\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP tool authorized\",\"tool\":\"write_note\",\"workspace\":\"/ws/alice\"}",
+    "{\"level\":\"info\",\"message\":\"Tool execution started\",\"tool\":\"write_note\"}",
+    "{\"duration_ms\":0,\"level\":\"info\",\"message\":\"Tool execution completed\",\"result_length\":73,\"tool\":\"write_note\"}",
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":10,\"level\":\"info\",\"message\":\"mcp.foruser.delivered\",\"session_key\":\"agent:alice:main\",\"tool\":\"write_note\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP session token verified\",\"session\":\"agent:alice:main\",\"tool\":\"bg_tool\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP tool authorized\",\"tool\":\"bg_tool\",\"workspace\":\"/ws/alice\"}",
+    "{\"level\":\"info\",\"message\":\"Tool execution started\",\"tool\":\"bg_tool\"}",
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":23,\"level\":\"info\",\"message\":\"mcp.foruser.delivered\",\"session_key\":\"agent:alice:main\",\"tool\":\"bg_tool\"}",
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":15,\"level\":\"info\",\"message\":\"mcp.async.reinject\",\"session_key\":\"agent:alice:main\",\"tool\":\"bg_tool\"}",
+    "{\"duration_ms\":0,\"level\":\"info\",\"message\":\"Tool execution completed\",\"result_length\":25,\"tool\":\"bg_tool\"}",
+    "{\"agent\":\"alice\",\"level\":\"info\",\"message\":\"MCP session token verified\",\"session\":\"agent:alice:main\",\"tool\":\"denied_tool\"}",
+    "{\"agent\":\"alice\",\"level\":\"warn\",\"message\":\"MCP tool denied\",\"reason\":\"acl_denied\",\"tool\":\"denied_tool\"}",
+    "{\"level\":\"warn\",\"message\":\"MCP session token verification failed\",\"reason\":\"invalid_token\",\"token_len\":67,\"tool\":\"write_note\"}"
+  ]
+}
