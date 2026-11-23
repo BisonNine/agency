@@ -3,8 +3,9 @@
 
 package agent
 
-// This file is part of the turn engine (the engine_*.go files); see
-// engine_turn.go.
+// The host applies this cap to the tool results it delivers itself (system
+// messages, host-run tools). It is the same cap the SDK engine
+// (go.bison9.com/agent/loop) applies to the tool results it stores.
 
 import (
 	"fmt"

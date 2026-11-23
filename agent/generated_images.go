@@ -221,3 +221,16 @@ func imageExtension(img providers.GeneratedImage) string {
 	}
 	return ".bin"
 }
+
+// withImageNotes is content followed by lines, one per line, after a blank
+// line.
+func withImageNotes(content string, lines []string) string {
+	if len(lines) == 0 {
+		return content
+	}
+	joined := strings.Join(lines, "\n")
+	if content == "" {
+		return joined
+	}
+	return content + "\n\n" + joined
+}

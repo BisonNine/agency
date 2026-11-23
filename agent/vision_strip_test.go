@@ -1,86 +1,171 @@
 package agent
 
 import (
+	"context"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
+	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
 )
 
-// visionStripLoop builds a minimal AgentLoop whose config knows a vision model,
-// a Responses vision model, an explicitly-off model, and a model with no vision
-// flag (which must be treated as off).
-func visionStripLoop() *AgentLoop {
-	return &AgentLoop{cfg: &config.Config{
-		Models: []config.ModelConfig{
-			{ModelName: "gpt5", Enabled: true, Vision: config.VisionUserMessage},
-			{ModelName: "gpt5-resp", Enabled: true, Vision: config.VisionToolResponse},
-			{ModelName: "deepseek", Enabled: true, Vision: config.VisionOff},
-			{ModelName: "noflag", Enabled: true},
-		},
-	}}
+// modelRequest is one request a model was sent.
+type modelRequest struct {
+	model    string
+	messages []providers.Message
+	tools    int
 }
 
-func msgsWithImage() []providers.Message {
+// requestRecorder records every request and answers it with a plain reply,
+// or with fail's error for the wire model.
+type requestRecorder struct {
+	mu       sync.Mutex
+	requests []modelRequest
+	fail     map[string]error
+}
+
+func (p *requestRecorder) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, tools []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.requests = append(p.requests, modelRequest{model: model, messages: slices.Clone(messages), tools: len(tools)})
+	if err := p.fail[model]; err != nil {
+		return nil, err
+	}
+	return &providers.LLMResponse{Content: "ok", FinishReason: "stop", Normal: true}, nil
+}
+
+func (*requestRecorder) GetDefaultModel() string { return "test-model" }
+
+// storedHistoryTurn runs one whole turn ("look") of the default agent of a
+// loop whose chain is mcs, in order (each model's wire name is its name), on
+// the test provider plus extra, with history already in its session. A model
+// configured with no_tools is offered none; fail makes a wire model answer
+// with an error.
+// It returns the requests the models were sent and the stored history after
+// the turn.
+func storedHistoryTurn(t *testing.T, extra []config.Provider, mcs []config.ModelConfig, history []providers.Message, fail map[string]error) ([]modelRequest, []providers.Message) {
+	t.Helper()
+	cfg := newTestConfig(t)
+	cfg.Providers = append(cfg.Providers, extra...)
+	names := make([]string, 0, len(mcs))
+	noTools := map[string]bool{}
+	for _, mc := range mcs {
+		noTools[mc.ModelName] = mc.NoTools
+		if mc.Provider == "" {
+			mc.Provider = testProviderName
+		}
+		mc.Model, mc.Enabled = mc.ModelName, true
+		cfg.Models = append(cfg.Models, mc)
+		names = append(names, mc.ModelName)
+	}
+	cfg.Agents.Defaults.Models = names
+	cfg.Agents.List[0].Tools = []string{"*"}
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
+	agent := al.registry.Default()
+	if agent == nil {
+		t.Fatal("no default agent")
+	}
+	p := &requestRecorder{fail: fail}
+	setTestProvider(agent, p)
+	key := "agent:" + agent.ID + ":main"
+	for _, m := range history {
+		if _, err := agent.Sessions.AddFullMessage(key, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opts := processOptions{SessionKey: key, UserMessage: "look"}
+	if _, _, err := testTurn(t, al, agent, opts, al.selectTurnModel(agent, key), nil); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.requests) == 0 {
+		t.Fatal("no model was called")
+	}
+	for i, r := range p.requests {
+		if (r.tools == 0) != noTools[r.model] {
+			t.Fatalf("request %d offered %d tools, want tools offered: %v", i+1, r.tools, !noTools[r.model])
+		}
+	}
+	return p.requests, agent.Sessions.GetHistory(key)
+}
+
+// imageToolResult is the tool result carrying an image in historyWithImage.
+const imageToolResult = "[Image: image/png]"
+
+// historyWithImage is a session whose tool result carries an image.
+func historyWithImage() []providers.Message {
 	return []providers.Message{
 		{Role: "user", Content: "check tracking"},
-		{Role: "tool", Content: "[Image: image/png]", Media: []string{"data:image/png;base64,AAA"}},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{toolCallTo("t1", "echo_tool")}},
+		{Role: "tool", ToolCallID: "t1", Content: imageToolResult, Media: []string{"data:image/png;base64,AAA"}},
+		{Role: "assistant", Content: "here it is"},
 	}
+}
+
+// messageWith is the message of msgs whose content starts with prefix.
+func messageWith(t *testing.T, msgs []providers.Message, prefix string) providers.Message {
+	t.Helper()
+	for _, m := range msgs {
+		if strings.HasPrefix(m.Content, prefix) {
+			return m
+		}
+	}
+	t.Fatalf("no message starts with %q in %+v", prefix, msgs)
+	return providers.Message{}
 }
 
 // A vision-capable model must receive the image untouched.
 func TestMessagesForModel_VisionModelKeepsImages(t *testing.T) {
-	al := visionStripLoop()
-	for _, model := range []string{"gpt5", "gpt5-resp"} {
-		out := messagesForModelNamed(al, msgsWithImage(), model, false)
-		if len(out[1].Media) != 1 {
-			t.Errorf("%s: expected image kept, got Media=%v", model, out[1].Media)
+	for _, vision := range []string{config.VisionUserMessage, config.VisionToolResponse} {
+		requests, _ := storedHistoryTurn(t, nil, []config.ModelConfig{{ModelName: "gpt5", Vision: vision}}, historyWithImage(), nil)
+		if got := messageWith(t, requests[0].messages, imageToolResult); len(got.Media) != 1 || got.Content != imageToolResult {
+			t.Errorf("%s: expected the image kept untouched, got %q, Media=%v", vision, got.Content, got.Media)
 		}
 	}
 }
 
-// A non-vision model (off, unset, or unknown) must not receive image parts —
-// this is the fix for OpenRouter 404ing the whole request on a non-vision
-// default like deepseek. The persisted history must be left intact.
+// A non-vision model (off or unset) must not receive image parts — this is
+// the fix for OpenRouter 404ing the whole request on a non-vision default
+// like deepseek. The persisted history must be left intact.
 func TestMessagesForModel_NonVisionStripsImagesWithoutMutating(t *testing.T) {
-	al := visionStripLoop()
-	for _, model := range []string{"deepseek", "noflag", "unknown-model"} {
-		msgs := msgsWithImage()
-		out := messagesForModelNamed(al, msgs, model, false)
-
-		if out[1].Media != nil {
-			t.Errorf("%s: expected images stripped, got Media=%v", model, out[1].Media)
+	for _, vision := range []string{config.VisionOff, ""} {
+		requests, stored := storedHistoryTurn(t, nil, []config.ModelConfig{{ModelName: "deepseek", Vision: vision}}, historyWithImage(), nil)
+		got := messageWith(t, requests[0].messages, imageToolResult)
+		if got.Media != nil {
+			t.Errorf("%q: expected images stripped, got Media=%v", vision, got.Media)
 		}
 		// Text (incl. the [Image: …] marker) is preserved and a hidden-attachment
 		// note is appended so the model knows something was stripped.
-		if !strings.HasPrefix(out[1].Content, "[Image: image/png]") {
-			t.Errorf("%s: text should be preserved, got %q", model, out[1].Content)
+		if !strings.Contains(got.Content, "1 attachment(s) on this message are hidden") {
+			t.Errorf("%q: expected hidden-attachment note, got %q", vision, got.Content)
 		}
-		if !strings.Contains(out[1].Content, "1 attachment(s) on this message are hidden") {
-			t.Errorf("%s: expected hidden-attachment note, got %q", model, out[1].Content)
-		}
-		// The caller's history must not be mutated: a later vision turn still sees it.
-		if len(msgs[1].Media) != 1 {
-			t.Errorf("%s: original history mutated, Media=%v", model, msgs[1].Media)
+		// The stored history must not be mutated: a later vision turn still sees it.
+		if m := messageWith(t, stored, imageToolResult); len(m.Media) != 1 || m.Content != imageToolResult {
+			t.Errorf("%q: stored history mutated: %q, Media=%v", vision, m.Content, m.Media)
 		}
 	}
 }
 
-// When there are no images, the input slice is returned as-is (no allocation),
-// even for a non-vision model.
-func TestMessagesForModel_NoImagesReturnsSameSlice(t *testing.T) {
-	al := visionStripLoop()
-	msgs := []providers.Message{{Role: "user", Content: "no images here"}}
-	out := messagesForModelNamed(al, msgs, "deepseek", false)
-	if &out[0] != &msgs[0] {
-		t.Error("expected the same backing slice when there are no images to strip")
+// When there are no images, a non-vision model's request carries the
+// history unchanged.
+func TestMessagesForModel_NoImagesLeavesRequestUnchanged(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "no images here"},
+		{Role: "assistant", Content: "noted"},
 	}
-}
-
-// messagesForModelNamed is messagesForModel for the configured model named
-// model, with the facts al's configuration gives it.
-func messagesForModelNamed(al *AgentLoop, messages []providers.Message, model string, hasTools bool) []providers.Message {
-	c := al.modelFacts(nil, model)
-	return messagesForModel(messages, c.Limits.Vision, c.ProviderSpec.RequireReasoningContent, hasTools)
+	requests, _ := storedHistoryTurn(t, nil, []config.ModelConfig{{ModelName: "deepseek", Vision: config.VisionOff}}, history, nil)
+	for _, want := range history {
+		if got := messageWith(t, requests[0].messages, want.Content); got.Role != want.Role || got.Content != want.Content || got.Media != nil {
+			t.Errorf("request carries %s %q, want %s %q unchanged", got.Role, got.Content, want.Role, want.Content)
+		}
+	}
+	for _, m := range requests[0].messages {
+		if strings.Contains(m.Content, "are hidden") {
+			t.Errorf("request carries a hidden-attachment note: %q", m.Content)
+		}
+	}
 }

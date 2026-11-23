@@ -15,29 +15,19 @@ import (
 	"go.bison9.com/agency/providers"
 )
 
-func TestLowStepsNote(t *testing.T) {
-	const lastStep = "[System notice] This is your last step in this turn. Do not call tools; reply now with your findings and next steps."
-	tests := []struct {
-		name          string
-		iteration     int
-		maxIterations int
-		want          string
-	}{
-		{name: "five remaining", iteration: 6, maxIterations: 10, want: ""},
-		{name: "four remaining", iteration: 7, maxIterations: 10, want: "[System notice] You have 3 tool steps left in this turn. Save any work in progress and give your reply with your findings and next steps before they run out."},
-		{name: "three remaining", iteration: 8, maxIterations: 10, want: "[System notice] You have 2 tool steps left in this turn. Save any work in progress and give your reply with your findings and next steps before they run out."},
-		{name: "two remaining", iteration: 9, maxIterations: 10, want: "[System notice] You have 1 tool step left in this turn. Save any work in progress and give your reply with your findings and next steps before it runs out."},
-		{name: "one remaining", iteration: 10, maxIterations: 10, want: lastStep},
-		{name: "small cap warns on the first iteration", iteration: 1, maxIterations: 1, want: lastStep},
-		{name: "past the cap", iteration: 11, maxIterations: 10, want: ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := lowStepsNote(tt.iteration, tt.maxIterations); got != tt.want {
-				t.Errorf("lowStepsNote(%d, %d) = %q, want %q", tt.iteration, tt.maxIterations, got, tt.want)
-			}
-		})
-	}
+// lastStepNote is the note on a turn's last step.
+const lastStepNote = "[System notice] This is your last step in this turn. Do not call tools; reply now with your findings and next steps."
+
+// sixStepNotes are the notes the requests of a six-step turn carry, one per
+// step ("" for none): nothing while five or more steps remain, then the
+// steps left after the current one, then the last-step note.
+var sixStepNotes = []string{
+	"",
+	"",
+	"[System notice] You have 3 tool steps left in this turn. Save any work in progress and give your reply with your findings and next steps before they run out.",
+	"[System notice] You have 2 tool steps left in this turn. Save any work in progress and give your reply with your findings and next steps before they run out.",
+	"[System notice] You have 1 tool step left in this turn. Save any work in progress and give your reply with your findings and next steps before it runs out.",
+	lastStepNote,
 }
 
 // optsChatFunc is a scripted model that also sees the request options.
@@ -60,13 +50,13 @@ type lowStepsRequest struct {
 	options  map[string]any
 }
 
-// lowStepsTurn runs a six-step turn in which the model calls a tool on every
+// lowStepsTurn runs a turn of steps steps in which the model calls a tool on every
 // step, and returns each request the model was sent (messages and options)
 // and the stored history.
 // fallback routes the turn through the fallback chain (chatCandidate) rather
 // than straight to the provider; cli makes the model a CLI provider; noTools
 // offers the model no tools.
-func lowStepsTurn(t *testing.T, fallback, cli, noTools bool) ([]lowStepsRequest, []providers.Message) {
+func lowStepsTurn(t *testing.T, steps int, fallback, cli, noTools bool) ([]lowStepsRequest, []providers.Message) {
 	t.Helper()
 	al := newTestAgentLoop(t).al
 	agentInstance := al.registry.Default()
@@ -77,7 +67,7 @@ func lowStepsTurn(t *testing.T, fallback, cli, noTools bool) ([]lowStepsRequest,
 	if agentInstance.Config != nil {
 		agentInstance.Config.Tools = []string{"*"}
 	}
-	agentInstance.MaxIterations = 6
+	agentInstance.MaxIterations = steps
 	agentInstance.NoTools = noTools
 	// The limits are the agent's own, set above, whatever model serves.
 	agentInstance.modelLimits = nil
@@ -128,8 +118,8 @@ func lowStepsTurn(t *testing.T, fallback, cli, noTools bool) ([]lowStepsRequest,
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(requests) != 6 {
-		t.Fatalf("model called %d times, want 6", len(requests))
+	if len(requests) != steps {
+		t.Fatalf("model called %d times, want %d", len(requests), steps)
 	}
 	return requests, agentInstance.Sessions.GetHistory(opts.SessionKey)
 }
@@ -158,10 +148,10 @@ func TestRunLLMIteration_LowStepsNotePerRequest(t *testing.T) {
 		{name: "fallback chain", fallback: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			requests, history := lowStepsTurn(t, tc.fallback, false, false)
+			requests, history := lowStepsTurn(t, 6, tc.fallback, false, false)
 			for i, r := range requests {
 				req := r.messages
-				want := lowStepsNote(i+1, 6)
+				want := sixStepNotes[i]
 				notes := lowStepsNotes(req)
 				switch {
 				case want == "" && len(notes) != 0:
@@ -191,6 +181,19 @@ func TestRunLLMIteration_LowStepsNotePerRequest(t *testing.T) {
 	}
 }
 
+// TestRunLLMIteration_LowStepsNoteSingleStep checks that a turn of one step
+// carries the last-step note on its first and only request.
+func TestRunLLMIteration_LowStepsNoteSingleStep(t *testing.T) {
+	requests, _ := lowStepsTurn(t, 1, false, false, false)
+	req := requests[0].messages
+	if notes := lowStepsNotes(req); len(notes) != 1 || notes[0] != lastStepNote {
+		t.Fatalf("request carries notes %q, want exactly %q", notes, lastStepNote)
+	}
+	if last := req[len(req)-1]; last.Role != "user" || last.Content != lastStepNote {
+		t.Fatalf("request ends with %s %q, want the note as a trailing user message", last.Role, last.Content)
+	}
+}
+
 // TestRunLLMIteration_LowStepsNoteSkipped checks that no request carries the
 // note when the model is offered no tools or runs on a CLI provider, on the
 // direct path and through the fallback chain.
@@ -207,7 +210,7 @@ func TestRunLLMIteration_LowStepsNoteSkipped(t *testing.T) {
 		{name: "CLI provider, fallback chain", fallback: true, cli: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			requests, _ := lowStepsTurn(t, tc.fallback, tc.cli, tc.noTools)
+			requests, _ := lowStepsTurn(t, 6, tc.fallback, tc.cli, tc.noTools)
 			for i, r := range requests {
 				if notes := lowStepsNotes(r.messages); len(notes) != 0 {
 					t.Errorf("request %d carries notes %q, want none", i+1, notes)
@@ -232,7 +235,7 @@ func TestRunLLMIteration_LastStepForbidsTools(t *testing.T) {
 		{name: "fallback chain", fallback: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			requests, _ := lowStepsTurn(t, tc.fallback, false, false)
+			requests, _ := lowStepsTurn(t, 6, tc.fallback, false, false)
 			last := len(requests) - 1
 			for i, r := range requests {
 				choice, set := r.options[providers.ToolChoiceOption]

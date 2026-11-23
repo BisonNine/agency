@@ -31,9 +31,10 @@ import (
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
-// This file is the host side of the turn engine (engine_*.go): today's turn
-// behaviour expressed as the engine's callbacks and event consumers, all
-// registered in turnHooksFor, in the one order the turn relies on.
+// This file is the host side of the SDK's turn engine
+// (go.bison9.com/agent/loop): today's turn behaviour expressed as the
+// engine's callbacks and event consumers, all registered in turnPlugins, in
+// the one order the turn relies on.
 
 // turnState is what a turn's consumers keep between events.
 type turnState struct {

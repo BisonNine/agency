@@ -49,6 +49,11 @@ func TestEmptyResponse_PokeRecovers(t *testing.T) {
 	}
 }
 
+// maxEmptyRetries is the engine's poke limit: how many times the SDK engine
+// (go.bison9.com/agent/loop) re-asks a model that answered with reasoning
+// and no reply before it gives up. It must equal the SDK's constant.
+const maxEmptyRetries = 2
+
 // When the model keeps returning empty-with-reasoning past the retry cap, the
 // turn is flagged degenerate (so the caller sends a fallback) with empty content.
 func TestEmptyResponse_DegenerateAfterRetries(t *testing.T) {

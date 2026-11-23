@@ -10,46 +10,96 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
+	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
 
-// The "Full LLM request" line renders the request's messages and tools the
-// same way whether the host-wide no-truncate switch is off (long text cut to
-// 200 runes) or on (nothing cut).
-func TestFormatRequestForLog_TruncationSwitch(t *testing.T) {
+// logTool is a tool with a given name, description and parameters.
+type logTool struct {
+	name, description string
+	parameters        map[string]any
+}
+
+func (l logTool) Name() string               { return l.name }
+func (l logTool) Description() string        { return l.description }
+func (l logTool) Parameters() map[string]any { return l.parameters }
+func (logTool) Execute(context.Context, map[string]any) *tools.ToolResult {
+	return tools.SilentResult("done")
+}
+
+// fullRequestLine runs a whole turn of the default agent whose first request
+// is messages, offering it exactly the given tools (none when empty), and
+// returns its "Full LLM request" log line.
+func fullRequestLine(t *testing.T, messages []providers.Message, offered ...logTool) map[string]any {
+	t.Helper()
+	logger.SetLogMessageContent(true)
+	t.Cleanup(func() { logger.SetLogMessageContent(false) })
+	var buf safeBufLoop
+	restore := logger.RedirectForTest(&buf)
+	defer restore()
+	cfg := newTestConfig(t)
+	noCogmem := false
+	cfg.Agents.List[0].Cogmem = &noCogmem
+	for _, tool := range offered {
+		cfg.Agents.List[0].Tools = append(cfg.Agents.List[0].Tools, tool.name)
+	}
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
+	agent := al.registry.Default()
+	for _, tool := range offered {
+		agent.Tools.Register(tool)
+	}
+	setTestProvider(agent, &sequenceProvider{responses: []*providers.LLMResponse{{Content: "ok"}}, errors: []error{nil}})
+	opts := processOptions{SessionKey: "request-log", Channel: "cli", ChatID: "direct", UserMessage: "go"}
+	cm, release := al.getContextManager(agent, opts.SessionKey)
+	defer release()
+	if _, err := al.runLLMIteration(context.Background(), agent, messages, opts, cm, nil); err != nil {
+		t.Fatal(err)
+	}
+	for l := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		var ev map[string]any
+		if json.Unmarshal([]byte(l), &ev) == nil && ev["message"] == "Full LLM request" {
+			return ev
+		}
+	}
+	t.Fatalf("no \"Full LLM request\" line in %s", buf.String())
+	return nil
+}
+
+// The "Full LLM request" line of a turn renders the request's messages and
+// tools the same way whether the host-wide no-truncate switch is off (long
+// text cut to 200 runes) or on (nothing cut).
+func TestFullLLMRequestLine_Format(t *testing.T) {
 	long := strings.Repeat("é", 250)
 	cut := strings.Repeat("é", 197) + "..."
 	params := "map[x:" + strings.Repeat("p", 250) + "]"
 	messages := []providers.Message{
 		{Role: "system", Content: "be brief"},
 		{Role: "assistant", Content: long, ToolCalls: []providers.ToolCall{
-			{ID: "c1", Type: "function", Name: "file_read", Function: &providers.FunctionCall{Name: "file_read", Arguments: long}},
+			{ID: "c1", Type: "function", Name: "long_read", Function: &providers.FunctionCall{Name: "long_read", Arguments: long}},
 			{ID: "c2", Type: "function", Name: "noop"},
 		}},
 		{Role: "tool", Content: "done", ToolCallID: "c1"},
 	}
-	defs := []providers.ToolDefinition{
-		{Type: "function", Function: providers.ToolFunctionDefinition{
-			Name: "file_read", Description: long,
-			Parameters: map[string]any{"x": strings.Repeat("p", 250)},
-		}},
-		{Type: "function", Function: providers.ToolFunctionDefinition{Name: "noop", Description: "nothing"}},
+	offered := []logTool{
+		{name: "long_read", description: long, parameters: map[string]any{"x": strings.Repeat("p", 250)}},
+		{name: "noop", description: "nothing"},
 	}
 	wantMessages := func(text string) string {
 		return "[\n" +
 			"  [0] Role: system\n  Content: be brief\n\n" +
 			"  [1] Role: assistant\n  ToolCalls:\n" +
-			"    - ID: c1, Type: function, Name: file_read\n      Arguments: " + text + "\n" +
+			"    - ID: c1, Type: function, Name: long_read\n      Arguments: " + text + "\n" +
 			"    - ID: c2, Type: function, Name: noop\n" +
 			"  Content: " + text + "\n\n" +
 			"  [2] Role: tool\n  Content: done\n  ToolCallID: c1\n\n" +
 			"]"
 	}
-	wantTools := func(text, p string) string {
+	wantTools := func(p string) string {
 		return "[\n" +
-			"  [0] Type: function, Name: file_read\n      Description: " + long + "\n      Parameters: " + p + "\n" +
+			"  [0] Type: function, Name: long_read\n      Description: " + long + "\n      Parameters: " + p + "\n" +
 			"  [1] Type: function, Name: noop\n      Description: nothing\n" +
 			"]"
 	}
@@ -64,17 +114,21 @@ func TestFormatRequestForLog_TruncationSwitch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			utils.SetDisableTruncation(tc.noTruncate)
 			t.Cleanup(func() { utils.SetDisableTruncation(false) })
-			if got, want := formatMessagesForLog(messages, utils.Truncate), wantMessages(tc.text); got != want {
+			line := fullRequestLine(t, messages, offered...)
+			if got, want := fmt.Sprint(line["messages_json"]), wantMessages(tc.text); got != want {
 				t.Errorf("messages:\n got %q\nwant %q", got, want)
 			}
-			if got, want := formatToolsForLog(defs, utils.Truncate), wantTools(tc.text, tc.p); got != want {
+			if got, want := fmt.Sprint(line["tools_json"]), wantTools(tc.p); got != want {
 				t.Errorf("tools:\n got %q\nwant %q", got, want)
-			}
-			if formatMessagesForLog(nil, utils.Truncate) != "[]" || formatToolsForLog(nil, utils.Truncate) != "[]" {
-				t.Error("an empty request is not rendered as []")
 			}
 		})
 	}
+	t.Run("no tools", func(t *testing.T) {
+		line := fullRequestLine(t, []providers.Message{{Role: "user", Content: "go"}})
+		if got := fmt.Sprint(line["tools_json"]); got != "[]" {
+			t.Errorf("tools = %q, want a request with no tools rendered as []", got)
+		}
+	})
 }
 
 // The host gives the engine its truncation rule: the "Full LLM request" line
