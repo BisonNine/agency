@@ -468,10 +468,7 @@ func TestCallTool_ReconnectsOnConnectionError(t *testing.T) {
 		t.Fatal("svc should be connected")
 	}
 	conn.cfg.URL = good.URL
-	// Drop the live streams too (the notification stream would keep Close
-	// waiting), as a server that died would.
-	bad.CloseClientConnections()
-	bad.Close()
+	killServer(t, bad)
 
 	result, err := mgr.CallTool(ctx, "svc", "ping", nil)
 	if err != nil {
@@ -550,10 +547,7 @@ func TestProbeOnce_ReconnectsUnresponsiveServer(t *testing.T) {
 	}
 	conn, _ := mgr.GetServer("svc")
 	conn.cfg.URL = good.URL
-	// Drop the live streams too (the notification stream would keep Close
-	// waiting), as a server that died would.
-	bad.CloseClientConnections()
-	bad.Close()
+	killServer(t, bad)
 
 	mgr.probeOnce("svc")
 
@@ -796,4 +790,17 @@ func TestBuildStdioEnv_AllowlistedBaseWithOverlay(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, got[k], v)
 		}
 	}
+}
+
+// killServer stops srv the way a server that died would: no new connections,
+// and the live ones (the client's notification stream, which would keep
+// Close waiting) dropped. The listener closes first so the client cannot
+// reopen its stream in between.
+func killServer(t *testing.T, srv *httptest.Server) {
+	t.Helper()
+	if err := srv.Listener.Close(); err != nil {
+		t.Logf("close listener: %v", err)
+	}
+	srv.CloseClientConnections()
+	srv.Close()
 }
