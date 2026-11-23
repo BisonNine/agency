@@ -138,3 +138,32 @@ func TestMerge_EmptyExtraCopiesBase(t *testing.T) {
 		t.Error("Merge() returned base's backing array")
 	}
 }
+
+// Each platform keeps its own system variables, and only its own.
+func TestKeep_PlatformNames(t *testing.T) {
+	saved := goos
+	t.Cleanup(func() { goos = saved })
+	tests := []struct {
+		goos string
+		name string
+		want bool
+	}{
+		{"darwin", "XPC_SERVICE_NAME", true},
+		{"darwin", "__CF_USER_TEXT_ENCODING", true},
+		{"darwin", "SYSTEMROOT", false},
+		{"darwin", "PATH", true},
+		{"windows", "SystemRoot", true},
+		{"windows", "Path", true},
+		{"windows", "XPC_FLAGS", false},
+		{"windows", "CLAW_SECRET", false},
+		{"linux", "XPC_FLAGS", false},
+		{"linux", "SYSTEMROOT", false},
+		{"linux", "LC_ALL", true},
+	}
+	for _, tt := range tests {
+		goos = tt.goos
+		if got := keep(tt.name); got != tt.want {
+			t.Errorf("%s: keep(%q) = %v, want %v", tt.goos, tt.name, got, tt.want)
+		}
+	}
+}

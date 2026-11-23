@@ -106,8 +106,11 @@ func filter(morePrefixes []string) []string {
 	return out
 }
 
+// goos is runtime.GOOS; a variable so tests can check each platform's rules.
+var goos = runtime.GOOS
+
 func keep(k string) bool {
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		if inList(k, darwinNames) {
 			return true
