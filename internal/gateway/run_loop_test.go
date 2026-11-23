@@ -6,6 +6,7 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"go.bison9.com/agent/cogmem/store"
 	"net"
 	"net/http"
 	"os"
@@ -16,7 +17,9 @@ import (
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/test/stubprovider"
 	"go.bison9.com/agency/servicetoken"
 )
 
@@ -54,6 +57,7 @@ func bootGatewayWith(t *testing.T, extra string, mutate func(string) string) *bo
 	if err != nil {
 		t.Fatal(err)
 	}
+	registerToolProviders()
 	b := &bootedGateway{g: g, cfg: cfg, alerts: &alertRecorder{}, tokens: make(chan struct{}), done: make(chan error, 1)}
 	b.fatal = newFatalNotifier(b.alerts)
 	msgBus := bus.NewMessageBus()
@@ -249,6 +253,11 @@ func TestGatewayRun_TLSDevicesAndReloadWarnings(t *testing.T) {
 		}
 	}
 
+	// Regenerating the self-signed certificate re-applies the host policy.
+	if code, body := b.g.post(t, "/api/tls/regenerate"); code != http.StatusOK {
+		t.Errorf("regenerate = %d %s", code, body)
+	}
+
 	newCfg := *b.al.GetConfig()
 	newCfg.Gateway.AllowedCIDRs = []string{"not-a-cidr"}
 	newCfg.Gateway.TrustedProxies = []string{"not-a-proxy"}
@@ -269,6 +278,52 @@ func TestGatewayRun_TLSDevicesAndReloadWarnings(t *testing.T) {
 	if b.services.MediaStore == oldStore {
 		t.Error("changed media cleanup kept the old store")
 	}
+
+	b.fatal.requestRestart()
+	if err := b.stop(t); exitCode(err) != exitCodeServiceDied {
+		t.Fatalf("loop = %v", err)
+	}
+}
+
+// TestGatewayRun_CogmemConsolidateTool: the cogmem_consolidate tool, called by
+// the model in a turn, queues a consolidation run for the calling agent, and
+// the worker for it is built.
+func TestGatewayRun_CogmemConsolidateTool(t *testing.T) {
+	b := bootGateway(t, "")
+	if b.services.CogmemManager == nil {
+		t.Fatal("no consolidation manager for a cognitive agent")
+	}
+	// The agent's turn asks for the tool, then answers once it has run; any
+	// other call (the memory worker's) gets an empty JSON object.
+	b.g.stub.SetDefault(stubprovider.Reply("{}"))
+	b.g.stub.SetHook(func(req stubprovider.Request) *stubprovider.Step {
+		if req.Tools == 0 || len(req.Messages) == 0 || !strings.Contains(req.Text(), "consolidate please") {
+			return nil
+		}
+		if req.Messages[len(req.Messages)-1].Role == "tool" {
+			step := stubprovider.Reply("queued")
+			return &step
+		}
+		step := stubprovider.CallTool("cogmem_consolidate", `{}`)
+		return &step
+	})
+	reply, err := b.al.ProcessDirect(t.Context(), "consolidate please", "cli:default")
+	if err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	if !strings.Contains(reply, "queued") {
+		t.Errorf("reply = %q", reply)
+	}
+	// The queued run opens the agent's memory store.
+	inst, ok := b.al.GetRegistry().Get("main")
+	if !ok {
+		t.Fatal("main not registered")
+	}
+	db := store.DBPath(cogmemhost.Dir(inst.StateDir))
+	waitFor(t, "the consolidation worker's store", func() bool {
+		_, err := os.Stat(db)
+		return err == nil
+	})
 
 	b.fatal.requestRestart()
 	if err := b.stop(t); exitCode(err) != exitCodeServiceDied {
