@@ -512,10 +512,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		return
 	}
 
-	if content == "" {
-		content = "[media only]"
-	}
-
 	logger.DebugCF("discord", "Received message", map[string]any{
 		"sender_name": sender.DisplayName,
 		"sender_id":   senderID,
