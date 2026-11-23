@@ -463,3 +463,61 @@ func TestWatchDefaultInterval(t *testing.T) {
 	m.Watch(ctx, 0)
 	cancel()
 }
+
+// A check that finds several marks passed sends only the most urgent one and
+// never sends the skipped ones later.
+func TestCheckExpiryMostUrgentMarkOnly(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := writePair(t, dir, certNames{dns: []string{"alice.example"}}, time.Now())
+	expiredText := func(notAfter time.Time) string {
+		return certPath + " expired " + notAfter.Format(time.RFC3339) + "; browsers now refuse the WebUI until a renewed pair is installed"
+	}
+
+	t.Run("expired at the first check", func(t *testing.T) {
+		rec := &testalerts.Recorder{}
+		m, err := Load(Options{CertFile: certPath, KeyFile: keyPath, Alerter: rec})
+		require.NoError(t, err)
+		notAfter := m.Info().NotAfter
+		m.opts.Now = func() time.Time { return notAfter.Add(time.Hour) }
+		m.CheckExpiry()
+		m.CheckExpiry()
+		got := rec.Alerts()
+		require.Len(t, got, 1)
+		assert.Equal(t, expiredText(notAfter), got[0].Description)
+	})
+
+	t.Run("3-day mark first skips the 14-day one", func(t *testing.T) {
+		rec := &testalerts.Recorder{}
+		m, err := Load(Options{CertFile: certPath, KeyFile: keyPath, Alerter: rec})
+		require.NoError(t, err)
+		notAfter := m.Info().NotAfter
+		for _, at := range []time.Time{notAfter.Add(-2 * day), notAfter.Add(-day), notAfter.Add(time.Hour), notAfter.Add(2 * time.Hour)} {
+			m.opts.Now = func() time.Time { return at }
+			m.CheckExpiry()
+		}
+		got := rec.Alerts()
+		require.Len(t, got, 2)
+		assert.Equal(t, certPath+" expires "+notAfter.Format(time.RFC3339)+" (in 2 days); install a renewed pair — it is picked up within a minute, no restart needed", got[0].Description)
+		assert.Equal(t, expiredText(notAfter), got[1].Description)
+	})
+
+	t.Run("one mark per check is unchanged", func(t *testing.T) {
+		rec := &testalerts.Recorder{}
+		m, err := Load(Options{CertFile: certPath, KeyFile: keyPath, Alerter: rec})
+		require.NoError(t, err)
+		notAfter := m.Info().NotAfter
+		for _, at := range []time.Time{notAfter.Add(-20 * day), notAfter.Add(-13 * day), notAfter.Add(-12 * day), notAfter.Add(-2 * day), notAfter.Add(time.Hour)} {
+			m.opts.Now = func() time.Time { return at }
+			m.CheckExpiry()
+		}
+		got := rec.Alerts()
+		require.Len(t, got, 3)
+		assert.Contains(t, got[0].Description, "(in 13 days)")
+		assert.Contains(t, got[1].Description, "(in 2 days)")
+		assert.Equal(t, expiredText(notAfter), got[2].Description)
+		for _, a := range got {
+			assert.Equal(t, "TLS certificate expires soon", a.Title)
+			assert.Equal(t, "tls-expiry", a.EventID)
+		}
+	})
+}

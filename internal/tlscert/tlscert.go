@@ -63,7 +63,8 @@ const (
 )
 
 // expiryWarnDays are the days-before-expiry at which a user-supplied
-// certificate raises an alert, once each; 0 is "it has expired".
+// certificate raises an alert, once each; 0 is "it has expired". A check that
+// finds several passed raises only the most urgent.
 var expiryWarnDays = []int{14, 3, 0}
 
 // Options selects and describes the certificate.
@@ -351,23 +352,33 @@ func (m *Manager) CheckExpiry() {
 		m.swap(l, "renewed")
 		return
 	}
-	for _, days := range expiryWarnDays {
-		if left > time.Duration(days)*day || m.warned[days] {
-			continue
+	// The most urgent mark crossed is the one to report: a check that finds
+	// several passed since the last one (an expired pair at its first check)
+	// sends that one alone and retires the less urgent ones.
+	days, crossed := 0, false
+	for _, d := range expiryWarnDays {
+		if left <= time.Duration(d)*day && (!crossed || d < days) {
+			days, crossed = d, true
 		}
-		m.warned[days] = true
-		desc := fmt.Sprintf("%s expires %s (in %d days); install a renewed pair — it is picked up within a minute, no restart needed",
-			cur.info.CertFile, cur.info.NotAfter.Format(time.RFC3339), int(left/day))
-		if days == 0 {
-			desc = cur.info.CertFile + " expired " + cur.info.NotAfter.Format(time.RFC3339) + "; browsers now refuse the WebUI until a renewed pair is installed"
-		}
-		m.alert(alerter.Alert{
-			Title:       "TLS certificate expires soon",
-			Description: desc,
-			EventID:     "tls-expiry",
-		})
+	}
+	if !crossed || m.warned[days] {
 		return
 	}
+	for _, d := range expiryWarnDays {
+		if d >= days {
+			m.warned[d] = true
+		}
+	}
+	desc := fmt.Sprintf("%s expires %s (in %d days); install a renewed pair — it is picked up within a minute, no restart needed",
+		cur.info.CertFile, cur.info.NotAfter.Format(time.RFC3339), int(left/day))
+	if days == 0 {
+		desc = cur.info.CertFile + " expired " + cur.info.NotAfter.Format(time.RFC3339) + "; browsers now refuse the WebUI until a renewed pair is installed"
+	}
+	m.alert(alerter.Alert{
+		Title:       "TLS certificate expires soon",
+		Description: desc,
+		EventID:     "tls-expiry",
+	})
 }
 
 // Watch polls the certificate files every interval (DefaultPollInterval when
