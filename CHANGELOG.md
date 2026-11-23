@@ -148,6 +148,13 @@
 
 ### Fixed
 
+- **Matrix no longer downloads attachments it will not use.** A file from a
+  sender not on the allow list, or on a group message the agent ignores, is
+  not fetched, and no file is left behind for a message that is not handed on.
+- **The WebUI connection limit holds when several browsers connect at the
+  same moment.** It could be exceeded before.
+- **A long reply split inside a code block no longer adds a blank line** at
+  the start of the continued block.
 - **An MCP client now sees its own agent's tools.** On the `/mcp` endpoint,
   a tool two agents both have could be described with the other agent's
   description; each client now sees its own agent's tool.
