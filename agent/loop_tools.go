@@ -42,24 +42,38 @@ func (al *AgentLoop) agentBuilder() agentreg.BuildFunc[*AgentInstance] {
 		if err != nil {
 			return nil, err
 		}
-		if inst.HumanModel != "" {
-			// A human agent runs no model: no vision side-model, no tools.
-			return inst, nil
-		}
-		// Wire the vision-describe side-model chain onto the instance (no-op when
-		// no vision model is configured).
-		al.wireVisionClients(cfg, inst)
-		if spec.Fresh {
-			return inst, nil
-		}
-		al.registerAgentTools(ctx, inst, cfg)
-		if inst.IsTemp() {
-			// A config agent gets these after the registry is built (the gateway
-			// registers its tools); an agent created later gets them now. Its
-			// MCP tools come once it is registered (agentInserted).
-			al.registerExtraTools(inst)
+		al.equipInstance(ctx, cfg, spec, inst)
+		if inst.turnAgent, err = al.newTurnAgent(inst); err != nil {
+			// Only its session store is open: the SDK agent was not built.
+			if cerr := inst.Sessions.Close(); cerr != nil {
+				logger.WarnCF("agent", "Agent not closed after a failed build",
+					map[string]any{"agent_id": inst.ID, "error": cerr.Error()})
+			}
+			return nil, err
 		}
 		return inst, nil
+	}
+}
+
+// equipInstance gives a newly built instance its vision side-model and its
+// tools: none for a human agent, no tools for a fresh temporary agent.
+func (al *AgentLoop) equipInstance(ctx context.Context, cfg *config.Config, spec agentreg.Spec, inst *AgentInstance) {
+	if inst.HumanModel != "" {
+		// A human agent runs no model: no vision side-model, no tools.
+		return
+	}
+	// Wire the vision-describe side-model chain onto the instance (no-op when
+	// no vision model is configured).
+	al.wireVisionClients(cfg, inst)
+	if spec.Fresh {
+		return
+	}
+	al.registerAgentTools(ctx, inst, cfg)
+	if inst.IsTemp() {
+		// A config agent gets these after the registry is built (the gateway
+		// registers its tools); an agent created later gets them now. Its
+		// MCP tools come once it is registered (agentInserted).
+		al.registerExtraTools(inst)
 	}
 }
 
