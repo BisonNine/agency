@@ -356,13 +356,17 @@ type gatewayRun struct {
 	serviceTokenChanges <-chan struct{}
 }
 
+// notifySignals is signal.Notify; replaced in tests, which deliver the signal
+// themselves.
+var notifySignals = signal.Notify
+
 // loop waits for signals, failures and config or token changes until the
 // gateway stops; the error is the exit reason.
 func (r *gatewayRun) loop(ctx context.Context) error {
 	// SIGTERM as well as SIGINT: systemd stops a unit with SIGTERM, whose
 	// default disposition kills the process without the clean shutdown below.
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	notifySignals(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	for {
 		select {

@@ -105,10 +105,14 @@ type fatalNotifier struct {
 	restart chan *restartRequestedError
 }
 
+// processExit ends the process when a shutdown hangs; replaced in tests that
+// run the whole gateway.
+var processExit = os.Exit
+
 func newFatalNotifier(a alerter.Alerter) *fatalNotifier {
 	return &fatalNotifier{
 		alerter: a,
-		exit:    os.Exit,
+		exit:    processExit,
 		timeout: fatalShutdownTimeout,
 		failed:  make(chan *serviceDiedError, 1),
 		restart: make(chan *restartRequestedError, 1),
