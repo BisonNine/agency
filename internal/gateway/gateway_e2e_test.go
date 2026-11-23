@@ -230,6 +230,7 @@ func (g *e2eGateway) post(t *testing.T, path string) (int, string) {
 // files.
 func TestGatewayCmd_RunReloadRestart(t *testing.T) {
 	g := newE2EHome(t, "")
+	before := countServiceGoroutines()
 	g.start(t)
 
 	if pid, _ := pidfile.Read(g.home); pid != os.Getpid() {
@@ -267,6 +268,8 @@ func TestGatewayCmd_RunReloadRestart(t *testing.T) {
 	if running, lerr := lockHeld(g.home); lerr != nil || running {
 		t.Errorf("lock still held after shutdown: %v, %v", running, lerr)
 	}
+	// The shutdown stops every service loop, the backup scheduler included.
+	requireNoNewServiceGoroutines(t, before)
 	if _, serr := os.Stat(filepath.Join(g.home, "logs", global.LogFileName)); serr != nil {
 		t.Errorf("no log file written: %v", serr)
 	}

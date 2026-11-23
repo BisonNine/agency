@@ -86,6 +86,8 @@ type gatewayServices struct {
 	// stopAuthWatch ends its credentials-file poller at shutdown.
 	AuthStore     *middleware.AuthStore
 	stopAuthWatch context.CancelFunc
+	// stopBackup ends the nightly backup scheduler at shutdown.
+	stopBackup func()
 	// fatal is the fail-fast path a dying core service reports to.
 	fatal *fatalNotifier
 	// store is the live configuration, shared with the WebUI API.
@@ -223,7 +225,7 @@ func startAgentServices(cfg *config.Config, agentLoop *agent.AgentLoop, msgBus *
 	// Start the optional nightly backup scheduler. Boot-only: it reads live config
 	// each tick (via agentLoop.GetConfig), so toggling/retiming it on reload takes
 	// effect without restarting the loop. Inert until backup.enabled is set.
-	startBackupScheduler(agentLoop.GetConfig, configPath, agentLoop.Alerter())
+	services.stopBackup = startBackupScheduler(agentLoop.GetConfig, configPath, agentLoop.Alerter())
 	// Nightly session retention (session.retention_days) and cogmem snapshot
 	// pruning; boot-only like the backup, reads live config each pass.
 	agentLoop.StartRetention()
@@ -549,6 +551,11 @@ func shutdownGateway(
 	phases.done("shell jobs stopped")
 	agentLoop.BeginMCPShutdown()
 
+	// The backup scheduler is boot-only, so a reload keeps it; only a
+	// shutdown ends it.
+	if services.stopBackup != nil {
+		services.stopBackup()
+	}
 	stopAndCleanupServices(services, agentLoop, gracefulShutdownTimeout, phases, false)
 	agentLoop.Stop()
 

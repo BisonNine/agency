@@ -97,8 +97,14 @@ func TestNightlyBackup_FailureAlerts(t *testing.T) {
 	}
 }
 
-// TestStartBackupScheduler_Stops: the scheduler's stop function ends it.
+// TestStartBackupScheduler_Stops: the scheduler's stop function ends its
+// goroutine.
 func TestStartBackupScheduler_Stops(t *testing.T) {
+	before := countServiceGoroutines()
 	stop := startBackupScheduler(func() *config.Config { return nil }, "", &alertRecorder{})
+	if goroutinesIn("gateway.startBackupScheduler") <= before["gateway.startBackupScheduler"] {
+		t.Fatal("the scheduler is not running")
+	}
 	stop()
+	requireNoNewServiceGoroutines(t, before)
 }
