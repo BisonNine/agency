@@ -127,6 +127,19 @@ func newE2EHome(t *testing.T, extra string) *e2eGateway {
 	return g
 }
 
+// rewriteConfig passes config.json through mutate.
+func (g *e2eGateway) rewriteConfig(t *testing.T, mutate func(string) string) {
+	t.Helper()
+	p := filepath.Join(g.home, "config.json")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(mutate(string(b))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (g *e2eGateway) url(path string) string {
 	return fmt.Sprintf("http://127.0.0.1:%d%s", g.port, path)
 }
