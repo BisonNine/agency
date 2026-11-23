@@ -197,10 +197,14 @@ func park(target, dst string) error {
 	return nil
 }
 
+// rename is os.Rename; replaced in tests to take the copy fallback, as across
+// filesystems.
+var rename = os.Rename
+
 // moveFile renames src to dst, falling back to copy-and-remove across
 // filesystems (an external agents directory may be one).
 func moveFile(src, dst string) error {
-	if err := os.Rename(src, dst); err == nil {
+	if err := rename(src, dst); err == nil {
 		return nil
 	}
 	info, err := os.Stat(src)
