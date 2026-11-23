@@ -13,7 +13,7 @@ require (
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/gomarkdown/markdown v0.0.0-20261117205700-e8c6d33a8b6c
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/h2non/filetype v1.1.3
 	github.com/mark3labs/mcp-go v1.6.0
 	github.com/mymmrac/telego v1.13.0

@@ -161,6 +161,8 @@
 
 ### Fixed
 
+- **The device channel's WebSocket library is updated past GO-2026-6278**
+  (weak random numbers for the frame mask key).
 - **Cancelling in an ACP client now stops the agent's run.** The reply used to
   keep running and the prompt kept waiting for it.
 - **A message whose attachments cannot be sent to an OpenAI Responses model is
