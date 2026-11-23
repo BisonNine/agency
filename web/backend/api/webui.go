@@ -53,7 +53,9 @@ func (h *Handler) ensureWebUIChannel(r *http.Request) (bool, error) {
 		return nil
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to save config: %w", err)
+		// Unwrapped: the handler's error response and the gateway's log
+		// line each say what failed.
+		return false, err
 	}
 	return changed, nil
 }
