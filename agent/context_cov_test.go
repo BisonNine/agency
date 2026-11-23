@@ -36,6 +36,19 @@ func TestCtxCov_MatchGlob(t *testing.T) {
 		{"aba*aba", "aba", false},
 		{"ab*ba", "aba", false},
 		{"ab*ba", "abba", true},
+		// Every star is a wildcard.
+		{"a*b*c", "abc", true},
+		{"a*b*c", "axxbyyc", true},
+		{"a*b*c", "acb", false},
+		{"a*b*c", "abcx", false},
+		{"*mail*", "send-mail-now", true},
+		{"*mail*", "post", false},
+		{"**", "", true},
+		{"a**z", "az", true},
+		{"*a*a*", "a", false},
+		{"*a*a*", "aa", true},
+		{"x*y*z", "xyz", true},
+		{"x*yz*z", "xyz", false},
 	}
 	for _, c := range cases {
 		if got := matchGlob(c.pattern, c.name); got != c.want {

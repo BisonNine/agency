@@ -851,22 +851,29 @@ func matchSkillFilter(name string, filter []string) bool {
 	return false
 }
 
-// matchGlob matches name against a glob pattern supporting '*' wildcards.
+// matchGlob matches name against a glob pattern in which every '*' matches
+// any run of characters (including none). The fixed parts must appear in
+// order without overlapping: "ab*ba" does not match "aba".
 func matchGlob(pattern, name string) bool {
-	if pattern == "*" {
-		return true
-	}
-	// Split pattern on '*' and verify parts appear in order.
-	parts := strings.SplitN(pattern, "*", 2)
+	parts := strings.Split(pattern, "*")
 	if len(parts) == 1 {
 		return pattern == name
 	}
-	prefix, suffix := parts[0], parts[1]
-	// The prefix and suffix must not overlap: "ab*ba" does not match "aba".
-	if len(name) < len(prefix)+len(suffix) || !strings.HasPrefix(name, prefix) {
+	first, last := parts[0], parts[len(parts)-1]
+	if len(name) < len(first)+len(last) || !strings.HasPrefix(name, first) || !strings.HasSuffix(name, last) {
 		return false
 	}
-	return strings.HasSuffix(name, suffix)
+	// The middle parts, in order, inside what the first and last leave; the
+	// leftmost match of each leaves the most room for the rest.
+	rest := name[len(first) : len(name)-len(last)]
+	for _, part := range parts[1 : len(parts)-1] {
+		i := strings.Index(rest, part)
+		if i < 0 {
+			return false
+		}
+		rest = rest[i+len(part):]
+	}
+	return true
 }
 
 // filteredSkills returns the skills the filter names. A nil or empty filter
