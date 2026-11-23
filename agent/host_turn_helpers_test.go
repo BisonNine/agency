@@ -164,29 +164,43 @@ type testHooks struct {
 	ps  []hook.Plugin
 	// onTextDelta are the plugins' OnTextDelta callbacks.
 	onTextDelta []hook.OnTextDeltaFunc
+	// panics are the consumers' panics, skipped.
+	panics []any
 }
 
 // emit gives ev to every OnEvent consumer, in order, on the turn's context.
-func (h *testHooks) emit(_ context.Context, ev hook.Event) {
+func (h *testHooks) emit(ctx context.Context, ev hook.Event) {
+	ctx = h.onTurn(ctx)
 	for _, p := range h.ps {
 		if p.OnEvent != nil {
-			observe(func() { p.OnEvent(h.ctx, ev) })
+			h.observe(func() { p.OnEvent(ctx, ev) })
 		}
 	}
 }
 
-// observe runs fn, skipping its panic, as the agent runs a consumer.
-func observe(fn func()) {
-	defer func() { _ = recover() }()
+// onTurn is ctx carrying the turn the hooks serve.
+func (h *testHooks) onTurn(ctx context.Context) context.Context {
+	return context.WithValue(ctx, hostTurnKey{}, hostTurnOf(h.ctx))
+}
+
+// observe runs fn, recording and skipping its panic, as the agent runs a
+// consumer.
+func (h *testHooks) observe(fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.panics = append(h.panics, r)
+		}
+	}()
 	fn()
 }
 
 // callBeforeLoop runs the BeforeLoop callbacks, in order, on the turn's
 // context.
-func (h *testHooks) callBeforeLoop(_ context.Context, loop *hook.Loop) error {
+func (h *testHooks) callBeforeLoop(ctx context.Context, loop *hook.Loop) error {
+	ctx = h.onTurn(ctx)
 	for _, p := range h.ps {
 		if p.BeforeLoop != nil {
-			if err := p.BeforeLoop(h.ctx, loop); err != nil {
+			if err := p.BeforeLoop(ctx, loop); err != nil {
 				return err
 			}
 		}
@@ -196,10 +210,11 @@ func (h *testHooks) callBeforeLoop(_ context.Context, loop *hook.Loop) error {
 
 // callAfterModel runs the AfterModel callbacks, in order, on the turn's
 // context.
-func (h *testHooks) callAfterModel(_ context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) *hook.PanicError {
+func (h *testHooks) callAfterModel(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) *hook.PanicError {
+	ctx = h.onTurn(ctx)
 	for _, p := range h.ps {
 		if p.AfterModel != nil {
-			observe(func() { p.AfterModel(h.ctx, call, resp) })
+			h.observe(func() { p.AfterModel(ctx, call, resp) })
 		}
 	}
 	return nil

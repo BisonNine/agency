@@ -143,8 +143,10 @@ func (al *AgentLoop) withHostTurn(ctx context.Context, agent *AgentInstance, opt
 
 // hostTurnOf is the turn on ctx; nil for a run the host did not start.
 func hostTurnOf(ctx context.Context) *hostTurn {
-	t, _ := ctx.Value(hostTurnKey{}).(*hostTurn)
-	return t
+	if t, ok := ctx.Value(hostTurnKey{}).(*hostTurn); ok {
+		return t
+	}
+	return nil
 }
 
 // modelName is the turn's model, by model_name; "" without one.
@@ -300,7 +302,7 @@ func (al *AgentLoop) turnPlugins(agent *AgentInstance) []hook.Plugin {
 		if t == nil {
 			return
 		}
-		st, o := t.st, t.o
+		st := t.st
 		switch e := ev.(type) {
 		case hook.Compaction:
 			if e.Phase == hook.CompactionEvicted {
@@ -311,22 +313,7 @@ func (al *AgentLoop) turnPlugins(agent *AgentInstance) []hook.Plugin {
 				st.mu.Unlock()
 			}
 		case hook.TurnFinished:
-			al.endTurn(t.ctx, agent, o, st)
-			if st.stopTyping {
-				al.stopTyping(o.Channel, o.ChatID)
-			}
-			if errors.Is(e.Err, hook.ErrNoModelAvailable) && t.noModel() {
-				// A turn with no model makes no provider call, but has always
-				// written its "LLM finish" line.
-				model := t.modelName()
-				al.emitFinish(evCtx, agent, o, hook.ModelCall{Iteration: e.Iterations, Model: hook.ModelRef{Name: model, Model: model}, Err: errNoModelConfigured})
-			}
-			if st.pendingSource && (e.Err == nil || !errors.Is(e.Cause, hook.ErrShutdown)) {
-				al.clearPendingTurnSource(agent.ID, o.SessionKey)
-			}
-			al.reportStoreRefusal(agent, o.SessionKey, e.Err)
-			al.reportSessionSave(agent, o.SessionKey, e.TurnResult)
-			al.sendModelReply(t.ctx, agent, o, st, e.TurnResult)
+			al.turnFinished(evCtx, t.ctx, agent, t, e)
 		}
 	}})
 
@@ -360,6 +347,31 @@ func (al *AgentLoop) turnPlugins(agent *AgentInstance) []hook.Plugin {
 	return ps
 }
 
+// turnFinished ends turn t of agent (TurnFinished), in order: the model
+// loop ended (endTurn), the typing stopped, the no-model finish line, the
+// pending source cleared, the store-fault and save reports, then the reply
+// sent. turnCtx is the turn's context, which the end and the reply are
+// published on.
+func (al *AgentLoop) turnFinished(evCtx, turnCtx context.Context, agent *AgentInstance, t *hostTurn, e hook.TurnFinished) {
+	st, o := t.st, t.o
+	al.endTurn(turnCtx, agent, o, st)
+	if st.stopTyping {
+		al.stopTyping(o.Channel, o.ChatID)
+	}
+	if errors.Is(e.Err, hook.ErrNoModelAvailable) && t.noModel() {
+		// A turn with no model makes no provider call, but has always
+		// written its "LLM finish" line.
+		model := t.modelName()
+		al.emitFinish(evCtx, agent, o, hook.ModelCall{Iteration: e.Iterations, Model: hook.ModelRef{Name: model, Model: model}, Err: errNoModelConfigured})
+	}
+	if st.pendingSource && (e.Err == nil || !errors.Is(e.Cause, hook.ErrShutdown)) {
+		al.clearPendingTurnSource(agent.ID, o.SessionKey)
+	}
+	al.reportStoreRefusal(agent, o.SessionKey, e.Err)
+	al.reportSessionSave(agent, o.SessionKey, e.TurnResult)
+	al.sendModelReply(turnCtx, agent, o, st, e.TurnResult)
+}
+
 // startModelLoop sets up a turn's model loop when it starts (BeforeLoop),
 // after its message is stored and the turn marked pending, on the context
 // BeforeLoop is given (the scoped turn context the engine runs on, ended
@@ -389,19 +401,6 @@ func (al *AgentLoop) startModelLoop(ctx context.Context, agent *AgentInstance, o
 	// placeholder every progress_interval with a running tool-call count.
 	st.stopProgress = al.startProgressUpdates(ctx, opts.Channel, opts.ChatID,
 		al.GetConfig().Agents.Defaults.GetProgressInterval(), &st.completedTools)
-}
-
-// turnPlugin readies a turn of agent before anything of it is stored
-// (BeforeTurn): a session_clear handoff releases the session's pins and
-// reissues its token, a single-shot turn starts blank, whispers held for the
-// agent open its message and the inbound media are described and pinned.
-func (al *AgentLoop) turnPlugin(agent *AgentInstance, opts *processOptions, cm ctxengine.ContextManager) hook.Plugin {
-	return hook.Plugin{
-		Name: "session",
-		BeforeTurn: func(ctx context.Context, turn *hook.Turn) (*hook.TurnResult, error) {
-			return nil, al.prepareSession(ctx, agent, cm, opts, turn)
-		},
-	}
 }
 
 // requestMediaPlugin makes the session's pins follow the request, and then
@@ -489,21 +488,6 @@ func (al *AgentLoop) endTurn(ctx context.Context, agent *AgentInstance, opts pro
 	evicted := st.evicted
 	st.mu.Unlock()
 	al.publishEvictionNotice(ctx, agent, opts, evicted)
-}
-
-// turnScope is the scope of a turn of agent on sessionKey: its accounting
-// identity (a clone's is its source's), the session, the turn id and the
-// sub-agent depth on ctx.
-func (al *AgentLoop) turnScope(ctx context.Context, agent *AgentInstance, sessionKey string) hook.Scope {
-	id := agent.Identity()
-	return hook.Scope{
-		AgentID:   id.Agent,
-		AgentName: id.Name,
-		Project:   id.Project,
-		Session:   sessionKey,
-		TurnID:    turnIDFrom(ctx),
-		Depth:     toolsagents.SpawnDepth(ctx),
-	}
 }
 
 // runModelTurn runs one turn of agent on opts on its SDK agent, its whole

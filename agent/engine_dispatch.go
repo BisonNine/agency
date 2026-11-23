@@ -28,9 +28,6 @@ import (
 // a context-window overflow (hook.DefaultRetries).
 const llmMaxRetries = hook.DefaultRetries
 
-// timeoutRetryBackoff is the step of the backoff before retrying a timed-out
-// dispatch: the n-th retry waits n steps, jittered (hook.DefaultRetryBackoff).
-const timeoutRetryBackoff = hook.DefaultRetryBackoff
 
 // llmDispatch is one iteration's model request.
 type llmDispatch struct {

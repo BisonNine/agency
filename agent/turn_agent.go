@@ -121,11 +121,10 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 				Assemble: func(_ context.Context, req *ctxengine.AssembleRequest) {
 					req.Channel, req.ChatID = t.opts.Channel, t.opts.ChatID
 				},
-				// The overflow retry compacts through a new reference: after
-				// a reload during the turn, the rebuilt manager.
-				Compaction: func() (ctxengine.ContextManager, func()) {
-					return al.getContextManager(inst, scope.Session)
-				},
+				// The overflow retry compacts through a new reference on the
+				// session's manager: after a reload during the turn, the
+				// rebuilt one.
+				Compaction: managerSource(sessionRef{al: al, inst: inst, key: scope.Session}).manager,
 			}
 			if t.mem != nil {
 				sess.Memory = cogmem.AsMemorySession(t.mem)
@@ -157,6 +156,22 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 			al.asyncToolCallback(ctx, inst, *t.opts, call.Name)(ctx, r)
 		}
 	}
+}
+
+// managerSource gives a new reference on a session's context manager.
+type managerSource interface {
+	manager() (ctxengine.ContextManager, func())
+}
+
+// sessionRef is one session of an instance, as a managerSource.
+type sessionRef struct {
+	al   *AgentLoop
+	inst *AgentInstance
+	key  string
+}
+
+func (r sessionRef) manager() (ctxengine.ContextManager, func()) {
+	return r.al.getContextManager(r.inst, r.key)
 }
 
 // errNoTurnSession ends a run given no session context (withHostTurn).
