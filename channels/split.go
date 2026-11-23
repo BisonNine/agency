@@ -80,14 +80,16 @@ func SplitMessage(content string, maxLen int) []string {
 							// Leave room for "\n```"
 							start+maxLen-5, totalLen)
 						betterEnd := findLastNewlineInRange(runes, start, innerLimit, 200)
+						rest := innerLimit
 						if betterEnd > headerEndIdx {
 							msgEnd = betterEnd
+							rest = betterEnd + 1 // the newline split on: the reopened fence supplies one
 						} else {
 							msgEnd = innerLimit
 						}
 						chunk := strings.TrimRight(string(runes[start:msgEnd]), " \t\n\r") + "\n```"
 						messages = append(messages, chunk)
-						remaining := strings.TrimSpace(header + "\n" + string(runes[msgEnd:totalLen]))
+						remaining := strings.TrimSpace(header + "\n" + string(runes[rest:totalLen]))
 						// Replace the tail of runes with the reconstructed remaining
 						runes = []rune(remaining)
 						totalLen = len(runes)
