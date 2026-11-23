@@ -609,16 +609,18 @@ func (t *ListDirTool) listRecursive(start string) *toolkit.Result {
 	count := 0
 	truncated := false
 
-	var rec func(dir string)
-	rec = func(dir string) {
+	// rec lists dir and the folders under it. A folder below start that
+	// cannot be read is skipped; only start's own error is returned.
+	var rec func(dir string) error
+	rec = func(dir string) error {
 		entries, err := t.sysFs.ReadDir(dir) // os/fs ReadDir returns entries sorted by name
 		if err != nil {
-			return
+			return err
 		}
 		for _, e := range entries {
 			if count >= maxRecursiveListEntries {
 				truncated = true
-				return
+				return nil
 			}
 			name := e.Name()
 			if name == global.FolderMarkerFile {
@@ -632,14 +634,17 @@ func (t *ListDirTool) listRecursive(start string) *toolkit.Result {
 				}
 				b.WriteString("DIR:  " + display + "\n")
 				count++
-				rec(child)
+				_ = rec(child)
 			} else {
 				b.WriteString("FILE: " + display + "\n")
 				count++
 			}
 		}
+		return nil
 	}
-	rec(start)
+	if err := rec(start); err != nil {
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read directory: %v", err)).WithError(err)
+	}
 
 	out := b.String()
 	if truncated {
