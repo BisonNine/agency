@@ -103,6 +103,8 @@ type MCPServer struct {
 
 	httpServer *http.Server
 	tracker    *firstCallTracker
+	// netListen binds the listener (net.Listen; a test seam).
+	netListen func(network, address string) (net.Listener, error)
 
 	// internal and bearer are the two endpoints (/internal and /mcp), served
 	// by the agent SDK's mcphost over the same registries, ACL and tokens.
@@ -276,6 +278,7 @@ func New(opts ...Option) (*MCPServer, error) {
 		endpointPath:  DefaultEndpointPath,
 		internalPath:  InternalEndpointPath,
 		sessionTokens: newSessionTokenStore(),
+		netListen:     net.Listen,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -371,7 +374,7 @@ func (m *MCPServer) RefreshCatalogue() {
 // listener is bound (binding failures are returned immediately), so callers
 // can rely on the server being ready once Start returns nil.
 func (m *MCPServer) Start() error {
-	ln, err := net.Listen("tcp", m.listen)
+	ln, err := m.netListen("tcp", m.listen)
 	if err != nil {
 		return fmt.Errorf("mcpserver: bind %s: %w", m.listen, err)
 	}
