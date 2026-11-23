@@ -126,7 +126,8 @@ func TestShutdown_TaskNotStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec, err := readStatus(tasksDirFor(ws), id); err != nil || rec.Status != StatusRunning {
+	rec, err := readStatus(tasksDirFor(ws), id)
+	if err != nil || rec.Status != StatusRunning {
 		t.Fatalf("background record = %+v (%v), want still running", rec, err)
 	}
 	if ids := listRunUUIDs(tasksDirFor(ws)); len(ids) != 1 || ids[0] != id {

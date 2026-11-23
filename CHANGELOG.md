@@ -63,6 +63,9 @@
 
 ### Changed
 
+- **Background tasks stop when Agency stops.** They used to run until the
+  process exited. A task still running at shutdown is started again after
+  restart, as before.
 - **BREAKING: `common_put` copies only a file the agent's file tools may read.**
   A path outside the read scope, such as `sessions/`, is refused with the file
   tools' message.
