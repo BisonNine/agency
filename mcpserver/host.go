@@ -381,23 +381,16 @@ func (h *endpointHost) beforeTool(ctx context.Context, call *hook.ToolCall) (*to
 	return nil, nil
 }
 
-// afterTool redacts any token from what the model receives, counts the call
-// in the session's tool statistics, and sends a tool's own output to the
-// chat of the call's turn while tool output is on (stream_tool_activity).
+// afterTool redacts any token from what the model receives and sends a
+// tool's own output to the chat of the call's turn while tool output is on
+// (stream_tool_activity). The call is counted when it ends (onEvent).
 func (h *endpointHost) afterTool(ctx context.Context, call *hook.ToolCall, res *toolkit.Result) {
 	res.ForLLM = agenttoken.Redact(res.ForLLM)
 	v, ok := callerValueOf(ctx)
-	if !ok || v.refused != nil {
+	if !ok || v.refused != nil || panicked(res.Err) {
 		return
 	}
 	name := internalName(ctx, call.Name)
-	// A panicking tool counts as a failure under its own text, as it always
-	// has; its answer is MCP's internal error.
-	if _, panicked := errors.AsType[*hook.ToolPanicError](res.Err); panicked {
-		tools.RecordToolResult(v.rec.sessionKey, name, tools.ErrorResult("tool "+name+" panicked"))
-		return
-	}
-	tools.RecordToolResult(v.rec.sessionKey, name, &tools.ToolResult{ForLLM: res.ForLLM, IsError: res.IsError})
 	// The model's answer carries only ForLLM; ForUser is delivered out of band
 	// over the message bus to the chat of the call's turn, only when tool
 	// output is on, as in the agent loop. Background results: asyncResult.
@@ -405,6 +398,38 @@ func (h *endpointHost) afterTool(ctx context.Context, call *hook.ToolCall, res *
 		dest, _ := callDest(ctx)
 		publishMCPForUser(ctx, h.m.msgBus, v.rec, dest, name, res)
 	}
+}
+
+// onEvent counts each call in the session's tool statistics when it ends,
+// as AfterTool left its result. A call whose tool, Gate or host callback
+// panicked counts as a failure under the panic's own text, as a panicking
+// tool always has; its answer is MCP's internal error. A callback's panic
+// skips the call's later callbacks, so only the end of the call sees every
+// panic, and each call ends exactly once.
+func (h *endpointHost) onEvent(ctx context.Context, ev hook.Event) {
+	fin, ok := ev.(hook.ToolCallFinished)
+	if !ok {
+		return
+	}
+	v, ok := callerValueOf(ctx)
+	if !ok || v.refused != nil {
+		return
+	}
+	name := internalName(ctx, fin.Call.Name)
+	res := fin.Result
+	if panicked(res.Err) {
+		res = tools.ErrorResult("tool " + name + " panicked")
+	}
+	tools.RecordToolResult(v.rec.sessionKey, name, &tools.ToolResult{ForLLM: res.ForLLM, IsError: res.IsError})
+}
+
+// panicked reports that err is a panic the endpoint recovered: the tool's
+// or the Gate's (*hook.ToolPanicError) or a host callback's
+// (*hook.PanicError).
+func panicked(err error) bool {
+	var tp *hook.ToolPanicError
+	var cp *hook.PanicError
+	return errors.As(err, &tp) || errors.As(err, &cp)
 }
 
 // asyncResult delivers a background tool's late result the way the agent
@@ -446,6 +471,7 @@ func (h *endpointHost) config() mcphost.Config {
 		RefuseWithInternalName: true,
 		PanicAsProtocolError:   true,
 		OnSkip:                 logSkip,
+		OnChange:               logChange,
 		Gate:                   h.gate,
 		CallContext:            h.callContext,
 		ToolContext:            h.toolContext,
@@ -453,6 +479,7 @@ func (h *endpointHost) config() mcphost.Config {
 			Name:       "mcpserver",
 			BeforeTool: h.beforeTool,
 			AfterTool:  h.afterTool,
+			OnEvent:    h.onEvent,
 		}},
 		AsyncResult: h.asyncResult,
 	}
@@ -462,6 +489,22 @@ func (h *endpointHost) config() mcphost.Config {
 		cfg.Realm = global.HostMCPRealm
 	}
 	return cfg
+}
+
+// logChange logs, at debug level, the tools an endpoint registered and the
+// names it withdrew, as the host's catalogue build always has (each
+// endpoint, at start and on every refresh that changed what it publishes).
+func logChange(r mcphost.RefreshResult) {
+	for _, t := range r.Added {
+		logger.DebugCF("mcpserver", "registered tool", map[string]any{"tool": t.Internal})
+	}
+	if len(r.Removed) > 0 {
+		names := make([]string, len(r.Removed))
+		for i, t := range r.Removed {
+			names[i] = t.Name
+		}
+		logger.DebugCF("mcpserver", "removed tools", map[string]any{"tools": names})
+	}
 }
 
 // logSkip logs a tool an endpoint leaves out of what it publishes, as the

@@ -151,6 +151,10 @@
 - **An MCP client now sees its own agent's tools.** On the `/mcp` endpoint,
   a tool two agents both have could be described with the other agent's
   description; each client now sees its own agent's tool.
+- **An MCP tool call that fails on an internal fault in the service is
+  answered as one, like a tool that crashes.** The client now gets MCP's
+  internal error (-32603) instead of a tool error, and the call is counted as
+  failed in the agent's tool statistics, where it used to be missing.
 - **Messages written while the service was stopping or restarting are no
   longer lost.** An interrupted reply, a tool result or a message queued at
   that moment could overwrite another in the conversation history, so one of

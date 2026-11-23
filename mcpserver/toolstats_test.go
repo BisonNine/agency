@@ -94,6 +94,56 @@ func TestDispatch_PanickingToolTalliedAsFailure(t *testing.T) {
 	}
 }
 
+// TestDispatch_PanickingHostCallbackTalliedAsFailure: a panic in one of the
+// host's callbacks during a call (the ACL in ToolContext, the breadcrumb in
+// BeforeTool, the tool-output switch in AfterTool) is answered with MCP's
+// internal error and counted once, as a failure, as a panicking tool is.
+func TestDispatch_PanickingHostCallbackTalliedAsFailure(t *testing.T) {
+	boom := func() { panic("host callback blew up") }
+	cases := []struct {
+		name     string
+		ctx      context.Context
+		policy   acl.Policy
+		activity ToolActivityNotifier
+	}{
+		{
+			name: "ToolContext", ctx: context.Background(),
+			policy: acl.PolicyFunc(func(_, _ string) bool { boom(); return true }),
+		},
+		{
+			name: "BeforeTool", ctx: context.Background(),
+			activity: func(_, _, _ string, _ map[string]any) string { boom(); return "" },
+		},
+		{name: "AfterTool", ctx: withToolOutput(context.Background(), func() bool { boom(); return true })},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			session := "agent:clone-cbpanic-" + tc.name + ":main"
+			rf := &mockTool{name: "read_file", params: map[string]any{}, result: &tools.ToolResult{ForLLM: "contents"}}
+			regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
+			st := newSessionTokenStore()
+			tok := st.Issue("alice", session, "/ws/alice/sessions")
+
+			tools.BeginToolStats(session)
+			defer tools.EndToolStats(session)
+			func() {
+				defer func() {
+					if _, ok := recover().(errPanicked); !ok {
+						t.Error("the call was not answered with MCP's internal error (-32603)")
+					}
+				}()
+				dispatchToolCall(tc.ctx, "read_file",
+					map[string]any{"session_token": tok}, st, resolverFor(regs), nil, tc.policy, nil, tc.activity)
+			}()
+
+			calls, errs, last := tools.EndToolStats(session)
+			if calls != 1 || errs != 1 || last != "read_file: tool read_file panicked" {
+				t.Errorf("tally = %d calls, %d errors, last %q; want 1, 1, the panic", calls, errs, last)
+			}
+		})
+	}
+}
+
 // TestDispatch_UnverifiedTokenNotTallied: a call whose session token cannot
 // be resolved has no session to attribute it to and is not counted.
 func TestDispatch_UnverifiedTokenNotTallied(t *testing.T) {
