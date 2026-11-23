@@ -12,9 +12,11 @@ import (
 	"testing"
 
 	"go.bison9.com/agency/internal/admin"
+	"go.bison9.com/agency/internal/install"
 )
 
 func TestResolveHome_EnvWins(t *testing.T) {
+	stubDetect(t, &install.ExistingInstall{ClawHome: "/opt/claw"})
 	t.Setenv("CLAW_HOME", "/tmp/claw-test-home")
 	home, _ := ResolveHome()
 	if home != "/tmp/claw-test-home" {

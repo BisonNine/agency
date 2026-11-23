@@ -25,7 +25,7 @@ func ResolveHome() (string, *install.ExistingInstall) {
 	if err != nil {
 		userHome = "" // no home directory: install detection and the ~/.claw fallback go without it
 	}
-	inst := install.DetectExistingInstall(userHome)
+	inst := detectInstall(userHome)
 	if home := os.Getenv(global.EnvVarHome); home != "" {
 		return home, inst
 	}
@@ -34,6 +34,10 @@ func ResolveHome() (string, *install.ExistingInstall) {
 	}
 	return filepath.Join(userHome, global.DefaultDataDir), inst
 }
+
+// detectInstall finds the installed service; replaced in tests so they do not
+// consult the real machine.
+var detectInstall = install.DetectExistingInstall
 
 // SecretsFileMode is security.permissions.secrets.file_mode from the config
 // file in home (its built-in default when there is none), the mode the

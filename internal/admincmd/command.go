@@ -41,8 +41,11 @@ func NewAdminCommand() *cobra.Command {
 	}
 }
 
-// openTerminal is replaced in tests.
-var openTerminal = admin.OpenTerminal
+// openTerminal and geteuid are replaced in tests.
+var (
+	openTerminal = admin.OpenTerminal
+	geteuid      = os.Geteuid
+)
 
 func run(out io.Writer, username string) (err error) {
 	t, err := openTerminal(out)
@@ -83,7 +86,7 @@ func run(out io.Writer, username string) (err error) {
 // a gateway running as that account can read a 0600 file. Any other caller
 // already owns the file.
 func chownToService(path string, inst *install.ExistingInstall) error {
-	if os.Geteuid() != 0 || inst == nil {
+	if geteuid() != 0 || inst == nil {
 		return nil
 	}
 	name := inst.User
