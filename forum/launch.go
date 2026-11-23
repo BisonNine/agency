@@ -373,6 +373,12 @@ func (s *Service) createParticipants(ctx context.Context, store *forumStore, cfg
 			rec.Created = true
 			created = append(created, rec.AgentID)
 			if err := setAgentsMarker(store, created); err != nil {
+				// The marker does not list the agent just created, so
+				// nothing would ever delete it: delete it now.
+				delErr := s.host.Agents.Delete(context.WithoutCancel(ctx), launcher, rec.AgentID)
+				if delErr != nil && !errors.Is(delErr, ErrNotFound) && !errors.Is(delErr, ErrDeletePending) {
+					err = errors.Join(err, fmt.Errorf("temporary agent %s: %w", rec.AgentID, delErr))
+				}
 				return nil, err
 			}
 		}
