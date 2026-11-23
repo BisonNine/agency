@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/cogmem/store"
 	"go.bison9.com/agent/ctxengine/memory"
 
@@ -42,10 +41,6 @@ func TestWireCognitiveMemory_GatesOnAgentFlag(t *testing.T) {
 	defer func() { agent.Config.Cogmem = nil }()
 	if al.wireCognitiveMemory(agent, "agent:main:main") != nil {
 		t.Fatal("agent with cogmem off got a memory session")
-	}
-	var none *cogmem.Session
-	if inj := recallInjections(context.Background(), none, "x"); inj != nil {
-		t.Fatalf("nil session produced injections %+v", inj)
 	}
 }
 

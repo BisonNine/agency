@@ -37,11 +37,17 @@ func (al *AgentLoop) newTurnAgent(inst *AgentInstance) (sdkagent.Agent, error) {
 }
 
 // turnAgentOf is inst's SDK agent. An instance the agent builder made has
-// it already; one made otherwise (a test's) gets it on its first turn.
+// it already; one made otherwise (a test's) gets it on its first turn,
+// unless the instance is closed: then the turn ends with loop.ErrClosed, as
+// it does on a closed instance's agent, and nothing is built that no Close
+// would close.
 func (al *AgentLoop) turnAgentOf(inst *AgentInstance) (sdkagent.Agent, error) {
 	inst.turnAgentMu.Lock()
 	defer inst.turnAgentMu.Unlock()
 	if inst.turnAgent == nil {
+		if inst.closed {
+			return nil, loop.ErrClosed
+		}
 		a, err := al.newTurnAgent(inst)
 		if err != nil {
 			return nil, err

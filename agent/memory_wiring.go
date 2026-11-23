@@ -9,7 +9,6 @@ import (
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/cogmem/consolidate"
 	"go.bison9.com/agent/cogmem/store"
-	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/memory"
 
 	"go.bison9.com/agency/cogmemhost"
@@ -97,22 +96,4 @@ func backfillInbox(ctx context.Context, st *store.Store, agentID, stateDir, sess
 			"agent_id": agentID, "session_key": sessionKey, "messages": copied,
 		})
 	}
-}
-
-// recallInjections asks memory for this dispatch's blocks and maps them onto
-// the context manager's placements. Nil for agents without memory.
-func recallInjections(ctx context.Context, mem *cogmem.Session, routeText string) []ctxengine.Injection {
-	rec := mem.Recall(ctx, routeText)
-	if len(rec) == 0 {
-		return nil
-	}
-	out := make([]ctxengine.Injection, 0, len(rec))
-	for _, r := range rec {
-		p := ctxengine.PlaceSystemStable
-		if r.Placement == cogmem.PlaceCurrentUser {
-			p = ctxengine.PlaceCurrentUser
-		}
-		out = append(out, ctxengine.Injection{Placement: p, Text: r.Text})
-	}
-	return out
 }

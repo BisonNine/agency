@@ -297,25 +297,45 @@ func TestContextWindow_AppliedAtTurnStart(t *testing.T) {
 	}
 }
 
-// The turn's assembly counts the tool schemas of the model the turn chose,
-// not of whatever /model selected since.
-func TestAssembleRequest_UsesTurnModel(t *testing.T) {
-	al, agent := newLimitsLoop(t, &limitsProvider{})
+// The turn's assembly counts and sends the tool schemas of the model the
+// turn chose, not of whatever /model selected since.
+func TestTurnAssembly_UsesTurnModel(t *testing.T) {
+	p := &limitsProvider{}
+	al, agent := newLimitsLoop(t, p)
 	const sessionKey = "assemble"
-	// Plain Model, which takes no tools, is active now; Alice Model took
-	// them when the turn started, and the other way round.
-	if err := al.setActiveModelIndex(agent, sessionKey, 2); err != nil {
-		t.Fatalf("setActiveModelIndex: %v", err)
-	}
-	opts := processOptions{SessionKey: sessionKey, turnModel: &turnModel{model: "Alice Model", limits: agent.limitsFor("Alice Model")}}
-	if got := al.assembleRequest(context.Background(), agent, nil, opts).ToolDefinitionTokens; got == 0 {
-		t.Error("turn on Alice Model: no tool schemas counted")
-	}
-	if err := al.setActiveModelIndex(agent, sessionKey, 0); err != nil {
-		t.Fatalf("setActiveModelIndex: %v", err)
-	}
-	opts.turnModel = &turnModel{model: "Plain Model", limits: agent.limitsFor("Plain Model")}
-	if got := al.assembleRequest(context.Background(), agent, nil, opts).ToolDefinitionTokens; got != 0 {
-		t.Errorf("turn on Plain Model: %d tool schema tokens counted, want 0", got)
+	cm, release := al.getContextManager(agent, sessionKey)
+	defer release()
+	// Alice Model, which takes tools, was active when the first turn
+	// started, Plain Model, which takes none, when the second did; /model
+	// then selected the other one.
+	for _, step := range []struct {
+		chosen, after int
+		wantTools     bool
+	}{{0, 2, true}, {2, 0, false}} {
+		if err := al.setActiveModelIndex(agent, sessionKey, step.chosen); err != nil {
+			t.Fatalf("setActiveModelIndex: %v", err)
+		}
+		tm := al.selectTurnModel(agent, sessionKey)
+		if err := al.setActiveModelIndex(agent, sessionKey, step.after); err != nil {
+			t.Fatalf("setActiveModelIndex: %v", err)
+		}
+		rec := &assemblyRecorder{ContextManager: cm}
+		opts := processOptions{SessionKey: sessionKey, Channel: "cli", ChatID: "direct"}
+		if _, _, err := testTurn(t, al, agent, opts, tm, rec); err != nil {
+			t.Fatalf("turn on %s: %v", tm.model, err)
+		}
+		got := rec.tokens()
+		if len(got) == 0 {
+			t.Fatalf("turn on %s: no assembly", tm.model)
+		}
+		p.mu.Lock()
+		sent := p.tools[len(p.tools)-1]
+		p.mu.Unlock()
+		if step.wantTools && (got[0] == 0 || sent == 0) {
+			t.Errorf("turn on %s: %d tool schema tokens counted, %d tools sent; want both", tm.model, got[0], sent)
+		}
+		if !step.wantTools && (got[0] != 0 || sent != 0) {
+			t.Errorf("turn on %s: %d tool schema tokens counted, %d tools sent; want none", tm.model, got[0], sent)
+		}
 	}
 }

@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"testing"
 
@@ -22,7 +23,8 @@ import (
 
 // probedAgent gives agent an SDK agent of its own whose first plugin
 // records, for each turn, how its model loop ended (before AfterTurn decides
-// the reply), so a test can read it. It replaces the instance's agent.
+// the reply), so a test can read it. It replaces the instance's agent and
+// closes the one it replaced.
 func (al *AgentLoop) probedAgent(agent *AgentInstance, extra []hook.Plugin, specOpt func(*loop.Spec)) (func(*hostTurn) modelReply, error) {
 	var mu sync.Mutex
 	ends := map[*hostTurn]modelReply{}
@@ -48,8 +50,14 @@ func (al *AgentLoop) probedAgent(agent *AgentInstance, extra []hook.Plugin, spec
 		return nil, err
 	}
 	agent.turnAgentMu.Lock()
+	prev := agent.turnAgent
 	agent.turnAgent = a
 	agent.turnAgentMu.Unlock()
+	if prev != nil {
+		if err := prev.Close(context.Background()); err != nil {
+			return nil, err
+		}
+	}
 	return ended, nil
 }
 
@@ -157,6 +165,28 @@ func (f *firstAssembly) Assemble(ctx context.Context, req ctxengine.AssembleRequ
 	return f.ContextManager.Assemble(ctx, req)
 }
 
+// assemblyRecorder is a context manager that records the tool-schema cost
+// (ToolDefinitionTokens) of every assembly a turn asks it for.
+type assemblyRecorder struct {
+	ctxengine.ContextManager
+	mu         sync.Mutex
+	toolTokens []int
+}
+
+func (r *assemblyRecorder) Assemble(ctx context.Context, req ctxengine.AssembleRequest) (ctxengine.Assembly, error) {
+	r.mu.Lock()
+	r.toolTokens = append(r.toolTokens, req.ToolDefinitionTokens)
+	r.mu.Unlock()
+	return r.ContextManager.Assemble(ctx, req)
+}
+
+// tokens are the recorded costs, one per assembly, in order.
+func (r *assemblyRecorder) tokens() []int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.toolTokens)
+}
+
 // testHooks are an agent's turn plugins (turnPlugins) serving one turn,
 // for tests that drive them with events: each call gets the turn's context.
 type testHooks struct {
@@ -209,15 +239,14 @@ func (h *testHooks) callBeforeLoop(ctx context.Context, loop *hook.Loop) error {
 }
 
 // callAfterModel runs the AfterModel callbacks, in order, on the turn's
-// context.
-func (h *testHooks) callAfterModel(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) *hook.PanicError {
+// context. A callback's panic propagates, as one ends the turn on the agent.
+func (h *testHooks) callAfterModel(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) {
 	ctx = h.onTurn(ctx)
 	for _, p := range h.ps {
 		if p.AfterModel != nil {
-			h.observe(func() { p.AfterModel(ctx, call, resp) })
+			p.AfterModel(ctx, call, resp)
 		}
 	}
-	return nil
 }
 
 // newTurnHooks are the plugins of agent serving one turn on opts, whose

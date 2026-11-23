@@ -35,9 +35,11 @@ func (al *AgentLoop) publishBreadcrumb(ctx context.Context, opts processOptions,
 // asyncToolCallback is the completion callback of an AsyncExecutor tool. Its
 // ForUser output goes straight to the user, as on the synchronous path; its
 // result re-enters the agent loop as a "system" message so
-// processSystemMessage routes it back through a normal turn. Where the result
-// goes is fixed now, while the agent exists: a clone's late result goes to
-// its source's main conversation, as a sub-agent's always has.
+// processSystemMessage routes it back through a normal turn. It is built when
+// the late result arrives, after the turn and perhaps after the agent; where
+// the result goes reads only the agent's Spec, which never changes: a clone's
+// late result goes to its source's main conversation, as a sub-agent's always
+// has.
 func (al *AgentLoop) asyncToolCallback(ctx context.Context, agent *AgentInstance, opts processOptions, toolName string) tools.AsyncCallback {
 	resultAgentID, resultSessionKey := asyncResultTarget(agent)
 	turnDepth := toolsagents.SpawnDepth(ctx)

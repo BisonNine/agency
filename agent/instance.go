@@ -117,6 +117,9 @@ type AgentInstance struct {
 	// agent builder.
 	turnAgent   sdkagent.Agent
 	turnAgentMu sync.Mutex
+	// closed is set by Close: a closed instance never builds an SDK agent.
+	// Guarded by turnAgentMu.
+	closed bool
 }
 
 // Label names the agent in logs and audit rows: its id, or "alice (clone
@@ -188,8 +191,8 @@ func (a *AgentInstance) toolIdentity() string {
 
 // asyncResultTarget is where a late (async) result of a's tools is
 // delivered: a's main conversation, or for a clone its source's — the clone
-// may be deleted by the time the result arrives. Callers resolve it when the
-// callback is built.
+// may be deleted by the time the result arrives. It is resolved when the late
+// result arrives; it reads only a's Spec, which never changes.
 func asyncResultTarget(a *AgentInstance) (agentID, sessionKey string) {
 	home := a.toolIdentity()
 	return home, routing.BuildAgentMainSessionKey(home)
@@ -606,6 +609,7 @@ func resolveAgentModels(agentCfg *config.AgentConfig, defaults *config.AgentDefa
 func (a *AgentInstance) Close() error {
 	a.turnAgentMu.Lock()
 	turnAgent := a.turnAgent
+	a.closed = true
 	a.turnAgentMu.Unlock()
 	if turnAgent != nil {
 		// It refuses new turns at once and finishes closing once the turns

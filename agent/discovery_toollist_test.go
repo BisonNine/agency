@@ -11,6 +11,8 @@ import (
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
+	"go.bison9.com/agent/discovery"
+
 	climcp "go.bison9.com/agency/mcp"
 	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
@@ -64,7 +66,7 @@ func TestDiscovery_MCPToolListsUnchanged(t *testing.T) {
 				{Role: "tool", ToolCallID: "tc-1", ToolReferences: []string{"bob_post", "alpha_read"}},
 				{Role: "tool", ToolCallID: "tc-2", ToolReferences: []string{"alpha_read", "mcp_alpha_scan"}},
 			}
-			inDefs := inContextToolList(agent, sent, history)
+			inDefs := inContextToolList(agent, history)
 			inContext := make([]string, 0, len(inDefs))
 			for _, d := range inDefs {
 				inContext = append(inContext, d.Function.Name)
@@ -112,7 +114,15 @@ func sentToolList(agent *AgentInstance) []providers.ToolDefinition {
 	return agent.Tools.ToolDefs(nil).Send
 }
 
-// inContextToolList is what the tool-schema estimate counts for history.
-func inContextToolList(agent *AgentInstance, sent []providers.ToolDefinition, history []providers.Message) []providers.ToolDefinition {
-	return sentToolDefs(agent, sent, history)
+// inContextToolList is what the tool-schema estimate counts for history:
+// discovery's InContext for what history's tool results have revealed, as
+// the SDK agent computes it over the same registry snapshot.
+func inContextToolList(agent *AgentInstance, history []providers.Message) []providers.ToolDefinition {
+	var refs [][]string
+	for _, m := range history {
+		if len(m.ToolReferences) > 0 {
+			refs = append(refs, m.ToolReferences)
+		}
+	}
+	return agent.Tools.ToolDefs(discovery.NewSession(refs...)).InContext
 }

@@ -226,81 +226,82 @@ func (b bulkyTool) Execute(context.Context, map[string]any) *tools.ToolResult {
 	return tools.SilentResult("ok")
 }
 
-// The tool-schema cost on the context manager's request counts only what the
-// request sends: with discovery on and no references, the hidden tools cost
-// nothing; once a stored message references one, that one tool is added. The
-// in-turn path (the messages in hand) uses the same selection.
-func TestAssembleRequest_EstimatesOnlySentTools(t *testing.T) {
+// The tool-schema cost a turn puts on the context manager's requests counts
+// only what the request sends: with discovery on and nothing referenced, the
+// hidden tools cost nothing; once a search result in the turn references
+// some, the next request counts them, and a later turn over the stored
+// history counts them from its first request.
+func TestTurn_EstimatesOnlySentTools(t *testing.T) {
 	al := newTestAgentLoop(t).al
 	agent := al.registry.Default()
 	if agent == nil {
 		t.Fatal("no default agent")
 	}
 	agent.Tools.RegisterDiscoveryTools(context.Background(), 5, nil)
-	coreDefs := agent.Tools.ToolDefs(nil).Send
-
 	for i := range 200 {
 		agent.Tools.RegisterEntries(tools.ToolEntry{Entry: discovery.HideEntries([]toolkit.Entry{{Tool: bulkyTool{name: fmt.Sprintf("mcp_bob_tool_%03d", i)}}})[0]})
 	}
-	// search_tools' description lists the hidden namespaces, so the core
-	// cost is taken again with the hidden tools registered.
 	var coreNow []providers.ToolDefinition
-	var referenced providers.ToolDefinition
+	hidden := map[string]providers.ToolDefinition{}
 	for _, d := range agent.Tools.ToolDefs(nil).Send {
-		if !d.Deferred {
+		if d.Deferred {
+			hidden[d.Function.Name] = d
+		} else {
 			coreNow = append(coreNow, d)
-		}
-		if d.Function.Name == "mcp_bob_tool_007" {
-			referenced = d
 		}
 	}
 	coreTokens := ctxengine.EstimateToolDefinitionTokens(coreNow)
-	referenced.Deferred = false
-	wantOne := ctxengine.EstimateToolDefinitionTokens(append(slices.Clone(coreNow), referenced))
-	if wantOne <= coreTokens {
-		t.Fatalf("precondition: one tool must cost something (%d <= %d)", wantOne, coreTokens)
+	withRefs := func(refs []string) int {
+		defs := slices.Clone(coreNow)
+		for _, name := range refs {
+			d, ok := hidden[name]
+			if !ok {
+				t.Fatalf("referenced tool %q is not a hidden tool", name)
+			}
+			d.Deferred = false
+			defs = append(defs, d)
+		}
+		return ctxengine.EstimateToolDefinitionTokens(defs)
 	}
-	if len(coreNow) != len(coreDefs) {
-		t.Fatalf("core tools = %d, want %d", len(coreNow), len(coreDefs))
-	}
+
+	provider := &defsRecordingProvider{responses: []*providers.LLMResponse{
+		toolCallResponse("tc-1", "search_tools", `{"query":"mcp_bob_tool_007"}`),
+		{Content: "Found Bob's tool."},
+	}}
+	setTestProvider(agent, provider)
 
 	const key = "agent:main:estimate"
-	opts := processOptions{SessionKey: key, Channel: "cli", ChatID: "direct"}
-	ctx := context.Background()
-
-	if got := al.assembleRequest(ctx, agent, nil, opts).ToolDefinitionTokens; got != coreTokens {
-		t.Errorf("no references: tool tokens = %d, want the core tools' %d", got, coreTokens)
-	}
-
-	history := []providers.Message{
-		{Role: "user", Content: "find Bob's tool"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{
-			ID: "tc-1", Type: "function", Name: "search_tools",
-			Function: &providers.FunctionCall{Name: "search_tools", Arguments: `{"query":"bob"}`},
-		}}},
-		{Role: "tool", ToolCallID: "tc-1", Content: "Found 1 tool(s)", ToolReferences: []string{"mcp_bob_tool_007"}},
-	}
 	cm, release := al.getContextManager(agent, key)
 	defer release()
-	if _, err := cm.AddUserMessage(ctx, history[0]); err != nil {
-		t.Fatal(err)
+	opts := processOptions{SessionKey: key, Channel: "cli", ChatID: "direct", UserMessage: "find Bob's tool"}
+	rec := &assemblyRecorder{ContextManager: cm}
+	if _, _, err := testTurn(t, al, agent, opts, al.selectTurnModel(agent, key), rec); err != nil {
+		t.Fatalf("turn: %v", err)
 	}
-	if _, err := cm.AddToolCallMessage(ctx, history[1]); err != nil {
-		t.Fatal(err)
+	if len(provider.messages) != 2 {
+		t.Fatalf("model calls = %d, want 2", len(provider.messages))
 	}
-	if _, err := cm.AddToolResult(ctx, history[2]); err != nil {
-		t.Fatal(err)
+	found, ok := toolMessageFor(provider.messages[1], "tc-1")
+	if !ok || len(found.ToolReferences) == 0 {
+		t.Fatalf("the search result referenced no tool: %+v", found)
+	}
+	wantRefs := withRefs(found.ToolReferences)
+	if wantRefs <= coreTokens {
+		t.Fatalf("precondition: the referenced tools must cost something (%d <= %d)", wantRefs, coreTokens)
+	}
+	// Each request is assembled before its call; the first request's
+	// assembly comes first.
+	if got := rec.tokens(); len(got) < 2 || got[0] != coreTokens || got[len(got)-1] != wantRefs {
+		t.Errorf("tool tokens per assembly = %v, want %d first (the core tools) and %d last (core plus the referenced tools)", got, coreTokens, wantRefs)
 	}
 
-	if got := al.assembleRequest(ctx, agent, nil, opts).ToolDefinitionTokens; got != wantOne {
-		t.Errorf("one stored reference: tool tokens = %d, want %d (core plus that tool)", got, wantOne)
+	opts.UserMessage = "use it"
+	rec = &assemblyRecorder{ContextManager: cm}
+	if _, _, err := testTurn(t, al, agent, opts, al.selectTurnModel(agent, key), rec); err != nil {
+		t.Fatalf("second turn: %v", err)
 	}
-	defs := agent.Tools.ToolDefs(nil).Send
-	if got := al.assembleRequestWithDefs(ctx, agent, nil, opts, defs, history).ToolDefinitionTokens; got != wantOne {
-		t.Errorf("in-turn messages with one reference: tool tokens = %d, want %d", got, wantOne)
-	}
-	if got := al.assembleRequestWithDefs(ctx, agent, nil, opts, defs, history[:1]).ToolDefinitionTokens; got != coreTokens {
-		t.Errorf("in-turn messages without references: tool tokens = %d, want %d", got, coreTokens)
+	if got := rec.tokens(); len(got) == 0 || got[0] != wantRefs {
+		t.Errorf("next turn's first request: tool tokens = %v, want %d first (the stored references counted)", got, wantRefs)
 	}
 }
 

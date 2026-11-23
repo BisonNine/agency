@@ -52,6 +52,28 @@ func TestTurnAgentIsBuiltWithTheInstance(t *testing.T) {
 	}
 }
 
+// TestTurnAgentNotBuiltAfterClose checks that an instance made without the
+// builder, once closed, builds no SDK agent for a turn (none that a Close
+// would close): the turn ends with the error a closed instance's agent
+// gives.
+func TestTurnAgentNotBuiltAfterClose(t *testing.T) {
+	al := newTestAgentLoop(t).al
+	bob := &AgentInstance{ID: "bob"}
+	if err := bob.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	_, err := al.runOnAgent(context.Background(), bob, processOptions{SessionKey: "agent:bob:main", UserMessage: "hello"}, &turnModel{}, nil, nil, false)
+	if !errors.Is(err, loop.ErrClosed) {
+		t.Errorf("a turn on a closed instance ended with %v, want %v", err, loop.ErrClosed)
+	}
+	bob.turnAgentMu.Lock()
+	built := bob.turnAgent
+	bob.turnAgentMu.Unlock()
+	if built != nil {
+		t.Error("a closed instance built an SDK agent")
+	}
+}
+
 // TestTurnAgentRunsATurnWithTheHostsSettings runs one turn on an instance's
 // SDK agent: it answers through the instance's model choice and stores the
 // exchange in the instance's session store, on the chat of the turn's

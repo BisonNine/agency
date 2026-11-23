@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/commands"
 	"go.bison9.com/agency/constants"
+	"go.bison9.com/agency/logger"
 )
 
 // sessionIdleTTL is how long a session's dispatch state survives with no turn
@@ -124,7 +125,7 @@ func (al *AgentLoop) pruneSessions() {
 // cancel stops the session's running turn, if any, and drops everything queued
 // behind it, recording both for the /cancel reply. It returns the dropped
 // messages.
-func (ss *sessionState) cancel(ctx context.Context, cause error) []bus.InboundMessage {
+func (ss *sessionState) cancel(cause error) []bus.InboundMessage {
 	ss.mu.Lock()
 	dropped := ss.pending
 	ss.skipCount += len(ss.pending)
@@ -177,8 +178,26 @@ func (h *runHandle) running() bool {
 func (h *runHandle) cancel(cause error, running bool) {
 	h.run.Cancel(cause)
 	if running && h.al.isCLIModel(h.turn.modelName()) {
-		h.al.reissueSessionToken(h.agent, h.turn.o.SessionKey)
+		h.reissueToken()
 	}
+}
+
+// reissueToken gives the turn's session a new MCP session token. A panic in
+// it is logged and skipped, so the /cancel still completes.
+func (h *runHandle) reissueToken() {
+	defer func() {
+		if r := recover(); r != nil {
+			value, stack := panicReport(r)
+			logger.ErrorCF("agent", "panic while reissuing the session token on cancel",
+				map[string]any{
+					"agent_id":    h.agent.ID,
+					"session_key": h.turn.o.SessionKey,
+					"panic":       value,
+					"stack":       stack,
+				})
+		}
+	}()
+	h.al.reissueSessionToken(h.agent, h.turn.o.SessionKey)
 }
 
 // turnHandles records the run of a queued turn: the first run started on
@@ -380,7 +399,7 @@ func (al *AgentLoop) processSessionMessage(ctx context.Context, msg bus.InboundM
 
 	if al.isCancelCommand(msg.Content) {
 		cause := &userCancelError{chat: queuedChat(msg)}
-		dropped := ss.cancel(ctx, cause)
+		dropped := ss.cancel(cause)
 		al.publishCancelledReplies(ctx, dropped, cause)
 		al.runTurn(ctx, ctx, msg)
 		return

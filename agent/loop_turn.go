@@ -8,17 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/tenebris-tech/alerter"
-	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
-	"go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/hook"
-	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/global"
@@ -66,15 +62,6 @@ type processOptions struct {
 	// turn starts; nil when the turn engine is entered without one, which
 	// then makes it.
 	turnModel *turnModel
-}
-
-// turnLimits are the limits of the turn's model: the choice made when the
-// turn started, else the session's active model.
-func (al *AgentLoop) turnLimits(agent *AgentInstance, opts processOptions) runLimits {
-	if opts.turnModel != nil {
-		return opts.turnModel.limits
-	}
-	return al.sessionLimits(agent, opts.SessionKey)
 }
 
 // setOutcome records how the turn ended in opts.OutcomeOut, when requested.
@@ -624,69 +611,6 @@ func (al *AgentLoop) evictionNotifyUser(agent *AgentInstance) bool {
 		applyEvictionConfig(&p, agent.Config.ContextEviction)
 	}
 	return p.NotifyUser
-}
-
-// assembleRequest builds the per-dispatch request for the context manager:
-// the system-prompt layers for this conversation, the cost of the tool schemas
-// this dispatch will send, the memory blocks recalled for the user's message
-// this turn, and the channel the compaction reporter should answer on. mem
-// may be nil.
-func (al *AgentLoop) assembleRequest(ctx context.Context, agent *AgentInstance, mem *cogmem.Session, opts processOptions) ctxengine.AssembleRequest {
-	defs := agent.Tools.ToolDefs(nil).Send
-	if al.turnLimits(agent, opts).noTools {
-		defs = nil
-	}
-	// The turn's request is not built yet: the stored history is what it
-	// will carry. Read only when a deferred tool makes the history matter.
-	var history []providers.Message
-	if hasDeferredTool(defs) && agent.Sessions != nil {
-		history = agent.Sessions.GetHistory(opts.SessionKey)
-	}
-	return al.assembleRequestWithDefs(ctx, agent, mem, opts, defs, history)
-}
-
-// assembleRequestWithDefs is assembleRequest for a caller that already holds
-// this dispatch's tool definitions and the messages it will send (history).
-func (al *AgentLoop) assembleRequestWithDefs(ctx context.Context, agent *AgentInstance, mem *cogmem.Session, opts processOptions, defs []providers.ToolDefinition, history []providers.Message) ctxengine.AssembleRequest {
-	return ctxengine.AssembleRequest{
-		ToolDefinitionTokens: ctxengine.EstimateToolDefinitionTokens(sentToolDefs(agent, defs, history)),
-		Layers:               al.promptLayers(agent, opts),
-		Injections:           recallInjections(ctx, mem, opts.UserMessage),
-		Channel:              opts.Channel,
-		ChatID:               opts.ChatID,
-	}
-}
-
-// sentToolDefs is the part of the agent's tool list a request with history
-// actually carries, and so what its tool schemas cost: the tools that are not
-// deferred, plus the deferred ones a message in history references
-// (discovery's InContext). An unreferenced deferred tool is not sent at all (a
-// provider without native deferred tools leaves it out; a native one loads
-// only referenced ones). defs is the dispatch's list: none means no tools are
-// offered, so none cost anything.
-func sentToolDefs(agent *AgentInstance, defs []providers.ToolDefinition, history []providers.Message) []providers.ToolDefinition {
-	if len(defs) == 0 {
-		return nil
-	}
-	return agent.Tools.ToolDefs(revealedIn(history)).InContext
-}
-
-// revealedIn is what history's tool results have revealed. The host keeps no
-// revealed-tools state of its own: it is rebuilt from the messages a request
-// carries, so it follows a restart and a compaction that drops messages.
-func revealedIn(history []providers.Message) *discovery.Session {
-	refs := make([][]string, 0, len(history))
-	for _, m := range history {
-		if len(m.ToolReferences) > 0 {
-			refs = append(refs, m.ToolReferences)
-		}
-	}
-	return discovery.NewSession(refs...)
-}
-
-// hasDeferredTool reports whether any definition is deferred.
-func hasDeferredTool(defs []providers.ToolDefinition) bool {
-	return slices.ContainsFunc(defs, common.IsDeferred)
 }
 
 // promptLayers is the system prompt for one dispatch: the agent's static and
