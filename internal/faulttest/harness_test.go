@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
@@ -20,7 +22,6 @@ import (
 	"go.bison9.com/agency/internal/test/stubprovider"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/state"
-	"go.bison9.com/agency/tools"
 )
 
 const (
@@ -112,7 +113,7 @@ type loop struct {
 // config, a channel manager that knows
 // testChannel, and Run in the background. extraTools are registered before
 // Run. The loop is stopped and closed when the test ends.
-func startLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, extraTools ...tools.Tool) *loop {
+func startLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, extraTools ...toolkit.Tool) *loop {
 	t.Helper()
 	al, err := agent.NewAgentLoop(t.Context(), cfg, msgBus)
 	if err != nil {
@@ -339,10 +340,10 @@ func (b *blockingTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
 
-func (b *blockingTool) Execute(context.Context, map[string]any) *tools.ToolResult {
+func (b *blockingTool) Execute(context.Context, map[string]any) *toolkit.Result {
 	b.started <- struct{}{}
 	<-b.release
-	return tools.SilentResult("released")
+	return toolkit.SilentResult("released")
 }
 
 // waitStarted fails unless a tool call begins within timeout.

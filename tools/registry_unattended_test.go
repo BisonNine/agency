@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agent/toolkit"
 )
 
 type mockSessionScopedTool struct {
@@ -17,7 +19,7 @@ func TestExecuteUnattended(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("ok_tool", "ok"))
 	failing := newMockTool("bad_tool", "bad")
-	failing.result = ErrorResult("the mailbox is locked")
+	failing.result = toolkit.ErrorResult("the mailbox is locked")
 	r.Register(failing)
 	r.Register(&mockSessionScopedTool{mockRegistryTool: *newMockTool("session_tool", "s")})
 
@@ -25,10 +27,10 @@ func TestExecuteUnattended(t *testing.T) {
 	if err != nil || out != "ok" {
 		t.Errorf("ok_tool = %q, %v", out, err)
 	}
-	if _, err = r.ExecuteUnattended(context.Background(), "missing", nil); !errors.Is(err, ErrToolNotRegistered) {
+	if _, err = r.ExecuteUnattended(context.Background(), "missing", nil); !errors.Is(err, toolkit.ErrToolNotRegistered) {
 		t.Errorf("missing = %v, want ErrToolNotRegistered", err)
 	}
-	if _, err = r.ExecuteUnattended(context.Background(), "session_tool", nil); !errors.Is(err, ErrToolSessionScoped) {
+	if _, err = r.ExecuteUnattended(context.Background(), "session_tool", nil); !errors.Is(err, toolkit.ErrToolSessionScoped) {
 		t.Errorf("session_tool = %v, want ErrToolSessionScoped", err)
 	}
 	_, err = r.ExecuteUnattended(context.Background(), "bad_tool", nil)

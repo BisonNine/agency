@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-
-	sessiontools "go.bison9.com/agent/ctxengine/tools"
 )
 
 type Message struct {
@@ -60,11 +58,3 @@ type ToolFunctionDefinition struct {
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
 }
-
-// SessionInfo and SummaryCoverage are defined by the session tools package
-// (tools/session/sessiontools); the aliases keep the historical names for the
-// agent loop, which produces them via ToolDeps.SessionInfoFn.
-type (
-	SessionInfo     = sessiontools.SessionInfo
-	SummaryCoverage = sessiontools.SummaryCoverage
-)

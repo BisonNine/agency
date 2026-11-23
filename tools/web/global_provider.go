@@ -1,10 +1,10 @@
 package web
 
 import (
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the web tools through the transport-neutral global
@@ -83,10 +83,10 @@ func (globalWebProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 				// The tool is still advertised, so guard here and report it to the
 				// model rather than dereferencing a nil receiver (which segfaults).
 				if search == nil {
-					return tools.ResultToGlobal(tools.ErrorResult(
+					return toolkit.ResultToSpec(toolkit.ErrorResult(
 						"web search is not configured on this server (no search provider is enabled)")), nil
 				}
-				return tools.ResultToGlobal(search.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(search.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -97,10 +97,10 @@ func (globalWebProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if fetch == nil {
-					return tools.ResultToGlobal(tools.ErrorResult(
+					return toolkit.ResultToSpec(toolkit.ErrorResult(
 						"web fetch is not configured on this server")), nil
 				}
-				return tools.ResultToGlobal(fetch.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(fetch.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 	}

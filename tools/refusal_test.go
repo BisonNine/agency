@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/logger"
 )
 
@@ -16,12 +18,12 @@ import (
 func TestRegistry_RefusalLoggedAtWarn(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
-		result    *ToolResult
+		result    *toolkit.Result
 		wantLevel string
 		wantMsg   string
 	}{
-		{"refusal", ErrorResult("You may not message Bob.").WithError(Refusal(errors.New("not allowed"))), `"level":"warn"`, "Tool call refused"},
-		{"failure", ErrorResult("disk full").WithError(errors.New("disk full")), `"level":"error"`, "Tool execution failed"},
+		{"refusal", toolkit.ErrorResult("You may not message Bob.").WithError(toolkit.Refusal(errors.New("not allowed"))), `"level":"warn"`, "Tool call refused"},
+		{"failure", toolkit.ErrorResult("disk full").WithError(errors.New("disk full")), `"level":"error"`, "Tool execution failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf safeBuf
@@ -70,7 +72,7 @@ func TestRegistry_RefusedCallLogs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := NewToolRegistry()
-			r.Register(&mockRegistryTool{name: "probe", params: map[string]any{}, result: SilentResult("ran")})
+			r.Register(&mockRegistryTool{name: "probe", params: map[string]any{}, result: toolkit.SilentResult("ran")})
 
 			var buf safeBuf
 			restore := logger.RedirectForTest(&buf)

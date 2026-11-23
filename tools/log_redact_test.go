@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/utils"
 )
@@ -231,7 +233,7 @@ func TestRegistry_ExecuteWithContext_OmitsArgsAtInfo(t *testing.T) {
 		name:   "file_write",
 		desc:   "writes",
 		params: map[string]any{},
-		result: SilentResult("ok"),
+		result: toolkit.SilentResult("ok"),
 	})
 
 	secret := strings.Repeat("S", 10240)
@@ -282,7 +284,7 @@ func TestRegistry_ExecuteWithContext_TruncatesErrorForLLM(t *testing.T) {
 		name:   "boom",
 		desc:   "errors",
 		params: map[string]any{},
-		result: ErrorResult(long),
+		result: toolkit.ErrorResult(long),
 	})
 
 	r.Execute(context.Background(), "boom", nil)
@@ -355,7 +357,7 @@ func TestRegistry_ExecuteWithContext_NoTruncateKeepsErrorForLLM(t *testing.T) {
 		name:   "boom",
 		desc:   "errors",
 		params: map[string]any{},
-		result: ErrorResult(long),
+		result: toolkit.ErrorResult(long),
 	})
 
 	r.Execute(context.Background(), "boom", nil)

@@ -17,14 +17,14 @@ import (
 // regWithHiddenSuiteTool returns a registry holding one suite tool registered
 // hidden behind discovery — exactly how the maestro/fusion suites register when
 // progressive discovery is enabled (a suite-exempt entry from discovery.HideEntries).
-func regWithHiddenSuiteTool(tool tools.Tool) *tools.ToolRegistry {
+func regWithHiddenSuiteTool(tool toolkit.Tool) *tools.ToolRegistry {
 	r := tools.NewToolRegistry()
 	r.RegisterEntries(hiddenSuiteEntry(tool))
 	return r
 }
 
 // hiddenSuiteEntry is tool registered as a suite tool hidden by discovery.
-func hiddenSuiteEntry(tool tools.Tool) tools.ToolEntry {
+func hiddenSuiteEntry(tool toolkit.Tool) tools.ToolEntry {
 	e := discovery.HideEntries([]toolkit.Entry{{Tool: tool}})
 	return tools.ToolEntry{Entry: e[0], SuiteExempt: true}
 }
@@ -35,7 +35,7 @@ func hiddenSuiteEntry(tool tools.Tool) tools.ToolEntry {
 // must never apply progressive discovery — it lists the tool AND dispatches it,
 // authorization coming from the ACL policy, not the discovery state.
 func TestHost_ListsAndDispatchesHiddenSuiteTool(t *testing.T) {
-	tool := &mockTool{name: "maestro_file_list", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	tool := &mockTool{name: "maestro_file_list", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	reg := regWithHiddenSuiteTool(tool)
 
 	// A hidden tool is registered like any other: discovery never gates it.

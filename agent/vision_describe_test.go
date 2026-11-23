@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/tools"
 )
 
 // stubVisionClient is a fake vision side-model: it records the image Media it was
@@ -151,8 +151,8 @@ func (flowAImageTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
 
-func (flowAImageTool) Execute(_ context.Context, _ map[string]any) *tools.ToolResult {
-	return &tools.ToolResult{
+func (flowAImageTool) Execute(_ context.Context, _ map[string]any) *toolkit.Result {
+	return &toolkit.Result{
 		ForLLM: "[viewing image cat.png]\nFocus: count the cats",
 		Images: []string{"data:image/png;base64,AAA"},
 	}

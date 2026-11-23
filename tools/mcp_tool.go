@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/tools/untrusted"
 )
@@ -149,7 +150,7 @@ func (t *MCPTool) Name() string {
 // dropped so clients see e.g. "fusion_trello_search" instead of the doubly-
 // prefixed "mcp__claw__mcp_fusion_trello_search". The internal registry name
 // (Name) is unchanged; only the externally published name differs. Implements
-// the tools.ExternalNamer interface.
+// the toolkit.ExternalNamer interface.
 func (t *MCPTool) ExternalName() string {
 	return strings.TrimPrefix(t.Name(), MCPToolPrefix)
 }
@@ -215,21 +216,21 @@ func emptyObjectSchema() map[string]any {
 }
 
 // Execute executes the MCP tool
-func (t *MCPTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+func (t *MCPTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	result, err := t.manager.CallTool(ctx, t.serverName, t.tool.Name, args)
 	if err != nil {
-		return ErrorResult(fmt.Sprintf("MCP tool execution failed: %v", err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("MCP tool execution failed: %v", err)).WithError(err)
 	}
 
 	if result == nil {
 		nilErr := errors.New("MCP tool returned nil result without error")
-		return ErrorResult("MCP tool execution failed: nil result").WithError(nilErr)
+		return toolkit.ErrorResult("MCP tool execution failed: nil result").WithError(nilErr)
 	}
 
 	// Handle error result from server
 	if result.IsError {
 		errMsg, _ := extractContent(result.Content)
-		return ErrorResult("MCP tool returned error: " + errMsg).
+		return toolkit.ErrorResult("MCP tool returned error: " + errMsg).
 			WithError(fmt.Errorf("MCP tool error: %s", errMsg))
 	}
 
@@ -239,7 +240,7 @@ func (t *MCPTool) Execute(ctx context.Context, args map[string]any) *ToolResult 
 	// external server, so it is marked untrusted before the model sees it.
 	output, images := extractContent(result.Content)
 
-	return &ToolResult{
+	return &toolkit.Result{
 		ForLLM:  untrusted.Wrap(output),
 		Images:  images,
 		IsError: false,

@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -14,7 +16,7 @@ func (p defaultEnabledTestProvider) Description() string                     { r
 func (p defaultEnabledTestProvider) Category() string                        { return "test" }
 func (p defaultEnabledTestProvider) ConfigKey() string                       { return "ztest" }
 func (p defaultEnabledTestProvider) Available(*config.Config) (bool, string) { return true, "" }
-func (p defaultEnabledTestProvider) Build(ToolDeps) []Tool                   { return nil }
+func (p defaultEnabledTestProvider) Build(ToolDeps) []toolkit.Tool           { return nil }
 func (p defaultEnabledTestProvider) Describe() []ToolDescriptor              { return p.descs }
 
 // TestDefaultEnabledToolNames verifies the single source of truth for

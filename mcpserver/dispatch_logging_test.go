@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agenttoken"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
@@ -28,7 +30,7 @@ func TestDispatch_SuccessEmitsAuthorizedInfoPerCall(t *testing.T) {
 	buf, restore := captureLogs(t)
 	defer restore()
 
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st := newSessionTokenStore()
 	tok := st.Issue("alice", "test:alice:main", "/tmp/archive/alice")

@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier"
@@ -39,11 +41,11 @@ type classifierTool struct {
 func (c *classifierTool) Name() string               { return c.name }
 func (c *classifierTool) Description() string        { return "test tool " + c.name }
 func (c *classifierTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (c *classifierTool) Execute(context.Context, map[string]any) *tools.ToolResult {
+func (c *classifierTool) Execute(context.Context, map[string]any) *toolkit.Result {
 	if c.isError {
-		return tools.ErrorResult(c.out)
+		return toolkit.ErrorResult(c.out)
 	}
-	return tools.NewToolResult(c.out)
+	return toolkit.NewResult(c.out)
 }
 
 type sessionClassifierTool struct{ classifierTool }
@@ -134,7 +136,7 @@ func newClassifierHostLoop(t *testing.T, cfg *config.Config) (*AgentLoop, *Class
 }
 
 // registerOn registers tool on the configured agent id's registry.
-func registerOn(t *testing.T, al *AgentLoop, id string, tool tools.Tool) {
+func registerOn(t *testing.T, al *AgentLoop, id string, tool toolkit.Tool) {
 	t.Helper()
 	inst, ok := al.GetRegistry().GetConfigured(id)
 	if !ok {
@@ -536,9 +538,9 @@ func TestClassifierHost_CloneActsAsOwner(t *testing.T) {
 // hangingTool never answers until its call is cancelled.
 type hangingTool struct{ classifierTool }
 
-func (h *hangingTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (h *hangingTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	<-ctx.Done()
-	return tools.ErrorResult(ctx.Err().Error())
+	return toolkit.ErrorResult(ctx.Err().Error())
 }
 
 // A classifier tool call is bounded by the watch probe's timeout; one that

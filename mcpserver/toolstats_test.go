@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/mcpserver/acl"
 	"go.bison9.com/agency/tools"
 )
@@ -18,9 +20,9 @@ import (
 // token was verified (tool not in the registry, denied by the ACL).
 func TestDispatch_TalliesSubagentToolCalls(t *testing.T) {
 	const session = "agent:clone-tally:main"
-	ok := &mockTool{name: "read_file", params: map[string]any{}, result: &tools.ToolResult{ForLLM: "contents"}}
-	bad := &mockTool{name: "write_file", params: map[string]any{}, result: &tools.ToolResult{ForLLM: "disk full", IsError: true}}
-	denied := &mockTool{name: "shell_exec", params: map[string]any{}, result: &tools.ToolResult{ForLLM: "ran"}}
+	ok := &mockTool{name: "read_file", params: map[string]any{}, result: &toolkit.Result{ForLLM: "contents"}}
+	bad := &mockTool{name: "write_file", params: map[string]any{}, result: &toolkit.Result{ForLLM: "disk full", IsError: true}}
+	denied := &mockTool{name: "shell_exec", params: map[string]any{}, result: &toolkit.Result{ForLLM: "ran"}}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(ok, bad, denied)}
 	policy := acl.PolicyFunc(func(_, tool string) bool { return tool != "shell_exec" })
 	st := newSessionTokenStore()
@@ -45,7 +47,7 @@ func TestDispatch_TalliesSubagentToolCalls(t *testing.T) {
 	tools.BeginToolStats(session)
 	dispatch("no_such_tool")
 	calls, errs, last = tools.EndToolStats(session)
-	if calls != 1 || errs != 1 || last != "no_such_tool: "+tools.NotEnabledMessage("no_such_tool") {
+	if calls != 1 || errs != 1 || last != "no_such_tool: "+toolkit.NotEnabledMessage("no_such_tool") {
 		t.Errorf("not-in-registry: %d calls, %d errors, last %q", calls, errs, last)
 	}
 
@@ -63,7 +65,7 @@ func TestDispatch_TalliesSubagentToolCalls(t *testing.T) {
 // panickingMock panics when executed.
 type panickingMock struct{ mockTool }
 
-func (*panickingMock) Execute(context.Context, map[string]any) *tools.ToolResult {
+func (*panickingMock) Execute(context.Context, map[string]any) *toolkit.Result {
 	panic("tool blew up")
 }
 
@@ -119,7 +121,7 @@ func TestDispatch_PanickingHostCallbackTalliedAsFailure(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			session := "agent:clone-cbpanic-" + tc.name + ":main"
-			rf := &mockTool{name: "read_file", params: map[string]any{}, result: &tools.ToolResult{ForLLM: "contents"}}
+			rf := &mockTool{name: "read_file", params: map[string]any{}, result: &toolkit.Result{ForLLM: "contents"}}
 			regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 			st := newSessionTokenStore()
 			tok := st.Issue("alice", session, "/ws/alice/sessions")

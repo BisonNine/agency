@@ -305,5 +305,5 @@ type ValidationError struct {
 
 func (e *ValidationError) Error() string { return strings.Join(e.Issues, "\n") }
 
-// Refusal marks the error as an expected refusal (tools.IsExpectedRefusal).
+// Refusal marks the error as an expected refusal (toolkit.IsExpectedRefusal).
 func (e *ValidationError) Refusal() bool { return true }

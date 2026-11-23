@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
@@ -59,7 +60,7 @@ func TestNamespacedProvider_PrefixesNames(t *testing.T) {
 
 func TestNamespacedProvider_ExecuteAndSchema(t *testing.T) {
 	p := NamespacedProvider("file", fakeGlobalProvider{})
-	var readTool Tool
+	var readTool toolkit.Tool
 	for _, tl := range p.Build(ToolDeps{}) {
 		if tl.Name() == "file_read" {
 			readTool = tl
@@ -78,7 +79,7 @@ func TestNamespacedProvider_ExecuteAndSchema(t *testing.T) {
 		t.Fatalf("expected 'path' property in schema, got %v", schema)
 	}
 	// Session is threaded from ctx into the call.
-	ctx := WithSessionKey(context.Background(), "sess-1")
+	ctx := toolkit.WithSessionKey(context.Background(), "sess-1")
 	res := readTool.Execute(ctx, map[string]any{"path": "/x"})
 	if res.IsError || res.ForLLM != "read:/x sess=sess-1" {
 		t.Fatalf("unexpected result: %+v", res)
@@ -87,7 +88,7 @@ func TestNamespacedProvider_ExecuteAndSchema(t *testing.T) {
 
 func TestNamespacedProvider_AsyncAndSessionInterfaces(t *testing.T) {
 	p := NamespacedProvider("file", fakeGlobalProvider{})
-	var watch Tool
+	var watch toolkit.Tool
 	for _, tl := range p.Build(ToolDeps{}) {
 		if tl.Name() == "file_watch" {
 			watch = tl
@@ -97,16 +98,16 @@ func TestNamespacedProvider_AsyncAndSessionInterfaces(t *testing.T) {
 		t.Fatal("file_watch not built")
 	}
 	// def flags must surface as the optional interfaces.
-	ss, ok := watch.(SessionScoped)
+	ss, ok := watch.(toolkit.SessionScoped)
 	if !ok || !ss.IsSessionScoped() {
 		t.Fatal("file_watch should be SessionScoped")
 	}
-	ae, ok := watch.(AsyncExecutor)
+	ae, ok := watch.(toolkit.AsyncExecutor)
 	if !ok {
 		t.Fatal("file_watch should be AsyncExecutor")
 	}
-	var got *ToolResult
-	res := ae.ExecuteAsync(context.Background(), map[string]any{}, func(_ context.Context, r *ToolResult) { got = r })
+	var got *toolkit.Result
+	res := ae.ExecuteAsync(context.Background(), map[string]any{}, func(_ context.Context, r *toolkit.Result) { got = r })
 	if !res.Async {
 		t.Fatalf("expected async result, got %+v", res)
 	}
@@ -114,16 +115,16 @@ func TestNamespacedProvider_AsyncAndSessionInterfaces(t *testing.T) {
 		t.Fatalf("expected notify callback to deliver 'done', got %+v", got)
 	}
 	// The non-async, non-session tool must NOT satisfy those interfaces.
-	var read Tool
+	var read toolkit.Tool
 	for _, tl := range p.Build(ToolDeps{}) {
 		if tl.Name() == "file_read" {
 			read = tl
 		}
 	}
-	if _, ok := read.(AsyncExecutor); ok {
+	if _, ok := read.(toolkit.AsyncExecutor); ok {
 		t.Fatal("file_read must not be AsyncExecutor")
 	}
-	if _, ok := read.(SessionScoped); ok {
+	if _, ok := read.(toolkit.SessionScoped); ok {
 		t.Fatal("file_read must not be SessionScoped")
 	}
 }

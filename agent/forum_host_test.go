@@ -19,6 +19,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -937,7 +938,7 @@ func TestForumHost_Ceilings(t *testing.T) {
 		t.Errorf("Ceilings() = %+v, want %+v", got, want)
 	}
 
-	call := func(tool string, args map[string]any) *tools.ToolResult {
+	call := func(tool string, args map[string]any) *toolkit.Result {
 		t.Helper()
 		alice, _ := r.al.GetRegistry().Get("alice")
 		return alice.Tools.ExecuteWithContext(context.Background(), tool, args, "telegram", "chat-1", nil)

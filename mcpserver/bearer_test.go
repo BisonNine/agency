@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agenttoken"
 	"go.bison9.com/agency/tools"
 )
@@ -61,7 +63,7 @@ func TestEndpointSchemas_DifferByParam(t *testing.T) {
 	rf := &mockTool{name: "read_file", params: map[string]any{
 		"type":       "object",
 		"properties": map[string]any{"path": map[string]any{"type": "string"}},
-	}, result: tools.NewToolResult("ok")}
+	}, result: toolkit.NewResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st, tok := seedSessionToken("alice")
 	srv := hostFor(t, regs, st)

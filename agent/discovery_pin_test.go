@@ -49,7 +49,7 @@ func TestAlwaysShown(t *testing.T) {
 // namedTool is a tool under a given internal name, offered (like an upstream
 // MCP tool) under that name without its mcp_ prefix.
 type namedTool struct {
-	tools.Tool
+	toolkit.Tool
 	name string
 }
 

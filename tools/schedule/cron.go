@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/cron"
@@ -80,7 +82,7 @@ func (t *CronTool) IsSessionScoped() bool { return true }
 // (e.g. "agent:alice:main" → "alice"). Empty when unavailable — callers treat
 // an empty id as "owns nothing" so cron stays fail-closed.
 func callerAgentID(ctx context.Context) string {
-	if pk := routing.ParseAgentSessionKey(tools.ToolSessionKey(ctx)); pk != nil {
+	if pk := routing.ParseAgentSessionKey(toolkit.SessionKey(ctx)); pk != nil {
 		return pk.AgentID
 	}
 	return ""
@@ -161,10 +163,10 @@ func (t *CronTool) Parameters() map[string]any {
 }
 
 // Execute runs the tool with the given arguments
-func (t *CronTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *CronTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	action, ok := args["action"].(string)
 	if !ok {
-		return tools.ErrorResult("action is required")
+		return toolkit.ErrorResult("action is required")
 	}
 
 	// Jobs are addressed to an agent. By default that's the caller; an authorized
@@ -193,20 +195,20 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 	case "disable":
 		return t.enableJob(args, false, target)
 	default:
-		return tools.ErrorResult("unknown action: " + action)
+		return toolkit.ErrorResult("unknown action: " + action)
 	}
 }
 
 // resolveTargetAgent returns the agent a cron action operates on: the caller by
 // default, or the `agent` arg when the caller is authorized (global_cron) to act
 // on another agent. Returns an error result if unauthorized or no caller agent.
-func (t *CronTool) resolveTargetAgent(args map[string]any, callerID string) (string, *tools.ToolResult) {
+func (t *CronTool) resolveTargetAgent(args map[string]any, callerID string) (string, *toolkit.Result) {
 	target := callerID
 	if a, ok := args["agent"].(string); ok {
 		if a = strings.TrimSpace(a); a != "" && !config.SameAgentID(a, callerID) {
 			cfg := t.config()
 			if cfg == nil || !cfg.AgentHasGlobalCron(callerID) {
-				return "", tools.ErrorResult("not authorized to schedule or manage another agent's cron jobs (requires global_cron)")
+				return "", toolkit.ErrorResult("not authorized to schedule or manage another agent's cron jobs (requires global_cron)")
 			}
 			// Jobs carry the agent's identity, so the target agent can later
 			// see/manage the job by its own id.
@@ -214,7 +216,7 @@ func (t *CronTool) resolveTargetAgent(args map[string]any, callerID string) (str
 		}
 	}
 	if target == "" {
-		return "", tools.ErrorResult("no calling agent in context")
+		return "", toolkit.ErrorResult("no calling agent in context")
 	}
 	return target, nil
 }
@@ -235,26 +237,26 @@ func (t *CronTool) ownedJob(jobID, agentID string) *cron.CronJob {
 	return nil
 }
 
-func (t *CronTool) addJob(args map[string]any, agentID string) *tools.ToolResult {
+func (t *CronTool) addJob(args map[string]any, agentID string) *toolkit.Result {
 	// The destination is resolved at fire time from the target agent's default
 	// channel — never captured here and never chosen by the model. Require that
 	// the target agent has a usable default channel now, so the job is deliverable.
 	cfg := t.config()
 	if cfg == nil {
-		return tools.ErrorResult("cron unavailable: configuration not loaded")
+		return toolkit.ErrorResult("cron unavailable: configuration not loaded")
 	}
 	// A human agent takes work only from agents' questions: a scheduled job
 	// would post to the person with nobody waiting for the answer.
 	if cfg.IsHumanAgent(agentID) {
-		return tools.ErrorResult(fmt.Sprintf("agent %q is a person; scheduled jobs can't be sent to them", agentID))
+		return toolkit.ErrorResult(fmt.Sprintf("agent %q is a person; scheduled jobs can't be sent to them", agentID))
 	}
 	if _, _, _, ok := cfg.CronTarget(agentID); !ok {
-		return tools.ErrorResult(fmt.Sprintf("agent %q has no default channel configured; set a default channel (binding) before scheduling", agentID))
+		return toolkit.ErrorResult(fmt.Sprintf("agent %q has no default channel configured; set a default channel (binding) before scheduling", agentID))
 	}
 
 	message, ok := args["message"].(string)
 	if !ok || message == "" {
-		return tools.ErrorResult("message is required for add")
+		return toolkit.ErrorResult("message is required for add")
 	}
 
 	var schedule cron.CronSchedule
@@ -277,7 +279,7 @@ func (t *CronTool) addJob(args map[string]any, agentID string) *tools.ToolResult
 	// Priority: listen > at_seconds > every_seconds > cron_expr
 	if listen {
 		if hasAt || hasEvery || hasCron {
-			return tools.ErrorResult("a listen job runs continuously and takes no schedule; drop at_seconds/every_seconds/cron_expr")
+			return toolkit.ErrorResult("a listen job runs continuously and takes no schedule; drop at_seconds/every_seconds/cron_expr")
 		}
 		schedule = cron.CronSchedule{Kind: cron.KindListen}
 	} else if hasAt {
@@ -298,7 +300,7 @@ func (t *CronTool) addJob(args map[string]any, agentID string) *tools.ToolResult
 			Expr: cronExpr,
 		}
 	} else {
-		return tools.ErrorResult("one of at_seconds, every_seconds, cron_expr, or listen is required")
+		return toolkit.ErrorResult("one of at_seconds, every_seconds, cron_expr, or listen is required")
 	}
 
 	// Job name = a short preview of the message (max 30 chars).
@@ -306,11 +308,11 @@ func (t *CronTool) addJob(args map[string]any, agentID string) *tools.ToolResult
 
 	watch, werr := parseWatchArgs(args)
 	if werr != nil {
-		return tools.ErrorResult(werr.Error())
+		return toolkit.ErrorResult(werr.Error())
 	}
 	if listen {
 		if watch == nil {
-			return tools.ErrorResult("listen requires watch_tool: the tool to keep calling")
+			return toolkit.ErrorResult("listen requires watch_tool: the tool to keep calling")
 		}
 		if secs, ok := args["watch_timeout_seconds"].(float64); ok && secs > 0 {
 			watch.TimeoutSec = int(secs)
@@ -331,7 +333,7 @@ func (t *CronTool) addJob(args map[string]any, agentID string) *tools.ToolResult
 	}
 	job, err := t.cronService.AddJob(messagePreview, schedule, message, mode, "", "", "")
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("Error adding job: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("Error adding job: %v", err))
 	}
 
 	// Address the job to the target agent: its default channel is the delivery
@@ -339,7 +341,7 @@ func (t *CronTool) addJob(args map[string]any, agentID string) *tools.ToolResult
 	job.AgentID = agentID
 	job.Payload.Watch = watch
 	if err := t.cronService.UpdateJob(job); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("Error updating job: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("Error updating job: %v", err))
 	}
 	t.kickListeners()
 
@@ -348,17 +350,17 @@ func (t *CronTool) addJob(args map[string]any, agentID string) *tools.ToolResult
 		if watch.SuppressRepeats {
 			when = fmt.Sprintf("each time %s carry a new value", describeFields(watch.Fields))
 		}
-		return tools.SilentResult(fmt.Sprintf(
+		return toolkit.SilentResult(fmt.Sprintf(
 			"Listener added for %s: %s (id: %s). It keeps %q running in the background and messages you with the full result %s.",
 			agentID, job.Name, job.ID, watch.Tool, when))
 	}
 	if watch != nil {
-		return tools.SilentResult(fmt.Sprintf(
+		return toolkit.SilentResult(fmt.Sprintf(
 			"Watch added for %s: %s (id: %s). It calls %q on the schedule and only messages you when %s change. "+
 				"The first run records a baseline silently.",
 			agentID, job.Name, job.ID, watch.Tool, describeFields(watch.Fields)))
 	}
-	return tools.SilentResult(fmt.Sprintf("Cron job added for %s: %s (id: %s)", agentID, job.Name, job.ID))
+	return toolkit.SilentResult(fmt.Sprintf("Cron job added for %s: %s (id: %s)", agentID, job.Name, job.ID))
 }
 
 // formatSchedule renders a job's schedule as readable text.
@@ -385,7 +387,7 @@ func formatNextRun(j *cron.CronJob) string {
 	return time.UnixMilli(*j.State.NextRunAtMS).Format("2006-01-02 15:04")
 }
 
-func (t *CronTool) listJobs(agentID string) *tools.ToolResult {
+func (t *CronTool) listJobs(agentID string) *toolkit.Result {
 	all := t.cronService.ListJobs(false)
 	jobs := make([]cron.CronJob, 0, len(all))
 	for _, j := range all {
@@ -395,7 +397,7 @@ func (t *CronTool) listJobs(agentID string) *tools.ToolResult {
 	}
 
 	if len(jobs) == 0 {
-		return tools.SilentResult("No scheduled jobs")
+		return toolkit.SilentResult("No scheduled jobs")
 	}
 
 	var result strings.Builder
@@ -410,17 +412,17 @@ func (t *CronTool) listJobs(agentID string) *tools.ToolResult {
 			j.Name, j.ID, formatSchedule(j), state, formatNextRun(j))
 	}
 
-	return tools.SilentResult(result.String())
+	return toolkit.SilentResult(result.String())
 }
 
-func (t *CronTool) getJob(args map[string]any, agentID string) *tools.ToolResult {
+func (t *CronTool) getJob(args map[string]any, agentID string) *toolkit.Result {
 	jobID, ok := args["job_id"].(string)
 	if !ok || jobID == "" {
-		return tools.ErrorResult("job_id is required for get")
+		return toolkit.ErrorResult("job_id is required for get")
 	}
 	job := t.ownedJob(jobID, agentID)
 	if job == nil {
-		return tools.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
+		return toolkit.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
 	}
 
 	state := "enabled"
@@ -438,46 +440,46 @@ func (t *CronTool) getJob(args map[string]any, agentID string) *tools.ToolResult
 	}
 	fmt.Fprintf(&b, "  delivers to: %s / %s\n", job.Payload.Channel, job.Payload.To)
 	fmt.Fprintf(&b, "  message:  %s", job.Payload.Message)
-	return tools.SilentResult(b.String())
+	return toolkit.SilentResult(b.String())
 }
 
-func (t *CronTool) removeJob(args map[string]any, agentID string) *tools.ToolResult {
+func (t *CronTool) removeJob(args map[string]any, agentID string) *toolkit.Result {
 	jobID, ok := args["job_id"].(string)
 	if !ok || jobID == "" {
-		return tools.ErrorResult("job_id is required for remove")
+		return toolkit.ErrorResult("job_id is required for remove")
 	}
 	// Only the owning agent may remove a job.
 	if t.ownedJob(jobID, agentID) == nil {
-		return tools.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
+		return toolkit.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
 	}
 
 	removed, err := t.cronService.RemoveJob(jobID)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("Failed to remove job %s: %v", jobID, err))
+		return toolkit.ErrorResult(fmt.Sprintf("Failed to remove job %s: %v", jobID, err))
 	}
 	t.kickListeners()
 	if removed {
-		return tools.SilentResult("Cron job removed: " + jobID)
+		return toolkit.SilentResult("Cron job removed: " + jobID)
 	}
-	return tools.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
+	return toolkit.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
 }
 
-func (t *CronTool) enableJob(args map[string]any, enable bool, agentID string) *tools.ToolResult {
+func (t *CronTool) enableJob(args map[string]any, enable bool, agentID string) *toolkit.Result {
 	jobID, ok := args["job_id"].(string)
 	if !ok || jobID == "" {
-		return tools.ErrorResult("job_id is required for enable/disable")
+		return toolkit.ErrorResult("job_id is required for enable/disable")
 	}
 	// Only the owning agent may enable/disable a job.
 	if t.ownedJob(jobID, agentID) == nil {
-		return tools.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
+		return toolkit.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
 	}
 
 	job, err := t.cronService.EnableJob(jobID, enable)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("Failed to update job %s: %v", jobID, err))
+		return toolkit.ErrorResult(fmt.Sprintf("Failed to update job %s: %v", jobID, err))
 	}
 	if job == nil {
-		return tools.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
+		return toolkit.ErrorResult(fmt.Sprintf("Job %s not found", jobID))
 	}
 	t.kickListeners()
 
@@ -485,7 +487,7 @@ func (t *CronTool) enableJob(args map[string]any, enable bool, agentID string) *
 	if !enable {
 		status = "disabled"
 	}
-	return tools.SilentResult(fmt.Sprintf("Cron job '%s' %s", job.Name, status))
+	return toolkit.SilentResult(fmt.Sprintf("Cron job '%s' %s", job.Name, status))
 }
 
 // ExecuteJob executes a cron job through the agent

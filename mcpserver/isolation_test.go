@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agenttoken"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
@@ -29,8 +31,8 @@ func resolverFor(m map[string]*tools.ToolRegistry) AgentResolver {
 // the correct session_token executes against the matching agent's registry,
 // and that the session_token is stripped from args before reaching the tool.
 func TestDispatch_ValidTokenRoutesToAgentRegistry(t *testing.T) {
-	aliceReadFile := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("alice-content")}
-	bobReadFile := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("bob-content")}
+	aliceReadFile := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("alice-content")}
+	bobReadFile := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("bob-content")}
 
 	regs := map[string]*tools.ToolRegistry{
 		"alice": newRegistryWith(aliceReadFile),
@@ -138,7 +140,7 @@ func TestDispatch_RedactsTokensInOutput(t *testing.T) {
 	leaky := &mockTool{
 		name:   "read_file",
 		params: map[string]any{},
-		result: tools.NewToolResult("here is your token: " + tok + " — keep it safe"),
+		result: toolkit.NewResult("here is your token: " + tok + " — keep it safe"),
 	}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(leaky)}
 

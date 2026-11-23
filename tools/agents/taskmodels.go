@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // The kinds of task-model spawn (agent_spawn's kind argument).
@@ -103,7 +103,7 @@ func taskRequestOf(rec *TaskRecord) TaskModelRequest {
 // record is kept like a sub-agent's (status and results files). Like Run, it
 // stops waiting when ctx ends first; the call goes on and its result goes to
 // onDetach.
-func (sm *SubagentManager) RunTask(ctx context.Context, label, channel, chatID string, req TaskModelRequest, onDetach tools.AsyncCallback) *tools.ToolResult {
+func (sm *SubagentManager) RunTask(ctx context.Context, label, channel, chatID string, req TaskModelRequest, onDetach toolkit.AsyncCallback) *toolkit.Result {
 	if strings.TrimSpace(label) == "" {
 		label = "(unnamed)"
 	}
@@ -114,12 +114,12 @@ func (sm *SubagentManager) RunTask(ctx context.Context, label, channel, chatID s
 
 // SpawnTaskCallback launches a tracked background task-model call, like
 // SpawnCallback, and returns its uuid.
-func (sm *SubagentManager) SpawnTaskCallback(name, channel, chatID string, req TaskModelRequest, cb tools.AsyncCallback, parentDepth int) (string, error) {
+func (sm *SubagentManager) SpawnTaskCallback(name, channel, chatID string, req TaskModelRequest, cb toolkit.AsyncCallback, parentDepth int) (string, error) {
 	return sm.spawnTaskCallback(context.Background(), spawnOrigin{depth: parentDepth}, name, channel, chatID, req, cb)
 }
 
 // spawnTaskCallback is SpawnTaskCallback for a call started from origin.
-func (sm *SubagentManager) spawnTaskCallback(ctx context.Context, origin spawnOrigin, name, channel, chatID string, req TaskModelRequest, cb tools.AsyncCallback) (string, error) {
+func (sm *SubagentManager) spawnTaskCallback(ctx context.Context, origin spawnOrigin, name, channel, chatID string, req TaskModelRequest, cb toolkit.AsyncCallback) (string, error) {
 	rec := sm.newTaskRecord(name, "callback", channel, chatID, req, origin)
 	rec.RetryAfter = nowEpoch() + retryDelaySecs()
 	dir := sm.tasksDir()
@@ -173,7 +173,7 @@ func (sm *SubagentManager) runTaskModel(ctx context.Context, rec *TaskRecord, mo
 // recordTaskResults writes the results and status files and returns the
 // notification: the result in full for the model, a short block for the
 // chat.
-func (sm *SubagentManager) recordTaskResults(rec *TaskRecord, res *TaskModelResult, runErr error) *tools.ToolResult {
+func (sm *SubagentManager) recordTaskResults(rec *TaskRecord, res *TaskModelResult, runErr error) *toolkit.Result {
 	rec.FinishedAt = nowRFC()
 	body := taskResultText(rec, res, runErr)
 	if runErr != nil {
@@ -204,7 +204,7 @@ func (sm *SubagentManager) recordTaskResults(rec *TaskRecord, res *TaskModelResu
 		fmt.Fprintf(&u, "Error: %s\n", rec.Error)
 	}
 	u.WriteString(callbackRuleEnd + "\n")
-	return &tools.ToolResult{ForLLM: body, ForUser: u.String(), IsError: runErr != nil}
+	return &toolkit.Result{ForLLM: body, ForUser: u.String(), IsError: runErr != nil}
 }
 
 // taskResultText is the result as the calling model reads it: outcome,
@@ -254,7 +254,7 @@ func taskResultText(rec *TaskRecord, res *TaskModelResult, runErr error) string 
 // of a sub-agent. The depth check has already run.
 func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*toolspec.Result, error) {
 	refuse := func(text string) (*toolspec.Result, error) {
-		return &toolspec.Result{IsError: true, ForLLM: text, Err: tools.Refusal(errors.New(text))}, nil
+		return &toolspec.Result{IsError: true, ForLLM: text, Err: toolkit.Refusal(errors.New(text))}, nil
 	}
 	kind := strings.ToLower(strings.TrimSpace(req.Kind))
 	switch {
@@ -284,7 +284,7 @@ func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*tool
 		chatID = "direct"
 	}
 	if req.Mode == global.SpawnAndWait {
-		return tools.ResultToGlobal(s.mgr.RunTask(ctx, req.Label, channel, chatID, treq, onResultCallback(req.OnResult))), nil
+		return toolkit.ResultToSpec(s.mgr.RunTask(ctx, req.Label, channel, chatID, treq, onResultCallback(req.OnResult))), nil
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -299,5 +299,5 @@ func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*tool
 	}
 	msg := fmt.Sprintf("Started background task '%s' (uuid: %s, kind %s). You'll be notified with the result, "+
 		"or poll agent_status with uuid=%q.", name, id, kind, id)
-	return tools.ResultToGlobal(tools.AsyncResult(msg)), nil
+	return toolkit.ResultToSpec(toolkit.AsyncResult(msg)), nil
 }

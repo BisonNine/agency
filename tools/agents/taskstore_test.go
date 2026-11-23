@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/tools"
 )
 
 // echoRunFull is a fake full-pipeline runner that returns the task text as the
@@ -47,9 +48,9 @@ func TestSpawn_NoRunnerIsUnavailable(t *testing.T) {
 		t.Fatalf("wait spawn without runner: want error result wrapping %q, got %+v", wantErr, res)
 	}
 
-	done := make(chan *tools.ToolResult, 1)
+	done := make(chan *toolkit.Result, 1)
 	id, err := mgr.SpawnCallback("work", "job", "", "cli", "direct", "", "", nil,
-		func(_ context.Context, r *tools.ToolResult) { done <- r }, 0)
+		func(_ context.Context, r *toolkit.Result) { done <- r }, 0)
 	if err != nil {
 		t.Fatalf("SpawnCallback: %v", err)
 	}
@@ -77,9 +78,9 @@ func TestSpawnCallback_Lifecycle(t *testing.T) {
 	mgr, ws := newTestManager(t)
 	dir := filepath.Join(ws, "tasks")
 
-	done := make(chan *tools.ToolResult, 1)
+	done := make(chan *toolkit.Result, 1)
 	id, err := mgr.SpawnCallback("the work", "job1", "", "cli", "direct", "", "", nil,
-		func(_ context.Context, r *tools.ToolResult) { done <- r }, 0)
+		func(_ context.Context, r *toolkit.Result) { done <- r }, 0)
 	if err != nil {
 		t.Fatalf("SpawnCallback error: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestSpawnCallback_Lifecycle(t *testing.T) {
 		t.Fatalf("status file not written: %v", err)
 	}
 
-	var res *tools.ToolResult
+	var res *toolkit.Result
 	select {
 	case res = <-done:
 	case <-time.After(5 * time.Second):
@@ -128,9 +129,9 @@ func TestTaskStatus_Unknown(t *testing.T) {
 
 func TestTaskList_ReturnsTasks(t *testing.T) {
 	mgr, _ := newTestManager(t)
-	done := make(chan *tools.ToolResult, 1)
+	done := make(chan *toolkit.Result, 1)
 	if _, err := mgr.SpawnCallback("w", "listed", "", "cli", "direct", "", "", nil,
-		func(_ context.Context, r *tools.ToolResult) { done <- r }, 0); err != nil {
+		func(_ context.Context, r *toolkit.Result) { done <- r }, 0); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	<-done
@@ -166,9 +167,9 @@ func TestSupervise_RelaunchesInterruptedTask(t *testing.T) {
 	dir := filepath.Join(ws, "tasks")
 	writeInterrupted(t, dir, "uuid-relaunch", "r", 0, nowEpoch()-1)
 
-	done := make(chan *tools.ToolResult, 1)
-	mgr.SuperviseOnce(nowEpoch(), func(_ *TaskRecord) tools.AsyncCallback {
-		return func(_ context.Context, r *tools.ToolResult) { done <- r }
+	done := make(chan *toolkit.Result, 1)
+	mgr.SuperviseOnce(nowEpoch(), func(_ *TaskRecord) toolkit.AsyncCallback {
+		return func(_ context.Context, r *toolkit.Result) { done <- r }
 	})
 
 	select {
@@ -193,7 +194,7 @@ func TestSupervise_GivesUpAfterMaxRestarts(t *testing.T) {
 	dir := filepath.Join(ws, "tasks")
 	writeInterrupted(t, dir, "uuid-giveup", "g", global.TaskMaxRestarts, nowEpoch()-1)
 
-	mgr.SuperviseOnce(nowEpoch(), func(*TaskRecord) tools.AsyncCallback { return nil })
+	mgr.SuperviseOnce(nowEpoch(), func(*TaskRecord) toolkit.AsyncCallback { return nil })
 
 	st, err := mgr.TaskStatus("uuid-giveup")
 	if err != nil {
@@ -212,7 +213,7 @@ func TestSupervise_RespectsCooldown(t *testing.T) {
 	dir := filepath.Join(ws, "tasks")
 	writeInterrupted(t, dir, "uuid-cooldown", "c", 0, nowEpoch()+3600) // not yet eligible
 
-	mgr.SuperviseOnce(nowEpoch(), func(*TaskRecord) tools.AsyncCallback {
+	mgr.SuperviseOnce(nowEpoch(), func(*TaskRecord) toolkit.AsyncCallback {
 		t.Fatal("task should not be relaunched while cooling down")
 		return nil
 	})

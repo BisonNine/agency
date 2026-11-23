@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/internal/tokenhash"
 	"go.bison9.com/agency/tools"
 )
@@ -416,7 +418,7 @@ type sessionToolMock struct {
 	capturedCtx context.Context
 }
 
-func (m *sessionToolMock) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (m *sessionToolMock) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	m.capturedCtx = ctx
 	m.calls++
 	m.gotArg = args
@@ -432,7 +434,7 @@ func TestDispatch_SessionScopedToolValidToken(t *testing.T) {
 	sessionTool := &sessionToolMock{
 		name:   "get_session_messages",
 		params: map[string]any{},
-		result: tools.NewToolResult("messages"),
+		result: toolkit.NewResult("messages"),
 	}
 	reg := newRegistryWith(sessionTool)
 	regs := map[string]*tools.ToolRegistry{"alice": reg}
@@ -456,7 +458,7 @@ func TestDispatch_SessionScopedToolValidToken(t *testing.T) {
 	}
 
 	// The tool's execution context must carry the session key.
-	if got := tools.ToolSessionKey(sessionTool.capturedCtx); got != "agent:alice:main" {
+	if got := toolkit.SessionKey(sessionTool.capturedCtx); got != "agent:alice:main" {
 		t.Errorf("expected session key %q in ctx, got %q", "agent:alice:main", got)
 	}
 }
@@ -467,7 +469,7 @@ func TestDispatch_SessionScopedToolMissingToken(t *testing.T) {
 	sessionTool := &sessionToolMock{
 		name:   "get_session_messages",
 		params: map[string]any{},
-		result: tools.NewToolResult("messages"),
+		result: toolkit.NewResult("messages"),
 	}
 	reg := newRegistryWith(sessionTool)
 	regs := map[string]*tools.ToolRegistry{"alice": reg}
@@ -493,7 +495,7 @@ func TestDispatch_SessionScopedToolInvalidToken(t *testing.T) {
 	sessionTool := &sessionToolMock{
 		name:   "get_session_messages",
 		params: map[string]any{},
-		result: tools.NewToolResult("messages"),
+		result: toolkit.NewResult("messages"),
 	}
 	reg := newRegistryWith(sessionTool)
 	regs := map[string]*tools.ToolRegistry{"alice": reg}
@@ -520,12 +522,12 @@ func TestDispatch_SessionTokenRoutesToCorrectAgent(t *testing.T) {
 	aliceTool := &sessionToolMock{
 		name:   "get_session_messages",
 		params: map[string]any{},
-		result: tools.NewToolResult("alice-messages"),
+		result: toolkit.NewResult("alice-messages"),
 	}
 	bobTool := &sessionToolMock{
 		name:   "get_session_messages",
 		params: map[string]any{},
-		result: tools.NewToolResult("bob-messages"),
+		result: toolkit.NewResult("bob-messages"),
 	}
 	regs := map[string]*tools.ToolRegistry{
 		"alice": newRegistryWith(aliceTool),
@@ -542,7 +544,7 @@ func TestDispatch_SessionTokenRoutesToCorrectAgent(t *testing.T) {
 	if bobTool.calls != 1 || aliceTool.calls != 0 {
 		t.Errorf("expected bob's registry, got alice=%d bob=%d", aliceTool.calls, bobTool.calls)
 	}
-	if got := tools.ToolSessionKey(bobTool.capturedCtx); got != "agent:bob:main" {
+	if got := toolkit.SessionKey(bobTool.capturedCtx); got != "agent:bob:main" {
 		t.Errorf("expected bob's session key in ctx, got %q", got)
 	}
 
@@ -559,7 +561,7 @@ func TestDispatch_SessionTokenRoutesToCorrectAgent(t *testing.T) {
 }
 
 // TestDispatch_SessionScopedInterfaceInjectsKey verifies that dispatchToolCall
-// injects the session key for every tool that implements tools.SessionScoped,
+// injects the session key for every tool that implements toolkit.SessionScoped,
 // regardless of the tool name. This replaces the old hardcoded name check.
 func TestDispatch_SessionScopedInterfaceInjectsKey(t *testing.T) {
 	st := newSessionTokenStore()
@@ -578,7 +580,7 @@ func TestDispatch_SessionScopedInterfaceInjectsKey(t *testing.T) {
 			tool := &sessionToolMock{
 				name:   name,
 				params: map[string]any{},
-				result: tools.NewToolResult("ok"),
+				result: toolkit.NewResult("ok"),
 			}
 			reg := newRegistryWith(tool)
 			regs := map[string]*tools.ToolRegistry{"alice": reg}
@@ -592,7 +594,7 @@ func TestDispatch_SessionScopedInterfaceInjectsKey(t *testing.T) {
 			if tool.calls != 1 {
 				t.Fatalf("expected tool to be called once, got %d", tool.calls)
 			}
-			if got := tools.ToolSessionKey(tool.capturedCtx); got != "agent:alice:main" {
+			if got := toolkit.SessionKey(tool.capturedCtx); got != "agent:alice:main" {
 				t.Errorf("%s: expected session key %q in ctx, got %q", name, "agent:alice:main", got)
 			}
 		})
@@ -600,7 +602,7 @@ func TestDispatch_SessionScopedInterfaceInjectsKey(t *testing.T) {
 }
 
 // TestDispatch_NonSessionScopedToolDoesNotGetSessionKey verifies that a tool
-// that does not implement tools.SessionScoped does NOT get a session key
+// that does not implement toolkit.SessionScoped does NOT get a session key
 // injected into its execution context, even though it receives a valid token.
 func TestDispatch_NonSessionScopedToolDoesNotGetSessionKey(t *testing.T) {
 	st := newSessionTokenStore()
@@ -610,7 +612,7 @@ func TestDispatch_NonSessionScopedToolDoesNotGetSessionKey(t *testing.T) {
 	tool := &nonScopedCaptureMock{
 		name:   "read_file",
 		params: map[string]any{},
-		result: tools.NewToolResult("content"),
+		result: toolkit.NewResult("content"),
 	}
 	reg := newRegistryWith(tool)
 	regs := map[string]*tools.ToolRegistry{"alice": reg}
@@ -624,7 +626,7 @@ func TestDispatch_NonSessionScopedToolDoesNotGetSessionKey(t *testing.T) {
 	if tool.calls != 1 {
 		t.Fatalf("expected tool to be called once, got %d", tool.calls)
 	}
-	if got := tools.ToolSessionKey(tool.capturedCtx); got != "" {
+	if got := toolkit.SessionKey(tool.capturedCtx); got != "" {
 		t.Errorf("non-session-scoped tool must not receive session key, got %q", got)
 	}
 }
@@ -635,7 +637,7 @@ type nonScopedCaptureMock struct {
 	capturedCtx context.Context
 }
 
-func (m *nonScopedCaptureMock) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (m *nonScopedCaptureMock) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	m.capturedCtx = ctx
 	m.calls++
 	m.gotArg = args
@@ -648,7 +650,7 @@ func TestDispatch_AllToolsRequireSessionToken(t *testing.T) {
 	st := newSessionTokenStore()
 	tok := st.Issue("alice", "test:alice:main", "/tmp/archive/alice")
 
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("content")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("content")}
 	reg := newRegistryWith(rf)
 	regs := map[string]*tools.ToolRegistry{"alice": reg}
 

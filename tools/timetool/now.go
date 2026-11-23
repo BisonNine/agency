@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // NowTool reports the current date, time, and timezone.
@@ -62,7 +62,7 @@ func (t *NowTool) clock() time.Time {
 	return time.Now()
 }
 
-func (t *NowTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *NowTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	now := t.clock()
 
 	if tz, ok := args["timezone"].(string); ok && strings.TrimSpace(tz) != "" {
@@ -70,14 +70,14 @@ func (t *NowTool) Execute(_ context.Context, args map[string]any) *tools.ToolRes
 		if err != nil {
 			// Naming an unknown zone is a recoverable mistake: report it and give
 			// the local time anyway, so the turn does not stall on a typo.
-			return tools.ErrorResult(fmt.Sprintf(
+			return toolkit.ErrorResult(fmt.Sprintf(
 				"unknown timezone %q — use an IANA name such as \"America/Toronto\" or \"UTC\". Local time is %s",
 				tz, render(now)))
 		}
 		now = now.In(loc)
 	}
 
-	return tools.SilentResult(render(now))
+	return toolkit.SilentResult(render(now))
 }
 
 // render formats one instant with everything a model might need from it: a

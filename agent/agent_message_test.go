@@ -14,6 +14,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -115,13 +116,13 @@ type probeTool struct {
 func (p *probeTool) Name() string               { return "probe_tool" }
 func (p *probeTool) Description() string        { return "test probe" }
 func (p *probeTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (p *probeTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (p *probeTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.depths = append(p.depths, toolsagents.SpawnDepth(ctx))
-	p.channel = append(p.channel, tools.ToolChannel(ctx))
+	p.channel = append(p.channel, toolkit.Channel(ctx))
 	p.chains = append(p.chains, tools.AskChain(ctx))
-	return tools.NewToolResult("probe ok")
+	return toolkit.NewResult("probe ok")
 }
 
 // toolThenText calls probe_tool once, then replies with the tool's result.
@@ -241,16 +242,16 @@ type asyncTool struct{ release <-chan struct{} }
 func (asyncTool) Name() string               { return "async_tool" }
 func (asyncTool) Description() string        { return "test background work" }
 func (asyncTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (asyncTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	return tools.ErrorResult("async only")
+func (asyncTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	return toolkit.ErrorResult("async only")
 }
 
-func (a asyncTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb tools.AsyncCallback) *tools.ToolResult {
+func (a asyncTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
 	go func() {
 		<-a.release
-		cb(ctx, &tools.ToolResult{ForLLM: "background done"})
+		cb(ctx, &toolkit.Result{ForLLM: "background done"})
 	}()
-	return tools.AsyncResult("started")
+	return toolkit.AsyncResult("started")
 }
 
 // TestAsk_BackgroundResultReachesMainConversation: background work an asked
@@ -640,7 +641,7 @@ func TestWhisper_DeliveredOnceAtStartOfNextMessage(t *testing.T) {
 }
 
 // callMessageTool runs callerID's agent_message tool.
-func callMessageTool(t *testing.T, al *AgentLoop, callerID, target string, wait any) *tools.ToolResult {
+func callMessageTool(t *testing.T, al *AgentLoop, callerID, target string, wait any) *toolkit.Result {
 	t.Helper()
 	caller, ok := al.GetRegistry().Get(callerID)
 	if !ok {
@@ -684,7 +685,7 @@ func TestAgentMessageTool_AllowAgents(t *testing.T) {
 			// A permission refusal or an unknown agent is expected, logged as
 			// a warning.
 			refusal := strings.HasPrefix(tc.want, "You may not message") || strings.HasPrefix(tc.want, "There is no agent")
-			if tools.IsExpectedRefusal(res.Err) != refusal {
+			if toolkit.IsExpectedRefusal(res.Err) != refusal {
 				t.Fatalf("IsExpectedRefusal = %v, want %v for %+v", !refusal, refusal, res)
 			}
 		})
@@ -922,7 +923,7 @@ func TestAgentMessageTool_SizeLimit(t *testing.T) {
 	over := tool.Execute(context.Background(), map[string]any{
 		"agent": "bob", "message": strings.Repeat("ü", tools.MaxAgentMessageChars+1), "wait_seconds": 0,
 	})
-	if !over.IsError || over.ForLLM != "Messages to other agents are limited to 8,000 characters." || !tools.IsExpectedRefusal(over.Err) {
+	if !over.IsError || over.ForLLM != "Messages to other agents are limited to 8,000 characters." || !toolkit.IsExpectedRefusal(over.Err) {
 		t.Fatalf("over the limit: %+v, want the limit refusal", over)
 	}
 	at := tool.Execute(context.Background(), map[string]any{

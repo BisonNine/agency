@@ -6,6 +6,8 @@ package agents
 import (
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/tools"
 )
@@ -33,7 +35,7 @@ func TestAskResult_Outcomes(t *testing.T) {
 			}
 			// A person who cannot be reached is an expected refusal (logged at
 			// WARN); a failed turn is an error.
-			if refused := tools.IsExpectedRefusal(got.Err); refused != tc.wantRefusal {
+			if refused := toolkit.IsExpectedRefusal(got.Err); refused != tc.wantRefusal {
 				t.Fatalf("IsExpectedRefusal(Err) = %v, want %v", refused, tc.wantRefusal)
 			}
 		})

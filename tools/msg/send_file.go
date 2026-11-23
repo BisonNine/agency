@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
@@ -100,7 +102,7 @@ type fileRequest struct {
 	filename string
 }
 
-func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	requests, problem := parseFileRequests(args)
 	if problem != "" {
 		return refused(problem)
@@ -119,7 +121,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	case !t.canRead:
 		return refused("You can only send files you're allowed to read.")
 	case t.sender == nil || t.reader == nil:
-		return tools.ErrorResult("Sending files is not available.")
+		return toolkit.ErrorResult("Sending files is not available.")
 	}
 
 	files := make([]tools.OutgoingFile, 0, len(requests))
@@ -143,7 +145,7 @@ func (t *SendFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	case errors.Is(err, tools.ErrNoFileSupport):
 		return refused("This chat can't receive files.")
 	case err != nil:
-		return tools.ErrorResult(fmt.Sprintf("The files could not be sent: %v.", err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("The files could not be sent: %v.", err)).WithError(err)
 	}
 	return sendReport(files, results)
 }
@@ -259,7 +261,7 @@ func OpenReadable(reader FileReader, path string, maxSize int64, verb string) (f
 
 // sendReport is the result of a send: every file sent, or each file's
 // outcome. It is an error when any file was not sent.
-func sendReport(files []tools.OutgoingFile, results []error) *tools.ToolResult {
+func sendReport(files []tools.OutgoingFile, results []error) *toolkit.Result {
 	var b strings.Builder
 	failed, pending := false, false
 	for i, f := range files {
@@ -280,10 +282,10 @@ func sendReport(files []tools.OutgoingFile, results []error) *tools.ToolResult {
 	}
 	text := strings.TrimSuffix(b.String(), "\n")
 	if !failed && !pending {
-		return tools.NewToolResult("Sent to the chat:\n" + text)
+		return toolkit.NewResult("Sent to the chat:\n" + text)
 	}
 	if failed {
-		return tools.ErrorResult(text)
+		return toolkit.ErrorResult(text)
 	}
-	return tools.NewToolResult(text)
+	return toolkit.NewResult(text)
 }

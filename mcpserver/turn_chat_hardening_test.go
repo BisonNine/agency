@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/bus"
@@ -33,10 +34,10 @@ type chatProbe struct {
 func (p *chatProbe) Name() string               { return "probe" }
 func (p *chatProbe) Description() string        { return "probe" }
 func (p *chatProbe) Parameters() map[string]any { return map[string]any{} }
-func (p *chatProbe) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (p *chatProbe) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	p.rc, p.problem = tools.TurnChat(ctx)
-	p.channel, p.chatID = tools.ToolChannel(ctx), tools.ToolChatID(ctx)
-	return tools.NewToolResult("ok")
+	p.channel, p.chatID = toolkit.Channel(ctx), toolkit.ChatID(ctx)
+	return toolkit.NewResult("ok")
 }
 
 // Every kind of call over the MCP host gets the turn chat the loop would
@@ -159,7 +160,7 @@ func TestPublishMCPAsyncToLLM_Edges(t *testing.T) {
 
 	mb := bus.NewMessageBus()
 	defer mb.Close()
-	publishMCPAsyncToLLM(context.Background(), mb, rec, dest, "agent_spawn", &tools.ToolResult{Err: errors.New("task failed")}, 1)
+	publishMCPAsyncToLLM(context.Background(), mb, rec, dest, "agent_spawn", &toolkit.Result{Err: errors.New("task failed")}, 1)
 	m, ok := consumeInbound(mb)
 	if !ok || m.Content != "task failed" {
 		t.Fatalf("error completion: %+v %v", m, ok)
@@ -168,16 +169,16 @@ func TestPublishMCPAsyncToLLM_Edges(t *testing.T) {
 		t.Fatalf("clone's completion went to %q / %q, want alice's main conversation", m.SessionKey, m.Metadata["preresolved_agent_id"])
 	}
 
-	publishMCPAsyncToLLM(context.Background(), mb, rec, dest, "agent_spawn", &tools.ToolResult{}, 1)
+	publishMCPAsyncToLLM(context.Background(), mb, rec, dest, "agent_spawn", &toolkit.Result{}, 1)
 	publishMCPAsyncToLLM(context.Background(), mb, rec, dest, "agent_spawn", nil, 1)
-	publishMCPAsyncToLLM(context.Background(), nil, rec, dest, "agent_spawn", &tools.ToolResult{ForLLM: "x"}, 1)
+	publishMCPAsyncToLLM(context.Background(), nil, rec, dest, "agent_spawn", &toolkit.Result{ForLLM: "x"}, 1)
 	if m, ok := consumeInbound(mb); ok {
 		t.Fatalf("injected %+v, want nothing", m)
 	}
 
 	closed := bus.NewMessageBus()
 	closed.Close()
-	publishMCPAsyncToLLM(context.Background(), closed, rec, dest, "agent_spawn", &tools.ToolResult{ForLLM: "x"}, 1)
+	publishMCPAsyncToLLM(context.Background(), closed, rec, dest, "agent_spawn", &toolkit.Result{ForLLM: "x"}, 1)
 }
 
 // consumeOutbound returns the next outbound message already on the bus.
@@ -221,11 +222,11 @@ func TestPublishMCPForUser_Destinations(t *testing.T) {
 	rec := sessionRecord{agentID: "alice"}
 	mb := bus.NewMessageBus()
 	defer mb.Close()
-	out := &tools.ToolResult{ForUser: "for you"}
+	out := &toolkit.Result{ForUser: "for you"}
 	for _, dest := range []tools.ReplyChat{{}, {Ambiguous: true}, {Channel: "recovery", ChatID: "x"}} {
 		publishMCPForUser(context.Background(), mb, rec, dest, "t", out)
 	}
-	publishMCPForUser(context.Background(), mb, rec, tools.ReplyChat{Channel: "telegram", ChatID: "42"}, "t", &tools.ToolResult{ForUser: "x", Silent: true})
+	publishMCPForUser(context.Background(), mb, rec, tools.ReplyChat{Channel: "telegram", ChatID: "42"}, "t", &toolkit.Result{ForUser: "x", Silent: true})
 	publishMCPForUser(context.Background(), nil, rec, tools.ReplyChat{Channel: "telegram", ChatID: "42"}, "t", out)
 	if m, ok := consumeOutbound(mb); ok {
 		t.Fatalf("published %+v, want nothing", m)

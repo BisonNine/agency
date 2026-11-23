@@ -13,6 +13,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -200,7 +201,7 @@ func TestShell_BackgroundResultReentry(t *testing.T) {
 	al, msgBus := messagingLoop(t, shellConfig(t), model)
 
 	for _, a := range shellCases {
-		al.taskPointerCallback("telegram", "chat-"+a.id, a.id, 0)(context.Background(), &tools.ToolResult{ForLLM: "task finished"})
+		al.taskPointerCallback("telegram", "chat-"+a.id, a.id, 0)(context.Background(), &toolkit.Result{ForLLM: "task finished"})
 		out := nextOutboundTo(t, msgBus, "chat-"+a.id)
 		checkShell(t, a.id+" re-entry", out.Content, a.allowed)
 		model.checkOffered(t, a.id+" re-entry", a.allowed)
@@ -233,9 +234,9 @@ func TestShell_ActingAsTheAgent(t *testing.T) {
 		}
 		checkOneResult(t, a.id+" agent_spawn wait", model, a.allowed)
 
-		done := make(chan *tools.ToolResult, 1)
+		done := make(chan *toolkit.Result, 1)
 		if _, err = inst.spawnMgr.SpawnCallback("run it", "job", "", "cli", "direct", "", "", nil,
-			func(_ context.Context, r *tools.ToolResult) { done <- r }, 0); err != nil {
+			func(_ context.Context, r *toolkit.Result) { done <- r }, 0); err != nil {
 			t.Fatalf("%s agent_spawn background: %v", a.id, err)
 		}
 		select {
@@ -321,7 +322,7 @@ func TestShell_HumanAgentNever(t *testing.T) {
 	if n := bob.Tools.Count(); n != 0 {
 		t.Errorf("the human agent has %d tools, want none", n)
 	}
-	for _, res := range []*tools.ToolResult{
+	for _, res := range []*toolkit.Result{
 		bob.Tools.ExecuteWithContext(context.Background(), "shell_exec",
 			map[string]any{"command": "echo shell-ok"}, "telegram", "chat-1", nil),
 	} {

@@ -1,6 +1,8 @@
 package schedule
 
 import (
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/tools"
 )
@@ -31,7 +33,7 @@ func (p scheduleProvider) Describe() []tools.ToolDescriptor {
 	}
 }
 
-func (p scheduleProvider) Build(deps tools.ToolDeps) []tools.Tool {
+func (p scheduleProvider) Build(deps tools.ToolDeps) []toolkit.Tool {
 	// The cron tool is created externally (in gateway/services.go) due to its
 	// dependency on CronService and AgentLoop, then registered via
 	// agentLoop.RegisterTool(). This provider intentionally returns nil —

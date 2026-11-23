@@ -6,9 +6,9 @@ package tools_test
 import (
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
-	"go.bison9.com/agency/tools"
 	toolsfiles "go.bison9.com/agency/tools/files"
 	toolssession "go.bison9.com/agency/tools/session"
 )
@@ -35,8 +35,8 @@ func TestSessionScopedInterface(t *testing.T) {
 func TestNonSessionToolDoesNotImplementSessionScoped(t *testing.T) {
 	// ReadFileTool is a typical non-session tool. It must not accidentally
 	// satisfy SessionScoped; if it does, that is an implementation mistake.
-	var tool tools.Tool = toolsfiles.NewReadFileTool("", false, 0)
-	if _, ok := tool.(tools.SessionScoped); ok {
+	var tool toolkit.Tool = toolsfiles.NewReadFileTool("", false, 0)
+	if _, ok := tool.(toolkit.SessionScoped); ok {
 		t.Errorf("ReadFileTool must not implement SessionScoped")
 	}
 }

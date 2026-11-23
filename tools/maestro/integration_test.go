@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
@@ -64,7 +66,7 @@ func (r *scriptedRunner) RunSync(ctx context.Context, task, model string) (*glob
 // with an allowed folder and a scripted sub-agent runner.
 type maestroHarness struct {
 	t      *testing.T
-	tools  map[string]tools.Tool
+	tools  map[string]toolkit.Tool
 	runner *scriptedRunner
 	ws     string
 	mount  string
@@ -116,7 +118,7 @@ func newMaestroHarnessWith(t *testing.T, mc *config.MaestroConfig) *maestroHarne
 			waitIdle(t, e.runner)
 		}
 	})
-	h := &maestroHarness{t: t, tools: map[string]tools.Tool{}, runner: runner, ws: ws, mount: mount}
+	h := &maestroHarness{t: t, tools: map[string]toolkit.Tool{}, runner: runner, ws: ws, mount: mount}
 	for _, tl := range built {
 		h.tools[tl.Name()] = tl
 	}
@@ -367,14 +369,14 @@ func TestIntegration_ModelHintAndPermanentFailure(t *testing.T) {
 
 	// Unknown alias via task_dispatch: permanent failure + notification.
 	tl := h.tools["maestro_task_dispatch"]
-	async, ok := tl.(tools.AsyncExecutor)
+	async, ok := tl.(toolkit.AsyncExecutor)
 	if !ok {
 		t.Fatal("task_dispatch must be an async tool (delivers a completion notification)")
 	}
-	notified := make(chan *tools.ToolResult, 1)
+	notified := make(chan *toolkit.Result, 1)
 	res := async.ExecuteAsync(context.Background(), map[string]any{
 		"project": project, "path": "bad", "prompt": "nest", "llm_model_id": "no-such-alias",
-	}, func(_ context.Context, r *tools.ToolResult) { notified <- r })
+	}, func(_ context.Context, r *toolkit.Result) { notified <- r })
 	if res == nil || res.IsError {
 		t.Fatalf("task_dispatch: %+v", res)
 	}

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
@@ -90,7 +91,7 @@ func TestProviderGating(t *testing.T) {
 			continue
 		}
 		found++
-		fn, ok := tools.ToolToSchema(tool)["function"].(map[string]any)
+		fn, ok := toolkit.ToolToSchema(tool)["function"].(map[string]any)
 		if !ok {
 			t.Fatalf("%s: no function", tool.Name())
 		}

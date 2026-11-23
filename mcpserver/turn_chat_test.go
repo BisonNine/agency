@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/tools"
@@ -47,7 +49,7 @@ func newTurnChatHost(t *testing.T) *turnChatHost {
 		h.sent <- sentMessage{channel, chatID, content}
 		return nil
 	})
-	notice := &mockTool{name: "notice", params: map[string]any{}, result: &tools.ToolResult{ForLLM: "ok", ForUser: "for the user"}}
+	notice := &mockTool{name: "notice", params: map[string]any{}, result: &toolkit.Result{ForLLM: "ok", ForUser: "for the user"}}
 	h.reg = newRegistryWith(send, notice)
 	go func() {
 		for {

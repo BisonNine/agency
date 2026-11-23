@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/tools"
 )
@@ -50,7 +52,7 @@ func TestPublishMCPAsyncToLLM_CloneResultGoesHome(t *testing.T) {
 			}
 		}()
 		time.Sleep(20 * time.Millisecond)
-		publishMCPAsyncToLLM(context.Background(), msgBus, rec, tools.ReplyChat{Channel: "telegram", ChatID: "42"}, "agent_spawn", &tools.ToolResult{ForLLM: "done"}, 0)
+		publishMCPAsyncToLLM(context.Background(), msgBus, rec, tools.ReplyChat{Channel: "telegram", ChatID: "42"}, "agent_spawn", &toolkit.Result{ForLLM: "done"}, 0)
 		select {
 		case m := <-got:
 			if m.Metadata["preresolved_agent_id"] != tc.wantAgent || m.SessionKey != tc.wantSession {

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // An allowed folder that holds the whole workspace does not lift the
@@ -32,7 +32,7 @@ func TestAllowedFolder_ContainingWorkspaceKeepsWorkspaceRules(t *testing.T) {
 	read := NewReadFileTool(ws, true, MaxReadFileSize)
 	for _, p := range []string{"AGENT.md", filepath.Join(ws, "AGENT.md"), "skills/s/SKILL.md", filepath.Join(ws, "skills", "s", "SKILL.md")} {
 		res := write.Execute(ctx, map[string]any{"path": p, "content": "x", "overwrite": true})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Errorf("write %s should be refused by the workspace write scope, got: %s", p, res.ForLLM)
 		}
 	}

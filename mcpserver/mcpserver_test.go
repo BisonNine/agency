@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/tools"
 )
 
@@ -17,7 +19,7 @@ type mockTool struct {
 	name   string
 	desc   string
 	params map[string]any
-	result *tools.ToolResult
+	result *toolkit.Result
 	calls  int
 	gotArg map[string]any
 }
@@ -25,7 +27,7 @@ type mockTool struct {
 func (m *mockTool) Name() string               { return m.name }
 func (m *mockTool) Description() string        { return m.desc }
 func (m *mockTool) Parameters() map[string]any { return m.params }
-func (m *mockTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (m *mockTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	m.calls++
 	m.gotArg = args
 	return m.result
@@ -40,7 +42,7 @@ type externalNamedMock struct {
 
 func (m *externalNamedMock) ExternalName() string { return m.external }
 
-func newRegistryWith(toolList ...tools.Tool) *tools.ToolRegistry {
+func newRegistryWith(toolList ...toolkit.Tool) *tools.ToolRegistry {
 	r := tools.NewToolRegistry()
 	for _, t := range toolList {
 		r.Register(t)
@@ -116,8 +118,8 @@ func TestWithListen_EmptyKeepsDefault(t *testing.T) {
 // --- allowlist filtering ---
 
 func TestAddTools_AllowlistFiltersTools(t *testing.T) {
-	allowed := &mockTool{name: "read_file", desc: "reads", params: map[string]any{"type": "object"}, result: tools.SilentResult("ok")}
-	denied := &mockTool{name: "exec_shell", desc: "dangerous", params: map[string]any{"type": "object"}, result: tools.SilentResult("ok")}
+	allowed := &mockTool{name: "read_file", desc: "reads", params: map[string]any{"type": "object"}, result: toolkit.SilentResult("ok")}
+	denied := &mockTool{name: "exec_shell", desc: "dangerous", params: map[string]any{"type": "object"}, result: toolkit.SilentResult("ok")}
 	r := newRegistryWith(allowed, denied)
 
 	opts := append(minimalOpts(r), WithAllowlist([]string{"read_file"}))
@@ -136,9 +138,9 @@ func TestAddTools_AllowlistFiltersTools(t *testing.T) {
 }
 
 func TestAddTools_WildcardAllowlistExposesAll(t *testing.T) {
-	a := &mockTool{name: "read_file", params: map[string]any{}, result: tools.SilentResult("ok")}
-	b := &mockTool{name: "web_fetch", params: map[string]any{}, result: tools.SilentResult("ok")}
-	c := &mockTool{name: "message", params: map[string]any{}, result: tools.SilentResult("ok")}
+	a := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.SilentResult("ok")}
+	b := &mockTool{name: "web_fetch", params: map[string]any{}, result: toolkit.SilentResult("ok")}
+	c := &mockTool{name: "message", params: map[string]any{}, result: toolkit.SilentResult("ok")}
 	r := newRegistryWith(a, b, c)
 
 	opts := append(minimalOpts(r), WithAllowlist([]string{"*"}))
@@ -161,9 +163,9 @@ func TestAddTools_WildcardAllowlistExposesAll(t *testing.T) {
 }
 
 func TestAddTools_PrefixWildcardAllowlist(t *testing.T) {
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.SilentResult("ok")}
-	rd := &mockTool{name: "read_dir", params: map[string]any{}, result: tools.SilentResult("ok")}
-	wf := &mockTool{name: "write_file", params: map[string]any{}, result: tools.SilentResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.SilentResult("ok")}
+	rd := &mockTool{name: "read_dir", params: map[string]any{}, result: toolkit.SilentResult("ok")}
+	wf := &mockTool{name: "write_file", params: map[string]any{}, result: toolkit.SilentResult("ok")}
 	r := newRegistryWith(rf, rd, wf)
 
 	opts := append(minimalOpts(r), WithAllowlist([]string{"read_*"}))
@@ -185,8 +187,8 @@ func TestAddTools_PrefixWildcardAllowlist(t *testing.T) {
 
 func TestAddTools_EmptyAllowlistRegistersNothing(t *testing.T) {
 	r := newRegistryWith(
-		&mockTool{name: "a", params: map[string]any{}, result: tools.SilentResult("ok")},
-		&mockTool{name: "b", params: map[string]any{}, result: tools.SilentResult("ok")},
+		&mockTool{name: "a", params: map[string]any{}, result: toolkit.SilentResult("ok")},
+		&mockTool{name: "b", params: map[string]any{}, result: toolkit.SilentResult("ok")},
 	)
 	srv, err := New(minimalOpts(r)...)
 	if err != nil {
@@ -200,7 +202,7 @@ func TestAddTools_EmptyAllowlistRegistersNothing(t *testing.T) {
 func TestAddTools_MsgSendExposedWhenAllowlisted(t *testing.T) {
 	// The outbound message tool is no longer hard-excluded; it obeys the
 	// allowlist like any other tool.
-	msg := &mockTool{name: "msg_send", desc: "outbound", params: map[string]any{"type": "object"}, result: tools.SilentResult("ok")}
+	msg := &mockTool{name: "msg_send", desc: "outbound", params: map[string]any{"type": "object"}, result: toolkit.SilentResult("ok")}
 	r := newRegistryWith(msg)
 
 	opts := append(minimalOpts(r), WithAllowlist([]string{"msg_send"}))
@@ -214,7 +216,7 @@ func TestAddTools_MsgSendExposedWhenAllowlisted(t *testing.T) {
 }
 
 func TestAddTools_NilParametersStillRegisters(t *testing.T) {
-	t1 := &mockTool{name: "noparams", desc: "no schema", params: nil, result: tools.SilentResult("ok")}
+	t1 := &mockTool{name: "noparams", desc: "no schema", params: nil, result: toolkit.SilentResult("ok")}
 	r := newRegistryWith(t1)
 
 	opts := append(minimalOpts(r), WithAllowlist([]string{"noparams"}))
@@ -232,9 +234,9 @@ func TestAddTools_NilParametersStillRegisters(t *testing.T) {
 // tools (ExternalNamer) publish under "<server>_<tool>" rather than their
 // internal "mcp_" name.
 func TestAddTools_ExternalNaming(t *testing.T) {
-	builtin := &mockTool{name: "file_read", params: map[string]any{}, result: tools.SilentResult("ok")}
+	builtin := &mockTool{name: "file_read", params: map[string]any{}, result: toolkit.SilentResult("ok")}
 	upstream := &externalNamedMock{
-		name: "mcp_fusion_trello_search", params: map[string]any{}, result: tools.SilentResult("ok"),
+		name: "mcp_fusion_trello_search", params: map[string]any{}, result: toolkit.SilentResult("ok"),
 		external: "fusion_trello_search",
 	}
 	r := newRegistryWith(builtin, upstream)

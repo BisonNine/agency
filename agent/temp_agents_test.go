@@ -14,6 +14,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -21,19 +22,18 @@ import (
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
-	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // runTool runs one of agent's tools in its main session and fails the test
 // when the tool is missing.
-func runTool(t *testing.T, agent *AgentInstance, name string, args map[string]any) *tools.ToolResult {
+func runTool(t *testing.T, agent *AgentInstance, name string, args map[string]any) *toolkit.Result {
 	t.Helper()
 	tool, ok := agent.Tools.Get(name)
 	if !ok {
 		t.Fatalf("%s has no tool %s (has %v)", agent.Label(), name, agent.Tools.List())
 	}
-	ctx := tools.WithSessionKey(context.Background(), routing.BuildAgentMainSessionKey(agent.ID))
+	ctx := toolkit.WithSessionKey(context.Background(), routing.BuildAgentMainSessionKey(agent.ID))
 	return tool.Execute(ctx, args)
 }
 
@@ -238,9 +238,9 @@ func TestSubagentSpawn_CreatesAndDeletesClone(t *testing.T) {
 	})
 
 	t.Run("agent_spawn background", func(t *testing.T) {
-		done := make(chan *tools.ToolResult, 1)
+		done := make(chan *toolkit.Result, 1)
 		if _, err := main.spawnMgr.SpawnCallback("do it", "job", "", "cli", "direct", "", "", nil,
-			func(_ context.Context, r *tools.ToolResult) { done <- r }, 0); err != nil {
+			func(_ context.Context, r *toolkit.Result) { done <- r }, 0); err != nil {
 			t.Fatalf("SpawnCallback: %v", err)
 		}
 		if r := <-done; r.IsError {

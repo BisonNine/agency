@@ -11,11 +11,12 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier/classifierfs"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/tools"
 	toolsclassifier "go.bison9.com/agency/tools/classifier"
 	"go.bison9.com/agency/tools/untrusted"
 )
@@ -26,8 +27,8 @@ type listTool struct{}
 func (listTool) Name() string               { return "probe_list" }
 func (listTool) Description() string        { return "lists nothing" }
 func (listTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (listTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	return tools.NewToolResult(`{"items":[]}`)
+func (listTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	return toolkit.NewResult(`{"items":[]}`)
 }
 
 // newClassifierService wires the service to its host: it is installed for
@@ -147,6 +148,6 @@ type secretTool struct{ msg string }
 func (secretTool) Name() string               { return "probe_secret" }
 func (secretTool) Description() string        { return "fails" }
 func (secretTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (s secretTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	return tools.ErrorResult(s.msg)
+func (s secretTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	return toolkit.ErrorResult(s.msg)
 }

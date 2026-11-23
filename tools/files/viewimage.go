@@ -17,11 +17,11 @@ import (
 	"strings"
 
 	"github.com/h2non/filetype"
+	"go.bison9.com/agent/toolkit"
 	xdraw "golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/tools"
 )
 
 // MaxViewImageSize caps the source image file file_view_image will load, in
@@ -76,32 +76,32 @@ func (t *ViewImageTool) Parameters() map[string]any {
 	}
 }
 
-func (t *ViewImageTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *ViewImageTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok || strings.TrimSpace(path) == "" {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 
 	data, err := t.sysFs.ReadFile(path)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to read %q: %v", path, err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read %q: %v", path, err)).WithError(err)
 	}
 	if int64(len(data)) > t.maxSize {
-		return tools.ErrorResult(fmt.Sprintf(
+		return toolkit.ErrorResult(fmt.Sprintf(
 			"image is %.1f MB; the limit is %d MB — shrink it first",
 			float64(len(data))/(1024*1024), t.maxSize/(1024*1024)))
 	}
 
 	kind, err := filetype.Match(data)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to detect image type: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("failed to detect image type: %v", err))
 	}
 	if kind == filetype.Unknown || !strings.HasPrefix(kind.MIME.Value, "image/") {
 		detected := "unknown"
 		if kind != filetype.Unknown {
 			detected = kind.MIME.Value
 		}
-		return tools.ErrorResult(fmt.Sprintf(
+		return toolkit.ErrorResult(fmt.Sprintf(
 			"%q is not an image (detected %s); file_view_image only handles images", path, detected))
 	}
 
@@ -114,7 +114,7 @@ func (t *ViewImageTool) Execute(_ context.Context, args map[string]any) *tools.T
 			forLLM += "\nFocus: " + focus
 		}
 	}
-	return &tools.ToolResult{
+	return &toolkit.Result{
 		ForLLM: forLLM,
 		Images: []string{dataURL},
 	}

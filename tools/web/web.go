@@ -15,8 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/tools/untrusted"
 	"go.bison9.com/agency/utils"
 )
@@ -794,10 +795,10 @@ func (t *WebSearchTool) Parameters() map[string]any {
 	}
 }
 
-func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	query, ok := args["query"].(string)
 	if !ok {
-		return tools.ErrorResult("query is required")
+		return toolkit.ErrorResult("query is required")
 	}
 
 	count := t.maxResults
@@ -809,12 +810,12 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *tools
 
 	result, err := t.provider.Search(ctx, query, count)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("search failed: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("search failed: %v", err))
 	}
 
 	// Silent: the model's final answer presents the results; the raw search
 	// payload is not streamed to the user as a separate message.
-	return &tools.ToolResult{
+	return &toolkit.Result{
 		ForLLM: untrusted.Wrap(result),
 		Silent: true,
 	}
@@ -900,35 +901,35 @@ func (t *WebFetchTool) Parameters() map[string]any {
 	}
 }
 
-func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	urlStr, ok := args["url"].(string)
 	if !ok {
-		return tools.ErrorResult("url is required")
+		return toolkit.ErrorResult("url is required")
 	}
 
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("invalid URL: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("invalid URL: %v", err))
 	}
 
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return tools.ErrorResult("only http/https URLs are allowed")
+		return toolkit.ErrorResult("only http/https URLs are allowed")
 	}
 
 	if parsedURL.Host == "" {
-		return tools.ErrorResult("missing domain in URL")
+		return toolkit.ErrorResult("missing domain in URL")
 	}
 
 	// Lightweight pre-flight: block obvious localhost/literal-IP without DNS resolution.
 	// The real SSRF guard is newSafeDialContext at connect time.
 	hostname := parsedURL.Hostname()
 	if isObviousPrivateHost(hostname) {
-		return tools.ErrorResult("fetching private or local network hosts is not allowed")
+		return toolkit.ErrorResult("fetching private or local network hosts is not allowed")
 	}
 	// With a proxy the dial-time guard sees the proxy's address, not the target's.
 	if t.proxy != "" {
 		if err = checkProxiedTarget(ctx, hostname); err != nil {
-			return tools.ErrorResult(err.Error())
+			return toolkit.ErrorResult(err.Error())
 		}
 	}
 
@@ -941,7 +942,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to create request: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("failed to create request: %v", err))
 	}
 
 	req.Header.Set("User-Agent", userAgent)
@@ -951,7 +952,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("request failed: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("request failed: %v", err))
 	}
 
 	resp.Body = http.MaxBytesReader(nil, resp.Body, t.fetchLimitBytes)
@@ -965,9 +966,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		if mbe, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			return tools.ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", mbe.Limit))
+			return toolkit.ErrorResult(fmt.Sprintf("failed to read response: size exceeded %d bytes limit", mbe.Limit))
 		}
-		return tools.ErrorResult(fmt.Sprintf("failed to read response: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read response: %v", err))
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -979,7 +980,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.
 		if err := json.Unmarshal(body, &jsonData); err == nil {
 			formatted, formatErr := json.MarshalIndent(jsonData, "", "  ")
 			if formatErr != nil {
-				return tools.ErrorResult(fmt.Sprintf("failed to format JSON response: %v", formatErr))
+				return toolkit.ErrorResult(fmt.Sprintf("failed to format JSON response: %v", formatErr))
 			}
 			text = string(formatted)
 			extractor = "json"
@@ -1020,12 +1021,12 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *tools.
 
 	resultJSON, marshalErr := json.MarshalIndent(result, "", "  ")
 	if marshalErr != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to encode result: %v", marshalErr))
+		return toolkit.ErrorResult(fmt.Sprintf("failed to encode result: %v", marshalErr))
 	}
 
 	// Silent: the "Fetched N bytes…" status is telemetry, not user content.
 	// The model's final answer carries the fetched information.
-	return &tools.ToolResult{
+	return &toolkit.Result{
 		ForLLM: untrusted.Wrap(string(resultJSON)),
 		Silent: true,
 	}

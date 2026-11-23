@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // safeBufLoop mirrors the safeBuf helper in tools tests: a sync-safe
@@ -44,8 +44,8 @@ func (n *noopWriteFile) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
 
-func (n *noopWriteFile) Execute(_ context.Context, _ map[string]any) *tools.ToolResult {
-	return &tools.ToolResult{ForLLM: "ok", Silent: true}
+func (n *noopWriteFile) Execute(_ context.Context, _ map[string]any) *toolkit.Result {
+	return &toolkit.Result{ForLLM: "ok", Silent: true}
 }
 
 // runWriteFileToolCallOnce drives one runLLMIteration that dispatches a

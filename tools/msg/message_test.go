@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/tools"
@@ -169,7 +171,7 @@ func TestMessageTool_Execute_Outcomes(t *testing.T) {
 			if result.ForLLM != tc.want || result.IsError != tc.isError {
 				t.Errorf("result = %q (error %v), want %q (error %v)", result.ForLLM, result.IsError, tc.want, tc.isError)
 			}
-			if tools.IsExpectedRefusal(result.Err) != tc.refusal {
+			if toolkit.IsExpectedRefusal(result.Err) != tc.refusal {
 				t.Errorf("expected refusal = %v, want %v", !tc.refusal, tc.refusal)
 			}
 			if sent.Load() == tc.isError || tool.HasSentInRound() == tc.isError {
@@ -240,7 +242,7 @@ func TestMessageTool_Destination(t *testing.T) {
 		want string
 	}{
 		{"no turn (service token)", context.Background(), "There is no chat to send messages to."},
-		{"tool context only", tools.WithToolContext(context.Background(), "telegram", "42"), "There is no chat to send messages to."},
+		{"tool context only", toolkit.WithChat(context.Background(), "telegram", "42"), "There is no chat to send messages to."},
 		{"more than one turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true}), "Messages can't be sent now: this agent is answering more than one conversation."},
 		{"asked turn", turnCtx(constants.AgentMessageChannel, "ask-1"), "Messages can't be sent to another agent: your final reply goes to it."},
 		{"sub-agent turn", turnCtx(constants.SubagentChannel, "agent:alice:task"), "Messages can't be sent to another agent: your final reply goes to it."},
@@ -255,7 +257,7 @@ func TestMessageTool_Destination(t *testing.T) {
 			if !res.IsError || res.ForLLM != tc.want || sent {
 				t.Fatalf("result = %+v sent=%v, want %q and nothing sent", res, sent, tc.want)
 			}
-			if !tools.IsExpectedRefusal(res.Err) {
+			if !toolkit.IsExpectedRefusal(res.Err) {
 				t.Fatalf("Err = %v, want an expected refusal (logged at WARN)", res.Err)
 			}
 		})

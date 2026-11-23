@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/tools/untrusted"
 )
@@ -492,7 +493,7 @@ func TestMCPTool_InterfaceCompliance(t *testing.T) {
 	mcpTool := NewMCPTool(manager, "test_server", tool)
 
 	// Verify it implements Tool interface
-	var _ Tool = mcpTool
+	var _ toolkit.Tool = mcpTool
 }
 
 // TestMCPTool_Parameters_StructuredSchema tests a structured InputSchema round-trip

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // readOnlyFixture is a workspace whose writes are confined to files/, with a
@@ -27,12 +27,12 @@ func readOnlyFixture(t *testing.T) (workspace, forumFile string) {
 	return workspace, forumFile
 }
 
-func assertWriteRefused(t *testing.T, res *tools.ToolResult) {
+func assertWriteRefused(t *testing.T, res *toolkit.Result) {
 	t.Helper()
 	if !res.IsError || !strings.HasPrefix(res.ForLLM, "write denied") {
 		t.Fatalf("result = %q (error %v), want the write-denied refusal", res.ForLLM, res.IsError)
 	}
-	if !tools.IsExpectedRefusal(res.Err) {
+	if !toolkit.IsExpectedRefusal(res.Err) {
 		t.Errorf("write denial is not marked as a refusal: %v", res.Err)
 	}
 }
@@ -131,12 +131,12 @@ func TestReadDenialIsRefusal(t *testing.T) {
 	tool := NewReadLinesTool(workspace, true, 0)
 
 	denied := tool.Execute(context.Background(), map[string]any{"path": "forums/f1/transcript.md"})
-	if !denied.IsError || !strings.Contains(denied.ForLLM, "read denied") || !tools.IsExpectedRefusal(denied.Err) {
-		t.Fatalf("denied read = %q (refusal %v), want a read-denied refusal", denied.ForLLM, tools.IsExpectedRefusal(denied.Err))
+	if !denied.IsError || !strings.Contains(denied.ForLLM, "read denied") || !toolkit.IsExpectedRefusal(denied.Err) {
+		t.Fatalf("denied read = %q (refusal %v), want a read-denied refusal", denied.ForLLM, toolkit.IsExpectedRefusal(denied.Err))
 	}
 	missing := tool.Execute(context.Background(), map[string]any{"path": "files/nope.md"})
-	if !missing.IsError || tools.IsExpectedRefusal(missing.Err) {
-		t.Fatalf("missing file = %q (refusal %v), want a failure that is not a refusal", missing.ForLLM, tools.IsExpectedRefusal(missing.Err))
+	if !missing.IsError || toolkit.IsExpectedRefusal(missing.Err) {
+		t.Fatalf("missing file = %q (refusal %v), want a failure that is not a refusal", missing.ForLLM, toolkit.IsExpectedRefusal(missing.Err))
 	}
 }
 
@@ -145,7 +145,7 @@ func TestDeleteWithoutSureIsRefusal(t *testing.T) {
 	workspace, _ := readOnlyFixture(t)
 	tool := NewDeleteFileToolScoped(workspace, true, "files")
 	res := tool.Execute(context.Background(), map[string]any{"path": "files/x.md"})
-	if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
-		t.Fatalf("result = %q (refusal %v), want a refusal", res.ForLLM, tools.IsExpectedRefusal(res.Err))
+	if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
+		t.Fatalf("result = %q (refusal %v), want a refusal", res.ForLLM, toolkit.IsExpectedRefusal(res.Err))
 	}
 }

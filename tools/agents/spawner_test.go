@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
@@ -222,7 +223,7 @@ func TestSpawnTool_CallbackRefusedWhenTurnAmbiguous(t *testing.T) {
 	}
 	ambiguous := tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true})
 	res, err := spawn.Handler(&toolspec.ToolCall{Ctx: ambiguous, Args: map[string]any{"task": "x", "name": "bg"}})
-	if err != nil || !res.IsError || res.ForLLM != spawnAmbiguousText || !tools.IsExpectedRefusal(res.Err) {
+	if err != nil || !res.IsError || res.ForLLM != spawnAmbiguousText || !toolkit.IsExpectedRefusal(res.Err) {
 		t.Fatalf("callback = %+v, %v, want the refusal", res, err)
 	}
 	res, err = spawn.Handler(&toolspec.ToolCall{Ctx: ambiguous, Args: map[string]any{"task": "x", "mode": "wait"}})

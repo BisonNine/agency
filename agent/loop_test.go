@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
@@ -23,7 +24,6 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/media"
 	"go.bison9.com/agency/routing"
-	"go.bison9.com/agency/tools"
 )
 
 type fakeChannel struct{ id string }
@@ -150,17 +150,17 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 
 // TestToolContext_Updates verifies tool context helpers work correctly
 func TestToolContext_Updates(t *testing.T) {
-	ctx := tools.WithToolContext(context.Background(), "telegram", "chat-42")
+	ctx := toolkit.WithChat(context.Background(), "telegram", "chat-42")
 
-	if got := tools.ToolChannel(ctx); got != "telegram" {
+	if got := toolkit.Channel(ctx); got != "telegram" {
 		t.Errorf("expected channel 'telegram', got %q", got)
 	}
-	if got := tools.ToolChatID(ctx); got != "chat-42" {
+	if got := toolkit.ChatID(ctx); got != "chat-42" {
 		t.Errorf("expected chatID 'chat-42', got %q", got)
 	}
 
 	// Empty context returns empty strings
-	if got := tools.ToolChannel(context.Background()); got != "" {
+	if got := toolkit.Channel(context.Background()); got != "" {
 		t.Errorf("expected empty channel from bare context, got %q", got)
 	}
 }
@@ -325,8 +325,8 @@ func (m *mockCustomTool) Parameters() map[string]any {
 	}
 }
 
-func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
-	return tools.SilentResult("Custom tool executed")
+func (m *mockCustomTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
+	return toolkit.SilentResult("Custom tool executed")
 }
 
 // testHelper executes a message and returns the response
@@ -1406,12 +1406,12 @@ func (m *mockEchoTool) Parameters() map[string]any {
 	}
 }
 
-func (m *mockEchoTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (m *mockEchoTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	text, ok := args["text"].(string)
 	if !ok || text == "" {
 		text = "echo"
 	}
-	return tools.SilentResult(text)
+	return toolkit.SilentResult(text)
 }
 
 // TestRunAgentLoop_EmptyResponse_FirstIteration verifies that when the provider

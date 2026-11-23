@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/tools"
 )
@@ -32,7 +34,7 @@ func TestPublishMCPAsyncToLLM_ReinjectsCompletion(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	publishMCPAsyncToLLM(context.Background(), msgBus, rec, dest, "agent_spawn",
-		&tools.ToolResult{ForLLM: `{"event":"completed","uuid":"abc"}`}, 3)
+		&toolkit.Result{ForLLM: `{"event":"completed","uuid":"abc"}`}, 3)
 
 	select {
 	case m := <-got:
@@ -85,7 +87,7 @@ func assertNoReinject(t *testing.T, dest tools.ReplyChat) {
 	}()
 	time.Sleep(20 * time.Millisecond)
 
-	publishMCPAsyncToLLM(context.Background(), msgBus, rec, dest, "agent_spawn", &tools.ToolResult{ForLLM: "x"}, 0)
+	publishMCPAsyncToLLM(context.Background(), msgBus, rec, dest, "agent_spawn", &toolkit.Result{ForLLM: "x"}, 0)
 
 	select {
 	case <-published:

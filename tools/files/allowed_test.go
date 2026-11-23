@@ -12,8 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/tools"
 )
 
 // allowFolders installs folders for ws for the length of the test.
@@ -111,7 +112,7 @@ func TestAllowedFolder_SymlinkEscapeRefused(t *testing.T) {
 		if !res.IsError || contains(res.ForLLM, "secret\n") {
 			t.Errorf("read through %s should be refused: %s", p, res.ForLLM)
 		}
-		if !tools.IsExpectedRefusal(res.Err) {
+		if !toolkit.IsExpectedRefusal(res.Err) {
 			t.Errorf("read through %s: want a refusal, got %v", p, res.Err)
 		}
 	}
@@ -176,7 +177,7 @@ func TestAllowedFolder_ReadOnlyByPermissions(t *testing.T) {
 	if !contains(res.ForLLM, want) {
 		t.Errorf("error = %q, want it to contain %q", res.ForLLM, want)
 	}
-	if !tools.IsExpectedRefusal(res.Err) {
+	if !toolkit.IsExpectedRefusal(res.Err) {
 		t.Errorf("want an expected refusal, got %v", res.Err)
 	}
 

@@ -7,16 +7,16 @@ import (
 	"encoding/json"
 
 	"go.bison9.com/agent/ctxengine/memory"
+	sessiontools "go.bison9.com/agent/ctxengine/tools"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
 
 // buildSessionInfo constructs session info for the given agent and session key.
 // Extracted so it can be reused by registerAgentTools in loop_tools.go.
-func buildSessionInfo(al *AgentLoop, agent *AgentInstance, sessionKey string) (*tools.SessionInfo, error) {
-	info := &tools.SessionInfo{
+func buildSessionInfo(al *AgentLoop, agent *AgentInstance, sessionKey string) (*sessiontools.SessionInfo, error) {
+	info := &sessiontools.SessionInfo{
 		SessionKey: sessionKey,
 	}
 
@@ -36,7 +36,7 @@ func buildSessionInfo(al *AgentLoop, agent *AgentInstance, sessionKey string) (*
 			CoveredSeqEnd   int64 `json:"covered_seq_end"`
 		}
 		if err := json.Unmarshal([]byte(rawSummary), &sv); err == nil && sv.CoveredSeqStart > 0 {
-			info.SummaryCovers = &tools.SummaryCoverage{
+			info.SummaryCovers = &sessiontools.SummaryCoverage{
 				SeqStart: sv.CoveredSeqStart,
 				SeqEnd:   sv.CoveredSeqEnd,
 			}

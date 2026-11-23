@@ -4,9 +4,8 @@
 package timetool
 
 import (
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
-
-	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the time tool through the transport-neutral global
@@ -35,7 +34,7 @@ func (globalTimeProvider) RegisterTools(_ toolspec.Deps) []toolspec.ToolDefiniti
 			// leaves it unable to answer a question about the current time.
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(now.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(now.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 )
 
 // --- mock types ---
@@ -15,13 +16,13 @@ type mockRegistryTool struct {
 	name   string
 	desc   string
 	params map[string]any
-	result *ToolResult
+	result *toolkit.Result
 }
 
 func (m *mockRegistryTool) Name() string               { return m.name }
 func (m *mockRegistryTool) Description() string        { return m.desc }
 func (m *mockRegistryTool) Parameters() map[string]any { return m.params }
-func (m *mockRegistryTool) Execute(_ context.Context, _ map[string]any) *ToolResult {
+func (m *mockRegistryTool) Execute(_ context.Context, _ map[string]any) *toolkit.Result {
 	return m.result
 }
 
@@ -30,17 +31,17 @@ type mockContextAwareTool struct {
 	lastCtx context.Context
 }
 
-func (m *mockContextAwareTool) Execute(ctx context.Context, _ map[string]any) *ToolResult {
+func (m *mockContextAwareTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	m.lastCtx = ctx
 	return m.result
 }
 
 type mockAsyncRegistryTool struct {
 	mockRegistryTool
-	lastCB AsyncCallback
+	lastCB toolkit.AsyncCallback
 }
 
-func (m *mockAsyncRegistryTool) ExecuteAsync(_ context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
+func (m *mockAsyncRegistryTool) ExecuteAsync(_ context.Context, args map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
 	m.lastCB = cb
 	return m.result
 }
@@ -71,7 +72,7 @@ func newMockTool(name, desc string) *mockRegistryTool {
 		name:   name,
 		desc:   desc,
 		params: map[string]any{"type": "object"},
-		result: SilentResult("ok"),
+		result: toolkit.SilentResult("ok"),
 	}
 }
 
@@ -171,7 +172,7 @@ func TestToolRegistry_Execute_Success(t *testing.T) {
 		name:   "greet",
 		desc:   "says hello",
 		params: map[string]any{},
-		result: SilentResult("hello"),
+		result: toolkit.SilentResult("hello"),
 	})
 
 	result := r.Execute(context.Background(), "greet", nil)
@@ -209,10 +210,10 @@ func TestToolRegistry_ExecuteWithContext_InjectsToolContext(t *testing.T) {
 	if ct.lastCtx == nil {
 		t.Fatal("expected Execute to be called")
 	}
-	if got := ToolChannel(ct.lastCtx); got != "telegram" {
+	if got := toolkit.Channel(ct.lastCtx); got != "telegram" {
 		t.Errorf("expected channel 'telegram', got %q", got)
 	}
-	if got := ToolChatID(ct.lastCtx); got != "chat-42" {
+	if got := toolkit.ChatID(ct.lastCtx); got != "chat-42" {
 		t.Errorf("expected chatID 'chat-42', got %q", got)
 	}
 }
@@ -230,10 +231,10 @@ func TestToolRegistry_ExecuteWithContext_EmptyContext(t *testing.T) {
 		t.Fatal("expected Execute to be called")
 	}
 	// Empty values are still injected; tools decide what to do with them.
-	if got := ToolChannel(ct.lastCtx); got != "" {
+	if got := toolkit.Channel(ct.lastCtx); got != "" {
 		t.Errorf("expected empty channel, got %q", got)
 	}
-	if got := ToolChatID(ct.lastCtx); got != "" {
+	if got := toolkit.ChatID(ct.lastCtx); got != "" {
 		t.Errorf("expected empty chatID, got %q", got)
 	}
 }
@@ -243,11 +244,11 @@ func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
 	at := &mockAsyncRegistryTool{
 		mockRegistryTool: *newMockTool("async_tool", "async work"),
 	}
-	at.result = AsyncResult("started")
+	at.result = toolkit.AsyncResult("started")
 	r.Register(at)
 
 	called := false
-	cb := func(_ context.Context, _ *ToolResult) { called = true }
+	cb := func(_ context.Context, _ *toolkit.Result) { called = true }
 
 	result := r.ExecuteWithContext(context.Background(), "async_tool", nil, "", "", cb)
 	if at.lastCB == nil {
@@ -257,7 +258,7 @@ func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
 		t.Error("expected async result")
 	}
 
-	at.lastCB(context.Background(), SilentResult("done"))
+	at.lastCB(context.Background(), toolkit.SilentResult("done"))
 	if !called {
 		t.Error("expected callback to be invoked")
 	}
@@ -293,7 +294,7 @@ func TestToolRegistry_ToolDefs(t *testing.T) {
 		name:   "beta",
 		desc:   "tool B",
 		params: params,
-		result: SilentResult("ok"),
+		result: toolkit.SilentResult("ok"),
 	})
 
 	defs := r.ToolDefs(nil).Send
@@ -404,7 +405,7 @@ func TestToolRegistry_AllowlistDenialIsExpectedRefusal(t *testing.T) {
 	r.Register(newMockTool("echo", "echoes input"))
 	ctx := WithToolAllowChecker(context.Background(), mockAllowChecker{})
 	res := r.Execute(ctx, "echo", nil)
-	if !res.IsError || !IsExpectedRefusal(res.Err) {
+	if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 		t.Fatalf("denied call = %+v, want an expected refusal", res)
 	}
 }

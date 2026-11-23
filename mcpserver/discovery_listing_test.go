@@ -68,17 +68,17 @@ func TestHost_DiscoveryListingUnchanged(t *testing.T) {
 func discoveryListingRegistry(hidden, listed []string) *tools.ToolRegistry {
 	r := tools.NewToolRegistry()
 	for _, n := range listed {
-		r.Register(&mockTool{name: n, params: map[string]any{}, result: tools.NewToolResult("ok")})
+		r.Register(&mockTool{name: n, params: map[string]any{}, result: toolkit.NewResult("ok")})
 	}
 	for _, n := range hidden {
-		registerHiddenForListing(r, &mockTool{name: n, params: map[string]any{}, result: tools.NewToolResult("ok")})
+		registerHiddenForListing(r, &mockTool{name: n, params: map[string]any{}, result: toolkit.NewResult("ok")})
 	}
 	registerDiscoveryForListing(r)
 	return r
 }
 
 // registerHiddenForListing registers t hidden by discovery.
-func registerHiddenForListing(r *tools.ToolRegistry, t tools.Tool) {
+func registerHiddenForListing(r *tools.ToolRegistry, t toolkit.Tool) {
 	e := discovery.HideEntries([]toolkit.Entry{{Tool: t}})
 	r.RegisterEntries(tools.ToolEntry{Entry: e[0]})
 }

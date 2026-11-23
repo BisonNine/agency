@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
@@ -63,10 +64,10 @@ func TestRun_WaitTaskDetachesWhenTheTurnStopsWaiting(t *testing.T) {
 	w := newBlockingWorker()
 	mgr, reg, ws := newBlockingManager(t, w)
 	turnCtx, stopTurn := context.WithCancelCause(context.Background())
-	reported := make(chan *tools.ToolResult, 1)
-	onDetach := func(_ context.Context, r *tools.ToolResult) { reported <- r }
+	reported := make(chan *toolkit.Result, 1)
+	onDetach := func(_ context.Context, r *toolkit.Result) { reported <- r }
 
-	done := make(chan *tools.ToolResult, 1)
+	done := make(chan *toolkit.Result, 1)
 	go func() {
 		res, err := mgr.Run(turnCtx, "do work", "job", "", "cli", "direct", "", "", nil, onDetach)
 		if err != nil {
@@ -129,7 +130,7 @@ func TestRun_WaitTaskCancelledOnShutdown(t *testing.T) {
 	w := newBlockingWorker()
 	mgr, reg, ws := newBlockingManager(t, w)
 	turnCtx, stopTurn := context.WithCancelCause(context.Background())
-	done := make(chan *tools.ToolResult, 1)
+	done := make(chan *toolkit.Result, 1)
 	go func() {
 		res, err := mgr.Run(turnCtx, "do work", "job", "", "cli", "direct", "", "", nil, nil)
 		if err != nil {
@@ -168,11 +169,11 @@ func TestRunTask_WaitDetaches(t *testing.T) {
 		Workspace: t.TempDir(), Live: NewLiveSet(), Tasks: reg, CallerAgentID: "alice", TaskRunner: runner,
 	})
 	turnCtx, stopTurn := context.WithCancelCause(context.Background())
-	reported := make(chan *tools.ToolResult, 1)
-	done := make(chan *tools.ToolResult, 1)
+	reported := make(chan *toolkit.Result, 1)
+	done := make(chan *toolkit.Result, 1)
 	go func() {
 		done <- mgr.RunTask(turnCtx, "sum", "cli", "direct", TaskModelRequest{Kind: TaskKindText, Prompt: "hi"},
-			func(_ context.Context, r *tools.ToolResult) { reported <- r })
+			func(_ context.Context, r *toolkit.Result) { reported <- r })
 	}()
 	<-runner.started
 	stopTurn(errInterrupted)

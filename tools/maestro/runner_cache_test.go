@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	mconfig "go.bison9.com/maestro/config"
 	mglobal "go.bison9.com/maestro/global"
 	mlogging "go.bison9.com/maestro/logging"
@@ -105,7 +106,7 @@ func (r *registration) register(t *testing.T, sr global.SyncRunner) *maestroHarn
 	if len(built) == 0 {
 		t.Fatal("no maestro tools built")
 	}
-	h := &maestroHarness{t: t, tools: map[string]tools.Tool{}, ws: r.ws}
+	h := &maestroHarness{t: t, tools: map[string]toolkit.Tool{}, ws: r.ws}
 	for _, tl := range built {
 		h.tools[tl.Name()] = tl
 	}

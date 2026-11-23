@@ -3,11 +3,11 @@ package skills
 import (
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
 	skillspkg "go.bison9.com/agency/skills"
-	"go.bison9.com/agency/tools"
 )
 
 // GlobalProvider exposes the skill tools through the transport-neutral global
@@ -67,7 +67,7 @@ func (globalSkillProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			},
 			Category: "skills",
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(find.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(find.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -81,7 +81,7 @@ func (globalSkillProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			},
 			Category: "skills",
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(install.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(install.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 	}

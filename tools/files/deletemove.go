@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // backupFilePattern matches the numbered backup siblings written by the `backup`
@@ -26,7 +26,7 @@ func linkRemovedMsg(path string) string {
 // source folder: a link cannot be recreated at the destination, and copying
 // what it points to would bring in content from elsewhere.
 func linkMoveRefusal(path string) error {
-	return tools.Refusal(errors.New("refusing to move: file_move cannot move a link: " + path))
+	return toolkit.Refusal(errors.New("refusing to move: file_move cannot move a link: " + path))
 }
 
 // DeleteFileTool deletes a whole file. A required sure=true guards against
@@ -60,16 +60,16 @@ func (t *DeleteFileTool) Parameters() map[string]any {
 	}
 }
 
-func (t *DeleteFileTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *DeleteFileTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 	if !getBoolArg(args, "sure", false) {
-		return errResult(tools.Refusal(errors.New("refusing to delete: pass sure=true to confirm deleting " + path)))
+		return errResult(toolkit.Refusal(errors.New("refusing to delete: pass sure=true to confirm deleting " + path)))
 	}
 	if backupFilePattern.MatchString(filepath.Base(path)) {
-		return errResult(tools.Refusal(errors.New("refusing to delete a backup file (<name>.NNNN): " + path)))
+		return errResult(toolkit.Refusal(errors.New("refusing to delete a backup file (<name>.NNNN): " + path)))
 	}
 	// A link is removed itself, whatever it points to (a file, a folder or
 	// nothing); its target is not touched.
@@ -77,19 +77,19 @@ func (t *DeleteFileTool) Execute(_ context.Context, args map[string]any) *tools.
 		if err := t.sysFs.Remove(path); err != nil {
 			return errResult(err)
 		}
-		return tools.SilentResult(linkRemovedMsg(path))
+		return toolkit.SilentResult(linkRemovedMsg(path))
 	}
 	info, err := t.sysFs.Stat(path)
 	if err != nil {
 		return errResult(err)
 	}
 	if info.IsDir() {
-		return errResult(tools.Refusal(errors.New("path is a directory; file_delete removes files only, use file_rmdir for folders: " + path)))
+		return errResult(toolkit.Refusal(errors.New("path is a directory; file_delete removes files only, use file_rmdir for folders: " + path)))
 	}
 	if err := t.sysFs.Remove(path); err != nil {
 		return errResult(err)
 	}
-	return tools.SilentResult("File deleted: " + path)
+	return toolkit.SilentResult("File deleted: " + path)
 }
 
 // MoveFileTool relocates a file so the agent can organize files without reading
@@ -134,14 +134,14 @@ func (t *MoveFileTool) Parameters() map[string]any {
 	}
 }
 
-func (t *MoveFileTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *MoveFileTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	src, ok := args["source_path"].(string)
 	if !ok || src == "" {
-		return tools.ErrorResult("source_path is required")
+		return toolkit.ErrorResult("source_path is required")
 	}
 	dst, ok := args["destination_path"].(string)
 	if !ok || dst == "" {
-		return tools.ErrorResult("destination_path is required")
+		return toolkit.ErrorResult("destination_path is required")
 	}
 	overwrite := getBoolArg(args, "overwrite", false)
 
@@ -164,7 +164,7 @@ func (t *MoveFileTool) Execute(_ context.Context, args map[string]any) *tools.To
 		return errResult(err)
 	}
 	if err := t.sysFs.Remove(src); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("copied to %s but failed to remove source %s: %v", dst, src, err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("copied to %s but failed to remove source %s: %v", dst, src, err)).WithError(err)
 	}
-	return tools.SilentResult(fmt.Sprintf("File moved: %s -> %s", src, dst))
+	return toolkit.SilentResult(fmt.Sprintf("File moved: %s -> %s", src, dst))
 }

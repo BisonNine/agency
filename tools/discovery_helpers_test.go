@@ -12,7 +12,7 @@ import (
 
 // hiddenEntry is tool's entry hidden by discovery, as the agent registers a
 // discovery-eligible tool: in group, loaded with it when revealTogether.
-func hiddenEntry(tool Tool, group string, revealTogether bool) ToolEntry {
+func hiddenEntry(tool toolkit.Tool, group string, revealTogether bool) ToolEntry {
 	e := discovery.HideEntries([]toolkit.Entry{{Tool: tool, Group: group, RevealTogether: revealTogether}})
 	return ToolEntry{Entry: e[0]}
 }
@@ -24,12 +24,12 @@ func suiteEntry(e ToolEntry) ToolEntry {
 }
 
 // listedEntry is tool's entry, listed.
-func listedEntry(tool Tool) ToolEntry {
+func listedEntry(tool toolkit.Tool) ToolEntry {
 	return ToolEntry{Tool: tool}
 }
 
 // registerHidden registers each tool hidden by discovery, in no group.
-func registerHidden(r *ToolRegistry, ts ...Tool) {
+func registerHidden(r *ToolRegistry, ts ...toolkit.Tool) {
 	for _, t := range ts {
 		r.RegisterEntries(hiddenEntry(t, "", false))
 	}
@@ -42,7 +42,7 @@ type metaTool struct {
 	name string
 }
 
-func (m metaTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+func (m metaTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	return m.r.Execute(ctx, m.name, args)
 }
 

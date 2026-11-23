@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/tools"
 )
 
 // Spawner is the robust sub-agent launcher injected via Deps.Spawn. It wraps a
@@ -121,7 +121,7 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*toolspec
 		if err != nil {
 			return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("subagent execution failed: %v", err)}, nil
 		}
-		return tools.ResultToGlobal(res), nil
+		return toolkit.ResultToSpec(res), nil
 
 	default: // global.SpawnCallback
 		name := strings.TrimSpace(req.Name)
@@ -138,17 +138,17 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*toolspec
 		msg := fmt.Sprintf("Spawned background task '%s' (uuid: %s). It runs in the background; "+
 			"you'll be notified on completion with a pointer to the result file, or poll agent_status with uuid=%q.",
 			name, id, id)
-		return tools.ResultToGlobal(tools.AsyncResult(msg)), nil
+		return toolkit.ResultToSpec(toolkit.AsyncResult(msg)), nil
 	}
 }
 
 // onResultCallback adapts a spawn request's OnResult to the manager's
 // callback; nil when there is none.
-func onResultCallback(onResult func(*toolspec.Result)) tools.AsyncCallback {
+func onResultCallback(onResult func(*toolspec.Result)) toolkit.AsyncCallback {
 	if onResult == nil {
 		return nil
 	}
-	return func(_ context.Context, r *tools.ToolResult) { onResult(tools.ResultToGlobal(r)) }
+	return func(_ context.Context, r *toolkit.Result) { onResult(toolkit.ResultToSpec(r)) }
 }
 
 // TaskStatus implements global.TaskInspector.

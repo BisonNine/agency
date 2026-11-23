@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/tools"
 )
 
@@ -80,7 +82,7 @@ func rebuild(t *testing.T, srv *MCPServer, store *SessionTokenStore, regs map[st
 }
 
 func aliceRegistry() (map[string]*tools.ToolRegistry, *mockTool) {
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("alice-content")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("alice-content")}
 	return map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}, rf
 }
 
@@ -164,8 +166,8 @@ func TestSharedStore_NoStoreOption(t *testing.T) {
 func TestSharedStore_ServiceTokensAcrossRebuild(t *testing.T) {
 	store := NewSessionTokenStore()
 	regs := map[string]*tools.ToolRegistry{
-		"alice": newRegistryWith(&mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("a")}),
-		"bob":   newRegistryWith(&mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("b")}),
+		"alice": newRegistryWith(&mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("a")}),
+		"bob":   newRegistryWith(&mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("b")}),
 	}
 	archive := func(id string) string { return "/tmp/archive/" + id }
 
@@ -211,7 +213,7 @@ func TestSharedStore_AgentGoneAfterRebuildFailsClosed(t *testing.T) {
 	regs, rf := aliceRegistry()
 	carolRegs := map[string]*tools.ToolRegistry{
 		"alice": regs["alice"],
-		"carol": newRegistryWith(&mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("c")}),
+		"carol": newRegistryWith(&mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("c")}),
 	}
 
 	srv := rebuild(t, nil, store, carolRegs)

@@ -11,10 +11,10 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // Rule 5: /cancel while the reply waits on a sub-agent does not stop the
@@ -117,10 +117,10 @@ func TestInterrupt_WaitTaskDuringShutdownIsCancelled(t *testing.T) {
 		t.Fatal("alice has no spawn manager")
 	}
 	reqCtx, endRequest := context.WithCancel(context.Background())
-	done := make(chan *tools.ToolResult, 1)
+	done := make(chan *toolkit.Result, 1)
 	go func() {
 		res, err := alice.spawnMgr.Run(reqCtx, "the work", "job", "", "cli", "direct", "", "", nil,
-			func(context.Context, *tools.ToolResult) { t.Error("a background result was delivered") })
+			func(context.Context, *toolkit.Result) { t.Error("a background result was delivered") })
 		if err != nil {
 			t.Errorf("Run: %v", err)
 		}

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -285,7 +287,7 @@ func (depsCaptureProvider) Category() string                        { return "te
 func (depsCaptureProvider) ConfigKey() string                       { return "" }
 func (depsCaptureProvider) Available(*config.Config) (bool, string) { return true, "" }
 func (depsCaptureProvider) Describe() []tools.ToolDescriptor        { return nil }
-func (depsCaptureProvider) Build(d tools.ToolDeps) []tools.Tool {
+func (depsCaptureProvider) Build(d tools.ToolDeps) []toolkit.Tool {
 	depsCaptured.Lock()
 	defer depsCaptured.Unlock()
 	if depsCaptured.byAgent != nil {

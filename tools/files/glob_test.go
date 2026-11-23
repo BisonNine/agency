@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/tools"
 )
 
 // touch sets a file's modification time to base plus n seconds.
@@ -167,7 +167,7 @@ func TestGlob_PermissionRules(t *testing.T) {
 	// Outside the read scope and every allowed folder: refused.
 	for _, p := range []string{".", outside} {
 		res := tool.Execute(ctx, map[string]any{"pattern": "**", "path": p})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Errorf("glob in %s: want a refusal, got %v %s", p, res.IsError, res.ForLLM)
 		}
 	}

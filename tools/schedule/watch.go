@@ -15,10 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/cron"
 	"go.bison9.com/agency/internal/dotpath"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // extractField selects a dot-path from a decoded JSON value (dotpath.Get: an
@@ -222,9 +223,9 @@ func (t *CronTool) probeWithContext(ctx context.Context, agentID string, w *cron
 	}
 	out, err := registry.ExecuteUnattended(ctx, w.Tool, w.Args)
 	switch {
-	case errors.Is(err, tools.ErrToolNotRegistered):
+	case errors.Is(err, toolkit.ErrToolNotRegistered):
 		return "", fmt.Errorf("tool %q is not available to agent %q", w.Tool, agentID)
-	case errors.Is(err, tools.ErrToolSessionScoped):
+	case errors.Is(err, toolkit.ErrToolSessionScoped):
 		return "", fmt.Errorf("tool %q is session-scoped and cannot be used as a watch probe", w.Tool)
 	}
 	return out, err

@@ -11,10 +11,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 const (
@@ -32,13 +32,13 @@ var globEntryLimit = maxGlobEntriesScanned
 // matching each name too slow.
 func checkGlobPattern(what, pattern string) error {
 	if utf8.RuneCountInString(pattern) > maxGlobPatternChars {
-		return tools.Refusal(fmt.Errorf("%s is longer than %d characters", what, maxGlobPatternChars))
+		return toolkit.Refusal(fmt.Errorf("%s is longer than %d characters", what, maxGlobPatternChars))
 	}
 	if strings.Count(pattern, "{") > maxGlobBraceGroups {
-		return tools.Refusal(fmt.Errorf("%s has more than %d {…} groups", what, maxGlobBraceGroups))
+		return toolkit.Refusal(fmt.Errorf("%s has more than %d {…} groups", what, maxGlobBraceGroups))
 	}
 	if !doublestar.ValidatePattern(pattern) {
-		return tools.Refusal(fmt.Errorf("%s is not a valid glob pattern: %s", what, pattern))
+		return toolkit.Refusal(fmt.Errorf("%s is not a valid glob pattern: %s", what, pattern))
 	}
 	return nil
 }
@@ -94,11 +94,11 @@ type globMatch struct {
 	mtime time.Time
 }
 
-func (t *GlobTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *GlobTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	pattern, ok := args["pattern"].(string)
 	pattern = strings.TrimSpace(pattern)
 	if !ok || pattern == "" {
-		return tools.ErrorResult("pattern is required")
+		return toolkit.ErrorResult("pattern is required")
 	}
 	if err := checkGlobPattern("pattern", pattern); err != nil {
 		return errResult(err)
@@ -118,7 +118,7 @@ func (t *GlobTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 			return errResult(err)
 		}
 		if !info.IsDir() {
-			return tools.ErrorResult(r + " is not a folder")
+			return toolkit.ErrorResult(r + " is not a folder")
 		}
 	}
 
@@ -185,7 +185,7 @@ func (t *GlobTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 		if stopped {
 			msg += fmt.Sprintf(" [Stopped after %d entries — search a smaller folder.]", globEntryLimit)
 		}
-		return tools.NewToolResult(msg)
+		return toolkit.NewResult(msg)
 	}
 	slices.SortFunc(matches, func(a, b globMatch) int {
 		if c := b.mtime.Compare(a.mtime); c != 0 {
@@ -208,5 +208,5 @@ func (t *GlobTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 	}
 	logger.DebugCF("tool", "GlobTool completed",
 		map[string]any{"pattern": pattern, "root": root, "matches": total, "scanned": scanned})
-	return tools.NewToolResult(header + "\n\n" + strings.Join(paths, "\n"))
+	return toolkit.NewResult(header + "\n\n" + strings.Join(paths, "\n"))
 }

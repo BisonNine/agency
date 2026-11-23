@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
@@ -35,9 +37,9 @@ const effectsLeak = "SST" + "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f
 // callback before it returns.
 type effectsAsync struct{ wireTool }
 
-func (e *effectsAsync) ExecuteAsync(ctx context.Context, _ map[string]any, cb tools.AsyncCallback) *tools.ToolResult {
-	cb(ctx, &tools.ToolResult{ForLLM: "background done", ForUser: "background for the user"})
-	return tools.NewToolResult("started in the background")
+func (e *effectsAsync) ExecuteAsync(ctx context.Context, _ map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
+	cb(ctx, &toolkit.Result{ForLLM: "background done", ForUser: "background for the user"})
+	return toolkit.NewResult("started in the background")
 }
 
 type effectsRecord struct {
@@ -60,8 +62,8 @@ func TestCallEffectsUnchanged(t *testing.T) {
 	const session = "agent:alice:main"
 	regs := map[string]*tools.ToolRegistry{
 		"alice": newRegistryWith(
-			&wireTool{name: "write_note", desc: "Writes a note", params: map[string]any{}, run: func(context.Context, map[string]any) *tools.ToolResult {
-				return &tools.ToolResult{ForLLM: "saved " + effectsLeak, ForUser: "Note saved"}
+			&wireTool{name: "write_note", desc: "Writes a note", params: map[string]any{}, run: func(context.Context, map[string]any) *toolkit.Result {
+				return &toolkit.Result{ForLLM: "saved " + effectsLeak, ForUser: "Note saved"}
 			}},
 			&wireTool{name: "denied_tool", desc: "Denied", params: map[string]any{}, run: wireText("never")},
 			&effectsAsync{wireTool{name: "bg_tool", desc: "Background", params: map[string]any{}, run: wireText("sync")}},

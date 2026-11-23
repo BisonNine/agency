@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/mcpserver/acl"
 	"go.bison9.com/agency/tools"
 )
@@ -37,7 +39,7 @@ func TestDispatch_ACLAllowExecutesAndLogsAuthorized(t *testing.T) {
 		return false
 	})
 
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st, tok := seedSessionToken("alice")
 
@@ -72,7 +74,7 @@ func TestDispatch_ACLDenyBlocksAndEmitsWarn(t *testing.T) {
 
 	denyAll := acl.PolicyFunc(func(_, _ string) bool { return false })
 
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st, tok := seedSessionToken("alice")
 
@@ -84,7 +86,7 @@ func TestDispatch_ACLDenyBlocksAndEmitsWarn(t *testing.T) {
 	if rf.calls != 0 {
 		t.Errorf("tool ran despite ACL deny: calls=%d", rf.calls)
 	}
-	if out != tools.NotEnabledMessage("read_file") {
+	if out != toolkit.NotEnabledMessage("read_file") {
 		t.Errorf("unexpected deny message: %s", out)
 	}
 
@@ -115,7 +117,7 @@ func TestDispatch_ACLDenyBlocksAndEmitsWarn(t *testing.T) {
 // TestDispatch_NilPolicyDefaultsToAllow confirms passing a nil acl.Policy
 // is treated as the default open policy: the tool executes normally.
 func TestDispatch_NilPolicyDefaultsToAllow(t *testing.T) {
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st, tok := seedSessionToken("alice")
 
@@ -163,7 +165,7 @@ func TestNew_WithACLPolicyInjectsCustomPolicy(t *testing.T) {
 		return false
 	})
 
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	r := newRegistryWith(rf)
 
 	srv, err := New(

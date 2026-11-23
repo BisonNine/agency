@@ -18,11 +18,12 @@ import (
 	"syscall"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/perms"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
 
@@ -152,10 +153,10 @@ func (t *ReadFileTool) Parameters() map[string]any {
 	}
 }
 
-func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 
 	// Keep the two addressing modes pure: reject the other mode's parameters
@@ -164,11 +165,11 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	// exists to prevent). Point the caller at the right tool.
 	if t.lineMode {
 		if argPresent(args, "offset") || argPresent(args, "length") {
-			return tools.ErrorResult("file_read_lines reads by line and does not accept offset/length. " +
+			return toolkit.ErrorResult("file_read_lines reads by line and does not accept offset/length. " +
 				"Use file_read_lines(path, start_line[, line_count]); to read by byte use file_read_bytes(path, offset).")
 		}
 	} else if argPresent(args, "start_line") || argPresent(args, "line_count") {
-		return tools.ErrorResult("file_read_bytes reads by byte offset and does not accept start_line/line_count. " +
+		return toolkit.ErrorResult("file_read_bytes reads by byte offset and does not accept start_line/line_count. " +
 			"Use file_read_bytes(path, offset[, length]); to read by line use file_read_lines(path, start_line).")
 	}
 
@@ -178,7 +179,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 		return errResult(err)
 	}
 	if offset < 0 {
-		return tools.ErrorResult("offset must be >= 0")
+		return toolkit.ErrorResult("offset must be >= 0")
 	}
 
 	// length (optional, capped at MaxReadFileSize)
@@ -187,7 +188,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 		return errResult(err)
 	}
 	if length <= 0 {
-		return tools.ErrorResult("length must be > 0")
+		return toolkit.ErrorResult("length must be > 0")
 	}
 	if length > t.maxSize {
 		length = t.maxSize
@@ -220,18 +221,18 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	sniff := make([]byte, 512)
 	sniffN, err := file.Read(sniff)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return tools.ErrorResult(fmt.Sprintf("failed to read %q: %v", path, err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read %q: %v", path, err)).WithError(err)
 	}
 
 	// Reset read position to beginning before applying the caller's offset.
 	if seeker, ok := file.(io.Seeker); ok {
 		_, err = seeker.Seek(0, io.SeekStart)
 		if err != nil {
-			return tools.ErrorResult(fmt.Sprintf("failed to reset file position after sniff: %v", err)).WithError(err)
+			return toolkit.ErrorResult(fmt.Sprintf("failed to reset file position after sniff: %v", err)).WithError(err)
 		}
 	} else {
 		if offset < int64(sniffN) && offset > 0 {
-			return tools.ErrorResult(
+			return toolkit.ErrorResult(
 				"non-seekable file: cannot seek to an offset within the first 512 bytes after binary detection",
 			)
 		}
@@ -254,14 +255,14 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	if seeker, ok := file.(io.Seeker); ok {
 		_, err = seeker.Seek(offset, io.SeekStart)
 		if err != nil {
-			return tools.ErrorResult(fmt.Sprintf("failed to seek to offset %d: %v", offset, err)).WithError(err)
+			return toolkit.ErrorResult(fmt.Sprintf("failed to seek to offset %d: %v", offset, err)).WithError(err)
 		}
 	} else if offset > 0 {
 		remaining := offset - int64(sniffN)
 		if remaining > 0 {
 			_, err = io.CopyN(io.Discard, file, remaining)
 			if err != nil {
-				return tools.ErrorResult(fmt.Sprintf("failed to advance to offset %d: %v", offset, err)).WithError(err)
+				return toolkit.ErrorResult(fmt.Sprintf("failed to advance to offset %d: %v", offset, err)).WithError(err)
 			}
 		}
 	}
@@ -269,14 +270,14 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	probe := make([]byte, length+1)
 	n, err := io.ReadFull(file, probe)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return tools.ErrorResult(fmt.Sprintf("failed to read file content: %v", err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read file content: %v", err)).WithError(err)
 	}
 
 	hasMore := int64(n) > length
 	data := probe[:min(int64(n), length)]
 
 	if len(data) == 0 {
-		return tools.NewToolResult("[END OF FILE - no content at this offset]")
+		return toolkit.NewResult("[END OF FILE - no content at this offset]")
 	}
 
 	readEnd := offset + int64(len(data))
@@ -292,7 +293,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	// continuation instruction sits at the model's highest-attention position.
 	// A hint buried above a large chunk was being ignored, causing models to
 	// re-read the same front chunk instead of advancing the offset.
-	return tools.NewToolResult(string(data) +
+	return toolkit.NewResult(string(data) +
 		byteReadStatus(path, filepath.Base(path), offset, readEnd, length, totalSize, hasMore))
 }
 
@@ -329,7 +330,7 @@ func byteReadStatus(path, displayPath string, offset, readEnd, length, totalSize
 // from file (positioned at 0), bounded by the byte ceiling. The output is
 // prefixed with each line's 1-based number and a header noting the range and how
 // to fetch the next chunk.
-func (t *ReadFileTool) readLines(file io.Reader, path string, startLine, lineCount int64) *tools.ToolResult {
+func (t *ReadFileTool) readLines(file io.Reader, path string, startLine, lineCount int64) *toolkit.Result {
 	displayPath := filepath.Base(path)
 	scanner := bufio.NewScanner(file)
 	// Allow long lines up to the byte ceiling (default 64KB buffer is too small).
@@ -363,16 +364,16 @@ func (t *ReadFileTool) readLines(file io.Reader, path string, startLine, lineCou
 		lastLine = cur
 	}
 	if err := scanner.Err(); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to read lines: %v", err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read lines: %v", err)).WithError(err)
 	}
 
 	if emitted == 0 {
-		return tools.NewToolResult(fmt.Sprintf("[file: %s | no lines at start_line=%d (file has %d line(s))]", displayPath, startLine, cur))
+		return toolkit.NewResult(fmt.Sprintf("[file: %s | no lines at start_line=%d (file has %d line(s))]", displayPath, startLine, cur))
 	}
 
 	logger.DebugCF("tool", "ReadFileTool line-mode read completed",
 		map[string]any{"path": displayPath, "start_line": startLine, "lines": emitted, "more": moreLines})
-	return tools.NewToolResult(b.String() +
+	return toolkit.NewResult(b.String() +
 		lineReadStatus(path, displayPath, startLine, lastLine, bytesCapped || moreLines, bytesCapped))
 }
 
@@ -499,20 +500,20 @@ func (t *WriteFileTool) Parameters() map[string]any {
 	}
 }
 
-func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 
 	content, ok := args["content"].(string)
 	if !ok {
-		return tools.ErrorResult("content is required")
+		return toolkit.ErrorResult("content is required")
 	}
 
 	if !getBoolArg(args, "overwrite", false) {
 		if info, err := t.sysFs.Stat(path); err == nil && !info.IsDir() {
-			return tools.ErrorResult(fmt.Sprintf("file already exists: %s. Set overwrite: true to replace it.", path))
+			return toolkit.ErrorResult(fmt.Sprintf("file already exists: %s. Set overwrite: true to replace it.", path))
 		}
 	}
 
@@ -532,12 +533,12 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *tools
 
 	forLLM := "File written: " + path
 	if getBoolArg(args, "display", false) {
-		return &tools.ToolResult{
+		return &toolkit.Result{
 			ForLLM:  forLLM,
 			ForUser: displayBody(displayHeader("Wrote", path), content),
 		}
 	}
-	return tools.SilentResult(forLLM)
+	return toolkit.SilentResult(forLLM)
 }
 
 type ListDirTool struct {
@@ -579,7 +580,7 @@ func (t *ListDirTool) Parameters() map[string]any {
 	}
 }
 
-func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "."
@@ -591,7 +592,7 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *tools.T
 
 	entries, err := t.sysFs.ReadDir(path)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to read directory: %v", err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read directory: %v", err)).WithError(err)
 	}
 	return formatDirEntries(entries)
 }
@@ -603,7 +604,7 @@ const maxRecursiveListEntries = 1000
 // listRecursive walks the tree under start via the sandboxed fs (scoping and
 // allowed folders still apply), listing entries with workspace-relative paths. Hidden
 // directories (.git, etc.) and the .claw marker are skipped.
-func (t *ListDirTool) listRecursive(start string) *tools.ToolResult {
+func (t *ListDirTool) listRecursive(start string) *toolkit.Result {
 	var b strings.Builder
 	count := 0
 	truncated := false
@@ -644,10 +645,10 @@ func (t *ListDirTool) listRecursive(start string) *tools.ToolResult {
 	if truncated {
 		out += fmt.Sprintf("\n[truncated at %d entries — list a subdirectory for more]\n", maxRecursiveListEntries)
 	}
-	return tools.NewToolResult(out)
+	return toolkit.NewResult(out)
 }
 
-func formatDirEntries(entries []os.DirEntry) *tools.ToolResult {
+func formatDirEntries(entries []os.DirEntry) *toolkit.Result {
 	var result strings.Builder
 	for _, entry := range entries {
 		// Hide the claw-internal new-file marker from agents.
@@ -660,7 +661,7 @@ func formatDirEntries(entries []os.DirEntry) *tools.ToolResult {
 			result.WriteString("FILE: " + entry.Name() + "\n")
 		}
 	}
-	return tools.NewToolResult(result.String())
+	return toolkit.NewResult(result.String())
 }
 
 // fileSystem abstracts reading, writing, and listing files.
@@ -713,9 +714,9 @@ func isRoot(fsys fileSystem, path string) bool {
 }
 
 // errResult is the error result for err, keeping err so the registry can
-// tell an expected refusal (tools.IsExpectedRefusal) from a failure.
-func errResult(err error) *tools.ToolResult {
-	return tools.ErrorResult(err.Error()).WithError(err)
+// tell an expected refusal (toolkit.IsExpectedRefusal) from a failure.
+func errResult(err error) *toolkit.Result {
+	return toolkit.ErrorResult(err.Error()).WithError(err)
 }
 
 // hostFs is an unrestricted fileReadWriter that operates directly on the host filesystem.
@@ -728,7 +729,7 @@ type hostFs struct {
 // notRegular refuses reading path, which is not a regular file (a folder,
 // FIFO, device or socket): reading one could block or never end.
 func notRegular(path string) error {
-	return tools.Refusal(fmt.Errorf("access denied: %s is not a regular file", path))
+	return toolkit.Refusal(fmt.Errorf("access denied: %s is not a regular file", path))
 }
 
 // regularOpen checks the file just opened for path: it must be a regular
@@ -745,7 +746,7 @@ func regularOpen(f *os.File, path string, checked os.FileInfo) (*os.File, error)
 		return nil, notRegular(path)
 	case checked != nil && !os.SameFile(checked, info):
 		utils.CloseQuietly(f)
-		return nil, tools.Refusal(fmt.Errorf("access denied: %s changed while it was being opened", path))
+		return nil, toolkit.Refusal(fmt.Errorf("access denied: %s changed while it was being opened", path))
 	}
 	return f, nil
 }
@@ -925,7 +926,7 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 			if outside == "" {
 				outside = "the workspace"
 			}
-			return tools.Refusal(fmt.Errorf("access denied: %s resolves outside %s", r.abs(path), outside))
+			return toolkit.Refusal(fmt.Errorf("access denied: %s resolves outside %s", r.abs(path), outside))
 		}
 		return err
 	}
@@ -1217,7 +1218,7 @@ func (w *whitelistFs) hostReadPath(path string) (string, error) {
 			return target, nil
 		}
 	}
-	return "", tools.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read", path))
+	return "", toolkit.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read", path))
 }
 
 // matchedArea returns the shortest folder prefix of path that an allow-read
@@ -1423,7 +1424,7 @@ func (r *readScopedFs) readAllowed(path string, parentOnly bool) (*sandboxFs, st
 		absPath = a
 	}
 	if r.rootOf(absPath) == "" {
-		return nil, "", tools.Refusal(fmt.Errorf("read denied: the agent can only read %s/", strings.Join(r.subdirNames, "/, ")))
+		return nil, "", toolkit.Refusal(fmt.Errorf("read denied: the agent can only read %s/", strings.Join(r.subdirNames, "/, ")))
 	}
 	return r.resolvedInReadRoot(path, absPath, parentOnly)
 }
@@ -1497,7 +1498,7 @@ func (r *readScopedFs) resolvedInReadRoot(path, absPath string, parentOnly bool)
 			return nil, "", nil
 		}
 	}
-	return nil, "", tools.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read (%s/)",
+	return nil, "", toolkit.Refusal(fmt.Errorf("access denied: %s resolves outside the folders the agent can read (%s/)",
 		path, strings.Join(r.subdirNames, "/, ")))
 }
 
@@ -1653,7 +1654,7 @@ func (w *writeScopedFs) writeAllowed(path string, parentOnly bool) error {
 	}
 
 	if absPath != absRoot && !isWithinWorkspace(absPath, absRoot) {
-		return tools.Refusal(fmt.Errorf("write denied: outside %s", w.writeRoot))
+		return toolkit.Refusal(fmt.Errorf("write denied: outside %s", w.writeRoot))
 	}
 	if parentOnly {
 		return w.resolvedWithinRoot(path, filepath.Dir(absPath), absRoot)
@@ -1689,7 +1690,7 @@ func (w *writeScopedFs) resolvedWithinRoot(path, absPath, absRoot string) error 
 	}
 	defer utils.CloseQuietly(root)
 
-	outside := tools.Refusal(fmt.Errorf("write denied: %s resolves outside %s", path, w.writeRoot))
+	outside := toolkit.Refusal(fmt.Errorf("write denied: %s resolves outside %s", path, w.writeRoot))
 	resolvedRoot, ok, err := resolveInWorkspace(root, relRoot)
 	if err != nil {
 		return err

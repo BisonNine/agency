@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 
+	sessiontools "go.bison9.com/agent/ctxengine/tools"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/config"
 )
@@ -37,7 +39,7 @@ type ToolProvider interface {
 	Category() string
 	ConfigKey() string                           // maps to config struct field name
 	Available(cfg *config.Config) (bool, string) // (ok, reason if not)
-	Build(deps ToolDeps) []Tool
+	Build(deps ToolDeps) []toolkit.Tool
 	Describe() []ToolDescriptor
 }
 
@@ -93,14 +95,14 @@ type ToolDeps struct {
 	// human-readable compaction report and the resulting rendered summary,
 	// alongside any error.
 	CompactFn     func(ctx context.Context, sessionKey string) (report, summary string, err error)
-	SessionInfoFn func(ctx context.Context, sessionKey string) (*SessionInfo, error)
+	SessionInfoFn func(ctx context.Context, sessionKey string) (*sessiontools.SessionInfo, error)
 	// ClearFn clears the active conversation (preserving the archive) and hands
 	// the agent a fresh turn, optionally delivering message as a self-handoff.
 	// nil when session_clear is not enabled for the agent.
 	ClearFn func(ctx context.Context, sessionKey, message string) error
 
 	// Shared pre-built tool instances
-	MessageTool Tool // shared msg_send instance; may be nil
+	MessageTool toolkit.Tool // shared msg_send instance; may be nil
 }
 
 // EffectiveStateDir is StateDir, or Workspace when StateDir is unset.

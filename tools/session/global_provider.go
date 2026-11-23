@@ -20,6 +20,7 @@ import (
 	"runtime"
 
 	sessiontools "go.bison9.com/agent/ctxengine/tools"
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/app"
@@ -96,11 +97,11 @@ func refuseClearInAsk(defs []toolspec.ToolDefinition) []toolspec.ToolDefinition 
 		}
 		next := defs[i].Handler
 		defs[i].Handler = func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-			if tools.ToolChannel(call.Ctx) == constants.AgentMessageChannel {
-				return &toolspec.Result{IsError: true, ForLLM: errClearInAsk.Error(), Err: tools.Refusal(errClearInAsk)}, nil
+			if toolkit.Channel(call.Ctx) == constants.AgentMessageChannel {
+				return &toolspec.Result{IsError: true, ForLLM: errClearInAsk.Error(), Err: toolkit.Refusal(errClearInAsk)}, nil
 			}
 			if _, problem := tools.TurnChat(call.Ctx); problem == tools.ChatAmbiguous {
-				return &toolspec.Result{IsError: true, ForLLM: errClearAmbiguous.Error(), Err: tools.Refusal(errClearAmbiguous)}, nil
+				return &toolspec.Result{IsError: true, ForLLM: errClearAmbiguous.Error(), Err: toolkit.Refusal(errClearAmbiguous)}, nil
 			}
 			return next(call)
 		}

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/cron"
 	"go.bison9.com/agency/tools"
 )
@@ -12,7 +14,7 @@ import (
 // probeTool answers a watch probe with result.
 type probeTool struct {
 	name   string
-	result *tools.ToolResult
+	result *toolkit.Result
 	scoped bool
 	sawCtx context.Context
 }
@@ -20,7 +22,7 @@ type probeTool struct {
 func (p *probeTool) Name() string               { return p.name }
 func (p *probeTool) Description() string        { return "probe" }
 func (p *probeTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (p *probeTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (p *probeTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	p.sawCtx = ctx
 	return p.result
 }
@@ -30,11 +32,11 @@ func (p *probeTool) IsSessionScoped() bool { return p.scoped }
 // the tool's own text on failure, a refusal naming the tool when the agent
 // lacks it or it needs a session, and no chat to send to.
 func TestWatchProbe_Outcomes(t *testing.T) {
-	ok := &probeTool{name: "mail_list", result: tools.NewToolResult(`{"ids":[1]}`)}
-	failing := &probeTool{name: "mail_fail", result: tools.ErrorResult("mailbox locked")}
-	scoped := &probeTool{name: "session_x", result: tools.NewToolResult("x"), scoped: true}
+	ok := &probeTool{name: "mail_list", result: toolkit.NewResult(`{"ids":[1]}`)}
+	failing := &probeTool{name: "mail_fail", result: toolkit.ErrorResult("mailbox locked")}
+	scoped := &probeTool{name: "session_x", result: toolkit.NewResult("x"), scoped: true}
 	reg := tools.NewToolRegistry()
-	for _, tl := range []tools.Tool{ok, failing, scoped} {
+	for _, tl := range []toolkit.Tool{ok, failing, scoped} {
 		reg.Register(tl)
 	}
 	ct := &CronTool{}

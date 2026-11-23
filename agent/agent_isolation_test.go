@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/routing"
-	"go.bison9.com/agency/tools"
 )
 
 // TestAgentIsolation_ResolveScopeKeyRejectsMismatchedAgentID tests that resolveScopeKey
@@ -121,7 +122,7 @@ func TestAgentIsolation_TaskPointerCallbackCarriesOwnerAgent(t *testing.T) {
 	}
 
 	cb := al.taskPointerCallback("slack", "C123", "bob", 2)
-	cb(context.Background(), &tools.ToolResult{
+	cb(context.Background(), &toolkit.Result{
 		ForLLM: "task finished",
 	})
 

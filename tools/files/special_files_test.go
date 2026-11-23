@@ -14,8 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
 
@@ -59,7 +60,7 @@ func TestFileTools_RefuseFIFO(t *testing.T) {
 		}
 		for _, tc := range []struct {
 			name string
-			tool tools.Tool
+			tool toolkit.Tool
 			args map[string]any
 		}{
 			{"file_read_lines", NewReadLinesTool(ws, restrict, MaxReadFileSize), map[string]any{"path": path}},
@@ -70,7 +71,7 @@ func TestFileTools_RefuseFIFO(t *testing.T) {
 			{"file_search_lines", NewSearchLinesTool(ws, restrict), map[string]any{"query": "x", "path": path}},
 			{"file_count", NewCountFileTool(ws, restrict), map[string]any{"path": path}},
 		} {
-			res := notBlocking(t, tc.name, func() *tools.ToolResult { return tc.tool.Execute(ctx, tc.args) })
+			res := notBlocking(t, tc.name, func() *toolkit.Result { return tc.tool.Execute(ctx, tc.args) })
 			// A search skips what is not a regular file; every other tool refuses.
 			if !res.IsError && (tc.name != "file_search_lines" || !strings.HasPrefix(res.ForLLM, "No matches")) {
 				t.Errorf("%s (restrict=%v): a FIFO was read: %q", tc.name, restrict, res.ForLLM)
@@ -89,7 +90,7 @@ func TestFileTools_RefuseFIFO(t *testing.T) {
 				utils.CloseQuietly(f)
 			}
 			return err
-		}); err == nil || !tools.IsExpectedRefusal(err) {
+		}); err == nil || !toolkit.IsExpectedRefusal(err) {
 			t.Errorf("Reader.Open (restrict=%v) = %v, want a refusal", restrict, err)
 		}
 	}

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/mcpserver/acl"
 	"go.bison9.com/agency/tools"
 )
@@ -22,7 +24,7 @@ func TestDispatch_ToolNotInAgentRegistryReturnsNotEnabled(t *testing.T) {
 	defer restore()
 
 	// alice's registry has read_file only; trello_search belongs to another agent.
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st, tok := seedSessionToken("alice")
 
@@ -31,7 +33,7 @@ func TestDispatch_ToolNotInAgentRegistryReturnsNotEnabled(t *testing.T) {
 	if !isErr {
 		t.Fatalf("expected refusal for unregistered tool, got success: %s", out)
 	}
-	if out != tools.NotEnabledMessage("trello_search") {
+	if out != toolkit.NotEnabledMessage("trello_search") {
 		t.Errorf("unexpected refusal message: %s", out)
 	}
 	if logs := buf.String(); !strings.Contains(logs, `"reason":"tool_not_in_registry"`) {
@@ -47,14 +49,14 @@ func TestDispatch_DenialCausesAreIndistinguishable(t *testing.T) {
 	denyAll := acl.PolicyFunc(func(_, _ string) bool { return false })
 
 	// Case 7: tool IS registered, policy refuses it.
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regsWith := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	stA, tokA := seedSessionToken("alice")
 	aclOut, aclErr := dispatchToolCall(context.Background(), "read_file",
 		map[string]any{"session_token": tokA}, stA, resolverFor(regsWith), nil, denyAll, nil, nil)
 
 	// Case 6: tool is absent from the registry, policy would allow it.
-	other := &mockTool{name: "list_dir", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	other := &mockTool{name: "list_dir", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regsWithout := map[string]*tools.ToolRegistry{"alice": newRegistryWith(other)}
 	stB, tokB := seedSessionToken("alice")
 	missOut, missErr := dispatchToolCall(context.Background(), "read_file",
@@ -73,7 +75,7 @@ func TestDispatch_DenialCausesAreIndistinguishable(t *testing.T) {
 // workaround; this message must name the cause as configuration, rule out a
 // fault, and hand the agent the remedy.
 func TestNotEnabledMessage_TellsAgentToStopAndAsk(t *testing.T) {
-	msg := tools.NotEnabledMessage("trello_search")
+	msg := toolkit.NotEnabledMessage("trello_search")
 
 	if !strings.Contains(msg, "trello_search") {
 		t.Errorf("message should name the tool: %s", msg)
@@ -97,7 +99,7 @@ func TestNotEnabledMessage_TellsAgentToStopAndAsk(t *testing.T) {
 // re-send a valid token, which IS worth retrying) and must never be reported
 // as a permission problem.
 func TestDispatch_InvalidTokenIsNotAPermissionMessage(t *testing.T) {
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st, _ := seedSessionToken("alice")
 

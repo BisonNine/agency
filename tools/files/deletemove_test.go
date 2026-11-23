@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 func TestFileDelete_RequiresSure(t *testing.T) {
@@ -39,7 +39,7 @@ func TestFileDelete_RefusesBackupFiles(t *testing.T) {
 	}
 	tool := NewDeleteFileToolScoped(dir, false, "")
 	res := tool.Execute(context.Background(), map[string]any{"path": bp, "sure": true})
-	if !res.IsError || !contains(res.ForLLM, "backup") || !tools.IsExpectedRefusal(res.Err) {
+	if !res.IsError || !contains(res.ForLLM, "backup") || !toolkit.IsExpectedRefusal(res.Err) {
 		t.Fatalf("should refuse to delete a backup file as an expected refusal, got: %s", res.ForLLM)
 	}
 	if _, err := os.Stat(bp); err != nil {
@@ -55,7 +55,7 @@ func TestFileDelete_RefusesDirectories(t *testing.T) {
 	}
 	tool := NewDeleteFileToolScoped(dir, false, "")
 	res := tool.Execute(context.Background(), map[string]any{"path": sub, "sure": true})
-	if !res.IsError || !contains(res.ForLLM, "directory") || !tools.IsExpectedRefusal(res.Err) {
+	if !res.IsError || !contains(res.ForLLM, "directory") || !toolkit.IsExpectedRefusal(res.Err) {
 		t.Fatalf("should refuse to delete a directory as an expected refusal, got: %s", res.ForLLM)
 	}
 	if _, err := os.Stat(sub); err != nil {

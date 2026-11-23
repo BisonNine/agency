@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
@@ -26,17 +28,17 @@ type depthTool struct {
 func (d *depthTool) Name() string               { return d.name }
 func (d *depthTool) Description() string        { return "records spawn depth" }
 func (d *depthTool) Parameters() map[string]any { return map[string]any{} }
-func (d *depthTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (d *depthTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	d.got = toolsagents.SpawnDepth(ctx)
-	return &tools.ToolResult{ForLLM: "ok"}
+	return &toolkit.Result{ForLLM: "ok"}
 }
 
-func (d *depthTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb tools.AsyncCallback) *tools.ToolResult {
+func (d *depthTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
 	d.got = toolsagents.SpawnDepth(ctx)
 	if d.async && cb != nil {
-		cb(ctx, &tools.ToolResult{ForLLM: "late result"})
+		cb(ctx, &toolkit.Result{ForLLM: "late result"})
 	}
-	return &tools.ToolResult{ForLLM: "started", Async: true}
+	return &toolkit.Result{ForLLM: "started", Async: true}
 }
 
 // spawnTool is agent_spawn over the real Spawner, so its depth guard runs.
@@ -45,12 +47,12 @@ type spawnTool struct{ sp *toolsagents.Spawner }
 func (s *spawnTool) Name() string               { return "agent_spawn" }
 func (s *spawnTool) Description() string        { return "spawn" }
 func (s *spawnTool) Parameters() map[string]any { return map[string]any{} }
-func (s *spawnTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (s *spawnTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	res, err := s.sp.Spawn(ctx, global.SpawnRequest{Mode: global.SpawnAndWait, Task: "work"})
 	if err != nil {
-		return tools.ErrorResult(err.Error())
+		return toolkit.ErrorResult(err.Error())
 	}
-	return &tools.ToolResult{ForLLM: res.ForLLM, IsError: res.IsError}
+	return &toolkit.Result{ForLLM: res.ForLLM, IsError: res.IsError}
 }
 
 func dispatchDepth(t *testing.T, st *SessionTokenStore, tok string, tool *depthTool) int {

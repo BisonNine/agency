@@ -18,6 +18,7 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier"
@@ -184,7 +185,7 @@ func (h *ClassifierHost) Has(agentID, tool string) error {
 	if !ok {
 		return fmt.Errorf("tool %s is not available to agent %s", tool, agentID)
 	}
-	if scoped, isScoped := t.(tools.SessionScoped); isScoped && scoped.IsSessionScoped() {
+	if scoped, isScoped := t.(toolkit.SessionScoped); isScoped && scoped.IsSessionScoped() {
 		return fmt.Errorf("tool %s works only in a conversation and cannot be used by a classifier", tool)
 	}
 	return nil
@@ -239,9 +240,9 @@ func (h *ClassifierHost) Call(ctx context.Context, agentID, tool string, args ma
 		return "", fmt.Errorf("no answer within %s", toolschedule.WatchProbeTimeout)
 	}
 	switch {
-	case errors.Is(err, tools.ErrToolNotRegistered):
+	case errors.Is(err, toolkit.ErrToolNotRegistered):
 		return "", classifier.ToolUnavailable(fmt.Sprintf("tool %s is not available to agent %s", tool, agentID))
-	case errors.Is(err, tools.ErrToolSessionScoped):
+	case errors.Is(err, toolkit.ErrToolSessionScoped):
 		return "", classifier.ToolUnavailable(fmt.Sprintf("tool %s works only in a conversation and cannot be used by a classifier", tool))
 	case err != nil:
 		// ExecuteUnattended names the tool ("tool "x" failed: <message>",

@@ -565,8 +565,8 @@ func scopeFailure(err error) (*toolspec.Result, error) {
 	return nil, err
 }
 
-// refused marks a scope refusal as expected (the host's
-// tools.IsExpectedRefusal recognises the Refusal method), so it is logged as
+// refused marks a scope refusal as expected
+// (toolkit.IsExpectedRefusal recognises the Refusal method), so it is logged as
 // a warning, not an error.
 type refused struct{ error }
 

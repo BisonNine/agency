@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	ccv3pkg "go.bison9.com/agency/ccv3"
@@ -34,13 +35,13 @@ func testConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-func build(t *testing.T, cfg *config.Config, agentID string) []tools.Tool {
+func build(t *testing.T, cfg *config.Config, agentID string) []toolkit.Tool {
 	t.Helper()
 	return tools.BareNamespacedProvider(Suite, GlobalProvider).Build(tools.ToolDeps{Cfg: cfg, AgentID: agentID})
 }
 
 // run calls the one ccv3 tool of alice.
-func run(t *testing.T, cfg *config.Config, args map[string]any) *tools.ToolResult {
+func run(t *testing.T, cfg *config.Config, args map[string]any) *toolkit.Result {
 	t.Helper()
 	ts := build(t, cfg, "alice")
 	if len(ts) != 1 {
@@ -49,7 +50,7 @@ func run(t *testing.T, cfg *config.Config, args map[string]any) *tools.ToolResul
 	return ts[0].Execute(context.Background(), args)
 }
 
-func mustOK(t *testing.T, res *tools.ToolResult) {
+func mustOK(t *testing.T, res *toolkit.Result) {
 	t.Helper()
 	if res.IsError {
 		t.Fatalf("result is an error: %s (%v)", res.ForLLM, res.Err)
@@ -57,12 +58,12 @@ func mustOK(t *testing.T, res *tools.ToolResult) {
 }
 
 // mustRefuse checks res is an expected refusal whose text contains want.
-func mustRefuse(t *testing.T, res *tools.ToolResult, want string) {
+func mustRefuse(t *testing.T, res *toolkit.Result, want string) {
 	t.Helper()
 	if !res.IsError {
 		t.Fatalf("result is not an error: %s", res.ForLLM)
 	}
-	if !tools.IsExpectedRefusal(res.Err) {
+	if !toolkit.IsExpectedRefusal(res.Err) {
 		t.Errorf("refusal %q: Err %v is not an expected refusal", res.ForLLM, res.Err)
 	}
 	if !strings.Contains(res.ForLLM, want) {

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/cron"
@@ -35,7 +37,7 @@ type scriptedReply struct {
 func (s *scriptedTool) Name() string               { return "documents_event_wait" }
 func (s *scriptedTool) Description() string        { return "fake long-poll" }
 func (s *scriptedTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (s *scriptedTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (s *scriptedTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	s.mu.Lock()
 	s.calls++
 	var r scriptedReply
@@ -47,12 +49,12 @@ func (s *scriptedTool) Execute(ctx context.Context, _ map[string]any) *tools.Too
 	s.mu.Unlock()
 	if r.block {
 		<-ctx.Done()
-		return tools.ErrorResult(ctx.Err().Error())
+		return toolkit.ErrorResult(ctx.Err().Error())
 	}
 	if r.err {
-		return tools.ErrorResult(r.text)
+		return toolkit.ErrorResult(r.text)
 	}
-	return tools.NewToolResult(r.text)
+	return toolkit.NewResult(r.text)
 }
 
 func (s *scriptedTool) callCount() int {

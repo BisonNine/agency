@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 )
 
 // discoveryOnRegistry is a registry as an agent with discovery on builds it:
@@ -80,13 +81,13 @@ func TestToolDefs_DiscoveryOn_FullStableFlaggedList(t *testing.T) {
 
 	for _, step := range []struct {
 		name string
-		run  func() *ToolResult
+		run  func() *toolkit.Result
 	}{
-		{"search", func() *ToolResult { return search.Execute(ctx, map[string]any{"query": "notebook note"}) }},
-		{"regex search", func() *ToolResult { return search.Execute(ctx, map[string]any{"query": "bob", "regex": true}) }},
-		{"details", func() *ToolResult { return details.Execute(ctx, map[string]any{"name": "mcp_alice_read"}) }},
-		{"details by bare name", func() *ToolResult { return details.Execute(ctx, map[string]any{"name": "x_weather"}) }},
-		{"call a hidden tool", func() *ToolResult { return r.Execute(ctx, "mcp_bob_post", nil) }},
+		{"search", func() *toolkit.Result { return search.Execute(ctx, map[string]any{"query": "notebook note"}) }},
+		{"regex search", func() *toolkit.Result { return search.Execute(ctx, map[string]any{"query": "bob", "regex": true}) }},
+		{"details", func() *toolkit.Result { return details.Execute(ctx, map[string]any{"name": "mcp_alice_read"}) }},
+		{"details by bare name", func() *toolkit.Result { return details.Execute(ctx, map[string]any{"name": "x_weather"}) }},
+		{"call a hidden tool", func() *toolkit.Result { return r.Execute(ctx, "mcp_bob_post", nil) }},
 	} {
 		if res := step.run(); res.IsError {
 			t.Fatalf("%s: %s", step.name, res.ForLLM)

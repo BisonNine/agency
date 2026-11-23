@@ -82,7 +82,7 @@ func (a namespacedProvider) Available(cfg *config.Config) (bool, string) {
 	return true, ""
 }
 
-func (a namespacedProvider) Build(deps ToolDeps) []Tool {
+func (a namespacedProvider) Build(deps ToolDeps) []toolkit.Tool {
 	// All-or-nothing suite: gated as a unit by the per-agent flag. When enabled,
 	// every tool is registered (bypassing the per-tool allow/deny gate — the flag
 	// IS the allow decision); when disabled, none are. The provider's RegisterTools
@@ -91,7 +91,7 @@ func (a namespacedProvider) Build(deps ToolDeps) []Tool {
 		return nil
 	}
 	defs := a.p.RegisterTools(a.toGlobalDeps(deps))
-	out := make([]Tool, 0, len(defs))
+	out := make([]toolkit.Tool, 0, len(defs))
 	for _, d := range defs {
 		out = append(out, toolkit.FromSpec(a.namePrefix(), d))
 	}

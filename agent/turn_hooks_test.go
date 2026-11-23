@@ -13,6 +13,7 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/dump"
@@ -118,11 +119,11 @@ func TestRecordToolCall_StatsThenAudit(t *testing.T) {
 	tools.BeginToolStats(opts.SessionKey)
 
 	recordToolCall(context.Background(), agent, opts, hook.ToolCallFinished{
-		Call: hook.ToolCall{ID: "c1", Name: "file_read_lines"}, Result: tools.SilentResult("ok"),
+		Call: hook.ToolCall{ID: "c1", Name: "file_read_lines"}, Result: toolkit.SilentResult("ok"),
 	})
 	recordToolCall(context.Background(), agent, opts, hook.ToolCallFinished{
 		Call: hook.ToolCall{ID: "c2", Name: "boom"},
-		Result: &tools.ToolResult{
+		Result: &toolkit.Result{
 			Err:    &hook.ToolPanicError{Tool: "boom", Value: "Bob's bug"},
 			ForLLM: "Tool boom failed with an internal error.",
 		},

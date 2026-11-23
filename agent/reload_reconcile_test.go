@@ -14,6 +14,7 @@ import (
 
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -123,7 +124,7 @@ func (cancelOnBuild) Category() string                        { return "test" }
 func (cancelOnBuild) ConfigKey() string                       { return "" }
 func (cancelOnBuild) Available(*config.Config) (bool, string) { return true, "" }
 func (cancelOnBuild) Describe() []tools.ToolDescriptor        { return nil }
-func (cancelOnBuild) Build(tools.ToolDeps) []tools.Tool {
+func (cancelOnBuild) Build(tools.ToolDeps) []toolkit.Tool {
 	if h := buildHook.Load(); h != nil {
 		(*h)()
 	}

@@ -10,9 +10,9 @@ import (
 	"sync"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // taskRun is one task of the manager while it runs: its record, its entry in
@@ -24,10 +24,10 @@ type taskRun struct {
 	mu sync.Mutex
 	// cb receives the result of a callback task (and of a wait task its turn
 	// stopped waiting for).
-	cb tools.AsyncCallback
+	cb toolkit.AsyncCallback
 	// result receives the result of a wait task (buffered, set at launch,
 	// never changed) while waiting says a turn still waits for it.
-	result  chan *tools.ToolResult
+	result  chan *toolkit.Result
 	waiting bool
 	// ended: the result was recorded, or the task was cancelled.
 	ended     bool
@@ -60,17 +60,17 @@ func taskKind(rec *TaskRecord) string {
 // context of its own. A wait-mode task (wait) delivers its result to the
 // returned run's waiter; any other to cb. askChain is the ask chain of the
 // turn that started it.
-func (sm *SubagentManager) launch(parent context.Context, rec *TaskRecord, cb tools.AsyncCallback, resumed, wait bool, askChain []string) *taskRun {
+func (sm *SubagentManager) launch(parent context.Context, rec *TaskRecord, cb toolkit.AsyncCallback, resumed, wait bool, askChain []string) *taskRun {
 	return sm.launchTask(parent, rec, cb, resumed, wait, askChain, false)
 }
 
 // launchTask is launch; settleHeld says the caller holds the settle lock
 // (the supervisor), which a task cancelled as it starts (its parent was
 // cancelled) must then not take again.
-func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, cb tools.AsyncCallback, resumed, wait bool, askChain []string, settleHeld bool) *taskRun {
+func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, cb toolkit.AsyncCallback, resumed, wait bool, askChain []string, settleHeld bool) *taskRun {
 	tr := &taskRun{rec: rec, cb: cb, settleHeld: settleHeld}
 	if wait {
-		tr.result, tr.waiting = make(chan *tools.ToolResult, 1), true
+		tr.result, tr.waiting = make(chan *toolkit.Result, 1), true
 	}
 	info := hook.TaskInfo{
 		ID: rec.UUID, Owner: sm.ownerAgentID, Parent: rec.Parent,
@@ -98,10 +98,10 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 		if r := recover(); r != nil {
 			err := fmt.Errorf("panic: %v", r)
 			if rec.Kind != "" {
-				sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordTaskResults(rec, nil, err) }, "", nil)
+				sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordTaskResults(rec, nil, err) }, "", nil)
 				return
 			}
-			sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordResults(rec, "", 0, err) }, "", nil)
+			sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordResults(rec, "", 0, err) }, "", nil)
 		}
 	}()
 
@@ -121,7 +121,7 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 
 	if rec.Kind != "" {
 		res, err := sm.runTaskModel(ctx, rec, string(tr.task.Info().Mode))
-		sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordTaskResults(rec, res, err) }, "", nil)
+		sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordTaskResults(rec, res, err) }, "", nil)
 		return
 	}
 
@@ -130,7 +130,7 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 		taskText = interruptionNote + "\n\n" + rec.Task
 	}
 	if sm.runFull == nil {
-		sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordResults(rec, "", 0, errRunnerNotConfigured()) }, "", nil)
+		sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordResults(rec, "", 0, errRunnerNotConfigured()) }, "", nil)
 		return
 	}
 
@@ -146,14 +146,14 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 		logger.WarnCF("subagent", "subagent.run.failed", map[string]any{
 			"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": tr.task.Info().Mode, "error": err.Error(),
 		})
-		sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordResults(rec, "", 0, err) }, partial, release)
+		sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordResults(rec, "", 0, err) }, partial, release)
 		return
 	}
 	logger.InfoCF("subagent", "subagent.run.finished", map[string]any{
 		"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": tr.task.Info().Mode,
 		"iterations": fr.Iterations, "content_len": len(fr.Content),
 	})
-	sm.complete(ctx, tr, func() *tools.ToolResult { return sm.recordResults(rec, fr.Content, fr.Iterations, nil) }, fr.Content, release)
+	sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordResults(rec, fr.Content, fr.Iterations, nil) }, fr.Content, release)
 }
 
 // complete records a task that ended: record builds its results and status
@@ -161,7 +161,7 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 // the callback (release, when not nil, deletes the worker's clone: before a
 // waiting turn gets the result, after a callback). A cancelled task is not recorded again: only its partial
 // output, when there is some, is kept in its results file.
-func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record func() *tools.ToolResult, partial string, release func()) {
+func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record func() *toolkit.Result, partial string, release func()) {
 	if release == nil {
 		release = func() {}
 	}
@@ -265,7 +265,7 @@ func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) bool {
 		"cause": fmt.Sprint(cause),
 	})
 	if waiting {
-		tr.result <- &tools.ToolResult{
+		tr.result <- &toolkit.Result{
 			ForLLM:  fmt.Sprintf("Task '%s' (uuid %s) was cancelled before it finished.", rec.Name, rec.UUID),
 			IsError: true,
 		}
@@ -277,7 +277,7 @@ func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) bool {
 // it goes on, its record says callback and gets a run marker (so a restart
 // relaunches it), and its result goes to cb. It returns false when the task
 // had already ended; its result is then in tr.result.
-func (sm *SubagentManager) detach(tr *taskRun, cb tools.AsyncCallback) bool {
+func (sm *SubagentManager) detach(tr *taskRun, cb toolkit.AsyncCallback) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.ended || !tr.waiting {
@@ -305,7 +305,7 @@ func (sm *SubagentManager) detach(tr *taskRun, cb tools.AsyncCallback) bool {
 // is cancelled instead when the process is shutting down (the turn is
 // replayed on restart and starts it again), and when there is no onDetach
 // (no chat for a later result).
-func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tools.AsyncCallback) *tools.ToolResult {
+func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach toolkit.AsyncCallback) *toolkit.Result {
 	select {
 	case res := <-tr.result:
 		return res
@@ -329,7 +329,7 @@ func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tool
 	if !sm.detach(tr, onDetach) {
 		return <-tr.result
 	}
-	return &tools.ToolResult{ForLLM: fmt.Sprintf(detachedText, tr.rec.Name, tr.rec.UUID, tr.rec.UUID)}
+	return &toolkit.Result{ForLLM: fmt.Sprintf(detachedText, tr.rec.Name, tr.rec.UUID, tr.rec.UUID)}
 }
 
 // errNoRoute cancels a wait task whose turn stopped waiting when its result

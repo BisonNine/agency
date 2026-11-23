@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // rangeEditTool implements the six explicit positional mutation tools so the LLM
@@ -135,10 +135,10 @@ func resolveEnd(args map[string]any, start, maxEnd int64) (int64, error) {
 	return end, nil
 }
 
-func (t *rangeEditTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *rangeEditTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 	// Refused before reading or backing up, so the answer is the refusal.
 	if err := checkWrite(t.sysFs, path); err != nil {
@@ -171,9 +171,9 @@ func (t *rangeEditTool) Execute(_ context.Context, args map[string]any) *tools.T
 
 	forLLM := fmt.Sprintf("%s in %s", report, path)
 	if getBoolArg(args, "display", false) && shown != "" {
-		return &tools.ToolResult{ForLLM: forLLM, ForUser: displayBody(displayHeader(report, path), shown)}
+		return &toolkit.Result{ForLLM: forLLM, ForUser: displayBody(displayHeader(report, path), shown)}
 	}
-	return tools.SilentResult(forLLM)
+	return toolkit.SilentResult(forLLM)
 }
 
 func (t *rangeEditTool) applyLines(content []byte, args map[string]any) (out []byte, report, shown string, err error) {

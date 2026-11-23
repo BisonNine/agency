@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/bus"
@@ -72,7 +73,7 @@ func runMessageTool(host tools.ToolDeps, call *toolspec.ToolCall) *toolspec.Resu
 	// warning, not an error.
 	refuse := func(format string, args ...any) *toolspec.Result {
 		text := fmt.Sprintf(format, args...)
-		return &toolspec.Result{IsError: true, ForLLM: text, Err: tools.Refusal(errors.New(text))}
+		return &toolspec.Result{IsError: true, ForLLM: text, Err: toolkit.Refusal(errors.New(text))}
 	}
 	if host.Cfg == nil || host.Agents == nil || host.Messenger == nil {
 		return fail("agent_message is not available")
@@ -133,7 +134,7 @@ func askResult(name string, reply tools.AgentReply) *toolspec.Result {
 		return &toolspec.Result{ForLLM: reply.Text}
 	case tools.OutcomePersonUnreachable:
 		// The person's chat could not be reached: expected, not a fault.
-		return &toolspec.Result{IsError: true, ForLLM: reply.Text, Err: tools.Refusal(errors.New(reply.Text))}
+		return &toolspec.Result{IsError: true, ForLLM: reply.Text, Err: toolkit.Refusal(errors.New(reply.Text))}
 	case bus.OutcomeError:
 		return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("%s's turn failed: %s", name, reply.Text)}
 	case bus.OutcomeCancelled:

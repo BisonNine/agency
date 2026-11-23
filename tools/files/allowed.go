@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/fileutil"
-	"go.bison9.com/agency/tools"
 )
 
 // allowedByWorkspace holds, per agent workspace, the absolute folders the
@@ -127,7 +128,7 @@ type target struct {
 // errOutsideAllowed is the refusal for a path that names an allowed folder but
 // leads outside every folder the agent may use.
 func errOutsideAllowed(p string) error {
-	return tools.Refusal(fmt.Errorf("access denied: %s resolves outside the allowed folders", p))
+	return toolkit.Refusal(fmt.Errorf("access denied: %s resolves outside the allowed folders", p))
 }
 
 // place decides where path is served. With followLast false the last
@@ -250,7 +251,7 @@ func resolveExisting(abs string) string {
 // into a short refusal naming the path.
 func writeErr(t target, err error) error {
 	if err != nil && errors.Is(err, fs.ErrPermission) {
-		return tools.Refusal(fmt.Errorf("permission denied: %s is read-only for this app", t.abs))
+		return toolkit.Refusal(fmt.Errorf("permission denied: %s is read-only for this app", t.abs))
 	}
 	return err
 }

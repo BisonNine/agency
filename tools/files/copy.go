@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 type CopyFileTool struct {
@@ -66,14 +66,14 @@ func (t *CopyFileTool) Parameters() map[string]any {
 	}
 }
 
-func (t *CopyFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *CopyFileTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	src, ok := args["source_path"].(string)
 	if !ok || src == "" {
-		return tools.ErrorResult("source_path is required")
+		return toolkit.ErrorResult("source_path is required")
 	}
 	dst, ok := args["destination_path"].(string)
 	if !ok || dst == "" {
-		return tools.ErrorResult("destination_path is required")
+		return toolkit.ErrorResult("destination_path is required")
 	}
 	overwrite := getBoolArg(args, "overwrite", false)
 
@@ -84,12 +84,12 @@ func (t *CopyFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 
 	forLLM := fmt.Sprintf("File copied: %s -> %s", src, dst)
 	if getBoolArg(args, "display", false) {
-		return &tools.ToolResult{
+		return &toolkit.Result{
 			ForLLM:  forLLM,
 			ForUser: displayBody("", string(data)),
 		}
 	}
-	return tools.SilentResult(forLLM)
+	return toolkit.SilentResult(forLLM)
 }
 
 // copyFileViaFs copies src to dst through fsys, preserving source mode bits.

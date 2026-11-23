@@ -11,6 +11,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -115,7 +116,7 @@ func (l *sendFilesLoop) write(t *testing.T, name, content string) string {
 
 // run calls msg_send_file as alice's registered tool in a turn answering
 // channel/chatID.
-func (l *sendFilesLoop) run(channel, chatID string, paths ...string) *tools.ToolResult {
+func (l *sendFilesLoop) run(channel, chatID string, paths ...string) *toolkit.Result {
 	list := make([]any, len(paths))
 	for i, p := range paths {
 		list[i] = map[string]any{"path": p}

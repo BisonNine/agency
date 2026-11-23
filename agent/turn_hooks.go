@@ -21,6 +21,7 @@ import (
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -849,7 +850,7 @@ func recordToolCall(ctx context.Context, agent *AgentInstance, opts processOptio
 		return
 	}
 	if panicked := new(*hook.ToolPanicError); errors.As(f.Result.Err, panicked) {
-		tools.RecordToolResult(opts.SessionKey, f.Call.Name, tools.ErrorResult(f.Result.ForLLM))
+		tools.RecordToolResult(opts.SessionKey, f.Call.Name, toolkit.ErrorResult(f.Result.ForLLM))
 		return
 	}
 	tools.RecordToolResult(opts.SessionKey, f.Call.Name, f.Result)

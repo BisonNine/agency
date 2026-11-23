@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/tools"
 )
 
@@ -79,14 +81,14 @@ func TestSendFile_SwappedAfterCheck(t *testing.T) {
 					tt.swap(t, f, abs)
 				}
 			})
-			done := make(chan *tools.ToolResult, 1)
+			done := make(chan *toolkit.Result, 1)
 			go func() {
 				done <- f.tool.Execute(chatCtx(), filesArg(
 					map[string]any{"path": "files/chart.png"},
 					map[string]any{"path": "files/notes.md"},
 				))
 			}()
-			var r *tools.ToolResult
+			var r *toolkit.Result
 			select {
 			case r = <-done:
 			case <-time.After(10 * time.Second):
@@ -240,7 +242,7 @@ func TestSendFile_SenderFailure(t *testing.T) {
 	f := newSendFixture(t, 0)
 	f.sender.err = errors.New("no media store")
 	r := f.tool.Execute(chatCtx(), filesArg(map[string]any{"path": "files/notes.md"}))
-	if !r.IsError || r.ForLLM != "The files could not be sent: no media store." || tools.IsExpectedRefusal(r.Err) {
+	if !r.IsError || r.ForLLM != "The files could not be sent: no media store." || toolkit.IsExpectedRefusal(r.Err) {
 		t.Fatalf("result = %+v", r)
 	}
 	none := NewSendFileTool(f.tool.reader, true, 0, nil)

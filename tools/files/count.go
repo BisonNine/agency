@@ -16,7 +16,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/utils"
 )
 
@@ -80,29 +81,29 @@ type fileCounts struct {
 	InvalidUTF8  bool   `json:"invalid_utf8,omitempty"`
 }
 
-func (t *CountFileTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *CountFileTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 
 	f, err := t.sysFs.Open(path)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to open %q: %v", path, err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("failed to open %q: %v", path, err)).WithError(err)
 	}
 	defer utils.CloseQuietly(f)
 
 	counts, err := countReader(bufio.NewReaderSize(f, 64*1024))
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to read %q: %v", path, err)).WithError(err)
+		return toolkit.ErrorResult(fmt.Sprintf("failed to read %q: %v", path, err)).WithError(err)
 	}
 	counts.Path = path
 
 	encoded, err := json.Marshal(counts)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to encode counts: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("failed to encode counts: %v", err))
 	}
-	return tools.SilentResult(string(encoded))
+	return toolkit.SilentResult(string(encoded))
 }
 
 // countReader walks the stream once, counting as wc does.

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/tools"
 )
 
 // mockDisplayTool returns a ToolResult with ForUser populated and Silent=false,
@@ -23,8 +23,8 @@ func (m *mockDisplayTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
 
-func (m *mockDisplayTool) Execute(_ context.Context, _ map[string]any) *tools.ToolResult {
-	return &tools.ToolResult{
+func (m *mockDisplayTool) Execute(_ context.Context, _ map[string]any) *toolkit.Result {
+	return &toolkit.Result{
 		ForLLM:  "ok",
 		ForUser: m.forUser,
 		Silent:  false,

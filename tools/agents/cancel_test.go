@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
@@ -70,7 +71,7 @@ func newCancelFixture(t *testing.T) *cancelFixture {
 	return f
 }
 
-func (f *cancelFixture) spawn(t *testing.T, ctx context.Context, cb tools.AsyncCallback) (string, context.Context) {
+func (f *cancelFixture) spawn(t *testing.T, ctx context.Context, cb toolkit.AsyncCallback) (string, context.Context) {
 	t.Helper()
 	id, err := f.mgr.spawnCallback(ctx, originOf(ctx), "work", "job", "", "cli", "direct", "", "", nil, cb)
 	if err != nil {
@@ -93,7 +94,7 @@ func TestCancelTask_SettlesBeforeCancelling(t *testing.T) {
 	f := newCancelFixture(t)
 	f.partial = "half of it"
 	fired := make(chan struct{}, 1)
-	id, wctx := f.spawn(t, context.Background(), func(context.Context, *tools.ToolResult) { fired <- struct{}{} })
+	id, wctx := f.spawn(t, context.Background(), func(context.Context, *toolkit.Result) { fired <- struct{}{} })
 
 	res := f.mgr.CancelTask(id)
 	if res.Cancelled != 1 || len(res.Tasks) != 1 || res.Tasks[0].UUID != id || res.Tasks[0].Status != StatusCancelled {
@@ -222,7 +223,7 @@ func TestCancelAllTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-runner.started
-	waited := make(chan *tools.ToolResult, 1)
+	waited := make(chan *toolkit.Result, 1)
 	go func() {
 		res, err := f.mgr.Run(context.Background(), "wait for me", "w", "", "cli", "direct", "", "", nil, nil)
 		if err != nil {
@@ -307,7 +308,7 @@ func TestRun_WaitTaskEndingAtOnce(t *testing.T) {
 		Workspace: t.TempDir(), Live: NewLiveSet(), CallerAgentID: "alice", TaskRunner: runner,
 	})
 	for range 200 {
-		done := make(chan *tools.ToolResult, 1)
+		done := make(chan *toolkit.Result, 1)
 		go func() {
 			done <- mgr.RunTask(context.Background(), "t", "cli", "direct", TaskModelRequest{Kind: TaskKindText, Prompt: "hi"}, nil)
 		}()
@@ -450,9 +451,9 @@ func TestRun_WaitTaskCancelledWhileShuttingDown(t *testing.T) {
 		ShuttingDown: func() bool { return true },
 	})
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan *tools.ToolResult, 1)
+	done := make(chan *toolkit.Result, 1)
 	go func() {
-		res, err := mgr.Run(ctx, "do work", "job", "", "cli", "direct", "", "", nil, func(context.Context, *tools.ToolResult) {
+		res, err := mgr.Run(ctx, "do work", "job", "", "cli", "direct", "", "", nil, func(context.Context, *toolkit.Result) {
 			t.Error("a background result was delivered")
 		})
 		if err != nil {

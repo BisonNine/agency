@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/tools"
 )
@@ -39,7 +41,7 @@ func TestDispatch_ToolActivityBreadcrumbPublished(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{ForLLM: "wrote ok"},
+		result: &toolkit.Result{ForLLM: "wrote ok"},
 	}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 
@@ -89,7 +91,7 @@ func TestDispatch_ToolActivityOffPublishesNothing(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{ForLLM: "wrote ok"},
+		result: &toolkit.Result{ForLLM: "wrote ok"},
 	}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 

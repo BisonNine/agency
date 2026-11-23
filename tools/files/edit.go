@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // EditFileTool edits a file by replacing old_text with new_text.
@@ -73,20 +73,20 @@ func (t *EditFileTool) Parameters() map[string]any {
 	}
 }
 
-func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 
 	oldText, ok := args["old_text"].(string)
 	if !ok {
-		return tools.ErrorResult("old_text is required")
+		return toolkit.ErrorResult("old_text is required")
 	}
 
 	newText, ok := args["new_text"].(string)
 	if !ok {
-		return tools.ErrorResult("new_text is required")
+		return toolkit.ErrorResult("new_text is required")
 	}
 
 	// Refused before matching or backing up, so the answer is the refusal.
@@ -113,12 +113,12 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *tools.
 	}
 	forLLM := "File edited: " + path
 	if getBoolArg(args, "display", false) {
-		return &tools.ToolResult{
+		return &toolkit.Result{
 			ForLLM:  forLLM,
 			ForUser: displayBody(displayHeader("Edited", path), newText),
 		}
 	}
-	return tools.SilentResult(forLLM)
+	return toolkit.SilentResult(forLLM)
 }
 
 type AppendFileTool struct {
@@ -175,15 +175,15 @@ func (t *AppendFileTool) Parameters() map[string]any {
 	}
 }
 
-func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 
 	content, ok := args["content"].(string)
 	if !ok {
-		return tools.ErrorResult("content is required")
+		return toolkit.ErrorResult("content is required")
 	}
 
 	if err := checkWrite(t.sysFs, path); err != nil {
@@ -200,12 +200,12 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *tool
 	}
 	forLLM := "Appended to " + path
 	if getBoolArg(args, "display", false) {
-		return &tools.ToolResult{
+		return &toolkit.Result{
 			ForLLM:  forLLM,
 			ForUser: displayBody(displayHeader("Appended", path), content),
 		}
 	}
-	return tools.SilentResult(forLLM)
+	return toolkit.SilentResult(forLLM)
 }
 
 // appendFile reads the existing content (if any) via sysFs, appends new content, and writes back.

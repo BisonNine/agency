@@ -14,12 +14,12 @@ import (
 	"slices"
 	"strings"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	ccv3pkg "go.bison9.com/agency/ccv3"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // The actions, in the order the description and refusals name them.
@@ -92,8 +92,8 @@ type tool struct {
 // refused is a refusal result: one sentence for the model, logged by the
 // host as an expected refusal.
 func refused(err error) *toolspec.Result {
-	if !tools.IsExpectedRefusal(err) {
-		err = tools.Refusal(err)
+	if !toolkit.IsExpectedRefusal(err) {
+		err = toolkit.Refusal(err)
 	}
 	return &toolspec.Result{ForLLM: err.Error(), IsError: true, Err: err}
 }
@@ -106,7 +106,7 @@ func refusedf(format string, args ...any) *toolspec.Result {
 // anything else (an I/O failure) in a fixed sentence with the detail kept
 // for the log.
 func failed(err error, action, id string) *toolspec.Result {
-	if tools.IsExpectedRefusal(err) {
+	if toolkit.IsExpectedRefusal(err) {
 		return refused(err)
 	}
 	return &toolspec.Result{ForLLM: fmt.Sprintf("Card %q could not be %s; try again later.", id, pastTense[action]), IsError: true, Err: err}

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/tools"
 )
@@ -16,7 +18,7 @@ import (
 func TestSessionClear_RefusedInAskedTurn(t *testing.T) {
 	cleared := 0
 	deps := tools.ToolDeps{ClearFn: func(context.Context, string, string) error { cleared++; return nil }}
-	var clearTool tools.Tool
+	var clearTool toolkit.Tool
 	for _, tl := range tools.NamespacedProvider("session", GlobalProvider).Build(deps) {
 		if tl.Name() == "session_clear" {
 			clearTool = tl
@@ -25,11 +27,11 @@ func TestSessionClear_RefusedInAskedTurn(t *testing.T) {
 	if clearTool == nil {
 		t.Fatal("no session_clear")
 	}
-	run := func(channel string) *tools.ToolResult {
-		ctx := tools.WithSessionKey(tools.WithToolContext(context.Background(), channel, "x"), "agent:alice:main")
+	run := func(channel string) *toolkit.Result {
+		ctx := toolkit.WithSessionKey(toolkit.WithChat(context.Background(), channel, "x"), "agent:alice:main")
 		return clearTool.Execute(ctx, map[string]any{})
 	}
-	if res := run(constants.AgentMessageChannel); !res.IsError || !strings.Contains(res.ForLLM, "answering another agent's message") || !tools.IsExpectedRefusal(res.Err) || cleared != 0 {
+	if res := run(constants.AgentMessageChannel); !res.IsError || !strings.Contains(res.ForLLM, "answering another agent's message") || !toolkit.IsExpectedRefusal(res.Err) || cleared != 0 {
 		t.Fatalf("asked turn: %+v cleared=%d, want an expected refusal", res, cleared)
 	}
 	if res := run("telegram"); res.IsError || cleared != 1 {

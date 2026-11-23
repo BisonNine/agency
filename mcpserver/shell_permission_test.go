@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/tools/shell"
@@ -47,7 +49,7 @@ func TestDispatch_ShellFollowsTheTokensAgent(t *testing.T) {
 	st.RegisterService(aliceSvc, "alice", "/ws")
 	st.RegisterService(bobSvc, "bob", "/ws")
 
-	bobRefusal := tools.NotEnabledMessage("shell_exec")
+	bobRefusal := toolkit.NotEnabledMessage("shell_exec")
 	for _, tc := range []struct {
 		name, token, want string
 		wantErr           bool

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
@@ -146,9 +147,9 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				rt := rangeTools[key]
 				if rt == nil {
-					return tools.ResultToGlobal(tools.ErrorResult("file edit is not available")), nil
+					return toolkit.ResultToSpec(toolkit.ErrorResult("file edit is not available")), nil
 				}
-				return tools.ResultToGlobal(rt.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(rt.Execute(call.Ctx, call.Args)), nil
 			},
 		}
 	}
@@ -162,7 +163,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			// Edge-case; file_read_lines is the default. Enableable per agent.
 			DefaultAllow: toolspec.Allow(false),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(readBytes.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(readBytes.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -172,7 +173,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(readLines.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(readLines.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -182,7 +183,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(count.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(count.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -192,7 +193,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(viewImage.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(viewImage.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -202,7 +203,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(write.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(write.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -212,7 +213,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(list.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(list.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -223,9 +224,9 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if searchLines == nil {
-					return tools.ResultToGlobal(tools.ErrorResult("file search is not available")), nil
+					return toolkit.ResultToSpec(toolkit.ErrorResult("file search is not available")), nil
 				}
-				return tools.ResultToGlobal(searchLines.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(searchLines.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -237,9 +238,9 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			DefaultAllow: toolspec.Allow(false),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if glob == nil {
-					return tools.ResultToGlobal(tools.ErrorResult("file glob is not available")), nil
+					return toolkit.ResultToSpec(toolkit.ErrorResult("file glob is not available")), nil
 				}
-				return tools.ResultToGlobal(glob.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(glob.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -251,9 +252,9 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			DefaultAllow: toolspec.Allow(false),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if searchBytes == nil {
-					return tools.ResultToGlobal(tools.ErrorResult("file search is not available")), nil
+					return toolkit.ResultToSpec(toolkit.ErrorResult("file search is not available")), nil
 				}
-				return tools.ResultToGlobal(searchBytes.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(searchBytes.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -263,7 +264,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(edit.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(edit.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -273,7 +274,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(apnd.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(apnd.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -283,7 +284,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(cp.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(cp.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		rangeDef("edit", "lines"),
@@ -299,7 +300,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(del.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(del.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -309,7 +310,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(mv.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(mv.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -319,7 +320,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(mkdir.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(mkdir.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -329,7 +330,7 @@ func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 			Category:     "filesystem",
 			DefaultAllow: toolspec.Allow(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return tools.ResultToGlobal(rmdir.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(rmdir.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 	}

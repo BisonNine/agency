@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // MkdirTool creates a folder, and any missing parents, inside the write scope.
@@ -43,10 +43,10 @@ func (t *MkdirTool) Parameters() map[string]any {
 	}
 }
 
-func (t *MkdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *MkdirTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 	if err := checkWrite(t.sysFs, path); err != nil {
 		return errResult(err)
@@ -54,16 +54,16 @@ func (t *MkdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolR
 	info, err := t.sysFs.Stat(path)
 	switch {
 	case err == nil && info.IsDir():
-		return tools.SilentResult("Folder already exists: " + path)
+		return toolkit.SilentResult("Folder already exists: " + path)
 	case err == nil:
-		return errResult(tools.Refusal(errors.New("path exists and is a file: " + path)))
+		return errResult(toolkit.Refusal(errors.New("path exists and is a file: " + path)))
 	case !errors.Is(err, fs.ErrNotExist):
 		return errResult(err)
 	}
 	if err := t.sysFs.MkdirAll(path); err != nil {
 		return errResult(err)
 	}
-	return tools.SilentResult("Folder created: " + path)
+	return toolkit.SilentResult("Folder created: " + path)
 }
 
 // RmdirTool removes a folder: an empty one, or with recursive=true the whole
@@ -99,27 +99,27 @@ func (t *RmdirTool) Parameters() map[string]any {
 	}
 }
 
-func (t *RmdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
+func (t *RmdirTool) Execute(_ context.Context, args map[string]any) *toolkit.Result {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
-		return tools.ErrorResult("path is required")
+		return toolkit.ErrorResult("path is required")
 	}
 	if !getBoolArg(args, "sure", false) {
-		return errResult(tools.Refusal(errors.New("refusing to remove: pass sure=true to confirm removing " + path)))
+		return errResult(toolkit.Refusal(errors.New("refusing to remove: pass sure=true to confirm removing " + path)))
 	}
 	if isRoot(t.sysFs, path) {
-		return errResult(tools.Refusal(errors.New("refusing to remove a top-level folder (the write folder or a mount): " + path)))
+		return errResult(toolkit.Refusal(errors.New("refusing to remove a top-level folder (the write folder or a mount): " + path)))
 	}
 	// A link is removed itself, whatever it points to; its target is not
 	// touched. Remove checks the link's folder, not where the link leads.
 	if linkInfo, err := t.sysFs.Lstat(path); err == nil && linkInfo.Mode()&fs.ModeSymlink != 0 {
 		if backupFilePattern.MatchString(filepath.Base(path)) {
-			return errResult(tools.Refusal(errors.New("refusing to remove a backup file (<name>.NNNN): " + path)))
+			return errResult(toolkit.Refusal(errors.New("refusing to remove a backup file (<name>.NNNN): " + path)))
 		}
 		if err := t.sysFs.Remove(path); err != nil {
 			return errResult(err)
 		}
-		return tools.SilentResult(linkRemovedMsg(path))
+		return toolkit.SilentResult(linkRemovedMsg(path))
 	}
 	if err := checkWrite(t.sysFs, path); err != nil {
 		return errResult(err)
@@ -129,7 +129,7 @@ func (t *RmdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolR
 		return errResult(statErr)
 	}
 	if !info.IsDir() {
-		return errResult(tools.Refusal(errors.New("path is a file; file_rmdir removes folders only, use file_delete for files: " + path)))
+		return errResult(toolkit.Refusal(errors.New("path is a file; file_rmdir removes folders only, use file_delete for files: " + path)))
 	}
 
 	if !getBoolArg(args, "recursive", false) {
@@ -138,12 +138,12 @@ func (t *RmdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolR
 			return errResult(err)
 		}
 		if len(entries) > 0 {
-			return errResult(tools.Refusal(errors.New("folder is not empty; pass recursive=true to remove it and everything in it: " + path)))
+			return errResult(toolkit.Refusal(errors.New("folder is not empty; pass recursive=true to remove it and everything in it: " + path)))
 		}
 		if err := t.sysFs.Remove(path); err != nil {
 			return errResult(err)
 		}
-		return tools.SilentResult("Folder removed: " + path)
+		return toolkit.SilentResult("Folder removed: " + path)
 	}
 
 	tree, err := walkTree(t.sysFs, path)
@@ -154,7 +154,7 @@ func (t *RmdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolR
 	for _, f := range tree.files {
 		full := filepath.Join(path, f)
 		if backupFilePattern.MatchString(filepath.Base(f)) {
-			return errResult(tools.Refusal(errors.New("refusing to remove: the folder contains a backup file (<name>.NNNN): " + full)))
+			return errResult(toolkit.Refusal(errors.New("refusing to remove: the folder contains a backup file (<name>.NNNN): " + full)))
 		}
 		if err := checkWrite(t.sysFs, full); err != nil {
 			return errResult(err)
@@ -164,7 +164,7 @@ func (t *RmdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolR
 	// folder is checked with the others below.
 	for _, l := range tree.links {
 		if backupFilePattern.MatchString(filepath.Base(l)) {
-			return errResult(tools.Refusal(errors.New("refusing to remove: the folder contains a backup file (<name>.NNNN): " + filepath.Join(path, l))))
+			return errResult(toolkit.Refusal(errors.New("refusing to remove: the folder contains a backup file (<name>.NNNN): " + filepath.Join(path, l))))
 		}
 	}
 	for _, d := range tree.dirs {
@@ -183,11 +183,11 @@ func (t *RmdirTool) Execute(_ context.Context, args map[string]any) *tools.ToolR
 	victims = append(victims, ".")
 	for i, v := range victims {
 		if err := t.sysFs.Remove(filepath.Join(path, v)); err != nil {
-			return tools.ErrorResult(fmt.Sprintf("removed %d of %d entries in %s, then failed on %s: %v; the rest is still there",
+			return toolkit.ErrorResult(fmt.Sprintf("removed %d of %d entries in %s, then failed on %s: %v; the rest is still there",
 				i, len(victims), path, filepath.Join(path, v), err)).WithError(err)
 		}
 	}
-	return tools.SilentResult(fmt.Sprintf("Folder removed: %s (%d files)", path, len(tree.files)+len(tree.links)))
+	return toolkit.SilentResult(fmt.Sprintf("Folder removed: %s (%d files)", path, len(tree.files)+len(tree.links)))
 }
 
 // dirTree lists what is under a folder, by path relative to that folder.
@@ -249,12 +249,12 @@ func isInside(fsys fileSystem, src, dst string) bool {
 // (see MoveFileTool for why it never renames), then removes the emptied source
 // folders. Everything that could refuse is checked before the first copy; a
 // later failure stops the move and reports what was moved and what was not.
-func (t *MoveFileTool) moveDir(src, dst string, overwrite bool) *tools.ToolResult {
+func (t *MoveFileTool) moveDir(src, dst string, overwrite bool) *toolkit.Result {
 	if isInside(t.sysFs, src, dst) {
-		return errResult(tools.Refusal(fmt.Errorf("cannot move a folder into itself: %s -> %s", src, dst)))
+		return errResult(toolkit.Refusal(fmt.Errorf("cannot move a folder into itself: %s -> %s", src, dst)))
 	}
 	if isRoot(t.sysFs, src) {
-		return errResult(tools.Refusal(errors.New("refusing to move a top-level folder (the write folder or a mount): " + src)))
+		return errResult(toolkit.Refusal(errors.New("refusing to move a top-level folder (the write folder or a mount): " + src)))
 	}
 
 	for _, p := range []string{src, dst} {
@@ -316,14 +316,14 @@ func (t *MoveFileTool) moveDir(src, dst string, overwrite bool) *tools.ToolResul
 			return errResult(fmt.Errorf("destination has a folder where a file goes: %s", target))
 		}
 		if backupFilePattern.MatchString(filepath.Base(f)) {
-			return errResult(tools.Refusal(errors.New("refusing to overwrite a backup file (<name>.NNNN): " + target)))
+			return errResult(toolkit.Refusal(errors.New("refusing to overwrite a backup file (<name>.NNNN): " + target)))
 		}
 	}
 
 	// Create every destination folder (empty ones included), then move the
 	// files, then remove the emptied source folders deepest first.
 	moved := 0
-	fail := func(what string, err error) *tools.ToolResult {
+	fail := func(what string, err error) *toolkit.Result {
 		movedList, notMovedList := "none", "none"
 		if moved > 0 {
 			movedList = strings.Join(tree.files[:moved], ", ")
@@ -331,7 +331,7 @@ func (t *MoveFileTool) moveDir(src, dst string, overwrite bool) *tools.ToolResul
 		if moved < len(tree.files) {
 			notMovedList = strings.Join(tree.files[moved:], ", ")
 		}
-		return tools.ErrorResult(fmt.Sprintf(
+		return toolkit.ErrorResult(fmt.Sprintf(
 			"folder move stopped at %s: %v. Moved %d of %d files to %s: %s. Not moved, still in %s: %s.",
 			what, err, moved, len(tree.files), dst, movedList, src, notMovedList)).WithError(err)
 	}
@@ -363,5 +363,5 @@ func (t *MoveFileTool) moveDir(src, dst string, overwrite bool) *tools.ToolResul
 	if err := t.sysFs.Remove(src); err != nil {
 		return fail(src, err)
 	}
-	return tools.SilentResult(fmt.Sprintf("Folder moved: %s -> %s (%d files)", src, dst, len(tree.files)))
+	return toolkit.SilentResult(fmt.Sprintf("Folder moved: %s -> %s (%d files)", src, dst, len(tree.files)))
 }

@@ -17,7 +17,7 @@ func TestToolStats_LastErrorRedactedAndTruncated(t *testing.T) {
 	const key = "agent:clone-redact:main"
 	token := "SST" + strings.Repeat("a", 64)
 	BeginToolStats(key)
-	RecordToolResult(key, "cogmem_status", ErrorResult("rejected "+token+" "+strings.Repeat("x", 1000)))
+	RecordToolResult(key, "cogmem_status", toolkit.ErrorResult("rejected "+token+" "+strings.Repeat("x", 1000)))
 	_, _, last := EndToolStats(key)
 	if strings.Contains(last, token) {
 		t.Errorf("token not redacted: %q", last)

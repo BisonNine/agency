@@ -12,6 +12,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
@@ -124,7 +125,7 @@ func TestRunSubagentTask_ErrorPathRemovesTally(t *testing.T) {
 		t.Fatalf("the run was not made by a clone (agent %q)", clone)
 	}
 	session := routing.BuildAgentMainSessionKey(clone)
-	tools.RecordToolResult(session, "file_write", tools.NewToolResult("late"))
+	tools.RecordToolResult(session, "file_write", toolkit.NewResult("late"))
 	if calls, _, _ := tools.EndToolStats(session); calls != 0 {
 		t.Errorf("tally entry left behind after a failed run (%d calls)", calls)
 	}
@@ -150,6 +151,6 @@ func (panickingTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
 
-func (panickingTool) Execute(context.Context, map[string]any) *tools.ToolResult {
+func (panickingTool) Execute(context.Context, map[string]any) *toolkit.Result {
 	panic("tool blew up")
 }

@@ -8,11 +8,11 @@ import (
 
 	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
@@ -42,10 +42,10 @@ func (al *AgentLoop) publishBreadcrumb(ctx context.Context, opts processOptions,
 // the result goes reads only the agent's Spec, which never changes: a clone's
 // late result goes to its source's main conversation, as a sub-agent's always
 // has.
-func (al *AgentLoop) asyncToolCallback(ctx context.Context, agent *AgentInstance, opts processOptions, toolName string) tools.AsyncCallback {
+func (al *AgentLoop) asyncToolCallback(ctx context.Context, agent *AgentInstance, opts processOptions, toolName string) toolkit.AsyncCallback {
 	resultAgentID, resultSessionKey := asyncResultTarget(agent)
 	turnDepth := toolsagents.SpawnDepth(ctx)
-	return func(cbCtx context.Context, result *tools.ToolResult) {
+	return func(cbCtx context.Context, result *toolkit.Result) {
 		// An asked turn has no chat: its user-facing output is dropped.
 		if !result.Silent && result.ForUser != "" && opts.Channel != constants.AgentMessageChannel {
 			al.deliverAsyncForUser(cbCtx, opts, toolName, result.ForUser)
@@ -110,7 +110,7 @@ func (al *AgentLoop) deliverAsyncForUser(cbCtx context.Context, opts processOpti
 }
 
 // publishToolForUser sends a tool's ForUser output to the chat.
-func (al *AgentLoop) publishToolForUser(ctx context.Context, opts processOptions, tool string, result *tools.ToolResult) {
+func (al *AgentLoop) publishToolForUser(ctx context.Context, opts processOptions, tool string, result *toolkit.Result) {
 	if err := al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 		Channel: opts.Channel,
 		ChatID:  opts.ChatID,
@@ -132,7 +132,7 @@ func (al *AgentLoop) publishToolForUser(ctx context.Context, opts processOptions
 }
 
 // publishToolMedia sends the media refs a tool returned to the chat.
-func (al *AgentLoop) publishToolMedia(ctx context.Context, opts processOptions, tool string, result *tools.ToolResult) {
+func (al *AgentLoop) publishToolMedia(ctx context.Context, opts processOptions, tool string, result *toolkit.Result) {
 	parts := make([]bus.MediaPart, 0, len(result.Media))
 	for _, ref := range result.Media {
 		part := bus.MediaPart{Ref: ref}

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/tools"
@@ -25,10 +27,10 @@ type scopeTool struct {
 func (s *scopeTool) Name() string               { return "probe" }
 func (s *scopeTool) Description() string        { return "records turn scope" }
 func (s *scopeTool) Parameters() map[string]any { return map[string]any{} }
-func (s *scopeTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (s *scopeTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	s.chain = tools.AskChain(ctx)
 	s.task = toolsagents.TaskID(ctx)
-	return &tools.ToolResult{ForLLM: "ok", ForUser: "for the chat"}
+	return &toolkit.Result{ForLLM: "ok", ForUser: "for the chat"}
 }
 
 func dispatchScope(t *testing.T, st *SessionTokenStore, tok string, msgBus *bus.MessageBus) *scopeTool {

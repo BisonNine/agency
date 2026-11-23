@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // slowPattern is a valid glob whose brace groups make matching each name
@@ -37,7 +37,7 @@ func TestGlobPattern_CostLimits(t *testing.T) {
 	} {
 		start := time.Now()
 		res := glob.Execute(ctx, map[string]any{"pattern": tc.pattern, "path": "files"})
-		if !res.IsError || !strings.Contains(res.ForLLM, "pattern "+tc.want) || !tools.IsExpectedRefusal(res.Err) {
+		if !res.IsError || !strings.Contains(res.ForLLM, "pattern "+tc.want) || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Errorf("glob %s: %v %s", name, res.IsError, res.ForLLM)
 		}
 		res = search.Execute(ctx, map[string]any{"query": "needle", "path": "files", "include": tc.pattern})
@@ -62,7 +62,7 @@ func TestGlobAndSearch_Cancelled(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	for name, res := range map[string]*tools.ToolResult{
+	for name, res := range map[string]*toolkit.Result{
 		"glob":         NewGlobTool(ws, true).Execute(ctx, map[string]any{"pattern": "**", "path": "files"}),
 		"search lines": NewSearchLinesTool(ws, true).Execute(ctx, map[string]any{"query": "needle", "path": "files"}),
 		"search bytes": NewSearchBytesTool(ws, true).Execute(ctx, map[string]any{"query": "needle", "path": "files"}),

@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/tools"
 )
 
 // fakeTaskRunner records the requests it gets and answers with res/err;
@@ -227,9 +227,9 @@ func TestSupervise_RelaunchesTaskModelCall(t *testing.T) {
 	if err := markRun(dir, rec.UUID); err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan *tools.ToolResult, 1)
-	sp.mgr.SuperviseOnce(nowEpoch(), func(*TaskRecord) tools.AsyncCallback {
-		return func(_ context.Context, r *tools.ToolResult) { done <- r }
+	done := make(chan *toolkit.Result, 1)
+	sp.mgr.SuperviseOnce(nowEpoch(), func(*TaskRecord) toolkit.AsyncCallback {
+		return func(_ context.Context, r *toolkit.Result) { done <- r }
 	})
 	select {
 	case r := <-done:

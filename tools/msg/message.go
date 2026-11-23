@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/tools"
 )
@@ -66,15 +68,15 @@ func (t *MessageTool) SetSendCallback(callback SendCallback) {
 	t.sendCallback = callback
 }
 
-func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	content, ok := args["content"].(string)
 	if !ok {
-		return &tools.ToolResult{ForLLM: "content is required", IsError: true}
+		return &toolkit.Result{ForLLM: "content is required", IsError: true}
 	}
 	// An empty message reaches nobody, and a platform such as Slack rejects
 	// it (no_text); the model is told before anything is sent.
 	if strings.TrimSpace(content) == "" {
-		return &tools.ToolResult{ForLLM: "content is empty: nothing to send", IsError: true}
+		return &toolkit.Result{ForLLM: "content is empty: nothing to send", IsError: true}
 	}
 
 	// Security: the target is always the chat of the call's own turn. The
@@ -97,13 +99,13 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *tools.T
 	channel, chatID := dest.Channel, dest.ChatID
 
 	if t.sendCallback == nil {
-		return &tools.ToolResult{ForLLM: "Message sending not configured", IsError: true}
+		return &toolkit.Result{ForLLM: "Message sending not configured", IsError: true}
 	}
 
 	chat := chatLabel(channel, chatID)
 	err := t.sendCallback(ctx, channel, chatID, content)
 	if err != nil && !errors.Is(err, ErrQueued) {
-		return &tools.ToolResult{ForLLM: notSentText(chat, err), IsError: true, Err: notSentError(err)}
+		return &toolkit.Result{ForLLM: notSentText(chat, err), IsError: true, Err: notSentError(err)}
 	}
 
 	t.sentInRound.Store(true)
@@ -115,13 +117,13 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *tools.T
 		text = "Message queued for delivery to " + chat + "."
 	}
 	// Silent: user already received the message directly
-	return &tools.ToolResult{ForLLM: text, Silent: true}
+	return &toolkit.Result{ForLLM: text, Silent: true}
 }
 
 // refused is a send refused because the turn has no chat to send to: an
 // expected refusal (logged at WARN), not a failure.
-func refused(text string) *tools.ToolResult {
-	return &tools.ToolResult{ForLLM: text, IsError: true, Err: tools.Refusal(errors.New(text))}
+func refused(text string) *toolkit.Result {
+	return &toolkit.Result{ForLLM: text, IsError: true, Err: toolkit.Refusal(errors.New(text))}
 }
 
 // chatLabel names a chat as channel:chat, without repeating the channel
@@ -143,7 +145,7 @@ func notSentError(err error) error {
 		channels.ErrRecipientNotFound, channels.ErrReceiveOnly,
 	} {
 		if errors.Is(err, expected) {
-			return tools.Refusal(err)
+			return toolkit.Refusal(err)
 		}
 	}
 	return err

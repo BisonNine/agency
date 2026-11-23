@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/mcpserver/acl"
 	"go.bison9.com/agency/tools"
 )
@@ -62,10 +64,10 @@ func listedToolNames(t *testing.T, srv *MCPServer, params map[string]any) []stri
 // that tool enumeration on /internal is global: tools/list returns the same
 // union catalogue with no token, an unknown token, or a valid token in params.
 func TestToolsList_ReturnsFullCatalogueRegardlessOfToken(t *testing.T) {
-	aliceRF := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("a")}
-	aliceWF := &mockTool{name: "write_file", params: map[string]any{}, result: tools.NewToolResult("a")}
-	bobRF := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("b")}
-	bobLD := &mockTool{name: "list_dir", params: map[string]any{}, result: tools.NewToolResult("b")}
+	aliceRF := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("a")}
+	aliceWF := &mockTool{name: "write_file", params: map[string]any{}, result: toolkit.NewResult("a")}
+	bobRF := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("b")}
+	bobLD := &mockTool{name: "list_dir", params: map[string]any{}, result: toolkit.NewResult("b")}
 
 	srv, err := New(
 		WithAgentRegistries(map[string]*tools.ToolRegistry{
@@ -106,7 +108,7 @@ func TestToolsList_NeverEmitsToolCallLogs(t *testing.T) {
 	buf, restore := captureLogs(t)
 	defer restore()
 
-	rf := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("ok")}
+	rf := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("ok")}
 	srv, err := New(
 		WithAgentRegistries(map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}),
 		WithAllowlist([]string{"*"}),
@@ -174,10 +176,10 @@ func listedOnBearer(t *testing.T, srv *MCPServer, bearer string) []string {
 // the agent, so tools/list offers only the tools a call with that token
 // reaches (its registry, under the ACL policy); /internal keeps the union.
 func TestToolsList_BearerListsOnlyTheAgentsTools(t *testing.T) {
-	aliceRF := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("a")}
-	aliceWF := &mockTool{name: "write_file", params: map[string]any{}, result: tools.NewToolResult("a")}
-	bobRF := &mockTool{name: "read_file", params: map[string]any{}, result: tools.NewToolResult("b")}
-	bobLD := &mockTool{name: "list_dir", params: map[string]any{}, result: tools.NewToolResult("b")}
+	aliceRF := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("a")}
+	aliceWF := &mockTool{name: "write_file", params: map[string]any{}, result: toolkit.NewResult("a")}
+	bobRF := &mockTool{name: "read_file", params: map[string]any{}, result: toolkit.NewResult("b")}
+	bobLD := &mockTool{name: "list_dir", params: map[string]any{}, result: toolkit.NewResult("b")}
 	srv, err := New(
 		WithAgentRegistries(map[string]*tools.ToolRegistry{
 			"alice": newRegistryWith(aliceRF, aliceWF),

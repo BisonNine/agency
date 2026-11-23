@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
@@ -31,21 +33,21 @@ import (
 type laterAsync struct {
 	wireTool
 	mu  sync.Mutex
-	cbs []tools.AsyncCallback
+	cbs []toolkit.AsyncCallback
 }
 
-func (l *laterAsync) ExecuteAsync(_ context.Context, _ map[string]any, cb tools.AsyncCallback) *tools.ToolResult {
+func (l *laterAsync) ExecuteAsync(_ context.Context, _ map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
 	l.mu.Lock()
 	l.cbs = append(l.cbs, cb)
 	l.mu.Unlock()
-	return tools.NewToolResult("started")
+	return toolkit.NewResult("started")
 }
 
 func (l *laterAsync) fire(i int, text string) {
 	l.mu.Lock()
 	cb := l.cbs[i]
 	l.mu.Unlock()
-	cb(context.Background(), &tools.ToolResult{ForLLM: text, ForUser: text + " (for the user)"})
+	cb(context.Background(), &toolkit.Result{ForLLM: text, ForUser: text + " (for the user)"})
 }
 
 func TestAsyncResultChatUnchanged(t *testing.T) {

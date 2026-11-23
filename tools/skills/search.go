@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agent/toolkit"
+
 	skillspkg "go.bison9.com/agency/skills"
-	"go.bison9.com/agency/tools"
 )
 
 // FindSkillsTool allows the LLM agent to search for installable skills from registries.
@@ -52,11 +53,11 @@ func (t *FindSkillsTool) Parameters() map[string]any {
 	}
 }
 
-func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	query, ok := args["query"].(string)
 	query = strings.ToLower(strings.TrimSpace(query))
 	if !ok || query == "" {
-		return tools.ErrorResult("query is required and must be a non-empty string")
+		return toolkit.ErrorResult("query is required and must be a non-empty string")
 	}
 
 	limit := 5
@@ -70,14 +71,14 @@ func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *tool
 	// Check cache first.
 	if t.cache != nil {
 		if cached, hit := t.cache.Get(query); hit {
-			return tools.SilentResult(formatSearchResults(query, cached, true))
+			return toolkit.SilentResult(formatSearchResults(query, cached, true))
 		}
 	}
 
 	// Search all registries.
 	results, err := t.registryMgr.SearchAll(ctx, query, limit)
 	if err != nil {
-		return tools.ErrorResult(fmt.Sprintf("skill search failed: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("skill search failed: %v", err))
 	}
 
 	// Cache the results.
@@ -85,7 +86,7 @@ func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *tool
 		t.cache.Put(query, results)
 	}
 
-	return tools.SilentResult(formatSearchResults(query, results, false))
+	return toolkit.SilentResult(formatSearchResults(query, results, false))
 }
 
 func formatSearchResults(query string, results []skillspkg.SearchResult, cached bool) string {

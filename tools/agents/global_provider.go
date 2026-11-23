@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
@@ -195,7 +196,7 @@ func (globalAgentProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 				// turn; a call that can't be tied to one turn has none.
 				if _, problem := tools.TurnChat(call.Ctx); problem == tools.ChatAmbiguous {
 					if mode == global.SpawnCallback {
-						return &toolspec.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: tools.Refusal(errSpawnAmbiguous)}, nil
+						return &toolspec.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: toolkit.Refusal(errSpawnAmbiguous)}, nil
 					}
 					// A waited task whose turn stops waiting would have no
 					// chat to report to either: it is cancelled then.

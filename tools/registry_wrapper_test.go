@@ -206,7 +206,7 @@ func TestWrapper_ExecuteTexts(t *testing.T) {
 	})
 	t.Run("denied", func(t *testing.T) {
 		res := r.ExecuteWithContext(ctx, "plain", nil, "", "", nil)
-		if !res.IsError || res.ForLLM != NotEnabledMessage("plain") || !IsExpectedRefusal(res.Err) {
+		if !res.IsError || res.ForLLM != toolkit.NotEnabledMessage("plain") || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Errorf("result = %+v", res)
 		}
 		if res.Err.Error() != "tool not permitted: plain" {
@@ -220,7 +220,7 @@ func TestWrapper_ExecuteTexts(t *testing.T) {
 	})
 	t.Run("suite still denied", func(t *testing.T) {
 		res := r.ExecuteWithContext(ctx, "denied_suite", nil, "", "", nil)
-		if !res.IsError || res.ForLLM != NotEnabledMessage("denied_suite") {
+		if !res.IsError || res.ForLLM != toolkit.NotEnabledMessage("denied_suite") {
 			t.Errorf("result = %+v", res)
 		}
 	})
@@ -295,7 +295,7 @@ func TestWrapper_ExecuteUnattendedChecksAndClearsChat(t *testing.T) {
 	for _, tool := range NamespacedProvider("probe", agentProbe{}).Build(ToolDeps{}) {
 		r.Register(tool)
 	}
-	ctx := WithToolContext(context.Background(), "telegram", "42")
+	ctx := toolkit.WithChat(context.Background(), "telegram", "42")
 
 	out, err := r.ExecuteUnattended(ctx, "probe_whoami", nil)
 	if err != nil || out != "agent= chat=/" {
@@ -304,7 +304,7 @@ func TestWrapper_ExecuteUnattendedChecksAndClearsChat(t *testing.T) {
 
 	denied := WithToolAllowChecker(ctx, mockAllowChecker{denied: map[string]bool{"probe_whoami": true}})
 	out, err = r.ExecuteUnattended(denied, "probe_whoami", nil)
-	want := `tool "probe_whoami" failed: ` + NotEnabledMessage("probe_whoami")
+	want := `tool "probe_whoami" failed: ` + toolkit.NotEnabledMessage("probe_whoami")
 	if err == nil || err.Error() != want || out != "" {
 		t.Errorf("denied call = %q, %v; want error %q", out, err, want)
 	}
@@ -316,9 +316,9 @@ type countingTool struct {
 	runs *atomic.Int64
 }
 
-func (c *countingTool) Execute(context.Context, map[string]any) *ToolResult {
+func (c *countingTool) Execute(context.Context, map[string]any) *toolkit.Result {
 	c.runs.Add(1)
-	return SilentResult("ran")
+	return toolkit.SilentResult("ran")
 }
 
 // While a suite-exempt tool is swapped for an ordinary one of the same name
@@ -372,7 +372,7 @@ func TestWrapper_GateChecksTheToolThatRuns(t *testing.T) {
 func TestWrapper_ExecuteUnattendedByExternalName(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(&mockExternalTool{mockRegistryTool: *newMockTool("mcp_srv_find", "find"), external: "srv_find"})
-	if _, err := r.ExecuteUnattended(context.Background(), "srv_find", nil); !errors.Is(err, ErrToolNotRegistered) {
+	if _, err := r.ExecuteUnattended(context.Background(), "srv_find", nil); !errors.Is(err, toolkit.ErrToolNotRegistered) {
 		t.Errorf("err = %v, want ErrToolNotRegistered", err)
 	}
 }

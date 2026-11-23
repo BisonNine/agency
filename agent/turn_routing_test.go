@@ -14,10 +14,10 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // Memory recalls for the message with its whispers, before its inbound media
@@ -55,18 +55,18 @@ func TestTurn_RecallTextHasWhispersNotMedia(t *testing.T) {
 
 // gatedAsyncTool completes in the background: each call hands its callback
 // to the test, which reports the result when it chooses.
-type gatedAsyncTool struct{ cbs chan tools.AsyncCallback }
+type gatedAsyncTool struct{ cbs chan toolkit.AsyncCallback }
 
 func (gatedAsyncTool) Name() string               { return "gated_async" }
 func (gatedAsyncTool) Description() string        { return "completes when the test says" }
 func (gatedAsyncTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (gatedAsyncTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	return &tools.ToolResult{ForLLM: "sync"}
+func (gatedAsyncTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	return &toolkit.Result{ForLLM: "sync"}
 }
 
-func (g gatedAsyncTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb tools.AsyncCallback) *tools.ToolResult {
+func (g gatedAsyncTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
 	g.cbs <- cb
-	return &tools.ToolResult{ForLLM: "started", Async: true}
+	return &toolkit.Result{ForLLM: "started", Async: true}
 }
 
 // hookedProvider answers each call with next(n), n counting from 0.
@@ -110,7 +110,7 @@ func TestAsyncResult_GoesToTheCallsChat(t *testing.T) {
 	}}
 	msgBus := bus.NewMessageBus()
 	al := mustNewAgentLoop(t, cfg, msgBus, p, nil)
-	tool := gatedAsyncTool{cbs: make(chan tools.AsyncCallback, 2)}
+	tool := gatedAsyncTool{cbs: make(chan toolkit.AsyncCallback, 2)}
 	al.RegisterTool(tool)
 	agent := al.GetRegistry().Default()
 	const session = "agent:main:shared"
@@ -132,7 +132,7 @@ func TestAsyncResult_GoesToTheCallsChat(t *testing.T) {
 	}
 
 	// After the turn ended.
-	cb1(context.Background(), &tools.ToolResult{ForLLM: "late one", Silent: true})
+	cb1(context.Background(), &toolkit.Result{ForLLM: "late one", Silent: true})
 	if chat, origin := inboundChat(); chat != "c1" || origin != "telegram" {
 		t.Fatalf("late result went to %s:%s, want telegram:c1", origin, chat)
 	}
@@ -144,7 +144,7 @@ func TestAsyncResult_GoesToTheCallsChat(t *testing.T) {
 		done <- err
 	}()
 	<-secondTurn
-	cb2(context.Background(), &tools.ToolResult{ForLLM: "late two", Silent: true})
+	cb2(context.Background(), &toolkit.Result{ForLLM: "late two", Silent: true})
 	chat, origin := inboundChat()
 	close(release)
 	if err := <-done; err != nil {

@@ -18,6 +18,7 @@ import (
 
 	sdkshell "go.bison9.com/agent/toolbox/shell"
 	"go.bison9.com/agent/toolbox/shell/proc"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/audit"
@@ -71,7 +72,7 @@ func shellAgent(id string, deny ...string) *config.AgentConfig {
 }
 
 // run calls a tool the way the loop does, with an async callback.
-func (a *agentTools) run(name string, args map[string]any, cb tools.AsyncCallback) *tools.ToolResult {
+func (a *agentTools) run(name string, args map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
 	a.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -290,8 +291,8 @@ func TestNoticeThroughTheCallbackPath(t *testing.T) {
 	m := testMount(t)
 	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: t.TempDir()})
 
-	got := make(chan *tools.ToolResult, 1)
-	cb := func(_ context.Context, r *tools.ToolResult) { got <- r }
+	got := make(chan *toolkit.Result, 1)
+	cb := func(_ context.Context, r *toolkit.Result) { got <- r }
 	res := alice.run("shell_exec", map[string]any{"command": "sleep 0.3; echo alice-done", "background": true}, cb)
 	id := jobID(t, res.ForLLM)
 	select {
@@ -304,8 +305,8 @@ func TestNoticeThroughTheCallbackPath(t *testing.T) {
 	}
 
 	// notify false: no notice.
-	quiet := make(chan *tools.ToolResult, 1)
-	res = alice.run("shell_exec", map[string]any{"command": "true", "background": true, "notify": false}, func(_ context.Context, r *tools.ToolResult) { quiet <- r })
+	quiet := make(chan *toolkit.Result, 1)
+	res = alice.run("shell_exec", map[string]any{"command": "true", "background": true, "notify": false}, func(_ context.Context, r *toolkit.Result) { quiet <- r })
 	if res.IsError {
 		t.Fatal(res.ForLLM)
 	}
@@ -508,8 +509,8 @@ func processAlive(pid int) bool {
 func TestCloseSendsNoNotice(t *testing.T) {
 	m := newMount()
 	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: t.TempDir()})
-	got := make(chan *tools.ToolResult, 1)
-	res := alice.run("shell_exec", map[string]any{"command": "sleep 60", "background": true}, func(_ context.Context, r *tools.ToolResult) { got <- r })
+	got := make(chan *toolkit.Result, 1)
+	res := alice.run("shell_exec", map[string]any{"command": "sleep 60", "background": true}, func(_ context.Context, r *toolkit.Result) { got <- r })
 	jobID(t, res.ForLLM)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -529,8 +530,8 @@ func TestNoticeOfAJobThatExitsAtOnce(t *testing.T) {
 	m := testMount(t)
 	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: t.TempDir()})
 	for range 20 {
-		got := make(chan *tools.ToolResult, 1)
-		res := alice.run("shell_exec", map[string]any{"command": "true", "background": true}, func(_ context.Context, r *tools.ToolResult) { got <- r })
+		got := make(chan *toolkit.Result, 1)
+		res := alice.run("shell_exec", map[string]any{"command": "true", "background": true}, func(_ context.Context, r *toolkit.Result) { got <- r })
 		id := jobID(t, res.ForLLM)
 		select {
 		case r := <-got:
@@ -549,7 +550,7 @@ func TestShutdownStoppedJobToldAtNextStart(t *testing.T) {
 	ws := t.TempDir()
 	first := newMount()
 	alice := build(t, first, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
-	id := jobID(t, alice.run("shell_exec", map[string]any{"command": "sleep 60", "background": true}, func(context.Context, *tools.ToolResult) {}).ForLLM)
+	id := jobID(t, alice.run("shell_exec", map[string]any{"command": "sleep 60", "background": true}, func(context.Context, *toolkit.Result) {}).ForLLM)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := first.Close(ctx); err != nil {

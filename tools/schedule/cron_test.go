@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/cron"
-	"go.bison9.com/agency/tools"
 )
 
 // testConfig builds a config where alice and bob each have a concrete default
@@ -45,7 +46,7 @@ func newTestCronTool(t *testing.T) *CronTool {
 // agentCtx builds a tool context carrying the caller's session key (cron derives
 // the caller agent id from it). Channel/chat are no longer used by add.
 func agentCtx(agentID string) context.Context {
-	return tools.WithSessionKey(context.Background(), "agent:"+agentID+":main")
+	return toolkit.WithSessionKey(context.Background(), "agent:"+agentID+":main")
 }
 
 // TestCronTool_AddRequiresDefaultChannel verifies add fails when the target agent

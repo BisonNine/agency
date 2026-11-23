@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
 )
@@ -26,8 +27,8 @@ func (m *mockSearchableTool) Parameters() map[string]any {
 	return map[string]any{"type": "object"}
 }
 
-func (m *mockSearchableTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
-	return SilentResult("mock executed: " + m.name)
+func (m *mockSearchableTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
+	return toolkit.SilentResult("mock executed: " + m.name)
 }
 
 // Helper to initialize a populated ToolRegistry

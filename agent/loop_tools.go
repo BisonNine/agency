@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	sessiontools "go.bison9.com/agent/ctxengine/tools"
 	sdkdiscovery "go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm"
@@ -151,7 +152,7 @@ func (al *AgentLoop) registerAgentTools(
 // for queueing the message and learning its delivery: a channel reports an
 // offline, unknown or stopped recipient at once (never retried); a slower
 // outcome is reported as queued.
-func (al *AgentLoop) newMessageTool() tools.Tool {
+func (al *AgentLoop) newMessageTool() toolkit.Tool {
 	mt := toolsmsg.NewMessageTool()
 	mt.SetSendCallback(func(ctx context.Context, channel, chatID, content string) error {
 		pubCtx, pubCancel := context.WithTimeout(ctx, publishTimeout)
@@ -262,8 +263,8 @@ func (al *AgentLoop) clearFn(agent *AgentInstance) func(ctx context.Context, ses
 			metadataKeyPreresolvedAgentID: agent.ID,
 		}
 		inbound := bus.InboundMessage{
-			Channel:    tools.ToolChannel(ctx),
-			ChatID:     tools.ToolChatID(ctx),
+			Channel:    toolkit.Channel(ctx),
+			ChatID:     toolkit.ChatID(ctx),
 			SenderID:   "system",
 			Internal:   true,
 			SessionKey: sessionKey,
@@ -280,8 +281,8 @@ func (al *AgentLoop) clearFn(agent *AgentInstance) func(ctx context.Context, ses
 }
 
 // sessionInfoFn is session_info's closure for agent.
-func (al *AgentLoop) sessionInfoFn(agent *AgentInstance) func(ctx context.Context, sessionKey string) (*tools.SessionInfo, error) {
-	return func(ctx context.Context, sessionKey string) (*tools.SessionInfo, error) {
+func (al *AgentLoop) sessionInfoFn(agent *AgentInstance) func(ctx context.Context, sessionKey string) (*sessiontools.SessionInfo, error) {
+	return func(ctx context.Context, sessionKey string) (*sessiontools.SessionInfo, error) {
 		return buildSessionInfo(al, agent, sessionKey) //nolint:contextcheck // compaction reporter: ctxengine's callback has no context, so it publishes on its own
 	}
 }
@@ -431,9 +432,9 @@ func (al *AgentLoop) registerDiscoveryMetaTools(ctx context.Context, agent *Agen
 // RegisterTool registers a host-built tool (the gateway's cron tool) on every
 // agent that allows it, and remembers it for the temporary agents created
 // later. A fresh temporary agent gets no tools.
-func (al *AgentLoop) RegisterTool(tool tools.Tool) {
+func (al *AgentLoop) RegisterTool(tool toolkit.Tool) {
 	al.extraToolsMu.Lock()
-	al.extraTools = slices.DeleteFunc(al.extraTools, func(t tools.Tool) bool { return t.Name() == tool.Name() })
+	al.extraTools = slices.DeleteFunc(al.extraTools, func(t toolkit.Tool) bool { return t.Name() == tool.Name() })
 	al.extraTools = append(al.extraTools, tool)
 	al.extraToolsMu.Unlock()
 
@@ -540,7 +541,7 @@ func (al *AgentLoop) runTaskSupervision() {
 
 	now := time.Now().Unix()
 	for _, m := range managers {
-		m.SuperviseOnce(now, func(rec *toolsagents.TaskRecord) tools.AsyncCallback {
+		m.SuperviseOnce(now, func(rec *toolsagents.TaskRecord) toolkit.AsyncCallback {
 			return al.taskPointerCallback(rec.Channel, rec.ChatID, rec.OwnerAgentID, rec.SpawnDepth)
 		})
 	}
@@ -551,8 +552,8 @@ func (al *AgentLoop) runTaskSupervision() {
 // agent reads the referenced result file). Mirrors the inline async-tool callback
 // used for the initial in-turn spawn. spawnDepth is the spawning turn's depth,
 // carried on the re-injected message so the re-entered turn is not lower.
-func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, spawnDepth int) tools.AsyncCallback {
-	return func(cbCtx context.Context, result *tools.ToolResult) {
+func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, spawnDepth int) toolkit.AsyncCallback {
+	return func(cbCtx context.Context, result *toolkit.Result) {
 		if result == nil {
 			return
 		}

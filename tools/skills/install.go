@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/internal/perms"
 	"go.bison9.com/agency/logger"
 	skillspkg "go.bison9.com/agency/skills"
-	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
 
@@ -69,7 +70,7 @@ func (t *InstallSkillTool) Parameters() map[string]any {
 	}
 }
 
-func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	// Install lock to prevent concurrent directory operations.
 	// Ideally this should be done at a `slug` level, currently, its at a `workspace` level.
 	t.mu.Lock()
@@ -81,7 +82,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *to
 		slug = v
 	}
 	if err := utils.ValidateSkillIdentifier(slug); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("invalid slug %q: error: %s", slug, err.Error()))
+		return toolkit.ErrorResult(fmt.Sprintf("invalid slug %q: error: %s", slug, err.Error()))
 	}
 
 	// Validate registry
@@ -90,7 +91,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *to
 		registryName = v
 	}
 	if err := utils.ValidateSkillIdentifier(registryName); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("invalid registry %q: error: %s", registryName, err.Error()))
+		return toolkit.ErrorResult(fmt.Sprintf("invalid registry %q: error: %s", registryName, err.Error()))
 	}
 
 	var version string
@@ -108,26 +109,26 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *to
 
 	if !force {
 		if _, err := os.Stat(targetDir); err == nil {
-			return tools.ErrorResult(
+			return toolkit.ErrorResult(
 				fmt.Sprintf("skill %q already installed at %s. Use force=true to reinstall.", slug, targetDir),
 			)
 		}
 	} else {
 		// Force: remove existing if present.
 		if err := os.RemoveAll(targetDir); err != nil {
-			return tools.ErrorResult(fmt.Sprintf("failed to remove existing skill %q: %v", slug, err))
+			return toolkit.ErrorResult(fmt.Sprintf("failed to remove existing skill %q: %v", slug, err))
 		}
 	}
 
 	// Resolve which registry to use.
 	registry := t.registryMgr.GetRegistry(registryName)
 	if registry == nil {
-		return tools.ErrorResult(fmt.Sprintf("registry %q not found", registryName))
+		return toolkit.ErrorResult(fmt.Sprintf("registry %q not found", registryName))
 	}
 
 	// Ensure skills directory exists.
 	if err := perms.CurrentPolicy().MkdirAll(skillsDir); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to create skills directory: %v", err))
+		return toolkit.ErrorResult(fmt.Sprintf("failed to create skills directory: %v", err))
 	}
 
 	// Download and install (handles metadata, version resolution, extraction).
@@ -143,7 +144,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *to
 					"error":      rmErr.Error(),
 				})
 		}
-		return tools.ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
+		return toolkit.ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
 	}
 
 	// Moderation: block malware.
@@ -157,7 +158,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *to
 					"error":      rmErr.Error(),
 				})
 		}
-		return tools.ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
+		return toolkit.ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
 	}
 
 	// Write origin metadata.
@@ -187,7 +188,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *to
 	}
 	output += "\nThe skill is now available and can be loaded in the current session."
 
-	return tools.SilentResult(output)
+	return toolkit.SilentResult(output)
 }
 
 // originMeta tracks which registry a skill was installed from.

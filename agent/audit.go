@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/internal/audit"
@@ -29,7 +30,7 @@ func recordToolCallAudit(
 	agent *AgentInstance,
 	opts processOptions,
 	tc spawnllm.ToolCall,
-	result *tools.ToolResult,
+	result *toolkit.Result,
 	elapsed time.Duration,
 ) {
 	store := audit.Default()

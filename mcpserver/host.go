@@ -298,11 +298,11 @@ func (h *endpointHost) callContext(ctx context.Context, c mcphost.Caller) contex
 }
 
 // toolContext gives the session key only to session-scoped tools, which
-// read it with tools.ToolSessionKey, and records the tool the call resolved
+// read it with toolkit.SessionKey, and records the tool the call resolved
 // to, with the ACL's decision on it, for the callbacks and the gate.
 func (h *endpointHost) toolContext(ctx context.Context, c mcphost.Caller, info toolkit.Info) context.Context {
 	ctx = context.WithValue(ctx, resolvedKey{}, resolved{name: info.Name, allowed: h.m.policy.IsAllowed(c.Scope.AgentID, info.Name)})
-	if t, ok := info.Tool.(tools.SessionScoped); ok && t.IsSessionScoped() {
+	if t, ok := info.Tool.(toolkit.SessionScoped); ok && t.IsSessionScoped() {
 		return ctx
 	}
 	return toolkit.WithSessionKey(ctx, "")
@@ -313,7 +313,7 @@ func (h *endpointHost) toolContext(ctx context.Context, c mcphost.Caller, info t
 func (h *endpointHost) gate(ctx context.Context, info toolkit.Info) *toolkit.Result {
 	// The endpoint runs the tool the call resolved to; any other is refused.
 	if r := resolvedTool(ctx); r.name != info.Name || !r.allowed {
-		return toolkit.ErrorResult(tools.NotEnabledMessage(info.Name)).
+		return toolkit.ErrorResult(toolkit.NotEnabledMessage(info.Name)).
 			WithError(toolkit.Refusal(fmt.Errorf("tool not permitted: %s", info.Name)))
 	}
 	return tools.CallGate(ctx, info)
@@ -362,7 +362,7 @@ func (h *endpointHost) beforeTool(ctx context.Context, call *hook.ToolCall) (*to
 	if !r.allowed {
 		logger.WarnCF("mcpserver", "MCP tool denied",
 			map[string]any{"agent": agentName, "tool": internal, "reason": "acl_denied"})
-		return toolkit.ErrorResult(tools.NotEnabledMessage(internal)).
+		return toolkit.ErrorResult(toolkit.NotEnabledMessage(internal)).
 			WithError(toolkit.Refusal(fmt.Errorf("tool not permitted: %s", internal))), nil
 	}
 	logger.InfoCF("mcpserver", "MCP tool authorized",
@@ -418,9 +418,9 @@ func (h *endpointHost) onEvent(ctx context.Context, ev hook.Event) {
 	name := internalName(ctx, fin.Call.Name)
 	res := fin.Result
 	if panicked(res.Err) {
-		res = tools.ErrorResult("tool " + name + " panicked")
+		res = toolkit.ErrorResult("tool " + name + " panicked")
 	}
-	tools.RecordToolResult(v.rec.sessionKey, name, &tools.ToolResult{ForLLM: res.ForLLM, IsError: res.IsError})
+	tools.RecordToolResult(v.rec.sessionKey, name, &toolkit.Result{ForLLM: res.ForLLM, IsError: res.IsError})
 }
 
 // panicked reports that err is a panic the endpoint recovered: the tool's
@@ -539,7 +539,7 @@ func logSkip(s mcphost.Skip) {
 // (agent/tool_exec.go): the result answers the chat of the call's turn, dest.
 // No-op when there is nothing to inject; when the call had no turn chat to
 // route to, it logs the drop rather than failing silently.
-func publishMCPAsyncToLLM(ctx context.Context, msgBus *bus.MessageBus, rec sessionRecord, dest tools.ReplyChat, toolName string, r *tools.ToolResult, spawnDepth int) {
+func publishMCPAsyncToLLM(ctx context.Context, msgBus *bus.MessageBus, rec sessionRecord, dest tools.ReplyChat, toolName string, r *toolkit.Result, spawnDepth int) {
 	if r == nil || msgBus == nil {
 		return
 	}
@@ -628,7 +628,7 @@ func publishMCPForUser(
 	rec sessionRecord,
 	dest tools.ReplyChat,
 	toolName string,
-	result *tools.ToolResult,
+	result *toolkit.Result,
 ) {
 	if result == nil || result.Silent || result.ForUser == "" {
 		return

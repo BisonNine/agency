@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/tools"
@@ -98,9 +100,9 @@ func filesArg(entries ...map[string]any) map[string]any {
 	return map[string]any{"files": list}
 }
 
-func requireRefusal(t *testing.T, r *tools.ToolResult, want string) {
+func requireRefusal(t *testing.T, r *toolkit.Result, want string) {
 	t.Helper()
-	if !r.IsError || !tools.IsExpectedRefusal(r.Err) {
+	if !r.IsError || !toolkit.IsExpectedRefusal(r.Err) {
 		t.Fatalf("result = %+v, want a refusal", r)
 	}
 	if !strings.Contains(r.ForLLM, want) {
@@ -155,7 +157,7 @@ func TestSendFile_Destination(t *testing.T) {
 		{"recovery turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: "recovery", ChatID: "x"}), "This chat can't receive files."},
 		{"more than one turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true}), "answering more than one conversation"},
 		{"no turn (service token)", context.Background(), "There is no chat to send files to."},
-		{"tool context only", tools.WithToolContext(context.Background(), "telegram", "42"), "There is no chat to send files to."},
+		{"tool context only", toolkit.WithChat(context.Background(), "telegram", "42"), "There is no chat to send files to."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

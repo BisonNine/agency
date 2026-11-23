@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/tools"
 )
@@ -23,7 +25,7 @@ func TestDispatch_ForUserPublishedToOriginatingChannel(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{
+		result: &toolkit.Result{
 			ForLLM:  "wrote ok",
 			ForUser: userPayload,
 			Silent:  false,
@@ -89,7 +91,7 @@ func TestDispatch_ForUserOnlyWithToolOutputOn(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{ForLLM: "wrote ok", ForUser: "command output"},
+		result: &toolkit.Result{ForLLM: "wrote ok", ForUser: "command output"},
 	}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	st := newSessionTokenStore()
@@ -151,7 +153,7 @@ func TestDispatch_SilentToolResultIsNotPublished(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{
+		result: &toolkit.Result{
 			ForLLM:  "wrote ok",
 			ForUser: "should not be sent",
 			Silent:  true,
@@ -209,7 +211,7 @@ func TestDispatch_ForUserDroppedWhenNoActiveChannel(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{
+		result: &toolkit.Result{
 			ForLLM:  "wrote ok",
 			ForUser: userPayload,
 			Silent:  false,
@@ -279,7 +281,7 @@ func TestDispatch_MCPResponseContainsOnlyForLLM(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{
+		result: &toolkit.Result{
 			ForLLM:  llmPayload,
 			ForUser: userPayload,
 			Silent:  false,
@@ -368,7 +370,7 @@ func TestServer_WithToolOutput(t *testing.T) {
 	rf := &mockTool{
 		name:   "write_file",
 		params: map[string]any{},
-		result: &tools.ToolResult{ForLLM: "wrote ok", ForUser: "command output"},
+		result: &toolkit.Result{ForLLM: "wrote ok", ForUser: "command output"},
 	}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
 	store := NewSessionTokenStore()

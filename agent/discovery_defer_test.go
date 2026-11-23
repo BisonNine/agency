@@ -35,9 +35,9 @@ func (n *notebookTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
 
-func (n *notebookTool) Execute(context.Context, map[string]any) *tools.ToolResult {
+func (n *notebookTool) Execute(context.Context, map[string]any) *toolkit.Result {
 	n.calls.Add(1)
-	return tools.SilentResult("page 1: buy milk")
+	return toolkit.SilentResult("page 1: buy milk")
 }
 
 // defsRecordingProvider answers from a script and records the tool definitions
@@ -223,8 +223,8 @@ func (b bulkyTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
 
-func (b bulkyTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	return tools.SilentResult("ok")
+func (b bulkyTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	return toolkit.SilentResult("ok")
 }
 
 // The tool-schema cost a turn puts on the context manager's requests counts
@@ -308,7 +308,7 @@ func TestTurn_EstimatesOnlySentTools(t *testing.T) {
 
 // registerHiddenSuite registers t on agent as a discovery-hidden suite tool,
 // as registerProviderTools does for fusion and maestro.
-func registerHiddenSuite(agent *AgentInstance, t tools.Tool) {
+func registerHiddenSuite(agent *AgentInstance, t toolkit.Tool) {
 	for _, e := range discovery.HideEntries([]toolkit.Entry{{Tool: t}}) {
 		agent.Tools.RegisterEntries(tools.ToolEntry{Entry: e, SuiteExempt: true})
 	}

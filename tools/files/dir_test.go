@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // mkTree creates files (relative path -> content) under root.
@@ -96,7 +96,7 @@ func TestFileMkdir_SandboxConfinedToWriteSubdir(t *testing.T) {
 		if !res.IsError {
 			t.Fatalf("mkdir %s outside files/ should be refused", p)
 		}
-		if !tools.IsExpectedRefusal(res.Err) {
+		if !toolkit.IsExpectedRefusal(res.Err) {
 			t.Fatalf("mkdir %s should be an expected refusal, got: %s", p, res.ForLLM)
 		}
 	}
@@ -129,7 +129,7 @@ func TestFileRmdir(t *testing.T) {
 		}
 		tool := NewRmdirToolScoped(dir, false, "")
 		res := tool.Execute(ctx, map[string]any{"path": sub})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "sure=true") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "sure=true") {
 			t.Fatalf("rmdir without sure should be refused, got: %s", res.ForLLM)
 		}
 		mustExist(t, sub)
@@ -153,7 +153,7 @@ func TestFileRmdir(t *testing.T) {
 		mkTree(t, dir, map[string]string{"full/a.txt": "a"})
 		tool := NewRmdirToolScoped(dir, false, "")
 		res := tool.Execute(ctx, map[string]any{"path": filepath.Join(dir, "full"), "sure": true})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "recursive=true") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "recursive=true") {
 			t.Fatalf("non-empty rmdir should be refused pointing at recursive, got: %s", res.ForLLM)
 		}
 		mustRead(t, filepath.Join(dir, "full", "a.txt"), "a")
@@ -178,7 +178,7 @@ func TestFileRmdir(t *testing.T) {
 		mkTree(t, dir, map[string]string{"full/a.txt": "a", "full/sub/notes.md.0002": "backup"})
 		tool := NewRmdirToolScoped(dir, false, "")
 		res := tool.Execute(ctx, map[string]any{"path": filepath.Join(dir, "full"), "sure": true, "recursive": true})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "notes.md.0002") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "notes.md.0002") {
 			t.Fatalf("should refuse naming the backup file, got: %s", res.ForLLM)
 		}
 		mustRead(t, filepath.Join(dir, "full", "a.txt"), "a")
@@ -189,7 +189,7 @@ func TestFileRmdir(t *testing.T) {
 		dir, p := writeTemp(t, "data")
 		tool := NewRmdirToolScoped(dir, false, "")
 		res := tool.Execute(ctx, map[string]any{"path": p, "sure": true, "recursive": true})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "file_delete") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "file_delete") {
 			t.Fatalf("rmdir of a file should point at file_delete, got: %s", res.ForLLM)
 		}
 		mustExist(t, p)
@@ -207,7 +207,7 @@ func TestFileRmdir_SandboxRoots(t *testing.T) {
 
 	for _, p := range []string{"files", "files/", "./files", filepath.Join(ws, "files"), mount, mount + "/", "skills", ".", "..", filepath.Dir(ws)} {
 		res := tool.Execute(ctx, map[string]any{"path": p, "sure": true, "recursive": true})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Fatalf("rmdir %q should be an expected refusal, got: %s", p, res.ForLLM)
 		}
 	}
@@ -227,7 +227,7 @@ func TestFileRmdir_WorkspaceRootWithoutWriteSubdir(t *testing.T) {
 	tool := NewRmdirToolScoped(ws, true, "")
 	for _, p := range []string{".", ws} {
 		res := tool.Execute(context.Background(), map[string]any{"path": p, "sure": true, "recursive": true})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Fatalf("rmdir of the workspace %q should be refused, got: %s", p, res.ForLLM)
 		}
 	}
@@ -318,7 +318,7 @@ func TestFileMove_Folder(t *testing.T) {
 		})
 		tool := NewMoveFileToolScoped(dir, false, "")
 		res := tool.Execute(ctx, map[string]any{"source_path": filepath.Join(dir, "src"), "destination_path": filepath.Join(dir, "dst"), "overwrite": true})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "n.md.0001") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "n.md.0001") {
 			t.Fatalf("should refuse to overwrite a backup, got: %s", res.ForLLM)
 		}
 		mustRead(t, filepath.Join(dir, "dst", "n.md.0001"), "old backup")
@@ -332,7 +332,7 @@ func TestFileMove_Folder(t *testing.T) {
 		tool := NewMoveFileToolScoped(dir, false, "")
 		for _, d := range []string{filepath.Join(dir, "src"), filepath.Join(dir, "src", "inner"), filepath.Join(dir, "src", "x", "y")} {
 			res := tool.Execute(ctx, map[string]any{"source_path": filepath.Join(dir, "src"), "destination_path": d, "overwrite": true})
-			if !res.IsError || !tools.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "into itself") {
+			if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "into itself") {
 				t.Fatalf("move into %s should be refused, got: %s", d, res.ForLLM)
 			}
 		}
@@ -345,7 +345,7 @@ func TestFileMove_Folder(t *testing.T) {
 		mkTree(t, ws, map[string]string{"files/src/a.txt": "a"})
 		tool := NewMoveFileToolScoped(ws, true, "files")
 		res := tool.Execute(ctx, map[string]any{"source_path": "files/src", "destination_path": filepath.Join(ws, "files", "src", "inner")})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "into itself") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || !contains(res.ForLLM, "into itself") {
 			t.Fatalf("move into itself should be refused, got: %s", res.ForLLM)
 		}
 		mustRead(t, filepath.Join(ws, "files", "src", "a.txt"), "a")
@@ -424,7 +424,7 @@ func TestFileMove_FolderSandbox(t *testing.T) {
 	}
 	for _, tc := range cases {
 		res := tool.Execute(ctx, map[string]any{"source_path": tc.src, "destination_path": tc.dst})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Fatalf("move %s -> %s should be an expected refusal, got: %s", tc.src, tc.dst, res.ForLLM)
 		}
 	}
@@ -456,7 +456,7 @@ func TestFileMove_FolderIntoAllowedFolder(t *testing.T) {
 	mustRead(t, filepath.Join(rw, "bob", "sub", "b.txt"), "b")
 
 	res = tool.Execute(ctx, map[string]any{"source_path": rw, "destination_path": "files/notes"})
-	if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
+	if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 		t.Fatalf("moving an allowed folder should be refused, got: %s", res.ForLLM)
 	}
 	mustExist(t, filepath.Join(rw, "bob", "a.txt"))

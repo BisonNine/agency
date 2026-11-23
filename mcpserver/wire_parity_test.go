@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/agenttoken"
 	"go.bison9.com/agency/internal/tokenhash"
 	"go.bison9.com/agency/mcpserver/acl"
@@ -46,13 +48,13 @@ const (
 type wireTool struct {
 	name, desc string
 	params     map[string]any
-	run        func(ctx context.Context, args map[string]any) *tools.ToolResult
+	run        func(ctx context.Context, args map[string]any) *toolkit.Result
 }
 
 func (w *wireTool) Name() string               { return w.name }
 func (w *wireTool) Description() string        { return w.desc }
 func (w *wireTool) Parameters() map[string]any { return w.params }
-func (w *wireTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (w *wireTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	return w.run(ctx, args)
 }
 
@@ -70,23 +72,23 @@ type wireScoped struct{ wireTool }
 
 func (*wireScoped) IsSessionScoped() bool { return true }
 
-func wireText(s string) func(context.Context, map[string]any) *tools.ToolResult {
-	return func(context.Context, map[string]any) *tools.ToolResult { return tools.NewToolResult(s) }
+func wireText(s string) func(context.Context, map[string]any) *toolkit.Result {
+	return func(context.Context, map[string]any) *toolkit.Result { return toolkit.NewResult(s) }
 }
 
 // wireArgs reports the argument names a tool received.
-func wireArgs(_ context.Context, args map[string]any) *tools.ToolResult {
+func wireArgs(_ context.Context, args map[string]any) *toolkit.Result {
 	keys := make([]string, 0, len(args))
 	for k := range args {
 		keys = append(keys, k)
 	}
 	slices.Sort(keys)
-	return tools.NewToolResult("args=" + strings.Join(keys, ","))
+	return toolkit.NewResult("args=" + strings.Join(keys, ","))
 }
 
 // wireSession reports the session key on the call's context.
-func wireSession(ctx context.Context, _ map[string]any) *tools.ToolResult {
-	return tools.NewToolResult("session=" + tools.ToolSessionKey(ctx))
+func wireSession(ctx context.Context, _ map[string]any) *toolkit.Result {
+	return toolkit.NewResult("session=" + toolkit.SessionKey(ctx))
 }
 
 func wireRegistries() map[string]*tools.ToolRegistry {
@@ -102,18 +104,18 @@ func wireRegistries() map[string]*tools.ToolRegistry {
 	alice := newRegistryWith(
 		&wireTool{name: "time_now", desc: "Alice's clock", params: schema, run: wireArgs},
 		&wireTool{name: "open_args", desc: "Free-form object", params: open, run: wireArgs},
-		&wireTool{name: "fail_tool", desc: "Always fails", params: nil, run: func(context.Context, map[string]any) *tools.ToolResult {
-			return tools.ErrorResult("boom")
+		&wireTool{name: "fail_tool", desc: "Always fails", params: nil, run: func(context.Context, map[string]any) *toolkit.Result {
+			return toolkit.ErrorResult("boom")
 		}},
-		&wireTool{name: "nil_tool", desc: "Returns nothing", params: map[string]any{}, run: func(context.Context, map[string]any) *tools.ToolResult {
+		&wireTool{name: "nil_tool", desc: "Returns nothing", params: map[string]any{}, run: func(context.Context, map[string]any) *toolkit.Result {
 			return nil
 		}},
-		&wireTool{name: "panic_tool", desc: "Panics", params: map[string]any{}, run: func(context.Context, map[string]any) *tools.ToolResult {
+		&wireTool{name: "panic_tool", desc: "Panics", params: map[string]any{}, run: func(context.Context, map[string]any) *toolkit.Result {
 			panic("wire fixture panic")
 		}},
 		&wireTool{name: "leak_tool", desc: "Echoes a token", params: map[string]any{}, run: wireText("token " + wireLeaked + " end")},
-		&wireTool{name: "foruser_tool", desc: "Speaks to the user", params: map[string]any{}, run: func(context.Context, map[string]any) *tools.ToolResult {
-			return &tools.ToolResult{ForLLM: "for the model", ForUser: "for the user"}
+		&wireTool{name: "foruser_tool", desc: "Speaks to the user", params: map[string]any{}, run: func(context.Context, map[string]any) *toolkit.Result {
+			return &toolkit.Result{ForLLM: "for the model", ForUser: "for the user"}
 		}},
 		&wireScoped{wireTool{name: "session_echo", desc: "Session-scoped", params: map[string]any{}, run: wireSession}},
 		&wireTool{name: "ctx_probe", desc: "Not session-scoped", params: map[string]any{}, run: wireSession},

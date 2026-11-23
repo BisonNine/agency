@@ -12,7 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/utils"
 )
 
@@ -47,7 +48,7 @@ func TestAllowReadPath_LinkTargetChecked(t *testing.T) {
 	for _, name := range []string{"link-sess.txt", "link-agents.md", "link-secret.txt"} {
 		p := filepath.Join(shared, name)
 		res := read.Execute(ctx, map[string]any{"path": p})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || strings.Contains(res.ForLLM, "L2") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || strings.Contains(res.ForLLM, "L2") {
 			t.Errorf("%s: want a refusal, got %v %q", name, res.IsError, res.ForLLM)
 		}
 	}
@@ -94,7 +95,7 @@ func TestReadScope_LinkSwappedBeforeRead(t *testing.T) {
 			case "Stat":
 				_, err = r.Stat("files/doc.txt")
 			}
-			if err == nil || !tools.IsExpectedRefusal(err) || !strings.Contains(err.Error(), "resolves outside the folders the agent can read") {
+			if err == nil || !toolkit.IsExpectedRefusal(err) || !strings.Contains(err.Error(), "resolves outside the folders the agent can read") {
 				t.Fatalf("%s after the swap = %v, want the refusal", op, err)
 			}
 		})

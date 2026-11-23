@@ -13,9 +13,9 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 const (
@@ -204,10 +204,10 @@ func (o lineOptions) included(rel string) bool {
 	return err == nil && ok
 }
 
-func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	query, ok := args["query"].(string)
 	if !ok || strings.TrimSpace(query) == "" {
-		return tools.ErrorResult("query is required")
+		return toolkit.ErrorResult("query is required")
 	}
 	root, ok := args["path"].(string)
 	explicit := ok && strings.TrimSpace(root) != ""
@@ -235,12 +235,12 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]any) *too
 	if useRegex {
 		re, err = regexp.Compile(query)
 		if err != nil {
-			return tools.ErrorResult(fmt.Sprintf("invalid regex: %v", err))
+			return toolkit.ErrorResult(fmt.Sprintf("invalid regex: %v", err))
 		}
 	} else {
 		re, err = regexp.Compile("(?i)" + regexp.QuoteMeta(query))
 		if err != nil {
-			return tools.ErrorResult(fmt.Sprintf("invalid query: %v", err))
+			return toolkit.ErrorResult(fmt.Sprintf("invalid query: %v", err))
 		}
 	}
 
@@ -291,7 +291,7 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]any) *too
 	}
 
 	if len(out) == 0 {
-		return tools.NewToolResult(fmt.Sprintf("No matches for %q in %s.", query, root))
+		return toolkit.NewResult(fmt.Sprintf("No matches for %q in %s.", query, root))
 	}
 	header := fmt.Sprintf("%d match(es) for %q in %s (byte offsets):", len(out), query, root)
 	if truncated {
@@ -300,7 +300,7 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]any) *too
 	header += "\nRead from a match with file_read_bytes(offset=<start>)."
 	logger.DebugCF("tool", "SearchFilesTool completed",
 		map[string]any{"query": query, "root": root, "matches": len(out), "scanned": scanned, "byte_mode": t.byteMode})
-	return tools.NewToolResult(header + "\n\n" + strings.Join(out, "\n"))
+	return toolkit.NewResult(header + "\n\n" + strings.Join(out, "\n"))
 }
 
 // searchLines is file_search_lines: the matches, files or counts under roots
@@ -308,7 +308,7 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]any) *too
 // (matches in lines mode, files otherwise). root names them in the result.
 // With explicit (the agent named the path) include matches paths below the
 // searched folder; otherwise (the default folders) paths below the workspace.
-func (t *SearchFilesTool) searchLines(ctx context.Context, query string, roots []string, root string, explicit, isDir bool, re *regexp.Regexp, limit int, opts lineOptions) *tools.ToolResult {
+func (t *SearchFilesTool) searchLines(ctx context.Context, query string, roots []string, root string, explicit, isDir bool, re *regexp.Regexp, limit int, opts lineOptions) *toolkit.Result {
 	var (
 		out       []string // one entry per match block, file or count
 		found     int      // matches (lines mode) or files (files/count)
@@ -382,7 +382,7 @@ func (t *SearchFilesTool) searchLines(ctx context.Context, query string, roots [
 	}
 
 	if found == 0 {
-		return tools.NewToolResult(fmt.Sprintf("No matches for %q in %s.", query, root))
+		return toolkit.NewResult(fmt.Sprintf("No matches for %q in %s.", query, root))
 	}
 	var header string
 	switch opts.output {
@@ -412,7 +412,7 @@ func (t *SearchFilesTool) searchLines(ctx context.Context, query string, roots [
 	}
 	logger.DebugCF("tool", "SearchFilesTool completed",
 		map[string]any{"query": query, "root": root, "found": found, "scanned": scanned, "output": opts.output})
-	return tools.NewToolResult(header + "\n\n" + strings.Join(out, sep))
+	return toolkit.NewResult(header + "\n\n" + strings.Join(out, sep))
 }
 
 // walk recursively visits files under dir (depth-first), calling visit(path) for

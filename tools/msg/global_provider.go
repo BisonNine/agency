@@ -1,6 +1,7 @@
 package msg
 
 import (
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
@@ -44,7 +45,7 @@ func (globalMsgProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 
 	// msg_send: shared pre-built instance passed via deps.Host (may be nil if not
 	// yet wired). Its concrete type is *MessageTool, but it is handed to us as a
-	// tools.Tool, so we delegate through the Tool interface.
+	// toolkit.Tool, so we delegate through the Tool interface.
 
 	// msg_send_file: construct the real instance only when real config is
 	// present. It reads with the file tools' permissions for this workspace
@@ -71,7 +72,7 @@ func (globalMsgProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 				if cd.MessageTool == nil {
 					return &toolspec.Result{IsError: true, ForLLM: "message tool not available"}, nil
 				}
-				return tools.ResultToGlobal(cd.MessageTool.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(cd.MessageTool.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
@@ -84,7 +85,7 @@ func (globalMsgProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 				if sendFile == nil {
 					return &toolspec.Result{IsError: true, ForLLM: "send_file tool not available"}, nil
 				}
-				return tools.ResultToGlobal(sendFile.Execute(call.Ctx, call.Args)), nil
+				return toolkit.ResultToSpec(sendFile.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 	}

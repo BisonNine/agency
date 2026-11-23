@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/toolkit"
 	mllm "go.bison9.com/maestro/llm"
 
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
@@ -264,7 +264,7 @@ func TestDispatcher_NoTimeoutWhenUnset(t *testing.T) {
 // every one fail is a failed dispatch (retried by the runner), with the count
 // and the last error in the message and the usage kept.
 func TestDispatcher_AllToolCallsFailed(t *testing.T) {
-	lastErr := "cogmem_status: " + tools.NotEnabledMessage("cogmem_status")
+	lastErr := "cogmem_status: " + toolkit.NotEnabledMessage("cogmem_status")
 	runner := &stubRunner{res: &global.SyncResult{
 		Content: "I checked everything and it looks fine.", Iterations: 3,
 		Model: "claude-x", InputTokens: 900, OutputTokens: 80, CacheReadTokens: 9, CostUSD: 0.05,

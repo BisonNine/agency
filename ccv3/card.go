@@ -110,7 +110,7 @@ type sentinel struct{ msg string }
 
 func (e *sentinel) Error() string { return e.msg }
 
-// Refusal marks the error as an expected refusal (tools.IsExpectedRefusal).
+// Refusal marks the error as an expected refusal (toolkit.IsExpectedRefusal).
 func (*sentinel) Refusal() bool { return true }
 
 // The error kinds the store returns; test with errors.Is. Each carries a
@@ -132,7 +132,7 @@ type refusal struct {
 func (e *refusal) Error() string { return e.msg }
 func (e *refusal) Unwrap() error { return e.kind }
 
-// Refusal marks the error as an expected refusal (tools.IsExpectedRefusal).
+// Refusal marks the error as an expected refusal (toolkit.IsExpectedRefusal).
 func (*refusal) Refusal() bool { return true }
 
 func refuse(kind error, format string, args ...any) error {
@@ -159,5 +159,5 @@ func (e *ValidationError) Error() string {
 	return "The card is not valid: " + strings.Join(parts, "; ") + "."
 }
 
-// Refusal marks the error as an expected refusal (tools.IsExpectedRefusal).
+// Refusal marks the error as an expected refusal (toolkit.IsExpectedRefusal).
 func (*ValidationError) Refusal() bool { return true }

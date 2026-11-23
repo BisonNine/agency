@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/tools"
+	"go.bison9.com/agent/toolkit"
 )
 
 // harnessDoc is the content of every file the matrix edits.
@@ -79,7 +79,7 @@ func newHarnessFixture(t *testing.T) harnessFixture {
 type harnessTool struct {
 	name  string
 	write bool
-	tool  func(ws string) tools.Tool
+	tool  func(ws string) toolkit.Tool
 	args  func(path string) map[string]any
 	want  string // write: content after the call; read: a substring of the result
 }
@@ -87,37 +87,37 @@ type harnessTool struct {
 var harnessTools = []harnessTool{
 	{
 		name: "file_read_lines",
-		tool: func(ws string) tools.Tool { return NewReadLinesTool(ws, true, MaxReadFileSize) },
+		tool: func(ws string) toolkit.Tool { return NewReadLinesTool(ws, true, MaxReadFileSize) },
 		args: func(p string) map[string]any { return map[string]any{"path": p, "start_line": 2, "line_count": 1} },
 		want: "2: L2",
 	},
 	{
 		name: "file_edit_lines", write: true,
-		tool: func(ws string) tools.Tool { return newRangeEditTool("edit", "lines", ws, true, "files") },
+		tool: func(ws string) toolkit.Tool { return newRangeEditTool("edit", "lines", ws, true, "files") },
 		args: func(p string) map[string]any { return map[string]any{"path": p, "start": 2, "replace": "X"} },
 		want: "L1\nX\nL3\n",
 	},
 	{
 		name: "file_insert_lines", write: true,
-		tool: func(ws string) tools.Tool { return newRangeEditTool("insert", "lines", ws, true, "files") },
+		tool: func(ws string) toolkit.Tool { return newRangeEditTool("insert", "lines", ws, true, "files") },
 		args: func(p string) map[string]any { return map[string]any{"path": p, "after_line": 1, "text": "X"} },
 		want: "L1\nX\nL2\nL3\n",
 	},
 	{
 		name: "file_delete_lines", write: true,
-		tool: func(ws string) tools.Tool { return newRangeEditTool("delete", "lines", ws, true, "files") },
+		tool: func(ws string) toolkit.Tool { return newRangeEditTool("delete", "lines", ws, true, "files") },
 		args: func(p string) map[string]any { return map[string]any{"path": p, "start": 2} },
 		want: "L1\nL3\n",
 	},
 	{
 		name: "file_edit", write: true,
-		tool: func(ws string) tools.Tool { return NewEditFileToolScoped(ws, true, "files") },
+		tool: func(ws string) toolkit.Tool { return NewEditFileToolScoped(ws, true, "files") },
 		args: func(p string) map[string]any { return map[string]any{"path": p, "old_text": "L2", "new_text": "X"} },
 		want: "L1\nX\nL3\n",
 	},
 	{
 		name: "file_write", write: true,
-		tool: func(ws string) tools.Tool { return NewWriteFileToolScoped(ws, true, "files") },
+		tool: func(ws string) toolkit.Tool { return NewWriteFileToolScoped(ws, true, "files") },
 		args: func(p string) map[string]any { return map[string]any{"path": p, "content": "X\n", "overwrite": true} },
 		want: "X\n",
 	},
@@ -264,7 +264,7 @@ func TestCodingTools_PermissionMatrix(t *testing.T) {
 				if !res.IsError {
 					t.Fatalf("%s %s: not refused: %s", ht.name, path, res.ForLLM)
 				}
-				if !tools.IsExpectedRefusal(res.Err) {
+				if !toolkit.IsExpectedRefusal(res.Err) {
 					t.Errorf("%s %s: want an expected refusal, got %v (%s)", ht.name, path, res.Err, res.ForLLM)
 				}
 				if strings.Contains(res.ForLLM, "escapes from parent") {
@@ -317,7 +317,7 @@ func TestCodingTools_ListMatrix(t *testing.T) {
 	}
 	for _, p := range []string{".", f.outside, "files/out", filepath.Join(f.src, "out"), ".."} {
 		res := list.Execute(ctx, map[string]any{"path": p})
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) || strings.Contains(res.ForLLM, "doc.txt") {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) || strings.Contains(res.ForLLM, "doc.txt") {
 			t.Errorf("list %s: want a refusal, got %v %s", p, res.IsError, res.ForLLM)
 		}
 	}
@@ -334,7 +334,7 @@ func TestCodingTools_WorkspaceLinkOutReadRefusal(t *testing.T) {
 	readLines := NewReadLinesTool(f.ws, true, MaxReadFileSize)
 	for _, tc := range []struct {
 		name string
-		res  *tools.ToolResult
+		res  *toolkit.Result
 		want string
 	}{
 		{"file_read_lines", readLines.Execute(ctx, map[string]any{"path": "files/out.txt"}), outTxt},
@@ -346,7 +346,7 @@ func TestCodingTools_WorkspaceLinkOutReadRefusal(t *testing.T) {
 		{"file_count", NewCountFileTool(f.ws, true).Execute(ctx, map[string]any{"path": "files/out.txt"}), outTxt},
 	} {
 		want := "access denied: " + tc.want + " resolves outside the workspace"
-		if !tc.res.IsError || !tools.IsExpectedRefusal(tc.res.Err) || !strings.Contains(tc.res.ForLLM, want) {
+		if !tc.res.IsError || !toolkit.IsExpectedRefusal(tc.res.Err) || !strings.Contains(tc.res.ForLLM, want) {
 			t.Errorf("%s: want the refusal %q, got %v %q", tc.name, want, tc.res.IsError, tc.res.ForLLM)
 		}
 		if strings.Contains(tc.res.ForLLM, "escapes from parent") || strings.Contains(tc.res.ForLLM, "L2") {
@@ -363,48 +363,48 @@ func TestCodingTools_LinkOutOfReadScope(t *testing.T) {
 	ctx := context.Background()
 	type call struct {
 		name string
-		run  func(f harnessFixture, path string) *tools.ToolResult
+		run  func(f harnessFixture, path string) *toolkit.Result
 	}
 	file := func(path string) map[string]any { return map[string]any{"path": path} }
 	fileCalls := []call{
-		{"file_read_bytes", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_read_bytes", func(f harnessFixture, p string) *toolkit.Result {
 			return NewReadFileTool(f.ws, true, MaxReadFileSize).Execute(ctx, file(p))
 		}},
-		{"file_read_lines", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_read_lines", func(f harnessFixture, p string) *toolkit.Result {
 			return NewReadLinesTool(f.ws, true, MaxReadFileSize).Execute(ctx, file(p))
 		}},
-		{"file_search_lines", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_search_lines", func(f harnessFixture, p string) *toolkit.Result {
 			return NewSearchLinesTool(f.ws, true).Execute(ctx, map[string]any{"query": "L", "path": p})
 		}},
-		{"file_search_bytes", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_search_bytes", func(f harnessFixture, p string) *toolkit.Result {
 			return NewSearchBytesTool(f.ws, true).Execute(ctx, map[string]any{"query": "L", "path": p})
 		}},
-		{"file_count", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_count", func(f harnessFixture, p string) *toolkit.Result {
 			return NewCountFileTool(f.ws, true).Execute(ctx, file(p))
 		}},
-		{"file_view_image", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_view_image", func(f harnessFixture, p string) *toolkit.Result {
 			return NewViewImageTool(f.ws, true).Execute(ctx, file(p))
 		}},
-		{"file_copy source", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_copy source", func(f harnessFixture, p string) *toolkit.Result {
 			return NewCopyFileToolScoped(f.ws, true, "files").Execute(ctx,
 				map[string]any{"source_path": p, "destination_path": "files/copied.txt"})
 		}},
 	}
 	dirCalls := []call{
-		{"file_list", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_list", func(f harnessFixture, p string) *toolkit.Result {
 			return NewListDirTool(f.ws, true).Execute(ctx, file(p))
 		}},
-		{"file_glob", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_glob", func(f harnessFixture, p string) *toolkit.Result {
 			return NewGlobTool(f.ws, true).Execute(ctx, map[string]any{"pattern": "**", "path": p})
 		}},
-		{"file_move source", func(f harnessFixture, p string) *tools.ToolResult {
+		{"file_move source", func(f harnessFixture, p string) *toolkit.Result {
 			return NewMoveFileToolScoped(f.ws, true, "files").Execute(ctx,
 				map[string]any{"source_path": p + "/doc.txt", "destination_path": "files/moved.txt"})
 		}},
 	}
-	refused := func(t *testing.T, f harnessFixture, name, path string, res *tools.ToolResult) {
+	refused := func(t *testing.T, f harnessFixture, name, path string, res *toolkit.Result) {
 		t.Helper()
-		if !res.IsError || !tools.IsExpectedRefusal(res.Err) {
+		if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
 			t.Errorf("%s %s: want a refusal, got %v %q", name, path, res.IsError, res.ForLLM)
 		}
 		if strings.Contains(res.ForLLM, "L2") || strings.Contains(res.ForLLM, "doc.txt\n") {
@@ -450,15 +450,15 @@ func TestCodingTools_ReadOnlyFolderRefusesBeforeBackup(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
 		name string
-		tool func(ws string) tools.Tool
+		tool func(ws string) toolkit.Tool
 		args map[string]any
 	}{
-		{"file_edit_lines", func(ws string) tools.Tool { return newRangeEditTool("edit", "lines", ws, true, "files") }, map[string]any{"start": 2, "replace": "X"}},
-		{"file_delete_lines", func(ws string) tools.Tool { return newRangeEditTool("delete", "lines", ws, true, "files") }, map[string]any{"start": 2}},
-		{"file_insert_lines with backup", func(ws string) tools.Tool { return newRangeEditTool("insert", "lines", ws, true, "files") }, map[string]any{"after_line": 1, "text": "X", "backup": true}},
-		{"file_edit with backup", func(ws string) tools.Tool { return NewEditFileToolScoped(ws, true, "files") }, map[string]any{"old_text": "L2", "new_text": "X", "backup": true}},
-		{"file_write with backup", func(ws string) tools.Tool { return NewWriteFileToolScoped(ws, true, "files") }, map[string]any{"content": "X", "overwrite": true, "backup": true}},
-		{"file_append with backup", func(ws string) tools.Tool { return NewAppendFileToolScoped(ws, true, "files") }, map[string]any{"content": "X", "backup": true}},
+		{"file_edit_lines", func(ws string) toolkit.Tool { return newRangeEditTool("edit", "lines", ws, true, "files") }, map[string]any{"start": 2, "replace": "X"}},
+		{"file_delete_lines", func(ws string) toolkit.Tool { return newRangeEditTool("delete", "lines", ws, true, "files") }, map[string]any{"start": 2}},
+		{"file_insert_lines with backup", func(ws string) toolkit.Tool { return newRangeEditTool("insert", "lines", ws, true, "files") }, map[string]any{"after_line": 1, "text": "X", "backup": true}},
+		{"file_edit with backup", func(ws string) toolkit.Tool { return NewEditFileToolScoped(ws, true, "files") }, map[string]any{"old_text": "L2", "new_text": "X", "backup": true}},
+		{"file_write with backup", func(ws string) toolkit.Tool { return NewWriteFileToolScoped(ws, true, "files") }, map[string]any{"content": "X", "overwrite": true, "backup": true}},
+		{"file_append with backup", func(ws string) toolkit.Tool { return NewAppendFileToolScoped(ws, true, "files") }, map[string]any{"content": "X", "backup": true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newHarnessFixture(t)
@@ -466,7 +466,7 @@ func TestCodingTools_ReadOnlyFolderRefusesBeforeBackup(t *testing.T) {
 			tc.args["path"] = doc
 			res := tc.tool(f.ws).Execute(ctx, tc.args)
 			want := "permission denied: " + doc + " is read-only for this app"
-			if !res.IsError || res.ForLLM != want || !tools.IsExpectedRefusal(res.Err) {
+			if !res.IsError || res.ForLLM != want || !toolkit.IsExpectedRefusal(res.Err) {
 				t.Errorf("refusal = %v %q, want %q", res.IsError, res.ForLLM, want)
 			}
 			if got := readBack(t, doc); got != harnessDoc {

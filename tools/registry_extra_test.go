@@ -5,23 +5,25 @@ import (
 	"fmt"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/config"
 )
 
 // mockTool is a simple tool for registry tests.
 type mockTool struct {
 	name   string
-	result *ToolResult
+	result *toolkit.Result
 }
 
 func (t *mockTool) Name() string               { return t.name }
 func (t *mockTool) Description() string        { return "mock tool " + t.name }
 func (t *mockTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (t *mockTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+func (t *mockTool) Execute(ctx context.Context, args map[string]any) *toolkit.Result {
 	if t.result != nil {
 		return t.result
 	}
-	return NewToolResult("tool executed: " + t.name)
+	return toolkit.NewResult("tool executed: " + t.name)
 }
 
 func TestToolRegistry_GetDefinitions_Empty(t *testing.T) {
@@ -118,7 +120,7 @@ func TestToolRegistry_Execute_NotFoundExtra(t *testing.T) {
 
 func TestToolRegistry_Execute_FoundWithResult(t *testing.T) {
 	r := NewToolRegistry()
-	r.Register(&mockTool{name: "do_thing_unique", result: NewToolResult("done")})
+	r.Register(&mockTool{name: "do_thing_unique", result: toolkit.NewResult("done")})
 
 	result := r.Execute(context.Background(), "do_thing_unique", nil)
 	if result.IsError {

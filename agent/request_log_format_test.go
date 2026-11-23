@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
 
@@ -27,8 +27,8 @@ type logTool struct {
 func (l logTool) Name() string               { return l.name }
 func (l logTool) Description() string        { return l.description }
 func (l logTool) Parameters() map[string]any { return l.parameters }
-func (logTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	return tools.SilentResult("done")
+func (logTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	return toolkit.SilentResult("done")
 }
 
 // fullRequestLine runs a whole turn of the default agent whose first request

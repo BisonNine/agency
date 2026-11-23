@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/tools"
 )
 
 // countInHistory counts the stored messages of agent's main conversation
@@ -280,8 +280,8 @@ type mediaTool struct{ refs []string }
 func (mediaTool) Name() string               { return "media_tool" }
 func (mediaTool) Description() string        { return "returns media" }
 func (mediaTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (m mediaTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	r := tools.NewToolResult("made it")
+func (m mediaTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	r := toolkit.NewResult("made it")
 	r.Media = m.refs
 	return r
 }

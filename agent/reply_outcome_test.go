@@ -14,6 +14,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
@@ -242,11 +243,11 @@ type roundSendingTool struct{}
 func (roundSendingTool) Name() string               { return "fake_send" }
 func (roundSendingTool) Description() string        { return "marks the round sent" }
 func (roundSendingTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (roundSendingTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (roundSendingTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	if f := tools.RoundSentFlagFromCtx(ctx); f != nil {
 		f.Store(true)
 	}
-	return &tools.ToolResult{ForLLM: "sent", Silent: true}
+	return &toolkit.Result{ForLLM: "sent", Silent: true}
 }
 
 // TestRunTurn_MsgSendSuppressesUnlessRequired: after msg_send replied in the
@@ -422,9 +423,9 @@ type depthTool struct{ depth *atomic.Int64 }
 func (depthTool) Name() string               { return "depth_probe" }
 func (depthTool) Description() string        { return "records the spawn depth" }
 func (depthTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (d depthTool) Execute(ctx context.Context, _ map[string]any) *tools.ToolResult {
+func (d depthTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	d.depth.Store(int64(toolsagents.SpawnDepth(ctx)))
-	return &tools.ToolResult{ForLLM: "ok", Silent: true}
+	return &toolkit.Result{ForLLM: "ok", Silent: true}
 }
 
 // TestInbound_SpawnDepthReachesTools: a bus turn's tools run at the depth the
@@ -606,13 +607,13 @@ type asyncProbeTool struct{}
 func (asyncProbeTool) Name() string               { return "async_probe" }
 func (asyncProbeTool) Description() string        { return "completes later" }
 func (asyncProbeTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
-func (asyncProbeTool) Execute(context.Context, map[string]any) *tools.ToolResult {
-	return &tools.ToolResult{ForLLM: "sync"}
+func (asyncProbeTool) Execute(context.Context, map[string]any) *toolkit.Result {
+	return &toolkit.Result{ForLLM: "sync"}
 }
 
-func (asyncProbeTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb tools.AsyncCallback) *tools.ToolResult {
-	go cb(context.WithoutCancel(ctx), &tools.ToolResult{ForLLM: "late result", Silent: true})
-	return &tools.ToolResult{ForLLM: "started", Async: true}
+func (asyncProbeTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
+	go cb(context.WithoutCancel(ctx), &toolkit.Result{ForLLM: "late result", Silent: true})
+	return &toolkit.Result{ForLLM: "started", Async: true}
 }
 
 // TestAsyncResult_CarriesTurnDepth: an async tool result re-injected into the
@@ -685,7 +686,7 @@ func TestMsgSend_ReportsDelivery(t *testing.T) {
 			if _, ok := agent.Tools.Get("msg_send"); !ok {
 				t.Fatal("the agent has no msg_send")
 			}
-			results := make(chan *tools.ToolResult, 1)
+			results := make(chan *toolkit.Result, 1)
 			go func() {
 				// The turn's chat, as runToolCall gives it.
 				ctx := tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: tc.channel, ChatID: tc.chatID})

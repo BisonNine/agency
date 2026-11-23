@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/mcpserver/acl"
 	"go.bison9.com/agency/tools"
@@ -134,7 +136,7 @@ func dispatchToolCall(
 		}
 	}
 	if !published(regs, toolName) {
-		regs[stubRegistryID] = newRegistryWith(&mockTool{name: toolName, params: map[string]any{}, result: tools.NewToolResult("stub")})
+		regs[stubRegistryID] = newRegistryWith(&mockTool{name: toolName, params: map[string]any{}, result: toolkit.NewResult("stub")})
 	}
 	opts := []Option{
 		WithAgentRegistries(regs),
@@ -183,7 +185,7 @@ func published(regs map[string]*tools.ToolRegistry, name string) bool {
 		}
 		for _, internal := range reg.List() {
 			if tl, ok := reg.Get(internal); ok {
-				if en, ok := tl.(tools.ExternalNamer); ok && en.ExternalName() == name {
+				if en, ok := tl.(toolkit.ExternalNamer); ok && en.ExternalName() == name {
 					return true
 				}
 			}

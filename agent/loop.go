@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/cogmem/consolidate"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/alerts"
@@ -29,7 +30,6 @@ import (
 	"go.bison9.com/agency/msgtoken"
 	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/state"
-	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 	"go.bison9.com/agency/voice"
 )
@@ -192,7 +192,7 @@ type AgentLoop struct {
 	// extraTools are the host-built tools added with RegisterTool, kept so a
 	// temporary agent created later gets them too.
 	extraToolsMu sync.Mutex
-	extraTools   []tools.Tool
+	extraTools   []toolkit.Tool
 
 	// stopRun cancels the context Run derives for every turn it starts, with
 	// errShuttingDown as the cause; set by Run, called by Stop. Guarded by

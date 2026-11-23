@@ -78,14 +78,14 @@ func (r *ToolRegistry) put(e toolkit.Entry, exempt bool, what string) {
 	logger.DebugCF("tools", "Registered "+what, fields)
 }
 
-func (r *ToolRegistry) Register(tool Tool) {
+func (r *ToolRegistry) Register(tool toolkit.Tool) {
 	r.put(toolkit.Entry{Tool: tool}, false, "core tool")
 }
 
 // RegisterSuite registers a tool that belongs to an all-or-nothing suite. It is
 // identical to Register but marks the entry suite-exempt, so ExecuteWithContext
 // skips the per-tool allowlist check (the suite flag is the allow decision).
-func (r *ToolRegistry) RegisterSuite(tool Tool) {
+func (r *ToolRegistry) RegisterSuite(tool toolkit.Tool) {
 	r.put(toolkit.Entry{Tool: tool}, true, "suite tool")
 }
 
@@ -181,7 +181,7 @@ func (r *ToolRegistry) Subscribe(fn func(toolkit.Change)) (unsubscribe func()) {
 // Get returns the tool registered under name (the internal registry key),
 // hidden or not: progressive discovery only defers loading a tool's
 // definition, it never makes a registered tool uncallable.
-func (r *ToolRegistry) Get(name string) (Tool, bool) {
+func (r *ToolRegistry) Get(name string) (toolkit.Tool, bool) {
 	info, ok := r.cat.Get(name)
 	if !ok {
 		return nil, false
@@ -189,7 +189,7 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	return info.Tool, true
 }
 
-func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
+func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *toolkit.Result {
 	return r.ExecuteWithContext(ctx, name, args, "", "", nil)
 }
 
@@ -228,7 +228,7 @@ func allowGate(name string) toolkit.Gate {
 		if checker.IsToolDenied(info.Name) || (!isSuiteExempt(info) && !checker.IsToolAllowed(info.Name)) {
 			logger.WarnCF("tool", "Tool execution denied by agent allowlist",
 				map[string]any{"tool": info.Name})
-			return ErrorResult(NotEnabledMessage(name)).WithError(Refusal(fmt.Errorf("tool not permitted: %s", name)))
+			return toolkit.ErrorResult(toolkit.NotEnabledMessage(name)).WithError(toolkit.Refusal(fmt.Errorf("tool not permitted: %s", name)))
 		}
 		return nil
 	}
@@ -249,7 +249,7 @@ func CallContext(ctx context.Context, channel, chatID string) context.Context {
 
 // CallGate is the per-call grant check ExecuteWithContext runs (allowGate),
 // for a caller that executes the exact tool through a View of the registry.
-func CallGate(ctx context.Context, info toolkit.Info) *ToolResult {
+func CallGate(ctx context.Context, info toolkit.Info) *toolkit.Result {
 	return allowGate(info.Name)(ctx, info)
 }
 
@@ -264,8 +264,8 @@ func (r *ToolRegistry) ExecuteWithContext(
 	name string,
 	args map[string]any,
 	channel, chatID string,
-	asyncCallback AsyncCallback,
-) *ToolResult {
+	asyncCallback toolkit.AsyncCallback,
+) *toolkit.Result {
 	// Who the call is for: tools read the chat via ToolChannel/ToolChatID and
 	// bridged toolspec tools the agent id. Always set — tools validate what
 	// they require.
@@ -279,7 +279,7 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 	listed := r.cat.Listed()
 	definitions := make([]map[string]any, 0, len(listed))
 	for _, info := range listed {
-		definitions = append(definitions, ToolToSchema(info.Tool))
+		definitions = append(definitions, toolkit.ToolToSchema(info.Tool))
 	}
 	return definitions
 }

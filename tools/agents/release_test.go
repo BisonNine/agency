@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolkit"
+
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/tools"
 )
 
 // TestSpawnCallback_ReleasesAfterDelivery: a background worker is released
@@ -44,7 +45,7 @@ func TestSpawnCallback_ReleasesAfterDelivery(t *testing.T) {
 					return &global.SyncResult{Content: "ok", Iterations: 1}, release, nil
 				},
 			})
-			cb := func(context.Context, *tools.ToolResult) {
+			cb := func(context.Context, *toolkit.Result) {
 				mu.Lock()
 				order = append(order, "delivered")
 				mu.Unlock()
