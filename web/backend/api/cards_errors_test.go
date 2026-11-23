@@ -81,9 +81,9 @@ func TestCards_ImportRefusals(t *testing.T) {
 		{"no file", map[string]string{"id": "holmes"}, nil, "file is required"},
 		{"too large", map[string]string{"id": "holmes"}, bytes.Repeat([]byte("a"), 8<<20+1), "The file is larger than 8 MiB."},
 	} {
-		rec := postCardForm(t, mux, tc.fields, tc.file)
-		if rec.Code != http.StatusBadRequest || cardErr(t, rec) != tc.want {
-			t.Errorf("%s = %d %q, want 400 %q", tc.name, rec.Code, rec.Body.String(), tc.want)
+		got := postCardForm(t, mux, tc.fields, tc.file)
+		if got.Code != http.StatusBadRequest || cardErr(t, got) != tc.want {
+			t.Errorf("%s = %d %q, want 400 %q", tc.name, got.Code, got.Body.String(), tc.want)
 		}
 	}
 	rec = postCardForm(t, mux, map[string]string{"id": "holmes"}, []byte(`{"not":"a card"}`))
@@ -128,7 +128,11 @@ func TestCards_LibraryCannotOpen(t *testing.T) {
 	if err := os.Chmod(cfg.DataDir(), 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(cfg.DataDir(), 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(cfg.DataDir(), 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores folder permissions")
 	}

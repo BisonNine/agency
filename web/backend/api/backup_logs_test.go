@@ -4,7 +4,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,7 +23,7 @@ func TestRunBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(cfg.DataDir(), 0o700); err != nil {
+	if err = os.MkdirAll(cfg.DataDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -39,9 +38,7 @@ func TestRunBackup(t *testing.T) {
 		Files   int      `json:"files"`
 		Skipped []string `json:"skipped"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatal(err)
-	}
+	decodeInto(t, rec, &out)
 	wantFolder := filepath.Join(cfg.DataDir(), "backup")
 	if out.Folder != wantFolder || filepath.Dir(out.Archive) != wantFolder {
 		t.Fatalf("folder %q archive %q, want both in %q", out.Folder, out.Archive, wantFolder)
@@ -52,10 +49,10 @@ func TestRunBackup(t *testing.T) {
 	}
 
 	// A file where the backup folder belongs makes the backup fail.
-	if err := os.RemoveAll(wantFolder); err != nil {
+	if err = os.RemoveAll(wantFolder); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(wantFolder, nil, 0o600); err != nil {
+	if err = os.WriteFile(wantFolder, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	rec = serve(mux, http.MethodPost, "/api/backup", "")
@@ -70,25 +67,31 @@ func TestGatewayLogs(t *testing.T) {
 	h := NewHandler(setupTestEnv(t))
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
-	get := func(query string) (map[string]any, *http.Response) {
+	type logsReply struct {
+		Logs  []string `json:"logs"`
+		Count int      `json:"count"`
+		Error string   `json:"error"`
+	}
+	get := func(query string) logsReply {
 		t.Helper()
 		rec := serve(mux, http.MethodGet, "/api/gateway/logs"+query, "")
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d", rec.Code)
 		}
-		return decodeMap(t, rec), rec.Result()
+		if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+			t.Fatalf("Cache-Control = %q, want no-store", cc)
+		}
+		var out logsReply
+		decodeInto(t, rec, &out)
+		return out
 	}
 
 	// Only a process that never enabled file logging has no log path:
 	// logger.DisableFileLogging keeps the last one (a logger defect,
 	// reported separately), so a repeated run starts with one set.
 	if logger.GetLogFilePath() == "" {
-		out, resp := get("")
-		if out["error"] != "file logging is disabled" || out["count"] != float64(0) {
-			t.Fatalf("disabled: %v", out)
-		}
-		if resp.Header.Get("Cache-Control") != "no-store" {
-			t.Fatalf("Cache-Control = %q, want no-store", resp.Header.Get("Cache-Control"))
+		if out := get(""); out.Error != "file logging is disabled" || out.Count != 0 || out.Logs == nil {
+			t.Fatalf("disabled: %+v", out)
 		}
 	}
 
@@ -101,26 +104,20 @@ func TestGatewayLogs(t *testing.T) {
 		logger.WarnCF("test", m, nil)
 	}
 
-	out, resp := get("?lines=1")
-	if resp.Header.Get("Cache-Control") != "no-store" {
-		t.Fatalf("Cache-Control = %q, want no-store", resp.Header.Get("Cache-Control"))
-	}
-	logs, _ := out["logs"].([]any)
-	if out["count"] != float64(1) || len(logs) != 1 || !strings.Contains(logs[0].(string), "alice-three") {
-		t.Fatalf("lines=1: %v", out)
+	out := get("?lines=1")
+	if out.Count != 1 || len(out.Logs) != 1 || !strings.Contains(out.Logs[0], "alice-three") {
+		t.Fatalf("lines=1: %+v", out)
 	}
 	for _, q := range []string{"", "?lines=abc", "?lines=-3", "?lines=999999"} {
-		out, _ = get(q)
-		if n, _ := out["count"].(float64); n < 3 || out["error"] != nil {
-			t.Fatalf("%q: count %v error %v, want every line", q, out["count"], out["error"])
+		if out = get(q); out.Count < 3 || out.Error != "" {
+			t.Fatalf("%q: %+v, want every line", q, out)
 		}
 	}
 
 	if err := os.Remove(logPath); err != nil {
 		t.Fatal(err)
 	}
-	out, _ = get("")
-	if e, _ := out["error"].(string); !strings.Contains(e, "no such file") || out["count"] != float64(0) {
-		t.Fatalf("missing file: %v", out)
+	if out = get(""); !strings.Contains(out.Error, "no such file") || out.Count != 0 {
+		t.Fatalf("missing file: %+v", out)
 	}
 }

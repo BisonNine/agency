@@ -122,7 +122,9 @@ func TestMemoryEndpoints_CorruptStore(t *testing.T) {
 	id := seedCogmemDB(t, configPath)
 	path := memoryDBPath(t, configPath)
 	for _, suffix := range []string{"-wal", "-shm"} {
-		_ = os.Remove(path + suffix)
+		if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
 	}
 	if err := os.WriteFile(path, []byte(strings.Repeat("not a database ", 512)), 0o600); err != nil {
 		t.Fatal(err)

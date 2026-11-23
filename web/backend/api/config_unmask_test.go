@@ -5,6 +5,7 @@ package api
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -130,7 +131,5 @@ func jsonEqual(t *testing.T, a, b []byte) bool {
 	if err := json.Unmarshal(b, &y); err != nil {
 		t.Fatal(err)
 	}
-	xa, _ := json.Marshal(x)
-	ya, _ := json.Marshal(y)
-	return string(xa) == string(ya)
+	return reflect.DeepEqual(x, y)
 }

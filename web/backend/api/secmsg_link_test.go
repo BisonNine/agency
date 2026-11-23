@@ -124,8 +124,11 @@ func startStatusDaemon(t *testing.T, accounts []schema.StatusReply) string {
 			wg.Go(func() {
 				defer utils.CloseQuietly(c)
 				enc := json.NewEncoder(c)
-				if enc.Encode(map[string]any{"jsonrpc": "2.0", "method": schema.MethodHello,
-					"params": schema.InfoParams{Proto: schema.ProtoVersion, Daemon: "fakesigd", Service: "signal"}}) != nil {
+				hello := map[string]any{
+					"jsonrpc": "2.0", "method": schema.MethodHello,
+					"params": schema.InfoParams{Proto: schema.ProtoVersion, Daemon: "fakesigd", Service: "signal"},
+				}
+				if enc.Encode(hello) != nil {
 					return
 				}
 				r := bufio.NewReader(c)

@@ -109,7 +109,9 @@ func TestProbeOpenAICompatibleModel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.WriteHeader(status)
-		_, _ = w.Write([]byte(body))
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer srv.Close()
 

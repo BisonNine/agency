@@ -143,18 +143,26 @@ func TestGatewayAlerts_TailEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.SetAlertsPath(path)
-	out := decodeMap(t, serve(mux, http.MethodGet, "/api/gateway/alerts?lines=1", ""))
-	if logs, _ := out["logs"].([]any); len(logs) != 1 || logs[0] != "last" {
-		t.Fatalf("lines=1 = %v", out)
+	type alertsReply struct {
+		Logs  []string `json:"logs"`
+		Count int      `json:"count"`
+		Error string   `json:"error"`
 	}
-	out = decodeMap(t, serve(mux, http.MethodGet, "/api/gateway/alerts?lines=999999", ""))
-	if out["count"] != float64(2) {
-		t.Fatalf("capped = %v", out)
+	var out alertsReply
+	decodeInto(t, serve(mux, http.MethodGet, "/api/gateway/alerts?lines=1", ""), &out)
+	if len(out.Logs) != 1 || out.Logs[0] != "last" {
+		t.Fatalf("lines=1 = %+v", out)
+	}
+	out = alertsReply{}
+	decodeInto(t, serve(mux, http.MethodGet, "/api/gateway/alerts?lines=999999", ""), &out)
+	if out.Count != 2 {
+		t.Fatalf("capped = %+v", out)
 	}
 	h.SetAlertsPath(t.TempDir())
-	out = decodeMap(t, serve(mux, http.MethodGet, "/api/gateway/alerts", ""))
-	if e, _ := out["error"].(string); e == "" || out["count"] != float64(0) {
-		t.Fatalf("a folder = %v, want an error", out)
+	out = alertsReply{}
+	decodeInto(t, serve(mux, http.MethodGet, "/api/gateway/alerts", ""), &out)
+	if out.Error == "" || out.Count != 0 {
+		t.Fatalf("a folder = %+v, want an error", out)
 	}
 }
 

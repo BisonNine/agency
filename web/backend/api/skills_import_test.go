@@ -126,7 +126,7 @@ func TestImportSkill_Refusals(t *testing.T) {
 			t.Errorf("%s = %d %q, want 400 %q", tc.name, rec.Code, rec.Body.String(), tc.want)
 		}
 	}
-	if entries, _ := os.ReadDir(shared); len(entries) != 0 {
+	if entries, err := os.ReadDir(shared); err == nil && len(entries) != 0 {
 		t.Fatalf("refused imports wrote %d entries", len(entries))
 	}
 }

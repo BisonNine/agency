@@ -84,10 +84,10 @@ func TestDevicePair_ProvisionsOnceAndRendersQR(t *testing.T) {
 	if out["hasToken"] != true || out["enabled"] != true {
 		t.Fatalf("hasToken/enabled = %v/%v, want true/true", out["hasToken"], out["enabled"])
 	}
-	if png, _ := out["qr_png"].(string); !strings.HasPrefix(png, "data:image/png;base64,") {
+	if png, ok := out["qr_png"].(string); !ok || !strings.HasPrefix(png, "data:image/png;base64,") {
 		t.Fatalf("qr_png = %.40q, want a PNG data URL", png)
 	}
-	if ascii, _ := out["qr_ascii"].(string); ascii == "" {
+	if ascii, ok := out["qr_ascii"].(string); !ok || ascii == "" {
 		t.Fatal("qr_ascii is empty")
 	}
 	if *reloads != 1 {
@@ -170,8 +170,8 @@ func TestDeviceSettings_SavesAndReloadsOnChange(t *testing.T) {
 	if d := savedDevice(t, h); d.Host == "0.0.0.0" || *reloads != 0 {
 		t.Fatalf("refused save was applied: host %q reloads %d", d.Host, *reloads)
 	}
-	if rec := serve(mux, http.MethodPost, "/api/devices/pair", ""); rec.Code != http.StatusOK {
-		t.Fatalf("pair: %d", rec.Code)
+	if paired := serve(mux, http.MethodPost, "/api/devices/pair", ""); paired.Code != http.StatusOK {
+		t.Fatalf("pair: %d", paired.Code)
 	}
 
 	rec = serve(mux, http.MethodPost, "/api/devices/settings",

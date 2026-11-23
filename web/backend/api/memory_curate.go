@@ -114,8 +114,9 @@ func validMemoryStatus(status string) bool {
 	switch cogmemstore.Status(status) {
 	case cogmemstore.StatusActive, cogmemstore.StatusRetired:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // applyStatus moves a memory to active or retired. Any other value is an error
