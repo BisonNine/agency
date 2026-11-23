@@ -7,12 +7,13 @@ import (
 	"context"
 	"time"
 
+	"go.bison9.com/agent/toolkit/untrusted"
+
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/classifier"
 	"go.bison9.com/agency/logger"
 	toolsclassifier "go.bison9.com/agency/tools/classifier"
-	"go.bison9.com/agency/tools/untrusted"
 )
 
 // classifierCloseTimeout bounds how long shutdown waits for the classifier

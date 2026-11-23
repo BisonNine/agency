@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"go.bison9.com/agent/toolkit"
+	"go.bison9.com/agent/toolkit/untrusted"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools/untrusted"
 	"go.bison9.com/agency/utils"
 )
 

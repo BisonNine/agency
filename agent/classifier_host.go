@@ -19,6 +19,7 @@ import (
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
+	"go.bison9.com/agent/toolkit/untrusted"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier"
@@ -32,7 +33,6 @@ import (
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
 	toolschedule "go.bison9.com/agency/tools/schedule"
-	"go.bison9.com/agency/tools/untrusted"
 )
 
 // ClassifierHost is ClawEh's side of the classifier package's host contract

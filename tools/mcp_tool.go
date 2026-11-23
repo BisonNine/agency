@@ -10,8 +10,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"go.bison9.com/agent/toolkit"
-
-	"go.bison9.com/agency/tools/untrusted"
+	"go.bison9.com/agent/toolkit/untrusted"
 )
 
 // MCPManager defines the interface for MCP manager operations

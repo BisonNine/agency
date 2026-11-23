@@ -12,13 +12,13 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/toolkit"
+	"go.bison9.com/agent/toolkit/untrusted"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier/classifierfs"
 	"go.bison9.com/agency/config"
 	toolsclassifier "go.bison9.com/agency/tools/classifier"
-	"go.bison9.com/agency/tools/untrusted"
 )
 
 // listTool is a source tool that lists no items.
