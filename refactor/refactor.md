@@ -1826,8 +1826,8 @@ next session must know.
       branches are left). The defects it exposed are fixed and listed in
       the changelog under 0.6.6.
       Open, for the maintainer: the `common_put` `path` description (a
-      golden change); `common_get` writes under `files/` whatever the
-      write subdir and through in-workspace links; the cron store alert
+      golden change); the `common_get` description and its `as` parameter still say `files/` (a
+      golden change); the cron store alert
       against the start failure; `claw acp` cancel aborts nothing; the
       unused `ProposeDomains` / `AutoPromote` settings and the
       `Normalize` repair note in `cogmem/consolidate`.
