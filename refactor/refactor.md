@@ -1768,15 +1768,24 @@ next session must know.
       in-memory manager per session until `ForgetSession`, which is not
       on `agent.Agent`. Needed: a nil `Session.Context` for a turn that
       `BeforeTurn` answers, or a capability interface for `ForgetSession`.
-    - Host work once these are in, no SDK change: the callbacks of
-      `turnHooksFor` as plugins built once per agent, reading the turn's
-      state from the run's context (`withTurnRun`); `/cancel` through the
-      `Run` handle in place of `claimTurnHandle`; `Spec.AsyncResult`;
-      `ctxengine.WithCompactionStartFunc(loop.CompactionStart)` on the
-      cached managers; a bounded context for `AgentInstance.Close`; then
-      the engine files and their tests deleted. `max_tool_iterations` at
-      or below zero runs no iteration on the host engine and the default
-      on `loop` (`Limits.WithDefaults`): confirm config refuses it.
+  - Host adoption done against SDK dce9779 (branch `phase5c3`), which
+    closed the gaps above: every turn kind runs as one `Run` of the
+    instance's SDK agent (`Unqueued`, `Spec.Session` with the host's
+    reference, `Session.Compaction`, `Turn.RecallText`,
+    `WithoutTurnID`, `NoIterations`, `AsyncResult` with the call's
+    context, `EnginePanicError` re-panicked by the host); the callbacks
+    are `turnPlugins`, built once per agent, the turn's state on the
+    run's context (`withHostTurn`); `/cancel` stops the turn through its
+    `Run`; the cached managers report to `loop.CompactionStart`. The
+    host's engine copy and its tests are deleted (the SDK's `loop` tests
+    of the same names cover them); host tests drive real SDK turns.
+    `AgentInstance.Close` closes the agent in the background, never
+    waiting for or stopping its turns. The task registrar is not
+    adopted: the host's registry (`tools/agents`) is unchanged.
+    - Left for the SDK: unit tests of `messagesForModel`, the reasoning
+      backfill and the request-log formatting (their no-copy and
+      unknown-model cases, which a whole turn cannot reach, are no
+      longer pinned anywhere).
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
   - SDK half done (SDK 181800b): endpoint, session-token store,
