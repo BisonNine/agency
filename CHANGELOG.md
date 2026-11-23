@@ -155,6 +155,8 @@
 
 ### Fixed
 
+- **Cancelling in an ACP client now stops the agent's run.** The reply used to
+  keep running and the prompt kept waiting for it.
 - **`claw-auth -debug` no longer writes the OAuth client secret and
   authorization code to its log.** Only the first field of a request was
   masked.

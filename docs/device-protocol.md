@@ -142,6 +142,7 @@ All frames are JSON text frames. Three top-level shapes (discriminated by `type`
 |---|---|
 | `health` | liveness probe → `{status:"ok"}` |
 | `chat.send` | submit a user turn (see lifecycle below) |
+| `chat.abort` | stop the session's running reply, as `/cancel` does (see below) |
 | `node.event` | node ingress envelope (`chat.subscribe` / `chat.unsubscribe`) |
 | `agents.list` | list agents + default/main keys (operator clients) |
 | `chat.history` | stored transcript for a session key (operator clients) |
@@ -289,8 +290,8 @@ during a run. ClawEh keeps every run of a connection open by its `runId` until i
 reply goes to the run it answers (its `runId`); a reply that names no run goes to the
 latest open run.
 
-There is no abort request. To stop a reply, a client sends `/cancel` (or `/cancel all`) as a
-second `chat.send`; it reaches the same command as on any text channel. Its reply ends the
+To stop a reply, a client sends `/cancel` (or `/cancel all`) as a second `chat.send`; it
+reaches the same command as on any text channel. Its reply ends the
 runs started before it on the connection first, each under **its own** `runId`:
 `agent` `stream:"lifecycle"` `data.phase:"end"`, then a `chat` event with `state:"aborted"`
 (no message), and then the `/cancel` run's own reply (`agent:assistant` →
@@ -302,6 +303,15 @@ runs started before it on the connection first, each under **its own** `runId`:
 { "type":"event","event":"chat","payload":{
     "runId":"req-4","sessionKey":"...","seq":1,"state":"aborted" },"seq":<frame> }
 ```
+
+`chat.abort` `{sessionKey, runId?}` does the same: the agent gets a `/cancel` in the
+device's chat and that session, as a run of its own with a server-chosen id, and the
+events above follow. The session key is resolved and refused as `chat.send`'s is. Only
+runs this connection sent to that session can be aborted: with `runId` that run, without
+it all of them. The response is `{ok:true, aborted:true, runIds:[...]}`; when there is
+nothing to abort (no such run, an ended run, a run of another session or connection, a
+run already being aborted, nothing running) it is `{ok:true, aborted:false, runIds:[]}`
+and the agent gets nothing.
 
 Messages sent while the agent is busy are answered together in one reply (to the last one).
 The runs of the earlier ones end first, each under its own `runId`, with `agent` lifecycle end

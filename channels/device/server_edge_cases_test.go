@@ -584,7 +584,7 @@ func TestStreamDelta_NothingToCorrelate(t *testing.T) {
 	}
 	lc := testLiveConn(t, "dev1")
 	s.conns.Store(lc.chatID, lc)
-	lc.startRun("c1", true)
+	lc.startRun("c1", "", true)
 	if s.StreamDelta(lc.chatID, "", "hi") {
 		t.Fatal("StreamDelta with only a /cancel run open reported sent")
 	}
@@ -598,7 +598,7 @@ func TestStreamDelta_NothingToCorrelate(t *testing.T) {
 func TestRunBounds(t *testing.T) {
 	lc := &liveConn{}
 	for i := range maxOpenRuns + 2 {
-		lc.startRun("run"+string(rune('a'+i)), false)
+		lc.startRun("run"+string(rune('a'+i)), "", false)
 	}
 	if len(lc.runs) != maxOpenRuns || lc.runs[0].id != "runc" {
 		t.Fatalf("open runs = %d (first %q), want %d starting at runc", len(lc.runs), lc.runs[0].id, maxOpenRuns)
@@ -629,8 +629,8 @@ func TestDeliverReply_MergedLogged(t *testing.T) {
 	s.opts.LogMessages = true
 	lc := testLiveConn(t, "dev1")
 	s.conns.Store(lc.chatID, lc)
-	lc.startRun("r1", false)
-	lc.startRun("r2", false)
+	lc.startRun("r1", "", false)
+	lc.startRun("r2", "", false)
 	if err := s.DeliverReply(context.Background(), lc.chatID, "r2", "done", []string{"r1"}, bus.OutcomeError); err != nil {
 		t.Fatalf("DeliverReply: %v", err)
 	}

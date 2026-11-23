@@ -52,6 +52,9 @@ Streamed assistant text (`agent` `stream:"assistant"`, `data.delta`) is forwarde
 as additive ACP `agent_message_chunk` notifications. `chat` deltas are ignored to
 avoid double text (the `agent` stream already carries it).
 
+`session/cancel` stops the agent's reply as `/cancel` does (`chat.abort`), and the
+prompt returns `{stopReason:"cancelled"}`.
+
 ## Auth & pairing (the local hop)
 
 The bridge authenticates to ClawEh **as a paired device**, exactly like the
@@ -110,9 +113,6 @@ logging goes to `$CLAW_HOME/logs/claw.log`.
 - **One conversation per bridge.** The bridge connects as a single node device, so
   all ACP sessions map to that device's `main` conversation (matching how the R1
   behaves today). Per-ACP-session isolation is not implemented.
-- **Mid-turn cancel is limited.** The ACP library dispatches requests serially on
-  its read loop, so a `session/cancel` sent while a `session/prompt` is in flight
-  is not processed until the prompt returns. Clients abort via stdin EOF.
 - **No `session/load`/`list`/`fork`/`resume`.** These return errors; `set_*`
   methods are accepted as no-ops.
 
@@ -123,6 +123,9 @@ logging goes to `$CLAW_HOME/logs/claw.log`.
 - `internal/gateway/acp_bridge.go` — `acpBridge` (the `acp.Handler`): forwards
   prompts via `chat.send` and translates ClawEh's `agent`/`chat` events into ACP
   `session/update` notifications + turn completion.
+- `internal/gateway/acp_input.go` — reads the client's input beside the ACP
+  server, which handles one request at a time, so `session/cancel` is handled
+  while a prompt runs.
 - `internal/gateway/acp_bridge_test.go` — unit tests over the translation logic
   with a fake ClawEh (streamed, chat-final, stray-event, empty-prompt paths).
 - `internal/gateway/acp_pair_test.go`, `acp_integration_test.go` — the

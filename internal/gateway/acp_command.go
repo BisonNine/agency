@@ -118,7 +118,9 @@ func acpCmd(debug bool, wsURL string, autoPair bool) error {
 	defer utils.CloseQuietly(client)
 
 	br = newACPBridge(&abortSessionKeyClient{Client: client})
-	server := acplib.NewServer(br, os.Stdin, os.Stdout)
+	// session/cancel is handled as it arrives, not after the prompt it cancels.
+	input := acpInput(os.Stdin, func(n acplib.CancelNotification) { br.Cancel(ctx, n) })
+	server := acplib.NewServer(br, input, os.Stdout)
 	br.setNotifier(server)
 
 	logger.InfoC("acp", "ACP stdio server ready (bridged to "+app.ShortName()+")")

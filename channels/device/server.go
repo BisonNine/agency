@@ -132,8 +132,14 @@ const (
 // deviceRun is one run of a connection: the reply to one chat.send.
 type deviceRun struct {
 	id string
-	// cancel: the message was /cancel (or /cancel all).
-	cancel bool
+	// scope is the session scope key the run's message was sent to; empty
+	// for a device text command answered by the channel itself.
+	scope string
+	// cancel: the message was /cancel (or /cancel all), typed or sent for a
+	// chat.abort. aborting: a chat.abort already sent the /cancel that ends
+	// this run.
+	cancel   bool
+	aborting bool
 	// Partial-text streaming state. streamed: deltas were emitted for the
 	// run; text accumulates the assistant text sent so far. emitChatReply
 	// consults streamed to avoid re-sending the assistant text.
@@ -147,13 +153,14 @@ type deviceRun struct {
 	agentSeq uint64
 }
 
-// startRun opens run id; the oldest open run is forgotten past maxOpenRuns.
-func (lc *liveConn) startRun(id string, cancel bool) {
+// startRun opens run id, sent to session scope; the oldest open run is
+// forgotten past maxOpenRuns.
+func (lc *liveConn) startRun(id, scope string, cancel bool) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 	lc.runs = slices.DeleteFunc(lc.runs, func(r *deviceRun) bool { return r.id == id })
 	lc.ended = slices.DeleteFunc(lc.ended, func(e string) bool { return e == id })
-	lc.runs = append(lc.runs, &deviceRun{id: id, cancel: cancel})
+	lc.runs = append(lc.runs, &deviceRun{id: id, scope: scope, cancel: cancel})
 	if n := len(lc.runs); n > maxOpenRuns {
 		lc.runs = slices.Delete(lc.runs, 0, n-maxOpenRuns)
 	}
@@ -263,7 +270,7 @@ func NewServer(store *Store, opts ServerOptions) *Server {
 			},
 		},
 		// Advertised surface — kept honest to what is implemented. Expanded by phase.
-		methods:  []string{"connect", "health", "chat.send", "node.event"},
+		methods:  []string{"connect", "health", "chat.send", "chat.abort", "node.event"},
 		events:   []string{gatewayproto.EventConnectChallenge, "tick", "chat", "agent"},
 		throttle: newAuthThrottle(),
 	}
@@ -951,6 +958,8 @@ func (s *Server) dispatch(ctx context.Context, lc *liveConn, req gatewayproto.Re
 		lc.cw.send(gatewayproto.NewOKResponse(req.ID, map[string]any{"status": "ok"}))
 	case "chat.send":
 		s.handleChatSend(ctx, lc, req)
+	case "chat.abort":
+		s.handleChatAbort(ctx, lc, req)
 	case "node.event":
 		s.handleNodeEvent(lc, req)
 	case "agents.list":
@@ -1014,7 +1023,7 @@ func (s *Server) handleChatSend(ctx context.Context, lc *liveConn, req gatewaypr
 		lc.sessionKey = p.SessionKey
 	}
 	lc.mu.Unlock()
-	lc.startRun(runID, cmd == "cancel")
+	lc.startRun(runID, scopeKey, cmd == "cancel")
 
 	if s.opts.LogMessages {
 		logger.InfoCF("device", "chat.send in", map[string]any{
@@ -1061,6 +1070,69 @@ func (s *Server) handleChatSend(ctx context.Context, lc *liveConn, req gatewaypr
 	if s.inbound != nil {
 		go s.inbound(lc.deviceID, lc.chatID, p.Message, runID, scopeKey, attachments)
 	}
+}
+
+// handleChatAbort stops a session's running reply as a /cancel sent from
+// this device does: the agent gets a /cancel as a run of its own, whose reply
+// ends the stopped runs as aborted and then says what was stopped. Only runs
+// this connection started in that session can be aborted: with runId that
+// run, without it any. When there is none (an ended or unknown run, a run of
+// another session, nothing running) the request succeeds with aborted false
+// and nothing is sent to the agent. The session key is resolved, and refused,
+// as chat.send's is.
+func (s *Server) handleChatAbort(ctx context.Context, lc *liveConn, req gatewayproto.RequestFrame) {
+	var p struct {
+		SessionKey string `json:"sessionKey"`
+		RunID      string `json:"runId"`
+	}
+	if json.Unmarshal(req.Params, &p) != nil {
+		lc.cw.send(gatewayproto.NewErrorResponse(req.ID,
+			gatewayproto.NewError(gatewayproto.CodeInvalidRequest, "invalid chat.abort params", nil)))
+		return
+	}
+	requested := p.SessionKey
+	if requested == "" {
+		lc.mu.Lock()
+		requested = lc.sessionKey
+		lc.mu.Unlock()
+	}
+	scopeKey, err := s.sessionScopeKeyFor(ctx, lc, requested)
+	if err != nil {
+		s.refuseSessionKey(lc, req.ID, err)
+		return
+	}
+	runIDs := lc.abortableRuns(scopeKey, p.RunID)
+	if len(runIDs) == 0 {
+		lc.cw.send(gatewayproto.NewOKResponse(req.ID, map[string]any{"ok": true, "aborted": false, "runIds": []string{}}))
+		return
+	}
+	cancelRunID := randomToken(8)
+	lc.startRun(cancelRunID, scopeKey, true)
+	logger.InfoCF("device", "chat.abort: sending /cancel", map[string]any{
+		"deviceId": lc.deviceID, "sessionKey": scopeKey, "runIds": runIDs, "cancelRunId": cancelRunID,
+	})
+	lc.cw.send(gatewayproto.NewOKResponse(req.ID, map[string]any{"ok": true, "aborted": true, "runIds": runIDs}))
+	if s.inbound != nil {
+		go s.inbound(lc.deviceID, lc.chatID, "/cancel", cancelRunID, scopeKey, nil)
+	}
+}
+
+// abortableRuns returns the open runs a chat.abort for session scope stops
+// and marks them as being aborted, so a repeated abort is a no-op: runID's
+// run, or with no runID every run, sent to scope, that is not a /cancel and
+// not already being aborted.
+func (lc *liveConn) abortableRuns(scope, runID string) []string {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	var ids []string
+	for _, r := range lc.runs {
+		if r.cancel || r.aborting || r.scope != scope || (runID != "" && r.id != runID) {
+			continue
+		}
+		r.aborting = true
+		ids = append(ids, r.id)
+	}
+	return ids
 }
 
 // maxDeviceAttachmentBytes caps a single decoded inbound attachment to keep a

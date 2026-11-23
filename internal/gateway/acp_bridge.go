@@ -184,24 +184,23 @@ func (br *acpBridge) Prompt(ctx context.Context, req acplib.PromptRequest) (*acp
 	}
 }
 
-// Cancel aborts the gateway run. NOTE: the ACP library dispatches requests
-// serially, so a session/cancel sent mid-turn is only read after Prompt returns;
-// mid-turn abort is therefore not effective in v1 (documented).
+// Cancel ends the session's prompts with the cancelled stop reason and asks
+// the gateway to abort their runs (chat.abort, which stops the turn as
+// /cancel does). The prompt is ended first, so the run's own end event
+// cannot turn it into an ordinary end of turn.
 func (br *acpBridge) Cancel(ctx context.Context, req acplib.CancelNotification) {
 	br.mu.Lock()
-	runs := make([]string, 0, len(br.runs))
+	runs := make(map[string]*bridgeRun)
 	for id, r := range br.runs {
 		if r.sessionID == req.SessionID {
-			runs = append(runs, id)
+			runs[id] = r
 		}
 	}
 	br.mu.Unlock()
-	for _, id := range runs {
+	for id, r := range runs {
+		r.finish(acplib.StopReasonCancelled)
 		if err := br.client.ChatAbort(ctx, protocol.ChatAbortParams{RunID: id}); err != nil {
 			logger.WarnCF("acp", "chat abort failed", map[string]any{"runId": id, "error": err.Error()})
-		}
-		if r, ok := br.runByID(id); ok {
-			r.finish(acplib.StopReasonCancelled)
 		}
 	}
 }

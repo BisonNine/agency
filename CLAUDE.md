@@ -1207,7 +1207,10 @@ Hard-won learnings (don't relearn these):
   message (`StreamCapable.StreamDelta` takes the message id); the reply to a `/cancel` first
   ends every older run with `agent` lifecycle end and `chat` state `aborted` under its own id
   (`emitEnd`); a reply for a run that has ended (the last 64 remembered) is dropped, so every
-  run ends once. No abort request exists.
+  run ends once. `chat.abort` (`handleChatAbort`) sends the agent that `/cancel` as a run of
+  its own, for this connection's open runs in the session (`runId`: only that one); with
+  none it answers `aborted:false` and sends nothing. `claw acp` reads `session/cancel`
+  beside the serial ACP server (`acpInput`) and sends `chat.abort`.
 - **Order: `agent` stream BEFORE `chat` final.** `emitChatReply` emits `agent:assistant` →
   `agent:lifecycle/end` → `chat:final`. If `chat`/`final` goes first, the R1 marks the turn
   complete and paints the transcript **without speaking** — reply shows but is silent. Sending
