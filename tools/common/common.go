@@ -103,35 +103,13 @@ func (l location) refuse(err error) error {
 
 // copyFile copies src to dst, each confined to its folder, creating
 // intermediate folders for dst with exactly modes.Dir and dst with exactly
-// modes.File (the destination area's modes), whatever the umask. A source
-// with a scope is first opened through it, so a path the file tools would
-// refuse is refused with their words, and must be the file opened in its
-// folder.
+// modes.File (the destination area's modes), whatever the umask.
 func copyFile(src, dst location, modes config.Modes) error {
-	var scoped *os.File
-	if src.scope != nil {
-		f, err := src.scope.Open(filepath.Join(src.base, src.rel))
-		if err != nil {
-			return err
-		}
-		defer utils.CloseQuietly(f)
-		scoped = f
-	}
-	srcRoot, err := os.OpenRoot(src.base)
+	in, err := openSource(src)
 	if err != nil {
 		return err
 	}
-	defer utils.CloseQuietly(srcRoot)
-	in, err := srcRoot.Open(src.rel)
-	if err != nil {
-		return src.refuse(err)
-	}
 	defer utils.CloseQuietly(in)
-	if scoped != nil {
-		if sameErr := sameFile(scoped, in); sameErr != nil {
-			return fmt.Errorf("%s: %w", src.shown, sameErr)
-		}
-	}
 
 	dstRoot, err := os.OpenRoot(dst.base)
 	if err != nil {
@@ -154,6 +132,38 @@ func copyFile(src, dst location, modes config.Modes) error {
 		return err
 	}
 	return out.Close()
+}
+
+// openSource opens src inside its folder. A source with a scope is first
+// opened through it, so a path the file tools would refuse is refused with
+// their words, and must be the file opened in its folder. The caller closes
+// the file.
+func openSource(src location) (*os.File, error) {
+	var scoped *os.File
+	if src.scope != nil {
+		f, err := src.scope.Open(filepath.Join(src.base, src.rel))
+		if err != nil {
+			return nil, err
+		}
+		defer utils.CloseQuietly(f)
+		scoped = f
+	}
+	srcRoot, err := os.OpenRoot(src.base)
+	if err != nil {
+		return nil, err
+	}
+	defer utils.CloseQuietly(srcRoot)
+	in, err := srcRoot.Open(src.rel)
+	if err != nil {
+		return nil, src.refuse(err)
+	}
+	if scoped != nil {
+		if sameErr := sameFile(scoped, in); sameErr != nil {
+			utils.CloseQuietly(in)
+			return nil, fmt.Errorf("%s: %w", src.shown, sameErr)
+		}
+	}
+	return in, nil
 }
 
 // sameFile returns an error unless a and b are the same file.
@@ -251,9 +261,10 @@ func listCommon(commonDir string, args map[string]any) *toolspec.Result {
 	return &toolspec.Result{ForLLM: strings.TrimRight(b.String(), "\n")}
 }
 
-// getCommon copies commonDir/<name> into <workspace>/files/<as|basename(name)>,
-// creating what it writes with the workspace's modes.
-func getCommon(commonDir, workspace string, workspaceModes config.Modes, args map[string]any) *toolspec.Result {
+// getCommon copies commonDir/<name> into the agent's write folder as
+// <as|basename(name)>. It writes only what writer, the agent's file-write
+// permission, allows, and the file takes exactly fileMode.
+func getCommon(commonDir, workspace string, fileMode os.FileMode, writer *files.Writer, args map[string]any) *toolspec.Result {
 	name, ok := strArg(args, "name")
 	if !ok {
 		return errResult("common_get: 'name' is required")
@@ -270,24 +281,29 @@ func getCommon(commonDir, workspace string, workspaceModes config.Modes, args ma
 	if as, ok := strArg(args, "as"); ok {
 		dstRel = as
 	}
-	// Writes into the agent workspace land under files/, matching the
-	// read-only-workspace default.
-	filesRoot := filepath.Join(workspace, "files")
-	dstAbs, err := confine(filesRoot, dstRel)
+	// as is a path inside the agent's write folder; the file tools decide
+	// whether the agent may write there.
+	writeFolder := filepath.Join(workspace, writer.Folder())
+	dstAbs, err := confine(writeFolder, dstRel)
 	if err != nil {
 		return errResult("common_get: %v", err)
 	}
+	dst := mustRel(workspace, dstAbs)
 
 	src := location{base: commonDir, rel: mustRel(commonDir, srcAbs), shown: name, area: "the common folder"}
-	dst := location{base: workspace, rel: mustRel(workspace, dstAbs), shown: filepath.Join("files", dstRel), area: "the workspace"}
-	if err := copyFile(src, dst, workspaceModes); err != nil {
+	in, err := openSource(src)
+	if err != nil {
 		return copyResult("common_get", err)
 	}
-	rel, relErr := filepath.Rel(workspace, dstAbs)
-	if relErr != nil {
-		rel = dstAbs
+	data, err := io.ReadAll(in)
+	utils.CloseQuietly(in)
+	if err != nil {
+		return copyResult("common_get", err)
 	}
-	return &toolspec.Result{ForLLM: fmt.Sprintf("Copied %q to workspace %s", name, rel)}
+	if err := writer.WriteFile(dst, data, fileMode); err != nil {
+		return copyResult("common_get", err)
+	}
+	return &toolspec.Result{ForLLM: fmt.Sprintf("Copied %q to workspace %s", name, dst)}
 }
 
 // putCommon copies <workspace>/<path> into commonDir/<as|basename(path)>,

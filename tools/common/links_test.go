@@ -12,6 +12,7 @@ import (
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/tools/files"
 )
 
 // at is path as a location confined to its own folder.
@@ -24,6 +25,7 @@ func at(path string) location {
 type linkFixture struct {
 	ws, common, outside string
 	defs                []toolspec.ToolDefinition
+	fileDefs            []toolspec.ToolDefinition // the agent's file tools
 }
 
 func newLinkFixture(t *testing.T) *linkFixture {
@@ -32,8 +34,37 @@ func newLinkFixture(t *testing.T) *linkFixture {
 	mustWriteFile(t, filepath.Join(f.outside, "secret"), "secret")
 	mustWriteFile(t, filepath.Join(f.common, "doc.md"), "from common")
 	mustWriteFile(t, filepath.Join(f.ws, "files", "notes.md"), "notes")
-	f.defs = GlobalProvider.RegisterTools(newDeps(t, f.common, f.ws, nil))
+	deps := newDeps(t, f.common, f.ws, nil)
+	t.Cleanup(func() {
+		files.SetReadScopeSubdirs(nil)
+		files.SetAllowedFoldersForWorkspace(f.ws, nil)
+	})
+	f.fileDefs = files.GlobalProvider.RegisterTools(deps)
+	f.defs = GlobalProvider.RegisterTools(deps)
 	return f
+}
+
+// wantGetRefused fails unless common_get refuses to write as with the
+// refusal file_write gives for the same path, prefixed "common_get: ", and
+// nothing is written there.
+func (f *linkFixture) wantGetRefused(t *testing.T, as string) {
+	t.Helper()
+	path := filepath.Join("files", as)
+	want := "common_get: " + writeRefusal(t, f.fileDefs, path)
+	wantLinkRefusal(t, as, f.run(t, "get", map[string]any{"name": "doc.md", "as": as}), want)
+	if got, err := os.ReadFile(filepath.Join(f.ws, path)); err == nil && string(got) == "from common" {
+		t.Errorf("%s: written", as)
+	}
+}
+
+// writeRefusal is the refusal the file tools in defs give for writing path.
+func writeRefusal(t *testing.T, defs []toolspec.ToolDefinition, path string) string {
+	t.Helper()
+	res := call(t, findTool(t, defs, "write"), map[string]any{"path": path, "content": "x", "overwrite": true})
+	if !res.IsError || !toolkit.IsExpectedRefusal(res.Err) {
+		t.Fatalf("file_write %s: want a refusal, got %v %q", path, res.IsError, res.ForLLM)
+	}
+	return res.Err.Error()
 }
 
 func (f *linkFixture) link(t *testing.T, target, at string) {
@@ -86,9 +117,9 @@ func TestPut_LinkOutOfWorkspaceRefused(t *testing.T) {
 	f.link(t, "../../"+filepath.Base(f.outside)+"/secret", filepath.Join(f.ws, "files", "rel")) // relative, still outside
 
 	wantLinkRefusal(t, "file link", f.run(t, "put", map[string]any{"path": "files/link", "as": "leak"}),
-		"common_put: access denied: files/link resolves outside the workspace")
+		"common_put: access denied: "+filepath.Join(f.ws, "files", "link")+" resolves outside the workspace")
 	wantLinkRefusal(t, "folder link", f.run(t, "put", map[string]any{"path": "files/dir/secret", "as": "leak"}),
-		"common_put: access denied: files/dir/secret resolves outside the workspace")
+		"common_put: access denied: "+filepath.Join(f.ws, "files", "dir", "secret")+" resolves outside the workspace")
 	if res := f.run(t, "put", map[string]any{"path": "files/rel", "as": "leak"}); !res.IsError {
 		t.Errorf("relative link out: %s", res.ForLLM)
 	}
@@ -98,18 +129,15 @@ func TestPut_LinkOutOfWorkspaceRefused(t *testing.T) {
 }
 
 // common_get never writes outside the workspace through a link: an existing
-// destination link, or a linked parent folder.
+// destination link, or a linked parent folder. It refuses as file_write does.
 func TestGet_LinkOutOfWorkspaceRefused(t *testing.T) {
 	f := newLinkFixture(t)
 	f.link(t, filepath.Join(f.outside, "secret"), filepath.Join(f.ws, "files", "link"))
 	f.link(t, f.outside, filepath.Join(f.ws, "files", "dir"))
 
-	wantLinkRefusal(t, "destination link", f.run(t, "get", map[string]any{"name": "doc.md", "as": "link"}),
-		"common_get: access denied: files/link resolves outside the workspace")
-	wantLinkRefusal(t, "parent link", f.run(t, "get", map[string]any{"name": "doc.md", "as": "dir/secret"}),
-		"common_get: access denied: files/dir/secret resolves outside the workspace")
-	wantLinkRefusal(t, "new file under a parent link", f.run(t, "get", map[string]any{"name": "doc.md", "as": "dir/new/x.md"}),
-		"common_get: access denied: files/dir/new/x.md resolves outside the workspace")
+	f.wantGetRefused(t, "link")
+	f.wantGetRefused(t, "dir/secret")
+	f.wantGetRefused(t, "dir/new/x.md")
 	f.secretIntact(t)
 	if _, err := os.Stat(filepath.Join(f.outside, "new")); !os.IsNotExist(err) {
 		t.Errorf("a folder was created outside the workspace: %v", err)
@@ -136,7 +164,9 @@ func TestCommonFolderLinkRefused(t *testing.T) {
 	f.secretIntact(t)
 }
 
-// Links that stay inside their folder keep working, both ways.
+// Links that stay inside the folders the tools may use keep working, both
+// ways; a link out of the write folder into the rest of the workspace is
+// refused to common_get, as the file tools refuse it.
 func TestLinksInsideKeepWorking(t *testing.T) {
 	f := newLinkFixture(t)
 	mustWriteFile(t, filepath.Join(f.ws, "tasks", "t.json"), "task")
@@ -156,12 +186,18 @@ func TestLinksInsideKeepWorking(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(f.ws, "files", "alias.md")); err != nil || !strings.Contains(string(got), "from common") {
 		t.Errorf("workspace copy: %q %v", got, err)
 	}
-	res := f.run(t, "get", map[string]any{"name": "doc.md", "as": "tasks/from-common.md"})
-	if res.IsError {
-		t.Fatalf("get into a linked folder inside the workspace: %s", res.ForLLM)
+	mustWriteFile(t, filepath.Join(f.ws, "files", "real", "keep.md"), "keep")
+	f.link(t, "real", filepath.Join(f.ws, "files", "alias"))
+	res := f.run(t, "get", map[string]any{"name": "doc.md", "as": "alias/from-common.md"})
+	if res.IsError || res.ForLLM != `Copied "doc.md" to workspace files/alias/from-common.md` {
+		t.Fatalf("get through a folder link inside files/: %s", res.ForLLM)
 	}
-	if got, err := os.ReadFile(filepath.Join(f.ws, "tasks", "from-common.md")); err != nil || string(got) != "from common" {
+	if got, err := os.ReadFile(filepath.Join(f.ws, "files", "real", "from-common.md")); err != nil || string(got) != "from common" {
 		t.Errorf("copy through the inside folder link: %q %v", got, err)
+	}
+	f.wantGetRefused(t, "tasks/from-common.md")
+	if _, err := os.Stat(filepath.Join(f.ws, "tasks", "from-common.md")); !os.IsNotExist(err) {
+		t.Errorf("common_get wrote into tasks/: %v", err)
 	}
 }
 

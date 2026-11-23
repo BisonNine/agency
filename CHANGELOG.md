@@ -66,6 +66,10 @@
 - **BREAKING: `common_put` copies only a file the agent's file tools may read.**
   A path outside the read scope, such as `sessions/`, is refused with the file
   tools' message.
+- **BREAKING: `common_get` writes only where the agent's file tools may write.**
+  It writes into `agents.defaults.workspace_write_subdir` (default `files`)
+  rather than always `files/`, and a link leading out of that folder is
+  refused with the file tools' message.
 - **BREAKING: an agent whose models are all disabled or unusable no longer
   runs on the default model.** This covers a list whose only entries are
   disabled models or empty names. Its turns now fail with "no model

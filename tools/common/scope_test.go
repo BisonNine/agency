@@ -26,14 +26,23 @@ type scopeFixture struct {
 
 func newScopeFixture(t *testing.T, readSubdirs []string, restrict bool, agentCfg *config.AgentConfig) *scopeFixture {
 	t.Helper()
+	return newScopeFixtureWith(t, agentCfg, func(cfg *config.Config) {
+		cfg.Agents.Defaults.RestrictToWorkspace = restrict
+		cfg.Agents.Defaults.WorkspaceReadSubdirs = readSubdirs
+	})
+}
+
+// newScopeFixtureWith is the fixture with the default config changed by
+// configure.
+func newScopeFixtureWith(t *testing.T, agentCfg *config.AgentConfig, configure func(*config.Config)) *scopeFixture {
+	t.Helper()
 	f := &scopeFixture{ws: t.TempDir(), common: t.TempDir()}
 	for _, p := range []string{"files/notes.md", "skills/s/SKILL.md", "sessions/alice.jsonl", "maestro/plan.md", "COGMEM.md"} {
 		mustWriteFile(t, filepath.Join(f.ws, p), "body of "+p)
 	}
 	cfg := config.DefaultConfig()
 	cfg.Agents.CommonDir = f.common
-	cfg.Agents.Defaults.RestrictToWorkspace = restrict
-	cfg.Agents.Defaults.WorkspaceReadSubdirs = readSubdirs
+	configure(cfg)
 	deps := toolspec.Deps{Cfg: cfg, Host: tools.ToolDeps{Workspace: f.ws, AgentCfg: agentCfg}}
 	t.Cleanup(func() {
 		files.SetReadScopeSubdirs(nil)

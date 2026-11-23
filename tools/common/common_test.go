@@ -19,12 +19,16 @@ import (
 	"go.bison9.com/agency/tools"
 )
 
-// newDeps builds a toolspec.Deps with a config whose common dir is commonDir and a
-// ToolDeps for an agent rooted at workspace with the given per-agent config.
+// newDeps builds a toolspec.Deps with a config whose common dir is commonDir,
+// confining the agent to its workspace and its writes to files/ as the
+// defaults do, and a ToolDeps for an agent rooted at workspace with the given
+// per-agent config.
 func newDeps(t *testing.T, commonDir, workspace string, agentCfg *config.AgentConfig) toolspec.Deps {
 	t.Helper()
 	cfg := &config.Config{}
 	cfg.Agents.CommonDir = commonDir
+	cfg.Agents.Defaults.RestrictToWorkspace = true
+	cfg.Agents.Defaults.WorkspaceWriteSubdir = "files"
 	return toolspec.Deps{
 		Cfg:  cfg,
 		Host: tools.ToolDeps{Workspace: workspace, AgentCfg: agentCfg},

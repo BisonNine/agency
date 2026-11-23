@@ -107,6 +107,12 @@ func TestCopyFailures(t *testing.T) {
 	if res := call(t, findTool(t, defs, "get"), map[string]any{"name": "missing.txt"}); !res.IsError || !strings.HasPrefix(res.ForLLM, "common_get: copy failed: ") {
 		t.Errorf("get missing: %+v", res)
 	}
+	if err := os.Mkdir(filepath.Join(commonDir, "folder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if res := call(t, findTool(t, defs, "get"), map[string]any{"name": "folder"}); !res.IsError || !strings.HasPrefix(res.ForLLM, "common_get: copy failed: ") {
+		t.Errorf("get a folder: %+v", res)
+	}
 	if res := call(t, findTool(t, defs, "put"), map[string]any{"path": "missing.txt"}); !res.IsError || !strings.HasPrefix(res.ForLLM, "common_put: copy failed: ") {
 		t.Errorf("put missing: %+v", res)
 	}

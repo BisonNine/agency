@@ -55,6 +55,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 	var (
 		commonDir, workspace string
 		reader               *files.Reader
+		writer               = files.NewWriter(nil, "")
 	)
 	workspaceModes := config.Modes{Dir: config.DefaultDirMode, File: config.DefaultFileMode}
 	commonModes := workspaceModes
@@ -64,6 +65,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 		workspaceModes = c.AgentModes(workspace)
 		commonModes = c.PermissionModes(config.AreaCommon)
 		reader = files.NewReader(c, workspace)
+		writer = files.NewWriter(c, workspace)
 	}
 
 	return []toolspec.ToolDefinition{
@@ -84,7 +86,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 			Category:     "common",
 			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return getCommon(commonDir, workspace, workspaceModes, call.Args), nil
+				return getCommon(commonDir, workspace, workspaceModes.File, writer, call.Args), nil
 			},
 		},
 		{
