@@ -438,7 +438,7 @@ func TestEngine_EventGuarantees(t *testing.T) {
 			finished[fin.Call.ID] = fin.Result
 		}
 	}
-	if len(finished) != 2 || finished["c2"] == nil || !errors.As(finished["c2"].Err, new(*toolPanicError)) {
+	if len(finished) != 2 || finished["c2"] == nil || !errors.As(finished["c2"].Err, new(*hook.ToolPanicError)) {
 		t.Fatalf("finished = %v, want both calls, c2 as a panic", finished)
 	}
 }

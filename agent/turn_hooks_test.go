@@ -123,7 +123,7 @@ func TestRecordToolCall_StatsThenAudit(t *testing.T) {
 	recordToolCall(context.Background(), agent, opts, hook.ToolCallFinished{
 		Call: hook.ToolCall{ID: "c2", Name: "boom"},
 		Result: &tools.ToolResult{
-			Err:    &toolPanicError{tool: "boom", value: "Bob's bug"},
+			Err:    &hook.ToolPanicError{Tool: "boom", Value: "Bob's bug"},
 			ForLLM: "Tool boom failed with an internal error.",
 		},
 	})
