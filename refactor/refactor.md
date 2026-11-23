@@ -1778,16 +1778,23 @@ next session must know.
       or below zero runs no iteration on the host engine and the default
       on `loop` (`Limits.WithDefaults`): confirm config refuses it.
 - [ ] Phase 5d: example host
-- [ ] Phase 6: `mcphost`
-  - SDK half done (SDK 181800b): endpoint, session-token store,
-    authenticator seam, CLI helper; its report has the host adoption
-    checklist. Differences the host adoption must reconcile against
-    `tests/test_mcpserver.sh` before anything lands: a tool panic
-    returns a tool error instead of a protocol error; the nil-result
-    text; published names follow toolkit's no-shadow rule; the session
-    key is on every tool's context.
-  - SDK extras landed for 5c: none yet for the in-memory session store
-    (branch `memstore`, in progress).
+- [x] Phase 6: `mcphost` (SDK 181800b … 520fbb6; host 41fcf63, 141e52e).
+      Both MCP endpoints are `mcphost.Endpoint`s mounted by `mcpserver`;
+      session tokens are in `mcphost.Store`; the prompt layer is
+      `mcphost.TokenPrompt`. The host keeps the listener, paths, TLS, the
+      Host check, the ACL, service tokens and bus publishing. Three
+      fixtures recorded from the code BEFORE the switch pin it:
+      `mcpserver/testdata/wire_parity.json` (48 HTTP exchanges),
+      `call_effects.json` (responses, tally, bus messages, log lines) and
+      `async_effects.json` (late results). One intended change (changelog
+      0.6.6, Fixed): on `/mcp` a client sees its own agent's description
+      and hidden namespaces for a tool two agents both have. The real-CLI
+      tests passed (`CLAW_TEST_CLI=1`).
+  - Left open, low risk, each needs a small SDK change: a panic in a
+    HOST callback during an MCP call is a tool error, not the -32603
+    protocol error, and records no statistic; a tool whose schema fails
+    to encode still claims its published name; the "registered tool" /
+    "removed tools" debug lines are gone.
 - [x] Background shell (`refactor/bash.md`): SDK `toolbox/shell`
       (2d85433, 34d16bd); host mount f4f9306, old tool removed. The
       capabilities golden changed once, for `shell_ctrl` (the fixture
