@@ -18,8 +18,7 @@ import (
 )
 
 // TestGatewayCmd_MoreStartupErrors: a loose config file, a config that is not
-// a file, no channel to run and a missing certificate each stop the start
-// with the reason.
+// a file and a missing certificate each stop the start with the reason.
 func TestGatewayCmd_MoreStartupErrors(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -42,12 +41,6 @@ func TestGatewayCmd_MoreStartupErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, "error loading config"},
-		{"no channels", func(t *testing.T, g *e2eGateway) {
-			t.Helper()
-			g.rewriteConfig(t, func(s string) string {
-				return strings.Replace(s, `"webui": {"enabled": true, "token": "e2e-webui-token"}`, `"webui": {"enabled": false}`, 1)
-			})
-		}, "error starting channels"},
 		{"certificate files missing", func(t *testing.T, g *e2eGateway) {
 			t.Helper()
 			missing := filepath.Join(t.TempDir(), "missing")

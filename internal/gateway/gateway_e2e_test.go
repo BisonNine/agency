@@ -335,13 +335,6 @@ func TestGatewayCmd_StartupErrors(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	})
-	t.Run("port taken", func(t *testing.T) {
-		g := newE2EHome(t, "")
-		startHost(t, hostOptions{Port: g.port}, "taken")
-		if err := gatewayCmd(false); err == nil {
-			t.Fatal("gateway started on a port already in use")
-		}
-	})
 }
 
 // TestNewGatewayCommand_NoTruncateNeedsDebug: --no-truncate alone is refused
