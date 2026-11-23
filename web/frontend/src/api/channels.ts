@@ -119,6 +119,23 @@ export async function getIgnoredAllowedFolders(): Promise<
   return res.ignored ?? []
 }
 
+// MissingSharedKnowledge is a saved shared knowledge base whose folder is
+// missing or not a folder: the agent does not have it.
+export interface MissingSharedKnowledge {
+  agent: string
+  name: string
+  path: string
+}
+
+export async function getMissingSharedKnowledge(): Promise<
+  MissingSharedKnowledge[]
+> {
+  const res = await request<{ missing?: MissingSharedKnowledge[] }>(
+    "/api/agents/knowledge/missing",
+  )
+  return res.missing ?? []
+}
+
 // SecMsgLinkStatus mirrors the backend pairing reply. status is
 // "pending" | "complete" | "error"; qr_png is a PNG data-URL for the pairing URI.
 export interface SecMsgLinkStatus {

@@ -106,7 +106,17 @@
     "allowedFolderNotify": "Notify on new files",
     "allowedFolderNote": "Note",
     "allowedFolderAdd": "Add folder",
-    "allowedFolderRemove": "Remove folder"
+    "allowedFolderRemove": "Remove folder",
+    "knowledge": "Allow knowledge bases",
+    "knowledgeHint": "Lets the agent read, search and write its own knowledge bases and the shared ones below.",
+    "sharedKnowledge": "Shared knowledge bases",
+    "sharedKnowledgeName": "Name",
+    "sharedKnowledgeFolder": "Folder",
+    "sharedKnowledgeWrite": "Allow writing",
+    "sharedKnowledgeAdd": "Add knowledge base",
+    "sharedKnowledgeRemove": "Remove knowledge base",
+    "sharedKnowledgeNotUsed": "Not used: knowledge bases are off for this agent.",
+    "sharedKnowledgeNotFound": "Folder not found"
   },
   "navigation": {
     "chat": "Chat",

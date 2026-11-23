@@ -1285,6 +1285,103 @@ if (useGroup("F", "Agents — autosave and list realignment")) {
       if (codeCreated) await removeAgent(CODE)
     }
   })
+
+  // F21-F25 share one throwaway agent, e2e-kb, removed after F25 whatever
+  // the outcome.
+  const KB = "e2e-kb"
+  let kbCreated = false
+  // kbBlock is e2e-kb's saved knowledge block.
+  const kbBlock = async () => (await config()).agents.list.find((x) => x.id === KB)?.knowledge
+  // onKbCard opens /agents with e2e-kb selected, runs act, waits for the
+  // save and returns act's result.
+  const onKbCard = async (act) => {
+    const { close, page } = await open("/agents")
+    try {
+      await page.getByRole("button", { name: KB, exact: true }).click()
+      await page.waitForTimeout(400)
+      const out = await act(page)
+      await page.waitForTimeout(2000)
+      return out === undefined ? undefined : await out(page)
+    } finally {
+      await close()
+    }
+  }
+  const kbSwitch = (page) => page.getByRole("switch", { name: "Allow knowledge bases", exact: true })
+  const addKbRow = async (page, name, folder) => {
+    await page.getByRole("button", { name: "Add knowledge base", exact: true }).click()
+    await page.getByRole("textbox", { name: "Name", exact: true }).last().fill(name)
+    await page.getByRole("textbox", { name: "Folder", exact: true }).last().fill(folder)
+  }
+
+  await check(21, "Allow knowledge bases is saved, shown after a reload and removed when off", async () => {
+    await addAgent({ id: KB, name: KB, tools: [] })
+    kbCreated = true
+    await onKbCard((page) => kbSwitch(page).click())
+    let k = await kbBlock()
+    assert(JSON.stringify(k) === JSON.stringify({ enabled: true }), `knowledge = ${JSON.stringify(k)} after turning it on`)
+    await onKbCard(async (page) => {
+      assert((await kbSwitch(page).getAttribute("data-state")) === "checked", "the switch is off after a reload")
+      await kbSwitch(page).click()
+    })
+    k = await kbBlock()
+    assert(k === undefined, `knowledge = ${JSON.stringify(k)} after turning it off, want absent`)
+    return `${KB}: on, shown, off`
+  })
+
+  await check(22, "a shared row is saved while the switch is off, with the Not used note", async () => {
+    if (!kbCreated) return "skipped, never created"
+    const note = await onKbCard(async (page) => {
+      await addKbRow(page, "e2e-ref", "/tmp")
+      return (p) => p.getByText("Not used: knowledge bases are off for this agent.", { exact: true }).count()
+    })
+    const k = await kbBlock()
+    const want = { enabled: false, shared: [{ name: "e2e-ref", path: "/tmp" }] }
+    assert(JSON.stringify(k) === JSON.stringify(want), `knowledge = ${JSON.stringify(k)}, want ${JSON.stringify(want)}`)
+    assert(note === 1, `"Not used" note shown ${note} times`)
+  })
+
+  await check(23, "the shared row persists after a reload; Allow writing and the switch save", async () => {
+    if (!kbCreated) return "skipped, never created"
+    const shown = await onKbCard(async (page) => {
+      const name = await page.getByRole("textbox", { name: "Name", exact: true }).first().inputValue()
+      const folder = await page.getByRole("textbox", { name: "Folder", exact: true }).first().inputValue()
+      await page.getByRole("checkbox", { name: "Allow writing", exact: true }).first().click()
+      return () => [name, folder]
+    })
+    assert(JSON.stringify(shown) === JSON.stringify(["e2e-ref", "/tmp"]), `row after reload = ${JSON.stringify(shown)}`)
+    let k = await kbBlock()
+    assert(k?.shared?.[0]?.write === true, `knowledge = ${JSON.stringify(k)} after ticking Allow writing`)
+    const note = await onKbCard(async (page) => {
+      await kbSwitch(page).click()
+      return (p) => p.getByText("Not used: knowledge bases are off for this agent.", { exact: true }).count()
+    })
+    k = await kbBlock()
+    assert(k?.enabled === true && k.shared?.length === 1, `knowledge = ${JSON.stringify(k)} after turning it on`)
+    assert(note === 0, "the Not used note is still shown with the switch on")
+  })
+
+  await check(24, "a duplicate shared name is refused with the server's message at the list", async () => {
+    if (!kbCreated) return "skipped, never created"
+    const want = `${KB} has more than one shared knowledge base named "e2e-ref".`
+    const shown = await onKbCard(async (page) => {
+      await addKbRow(page, "e2e-ref", "/var/tmp")
+      return (p) => p.getByTestId("shared-knowledge-refusal").textContent()
+    })
+    assert(shown === want, `refusal at the list = ${JSON.stringify(shown)}, want ${JSON.stringify(want)}`)
+    const k = await kbBlock()
+    assert(k?.shared?.length === 1, `knowledge.shared = ${JSON.stringify(k?.shared)}; the refused row was saved`)
+  })
+
+  await check(25, "removing the shared row saves the list without it", async () => {
+    try {
+      if (!kbCreated) return "skipped, never created"
+      await onKbCard((page) => page.getByRole("button", { name: "Remove knowledge base", exact: true }).first().click())
+      const k = await kbBlock()
+      assert(JSON.stringify(k) === JSON.stringify({ enabled: true }), `knowledge = ${JSON.stringify(k)} after removing the row`)
+    } finally {
+      if (kbCreated) await removeAgent(KB)
+    }
+  })
 }
 
 // G. System page (the old Config page minus the listeners, which are group R)

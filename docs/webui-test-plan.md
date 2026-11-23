@@ -3,7 +3,7 @@
 Regression coverage for the ClawEh web interface. Every step below has an ID, a
 process, and an expected result, so it can be followed by hand — and every one is
 also automated in `tests/frontend-e2e.mjs`, which prints the same IDs. There are
-178 checks in all; the runner prints the same tally at the end.
+183 checks in all; the runner prints the same tally at the end.
 
 The WebUI holds no product name of its own: it shows the names the server
 fills into the page it serves (title and `product-*` meta tags) and returns
@@ -119,7 +119,7 @@ attaches on its own. No token is fetched or sent by the page.
 
 ## F. Agents — autosave and list realignment
 
-Creates an agent called `e2e-probe` and deletes it at the end; F11, F12, F14, F15 and F16 each create a second one (`e2e-msg`, `e2e-wrk`, `e2e-cls`, `e2e-tm`, `e2e-note`) through the API and remove it again, and F17–F20 share one (`e2e-code`) that F17 creates and F20 removes whatever the outcome.
+Creates an agent called `e2e-probe` and deletes it at the end; F11, F12, F14, F15 and F16 each create a second one (`e2e-msg`, `e2e-wrk`, `e2e-cls`, `e2e-tm`, `e2e-note`) through the API and remove it again, F17–F20 share one (`e2e-code`) that F17 creates and F20 removes whatever the outcome, and F21–F25 share one (`e2e-kb`) that F21 creates and F25 removes whatever the outcome.
 
 | ID | Process | Expected |
 |---|---|---|
@@ -143,6 +143,11 @@ Creates an agent called `e2e-probe` and deletes it at the end; F11, F12, F14, F1
 | F18 | Set `e2e-code`'s `tools` through the API to `["time_now", "web_fetch", "file_*", "agent_spawn"]`; on `/agents` click **Coding tools**, wait ~2s; click it again, wait ~2s | After the first click `tools` is exactly `["time_now", "web_fetch", "file_*", "agent_spawn", "shell_exec"]`: nothing is removed, `file_*` already grants the file tools and only `shell_exec` (granted only by name) is added. The second click changes nothing and no entry is listed twice |
 | F19 | With `e2e-code` selected, untick the `shell_exec` box, wait ~2s; reload `/agents`, select `e2e-code`, tick `shell_exec`, wait ~2s | After unticking, `tools` has no `shell_exec` and the other entries are unchanged; after the reload the box is unticked, and ticking it saves `shell_exec` again |
 | F20 | Set `e2e-code`'s `tools` through the API to `["time_now"]`; on `/agents` click **Default tools**, wait ~2s; remove `e2e-code` through the API | `tools` is the default set, which does not include `shell_exec` |
+| F21 | Create a throwaway agent `e2e-kb` through the API with `tools: []`; select it on `/agents`, turn on **Allow knowledge bases**, wait ~2s; reload `/agents`, select it, turn the switch off, wait ~2s | After turning it on, `knowledge` is `{enabled: true}` and after the reload the switch is on; after turning it off, `knowledge` is absent |
+| F22 | With `e2e-kb` selected (switch off), click **Add knowledge base**, type `e2e-ref` as **Name** and `/tmp` as **Folder**, wait ~2s | `knowledge` is `{enabled: false, shared: [{name: "e2e-ref", path: "/tmp"}]}`, and the list says "Not used: knowledge bases are off for this agent." |
+| F23 | Reload `/agents`, select `e2e-kb`; tick **Allow writing** on the row, wait ~2s; turn on **Allow knowledge bases**, wait ~2s | After the reload the row shows `e2e-ref` and `/tmp`; the saved entry gains `write: true`; with the switch on the "Not used" note is gone and `knowledge.enabled` is true with the entry kept |
+| F24 | Click **Add knowledge base** again, type `e2e-ref` as **Name** and `/var/tmp` as **Folder**, wait ~2s | The save is refused: the list shows "e2e-kb has more than one shared knowledge base named "e2e-ref"." and the saved `knowledge.shared` still holds the one entry |
+| F25 | Reload `/agents`, select `e2e-kb`, click **Remove knowledge base** on the row, wait ~2s; remove `e2e-kb` through the API | After the remove, `knowledge` is `{enabled: true}` with no `shared` |
 
 ## G. System page
 

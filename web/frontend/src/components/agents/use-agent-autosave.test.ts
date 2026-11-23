@@ -42,6 +42,7 @@ describe("editsFromAgent", () => {
       summarizationModels: [],
       shareCommon: true,
       allowedFolders: [],
+      sharedKnowledge: [],
       mcpTools: [],
       denyTools: [],
       allowAgents: [],
@@ -53,6 +54,14 @@ describe("editsFromAgent", () => {
         allowParallel: true,
       },
     })
+  })
+
+  it("seeds the shared knowledge bases from knowledge.shared", () => {
+    const shared = [{ name: "team", path: "/srv/team", write: true }]
+    expect(
+      editsFromAgent(agent("a", { knowledge: { enabled: false, shared } }))
+        .sharedKnowledge,
+    ).toEqual(shared)
   })
 
   it("seeds Sub-Agent models from subagent_models", () => {

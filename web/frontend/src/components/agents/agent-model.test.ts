@@ -22,6 +22,7 @@ import {
   toggleAccessEntry,
   toggleAllowAgent,
   toggleClassifiers,
+  toggleKnowledge,
   toolDenied,
   toolGranted,
   withAllAgents,
@@ -850,6 +851,82 @@ describe("agentsPayload", () => {
       { path: "/srv/ref" },
     ])
     expect(out.agents.list[0]).not.toHaveProperty("mounts")
+  })
+
+  it("reads and writes the knowledge block, dropping blank shared rows", () => {
+    const a = parseAgent({
+      id: "alice",
+      knowledge: {
+        enabled: true,
+        shared: [
+          { name: "pentesting", path: "/opt/okf/pentesting", write: false },
+          { name: "team", path: "/srv/team", write: true },
+        ],
+      },
+    })
+    expect(a.knowledge).toEqual({
+      enabled: true,
+      shared: [
+        { name: "pentesting", path: "/opt/okf/pentesting" },
+        { name: "team", path: "/srv/team", write: true },
+      ],
+    })
+    const out = agentsPayload({
+      defaults: {},
+      list: [
+        {
+          ...a,
+          knowledge: {
+            enabled: true,
+            shared: [
+              ...(a.knowledge?.shared ?? []),
+              { name: " ", path: "" },
+              { name: " notes ", path: "" },
+            ],
+          },
+        },
+      ],
+    }) as { agents: { list: Record<string, unknown>[] } }
+    // A half-filled row is sent so the server can refuse it by name.
+    expect(out.agents.list[0].knowledge).toEqual({
+      enabled: true,
+      shared: [
+        { name: "pentesting", path: "/opt/okf/pentesting" },
+        { name: "team", path: "/srv/team", write: true },
+        { name: "notes", path: "" },
+      ],
+    })
+  })
+
+  it("keeps a switched-off block only while something is shared", () => {
+    const off = (shared: { name: string; path: string }[]) =>
+      (
+        agentsPayload({
+          defaults: {},
+          list: [{ id: "alice", knowledge: { enabled: false, shared } }],
+        }) as { agents: { list: Record<string, unknown>[] } }
+      ).agents.list[0]
+    expect(off([])).not.toHaveProperty("knowledge")
+    expect(off([{ name: "x", path: "/x" }]).knowledge).toEqual({
+      enabled: false,
+      shared: [{ name: "x", path: "/x" }],
+    })
+    expect(parseAgent({ id: "alice", knowledge: [] }).knowledge).toBeUndefined()
+    expect(parseAgent({ id: "alice" }).knowledge).toBeUndefined()
+  })
+
+  it("turns the knowledge switch over, keeping the shared list", () => {
+    const shared = [{ name: "x", path: "/x" }]
+    const on = toggleKnowledge({
+      id: "alice",
+      knowledge: { enabled: false, shared },
+    })
+    expect(on.knowledge).toEqual({ enabled: true, shared })
+    expect(toggleKnowledge(on).knowledge).toEqual({ enabled: false, shared })
+    expect(toggleKnowledge({ id: "bob" }).knowledge).toEqual({
+      enabled: true,
+      shared: [],
+    })
   })
 
   it("writes an agent added on the page from its edited fields only", () => {

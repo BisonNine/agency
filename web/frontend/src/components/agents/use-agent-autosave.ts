@@ -4,6 +4,7 @@ import {
   type AgentEntry,
   type AllowedFolderEntry,
   type MaestroRunnerEdits,
+  type SharedKnowledgeEntry,
   maestroEditsFromAgent,
 } from "@/components/agents/agent-model"
 
@@ -31,6 +32,9 @@ export interface AgentEdits {
   summarizationModels: string[]
   shareCommon: boolean
   allowedFolders: AllowedFolderEntry[]
+  /** knowledge.shared ("Shared knowledge bases"); the switch is saved on
+   *  its own. */
+  sharedKnowledge: SharedKnowledgeEntry[]
   mcpTools: string[]
   denyTools: string[]
   /** subagents.allow_agents ("May message"); [] = none. */
@@ -59,6 +63,7 @@ export function editsFromAgent(a: AgentEntry): AgentEdits {
     summarizationModels: a.summarization_models ?? [],
     shareCommon: a.share_common !== false,
     allowedFolders: a.allowed_folders ?? [],
+    sharedKnowledge: a.knowledge?.shared ?? [],
     mcpTools: a.mcp_tools ?? [],
     denyTools: a.deny_tools ?? [],
     allowAgents: a.allow_agents ?? [],

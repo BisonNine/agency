@@ -94,6 +94,7 @@ Some tool sets are switched on and off as a whole, on the lower part of the card
 | **Allow classifiers** | Off | The `classifier_*` tools, to sort the items its tools can list ([Classifiers](./classifiers.md)). When on, it shows the **Classifier model** selector. |
 | **Fusion (REST-API tools)** | Off | The [Fusion](../mcpfusion.md) services ticked under **Fusion services**, and nothing else. |
 | **Allow forum** | Off | The `forum_*` tools, to hold structured discussions ([Forums](../forums/index.md)) with the agents it may message (see [Messages between agents](./messaging.md#who-may-message-whom)). |
+| **Allow knowledge bases** | Off | The `kb_get`, `kb_search` and `kb_put` tools and [knowledge bases](./knowledge-bases.md) of its own, plus the shared ones listed under the switch. |
 | **Allow character card tools** | Off | The `ccv3` tool, to create, edit and delete [character cards](./character-cards.md) in the library. |
 | **Share common directory** | On | Access to the shared common folder through the `common_*` tools, which must also be granted. See [Files and allowed folders](./allowed-folders.md#the-common-folder). |
 | **Global cron** | Off | Lets the agent create and manage scheduled jobs for other agents. See [Scheduled jobs](./scheduling.md). |

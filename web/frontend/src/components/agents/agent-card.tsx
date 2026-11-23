@@ -9,6 +9,7 @@ import {
   type AgentToolCatalogResponse,
   type HumanAgentProblem,
   type IgnoredAllowedFolder,
+  type MissingSharedKnowledge,
 } from "@/api/channels"
 import { type ModelInfo } from "@/api/models"
 import {
@@ -20,6 +21,7 @@ import {
   MESSAGE_TOOL,
   type MaestroRunnerEdits,
   SPAWN_TOOL,
+  type SharedKnowledgeEntry,
   type SkillInfo,
   TASK_GRANT_KINDS,
   type TaskGrantKind,
@@ -124,6 +126,16 @@ export interface AgentCardProps {
   onAllowedFoldersChange?: (folders: AllowedFolderEntry[]) => void
   /** Saved allowed folders the file tools skip (GET /api/agents/allowed-folders/ignored). */
   ignoredFolders?: IgnoredAllowedFolder[]
+  /** The knowledge switch ("Allow knowledge bases"). */
+  knowledge?: boolean
+  onKnowledgeChange?: (v: boolean) => void
+  /** knowledge.shared, as edited. */
+  sharedKnowledge?: SharedKnowledgeEntry[]
+  onSharedKnowledgeChange?: (shared: SharedKnowledgeEntry[]) => void
+  /** Saved shared knowledge bases whose folder is missing (GET /api/agents/knowledge/missing). */
+  missingKnowledge?: MissingSharedKnowledge[]
+  /** The server's refusal of the last save of the shared list. */
+  knowledgeRefusal?: string
   mcpTools?: string[]
   onMCPToolsChange?: (mcpTools: string[]) => void
   denyTools?: string[]
@@ -206,6 +218,12 @@ export function AgentCard({
   allowedFolders = [],
   onAllowedFoldersChange = undefined,
   ignoredFolders = [],
+  knowledge = false,
+  onKnowledgeChange = undefined,
+  sharedKnowledge = [],
+  onSharedKnowledgeChange = undefined,
+  missingKnowledge = [],
+  knowledgeRefusal = undefined,
   mcpTools = [],
   onMCPToolsChange = undefined,
   denyTools = [],
@@ -602,6 +620,124 @@ export function AgentCard({
               {t("agents.allowedFolderAdd")}
             </Button>
           </div>
+        </div>
+      )}
+
+      {!human && onKnowledgeChange !== undefined && (
+        <div className={settingsCardClass}>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-foreground text-sm font-semibold">
+                {t("agents.knowledge")}
+              </p>
+              <Switch
+                checked={knowledge}
+                onCheckedChange={onKnowledgeChange}
+                aria-label={t("agents.knowledge")}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {t("agents.knowledgeHint")}
+            </p>
+          </div>
+          {onSharedKnowledgeChange !== undefined && (
+            <div className="space-y-1.5">
+              <p className="text-foreground text-xs font-semibold">
+                {t("agents.sharedKnowledge")}
+              </p>
+              {!knowledge && sharedKnowledge.length > 0 && (
+                <p
+                  data-testid="shared-knowledge-unused"
+                  className="text-xs text-amber-600 dark:text-amber-400"
+                >
+                  {t("agents.sharedKnowledgeNotUsed")}
+                </p>
+              )}
+              {sharedKnowledge.map((k, ki) => {
+                const set = (patch: Partial<SharedKnowledgeEntry>) =>
+                  onSharedKnowledgeChange(
+                    sharedKnowledge.map((x, j) =>
+                      j === ki ? { ...x, ...patch } : x,
+                    ),
+                  )
+                const missing = missingKnowledge.some(
+                  (m) => m.name === k.name && m.path === k.path,
+                )
+                return (
+                  <div key={ki} className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        value={k.name}
+                        onChange={(e) => set({ name: e.target.value })}
+                        placeholder={t("agents.sharedKnowledgeName")}
+                        aria-label={t("agents.sharedKnowledgeName")}
+                        className="h-7 w-36 font-mono text-xs"
+                      />
+                      <Input
+                        value={k.path}
+                        onChange={(e) => set({ path: e.target.value })}
+                        placeholder={t("agents.sharedKnowledgeFolder")}
+                        aria-label={t("agents.sharedKnowledgeFolder")}
+                        className="h-7 flex-1 font-mono text-xs"
+                      />
+                      <label className="text-muted-foreground flex items-center gap-1 text-xs select-none">
+                        <Checkbox
+                          checked={k.write === true}
+                          onCheckedChange={(c) => set({ write: c === true })}
+                        />
+                        {t("agents.sharedKnowledgeWrite")}
+                      </label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        aria-label={t("agents.sharedKnowledgeRemove")}
+                        onClick={() =>
+                          onSharedKnowledgeChange(
+                            sharedKnowledge.filter((_, j) => j !== ki),
+                          )
+                        }
+                      >
+                        <IconTrash className="size-3.5" />
+                      </Button>
+                    </div>
+                    {missing && (
+                      <p
+                        data-testid="shared-knowledge-missing"
+                        className="text-xs text-amber-600 dark:text-amber-400"
+                      >
+                        {t("agents.sharedKnowledgeNotFound")}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+              {knowledgeRefusal && (
+                <p
+                  data-testid="shared-knowledge-refusal"
+                  className="text-destructive text-xs"
+                >
+                  {knowledgeRefusal}
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() =>
+                  onSharedKnowledgeChange([
+                    ...sharedKnowledge,
+                    { name: "", path: "" },
+                  ])
+                }
+              >
+                <IconPlus className="size-3.5" />
+                {t("agents.sharedKnowledgeAdd")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

@@ -12,6 +12,7 @@ import {
   getAppConfig,
   getHumanAgents,
   getIgnoredAllowedFolders,
+  getMissingSharedKnowledge,
   patchAppConfig,
 } from "@/api/channels"
 import { type ModelInfo, getModels } from "@/api/models"
@@ -40,6 +41,7 @@ import {
   sortAgentList,
   taskModelsFor,
   toggleClassifiers,
+  toggleKnowledge,
 } from "@/components/agents/agent-model"
 import { FallbacksSelect } from "@/components/agents/model-selects"
 import { SkillsSelect } from "@/components/agents/skills-select"
@@ -68,6 +70,11 @@ export function AgentsPage() {
     list: [],
   })
   const [saving, setSaving] = useState<string | null>(null)
+  // The server's refusal of an agent's shared knowledge bases, by agent id,
+  // shown at its list until a save goes through.
+  const [knowledgeRefusals, setKnowledgeRefusals] = useState<
+    Record<string, string>
+  >({})
   // Raw binding objects, preserved verbatim so saving never drops fields this
   // page doesn't model. Only the per-agent `default` flag is edited here.
 
@@ -129,6 +136,12 @@ export function AgentsPage() {
     queryKey: ["agents-ignored-folders"],
     queryFn: getIgnoredAllowedFolders,
   })
+  // Saved shared knowledge bases whose folder is missing; each is marked in
+  // its row.
+  const { data: missingKnowledge } = useQuery({
+    queryKey: ["agents-missing-knowledge"],
+    queryFn: getMissingSharedKnowledge,
+  })
   // The character-card library, for each card's Character card select.
   const { data: cardsData } = useQuery({
     queryKey: CARDS_QUERY_KEY,
@@ -138,6 +151,9 @@ export function AgentsPage() {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: HUMAN_AGENTS_QUERY_KEY }),
       queryClient.invalidateQueries({ queryKey: ["agents-ignored-folders"] }),
+      queryClient.invalidateQueries({
+        queryKey: ["agents-missing-knowledge"],
+      }),
     ])
 
   const fetchError = loadError
@@ -192,6 +208,10 @@ export function AgentsPage() {
           : undefined,
       share_common: edits.shareCommon,
       allowed_folders: edits.allowedFolders,
+      knowledge: {
+        enabled: list[index].knowledge?.enabled === true,
+        shared: edits.sharedKnowledge,
+      },
       mcp_tools: edits.mcpTools,
       deny_tools: edits.denyTools,
       allow_agents: edits.allowAgents,
@@ -199,6 +219,7 @@ export function AgentsPage() {
       maestro: applyMaestroEdits(list[index].maestro, edits.maestro),
     }
     const next: AgentsConfig = { ...agentsCfg, list }
+    const agentId = list[index].id
     try {
       await patchAppConfig(agentsPayload(next))
       void refreshAgentNotes()
@@ -206,8 +227,19 @@ export function AgentsPage() {
       // reseed around this write, so the saved snapshot cannot overwrite a
       // field that is still being edited.
       setAgentsCfg(next)
+      setKnowledgeRefusals((r) => withoutKey(r, agentId))
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save")
+      const message = e instanceof Error ? e.message : "Failed to save"
+      toast.error(message)
+      // A refused save that changed the shared list is shown at the list.
+      if (
+        sharedKnowledgeChanged(
+          agentsCfg.list?.[index]?.knowledge?.shared,
+          edits.sharedKnowledge,
+        )
+      ) {
+        setKnowledgeRefusals((r) => ({ ...r, [agentId]: message }))
+      }
       throw e // the hook turns a rejection into the card's error state
     }
   }
@@ -297,6 +329,8 @@ export function AgentsPage() {
     toggleFlag(index, "fusion", (a) => ({ ...a, fusion: !a.fusion }))
   const handleToggleForum = (index: number) =>
     toggleFlag(index, "forum", (a) => ({ ...a, forum: !a.forum }))
+  const handleToggleKnowledge = (index: number) =>
+    toggleFlag(index, "knowledge", toggleKnowledge)
   const handleToggleCCv3 = (index: number) =>
     toggleFlag(index, "ccv3", (a) => ({ ...a, ccv3: !a.ccv3 }))
   // "" = none; the Cards page's "Used by" column reads the same config.
@@ -599,6 +633,16 @@ export function AgentsPage() {
                       onAllowedFoldersChange={(fs) =>
                         edit(i, { allowedFolders: fs })
                       }
+                      knowledge={agent.knowledge?.enabled === true}
+                      onKnowledgeChange={() => handleToggleKnowledge(i)}
+                      sharedKnowledge={e.sharedKnowledge}
+                      onSharedKnowledgeChange={(sk) =>
+                        edit(i, { sharedKnowledge: sk })
+                      }
+                      missingKnowledge={(missingKnowledge ?? []).filter((m) =>
+                        sameAgentId(m.agent, agent.id),
+                      )}
+                      knowledgeRefusal={knowledgeRefusals[agent.id]}
                       mcpTools={e.mcpTools}
                       onMCPToolsChange={(mt) => edit(i, { mcpTools: mt })}
                       denyTools={e.denyTools}
@@ -707,4 +751,28 @@ export function AgentsPage() {
       </div>
     </div>
   )
+}
+
+// withoutKey returns r without key.
+function withoutKey(
+  r: Record<string, string>,
+  key: string,
+): Record<string, string> {
+  if (!(key in r)) return r
+  const next = { ...r }
+  delete next[key]
+  return next
+}
+
+// sharedKnowledgeChanged reports whether the edited shared knowledge bases
+// differ from the saved ones.
+function sharedKnowledgeChanged(
+  saved: AgentEdits["sharedKnowledge"] | undefined,
+  edited: AgentEdits["sharedKnowledge"],
+): boolean {
+  const norm = (l: AgentEdits["sharedKnowledge"]) =>
+    JSON.stringify(
+      l.map((e) => [e.name.trim(), e.path.trim(), e.write === true]),
+    )
+  return norm(saved ?? []) !== norm(edited)
 }

@@ -202,6 +202,117 @@ describe("AgentCard ignored allowed folders", () => {
   })
 })
 
+describe("AgentCard knowledge bases", () => {
+  const shared = [
+    { name: "pentesting", path: "/opt/okf/pentesting" },
+    { name: "team", path: "/srv/team", write: true },
+  ]
+
+  it("shows the switch and the shared rows with their columns", () => {
+    const onToggle = vi.fn()
+    renderCard({
+      knowledge: true,
+      onKnowledgeChange: onToggle,
+      sharedKnowledge: shared,
+      onSharedKnowledgeChange: vi.fn(),
+    })
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Allow knowledge bases" }),
+    )
+    expect(onToggle).toHaveBeenCalled()
+    expect(screen.getByText("Shared knowledge bases")).toBeTruthy()
+    const names = screen.getAllByLabelText("Name") as HTMLInputElement[]
+    const folders = screen.getAllByLabelText("Folder") as HTMLInputElement[]
+    expect(names.map((n) => n.value)).toEqual(["pentesting", "team"])
+    expect(folders.map((f) => f.value)).toEqual([
+      "/opt/okf/pentesting",
+      "/srv/team",
+    ])
+    const write = screen.getAllByRole("checkbox", { name: "Allow writing" })
+    expect(write.map((c) => c.getAttribute("aria-checked"))).toEqual([
+      "false",
+      "true",
+    ])
+    expect(screen.queryByTestId("shared-knowledge-unused")).toBeNull()
+  })
+
+  it("edits, adds and removes rows", () => {
+    const onChange = vi.fn()
+    renderCard({
+      onKnowledgeChange: vi.fn(),
+      sharedKnowledge: shared,
+      onSharedKnowledgeChange: onChange,
+    })
+    fireEvent.change(screen.getAllByLabelText("Name")[0], {
+      target: { value: "pt" },
+    })
+    expect(onChange).toHaveBeenLastCalledWith([
+      { name: "pt", path: "/opt/okf/pentesting" },
+      shared[1],
+    ])
+    fireEvent.click(
+      screen.getAllByRole("checkbox", { name: "Allow writing" })[0],
+    )
+    expect(onChange).toHaveBeenLastCalledWith([
+      { ...shared[0], write: true },
+      shared[1],
+    ])
+    fireEvent.click(screen.getByText("Add knowledge base"))
+    expect(onChange).toHaveBeenLastCalledWith([
+      ...shared,
+      { name: "", path: "" },
+    ])
+    fireEvent.click(screen.getAllByLabelText("Remove knowledge base")[1])
+    expect(onChange).toHaveBeenLastCalledWith([shared[0]])
+  })
+
+  it("says the list is not used while the switch is off", () => {
+    renderCard({
+      knowledge: false,
+      onKnowledgeChange: vi.fn(),
+      sharedKnowledge: shared,
+      onSharedKnowledgeChange: vi.fn(),
+    })
+    expect(screen.getByTestId("shared-knowledge-unused").textContent).toBe(
+      "Not used: knowledge bases are off for this agent.",
+    )
+  })
+
+  it("has no note when the switch is off and nothing is shared", () => {
+    renderCard({
+      onKnowledgeChange: vi.fn(),
+      onSharedKnowledgeChange: vi.fn(),
+    })
+    expect(screen.queryByTestId("shared-knowledge-unused")).toBeNull()
+  })
+
+  it("marks a row whose folder is missing and shows the server's refusal", () => {
+    renderCard({
+      knowledge: true,
+      onKnowledgeChange: vi.fn(),
+      sharedKnowledge: shared,
+      onSharedKnowledgeChange: vi.fn(),
+      missingKnowledge: [{ agent: "alice", name: "team", path: "/srv/team" }],
+      knowledgeRefusal:
+        'Alice has more than one shared knowledge base named "team".',
+    })
+    const missing = screen.getAllByTestId("shared-knowledge-missing")
+    expect(missing.map((m) => m.textContent)).toEqual(["Folder not found"])
+    expect(screen.getByTestId("shared-knowledge-refusal").textContent).toBe(
+      'Alice has more than one shared knowledge base named "team".',
+    )
+  })
+
+  it("is not shown for a human agent", () => {
+    renderCard({
+      human: true,
+      onKnowledgeChange: vi.fn(),
+      onSharedKnowledgeChange: vi.fn(),
+    })
+    expect(screen.queryByText("Allow knowledge bases")).toBeNull()
+  })
+})
+
 describe("AgentCard character card", () => {
   it("warns when the saved card is not in the library", () => {
     renderCard({

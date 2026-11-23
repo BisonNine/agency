@@ -23,6 +23,7 @@ An agent with no tools at all is told so in its instructions, and asks the perso
 | [Web search and fetch](./web-search.md) | The search providers, how to set one up, and fetching pages |
 | [Conversation and memory](./memory.md) | The one conversation per agent, how it is kept short, long-term memory, `/clear` and `/compact` |
 | [Files and allowed folders](./allowed-folders.md) | The agent's folders, what it may read and write, outside folders, the common folder |
+| [Knowledge bases](./knowledge-bases.md) | Notes the agent looks up, searches and writes: its own and shared ones, and the `kb_*` tools |
 | [Messages between agents](./messaging.md) | `agent_message`, `/ask` and `/whisper` |
 | [Human agents](./human-agents.md) | An agent that is a person, answering by hand |
 | [Character cards](./character-cards.md) | Giving an agent a character to play, the card library and the `ccv3` tool |

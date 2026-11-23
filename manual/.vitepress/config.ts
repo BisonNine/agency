@@ -58,6 +58,7 @@ export default defineConfig({
           { text: "Web search and fetch", link: "/agents/web-search" },
           { text: "Conversation and memory", link: "/agents/memory" },
           { text: "Files and allowed folders", link: "/agents/allowed-folders" },
+          { text: "Knowledge bases", link: "/agents/knowledge-bases" },
           { text: "Messages between agents", link: "/agents/messaging" },
           { text: "Human agents", link: "/agents/human-agents" },
           { text: "Character cards", link: "/agents/character-cards" },

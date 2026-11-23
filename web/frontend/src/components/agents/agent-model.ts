@@ -49,6 +49,9 @@ export interface AgentEntry {
   cogmem?: boolean
   /** allowed_folders: real folders the file tools may use. */
   allowed_folders?: AllowedFolderEntry[]
+  /** The per-agent `knowledge` block: the switch and the shared knowledge
+   *  bases. Absent = off, none shared. */
+  knowledge?: KnowledgeSettings
   mcp_tools?: string[]
   /** Tools the agent may never call, even when tools / mcp_tools admit them. */
   deny_tools?: string[]
@@ -70,6 +73,74 @@ export interface AllowedFolderEntry {
   /** Shown to the agent after the folder in its prompt; at most
    *  MAX_FOLDER_NOTE_CHARS characters. */
   note?: string
+}
+
+/** One shared knowledge base: the agent addresses it as shared/<name>. */
+export interface SharedKnowledgeEntry {
+  name: string
+  path: string
+  write?: boolean
+}
+
+/** The per-agent `knowledge` config block. */
+export interface KnowledgeSettings {
+  enabled: boolean
+  shared: SharedKnowledgeEntry[]
+}
+
+/** knowledgeFromRaw parses the saved block; anything but an object reads as
+ *  absent. */
+export function knowledgeFromRaw(raw: unknown): KnowledgeSettings | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined
+  }
+  const r = asRecord(raw)
+  return {
+    enabled: r.enabled === true,
+    shared: asArray(r.shared).map((e) => {
+      const er = asRecord(e)
+      return {
+        name: asString(er.name),
+        path: asString(er.path),
+        ...(er.write === true ? { write: true } : {}),
+      }
+    }),
+  }
+}
+
+/** knowledgePayload is the block as saved: shared rows left entirely blank
+ *  (one being added) are dropped; no block at all when the switch is off and
+ *  nothing is shared. */
+function knowledgePayload(
+  k: KnowledgeSettings | undefined,
+): Record<string, unknown> {
+  const shared = (k?.shared ?? [])
+    .map((e) => ({ ...e, name: e.name.trim(), path: e.path.trim() }))
+    .filter((e) => e.name !== "" || e.path !== "")
+    .map((e) => ({
+      name: e.name,
+      path: e.path,
+      ...(e.write ? { write: true } : {}),
+    }))
+  if (!k?.enabled && shared.length === 0) return {}
+  return {
+    knowledge: {
+      enabled: k?.enabled === true,
+      ...(shared.length > 0 ? { shared } : {}),
+    },
+  }
+}
+
+/** toggleKnowledge turns the agent's knowledge switch over, keeping the
+ *  shared list. */
+export function toggleKnowledge(a: AgentEntry): AgentEntry {
+  return {
+    ...a,
+    knowledge: {
+      enabled: a.knowledge?.enabled !== true,
+      shared: a.knowledge?.shared ?? [],
+    },
+  }
 }
 
 // MAX_FOLDER_NOTE_CHARS is config.MaxAllowedFolderNoteChars: the longest note
@@ -508,6 +579,7 @@ export function parseAgent(value: unknown): AgentEntry {
         ...(asString(fr.note) ? { note: asString(fr.note) } : {}),
       }
     }),
+    knowledge: knowledgeFromRaw(r.knowledge),
   }
 }
 
@@ -800,6 +872,7 @@ const AGENT_PAGE_KEYS = [
   "mcp_tools",
   "deny_tools",
   "allowed_folders",
+  "knowledge",
   "subagents",
 ]
 
@@ -898,6 +971,7 @@ export function agentPayload(a: AgentEntry): Record<string, unknown> {
         ...(f.notify ? { notify: true } : {}),
         ...(f.note?.trim() ? { note: f.note.trim() } : {}),
       })),
+    ...knowledgePayload(a.knowledge),
   }
 }
 

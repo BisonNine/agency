@@ -16,6 +16,7 @@ Each agent's workspace (see [Creating and editing agents](./creating.md#workspac
 | `tmp/` | Attachments and voice transcriptions it received | Read |
 | `forums/` | Its [forums](../forums/results.md#where-the-files-are) and their results | Read |
 | `maestro/` | [Maestro](../maestro.md) projects and tasks, when **Maestro** is on | Read and write |
+| `okf/` | Its own [knowledge bases](./knowledge-bases.md), when **Allow knowledge bases** is on | Not through file tools |
 | `sessions/` | Its conversation | Not through file tools |
 | `cogmem/` | Its long-term memory | Not through file tools |
 | `state/` | Turns in progress and its message tokens | Not through file tools |
