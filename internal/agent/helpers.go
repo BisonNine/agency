@@ -159,7 +159,9 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop) {
 				return
 			}
 			logger.ErrorCF("agent", "Error reading input", map[string]any{"error": err.Error()})
-			continue
+			// A failed read fails again on the next call: stop instead of
+			// spinning on it.
+			return
 		}
 
 		input := strings.TrimSpace(line)
