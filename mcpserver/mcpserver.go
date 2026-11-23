@@ -73,11 +73,12 @@ type MCPServer struct {
 	// handler is installed; nothing restarts it.
 	alerter alerter.Alerter
 	// onServeError, when set, is handed a Serve error after startup instead of
-	// the alerter: the gateway uses it to shut the process down. serving is
-	// set once Start has returned success, so a failure inside Start's own
-	// window is still returned by Start rather than handed off.
+	// the alerter: the gateway uses it to shut the process down. phase
+	// decides, once, whether a Serve error belongs to Start (phaseFailed: Start
+	// returns it, nothing else hears of it) or to the running server
+	// (phaseServing: handed off or alerted).
 	onServeError    func(error)
-	serving         atomic.Bool
+	phase           atomic.Int32
 	agentRegistries map[string]*tools.ToolRegistry // agentID → registry (dispatch target + schema source)
 	// agentLookup resolves a tools/call for an agent not in agentRegistries:
 	// a temporary agent created after the host started. Never part of the
@@ -389,26 +390,30 @@ func (m *MCPServer) Start() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := m.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			if m.serving.Load() && m.onServeError != nil {
-				m.onServeError(fmt.Errorf("%s: %w", m.listen, err))
-				errCh <- err
-				return
-			}
-			logger.ErrorCF("mcpserver", "MCP server exited",
-				map[string]any{"error": err.Error()})
-			if m.alerter != nil {
-				m.alerter.Send(alerter.Alert{
-					Title:       "MCP host server stopped",
-					Description: m.listen + ": external MCP clients and CLI providers lose the host tools until " + app.ShortName() + " is restarted",
-					Details:     err.Error(),
-					EventID:     "mcpserver",
-				})
-			}
+		err := m.httpServer.Serve(ln)
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			errCh <- nil
+			return
+		}
+		if m.phase.CompareAndSwap(phaseStarting, phaseFailed) {
+			// Still inside Start's window: Start returns this error.
 			errCh <- err
 			return
 		}
-		errCh <- nil
+		if m.onServeError != nil {
+			m.onServeError(fmt.Errorf("%s: %w", m.listen, err))
+			return
+		}
+		logger.ErrorCF("mcpserver", "MCP server exited",
+			map[string]any{"error": err.Error()})
+		if m.alerter != nil {
+			m.alerter.Send(alerter.Alert{
+				Title:       "MCP host server stopped",
+				Description: m.listen + ": external MCP clients and CLI providers lose the host tools until " + app.ShortName() + " is restarted",
+				Details:     err.Error(),
+				EventID:     "mcpserver",
+			})
+		}
 	}()
 
 	// Give the server a brief window to fail fast.
@@ -419,10 +424,20 @@ func (m *MCPServer) Start() error {
 		}
 		return nil
 	case <-time.After(150 * time.Millisecond):
-		m.serving.Store(true)
-		return nil
+		if m.phase.CompareAndSwap(phaseStarting, phaseServing) {
+			return nil
+		}
+		// Serve failed just as the window closed; the error is Start's.
+		return fmt.Errorf("mcpserver: start failed: %w", <-errCh)
 	}
 }
+
+// Start phases (MCPServer.phase).
+const (
+	phaseStarting int32 = iota
+	phaseServing
+	phaseFailed
+)
 
 // Shutdown stops the MCP server. It waits briefly for any in-flight tool
 // dispatches (POST requests) to complete, then force-closes all remaining

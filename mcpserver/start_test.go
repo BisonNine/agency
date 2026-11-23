@@ -237,3 +237,23 @@ func TestShutdown_ListenerCloseErrorIsLoggedNotReturned(t *testing.T) {
 		t.Fatalf("log lacks the close failure:\n%s", buf.String())
 	}
 }
+
+// A listener that fails inside the startup window is a start failure: Start
+// returns it and no operator alert is sent, since the caller reports it.
+func TestStart_FailureInsideStartupWindowDoesNotAlert(t *testing.T) {
+	ln := newStubListener(nil)
+	acceptErr := errors.New("accept failed")
+	ln.fail <- acceptErr
+	al := &recordingAlerter{sent: make(chan alerter.Alert, 1)}
+	srv := newServerOn(t, ln, WithAlerter(al))
+
+	if err := srv.Start(); !errors.Is(err, acceptErr) {
+		t.Fatalf("Start() = %v, want the serve error", err)
+	}
+	select {
+	case a := <-al.sent:
+		t.Fatalf("alerter got %+v for a failure Start returned", a)
+	default:
+	}
+	shutdown(t, srv)
+}
