@@ -142,7 +142,7 @@ var putSchema = map[string]any{
 	"properties": map[string]any{
 		"path": map[string]any{
 			"type":        "string",
-			"description": "Relative path within the agent workspace to copy into the common directory.",
+			"description": "Relative path of a file the agent may read with the file tools, to copy into the common directory.",
 		},
 		"as": map[string]any{
 			"type":        "string",

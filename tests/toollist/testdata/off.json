@@ -1800,7 +1800,7 @@
             "type": "string"
           },
           "path": {
-            "description": "Relative path within the agent workspace to copy into the common directory.",
+            "description": "Relative path of a file the agent may read with the file tools, to copy into the common directory.",
             "type": "string"
           }
         },
