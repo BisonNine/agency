@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -19,28 +20,19 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// freePort asks the kernel for an unused loopback port.
-func freePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("unexpected listener address type %T", ln.Addr())
-	}
-	port := tcpAddr.Port
-	if err := ln.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return port
-}
+// configPort is the port the tests configure. Nothing binds it: bindFreePorts
+// binds each listener on a port the kernel picks, so a port freed between
+// tests (or between a channel's stop and its re-bind) cannot be taken by
+// another process meanwhile.
+const configPort = 42330
 
-// listenRecorder wraps listenTCP: it keeps every listener it hands out (so the
-// test can kill the live one) and can fail a given number of binds first.
+// listenRecorder wraps listenTCP: it records each address the channel asks
+// for, binds it on a free port instead, keeps every listener it hands out (so
+// the test can reach and kill the live one) and can fail a given number of
+// binds first.
 type listenRecorder struct {
 	mu        sync.Mutex
+	requested []string
 	listeners []net.Listener
 	failNext  int
 	binds     int
@@ -50,11 +42,16 @@ func (r *listenRecorder) listen(addr string) (net.Listener, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.binds++
+	r.requested = append(r.requested, addr)
 	if r.failNext > 0 {
 		r.failNext--
 		return nil, errors.New("bind: address already in use")
 	}
-	ln, err := net.Listen("tcp", addr)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
 	if err != nil {
 		return nil, err
 	}
@@ -68,23 +65,46 @@ func (r *listenRecorder) last() net.Listener {
 	return r.listeners[len(r.listeners)-1]
 }
 
+// addr is the address the live (latest) listener is bound to.
+func (r *listenRecorder) addr() string { return r.last().Addr().String() }
+
 func (r *listenRecorder) bindCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.binds
 }
 
-// installSeams makes re-listen waits immediate and routes binds through rec.
-func installSeams(t *testing.T, rec *listenRecorder) {
+// requestedAddrs is every address the channel asked to bind, in order.
+func (r *listenRecorder) requestedAddrs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.requested)
+}
+
+// bindFreePorts routes the channel's binds through a new recorder until the
+// test ends.
+func bindFreePorts(t *testing.T) *listenRecorder {
 	t.Helper()
-	prevListen, prevAfter := listenTCP, retryAfter
+	rec := &listenRecorder{}
+	prev := listenTCP
 	listenTCP = rec.listen
+	t.Cleanup(func() { listenTCP = prev })
+	return rec
+}
+
+// installSeams routes binds through a recorder, as bindFreePorts, and makes
+// re-listen waits immediate.
+func installSeams(t *testing.T) *listenRecorder {
+	t.Helper()
+	rec := bindFreePorts(t)
+	prevAfter := retryAfter
 	retryAfter = func(time.Duration) <-chan time.Time {
 		ch := make(chan time.Time, 1)
 		ch <- time.Time{}
 		return ch
 	}
-	t.Cleanup(func() { listenTCP, retryAfter = prevListen, prevAfter })
+	t.Cleanup(func() { retryAfter = prevAfter })
+	return rec
 }
 
 func canConnect(addr string) bool {
@@ -111,11 +131,9 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 // channel alerts once, re-binds (retrying a failed bind), and serves again.
 // Stop then ends the loop and frees the port.
 func TestDeviceListenerRestartsAfterServeError(t *testing.T) {
-	rec := &listenRecorder{}
-	installSeams(t, rec)
+	rec := installSeams(t)
 
-	port := freePort(t)
-	dc, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: port}, t.TempDir(), false, bus.NewMessageBus(), "", nil)
+	dc, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: configPort}, t.TempDir(), false, bus.NewMessageBus(), "", nil)
 	if err != nil {
 		t.Fatalf("NewDeviceChannel: %v", err)
 	}
@@ -124,8 +142,7 @@ func TestDeviceListenerRestartsAfterServeError(t *testing.T) {
 	if err := dc.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-	waitFor(t, "initial listener", func() bool { return canConnect(addr) })
+	waitFor(t, "initial listener", func() bool { return canConnect(rec.addr()) })
 
 	// Kill the live listener: Serve's Accept fails and the loop must re-bind.
 	// The first re-bind is refused (port in use) and must be retried.
@@ -135,7 +152,7 @@ func TestDeviceListenerRestartsAfterServeError(t *testing.T) {
 	if err := rec.last().Close(); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "listener restored", func() bool { return rec.bindCount() >= 3 && canConnect(addr) })
+	waitFor(t, "listener restored", func() bool { return rec.bindCount() >= 3 && canConnect(rec.addr()) })
 
 	got := alerts.Alerts()
 	if len(got) != 1 {
@@ -156,22 +173,24 @@ func TestDeviceListenerRestartsAfterServeError(t *testing.T) {
 	default:
 		t.Fatal("Stop returned before the serve loop exited")
 	}
-	if canConnect(addr) {
+	if canConnect(rec.addr()) {
 		t.Fatal("listener still accepting after Stop")
 	}
 	if n := rec.bindCount(); n != 3 {
 		t.Fatalf("binds after Stop = %d, want 3 (no re-listen after stop)", n)
+	}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(configPort))
+	if got := rec.requestedAddrs(); !slices.Equal(got, []string{addr, addr, addr}) {
+		t.Fatalf("bound %v, want the configured address each time", got)
 	}
 }
 
 // TestDeviceListenerStopsOnContextCancel: cancelling the context Start was
 // given shuts the listener down without an alert; the loop does not re-bind.
 func TestDeviceListenerStopsOnContextCancel(t *testing.T) {
-	rec := &listenRecorder{}
-	installSeams(t, rec)
+	rec := installSeams(t)
 
-	port := freePort(t)
-	dc, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: port}, t.TempDir(), false, bus.NewMessageBus(), "", nil)
+	dc, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: configPort}, t.TempDir(), false, bus.NewMessageBus(), "", nil)
 	if err != nil {
 		t.Fatalf("NewDeviceChannel: %v", err)
 	}
@@ -181,7 +200,7 @@ func TestDeviceListenerStopsOnContextCancel(t *testing.T) {
 	if err := dc.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	addr := rec.addr()
 	waitFor(t, "initial listener", func() bool { return canConnect(addr) })
 
 	cancel()

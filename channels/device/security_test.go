@@ -176,8 +176,8 @@ func TestRevokedTokenRequestRefused(t *testing.T) {
 // connection with a close frame, so the client knows to reconnect; nothing is
 // acknowledged on the old connection afterwards.
 func TestChannelStopClosesConnections(t *testing.T) {
-	port := freePort(t)
-	dc, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: port, AutoApprove: true},
+	rec := bindFreePorts(t)
+	dc, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: configPort, AutoApprove: true},
 		t.TempDir(), false, bus.NewMessageBus(), "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestChannelStopClosesConnections(t *testing.T) {
 	if startErr := dc.Start(context.Background()); startErr != nil {
 		t.Fatal(startErr)
 	}
-	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	addr := rec.addr()
 	waitFor(t, "listener", func() bool { return canConnect(addr) })
 	em := newEmulator(t)
 	conn := mustOpen(t, em, "ws://"+addr+"/", "")

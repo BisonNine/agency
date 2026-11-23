@@ -15,7 +15,6 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
@@ -52,8 +51,8 @@ func testTLSConfig(t *testing.T) *tls.Config {
 // stops it when the test ends.
 func startChannel(t *testing.T, cfg config.DeviceChannelConfig, tlsConf *tls.Config) (*DeviceChannel, string) {
 	t.Helper()
-	port := freePort(t)
-	cfg.Enabled, cfg.Host, cfg.Port = true, "127.0.0.1", port
+	rec := bindFreePorts(t)
+	cfg.Enabled, cfg.Host, cfg.Port = true, "127.0.0.1", configPort
 	dc, err := NewDeviceChannel(cfg, t.TempDir(), false, bus.NewMessageBus(), "", nil)
 	if err != nil {
 		t.Fatalf("NewDeviceChannel: %v", err)
@@ -69,7 +68,7 @@ func startChannel(t *testing.T, cfg config.DeviceChannelConfig, tlsConf *tls.Con
 			t.Errorf("Stop: %v", err)
 		}
 	})
-	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	addr := rec.addr()
 	waitFor(t, "listener", func() bool { return canConnect(addr) })
 	return dc, addr
 }
@@ -99,7 +98,7 @@ func plainGet(t *testing.T, addr string) int {
 // than serving unencrypted.
 func TestDeviceListenerTLS(t *testing.T) {
 	// No certificate manager (HTTPS was off at start): fail closed.
-	bare, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: freePort(t), TLS: true},
+	bare, err := NewDeviceChannel(config.DeviceChannelConfig{Enabled: true, Host: "127.0.0.1", Port: configPort, TLS: true},
 		t.TempDir(), false, bus.NewMessageBus(), "", nil)
 	if err != nil {
 		t.Fatalf("NewDeviceChannel: %v", err)

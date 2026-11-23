@@ -6,8 +6,10 @@ package device
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"os"
 	"slices"
+	"strconv"
 	"testing"
 
 	"go.bison9.com/agency/bus"
@@ -18,7 +20,7 @@ import (
 )
 
 // reloadTestConfig is a configuration with the device channel enabled on a
-// free loopback port, with its data directory (and the self-signed HTTPS
+// loopback port (bound on a free one under bindFreePorts), with its data directory (and the self-signed HTTPS
 // certificate) under a temporary directory.
 func reloadTestConfig(t *testing.T) *config.Config {
 	t.Helper()
@@ -28,7 +30,7 @@ func reloadTestConfig(t *testing.T) *config.Config {
 		Enabled:   true,
 		Token:     "tok",
 		Host:      "127.0.0.1",
-		Port:      freePort(t),
+		Port:      configPort,
 		AllowFrom: config.FlexibleStringSlice{"*"},
 	}
 	return cfg
@@ -116,6 +118,7 @@ func TestFactoryInputs_CoverWhatTheFactoryReads(t *testing.T) {
 // the running device channel (its connections stay open); one that changes a
 // gateway setting it reads (trusted proxies) rebuilds it on the same port.
 func TestReload_DeviceChannel(t *testing.T) {
+	rec := bindFreePorts(t)
 	cfg := reloadTestConfig(t)
 	mb := bus.NewMessageBus()
 	defer mb.Close()
@@ -158,5 +161,9 @@ func TestReload_DeviceChannel(t *testing.T) {
 	}
 	if built != 2 {
 		t.Fatalf("build hook ran %d times, want 2", built)
+	}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(configPort))
+	if got := rec.requestedAddrs(); !slices.Equal(got, []string{addr, addr}) {
+		t.Fatalf("bound %v, want the same configured address twice", got)
 	}
 }
