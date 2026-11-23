@@ -113,17 +113,20 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *to
 				fmt.Sprintf("skill %q already installed at %s. Use force=true to reinstall.", slug, targetDir),
 			)
 		}
-	} else {
+	}
+
+	// Resolve which registry to use, before a forced reinstall removes the
+	// installed skill.
+	registry := t.registryMgr.GetRegistry(registryName)
+	if registry == nil {
+		return toolkit.ErrorResult(fmt.Sprintf("registry %q not found", registryName))
+	}
+
+	if force {
 		// Force: remove existing if present.
 		if err := os.RemoveAll(targetDir); err != nil {
 			return toolkit.ErrorResult(fmt.Sprintf("failed to remove existing skill %q: %v", slug, err))
 		}
-	}
-
-	// Resolve which registry to use.
-	registry := t.registryMgr.GetRegistry(registryName)
-	if registry == nil {
-		return toolkit.ErrorResult(fmt.Sprintf("registry %q not found", registryName))
 	}
 
 	// Ensure skills directory exists.
