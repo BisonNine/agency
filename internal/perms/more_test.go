@@ -130,7 +130,11 @@ func TestCheckErrors(t *testing.T) {
 		home := t.TempDir()
 		policy := PolicyFor(operatorConfig(t, home))
 		require.NoError(t, os.Chmod(home, 0o300))
-		t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(home, 0o700); err != nil {
+				t.Error(err)
+			}
+		})
 		_, err := Check(home, "", policy)
 		require.Error(t, err)
 		assert.True(t, strings.HasPrefix(err.Error(), "perms: walk "), err.Error())
@@ -155,11 +159,15 @@ func TestEnforceSkipsUnreadableSubtree(t *testing.T) {
 	inner := place(t, home, "skills/locked/inner.txt", 0o644)
 	other := place(t, home, "skills/other.txt", 0o644)
 	require.NoError(t, os.Chmod(locked, 0o000))
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(locked, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 
 	got, err := Check(home, "", PolicyFor(cfg))
 	require.NoError(t, err)
-	var paths []string
+	paths := make([]string, 0, len(got))
 	for _, f := range got {
 		paths = append(paths, f.Path)
 	}
@@ -197,7 +205,11 @@ func TestEnforceWalkFails(t *testing.T) {
 	skipIfRoot(t)
 	noExecutable(t)
 	home := t.TempDir()
-	t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(home, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	err := Enforce(home, Policy{Root: config.Modes{Dir: 0o300}}, Logger{})
 	require.Error(t, err)
 	assert.True(t, strings.HasPrefix(err.Error(), "perms: walk "), err.Error())

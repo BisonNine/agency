@@ -119,7 +119,11 @@ func TestEraseReportsDirectoryErrors(t *testing.T) {
 		seedKeys(t, cfg, "alice", "agent:alice:telegram:direct:42")
 		bobDir := seedKeys(t, cfg, "bob", "agent:bob:telegram:direct:42")
 		require.NoError(t, os.Chmod(bobDir, 0o000))
-		t.Cleanup(func() { _ = os.Chmod(bobDir, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(bobDir, 0o700); err != nil {
+				t.Error(err)
+			}
+		})
 
 		rep, err := Erase(cfg, EraseRequest{Channel: "telegram", ChatID: "42"}, nil)
 		require.Error(t, err)
@@ -211,7 +215,11 @@ func TestMigrateDirsUnreadableDirectory(t *testing.T) {
 	}
 	bad := t.TempDir()
 	require.NoError(t, os.Chmod(bad, 0o000))
-	t.Cleanup(func() { _ = os.Chmod(bad, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(bad, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	good := t.TempDir()
 	writeLegacy(t, good, "agent:alice:main")
 
@@ -246,7 +254,11 @@ func TestMigrateDirsWriteErrors(t *testing.T) {
 	for n := range 5 {
 		bad := t.TempDir()
 		require.NoError(t, os.Chmod(bad, 0o000))
-		t.Cleanup(func() { _ = os.Chmod(bad, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(bad, 0o700); err != nil {
+				t.Error(err)
+			}
+		})
 		dir := t.TempDir()
 		writeLegacy(t, dir, "agent:alice:main")
 		require.NoError(t, migrateDirs(&bytes.Buffer{}, []string{dir}))

@@ -33,7 +33,11 @@ func TestWriteUnwritableDirectory(t *testing.T) {
 	dir := t.TempDir()
 	internal := filepath.Dir(Path(dir))
 	require.NoError(t, os.MkdirAll(internal, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(internal, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(internal, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	err := Write(dir)
 	require.Error(t, err)
 	assert.True(t, strings.HasPrefix(err.Error(), "pidfile: write "+Path(dir)+": "), err.Error())
@@ -47,7 +51,11 @@ func TestRemoveEdgeCases(t *testing.T) {
 	require.NoError(t, Write(dir))
 	internal := filepath.Dir(Path(dir))
 	require.NoError(t, os.Chmod(internal, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(internal, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(internal, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	Remove(dir) // logged, not fatal
 	assert.FileExists(t, Path(dir))
 }

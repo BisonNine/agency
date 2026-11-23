@@ -43,7 +43,11 @@ func openAt(t *testing.T, path string) *Store {
 	t.Helper()
 	s, err := Open(context.Background(), path, withClock(func() time.Time { return time.Unix(0, 0) }))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = s.Close() })
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return s
 }
 
@@ -174,7 +178,11 @@ func TestPruneFailureAtOpen(t *testing.T) {
 
 	db, err := sql.Open("sqlite", dsn(path))
 	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	var n int
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&n))
 	assert.Equal(t, 1, n)

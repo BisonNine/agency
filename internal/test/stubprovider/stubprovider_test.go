@@ -31,18 +31,31 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
-// post sends a chat request and returns the response with its body read.
-func post(t *testing.T, ctx context.Context, s *Server, body string) (*http.Response, []byte) {
+// reply is a response with its body read.
+type reply struct {
+	StatusCode int
+	Header     http.Header
+}
+
+// post sends a chat request and returns the response status, headers and body.
+func post(t *testing.T, ctx context.Context, s *Server, body string) (reply, []byte) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL()+"/chat/completions", strings.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer alice")
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(t, resp)
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	return resp, b
+	return reply{StatusCode: resp.StatusCode, Header: resp.Header}, b
+}
+
+func closeBody(t *testing.T, resp *http.Response) {
+	t.Helper()
+	if err := resp.Body.Close(); err != nil {
+		t.Error(err)
+	}
 }
 
 const simple = `{"model":"m","messages":[{"role":"user","content":"hi"}]}`
@@ -51,7 +64,7 @@ func TestModelsEndpoint(t *testing.T) {
 	s := New(t)
 	resp, err := http.Get(s.URL() + "/models")
 	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
+	defer closeBody(t, resp)
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"object":"list","data":[{"id":"stub","object":"model"}]}`, string(b))
@@ -244,7 +257,7 @@ func TestHangUntilClientCancels(t *testing.T) {
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
-			_ = resp.Body.Close()
+			err = resp.Body.Close()
 		}
 		done <- err
 	}()

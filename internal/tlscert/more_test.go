@@ -34,7 +34,11 @@ func skipIfRoot(t *testing.T) {
 func readOnly(t *testing.T, dir string) {
 	t.Helper()
 	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 }
 
 // failWriter fails every write.
@@ -437,7 +441,7 @@ func TestWatchReloadsChangedPair(t *testing.T) {
 		default:
 		}
 	})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	m.Watch(ctx, time.Millisecond)
 
@@ -455,7 +459,7 @@ func TestWatchReloadsChangedPair(t *testing.T) {
 func TestWatchDefaultInterval(t *testing.T) {
 	m, err := Load(Options{DataDir: t.TempDir(), Alerter: &testalerts.Recorder{}})
 	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	m.Watch(ctx, 0)
 	cancel()
 }

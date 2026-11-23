@@ -23,15 +23,21 @@ func captureStdout(t *testing.T, fn func()) string {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	os.Stdout = w
-	done := make(chan []byte)
+	type read struct {
+		b   []byte
+		err error
+	}
+	done := make(chan read)
 	go func() {
-		b, _ := io.ReadAll(r)
-		done <- b
+		b, err := io.ReadAll(r)
+		done <- read{b, err}
 	}()
 	defer func() { os.Stdout = orig }()
 	fn()
 	require.NoError(t, w.Close())
-	return string(<-done)
+	got := <-done
+	require.NoError(t, got.err)
+	return string(got.b)
 }
 
 // setupHome writes a config with the agents alice and bob and returns the data

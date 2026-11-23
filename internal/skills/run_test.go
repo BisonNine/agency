@@ -23,15 +23,21 @@ func captureStdout(t *testing.T, fn func()) string {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	os.Stdout = w
-	done := make(chan []byte)
+	type read struct {
+		b   []byte
+		err error
+	}
+	done := make(chan read)
 	go func() {
-		b, _ := io.ReadAll(r)
-		done <- b
+		b, err := io.ReadAll(r)
+		done <- read{b, err}
 	}()
 	defer func() { os.Stdout = orig }()
 	fn()
 	require.NoError(t, w.Close())
-	return string(<-done)
+	got := <-done
+	require.NoError(t, got.err)
+	return string(got.b)
 }
 
 // setupHome points the config at a fresh temp data directory and returns it.
@@ -191,7 +197,9 @@ func TestSkillsRemoveMissingExits(t *testing.T) {
 	if os.Getenv("SKILLS_REMOVE_CHILD") == "1" {
 		cmd := NewSkillsCommand()
 		cmd.SetArgs([]string{"remove", "bob"})
-		_ = cmd.Execute()
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err) // not reached: the removal exits first
+		}
 		return
 	}
 	home := t.TempDir()
@@ -284,6 +292,7 @@ func TestSkillsInstallFromRegistry(t *testing.T) {
 
 	zipBody := testZip(t, map[string]string{"SKILL.md": "---\nname: alice\ndescription: d\n---\nHi\n"})
 	registry := func(t *testing.T, moderation map[string]bool) http.HandlerFunc {
+		t.Helper()
 		return func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/api/v1/skills/alice":
@@ -295,7 +304,8 @@ func TestSkillsInstallFromRegistry(t *testing.T) {
 				})
 			case "/api/v1/download":
 				assert.Equal(t, "1.2.3", r.URL.Query().Get("version"))
-				_, _ = w.Write(zipBody)
+				_, err := w.Write(zipBody)
+				assert.NoError(t, err)
 			default:
 				w.WriteHeader(http.StatusNotFound)
 			}

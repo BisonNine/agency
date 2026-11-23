@@ -73,7 +73,11 @@ func TestSeedConfig_UnwritableDirectory(t *testing.T) {
 	}
 	home := t.TempDir()
 	require.NoError(t, os.Chmod(home, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(home, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	path := filepath.Join(home, "config.json")
 
 	SeedConfig(path)

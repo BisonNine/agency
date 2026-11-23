@@ -60,7 +60,11 @@ func TestSeedChannelFiles_WriteFails(t *testing.T) {
 	skipIfRoot(t)
 	ws := t.TempDir()
 	require.NoError(t, os.Chmod(ws, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(ws, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(ws, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	seedChannelFiles(ws, 0o600, []string{config.ChannelKindTelegram, config.ChannelKindSlack})
 	for _, f := range []string{"TELEGRAM.md", "SLACK.md"} {
 		assert.NoFileExists(t, filepath.Join(ws, f))
@@ -80,7 +84,11 @@ func TestMigrateChannelFiles_RenameFails(t *testing.T) {
 	ws := t.TempDir()
 	writeFile(t, filepath.Join(ws, "channel-telegram.md"), "old")
 	require.NoError(t, os.Chmod(ws, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(ws, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(ws, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	migrateChannelFiles(ws, kindOf)
 	assert.Equal(t, "old", readFile(t, filepath.Join(ws, "channel-telegram.md")))
 	assert.NoFileExists(t, filepath.Join(ws, "TELEGRAM.md"))

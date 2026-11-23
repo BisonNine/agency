@@ -159,7 +159,7 @@ func commName(name string) string {
 // Deliberately NOT VmSize, which for a Go process includes over a gigabyte of
 // reserved address space and would suggest ClawEh is enormous when it is not.
 func RSSBytes(pid int) (int64, bool) {
-	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "status")) //nolint:gosec // a /proc entry named by a pid
+	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "status"))
 	if err != nil {
 		return 0, false
 	}

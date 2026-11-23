@@ -22,15 +22,21 @@ func captureStdout(t *testing.T, fn func()) string {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	os.Stdout = w
-	done := make(chan []byte)
+	type read struct {
+		b   []byte
+		err error
+	}
+	done := make(chan read)
 	go func() {
-		b, _ := io.ReadAll(r)
-		done <- b
+		b, err := io.ReadAll(r)
+		done <- read{b, err}
 	}()
 	defer func() { os.Stdout = orig }()
 	fn()
 	require.NoError(t, w.Close())
-	return string(<-done)
+	got := <-done
+	require.NoError(t, got.err)
+	return string(got.b)
 }
 
 func runToken(t *testing.T, args ...string) (string, error) {
@@ -148,7 +154,11 @@ func TestTokenStoreNotWritable(t *testing.T) {
 	require.NoError(t, servicetoken.Save(path, map[string]string{"bob": servicetoken.Hash("t")}))
 	dir := filepath.Dir(path)
 	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 
 	for _, args := range [][]string{{"issue", "alice"}, {"revoke", "bob"}} {
 		_, err := runToken(t, args...)

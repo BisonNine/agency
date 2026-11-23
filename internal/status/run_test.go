@@ -58,7 +58,11 @@ func TestStatusCommandNoConfigFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("CLAW_HOME", home)
 	require.NoError(t, os.Chmod(home, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(home, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 
 	out := captureStdout(t, func() { NewStatusCommand().Run(nil, nil) })
 	assert.Contains(t, out, "Config: "+filepath.Join(home, "config.json")+" ✗\n")

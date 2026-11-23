@@ -186,11 +186,15 @@ func TestCronSaveFailures(t *testing.T) {
 	id := onlyJob(t, store).ID
 	dir := filepath.Dir(store)
 	require.NoError(t, os.Chmod(dir, 0o500))
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if chmodErr := os.Chmod(dir, 0o700); chmodErr != nil {
+			t.Error(chmodErr)
+		}
+	})
 
 	for _, sub := range []string{"enable", "disable"} {
-		out, err := runCron(t, sub, id)
-		require.NoError(t, err)
+		out, runErr := runCron(t, sub, id)
+		require.NoError(t, runErr)
 		assert.True(t, strings.HasPrefix(out, "✗ Failed to update job "+id+": "), out)
 	}
 	out, err := runCron(t, "remove", id)
