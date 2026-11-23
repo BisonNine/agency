@@ -308,6 +308,15 @@ func TestGatewayCmd_Signal(t *testing.T) {
 
 // TestGatewayCmd_StartupErrors: a gateway that cannot start returns why.
 func TestGatewayCmd_StartupErrors(t *testing.T) {
+	t.Run("port taken", func(t *testing.T) {
+		g := newE2EHome(t, "")
+		startHost(t, hostOptions{Port: g.port}, "taken")
+		before := countServiceGoroutines()
+		if err := gatewayCmd(false); err == nil || !strings.Contains(err.Error(), "bind HTTP listener") {
+			t.Fatalf("err = %v, want the bind failure", err)
+		}
+		requireNoNewServiceGoroutines(t, before)
+	})
 	t.Run("already running", func(t *testing.T) {
 		g := newE2EHome(t, "")
 		lock, err := acquireLock(g.home)

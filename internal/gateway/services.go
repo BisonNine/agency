@@ -94,7 +94,9 @@ type gatewayServices struct {
 	store *config.Store
 }
 
-// setupAndStartServices initializes and starts all services
+// setupAndStartServices initializes and starts all services. When a step
+// fails, what the earlier steps started is stopped before the error is
+// returned (abortStart), so a failed start leaves nothing running.
 func setupAndStartServices(
 	cfg *config.Config,
 	agentLoop *agent.AgentLoop,
@@ -102,12 +104,17 @@ func setupAndStartServices(
 	configPath string,
 	store *config.Store,
 	fatal *fatalNotifier,
-) (*gatewayServices, error) {
+) (_ *gatewayServices, err error) {
 	services := &gatewayServices{fatal: fatal, store: store, folderState: folderwatch.NewState()}
+	defer func() {
+		if err != nil {
+			abortStart(services, agentLoop)
+		}
+	}()
 
 	ensureCommonDir(cfg)
 
-	if err := startCron(services, agentLoop, msgBus, cfg); err != nil {
+	if err = startCron(services, agentLoop, msgBus, cfg); err != nil {
 		return nil, err
 	}
 
@@ -125,33 +132,23 @@ func setupAndStartServices(
 	agent.RemoveStagedFileCopies()
 	services.mediaCleanup = mediaCleanerConfig(cfg)
 	services.MediaStore = startMediaStore(services.mediaCleanup)
-	// Stopped here if setup fails before the channel manager takes it over.
-	mediaOwned := true
-	defer func() {
-		if mediaOwned {
-			stopMediaStore(services.MediaStore)
-		}
-	}()
 
 	// The HTTPS listener's certificate, unless gateway.tls.mode is "off".
 	// Loaded (a self-signed pair generated or renewed) BEFORE the channels are
 	// built: the device channel reads the certificate's names for its own Host
 	// allowlist (tlscert.NamesForConfig), so the file has to be current first.
 	if cfg.Gateway.HTTPSEnabled() {
-		var err error
 		services.TLSCerts, err = tlscert.Load(tlsOptions(cfg, agentLoop.Alerter()))
 		if err != nil {
 			return nil, fmt.Errorf("HTTPS listener certificate: %w", err)
 		}
 	}
 
-	var err error
 	services.ChannelManager, err = channels.NewManager(cfg, msgBus, services.MediaStore,
 		channels.WithBuildHook(channelBuildHook(agentLoop, services.TLSCerts, admin.Path(cfg.DataDir()))))
 	if err != nil {
 		return nil, fmt.Errorf("error creating channel manager: %w", err)
 	}
-	mediaOwned = false
 	wireChannelManager(services, agentLoop)
 	agentLoop.SetMediaStore(services.MediaStore)
 
@@ -169,27 +166,90 @@ func setupAndStartServices(
 	// survive a reload. See rebuildSharedHTTPServer for the swap seam.
 	services.WebServer = newMergedWebServer(store, cfg)
 	wireWebServer(services, agentLoop)
-	if err := startHTTPHost(services, cfg, agentLoop, fatal); err != nil {
+	if err = startHTTPHost(services, cfg, agentLoop, fatal); err != nil {
 		return nil, err
 	}
 
-	if err := services.ChannelManager.StartAll(context.Background()); err != nil {
+	if err = services.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
 	}
 
 	logHealthEndpoints(services, cfg)
 
 	services.DeviceService = newDeviceService(cfg, agentLoop, msgBus)
-	if err := services.DeviceService.Start(context.Background()); err != nil {
-		logger.ErrorCF("device", "Error starting device service", map[string]any{"error": err.Error()})
+	if derr := services.DeviceService.Start(context.Background()); derr != nil {
+		logger.ErrorCF("device", "Error starting device service", map[string]any{"error": derr.Error()})
 	} else if cfg.Devices.Enabled {
 		logger.InfoC("device", "Device event service started")
 	}
 
-	if err := startAgentServices(cfg, agentLoop, msgBus, configPath, services); err != nil {
+	if err = startAgentServices(cfg, agentLoop, msgBus, configPath, services); err != nil {
 		return nil, err
 	}
 	return services, nil
+}
+
+// abortStart stops what a failed setupAndStartServices had started, newest
+// first: the backup scheduler, memory consolidation, the MCP host, the device
+// service, the channels, the certificate watcher, login poller and HTTP
+// listeners, the media store, the folder watcher and cron. Each is stopped
+// the way a shutdown stops it, and only when it was started. The agent loop
+// and what it owns stay with the caller.
+func abortStart(services *gatewayServices, agentLoop *agent.AgentLoop) {
+	logger.WarnC("gateway", "Start failed; stopping the services already started")
+	ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
+	defer cancel()
+	if services.stopBackup != nil {
+		services.stopBackup()
+	}
+	if services.CogmemManager != nil {
+		services.CogmemManager.Stop()
+	}
+	if services.MCPServer != nil {
+		agentLoop.SetMCPHost(nil)
+		if err := services.MCPServer.Shutdown(ctx); err != nil {
+			logger.WarnCF("mcpserver", "MCP server shutdown error", map[string]any{"error": err.Error()})
+		}
+	}
+	if services.DeviceService != nil {
+		services.DeviceService.Stop()
+	}
+	if services.ChannelManager != nil {
+		if err := services.ChannelManager.StopAll(ctx); err != nil {
+			logger.WarnCF("channels", "Channel manager shutdown error", map[string]any{"error": err.Error()})
+		}
+	}
+	stopListeners(services)
+	if services.MediaStore != nil {
+		stopMediaStore(services.MediaStore)
+	}
+	if services.FolderWatcher != nil {
+		services.FolderWatcher.Stop()
+	}
+	if services.CronTool != nil {
+		services.CronTool.StopListeners()
+	}
+	if services.CronService != nil {
+		services.CronService.Stop()
+	}
+}
+
+// stopListeners ends the certificate watcher and the login poller and stops
+// the HTTP listeners, each when it was started.
+func stopListeners(services *gatewayServices) {
+	if services.stopTLSWatch != nil {
+		services.stopTLSWatch()
+	}
+	if services.stopAuthWatch != nil {
+		services.stopAuthWatch()
+	}
+	if services.HTTPHost != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
+		if err := services.HTTPHost.Stop(shutdownCtx); err != nil {
+			logger.WarnCF("gateway", "Shared HTTP listener shutdown error", map[string]any{"error": err.Error()})
+		}
+		cancel()
+	}
 }
 
 // startAgentServices starts what serves the agents once the channels run:
@@ -559,18 +619,8 @@ func shutdownGateway(
 	stopAndCleanupServices(services, agentLoop, gracefulShutdownTimeout, phases, false)
 	agentLoop.Stop()
 
-	if services.stopTLSWatch != nil {
-		services.stopTLSWatch()
-	}
-	if services.stopAuthWatch != nil {
-		services.stopAuthWatch()
-	}
+	stopListeners(services)
 	if services.HTTPHost != nil {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
-		if err := services.HTTPHost.Stop(shutdownCtx); err != nil {
-			logger.WarnCF("gateway", "Shared HTTP listener shutdown error", map[string]any{"error": err.Error()})
-		}
-		cancel()
 		phases.done("HTTP listeners stopped")
 	}
 

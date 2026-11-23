@@ -4,7 +4,9 @@
 package gateway
 
 import (
+	"net"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -68,5 +70,17 @@ func requireNoNewServiceGoroutines(t *testing.T, before map[string]int) {
 			t.Fatalf("still running after the stop: %v", left)
 		}
 		time.Sleep(10 * time.Millisecond) // polling a condition, not timing
+	}
+}
+
+// requirePortFree fails when the loopback port is still bound.
+func requirePortFree(t *testing.T, port int) {
+	t.Helper()
+	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("port %d still bound: %v", port, err)
+	}
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

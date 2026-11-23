@@ -194,6 +194,15 @@ func TestHTTPHost_StopTimesOut(t *testing.T) {
 // TestSetupAndStartServices_Errors: listener settings the start cannot use
 // fail it with the reason.
 func TestSetupAndStartServices_Errors(t *testing.T) {
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cerr := taken.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
 	tests := []struct {
 		name   string
 		mutate func(cfg *config.Config)
@@ -202,6 +211,10 @@ func TestSetupAndStartServices_Errors(t *testing.T) {
 		{"bad allowlist", func(c *config.Config) { c.Gateway.AllowedCIDRs = []string{"not-a-cidr"} }, "invalid network allowlist"},
 		{"bad external url", func(c *config.Config) { c.Gateway.ExternalURL = "http://[::1" }, ""},
 		{"bad lockout exemption", func(c *config.Config) { c.Gateway.LockoutExempt = []string{"not an address"} }, ""},
+		{"MCP host port taken", func(c *config.Config) {
+			c.MCPHost.Enabled = true
+			c.MCPHost.Listen = taken.Addr().String()
+		}, "MCP server"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -218,6 +231,7 @@ func TestSetupAndStartServices_Errors(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { al.Close(context.Background()) })
+			before := countServiceGoroutines()
 			services, err := setupAndStartServices(cfg, al, msgBus, cfgPath, store, newFatalNotifier(&alertRecorder{}))
 			if err == nil {
 				shutdownGateway(services, al, false)
@@ -226,6 +240,9 @@ func TestSetupAndStartServices_Errors(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
+			// What the start got to is stopped again.
+			requireNoNewServiceGoroutines(t, before)
+			requirePortFree(t, g.port)
 		})
 	}
 }
