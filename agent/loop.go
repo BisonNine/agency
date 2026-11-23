@@ -490,6 +490,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		default:
 			msg, ok := al.bus.ConsumeInbound(ctx)
 			if !ok {
+				if ctx.Err() == nil {
+					// The bus closed: nothing can arrive any more (Close
+					// already dropped what was buffered). Polling it would
+					// spin, and returning would cancel the turns in flight
+					// as failures; wait for Stop, which ends them as a
+					// shutdown, so Stop then WaitTurns behaves as always.
+					logger.InfoCF("agent", "Message bus closed; the agent loop waits for shutdown", nil)
+					<-ctx.Done()
+					return nil
+				}
 				continue
 			}
 			al.dispatchInbound(ctx, msg)
