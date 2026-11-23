@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -46,12 +48,12 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "anthropic", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1"},
 		{Name: "vllm-local", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:8000/v1"},
 		{Name: "vllm-remote", Protocol: "openai-chat", BaseURL: "https://models.example.com/v1", APIKey: "remote-key"},
 	}
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "anthropic-token", Model: "claude-sonnet-4.6", Provider: "anthropic", Enabled: true},
 		{ModelName: "vllm-local", Model: "custom-model", Provider: "vllm-local", Enabled: true},
 		{ModelName: "vllm-remote", Model: "custom-model", Provider: "vllm-remote", Enabled: true},
@@ -116,11 +118,11 @@ func TestHandleListModels_ProbesLocalModelsConcurrently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "vllm-a", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:8000/v1"},
 		{Name: "vllm-b", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:8001/v1"},
 	}
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "local-vllm-a", Model: "custom-a", Provider: "vllm-a", Enabled: true},
 		{ModelName: "local-vllm-b", Model: "custom-b", Provider: "vllm-b", Enabled: true},
 	}
@@ -169,12 +171,12 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.Providers = []config.Provider{{
+	cfg.Providers = []modelspec.Provider{{
 		Name:     "vllm-local",
 		Protocol: "openai-chat",
 		BaseURL:  "http://0.0.0.0:8000/v1",
 	}}
-	cfg.Models = []config.ModelConfig{{
+	cfg.Models = []modelspec.Model{{
 		ModelName: "vllm-local",
 		Model:     "custom-model",
 		Provider:  "vllm-local",

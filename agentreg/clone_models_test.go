@@ -9,6 +9,8 @@ import (
 	"slices"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -18,8 +20,8 @@ func workerConfig(t *testing.T) *config.Config {
 	cfg := testConfig(t)
 	cfg.Agents.List[0].Subagents = &config.SubagentsConfig{Models: []string{"m2", "m3"}}
 	cfg.Models = append(cfg.Models,
-		config.ModelConfig{ModelName: "m2", Model: "model-two", Provider: "p", Enabled: true},
-		config.ModelConfig{ModelName: "m3", Model: "model-three", Provider: "p", Enabled: true})
+		modelspec.Model{ModelName: "m2", Model: "model-two", Provider: "p", Enabled: true},
+		modelspec.Model{ModelName: "m3", Model: "model-three", Provider: "p", Enabled: true})
 	return cfg
 }
 

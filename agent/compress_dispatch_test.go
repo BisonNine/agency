@@ -11,6 +11,7 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
@@ -20,11 +21,11 @@ import (
 // resolution paths that compress_model strings can take.
 func TestResolveCompressModelTarget(t *testing.T) {
 	cfg := &config.Config{
-		Providers: []config.Provider{
+		Providers: []modelspec.Provider{
 			{Name: "anthropic", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "k"},
 			{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "k"},
 		},
-		Models: []config.ModelConfig{
+		Models: []modelspec.Model{
 			{
 				ModelName: "haiku",
 				Model:     "claude-haiku-4-5",
@@ -84,10 +85,10 @@ func TestResolveCompressModelTarget_NilConfig(t *testing.T) {
 // "test-compress-model"), and one, "primary-target" ("some-model").
 func compressTestConfig() *config.Config {
 	return &config.Config{
-		Providers: []config.Provider{
+		Providers: []modelspec.Provider{
 			{Name: "openai", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "dummy"},
 		},
-		Models: []config.ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: "compress-target", Model: "test-compress-model", Provider: "openai", Enabled: true},
 			{ModelName: "primary-target", Model: "some-model", Provider: "openai", Enabled: true},
 		},

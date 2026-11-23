@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -136,7 +138,7 @@ func TestCollectAgents_TaskModelGrant(t *testing.T) {
 // Models listed but none usable: a marked row naming each with why.
 func TestAssessment_NoUsableTaskModel(t *testing.T) {
 	cfg, env := fixtureConfig(t)
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "Off", Model: "x", Provider: "OpenAI", Enabled: false})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "Off", Model: "x", Provider: "OpenAI", Enabled: false})
 	cfg.TaskModels.STTModels = []config.TaskModelRef{{Model: "Claude CLI"}, {Model: "Off"}}
 	cfg.TaskModels.VisionModels = []config.TaskModelRef{{Model: "Off"}}
 	s := collectAssessment(t.Context(), cfg, env)

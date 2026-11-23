@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/config"
 )
 
 // modelRequest is one request a model was sent.
@@ -48,7 +48,7 @@ func (*requestRecorder) GetDefaultModel() string { return "test-model" }
 // with an error.
 // It returns the requests the models were sent and the stored history after
 // the turn.
-func storedHistoryTurn(t *testing.T, extra []config.Provider, mcs []config.ModelConfig, history []spawnllm.Message, fail map[string]error) ([]modelRequest, []spawnllm.Message) {
+func storedHistoryTurn(t *testing.T, extra []modelspec.Provider, mcs []modelspec.Model, history []spawnllm.Message, fail map[string]error) ([]modelRequest, []spawnllm.Message) {
 	t.Helper()
 	cfg := newTestConfig(t)
 	cfg.Providers = append(cfg.Providers, extra...)
@@ -122,8 +122,8 @@ func messageWith(t *testing.T, msgs []spawnllm.Message, prefix string) spawnllm.
 
 // A vision-capable model must receive the image untouched.
 func TestMessagesForModel_VisionModelKeepsImages(t *testing.T) {
-	for _, vision := range []string{config.VisionUserMessage, config.VisionToolResponse} {
-		requests, _ := storedHistoryTurn(t, nil, []config.ModelConfig{{ModelName: "gpt5", Vision: vision}}, historyWithImage(), nil)
+	for _, vision := range []string{modelspec.VisionUserMessage, modelspec.VisionToolResponse} {
+		requests, _ := storedHistoryTurn(t, nil, []modelspec.Model{{ModelName: "gpt5", Vision: vision}}, historyWithImage(), nil)
 		if got := messageWith(t, requests[0].messages, imageToolResult); len(got.Media) != 1 || got.Content != imageToolResult {
 			t.Errorf("%s: expected the image kept untouched, got %q, Media=%v", vision, got.Content, got.Media)
 		}
@@ -134,8 +134,8 @@ func TestMessagesForModel_VisionModelKeepsImages(t *testing.T) {
 // the fix for OpenRouter 404ing the whole request on a non-vision default
 // like deepseek. The persisted history must be left intact.
 func TestMessagesForModel_NonVisionStripsImagesWithoutMutating(t *testing.T) {
-	for _, vision := range []string{config.VisionOff, ""} {
-		requests, stored := storedHistoryTurn(t, nil, []config.ModelConfig{{ModelName: "deepseek", Vision: vision}}, historyWithImage(), nil)
+	for _, vision := range []string{modelspec.VisionOff, ""} {
+		requests, stored := storedHistoryTurn(t, nil, []modelspec.Model{{ModelName: "deepseek", Vision: vision}}, historyWithImage(), nil)
 		got := messageWith(t, requests[0].messages, imageToolResult)
 		if got.Media != nil {
 			t.Errorf("%q: expected images stripped, got Media=%v", vision, got.Media)
@@ -159,7 +159,7 @@ func TestMessagesForModel_NoImagesLeavesRequestUnchanged(t *testing.T) {
 		{Role: "user", Content: "no images here"},
 		{Role: "assistant", Content: "noted"},
 	}
-	requests, _ := storedHistoryTurn(t, nil, []config.ModelConfig{{ModelName: "deepseek", Vision: config.VisionOff}}, history, nil)
+	requests, _ := storedHistoryTurn(t, nil, []modelspec.Model{{ModelName: "deepseek", Vision: modelspec.VisionOff}}, history, nil)
 	for _, want := range history {
 		if got := messageWith(t, requests[0].messages, want.Content); got.Role != want.Role || got.Content != want.Content || got.Media != nil {
 			t.Errorf("request carries %s %q, want %s %q unchanged", got.Role, got.Content, want.Role, want.Content)

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 )
@@ -80,11 +82,11 @@ func hostOf(raw string) string {
 
 // usedAPIProviders are the API providers at least one enabled model goes
 // through; a configured provider with no enabled model sends nothing.
-func usedAPIProviders(cfg *config.Config) []*config.Provider {
-	var out []*config.Provider
+func usedAPIProviders(cfg *config.Config) []*modelspec.Provider {
+	var out []*modelspec.Provider
 	for i := range cfg.Providers {
 		p := &cfg.Providers[i]
-		if config.IsCLIProtocol(p.Protocol) || p.BaseURL == "" {
+		if modelspec.IsCLIProtocol(p.Protocol) || p.BaseURL == "" {
 			continue
 		}
 		for _, m := range modelsFor(cfg, p.Name) {
@@ -168,7 +170,7 @@ func devicesSummary(ctx context.Context, cfg *config.Config, env Environment) st
 func externalExecSummary(cfg *config.Config) string {
 	var clis []string
 	for _, p := range cfg.Providers {
-		if !config.IsCLIProtocol(p.Protocol) {
+		if !modelspec.IsCLIProtocol(p.Protocol) {
 			continue
 		}
 		for _, m := range modelsFor(cfg, p.Name) {

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
@@ -43,8 +44,8 @@ printf '{"type":"result","result":"%[2]s","session_id":"t"}\n'
 func callCLI(t *testing.T, script string, bypass bool) error {
 	t.Helper()
 	cfg := &config.Config{
-		Providers: []config.Provider{{Name: "Claude CLI", Protocol: "claude-cli", Command: script, BypassRestrictions: bypass}},
-		Models: []config.ModelConfig{{
+		Providers: []modelspec.Provider{{Name: "Claude CLI", Protocol: "claude-cli", Command: script, BypassRestrictions: bypass}},
+		Models: []modelspec.Model{{
 			ModelName: "c", Model: "claude-cli", Provider: "Claude CLI", Workspace: t.TempDir(), Enabled: true,
 			Env: map[string]string{"ALICE_SETTING": "on"},
 		}},

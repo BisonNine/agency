@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/utils"
 )
@@ -66,7 +68,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	wg.Add(len(cfg.Models))
 	for i, m := range cfg.Models {
-		go func(i int, m config.ModelConfig) {
+		go func(i int, m modelspec.Model) {
 			defer wg.Done()
 			prov, err := cfg.GetProvider(m.Provider)
 			if err != nil {
@@ -125,7 +127,7 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer utils.CloseQuietly(r.Body)
 
-	var mc config.ModelConfig
+	var mc modelspec.Model
 	if err = json.Unmarshal(body, &mc); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return

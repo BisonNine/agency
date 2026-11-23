@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -190,7 +192,7 @@ func TestPatchCompression_SaveRewritesLegacyKeys(t *testing.T) {
 }
 
 // TestProviderRequireReasoningContent_RoundTrips covers the read-back path for
-// the flag: writes decode straight into config.Provider, but the list response
+// the flag: writes decode straight into modelspec.Provider, but the list response
 // is a separate DTO, so a field missing there would silently reset the checkbox
 // every time an operator opened the edit sheet.
 func TestProviderRequireReasoningContent_RoundTrips(t *testing.T) {
@@ -215,7 +217,7 @@ func TestProviderRequireReasoningContent_RoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	var found *config.Provider
+	var found *modelspec.Provider
 	for i := range cfg.Providers {
 		if cfg.Providers[i].Name == "ds" {
 			found = &cfg.Providers[i]

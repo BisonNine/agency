@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/classifier"
@@ -200,7 +201,7 @@ func render(t *testing.T, cfg *config.Config) string {
 	}
 
 	w("models\n")
-	models := append([]config.ModelConfig(nil), cfg.Models...)
+	models := append([]modelspec.Model(nil), cfg.Models...)
 	sort.Slice(models, func(i, j int) bool { return models[i].ModelName < models[j].ModelName })
 	for _, m := range models {
 		prov, err := cfg.GetProvider(m.Provider)
@@ -208,12 +209,12 @@ func render(t *testing.T, cfg *config.Config) string {
 			w("  %s: provider %q: %v\n", m.ModelName, m.Provider, err)
 			continue
 		}
-		if !config.IsCLIProtocol(prov.Protocol) {
+		if !modelspec.IsCLIProtocol(prov.Protocol) {
 			w("  %s: %s via %s (%s)\n", m.ModelName, m.Model, prov.Name, prov.Protocol)
 			continue
 		}
 		args := config.CLIArgs(prov.Protocol, prov.BypassRestrictions, m.ExtraArgs)
-		env := sortedKeys(config.CLIEnv(prov.Protocol, m.Env))
+		env := sortedKeys(modelspec.CLIEnv(prov.Protocol, m.Env))
 		w("  %s: %s via %s (%s) bypass=%s\n", m.ModelName, m.Model, prov.Name, prov.Protocol, onOff(prov.BypassRestrictions))
 		w("    argv: %s\n", list(args))
 		w("    env: %s\n", list(env))

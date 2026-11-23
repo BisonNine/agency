@@ -7,9 +7,8 @@ import (
 	"errors"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
-
-	"go.bison9.com/agency/config"
 )
 
 // reasoningPlaceholder is what the SDK engine writes into an empty
@@ -20,12 +19,12 @@ const reasoningPlaceholder = " "
 // Two endpoints: one that demands reasoning_content (DeepSeek V4 thinking
 // mode) and one that does not.
 var (
-	backfillProviders = []config.Provider{
+	backfillProviders = []modelspec.Provider{
 		{Name: "ds", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k", RequireReasoningContent: true},
 		{Name: "plain", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"},
 	}
-	dsPro      = config.ModelConfig{ModelName: "ds-pro", Provider: "ds"}
-	plainModel = config.ModelConfig{ModelName: "other", Provider: "plain"}
+	dsPro      = modelspec.Model{ModelName: "ds-pro", Provider: "ds"}
+	plainModel = modelspec.Model{ModelName: "other", Provider: "plain"}
 )
 
 // mixedHistory is what a session looks like after switching models: some
@@ -52,7 +51,7 @@ func reasoningOf(t *testing.T, msgs []spawnllm.Message, content string) string {
 // agent switched from a CLI model to DeepSeek replays a history with no
 // reasoning_content, and DeepSeek rejects it with a 400 on every turn.
 func TestBackfill_FillsEmptyAssistantReasoning(t *testing.T) {
-	requests, _ := storedHistoryTurn(t, backfillProviders, []config.ModelConfig{dsPro}, mixedHistory(), nil)
+	requests, _ := storedHistoryTurn(t, backfillProviders, []modelspec.Model{dsPro}, mixedHistory(), nil)
 	req := requests[0].messages
 	for i, m := range req {
 		if m.Role == "assistant" && m.ReasoningContent == "" {
@@ -75,7 +74,7 @@ func TestBackfill_FillsEmptyAssistantReasoning(t *testing.T) {
 // TestBackfill_OnlyAssistantMessages keeps the placeholder off user and tool
 // turns, which have no such field in the wire contract.
 func TestBackfill_OnlyAssistantMessages(t *testing.T) {
-	requests, _ := storedHistoryTurn(t, backfillProviders, []config.ModelConfig{dsPro}, mixedHistory(), nil)
+	requests, _ := storedHistoryTurn(t, backfillProviders, []modelspec.Model{dsPro}, mixedHistory(), nil)
 	for i, m := range requests[0].messages {
 		if m.Role != "assistant" && m.ReasoningContent != "" {
 			t.Errorf("message %d (%s): reasoning_content set on a non-assistant turn", i, m.Role)
@@ -89,7 +88,7 @@ func TestBackfill_OnlyAssistantMessages(t *testing.T) {
 func TestBackfill_RequiresTools(t *testing.T) {
 	toolless := dsPro
 	toolless.NoTools = true
-	requests, _ := storedHistoryTurn(t, backfillProviders, []config.ModelConfig{toolless}, mixedHistory(), nil)
+	requests, _ := storedHistoryTurn(t, backfillProviders, []modelspec.Model{toolless}, mixedHistory(), nil)
 	if got := reasoningOf(t, requests[0].messages, "written by a CLI model"); got != "" {
 		t.Errorf("no tools in the request: expected no backfill, got %q", got)
 	}
@@ -98,7 +97,7 @@ func TestBackfill_RequiresTools(t *testing.T) {
 // TestBackfill_OnlyWhenProviderOptsIn is the off path — an endpoint that never
 // asked for this must see history exactly as stored.
 func TestBackfill_OnlyWhenProviderOptsIn(t *testing.T) {
-	requests, _ := storedHistoryTurn(t, backfillProviders, []config.ModelConfig{plainModel}, mixedHistory(), nil)
+	requests, _ := storedHistoryTurn(t, backfillProviders, []modelspec.Model{plainModel}, mixedHistory(), nil)
 	if got := reasoningOf(t, requests[0].messages, "written by a CLI model"); got != "" {
 		t.Errorf("provider did not opt in: expected no backfill, got %q", got)
 	}
@@ -109,7 +108,7 @@ func TestBackfill_OnlyWhenProviderOptsIn(t *testing.T) {
 // quirk must not follow it to the next, nor reach the stored history.
 func TestBackfill_DoesNotMutateInput(t *testing.T) {
 	fail := map[string]error{dsPro.ModelName: errors.New(rateLimited)}
-	requests, stored := storedHistoryTurn(t, backfillProviders, []config.ModelConfig{dsPro, plainModel}, mixedHistory(), fail)
+	requests, stored := storedHistoryTurn(t, backfillProviders, []modelspec.Model{dsPro, plainModel}, mixedHistory(), fail)
 	if len(requests) != 2 || requests[0].model != dsPro.ModelName || requests[1].model != plainModel.ModelName {
 		t.Fatalf("requests went to %+v, want %s then %s", requests, dsPro.ModelName, plainModel.ModelName)
 	}
@@ -132,7 +131,7 @@ func TestBackfill_NothingToFill(t *testing.T) {
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", Content: "there", ReasoningContent: "thought"},
 	}
-	requests, _ := storedHistoryTurn(t, backfillProviders, []config.ModelConfig{dsPro}, history, nil)
+	requests, _ := storedHistoryTurn(t, backfillProviders, []modelspec.Model{dsPro}, history, nil)
 	if got := reasoningOf(t, requests[0].messages, "there"); got != "thought" {
 		t.Errorf("reasoning = %q, want it as stored", got)
 	}

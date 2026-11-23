@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 func TestClassifiersEffective(t *testing.T) {
@@ -140,8 +142,8 @@ func TestAgentSuiteEnabled_Classifiers(t *testing.T) {
 // is in Generate text only.
 func classifierTestConfig() *Config {
 	cfg := DefaultConfig()
-	cfg.Providers = []Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test-0123456789"}}
-	cfg.Models = []ModelConfig{
+	cfg.Providers = []modelspec.Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test-0123456789"}}
+	cfg.Models = []modelspec.Model{
 		{ModelName: "m", Model: "gpt-4o", Provider: "openai", Enabled: true},
 		{ModelName: "cheap", Model: "gpt-4o-mini", Provider: "openai", Enabled: true},
 		{ModelName: "other", Model: "gpt-x", Provider: "openai", Enabled: true},

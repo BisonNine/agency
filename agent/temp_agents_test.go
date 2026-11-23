@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
@@ -340,7 +341,7 @@ func TestSubagentSpawn_ModelNarrowsClone(t *testing.T) {
 	defer restore()
 
 	cfg := newTestConfig(t)
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "one", Model: "one-wire", Provider: "p", Enabled: true},
 		{ModelName: "two", Model: "two-wire", Provider: "p", Enabled: true},
 	}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolkit/untrusted"
@@ -303,7 +304,7 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 	}
 
 	chain := providers.ModelSet(al.catalog, alias).Begin(models.Chat)
-	if config.CLIAgentByProtocol(prov.Protocol) != nil {
+	if modelspec.CLIAgentByProtocol(prov.Protocol) != nil {
 		dir, cleanup, derr := h.isolatedFolder(ctx, al, cfg, agentID)
 		if derr != nil {
 			return "", "", derr

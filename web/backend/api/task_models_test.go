@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -24,15 +26,15 @@ func setupTaskModelsEnv(t *testing.T) (string, *http.ServeMux, *int) {
 		t.Fatal(err)
 	}
 	cfg.Providers = append(cfg.Providers,
-		config.Provider{Name: "anthropic-api", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "sk-ant-secret"},
-		config.Provider{Name: "Claude CLI", Protocol: "claude-cli"},
+		modelspec.Provider{Name: "anthropic-api", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "sk-ant-secret"},
+		modelspec.Provider{Name: "Claude CLI", Protocol: "claude-cli"},
 	)
 	cfg.Models = append(cfg.Models,
-		config.ModelConfig{ModelName: "sonnet", Model: "claude-sonnet", Provider: "anthropic-api", Enabled: true},
-		config.ModelConfig{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true},
-		config.ModelConfig{ModelName: "mixed", Model: "gpt-4o", Provider: "openai", Enabled: true},
-		config.ModelConfig{ModelName: "mixed", Model: "claude-sonnet", Provider: "anthropic-api", Enabled: true},
-		config.ModelConfig{ModelName: "off", Model: "gpt-4o", Provider: "openai", Enabled: false},
+		modelspec.Model{ModelName: "sonnet", Model: "claude-sonnet", Provider: "anthropic-api", Enabled: true},
+		modelspec.Model{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true},
+		modelspec.Model{ModelName: "mixed", Model: "gpt-4o", Provider: "openai", Enabled: true},
+		modelspec.Model{ModelName: "mixed", Model: "claude-sonnet", Provider: "anthropic-api", Enabled: true},
+		modelspec.Model{ModelName: "off", Model: "gpt-4o", Provider: "openai", Enabled: false},
 	)
 	cfg.TaskModels.ClassifyModels = []config.TaskModelRef{{Model: "custom-default"}}
 	cfg.TaskModels.TextModels = []config.TaskModelRef{{Model: "custom-default"}}

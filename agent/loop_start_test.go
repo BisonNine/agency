@@ -20,6 +20,7 @@ import (
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
@@ -162,8 +163,8 @@ func TestLoopStart_ProviderRequestStreamsOnlyForAStreamingChannel(t *testing.T) 
 	defer srv.Close()
 
 	cfg := newTestConfig(t)
-	cfg.Providers = append(cfg.Providers, config.Provider{Name: "wire", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "k"})
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "wire-model", Model: "alice-wire", Provider: "wire", Enabled: true})
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "wire", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "k"})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "wire-model", Model: "alice-wire", Provider: "wire", Enabled: true})
 	cfg.Agents.Defaults.Models = []string{"wire-model"}
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, realClients{})
 	chManager, err := channels.NewManager(&config.Config{}, bus.NewMessageBus(), nil)

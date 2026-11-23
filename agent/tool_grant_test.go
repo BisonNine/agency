@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 )
@@ -64,8 +66,8 @@ func noToolsConfig(t *testing.T) *config.Config {
 	cfg.Agents.List[0].Tools = nil
 	cfg.Agents.List[2].Tools = []string{"agent_message"}
 	// A configured model, so a fresh temporary agent can be created.
-	cfg.Providers = []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
-	cfg.Models = []config.ModelConfig{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}}
+	cfg.Providers = []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
+	cfg.Models = []modelspec.Model{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}}
 	cfg.Agents.Defaults.Models = []string{"alpha"}
 	return cfg
 }

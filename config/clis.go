@@ -18,16 +18,6 @@ import (
 // ClawEh's own controls. It is passed only when the provider's
 // bypass_restrictions ("Allow CLI to bypass restrictions" in the WebUI) is on.
 
-// CLIAgent describes one supported CLI agent.
-type CLIAgent = modelspec.CLIAgent
-
-// CLIAgents lists every supported CLI agent, in the order the WebUI shows them.
-var CLIAgents = modelspec.CLIAgents
-
-// CLIAgentByProtocol returns the CLI agent for a protocol, or nil if the
-// protocol is not a CLI. "gemini-cli" resolves to Antigravity.
-func CLIAgentByProtocol(protocol string) *CLIAgent { return modelspec.CLIAgentByProtocol(protocol) }
-
 // CLIArgs returns the arguments to run a CLI model with (modelspec.CLIArgs):
 // the protocol's bypass flags when bypass is on, its required arguments, then
 // the model's own extra_args.
@@ -39,7 +29,7 @@ func CLIAgentByProtocol(protocol string) *CLIAgent { return modelspec.CLIAgentBy
 func CLIArgs(protocol string, bypass bool, extraArgs []string) []string {
 	args, ignored := modelspec.CLIArgs(protocol, bypass, extraArgs)
 	if len(ignored) > 0 {
-		WarnIgnoredBypassArgs(CLIAgentByProtocol(protocol).Protocol, ignored)
+		WarnIgnoredBypassArgs(modelspec.CLIAgentByProtocol(protocol).Protocol, ignored)
 	}
 	return args
 }
@@ -55,10 +45,4 @@ func WarnIgnoredBypassArgs(protocol string, flags []string) {
 	// the model chain and the Check Up page lists the provider setting.
 	logger.WarnCF("config", "ignoring permission-bypass flag in extra_args: Allow CLI to bypass restrictions is off for this provider; tick it in the WebUI (or set bypass_restrictions) to pass it",
 		map[string]any{"protocol": protocol, "flags": strings.Join(flags, " ")})
-}
-
-// CLIEnv returns the environment for a CLI model: the protocol's required
-// entries, overridden by anything the model sets itself.
-func CLIEnv(protocol string, modelEnv map[string]string) map[string]string {
-	return modelspec.CLIEnv(protocol, modelEnv)
 }

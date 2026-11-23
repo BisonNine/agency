@@ -36,15 +36,6 @@ type CooldownConfig struct {
 	ServerErrorMinutes int `json:"server_error_minutes,omitempty" env:"CLAW_COOLDOWN_SERVER_ERROR_MINUTES"`
 }
 
-// Cooldown category defaults (minutes): modelspec's.
-const (
-	DefaultCooldownBillingAuthMinutes = modelspec.DefaultCooldownBillingAuthMinutes
-	DefaultCooldownRateLimitMinutes   = modelspec.DefaultCooldownRateLimitMinutes
-	DefaultCooldownBadRequestMinutes  = modelspec.DefaultCooldownBadRequestMinutes
-	DefaultCooldownClientErrorMinutes = modelspec.DefaultCooldownClientErrorMinutes
-	DefaultCooldownServerErrorMinutes = modelspec.DefaultCooldownServerErrorMinutes
-)
-
 // BillingAuth is the cooldown for HTTP 401, 402 and 403; 0 means never.
 func (c CooldownConfig) BillingAuth() time.Duration { return modelspec.Cooldown(c).BillingAuth() }
 
@@ -60,29 +51,12 @@ func (c CooldownConfig) ClientError() time.Duration { return modelspec.Cooldown(
 // ServerError is the cooldown for 5xx statuses; 0 means never.
 func (c CooldownConfig) ServerError() time.Duration { return modelspec.Cooldown(c).ServerError() }
 
-// Provider is a named endpoint a model is reached through
-// (modelspec.Provider). Models reference a provider by Name; the WebUI groups
-// models by provider.
-type Provider = modelspec.Provider
-
-// Vision passthrough modes for ModelConfig.Vision.
-const (
-	VisionOff          = modelspec.VisionOff
-	VisionUserMessage  = modelspec.VisionUserMessage
-	VisionToolResponse = modelspec.VisionToolResponse
-)
-
-// ModelConfig is one configured model (modelspec.Model). Check one with
-// ValidateModel, not its own Validate, so the operator sees the host's
-// wording.
-type ModelConfig = modelspec.Model
-
 // ValidateModel checks one model's own fields (modelspec's rules). It is the
 // one place model validation reaches the operator: every path that validates
 // a model (the WebUI's model endpoints, a config save or reload, and the
 // startup prune) goes through it, so the reserved extra_body key error names
 // the product as it always has.
-func ValidateModel(m *ModelConfig) error {
+func ValidateModel(m *modelspec.Model) error {
 	err := m.Validate()
 	if rk, ok := errors.AsType[*modelspec.ReservedBodyKeyError](err); ok {
 		return fmt.Errorf("model %q: extra_body key %q collides with a request field %s manages",
@@ -103,7 +77,7 @@ func (c *Config) HasCLIProvider() bool {
 		if err != nil {
 			continue
 		}
-		if IsCLIProtocol(prov.Protocol) {
+		if modelspec.IsCLIProtocol(prov.Protocol) {
 			return true
 		}
 	}
@@ -113,7 +87,7 @@ func (c *Config) HasCLIProvider() bool {
 // GetModelConfig returns the ModelConfig for the given model name.
 // If multiple configs exist with the same model_name, it uses round-robin
 // selection for load balancing. Returns an error if the model is not found.
-func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
+func (c *Config) GetModelConfig(modelName string) (*modelspec.Model, error) {
 	matches := c.findMatches(modelName)
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("model %q not found in models or providers", modelName)
@@ -128,8 +102,8 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 }
 
 // findMatches finds all ModelConfig entries with the given model_name.
-func (c *Config) findMatches(modelName string) []ModelConfig {
-	var matches []ModelConfig
+func (c *Config) findMatches(modelName string) []modelspec.Model {
+	var matches []modelspec.Model
 	for i := range c.Models {
 		if c.Models[i].ModelName == modelName && c.Models[i].Enabled {
 			matches = append(matches, c.Models[i])
@@ -137,18 +111,6 @@ func (c *Config) findMatches(modelName string) []ModelConfig {
 	}
 	return matches
 }
-
-// The protocols of the vendors whose speech APIs are not OpenAI-style. A
-// model on one serves task models only: it has no chat client.
-const (
-	GeminiProtocol     = modelspec.GeminiProtocol
-	ElevenLabsProtocol = modelspec.ElevenLabsProtocol
-)
-
-// TaskOnlyProtocol reports whether a provider protocol serves task models
-// only (Gemini's and ElevenLabs' own APIs). Its base_url is optional (the
-// vendor's default) and its api_key is required.
-func TaskOnlyProtocol(protocol string) bool { return modelspec.TaskOnlyProtocol(protocol) }
 
 // dropOtherProtocolFields clears the fields a provider's protocol never
 // uses, so a value left over from another protocol is not written back on
@@ -158,7 +120,7 @@ func TaskOnlyProtocol(protocol string) bool { return modelspec.TaskOnlyProtocol(
 func (c *Config) dropOtherProtocolFields() {
 	for i := range c.Providers {
 		p := &c.Providers[i]
-		if IsCLIProtocol(p.Protocol) {
+		if modelspec.IsCLIProtocol(p.Protocol) {
 			p.BaseURL = ""
 		} else {
 			p.Command = ""
@@ -167,15 +129,9 @@ func (c *Config) dropOtherProtocolFields() {
 	}
 }
 
-// IsCLIProtocol reports whether the protocol is a subprocess CLI provider,
-// which authenticates out-of-band and needs no API key. "gemini-cli" is
-// retained as an alias for "antigravity-cli": a config still naming it must
-// keep starting the MCP host, or its CLI would silently lose every claw tool.
-func IsCLIProtocol(protocol string) bool { return modelspec.IsCLIProtocol(protocol) }
-
 // GetProvider resolves a provider by name. The lookup is case-sensitive on the
 // configured Name.
-func (c *Config) GetProvider(name string) (*Provider, error) {
+func (c *Config) GetProvider(name string) (*modelspec.Provider, error) {
 	for i := range c.Providers {
 		if c.Providers[i].Name == name {
 			return &c.Providers[i], nil
@@ -287,7 +243,7 @@ func (c *Config) ValidateProvider(idx int) error {
 func (c *Config) PruneInvalid() (droppedProviders, droppedModels int) {
 	seen := make(map[string]struct{}, len(c.Providers))
 	valid := make(map[string]struct{}, len(c.Providers))
-	keptProviders := make([]Provider, 0, len(c.Providers))
+	keptProviders := make([]modelspec.Provider, 0, len(c.Providers))
 	for i := range c.Providers {
 		p := c.Providers[i]
 		var reason string
@@ -312,7 +268,7 @@ func (c *Config) PruneInvalid() (droppedProviders, droppedModels int) {
 	}
 	c.Providers = keptProviders
 
-	keptModels := make([]ModelConfig, 0, len(c.Models))
+	keptModels := make([]modelspec.Model, 0, len(c.Models))
 	for i := range c.Models {
 		m := c.Models[i]
 		if err := ValidateModel(&m); err != nil {

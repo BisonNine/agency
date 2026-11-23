@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -63,7 +65,7 @@ func secretFixture(t *testing.T) (string, *http.ServeMux, map[string]string) {
 		"mcp_header_auth": "Bearer mcp-header-secret-abcdefghijkl",
 	}
 	cfg := config.DefaultConfig()
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "m", Model: "gpt-4o", Provider: "OpenAI", Enabled: true},
 		{
 			ModelName: "cli", Model: "claude-sonnet", Provider: "ClaudeCLI", Enabled: true,
@@ -71,7 +73,7 @@ func secretFixture(t *testing.T) (string, *http.ServeMux, map[string]string) {
 		},
 	}
 	cfg.Agents.Defaults.Models = []string{"m", "cli"} // the template's CLI aliases are not in Models above
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{
 			Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: secrets["provider_api_key"],
 			Proxy: "http://" + secrets["provider_proxy_user"] + ":" + secrets["provider_proxy_pass"] + "@proxy.local:3128",
@@ -466,7 +468,7 @@ func TestMaskSecrets_LeavesNonStringsAlone(t *testing.T) {
 func telegramFixture(t *testing.T) (string, *http.ServeMux) {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.Models = []config.ModelConfig{{ModelName: "m", Model: "gpt-4o", Provider: "OpenAI", Enabled: true}}
+	cfg.Models = []modelspec.Model{{ModelName: "m", Model: "gpt-4o", Provider: "OpenAI", Enabled: true}}
 	cfg.Agents.Defaults.Models = []string{"m"}
 	cfg.Channels.Telegram = []config.TelegramBotConfig{
 		{ID: "alpha", Enabled: true, Token: "111:ALPHA-TOKEN-SECRET"},

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
@@ -67,8 +68,8 @@ const forumLaunchConfig = `{
 func forumConfig(t *testing.T, aliceForum, bobForum bool) *config.Config {
 	t.Helper()
 	cfg := ownerTestConfig(t)
-	cfg.Providers = []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
-	cfg.Models = []config.ModelConfig{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}}
+	cfg.Providers = []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
+	cfg.Models = []modelspec.Model{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}}
 	cfg.Agents.Defaults.Models = []string{"alpha"}
 	cfg.Agents.List = []config.AgentConfig{
 		{ID: "alice", Name: "Alice", Default: true, Forum: aliceForum, Subagents: &config.SubagentsConfig{AllowAgents: []string{"bob"}}},

@@ -10,6 +10,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
@@ -160,7 +161,7 @@ func (al *AgentLoop) modelHasVision(modelKey string) bool {
 	if err != nil || mc == nil {
 		return false
 	}
-	return mc.Vision == config.VisionUserMessage || mc.Vision == config.VisionToolResponse
+	return mc.Vision == modelspec.VisionUserMessage || mc.Vision == modelspec.VisionToolResponse
 }
 
 // visionDescribeSystemPrompt instructs the side-model to produce a description a

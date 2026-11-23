@@ -340,7 +340,7 @@ func TaskUseSupportFor(protocol string, use TaskUse) TaskUseSupport {
 		return TaskUseNo
 	}
 	openAI := protocol == "openai-chat" || protocol == "openai-responses"
-	if TaskOnlyProtocol(protocol) {
+	if modelspec.TaskOnlyProtocol(protocol) {
 		if use == TaskUseSTT || use == TaskUseTTS {
 			return TaskUseYes
 		}

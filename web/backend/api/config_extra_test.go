@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -271,7 +273,7 @@ func containsStr(s, sub string) bool {
 // to it. Guarded by TestValidateConfig_BaselineIsValid.
 func validConfigForValidation() *config.Config {
 	cfg := config.DefaultConfig()
-	cfg.Models = []config.ModelConfig{{
+	cfg.Models = []modelspec.Model{{
 		ModelName: "m",
 		Model:     "gpt-4o",
 		Provider:  "OpenAI", // must match a DefaultConfig provider name exactly

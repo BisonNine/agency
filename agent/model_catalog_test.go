@@ -15,6 +15,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
@@ -30,8 +31,8 @@ func catalogReloadConfig(baseDir, agentName string) *config.Config {
 			Defaults: config.AgentDefaults{Models: []string{"alpha"}, MaxTokens: 4096, MaxToolIterations: 10},
 			List:     []config.AgentConfig{{ID: "alice", Name: agentName, Default: true}},
 		},
-		Providers: []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}},
-		Models:    []config.ModelConfig{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}},
+		Providers: []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}},
+		Models:    []modelspec.Model{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}},
 	}
 }
 
@@ -200,9 +201,9 @@ func TestAssignAgentModels_Purposes(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	cfg := catalogReloadConfig(t.TempDir(), "Alice")
 	for _, n := range []string{"beta", "gamma", "eyes", "pics"} {
-		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: n, Model: n + "-wire", Provider: "p", Enabled: true})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: n, Model: n + "-wire", Provider: "p", Enabled: true})
 	}
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "nope", Model: "nope-wire", Provider: "p"}) // disabled
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "nope", Model: "nope-wire", Provider: "p"}) // disabled
 	cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{
 		ID: "bob", Name: "Bob", Models: []string{"beta", "alpha"},
 		Subagents:           &config.SubagentsConfig{Models: []string{"gamma", "nope"}},
@@ -282,7 +283,7 @@ func imageAPIIs(settings any, api string) bool {
 func TestDefaultModel_AliasSharingWireID(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	cfg := catalogReloadConfig(t.TempDir(), "Alice")
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "low", Model: "shared-wire", Provider: "p", ReasoningEffort: "low", Enabled: true},
 		{ModelName: "high", Model: "shared-wire", Provider: "p", ReasoningEffort: "high", Enabled: true},
 	}

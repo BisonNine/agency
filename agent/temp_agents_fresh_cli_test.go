@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
@@ -63,15 +65,15 @@ func TestFreshAgent_CLIModelIsolated(t *testing.T) {
 
 	logDir := t.TempDir()
 	cfg := ownerTestConfig(t)
-	cfg.Providers = []config.Provider{{
+	cfg.Providers = []modelspec.Provider{{
 		Name: "Claude CLI", Protocol: "claude-cli", Command: fakeClaudeCLI(t, logDir), BypassRestrictions: true,
 	}}
-	cfg.Models = []config.ModelConfig{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}}
+	cfg.Models = []modelspec.Model{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}}
 	cfg.Agents.Defaults.Models = []string{"cc"}
 	if err := os.MkdirAll(cfg.CLIPath(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	bypass := config.CLIAgentByProtocol("claude-cli").BypassArgs
+	bypass := modelspec.CLIAgentByProtocol("claude-cli").BypassArgs
 	if len(bypass) == 0 {
 		t.Fatal("fixture: claude-cli has no bypass flags")
 	}

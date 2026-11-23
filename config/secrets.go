@@ -32,15 +32,6 @@ import (
 // the same predicates the WebUI's masking uses (IsSecretKey and friends), so a
 // new "…_token" field accepts a reference the day it is introduced.
 
-// SecretRefEnvPrefix and SecretRefFilePrefix introduce the two reference forms.
-const (
-	SecretRefEnvPrefix  = modelspec.SecretRefEnvPrefix
-	SecretRefFilePrefix = modelspec.SecretRefFilePrefix
-)
-
-// IsSecretRef reports whether s is a secret reference rather than a literal.
-func IsSecretRef(s string) bool { return modelspec.IsSecretRef(s) }
-
 // IsSecretKey reports whether a JSON field name denotes a credential
 // ("api_key", "…_token", "…_secret", "…password", "password_hash").
 func IsSecretKey(key string) bool {
@@ -148,7 +139,7 @@ func resolveSecretRefs(doc any, allowed fs.FileMode) ([]secretRef, error) {
 	var refs []secretRef
 	var firstErr error
 	walkSecrets(doc, "", func(path, s string) string {
-		if !IsSecretRef(s) || firstErr != nil {
+		if !modelspec.IsSecretRef(s) || firstErr != nil {
 			return s
 		}
 		v, err := resolveSecretRef(s, allowed)
@@ -168,7 +159,7 @@ func resolveSecretRefs(doc any, allowed fs.FileMode) ([]secretRef, error) {
 // resolveSecretRef dereferences one "env:NAME" or "file:/abs/path" string. A
 // file whose mode grants any bit allowed does not is refused.
 func resolveSecretRef(ref string, allowed fs.FileMode) (string, error) {
-	if name, ok := strings.CutPrefix(ref, SecretRefEnvPrefix); ok {
+	if name, ok := strings.CutPrefix(ref, modelspec.SecretRefEnvPrefix); ok {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return "", fmt.Errorf("secret reference %q names no environment variable", ref)
@@ -179,7 +170,7 @@ func resolveSecretRef(ref string, allowed fs.FileMode) (string, error) {
 		}
 		return v, nil
 	}
-	path := strings.TrimSpace(strings.TrimPrefix(ref, SecretRefFilePrefix))
+	path := strings.TrimSpace(strings.TrimPrefix(ref, modelspec.SecretRefFilePrefix))
 	if path == "" || !filepath.IsAbs(path) {
 		return "", fmt.Errorf("secret reference %q: the path must be absolute", ref)
 	}
@@ -218,7 +209,7 @@ func restoreSecretRefs(doc any, refs []secretRef) {
 		byPath[r.Path] = r
 	}
 	walkSecrets(doc, "", func(path, s string) string {
-		if s == "" || IsSecretRef(s) {
+		if s == "" || modelspec.IsSecretRef(s) {
 			return s
 		}
 		if r, ok := byPath[path]; ok && r.Value == s {

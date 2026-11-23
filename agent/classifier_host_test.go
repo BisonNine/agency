@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/agentreg"
@@ -102,8 +103,8 @@ func (s *chatServer) count() int {
 func classifierHostConfig(t *testing.T, url string) *config.Config {
 	t.Helper()
 	cfg := ownerTestConfig(t)
-	cfg.Providers = []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: url + "/v1", APIKey: "k"}}
-	cfg.Models = []config.ModelConfig{
+	cfg.Providers = []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: url + "/v1", APIKey: "k"}}
+	cfg.Models = []modelspec.Model{
 		{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true},
 		{ModelName: "beta", Model: "beta-wire", Provider: "p", Enabled: true},
 	}
@@ -312,10 +313,10 @@ func TestClassifierHost_Complete(t *testing.T) {
 func TestClassifierHost_CLIIsolated(t *testing.T) {
 	logDir := t.TempDir()
 	cfg := classifierHostConfig(t, "http://127.0.0.1:0")
-	cfg.Providers = append(cfg.Providers, config.Provider{
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{
 		Name: "Claude CLI", Protocol: "claude-cli", Command: fakeClaudeCLI(t, logDir), BypassRestrictions: true,
 	})
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true})
 	cfg.Agents.List[0].Models = []string{"cc"}
 	cfg.Agents.List[0].Classifiers.Model = "cc"
 	if err := os.MkdirAll(cfg.CLIPath(), 0o700); err != nil {
@@ -357,7 +358,7 @@ func TestClassifierHost_CLIIsolated(t *testing.T) {
 		t.Errorf("CLI folder %s was not removed (err=%v)", dir, err)
 	}
 	args := strings.Split(strings.TrimSpace(readLog(t, logDir, "args")), "\n")
-	for _, flag := range config.CLIAgentByProtocol("claude-cli").BypassArgs {
+	for _, flag := range modelspec.CLIAgentByProtocol("claude-cli").BypassArgs {
 		if slices.Contains(args, flag) {
 			t.Errorf("bypass flag %s passed to the classifier's CLI: %v", flag, args)
 		}
@@ -576,8 +577,8 @@ func TestClassifierHost_CountsTowardDailySpend(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := classifierHostConfig(t, "http://127.0.0.1:0")
-	cfg.Providers = append(cfg.Providers, config.Provider{Name: "Claude CLI", Protocol: "claude-cli", Command: script})
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true})
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "Claude CLI", Protocol: "claude-cli", Command: script})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true})
 	cfg.Agents.List[0].Models = []string{"cc"}
 	cfg.Agents.List[0].Classifiers.Model = "cc"
 	cfg.Agents.Defaults.DailySpendAlertUSD = 1.0

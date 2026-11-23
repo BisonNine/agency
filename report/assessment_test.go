@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/perms"
@@ -558,8 +560,8 @@ func TestAssessment_IgnoredAllowedFolder(t *testing.T) {
 // channel, or on a secmsg daemon that discovers its accounts, is not listed.
 func TestAssessment_PersonChatNotSetUp(t *testing.T) {
 	cfg, env := fixtureConfig(t)
-	cfg.Providers = append(cfg.Providers, config.Provider{Name: "People", Protocol: config.HumanProtocol})
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "Bob person", Model: "bob", Provider: "People", Enabled: true})
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "People", Protocol: config.HumanProtocol})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "Bob person", Model: "bob", Provider: "People", Enabled: true})
 	cfg.Agents.List[1].Models = []string{"Bob person"}
 	const item = "Person's chat (Bob)" // by display name
 	hasRow := func() bool {
@@ -646,8 +648,8 @@ func TestAssessment_AgentWithNoTools(t *testing.T) {
 	}
 
 	cfg.Agents.List[1].Enabled = nil
-	cfg.Providers = append(cfg.Providers, config.Provider{Name: "People", Protocol: config.HumanProtocol})
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "Bob person", Model: "bob", Provider: "People", Enabled: true})
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "People", Protocol: config.HumanProtocol})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "Bob person", Model: "bob", Provider: "People", Enabled: true})
 	cfg.Agents.List[1].Models = []string{"Bob person"}
 	if hasRow("No tools (Bob)") {
 		t.Error("a human agent is listed")

@@ -24,7 +24,6 @@ import (
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -663,7 +662,7 @@ func fileEditRepeatHint(toolNames []string) string {
 // model the configuration does not have) and whether its provider requires
 // reasoning content. Name and Model are model.
 func (al *AgentLoop) modelFacts(agent *AgentInstance, model string) models.Candidate {
-	c := models.Candidate{Name: model, Model: model, Limits: modelspec.Limits{Vision: config.VisionOff, ThinkingLevel: modelspec.ThinkingOff}}
+	c := models.Candidate{Name: model, Model: model, Limits: modelspec.Limits{Vision: modelspec.VisionOff, ThinkingLevel: modelspec.ThinkingOff}}
 	if agent != nil {
 		l := agent.limitsFor(model)
 		c.Limits.MaxTokens, c.Limits.ThinkingLevel = l.maxTokens, l.thinkingLevel
@@ -886,5 +885,5 @@ func (al *AgentLoop) isCLIModel(name string) bool {
 		return false
 	}
 	prov, err := cfg.GetProvider(mc.Provider)
-	return err == nil && prov != nil && config.IsCLIProtocol(prov.Protocol)
+	return err == nil && prov != nil && modelspec.IsCLIProtocol(prov.Protocol)
 }

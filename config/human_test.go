@@ -9,17 +9,19 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // humanTestConfig is a valid configuration with one ordinary agent (alice)
 // and one human agent (bob) reached in his own chat.
 func humanTestConfig() *Config {
 	cfg := DefaultConfig()
-	cfg.Providers = []Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test-0123456789"},
 		{Name: "People", Protocol: HumanProtocol},
 	}
-	cfg.Models = []ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "m", Model: "gpt-4o", Provider: "openai", Enabled: true},
 		{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true, RequestTimeout: 600},
 	}
@@ -122,7 +124,7 @@ func TestHumanProblems(t *testing.T) {
 			c.Bindings[1] = AgentBinding{AgentID: "bob", Default: true, DeliverTo: "4242", Match: BindingMatch{Channel: "telegram-bob"}}
 		}, want: []HumanProblemKind{HumanBindings}, text: "Bob needs a chat of its own"},
 		{name: "model name shared with another model", mutate: func(c *Config) {
-			c.Models = append(c.Models, ModelConfig{ModelName: "Bob (human)", Model: "gpt-4o", Provider: "openai", Enabled: true})
+			c.Models = append(c.Models, modelspec.Model{ModelName: "Bob (human)", Model: "gpt-4o", Provider: "openai", Enabled: true})
 		}, want: []HumanProblemKind{HumanSharedName}, text: "The model name Bob (human) is used by a person and by another model."},
 		{name: "no default binding", mutate: func(c *Config) {
 			c.Bindings[1].Default = false
@@ -275,7 +277,7 @@ func TestPruneHumanProblems(t *testing.T) {
 	})
 	t.Run("a model sharing a person's name is dropped", func(t *testing.T) {
 		cfg := humanTestConfig()
-		cfg.Models = append(cfg.Models, ModelConfig{ModelName: "Bob (human)", Model: "gpt-4o", Provider: "openai", Enabled: true})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "Bob (human)", Model: "gpt-4o", Provider: "openai", Enabled: true})
 		cfg.PruneHumanProblems()
 		if len(cfg.Models) != 2 || cfg.Models[1].Provider != "People" {
 			t.Fatalf("models = %+v, want the impostor entry dropped", cfg.Models)

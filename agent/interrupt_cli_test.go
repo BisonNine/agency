@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/mcpserver"
 )
@@ -99,8 +99,8 @@ func TestInterrupt_CLIModelKilledAndTokenReplaced(t *testing.T) {
 
 	logDir := t.TempDir()
 	cfg := ownerTestConfig(t)
-	cfg.Providers = []config.Provider{{Name: "Claude CLI", Protocol: "claude-cli", Command: hangingCLI(t, logDir)}}
-	cfg.Models = []config.ModelConfig{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}}
+	cfg.Providers = []modelspec.Provider{{Name: "Claude CLI", Protocol: "claude-cli", Command: hangingCLI(t, logDir)}}
+	cfg.Models = []modelspec.Model{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}}
 	cfg.Agents.Defaults.Models = []string{"cc"}
 	if err := os.MkdirAll(cfg.CLIPath(), 0o700); err != nil {
 		t.Fatal(err)
@@ -154,8 +154,8 @@ func TestCancelTask_CLIWorkerKilledAndTokenRevoked(t *testing.T) {
 	logDir := t.TempDir()
 	cfg := ownerTestConfig(t)
 	cfg.Agents.List[0].Tools = []string{"agent_spawn"}
-	cfg.Providers = []config.Provider{{Name: "Claude CLI", Protocol: "claude-cli", Command: argsCLI(t, logDir)}}
-	cfg.Models = []config.ModelConfig{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}}
+	cfg.Providers = []modelspec.Provider{{Name: "Claude CLI", Protocol: "claude-cli", Command: argsCLI(t, logDir)}}
+	cfg.Models = []modelspec.Model{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}}
 	cfg.Agents.Defaults.Models = []string{"cc"}
 	if err := os.MkdirAll(cfg.CLIPath(), 0o700); err != nil {
 		t.Fatal(err)

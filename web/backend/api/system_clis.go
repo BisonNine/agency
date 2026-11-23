@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -85,8 +87,8 @@ func (h *Handler) handleListCLIs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]cliInfo, 0, len(config.CLIAgents))
-	for _, c := range config.CLIAgents {
+	out := make([]cliInfo, 0, len(modelspec.CLIAgents))
+	for _, c := range modelspec.CLIAgents {
 		info := cliInfo{
 			Protocol:      c.Protocol,
 			Label:         c.Label,
@@ -164,7 +166,7 @@ func (h *Handler) handleListCLIs(w http.ResponseWriter, r *http.Request) {
 // on finds the entries it left behind.
 func (h *Handler) handleSetCLIEnabled(w http.ResponseWriter, r *http.Request) {
 	protocol := r.PathValue("protocol")
-	agent := config.CLIAgentByProtocol(protocol)
+	agent := modelspec.CLIAgentByProtocol(protocol)
 	if agent == nil {
 		http.Error(w, fmt.Sprintf("Unknown CLI protocol %q", protocol), http.StatusNotFound)
 		return
@@ -221,11 +223,11 @@ func (h *Handler) handleSetCLIEnabled(w http.ResponseWriter, r *http.Request) {
 // When several models already reach this CLI but none is a sentinel, they are
 // all enabled — the user configured them deliberately, and adding a sentinel
 // alongside would be a model they did not ask for.
-func enableCLI(cfg *config.Config, agent *config.CLIAgent) error {
+func enableCLI(cfg *config.Config, agent *modelspec.CLIAgent) error {
 	prov := cliProviders(cfg, agent.Protocol)
 	if prov == nil {
 		name := uniqueProviderName(cfg, agent.Label)
-		cfg.Providers = append(cfg.Providers, config.Provider{
+		cfg.Providers = append(cfg.Providers, modelspec.Provider{
 			Name:     name,
 			Protocol: agent.Protocol,
 			// No Command: an empty one resolves the catalogue's binary on PATH,
@@ -237,7 +239,7 @@ func enableCLI(cfg *config.Config, agent *config.CLIAgent) error {
 
 	models := cliModels(cfg, agent.Protocol)
 	if len(models) == 0 {
-		cfg.Models = append(cfg.Models, config.ModelConfig{
+		cfg.Models = append(cfg.Models, modelspec.Model{
 			ModelName:      uniqueModelName(cfg, agent.Label),
 			Model:          agent.SentinelModel(),
 			Provider:       prov.Name,
@@ -268,7 +270,7 @@ func disableCLIModels(cfg *config.Config, protocol string) {
 // cliProviders returns the first provider using this CLI protocol, treating the
 // deprecated gemini-cli alias as antigravity-cli so an old config's provider is
 // found rather than duplicated.
-func cliProviders(cfg *config.Config, protocol string) *config.Provider {
+func cliProviders(cfg *config.Config, protocol string) *modelspec.Provider {
 	if i := cliProviderIndex(cfg, protocol); i >= 0 {
 		return &cfg.Providers[i]
 	}
@@ -279,13 +281,13 @@ func cliProviders(cfg *config.Config, protocol string) *config.Provider {
 // CLI protocol, or -1. The index is what the WebUI's edit and delete routes
 // address a provider by.
 func cliProviderIndex(cfg *config.Config, protocol string) int {
-	want := config.CLIAgentByProtocol(protocol)
+	want := modelspec.CLIAgentByProtocol(protocol)
 	if want == nil {
 		return -1
 	}
 	for i := range cfg.Providers {
 		p := &cfg.Providers[i]
-		if config.IsCLIProtocol(p.Protocol) && config.CLIAgentByProtocol(p.Protocol) == want {
+		if modelspec.IsCLIProtocol(p.Protocol) && modelspec.CLIAgentByProtocol(p.Protocol) == want {
 			return i
 		}
 	}
@@ -294,19 +296,19 @@ func cliProviderIndex(cfg *config.Config, protocol string) int {
 
 // cliModels returns every model reaching this CLI protocol, through any
 // provider that speaks it.
-func cliModels(cfg *config.Config, protocol string) []*config.ModelConfig {
-	want := config.CLIAgentByProtocol(protocol)
+func cliModels(cfg *config.Config, protocol string) []*modelspec.Model {
+	want := modelspec.CLIAgentByProtocol(protocol)
 	if want == nil {
 		return nil
 	}
 	names := map[string]struct{}{}
 	for i := range cfg.Providers {
 		p := &cfg.Providers[i]
-		if config.IsCLIProtocol(p.Protocol) && config.CLIAgentByProtocol(p.Protocol) == want {
+		if modelspec.IsCLIProtocol(p.Protocol) && modelspec.CLIAgentByProtocol(p.Protocol) == want {
 			names[p.Name] = struct{}{}
 		}
 	}
-	var out []*config.ModelConfig
+	var out []*modelspec.Model
 	for i := range cfg.Models {
 		if _, ok := names[cfg.Models[i].Provider]; ok {
 			out = append(out, &cfg.Models[i])

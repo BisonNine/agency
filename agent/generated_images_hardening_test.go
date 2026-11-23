@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
@@ -124,8 +125,8 @@ func TestGeneratedImages_CloneAnsweringAgentNamesSourceWorkspace(t *testing.T) {
 func TestGeneratedImages_FreshAgentAnsweringAgentKeepsNothing(t *testing.T) {
 	l := newSendFilesLoop(t)
 	cfg := l.al.GetConfig()
-	cfg.Providers = []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
-	cfg.Models = []config.ModelConfig{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}}
+	cfg.Providers = []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
+	cfg.Models = []modelspec.Model{{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true}}
 	if err := reloadForTest(t, l.al, context.Background(), &mockProvider{}, cfg); err != nil {
 		t.Fatal(err)
 	}

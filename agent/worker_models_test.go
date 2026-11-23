@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
@@ -26,7 +27,7 @@ import (
 func workerTestConfig(t *testing.T) *config.Config {
 	t.Helper()
 	cfg := newTestConfig(t)
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "one", Model: "one-wire", Provider: "p", Enabled: true},
 		{ModelName: "two", Model: "two-wire", Provider: "p", Enabled: true},
 		{ModelName: "three", Model: "three-wire", Provider: "p", Enabled: false},

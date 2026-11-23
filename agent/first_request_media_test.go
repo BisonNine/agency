@@ -16,10 +16,10 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
 )
@@ -93,7 +93,7 @@ func (p *messagesProvider) GetDefaultModel() string { return "test-model" }
 func TestFirstRequest_MediaResolvedAfterIterationOneCompaction(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	cfg := newTestConfig(t)
-	cfg.Models[0].Vision = config.VisionUserMessage // a model that sees images
+	cfg.Models[0].Vision = modelspec.VisionUserMessage // a model that sees images
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
 	store := &pinRecordingStore{FileMediaStore: media.NewFileMediaStore()}
 	al.mediaStore = store
@@ -260,7 +260,7 @@ func newMediaTurn(t *testing.T) *mediaTurn {
 	t.Helper()
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	cfg := newTestConfig(t)
-	cfg.Models[0].Vision = config.VisionUserMessage // a model that sees images
+	cfg.Models[0].Vision = modelspec.VisionUserMessage // a model that sees images
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
 	store := &pinRecordingStore{FileMediaStore: media.NewFileMediaStore()}
 	al.mediaStore = store

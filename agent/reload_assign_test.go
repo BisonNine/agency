@@ -17,6 +17,7 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/commands"
@@ -114,7 +115,7 @@ func TestReloadAdopt_BusyTemporaryAgentModelsRemoved(t *testing.T) {
 	defer end()
 
 	changed := abcConfig(base, "b")
-	changed.Models = slices.DeleteFunc(changed.Models, func(m config.ModelConfig) bool { return m.ModelName == "a" })
+	changed.Models = slices.DeleteFunc(changed.Models, func(m modelspec.Model) bool { return m.ModelName == "a" })
 	if err := reloadForTest(t, al, context.Background(), &mockProvider{}, changed); err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +300,7 @@ func TestClassifierHost_NoSameModelRetry(t *testing.T) {
 // running catalogue's build logs.
 func TestCheckDefaultModel_Quiet(t *testing.T) {
 	cfg := abcConfig(t.TempDir(), "a")
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "orphan", Model: "o", Provider: "nobody", Enabled: true})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "orphan", Model: "o", Provider: "nobody", Enabled: true})
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
 	if err := providers.CheckDefaultModel(context.Background(), cfg); err != nil {

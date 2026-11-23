@@ -76,8 +76,8 @@ func (b *CatalogBuilder) Alerts() *ModelAlerts { return b.alerts }
 // model, with what the dispatcher used to fill in at call time filled in now.
 // A model with no workspace runs its CLI in <CLAW_HOME>/cli; a model with no
 // request timeout takes the agents' default.
-func catalogModels(cfg *config.Config) []config.ModelConfig {
-	out := make([]config.ModelConfig, 0, len(cfg.Models))
+func catalogModels(cfg *config.Config) []modelspec.Model {
+	out := make([]modelspec.Model, 0, len(cfg.Models))
 	for i := range cfg.Models {
 		m := cfg.Models[i]
 		if !m.Enabled {
@@ -195,8 +195,8 @@ func ModelSet(c *models.Catalog, name string) *models.Set {
 
 // catalogDigest is what a catalogue built from a configuration depends on.
 type catalogDigest struct {
-	Providers     []config.Provider       `json:"providers"`
-	Models        []config.ModelConfig    `json:"models"`
+	Providers     []modelspec.Provider    `json:"providers"`
+	Models        []modelspec.Model       `json:"models"`
 	Modes         map[string]fsmode.Modes `json:"modes"` // response log file → its modes
 	Cooldown      config.CooldownConfig   `json:"cooldown"`
 	LogContent    bool                    `json:"log_content"`
@@ -259,7 +259,7 @@ func LogBypassEnabled(cfg *config.Config) {
 	}
 	for i := range cfg.Providers {
 		p := &cfg.Providers[i]
-		if p.BypassRestrictions && config.IsCLIProtocol(p.Protocol) {
+		if p.BypassRestrictions && modelspec.IsCLIProtocol(p.Protocol) {
 			logger.InfoCF("provider", "Allow CLI to bypass restrictions is on: the CLI can run commands and edit files anywhere the service user can, without asking",
 				map[string]any{"provider": p.Name, "protocol": p.Protocol})
 		}
@@ -332,7 +332,7 @@ func clientProblem(err error) error {
 		return err
 	}
 	switch {
-	case errors.Is(err, models.ErrNoClient) && config.TaskOnlyProtocol(ce.Protocol):
+	case errors.Is(err, models.ErrNoClient) && modelspec.TaskOnlyProtocol(ce.Protocol):
 		return fmt.Errorf("provider %q: protocol %q serves task models only (speech), not chat", ce.Provider, ce.Protocol)
 	case errors.Is(err, models.ErrNoClient):
 		return fmt.Errorf("provider %q: unknown protocol %q", ce.Provider, ce.Protocol)

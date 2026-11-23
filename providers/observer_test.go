@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/alerts"
@@ -74,8 +75,8 @@ func newAlertRig(t *testing.T) *alertRig {
 	r.alerts.SetAlerter(r.rec)
 	cfg := &config.Config{}
 	for _, p := range []string{"claude-cli", "openrouter", "openai"} {
-		cfg.Providers = append(cfg.Providers, config.Provider{Name: p, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
-		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "m@" + p, Model: "m", Provider: p, Enabled: true})
+		cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: p, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "m@" + p, Model: "m", Provider: p, Enabled: true})
 	}
 	r.cat = NewCatalogBuilder(r.alerts, r.clk).Build(cfg)
 	for _, p := range []string{"claude-cli", "openrouter", "openai"} {

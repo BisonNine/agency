@@ -15,6 +15,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
@@ -63,8 +64,8 @@ const bobChat = "bob-chat"
 func humanLoopConfig(t *testing.T, timeoutSec int) *config.Config {
 	t.Helper()
 	cfg := newTestConfig(t)
-	cfg.Providers = []config.Provider{{Name: "People", Protocol: config.HumanProtocol}}
-	cfg.Models = []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true, RequestTimeout: timeoutSec}}
+	cfg.Providers = []modelspec.Provider{{Name: "People", Protocol: config.HumanProtocol}}
+	cfg.Models = []modelspec.Model{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true, RequestTimeout: timeoutSec}}
 	cfg.Agents.List = []config.AgentConfig{
 		{ID: "alice", Name: "Alice", Default: true, Tools: []string{"*"}},
 		{ID: "bob", Name: "Bob", Models: []string{"Bob (human)"}, Tools: []string{"*"}, MCPTools: []string{"*"}},

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -21,42 +23,42 @@ func TestProviderReady_ResolvesTheBinaryRatherThanTrustingTheString(t *testing.T
 
 	tests := []struct {
 		name     string
-		provider config.Provider
+		provider modelspec.Provider
 		want     bool
 	}{
 		{
 			name:     "blank command finds the protocol default on PATH",
-			provider: config.Provider{Protocol: "antigravity-cli"},
+			provider: modelspec.Provider{Protocol: "antigravity-cli"},
 			want:     true,
 		},
 		{
 			name:     "a path that does not exist is not ready",
-			provider: config.Provider{Protocol: "antigravity-cli", Command: filepath.Join(dir, "gone")},
+			provider: modelspec.Provider{Protocol: "antigravity-cli", Command: filepath.Join(dir, "gone")},
 			want:     false,
 		},
 		{
 			name:     "an explicit path that exists is ready",
-			provider: config.Provider{Protocol: "antigravity-cli", Command: binPath},
+			provider: modelspec.Provider{Protocol: "antigravity-cli", Command: binPath},
 			want:     true,
 		},
 		{
 			name:     "the deprecated gemini-cli alias resolves to agy",
-			provider: config.Provider{Protocol: "gemini-cli"},
+			provider: modelspec.Provider{Protocol: "gemini-cli"},
 			want:     true,
 		},
 		{
 			name:     "a CLI whose binary is absent is not ready",
-			provider: config.Provider{Protocol: "codex-cli"},
+			provider: modelspec.Provider{Protocol: "codex-cli"},
 			want:     false,
 		},
 		{
 			name:     "an HTTP provider is ready when it has a key",
-			provider: config.Provider{Protocol: "openai-chat", APIKey: "sk-x"},
+			provider: modelspec.Provider{Protocol: "openai-chat", APIKey: "sk-x"},
 			want:     true,
 		},
 		{
 			name:     "an HTTP provider without a key is not",
-			provider: config.Provider{Protocol: "openai-chat"},
+			provider: modelspec.Provider{Protocol: "openai-chat"},
 			want:     false,
 		},
 	}
@@ -79,14 +81,14 @@ func TestResolvedCLICommand_NamesTheBinaryABlankCommandWillRun(t *testing.T) {
 	}
 	t.Setenv("PATH", dir)
 
-	if got := resolvedCLICommand(&config.Provider{Protocol: "claude-cli"}); got != binPath {
+	if got := resolvedCLICommand(&modelspec.Provider{Protocol: "claude-cli"}); got != binPath {
 		t.Errorf("resolved command = %q, want %q", got, binPath)
 	}
 	// HTTP providers have no binary, and an unresolvable CLI must not invent one.
-	if got := resolvedCLICommand(&config.Provider{Protocol: "openai-chat", APIKey: "k"}); got != "" {
+	if got := resolvedCLICommand(&modelspec.Provider{Protocol: "openai-chat", APIKey: "k"}); got != "" {
 		t.Errorf("HTTP provider resolved to %q, want empty", got)
 	}
-	if got := resolvedCLICommand(&config.Provider{Protocol: "cursor-cli"}); got != "" {
+	if got := resolvedCLICommand(&modelspec.Provider{Protocol: "cursor-cli"}); got != "" {
 		t.Errorf("missing binary resolved to %q, want empty", got)
 	}
 }
@@ -96,7 +98,7 @@ func TestResolvedCLICommand_NamesTheBinaryABlankCommandWillRun(t *testing.T) {
 // as unusable.
 func TestDefaultCLIBinary_CoversEveryAcceptedCLIProtocol(t *testing.T) {
 	for _, protocol := range []string{"claude-cli", "codex-cli", "antigravity-cli", "cursor-cli", "gemini-cli"} {
-		if !config.IsCLIProtocol(protocol) {
+		if !modelspec.IsCLIProtocol(protocol) {
 			t.Fatalf("%s is no longer an accepted CLI protocol; update this test", protocol)
 		}
 		if defaultCLIBinary(protocol) == "" {
@@ -108,11 +110,11 @@ func TestDefaultCLIBinary_CoversEveryAcceptedCLIProtocol(t *testing.T) {
 // A human provider reaches a person: it is ready with no key, and its models
 // count as configured.
 func TestProviderReady_Human(t *testing.T) {
-	p := &config.Provider{Name: "People", Protocol: config.HumanProtocol}
+	p := &modelspec.Provider{Name: "People", Protocol: config.HumanProtocol}
 	if !providerReady(p) {
 		t.Error("a human provider is not ready")
 	}
-	if !hasModelConfiguration(p, config.ModelConfig{ModelName: "Bob (human)", Model: "bob"}) {
+	if !hasModelConfiguration(p, modelspec.Model{ModelName: "Bob (human)", Model: "bob"}) {
 		t.Error("a human model is not configured")
 	}
 	if got := testProviderConnectivity(providerTestRequest{Protocol: config.HumanProtocol}); !got.OK {

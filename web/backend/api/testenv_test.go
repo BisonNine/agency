@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -18,13 +20,13 @@ func setupTestEnv(t *testing.T) string {
 	t.Setenv("CLAW_HOME", filepath.Join(tmp, ".claw"))
 
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{
+	cfg.Providers = []modelspec.Provider{{
 		Name:     "openai",
 		Protocol: "openai-chat",
 		BaseURL:  "https://api.openai.com/v1",
 		APIKey:   "sk-default",
 	}}
-	cfg.Models = []config.ModelConfig{{
+	cfg.Models = []modelspec.Model{{
 		ModelName: "custom-default",
 		Model:     "gpt-4o",
 		Provider:  "openai",

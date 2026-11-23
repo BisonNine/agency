@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/cron"
@@ -20,8 +22,8 @@ import (
 // Ordinary agents are unchanged.
 func TestCronTool_HumanAgent(t *testing.T) {
 	cfg := testConfig()
-	cfg.Providers = []config.Provider{{Name: "People", Protocol: config.HumanProtocol}}
-	cfg.Models = []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true}}
+	cfg.Providers = []modelspec.Provider{{Name: "People", Protocol: config.HumanProtocol}}
+	cfg.Models = []modelspec.Model{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true}}
 	for i := range cfg.Agents.List {
 		if cfg.Agents.List[i].ID == "bob" {
 			cfg.Agents.List[i].Models = []string{"Bob (human)"}

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -30,8 +32,8 @@ func TestHandleHumanAgentProblems(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			cfg.Providers = append(cfg.Providers, config.Provider{Name: "People", Protocol: config.HumanProtocol})
-			cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true})
+			cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "People", Protocol: config.HumanProtocol})
+			cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true})
 			cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Models: []string{"Bob (human)"}})
 			if tc.binding {
 				cfg.Bindings = append(cfg.Bindings, config.AgentBinding{

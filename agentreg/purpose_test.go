@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/clock"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/config"
 )
@@ -19,7 +20,7 @@ import (
 func TestPurposeAndCloneModel_SurviveReloadAndRestart(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Agents.List[0].Models = []string{"m1", "m2"}
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "m2", Model: "model-two", Provider: "p", Enabled: true})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "m2", Model: "model-two", Provider: "p", Enabled: true})
 	r := mustNew(t, cfg, newFakeHost())
 	clone := mustClone(t, r, "alice", CloneModel("m2"), WithPurpose("forum"), OwnedBy("alice"), WithCardPrompt(" # Character\nYou are Bob. "))
 	fresh := mustFresh(t, r, config.AgentConfig{Models: []string{"m1"}}, WithPurpose("forum"))
@@ -97,7 +98,7 @@ func TestTouch(t *testing.T) {
 func TestCloneModel_DeletedWhenSourceDropsIt(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Agents.List[0].Models = []string{"m1", "m2"}
-	cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "m2", Model: "model-two", Provider: "p", Enabled: true})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "m2", Model: "model-two", Provider: "p", Enabled: true})
 	r := mustNew(t, cfg, newFakeHost())
 	clone := mustClone(t, r, "alice", CloneModel("m2"))
 	kept := mustClone(t, r, "alice", CloneModel("m1"))

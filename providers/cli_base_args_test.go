@@ -7,13 +7,12 @@ import (
 	"slices"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
-
-	"go.bison9.com/agency/config"
 )
 
 // The WebUI shows an operator the command line of each CLI from the
-// catalogue (config.CLIAgents, modelspec's), while spawnllm builds the real
+// catalogue (modelspec.CLIAgents), while spawnllm builds the real
 // invocation from its own base arguments. The two must agree, or the page
 // shows a command that is not the one being run.
 func TestCLIAgents_BaseArgsMatchTheInvocation(t *testing.T) {
@@ -23,10 +22,10 @@ func TestCLIAgents_BaseArgsMatchTheInvocation(t *testing.T) {
 		"antigravity-cli": spawnllm.AntigravityCliBaseArgs(),
 		"cursor-cli":      spawnllm.CursorCliBaseArgs(),
 	}
-	if len(config.CLIAgents) != len(built) {
-		t.Fatalf("catalogue has %d CLIs, spawnllm builds %d", len(config.CLIAgents), len(built))
+	if len(modelspec.CLIAgents) != len(built) {
+		t.Fatalf("catalogue has %d CLIs, spawnllm builds %d", len(modelspec.CLIAgents), len(built))
 	}
-	for _, c := range config.CLIAgents {
+	for _, c := range modelspec.CLIAgents {
 		want, ok := built[c.Protocol]
 		if !ok {
 			t.Errorf("%s: spawnllm builds no invocation for it", c.Protocol)

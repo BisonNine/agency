@@ -14,6 +14,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
@@ -439,10 +440,10 @@ func openAIStub(t *testing.T) *httptest.Server {
 // through Bob's API at srv.
 func sideModelLoop(srv *httptest.Server, alias string) *AgentLoop {
 	cfg := &config.Config{
-		Providers: []config.Provider{
+		Providers: []modelspec.Provider{
 			{Name: "Bob's API", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "dummy"},
 		},
-		Models: []config.ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: alias, Model: "wire", Provider: "Bob's API", Enabled: true},
 		},
 	}

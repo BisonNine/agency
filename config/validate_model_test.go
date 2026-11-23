@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/logger"
 )
@@ -21,7 +23,7 @@ func reservedKeyMessage(model, key string) string {
 }
 
 func TestValidateModel_ReservedKeyKeepsTheHostWording(t *testing.T) {
-	m := ModelConfig{
+	m := modelspec.Model{
 		ModelName: "alice-chat", Model: "gpt", Provider: "openai",
 		ExtraBody: map[string]any{"temperature": 1},
 	}
@@ -32,14 +34,14 @@ func TestValidateModel_ReservedKeyKeepsTheHostWording(t *testing.T) {
 }
 
 func TestValidateModel_OtherErrorsPassThrough(t *testing.T) {
-	ok := ModelConfig{
+	ok := modelspec.Model{
 		ModelName: "alice-chat", Model: "gpt", Provider: "openai",
 		ExtraBody: map[string]any{"safety_settings": "strict"},
 	}
 	if err := ValidateModel(&ok); err != nil {
 		t.Fatalf("valid model refused: %v", err)
 	}
-	bad := ModelConfig{ModelName: "alice-chat", Model: "gpt"}
+	bad := modelspec.Model{ModelName: "alice-chat", Model: "gpt"}
 	if err := ValidateModel(&bad); err == nil || err.Error() != bad.Validate().Error() {
 		t.Fatalf("ValidateModel = %v, want modelspec's %v", err, bad.Validate())
 	}
@@ -49,8 +51,8 @@ func TestValidateModel_OtherErrorsPassThrough(t *testing.T) {
 // run.
 func TestValidateModels_ReservedKeyKeepsTheHostWording(t *testing.T) {
 	cfg := &Config{
-		Providers: []Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1"}},
-		Models: []ModelConfig{{
+		Providers: []modelspec.Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1"}},
+		Models: []modelspec.Model{{
 			ModelName: "alice-chat", Model: "gpt", Provider: "openai",
 			ExtraBody: map[string]any{"stream": true},
 		}},
@@ -67,8 +69,8 @@ func TestPruneInvalid_ReservedKeyKeepsTheHostWording(t *testing.T) {
 	defer restore()
 
 	cfg := &Config{
-		Providers: []Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1"}},
-		Models: []ModelConfig{{
+		Providers: []modelspec.Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1"}},
+		Models: []modelspec.Model{{
 			ModelName: "bob-chat", Model: "gpt", Provider: "openai",
 			ExtraBody: map[string]any{"tools": []any{}},
 		}},

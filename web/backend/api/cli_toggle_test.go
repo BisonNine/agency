@@ -9,6 +9,8 @@ import (
 	"slices"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -51,7 +53,7 @@ func TestSetCLIEnabled_CreatesProviderAndModelFromNothing(t *testing.T) {
 	// to the full catalogue on load, which is right for a fresh install and
 	// wrong for this test.
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"}}
+	cfg.Providers = []modelspec.Provider{{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"}}
 	cfg.Models = nil
 	h, path := writeConfig(t, cfg)
 
@@ -90,13 +92,13 @@ func TestSetCLIEnabled_CreatesProviderAndModelFromNothing(t *testing.T) {
 // left a second model enabled would still route agents to it.
 func TestSetCLIEnabled_OffDisablesEveryModelOnTheCLI(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "Claude CLI", Protocol: "claude-cli"}}
-	cfg.Models = []config.ModelConfig{
+	cfg.Providers = []modelspec.Provider{{Name: "Claude CLI", Protocol: "claude-cli"}}
+	cfg.Models = []modelspec.Model{
 		{ModelName: "Claude CLI", Model: "claude-cli", Provider: "Claude CLI", Enabled: true},
 		{ModelName: "Claude CLI Opus", Model: "claude-opus-4-7", Provider: "Claude CLI", Enabled: true},
 		{ModelName: "Elsewhere", Model: "gpt-5.5", Provider: "OpenAI", Enabled: true},
 	}
-	cfg.Providers = append(cfg.Providers, config.Provider{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"})
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"})
 	h, path := writeConfig(t, cfg)
 
 	if rec := setCLI(t, h, "claude-cli", false); rec.Code != http.StatusOK {
@@ -126,7 +128,7 @@ func TestSetCLIEnabled_OffDisablesEveryModelOnTheCLI(t *testing.T) {
 // second provider and model each time.
 func TestSetCLIEnabled_RoundTripsWithoutDuplicating(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"}}
+	cfg.Providers = []modelspec.Provider{{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"}}
 	cfg.Models = nil
 	h, path := writeConfig(t, cfg)
 
@@ -153,8 +155,8 @@ func TestSetCLIEnabled_RoundTripsWithoutDuplicating(t *testing.T) {
 // and silently replacing a configured entry would lose the tuning.
 func TestSetCLIEnabled_OnKeepsAnExistingModelsSettings(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "My Claude", Protocol: "claude-cli", Command: "/opt/claude"}}
-	cfg.Models = []config.ModelConfig{{
+	cfg.Providers = []modelspec.Provider{{Name: "My Claude", Protocol: "claude-cli", Command: "/opt/claude"}}
+	cfg.Models = []modelspec.Model{{
 		ModelName: "Tuned", Model: "claude-cli", Provider: "My Claude",
 		ContextWindow: 250000, Workspace: "/srv/work", Enabled: false,
 	}}
@@ -184,8 +186,8 @@ func TestSetCLIEnabled_OnKeepsAnExistingModelsSettings(t *testing.T) {
 // recognised as Antigravity, not treated as a second, unconfigured CLI.
 func TestSetCLIEnabled_FindsAGeminiCLIProviderForAntigravity(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "Gemini CLI", Protocol: "gemini-cli"}}
-	cfg.Models = []config.ModelConfig{{ModelName: "Gemini CLI", Model: "gemini-2.5-pro", Provider: "Gemini CLI", Enabled: false}}
+	cfg.Providers = []modelspec.Provider{{Name: "Gemini CLI", Protocol: "gemini-cli"}}
+	cfg.Models = []modelspec.Model{{ModelName: "Gemini CLI", Model: "gemini-2.5-pro", Provider: "Gemini CLI", Enabled: false}}
 	h, path := writeConfig(t, cfg)
 
 	if rec := setCLI(t, h, "antigravity-cli", true); rec.Code != http.StatusOK {
@@ -212,8 +214,8 @@ func TestSetCLIEnabled_RejectsAnUnknownProtocol(t *testing.T) {
 // switch just wrote.
 func TestListCLIs_ReportsConfiguredState(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "Claude CLI", Protocol: "claude-cli"}}
-	cfg.Models = []config.ModelConfig{
+	cfg.Providers = []modelspec.Provider{{Name: "Claude CLI", Protocol: "claude-cli"}}
+	cfg.Models = []modelspec.Model{
 		{ModelName: "a", Model: "claude-cli", Provider: "Claude CLI", Enabled: true},
 		{ModelName: "b", Model: "claude-opus-4-7", Provider: "Claude CLI", Enabled: false},
 	}
@@ -225,7 +227,7 @@ func TestListCLIs_ReportsConfiguredState(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != len(config.CLIAgents) {
+	if len(got) != len(modelspec.CLIAgents) {
 		t.Fatalf("got %d rows, want one per supported CLI", len(got))
 	}
 	for _, c := range got {
@@ -251,8 +253,8 @@ func TestListCLIs_ReportsConfiguredState(t *testing.T) {
 // it went unnoticed.
 func TestListCLIs_DoesNotRepeatAFlagTheProtocolAlreadySupplies(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "Cursor CLI", Protocol: "cursor-cli"}}
-	cfg.Models = []config.ModelConfig{
+	cfg.Providers = []modelspec.Provider{{Name: "Cursor CLI", Protocol: "cursor-cli"}}
+	cfg.Models = []modelspec.Model{
 		// As the seeded models ship: carrying the required flag explicitly.
 		{ModelName: "a", Model: "cursor-cli", Provider: "Cursor CLI", ExtraArgs: []string{"--yolo"}, Enabled: true},
 		{ModelName: "b", Model: "cursor-x", Provider: "Cursor CLI", ExtraArgs: []string{"--yolo", "--verbose"}, Enabled: true},
@@ -326,7 +328,7 @@ func listCLI(t *testing.T, h *Handler, protocol string) cliInfo {
 // through PUT, the saved config, and the listing.
 func TestSetCLI_BypassRestrictionsRoundTrip(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"}}
+	cfg.Providers = []modelspec.Provider{{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"}}
 	cfg.Models = nil
 	h, path := writeConfig(t, cfg)
 

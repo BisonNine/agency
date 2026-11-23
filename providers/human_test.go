@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
@@ -16,8 +17,8 @@ import (
 
 func TestHumanProvider_FromCatalogue(t *testing.T) {
 	cfg := &config.Config{
-		Providers: []config.Provider{{Name: "People", Protocol: config.HumanProtocol}},
-		Models:    []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", RequestTimeout: 90, Enabled: true}},
+		Providers: []modelspec.Provider{{Name: "People", Protocol: config.HumanProtocol}},
+		Models:    []modelspec.Model{{ModelName: "Bob (human)", Model: "bob", Provider: "People", RequestTimeout: 90, Enabled: true}},
 	}
 	b := NewCatalogBuilder(nil, nil)
 	human := func(c interface {
@@ -48,7 +49,7 @@ func TestHumanProvider_FromCatalogue(t *testing.T) {
 		t.Error("a rebuild made a new human client")
 	}
 	changed := *cfg
-	changed.Models = []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", RequestTimeout: 30, Enabled: true}}
+	changed.Models = []modelspec.Model{{ModelName: "Bob (human)", Model: "bob", Provider: "People", RequestTimeout: 30, Enabled: true}}
 	if other := human(b.Build(&changed)); other.Timeout() != 30*time.Second {
 		t.Errorf("changed timeout = %s, want 30s", other.Timeout())
 	}

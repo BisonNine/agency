@@ -6,10 +6,12 @@ package config
 import (
 	"slices"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 func TestValidateProvider_IgnoresOtherInvalidEntries(t *testing.T) {
-	cfg := &Config{Providers: []Provider{
+	cfg := &Config{Providers: []modelspec.Provider{
 		{Name: "stale", Protocol: "openai", BaseURL: "https://x/v1"},     // invalid (renamed protocol)
 		{Name: "good", Protocol: "openai-chat", BaseURL: "https://x/v1"}, // valid
 	}}
@@ -23,7 +25,7 @@ func TestValidateProvider_IgnoresOtherInvalidEntries(t *testing.T) {
 		t.Error("ValidateProvider(stale) = nil, want unknown-protocol error")
 	}
 	// Duplicate names are still rejected.
-	cfg.Providers = append(cfg.Providers, Provider{Name: "good", Protocol: "openai-chat", BaseURL: "https://y/v1"})
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "good", Protocol: "openai-chat", BaseURL: "https://y/v1"})
 	if err := cfg.ValidateProvider(2); err == nil {
 		t.Error("ValidateProvider(dup) = nil, want duplicate-name error")
 	}
@@ -35,13 +37,13 @@ func TestValidateProvider_IgnoresOtherInvalidEntries(t *testing.T) {
 
 func TestPruneInvalid(t *testing.T) {
 	cfg := &Config{
-		Providers: []Provider{
+		Providers: []modelspec.Provider{
 			{Name: "good", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1"},
 			{Name: "stale", Protocol: "openai", BaseURL: "https://api.example.com/v1"}, // unknown protocol
 			{Name: "nobase", Protocol: "openai-chat"},                                  // http protocol missing base_url
 			{Name: "", Protocol: "openai-chat", BaseURL: "https://x/v1"},               // empty name
 		},
-		Models: []ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: "ok", Model: "gpt-4o", Provider: "good", Enabled: true},
 			{ModelName: "orphan", Model: "m", Provider: "stale", Enabled: true},  // provider pruned
 			{ModelName: "missing", Model: "m", Provider: "ghost", Enabled: true}, // provider never existed

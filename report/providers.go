@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 )
@@ -28,8 +30,8 @@ var cliModelSentinels = map[string][]string{
 // required arguments plus the model's extra_args, the model flag unless the id
 // is the CLI's sentinel, the working directory for codex, then the trailing
 // stdin marker.
-func cliLaunch(prov *config.Provider, m *config.ModelConfig) (command, workdir string, envNames []string) {
-	agent := config.CLIAgentByProtocol(prov.Protocol)
+func cliLaunch(prov *modelspec.Provider, m *modelspec.Model) (command, workdir string, envNames []string) {
+	agent := modelspec.CLIAgentByProtocol(prov.Protocol)
 	workdir = m.Workspace
 	if workdir == "" {
 		workdir = "."
@@ -56,11 +58,11 @@ func cliLaunch(prov *config.Provider, m *config.ModelConfig) (command, workdir s
 			parts[i] = "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
 		}
 	}
-	return strings.Join(parts, " "), workdir, sortedKeys(config.CLIEnv(prov.Protocol, m.Env))
+	return strings.Join(parts, " "), workdir, sortedKeys(modelspec.CLIEnv(prov.Protocol, m.Env))
 }
 
 // modelSettings lists the flags set on a model that change what it may do.
-func modelSettings(m *config.ModelConfig) string {
+func modelSettings(m *modelspec.Model) string {
 	var s []string
 	if !m.Enabled {
 		s = append(s, "disabled")
@@ -71,7 +73,7 @@ func modelSettings(m *config.ModelConfig) string {
 	if m.ThinkingLevel != "" {
 		s = append(s, "thinking "+m.ThinkingLevel)
 	}
-	if m.Vision != "" && m.Vision != config.VisionOff {
+	if m.Vision != "" && m.Vision != modelspec.VisionOff {
 		s = append(s, "vision "+m.Vision)
 	}
 	if m.RequestTimeout > 0 {
@@ -86,8 +88,8 @@ func modelSettings(m *config.ModelConfig) string {
 	return strings.Join(s, ", ")
 }
 
-func modelsFor(cfg *config.Config, provider string) []*config.ModelConfig {
-	var out []*config.ModelConfig
+func modelsFor(cfg *config.Config, provider string) []*modelspec.Model {
+	var out []*modelspec.Model
 	for i := range cfg.Models {
 		if cfg.Models[i].Provider == provider {
 			out = append(out, &cfg.Models[i])
@@ -103,7 +105,7 @@ func collectProviders(_ context.Context, cfg *config.Config, _ Environment) Sect
 	var idle []string
 	for i := range cfg.Providers {
 		p := &cfg.Providers[i]
-		var enabled []*config.ModelConfig
+		var enabled []*modelspec.Model
 		for _, m := range modelsFor(cfg, p.Name) {
 			if m.Enabled {
 				enabled = append(enabled, m)
@@ -116,7 +118,7 @@ func collectProviders(_ context.Context, cfg *config.Config, _ Environment) Sect
 		for _, m := range enabled {
 			models.Rows = append(models.Rows, row(m.ModelName, p.Name, m.Model, modelSettings(m)))
 		}
-		if config.IsCLIProtocol(p.Protocol) {
+		if modelspec.IsCLIProtocol(p.Protocol) {
 			for _, m := range enabled {
 				cmd, wd, envNames := cliLaunch(p, m)
 				if wd == "." {

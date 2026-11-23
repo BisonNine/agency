@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -26,11 +28,11 @@ import (
 // on PATH, and this is the PATH the CLI subprocess will actually be launched
 // with, which no other vantage point can know: one host may run several
 // instances under different users with different PATHs baked into their units.
-func providerReady(p *config.Provider) bool {
+func providerReady(p *modelspec.Provider) bool {
 	if config.IsHumanProtocol(p.Protocol) {
 		return true // reaches a person: nothing to authenticate or find
 	}
-	if !config.IsCLIProtocol(p.Protocol) {
+	if !modelspec.IsCLIProtocol(p.Protocol) {
 		return p.APIKey != ""
 	}
 	_, ok := resolveCLIBinary(p.Protocol, p.Command)
@@ -40,8 +42,8 @@ func providerReady(p *config.Provider) bool {
 // resolvedCLICommand returns where a CLI provider's binary was found, and "" for
 // an HTTP provider or a CLI one that could not be resolved. It lets the card
 // show which binary a blank command will run.
-func resolvedCLICommand(p *config.Provider) string {
-	if !config.IsCLIProtocol(p.Protocol) {
+func resolvedCLICommand(p *modelspec.Provider) string {
+	if !modelspec.IsCLIProtocol(p.Protocol) {
 		return ""
 	}
 	path, ok := resolveCLIBinary(p.Protocol, p.Command)
@@ -79,7 +81,7 @@ func resolveCLIBinary(protocol, command string) (string, bool) {
 // page and the CLI section cannot drift apart. The catalogue resolves the
 // deprecated gemini-cli alias to Antigravity's binary.
 func defaultCLIBinary(protocol string) string {
-	if agent := config.CLIAgentByProtocol(protocol); agent != nil {
+	if agent := modelspec.CLIAgentByProtocol(protocol); agent != nil {
 		return agent.Binary
 	}
 	return ""

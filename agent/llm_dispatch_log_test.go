@@ -15,6 +15,7 @@ import (
 	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/common"
 
@@ -62,9 +63,9 @@ func chainCatalog(t *testing.T, p spawnllm.LLMProvider, parked []models.Candidat
 			continue
 		}
 		if _, err := cfg.GetProvider(c.Provider); err != nil {
-			cfg.Providers = append(cfg.Providers, config.Provider{Name: c.Provider, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
+			cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: c.Provider, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
 		}
-		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: c.Name, Model: c.Model, Provider: c.Provider, Enabled: true})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: c.Name, Model: c.Model, Provider: c.Provider, Enabled: true})
 		clients[c.Name] = p
 	}
 	cat := testCatalog(cfg, nil)

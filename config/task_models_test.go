@@ -12,18 +12,20 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // taskModelsTestConfig has three enabled models on an OpenAI-style provider,
 // one on a CLI provider and one person.
 func taskModelsTestConfig() *Config {
 	cfg := DefaultConfig()
-	cfg.Providers = []Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test-0123456789"},
 		{Name: "anthropic", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "sk-test-0123456789"},
 		{Name: "claude", Protocol: "claude-cli"},
 	}
-	cfg.Models = []ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "m", Model: "gpt-4o", Provider: "openai", Enabled: true},
 		{ModelName: "whisper", Model: "whisper-1", Provider: "openai", Enabled: true},
 		{ModelName: "sonnet", Model: "claude-sonnet", Provider: "anthropic", Enabled: true},
@@ -458,13 +460,13 @@ func TestTaskUseSupportFor(t *testing.T) {
 		{"openai-chat", TaskUseTTS, TaskUseYes},
 		{"anthropic", TaskUseTTS, TaskUseNo},
 		{HumanProtocol, TaskUseText, TaskUseNo},
-		{GeminiProtocol, TaskUseSTT, TaskUseYes},
-		{GeminiProtocol, TaskUseTTS, TaskUseYes},
-		{GeminiProtocol, TaskUseText, TaskUseNo},
-		{GeminiProtocol, TaskUseImage, TaskUseNo},
-		{ElevenLabsProtocol, TaskUseSTT, TaskUseYes},
-		{ElevenLabsProtocol, TaskUseTTS, TaskUseYes},
-		{ElevenLabsProtocol, TaskUseVision, TaskUseNo},
+		{modelspec.GeminiProtocol, TaskUseSTT, TaskUseYes},
+		{modelspec.GeminiProtocol, TaskUseTTS, TaskUseYes},
+		{modelspec.GeminiProtocol, TaskUseText, TaskUseNo},
+		{modelspec.GeminiProtocol, TaskUseImage, TaskUseNo},
+		{modelspec.ElevenLabsProtocol, TaskUseSTT, TaskUseYes},
+		{modelspec.ElevenLabsProtocol, TaskUseTTS, TaskUseYes},
+		{modelspec.ElevenLabsProtocol, TaskUseVision, TaskUseNo},
 	} {
 		if got := TaskUseSupportFor(tc.protocol, tc.use); got != tc.want {
 			t.Errorf("TaskUseSupportFor(%s, %s) = %v, want %v", tc.protocol, tc.use, got, tc.want)
@@ -490,11 +492,11 @@ func TestAgentConfig_TaskModelAllowed(t *testing.T) {
 // gemini and elevenlabs are HTTP protocols with an optional base URL and a
 // required API key; a model on one has no chat client.
 func TestTaskOnlyProtocols_Validation(t *testing.T) {
-	for _, proto := range []string{GeminiProtocol, ElevenLabsProtocol} {
-		if !TaskOnlyProtocol(proto) {
+	for _, proto := range []string{modelspec.GeminiProtocol, modelspec.ElevenLabsProtocol} {
+		if !modelspec.TaskOnlyProtocol(proto) {
 			t.Errorf("%s is not task-only", proto)
 		}
-		c := &Config{Providers: []Provider{{Name: "v", Protocol: proto, APIKey: "k"}}}
+		c := &Config{Providers: []modelspec.Provider{{Name: "v", Protocol: proto, APIKey: "k"}}}
 		if err := c.ValidateProviders(); err != nil {
 			t.Errorf("%s without base_url: %v", proto, err)
 		}
@@ -509,7 +511,7 @@ func TestTaskOnlyProtocols_Validation(t *testing.T) {
 			t.Errorf("%s without api_key not pruned", proto)
 		}
 	}
-	if TaskOnlyProtocol("openai-chat") {
+	if modelspec.TaskOnlyProtocol("openai-chat") {
 		t.Error("openai-chat is task-only")
 	}
 }
@@ -517,11 +519,11 @@ func TestTaskOnlyProtocols_Validation(t *testing.T) {
 func TestTaskModelProblem(t *testing.T) {
 	cfg := taskModelsTestConfig()
 	cfg.Models = append(cfg.Models,
-		ModelConfig{ModelName: "off", Model: "x", Provider: "openai", Enabled: false},
-		ModelConfig{ModelName: "orphan", Model: "x", Provider: "gone", Enabled: true},
+		modelspec.Model{ModelName: "off", Model: "x", Provider: "openai", Enabled: false},
+		modelspec.Model{ModelName: "orphan", Model: "x", Provider: "gone", Enabled: true},
 	)
-	cfg.Providers = append(cfg.Providers, Provider{Name: "el", Protocol: ElevenLabsProtocol, APIKey: "k"})
-	cfg.Models = append(cfg.Models, ModelConfig{ModelName: "scribe", Model: "scribe_v1", Provider: "el", Enabled: true})
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "el", Protocol: modelspec.ElevenLabsProtocol, APIKey: "k"})
+	cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "scribe", Model: "scribe_v1", Provider: "el", Enabled: true})
 	for _, tc := range []struct {
 		name string
 		use  TaskUse

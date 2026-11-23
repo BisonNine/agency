@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm/speech"
 
 	"go.bison9.com/agency/config"
@@ -24,7 +25,7 @@ import (
 // usable model and normal when another one serves; a model not in that
 // list raises none.
 func TestDetectTranscriber_AlertsOnUnusableBackend(t *testing.T) {
-	models := []config.ModelConfig{
+	models := []modelspec.Model{
 		{ModelName: "alice-stt", Provider: "missing", Model: "whisper-1", Enabled: true},
 		{ModelName: "whisper-groq", Provider: "groq", Model: "whisper-large-v3", Enabled: true},
 	}
@@ -55,7 +56,7 @@ func TestDetectTranscriber_AlertsOnUnusableBackend(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &alertRecorder{}
 			cfg := &config.Config{
-				Providers:  []config.Provider{groqProvider},
+				Providers:  []modelspec.Provider{groqProvider},
 				Models:     models,
 				TaskModels: tt.task,
 			}

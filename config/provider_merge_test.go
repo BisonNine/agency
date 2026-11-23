@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // Deleting a provider used to corrupt the ones after it. LoadConfig starts from
@@ -14,7 +16,7 @@ import (
 // that default set.
 func TestLoadConfig_DeletingAProviderDoesNotAlterTheOthers(t *testing.T) {
 	cfg := DefaultConfig()
-	var kept []Provider
+	var kept []modelspec.Provider
 	for _, p := range cfg.Providers {
 		if p.Name == "OpenAI" {
 			continue
@@ -53,7 +55,7 @@ func TestLoadConfig_DeletingAProviderDoesNotAlterTheOthers(t *testing.T) {
 // require_reasoning_content it was saved with.
 func TestLoadConfig_ProviderFlagsDoNotLeakToNeighbours(t *testing.T) {
 	cfg := DefaultConfig()
-	var kept []Provider
+	var kept []modelspec.Provider
 	for _, p := range cfg.Providers {
 		if p.Name == "OpenAI" {
 			continue
@@ -75,7 +77,7 @@ func TestLoadConfig_ProviderFlagsDoNotLeakToNeighbours(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved := make(map[string]Provider, len(kept))
+	saved := make(map[string]modelspec.Provider, len(kept))
 	for _, p := range kept {
 		saved[p.Name] = p
 	}

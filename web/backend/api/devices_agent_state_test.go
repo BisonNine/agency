@@ -6,6 +6,8 @@ package api
 import (
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -14,11 +16,11 @@ import (
 func TestAssignedAgentState(t *testing.T) {
 	off := false
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-test-0123456789"},
 		{Name: "People", Protocol: config.HumanProtocol},
 	}
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "m", Model: "gpt-4o", Provider: "openai", Enabled: true},
 		{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true},
 		{ModelName: "Carol (human)", Model: "carol", Provider: "People", Enabled: true},

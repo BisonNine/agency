@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // builtinList names a top-level list LoadConfig fills with built-in defaults
@@ -28,7 +30,7 @@ var builtinLists = []builtinList{
 		clear: func(c *Config, empty bool) {
 			c.Providers = nil
 			if empty {
-				c.Providers = []Provider{}
+				c.Providers = []modelspec.Provider{}
 			}
 		},
 		count: func(c *Config) int { return len(c.Providers) },
@@ -39,7 +41,7 @@ var builtinLists = []builtinList{
 		clear: func(c *Config, empty bool) {
 			c.Models = nil
 			if empty {
-				c.Models = []ModelConfig{}
+				c.Models = []modelspec.Model{}
 			}
 		},
 		count: func(c *Config) int { return len(c.Models) },

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm/speech"
 
 	"go.bison9.com/agency/config"
@@ -22,20 +23,20 @@ import (
 
 // Providers shared by the detection tests.
 var (
-	groqProvider       = config.Provider{Name: "groq", Protocol: "openai-chat", BaseURL: "https://api.groq.com/openai/v1", APIKey: "sk-groq"}
-	openAIProvider     = config.Provider{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-openai"}
-	openRouterProvider = config.Provider{Name: "my-openrouter", Protocol: "openai-chat", BaseURL: "https://openrouter.ai/api/v1", APIKey: "sk-or"}
-	customProvider     = config.Provider{Name: "local-whisper", Protocol: "openai-chat", BaseURL: "https://stt.example.com/v1", APIKey: "sk-local"}
+	groqProvider       = modelspec.Provider{Name: "groq", Protocol: "openai-chat", BaseURL: "https://api.groq.com/openai/v1", APIKey: "sk-groq"}
+	openAIProvider     = modelspec.Provider{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-openai"}
+	openRouterProvider = modelspec.Provider{Name: "my-openrouter", Protocol: "openai-chat", BaseURL: "https://openrouter.ai/api/v1", APIKey: "sk-or"}
+	customProvider     = modelspec.Provider{Name: "local-whisper", Protocol: "openai-chat", BaseURL: "https://stt.example.com/v1", APIKey: "sk-local"}
 )
 
 // sttModel is a model_list entry named alias on provider with model id model.
-func sttModel(alias, provider, model string) config.ModelConfig {
-	return config.ModelConfig{ModelName: alias, Provider: provider, Model: model, Enabled: true}
+func sttModel(alias, provider, model string) modelspec.Model {
+	return modelspec.Model{ModelName: alias, Provider: provider, Model: model, Enabled: true}
 }
 
 // sttConfig is a config with the providers and models given and the named
 // models in the Transcription list, in that order.
-func sttConfig(providers []config.Provider, models []config.ModelConfig, stt ...string) *config.Config {
+func sttConfig(providers []modelspec.Provider, models []modelspec.Model, stt ...string) *config.Config {
 	cfg := &config.Config{Providers: providers, Models: models}
 	for _, name := range stt {
 		cfg.TaskModels.STTModels = append(cfg.TaskModels.STTModels, config.TaskModelRef{Model: name})
@@ -44,13 +45,13 @@ func sttConfig(providers []config.Provider, models []config.ModelConfig, stt ...
 }
 
 func TestDetectTranscriber(t *testing.T) {
-	allModels := []config.ModelConfig{
+	allModels := []modelspec.Model{
 		sttModel("whisper-openai", "openai", "whisper-1"),
 		sttModel("whisper-or", "my-openrouter", "openai/whisper-large-v3"),
 		sttModel("whisper-groq", "groq", "whisper-large-v3"),
 		sttModel("whisper-local", "local-whisper", "whisper-1"),
 	}
-	allProviders := []config.Provider{openAIProvider, openRouterProvider, groqProvider, customProvider}
+	allProviders := []modelspec.Provider{openAIProvider, openRouterProvider, groqProvider, customProvider}
 	tests := []struct {
 		name     string
 		cfg      *config.Config
@@ -101,7 +102,7 @@ func TestDetectTranscriber(t *testing.T) {
 		},
 		{
 			name: "every enabled entry of a load-balanced model joins the chain",
-			cfg: sttConfig(allProviders, []config.ModelConfig{
+			cfg: sttConfig(allProviders, []modelspec.Model{
 				sttModel("whisper", "groq", "whisper-large-v3"),
 				sttModel("whisper", "openai", "whisper-1"),
 			}, "whisper"),
@@ -131,14 +132,14 @@ func TestDetectTranscriber(t *testing.T) {
 // A model that cannot be used is skipped, with its reason, and the next
 // usable model is chosen alone rather than starting a chain with a broken one.
 func TestDetectTranscriber_SkipsUnusableModels(t *testing.T) {
-	providers := []config.Provider{
+	providers := []modelspec.Provider{
 		groqProvider,
 		{Name: "no-key", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
 		{Name: "no-url", Protocol: "openai-chat", APIKey: "sk-x"},
 		{Name: "cli", Protocol: "claude-cli"},
 		{Name: "anthropic-api", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "sk-a"},
 		{Name: "azure-api", Protocol: "azure", BaseURL: "https://example.openai.azure.com", APIKey: "sk-z"},
-		{Name: "gemini-nokey", Protocol: config.GeminiProtocol},
+		{Name: "gemini-nokey", Protocol: modelspec.GeminiProtocol},
 	}
 	for _, tc := range []struct {
 		name     string
@@ -155,7 +156,7 @@ func TestDetectTranscriber_SkipsUnusableModels(t *testing.T) {
 		{"gemini without a key", "gemini-nokey", "provider has no API key"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := sttConfig(providers, []config.ModelConfig{
+			cfg := sttConfig(providers, []modelspec.Model{
 				sttModel("bad", tc.provider, "whisper-1"),
 				sttModel("whisper-groq", "groq", "whisper-large-v3"),
 			}, "bad", "whisper-groq")
@@ -176,8 +177,8 @@ func TestDetectTranscriber_SkipsUnusableModels(t *testing.T) {
 func TestDetectTranscriber_SkipsMissingModel(t *testing.T) {
 	disabled := sttModel("off", "groq", "whisper-large-v3")
 	disabled.Enabled = false
-	cfg := sttConfig([]config.Provider{groqProvider},
-		[]config.ModelConfig{disabled, sttModel("whisper-groq", "groq", "whisper-large-v3")},
+	cfg := sttConfig([]modelspec.Provider{groqProvider},
+		[]modelspec.Model{disabled, sttModel("whisper-groq", "groq", "whisper-large-v3")},
 		"gone", "off", "whisper-groq")
 	rec := &alertRecorder{}
 	tr := DetectTranscriberWithAlerter(cfg, rec)
@@ -196,7 +197,7 @@ func TestDetectTranscriber_SkipsMissingModel(t *testing.T) {
 func TestDetectTranscriber_DisabledModelDoesNotAlert(t *testing.T) {
 	off := sttModel("off", "groq", "whisper-large-v3")
 	off.Enabled = false
-	cfg := sttConfig([]config.Provider{groqProvider}, []config.ModelConfig{off}, "off")
+	cfg := sttConfig([]modelspec.Provider{groqProvider}, []modelspec.Model{off}, "off")
 	rec := &alertRecorder{}
 	if tr := DetectTranscriberWithAlerter(cfg, rec); tr != nil {
 		t.Fatalf("DetectTranscriber() = %v, want none", tr)
@@ -216,8 +217,8 @@ func TestTranscriptionStatus(t *testing.T) {
 	logs := &logBuf{}
 	restore := logger.RedirectForTest(logs)
 	defer restore()
-	cfg := sttConfig([]config.Provider{groqProvider, {Name: "nokey", Protocol: "openai-chat", BaseURL: "https://x/v1"}},
-		[]config.ModelConfig{sttModel("a", "groq", "w"), sttModel("b", "nokey", "w")}, "b", "gone", "a")
+	cfg := sttConfig([]modelspec.Provider{groqProvider, {Name: "nokey", Protocol: "openai-chat", BaseURL: "https://x/v1"}},
+		[]modelspec.Model{sttModel("a", "groq", "w"), sttModel("b", "nokey", "w")}, "b", "gone", "a")
 	st := TranscriptionStatus(cfg)
 	want := []UnusableModel{{"b", "provider has no API key"}, {"gone", "not on the Models page"}}
 	if len(st.Usable) != 1 || st.Usable[0] != "a" || len(st.Unusable) != 2 || st.Unusable[0] != want[0] || st.Unusable[1] != want[1] {
@@ -249,14 +250,14 @@ func (l *logBuf) String() string {
 // SpeechBackend picks the spawnllm client by protocol.
 func TestSpeechBackend_ByProtocol(t *testing.T) {
 	for _, tc := range []struct {
-		p    config.Provider
+		p    modelspec.Provider
 		want string
 	}{
 		{groqProvider, "*speech.OpenAI"},
 		{openRouterProvider, "*speech.OpenAI"},
-		{config.Provider{Protocol: "openai-responses", BaseURL: "https://x/v1", APIKey: "k"}, "*speech.OpenAI"},
-		{config.Provider{Protocol: config.GeminiProtocol, APIKey: "k"}, "*speech.Gemini"},
-		{config.Provider{Protocol: config.ElevenLabsProtocol, APIKey: "k"}, "*speech.ElevenLabs"},
+		{modelspec.Provider{Protocol: "openai-responses", BaseURL: "https://x/v1", APIKey: "k"}, "*speech.OpenAI"},
+		{modelspec.Provider{Protocol: modelspec.GeminiProtocol, APIKey: "k"}, "*speech.Gemini"},
+		{modelspec.Provider{Protocol: modelspec.ElevenLabsProtocol, APIKey: "k"}, "*speech.ElevenLabs"},
 	} {
 		c, problem := SpeechBackend(&tc.p)
 		if problem != "" || fmt.Sprintf("%T", c) != tc.want {
@@ -289,8 +290,8 @@ func TestTranscribe_ThroughSpawnllm(t *testing.T) {
 	if err := os.WriteFile(audioPath, []byte("fake-audio-data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prov := config.Provider{Name: "local", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "sk-test"}
-	cfg := sttConfig([]config.Provider{prov}, []config.ModelConfig{sttModel("fast-stt", "local", "whisper-large-v3-turbo")}, "fast-stt")
+	prov := modelspec.Provider{Name: "local", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "sk-test"}
+	cfg := sttConfig([]modelspec.Provider{prov}, []modelspec.Model{sttModel("fast-stt", "local", "whisper-large-v3-turbo")}, "fast-stt")
 	tr := DetectTranscriber(cfg)
 	if tr == nil || tr.Name() != "fast-stt" {
 		t.Fatalf("DetectTranscriber() = %v", tr)

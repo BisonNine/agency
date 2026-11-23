@@ -13,6 +13,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
@@ -57,8 +58,8 @@ func (p *scriptedProvider) callCount() int {
 func compressCatalog(clients map[string]spawnllm.LLMProvider) *models.Catalog {
 	cfg := &config.Config{}
 	for name := range clients {
-		cfg.Providers = append(cfg.Providers, config.Provider{Name: "p-" + name, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
-		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: name, Model: name, Provider: "p-" + name, Enabled: true})
+		cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "p-" + name, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: name, Model: name, Provider: "p-" + name, Enabled: true})
 	}
 	return testCatalog(cfg, clients)
 }

@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/commands"
@@ -33,10 +34,10 @@ func abcConfig(baseDir string, order ...string) *config.Config {
 			Defaults: config.AgentDefaults{Models: order, MaxTokens: 4096, MaxToolIterations: 10},
 			List:     []config.AgentConfig{{ID: "main", Name: "Main", Default: true}},
 		},
-		Providers: []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}},
+		Providers: []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}},
 	}
 	for _, n := range []string{"a", "b", "c"} {
-		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: n, Model: n + "-wire", Provider: "p", Enabled: true})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: n, Model: n + "-wire", Provider: "p", Enabled: true})
 	}
 	return cfg
 }

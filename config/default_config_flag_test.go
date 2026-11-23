@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // The default_config marker lets the setup wizard tell a fresh, never-saved
@@ -57,7 +59,7 @@ func TestDefaultConfig_SeedsAntigravityNotGemini(t *testing.T) {
 	// workspace-trust env var goes with it.
 	cfg := DefaultConfig()
 
-	var model *ModelConfig
+	var model *modelspec.Model
 	for i := range cfg.Models {
 		switch cfg.Models[i].ModelName {
 		case "Antigravity CLI":

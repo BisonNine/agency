@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -132,7 +134,7 @@ func fixtureConfig(t *testing.T) (*config.Config, Environment) {
 		t.Fatal(err)
 	}
 
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{
 			Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: secretAPIKey,
 			Proxy: "http://proxyuser:" + secretProxyPass + "@proxy.local:3128",
@@ -142,7 +144,7 @@ func fixtureConfig(t *testing.T) (*config.Config, Environment) {
 		{Name: "Claude CLI", Protocol: "claude-cli", BypassRestrictions: true},
 		{Name: "Codex CLI", Protocol: "codex-cli", Command: "/opt/codex/bin/codex"},
 	}
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "GPT", Model: "gpt-5.5", Provider: "OpenAI", Enabled: true, ThinkingLevel: "high", ContextWindow: 200000},
 		{ModelName: "GPT Old", Model: "gpt-4o", Provider: "OpenAI", Enabled: false, NoTools: true},
 		{

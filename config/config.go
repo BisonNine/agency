@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 )
@@ -84,26 +86,26 @@ type SecurityConfig struct {
 }
 
 type Config struct {
-	Agents        AgentsConfig        `json:"agents"`
-	Bindings      []AgentBinding      `json:"bindings,omitempty"`
-	Session       SessionConfig       `json:"session,omitempty"`
-	AgentMentions AgentMentionConfig  `json:"agent_mentions,omitempty"`
-	Channels      ChannelsConfig      `json:"channels"`
-	Providers     []Provider          `json:"providers"`
-	Models        []ModelConfig       `json:"models"` // Models, each reached through a named provider
-	Summarization SummarizationConfig `json:"summarization,omitempty"`
-	Gateway       GatewayConfig       `json:"gateway"`
-	Tools         ToolsConfig         `json:"tools"`
-	Devices       DevicesConfig       `json:"devices"`
-	Logging       LoggingConfig       `json:"logging"`
-	Security      SecurityConfig      `json:"security,omitempty"`
-	MCPHost       MCPHostConfig       `json:"mcp_host,omitempty"`
-	Cooldown      CooldownConfig      `json:"cooldown,omitempty"`
-	Backup        BackupConfig        `json:"backup,omitempty"`
-	Forum         ForumConfig         `json:"forum,omitzero"`
-	Classifiers   ClassifiersConfig   `json:"classifiers,omitzero"`
-	TaskModels    TaskModelsConfig    `json:"task_models,omitzero"`
-	Operator      OperatorConfig      `json:"operator,omitzero"`
+	Agents        AgentsConfig         `json:"agents"`
+	Bindings      []AgentBinding       `json:"bindings,omitempty"`
+	Session       SessionConfig        `json:"session,omitempty"`
+	AgentMentions AgentMentionConfig   `json:"agent_mentions,omitempty"`
+	Channels      ChannelsConfig       `json:"channels"`
+	Providers     []modelspec.Provider `json:"providers"`
+	Models        []modelspec.Model    `json:"models"` // Models, each reached through a named provider
+	Summarization SummarizationConfig  `json:"summarization,omitempty"`
+	Gateway       GatewayConfig        `json:"gateway"`
+	Tools         ToolsConfig          `json:"tools"`
+	Devices       DevicesConfig        `json:"devices"`
+	Logging       LoggingConfig        `json:"logging"`
+	Security      SecurityConfig       `json:"security,omitempty"`
+	MCPHost       MCPHostConfig        `json:"mcp_host,omitempty"`
+	Cooldown      CooldownConfig       `json:"cooldown,omitempty"`
+	Backup        BackupConfig         `json:"backup,omitempty"`
+	Forum         ForumConfig          `json:"forum,omitzero"`
+	Classifiers   ClassifiersConfig    `json:"classifiers,omitzero"`
+	TaskModels    TaskModelsConfig     `json:"task_models,omitzero"`
+	Operator      OperatorConfig       `json:"operator,omitzero"`
 	// DefaultConfig marks a never-saved, auto-seeded config. DefaultConfig() sets
 	// it true and SeedDefaultConfig() preserves it on disk; the first save through
 	// SaveConfig clears it. The setup wizard uses it (with a "no usable model"
@@ -140,9 +142,9 @@ type Config struct {
 func (c *Config) MarshalJSON() ([]byte, error) {
 	type Alias Config
 	aux := &struct {
-		Session   *SessionConfig `json:"session,omitempty"`
-		Providers []Provider     `json:"providers"`
-		Models    []ModelConfig  `json:"models"`
+		Session   *SessionConfig       `json:"session,omitempty"`
+		Providers []modelspec.Provider `json:"providers"`
+		Models    []modelspec.Model    `json:"models"`
 		*Alias
 	}{
 		Providers: nonNilSlice(c.Providers),

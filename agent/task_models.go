@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/imagegen"
 	"go.bison9.com/agent/spawnllm/protocoltypes"
@@ -475,8 +476,8 @@ type callOutput struct {
 }
 
 // call makes one model call of the kind, billed to id.
-func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, chain *models.Chain, agentID string, id accounting.Identity, alias string, mc *config.ModelConfig,
-	prov *config.Provider, req toolsagents.TaskModelRequest, inputs []taskInput,
+func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, chain *models.Chain, agentID string, id accounting.Identity, alias string, mc *modelspec.Model,
+	prov *modelspec.Provider, req toolsagents.TaskModelRequest, inputs []taskInput,
 ) (*callOutput, error) {
 	callCtx, cancel := context.WithTimeout(ctx, attemptTimeout(cfg, mc))
 	defer cancel()
@@ -499,7 +500,7 @@ func (h *taskModelHost) call(ctx context.Context, cfg *config.Config, chain *mod
 // attemptTimeout is how long one model call of a task may take: the
 // model's request_timeout, else agents.defaults.request_timeout, else
 // taskAttemptTimeout.
-func attemptTimeout(cfg *config.Config, mc *config.ModelConfig) time.Duration {
+func attemptTimeout(cfg *config.Config, mc *modelspec.Model) time.Duration {
 	switch {
 	case mc.RequestTimeout > 0:
 		return time.Duration(mc.RequestTimeout) * time.Second
@@ -514,14 +515,14 @@ func attemptTimeout(cfg *config.Config, mc *config.ModelConfig) time.Duration {
 // definitions: the prompt, text inputs added as text, images attached.
 // wantImages makes it an image call. A CLI model runs isolated in a folder of
 // its own.
-func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, chain *models.Chain, agentID string, id accounting.Identity, alias string, mc *config.ModelConfig,
-	prov *config.Provider, req toolsagents.TaskModelRequest, inputs []taskInput, wantImages bool,
+func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, chain *models.Chain, agentID string, id accounting.Identity, alias string, mc *modelspec.Model,
+	prov *modelspec.Provider, req toolsagents.TaskModelRequest, inputs []taskInput, wantImages bool,
 ) (*callOutput, error) {
-	if config.TaskOnlyProtocol(prov.Protocol) {
+	if modelspec.TaskOnlyProtocol(prov.Protocol) {
 		return nil, fmt.Errorf("provider %s serves speech only", prov.Name)
 	}
 	clientChain := chain
-	if config.CLIAgentByProtocol(prov.Protocol) != nil {
+	if modelspec.CLIAgentByProtocol(prov.Protocol) != nil {
 		dir, cleanup, derr := h.isolatedFolder(cfg, agentID)
 		if derr != nil {
 			return nil, derr
@@ -570,7 +571,7 @@ func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, chain *mod
 
 // imagesAPI calls the OpenAI-style image endpoints: an edit with input
 // images, else a generation.
-func (h *taskModelHost) imagesAPI(ctx context.Context, id accounting.Identity, mc *config.ModelConfig, prov *config.Provider,
+func (h *taskModelHost) imagesAPI(ctx context.Context, id accounting.Identity, mc *modelspec.Model, prov *modelspec.Provider,
 	req toolsagents.TaskModelRequest, inputs []taskInput,
 ) (*callOutput, error) {
 	if prov.Protocol != "openai-chat" && prov.Protocol != "openai-responses" {
@@ -599,8 +600,8 @@ func (h *taskModelHost) imagesAPI(ctx context.Context, id accounting.Identity, m
 
 // speak synthesizes the prompt with the call's voice and format, else the
 // model's tts_defaults.
-func (h *taskModelHost) speak(ctx context.Context, id accounting.Identity, cfg *config.Config, alias string, mc *config.ModelConfig,
-	prov *config.Provider, req toolsagents.TaskModelRequest,
+func (h *taskModelHost) speak(ctx context.Context, id accounting.Identity, cfg *config.Config, alias string, mc *modelspec.Model,
+	prov *modelspec.Provider, req toolsagents.TaskModelRequest,
 ) (*callOutput, error) {
 	backend, problem := h.speechBackend(prov)
 	if problem != "" {
@@ -628,7 +629,7 @@ func (h *taskModelHost) speak(ctx context.Context, id accounting.Identity, cfg *
 }
 
 // transcribe sends the one audio input to the model.
-func (h *taskModelHost) transcribe(ctx context.Context, id accounting.Identity, mc *config.ModelConfig, prov *config.Provider,
+func (h *taskModelHost) transcribe(ctx context.Context, id accounting.Identity, mc *modelspec.Model, prov *modelspec.Provider,
 	req toolsagents.TaskModelRequest, in taskInput,
 ) (*callOutput, error) {
 	backend, problem := h.speechBackend(prov)
@@ -646,7 +647,7 @@ func (h *taskModelHost) transcribe(ctx context.Context, id accounting.Identity, 
 }
 
 // speechBackend is voice.SpeechBackend with the host's HTTP client.
-func (h *taskModelHost) speechBackend(prov *config.Provider) (voice.SpeechClient, string) {
+func (h *taskModelHost) speechBackend(prov *modelspec.Provider) (voice.SpeechClient, string) {
 	if h.httpClient == nil {
 		return voice.SpeechBackend(prov)
 	}

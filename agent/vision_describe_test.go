@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
@@ -87,7 +88,7 @@ func TestDescribeImages_FallsThroughChain(t *testing.T) {
 // description into the message text and clears the image Media.
 func TestDescribeInboundMedia_NonVisionPrimaryFoldsDescription(t *testing.T) {
 	al := &AgentLoop{cfg: &config.Config{
-		Models: []config.ModelConfig{{ModelName: "deepseek", Enabled: true, Vision: config.VisionOff}},
+		Models: []modelspec.Model{{ModelName: "deepseek", Enabled: true, Vision: modelspec.VisionOff}},
 	}}
 	stub := &stubVisionClient{reply: "a cat on a mat"}
 	agent := &AgentInstance{ID: "a1", Model: "deepseek", VisionClients: []visionClient{stub}}
@@ -109,7 +110,7 @@ func TestDescribeInboundMedia_NonVisionPrimaryFoldsDescription(t *testing.T) {
 // A vision-capable primary keeps the image untouched (the normal path handles it).
 func TestDescribeInboundMedia_VisionPrimaryUntouched(t *testing.T) {
 	al := &AgentLoop{cfg: &config.Config{
-		Models: []config.ModelConfig{{ModelName: "gpt5", Enabled: true, Vision: config.VisionUserMessage}},
+		Models: []modelspec.Model{{ModelName: "gpt5", Enabled: true, Vision: modelspec.VisionUserMessage}},
 	}}
 	stub := &stubVisionClient{reply: "should not be called"}
 	agent := &AgentInstance{ID: "a1", Model: "gpt5", VisionClients: []visionClient{stub}}
@@ -129,7 +130,7 @@ func TestDescribeInboundMedia_VisionPrimaryUntouched(t *testing.T) {
 // (strip) path, message unchanged.
 func TestDescribeInboundMedia_NoVisionConfiguredUntouched(t *testing.T) {
 	al := &AgentLoop{cfg: &config.Config{
-		Models: []config.ModelConfig{{ModelName: "deepseek", Enabled: true, Vision: config.VisionOff}},
+		Models: []modelspec.Model{{ModelName: "deepseek", Enabled: true, Vision: modelspec.VisionOff}},
 	}}
 	agent := &AgentInstance{ID: "a1", Model: "deepseek"} // no VisionClients
 
@@ -222,8 +223,8 @@ func TestFlowA_InjectsDescriptionForNonVisionModel(t *testing.T) {
 // skipped, and with an empty list the feature is off.
 func TestWireVisionClients_TaskModelsInPageOrder(t *testing.T) {
 	cfg := ownerTestConfig(t)
-	cfg.Providers = []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
-	cfg.Models = []config.ModelConfig{
+	cfg.Providers = []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}}
+	cfg.Models = []modelspec.Model{
 		{ModelName: "alpha", Model: "alpha-wire", Provider: "p", Enabled: true},
 		{ModelName: "v1", Model: "v1-wire", Provider: "p", Enabled: true},
 		{ModelName: "v2", Model: "v2-wire", Provider: "p", Enabled: true},

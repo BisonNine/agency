@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/config"
 )
@@ -23,8 +24,8 @@ func initTest(t *testing.T) {
 }
 
 // openaiProvider returns a credentialed openai provider for use in test configs.
-func openaiProvider() config.Provider {
-	return config.Provider{
+func openaiProvider() modelspec.Provider {
+	return modelspec.Provider{
 		Name:     "openai",
 		Protocol: "openai-chat",
 		BaseURL:  "https://api.openai.com/v1",
@@ -33,8 +34,8 @@ func openaiProvider() config.Provider {
 }
 
 // anthropicProvider returns a credentialed anthropic provider for use in test configs.
-func anthropicProvider() config.Provider {
-	return config.Provider{
+func anthropicProvider() modelspec.Provider {
+	return modelspec.Provider{
 		Name:     "anthropic",
 		Protocol: "anthropic",
 		BaseURL:  "https://api.anthropic.com/v1",
@@ -93,8 +94,8 @@ func TestShowCurrentModel_WithDefaultModel(t *testing.T) {
 				Models: []string{"gpt-4"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider(), anthropicProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider(), anthropicProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "gpt-4", Model: "gpt-4", Provider: "openai", Enabled: true},
 			{ModelName: "claude-3", Model: "claude-3", Provider: "anthropic", Enabled: true},
 		},
@@ -115,8 +116,8 @@ func TestShowCurrentModel_NoDefaultModel(t *testing.T) {
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "gpt-4", Model: "gpt-4", Provider: "openai", Enabled: true},
 		},
 	}
@@ -136,7 +137,7 @@ func TestShowCurrentModel_WithModelConfig(t *testing.T) {
 				Models: []string{"my-model"},
 			},
 		},
-		Models: []config.ModelConfig{},
+		Models: []modelspec.Model{},
 	}
 
 	output := captureStdout(t, func() {
@@ -148,7 +149,7 @@ func TestShowCurrentModel_WithModelConfig(t *testing.T) {
 
 func TestListAvailableModels_Empty(t *testing.T) {
 	cfg := &config.Config{
-		Models: []config.ModelConfig{},
+		Models: []modelspec.Model{},
 	}
 
 	output := captureStdout(t, func() {
@@ -165,13 +166,13 @@ func TestListAvailableModels_WithModels(t *testing.T) {
 				Models: []string{"gpt-4"},
 			},
 		},
-		Providers: []config.Provider{
+		Providers: []modelspec.Provider{
 			openaiProvider(),
 			anthropicProvider(),
 			// Provider without credentials: models referencing it are skipped.
 			{Name: "nokey", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1"},
 		},
-		Models: []config.ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: "gpt-4", Model: "gpt-4", Provider: "openai", Enabled: true},
 			{ModelName: "claude-3", Model: "claude-3", Provider: "anthropic", Enabled: true},
 			{ModelName: "no-key-model", Model: "test", Provider: "nokey", Enabled: true},
@@ -197,8 +198,8 @@ func TestSetDefaultModel_ValidModel(t *testing.T) {
 				Models: []string{"old-model"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "new-model", Model: "new-model", Provider: "openai", Enabled: true},
 			{ModelName: "old-model", Model: "old-model", Provider: "openai", Enabled: true},
 		},
@@ -226,8 +227,8 @@ func TestSetDefaultModel_InvalidModel(t *testing.T) {
 				Models: []string{"existing-model"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "existing-model", Model: "existing", Provider: "openai", Enabled: true},
 		},
 	}
@@ -244,8 +245,8 @@ func TestSetDefaultModel_DisabledModel(t *testing.T) {
 				Models: []string{"existing-model"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "existing-model", Model: "existing", Provider: "openai", Enabled: true},
 			{ModelName: "disabled-model", Model: "disabled", Provider: "openai", Enabled: false},
 		},
@@ -264,8 +265,8 @@ func TestSetDefaultModel_SaveConfigError(t *testing.T) {
 				Models: []string{"old-model"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "new-model", Model: "new-model", Provider: "openai", Enabled: true},
 		},
 	}
@@ -306,8 +307,8 @@ func TestModelCommandExecution_Show(t *testing.T) {
 				Models: []string{"test-model"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "test-model", Model: "test", Provider: "openai", Enabled: true},
 		},
 	}
@@ -334,8 +335,8 @@ func TestModelCommandExecution_Set(t *testing.T) {
 				Models: []string{"old-model"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "old-model", Model: "old", Provider: "openai", Enabled: true},
 			{ModelName: "new-model", Model: "new", Provider: "openai", Enabled: true},
 		},
@@ -369,8 +370,8 @@ func TestListAvailableModels_MarkerLogic(t *testing.T) {
 				Models: []string{"middle-model"},
 			},
 		},
-		Providers: []config.Provider{openaiProvider()},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
 			{ModelName: "first-model", Model: "first", Provider: "openai", Enabled: true},
 			{ModelName: "middle-model", Model: "middle", Provider: "openai", Enabled: true},
 			{ModelName: "last-model", Model: "last", Provider: "openai", Enabled: true},

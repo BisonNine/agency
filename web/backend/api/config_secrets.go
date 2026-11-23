@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -57,7 +59,7 @@ func maskSecrets(v any) {
 					continue
 				}
 			case config.IsProxyKey(k):
-				if s, ok := val.(string); ok && !config.IsSecretRef(s) {
+				if s, ok := val.(string); ok && !modelspec.IsSecretRef(s) {
 					t[k] = maskProxyURL(s)
 					continue
 				}
@@ -75,7 +77,7 @@ func maskSecrets(v any) {
 // ("env:NAME", "file:/path") as written: it names where the secret lives and
 // is what the operator needs to see to edit it.
 func maskSecretValue(s string) string {
-	if config.IsSecretRef(s) {
+	if modelspec.IsSecretRef(s) {
 		return s
 	}
 	return maskAPIKey(s)

@@ -11,6 +11,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
@@ -69,7 +70,7 @@ func limitsConfig(t *testing.T, models ...string) *config.Config {
 	if len(models) == 0 {
 		models = []string{"Alice Model", "Bob Model", "Plain Model"}
 	}
-	prov := config.Provider{Name: "Alice Co", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:1/v1", APIKey: "k"}
+	prov := modelspec.Provider{Name: "Alice Co", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:1/v1", APIKey: "k"}
 	return &config.Config{
 		Agents: config.AgentsConfig{
 			BaseDir: t.TempDir(),
@@ -81,8 +82,8 @@ func limitsConfig(t *testing.T, models ...string) *config.Config {
 			},
 			List: []config.AgentConfig{{ID: "main", Name: "Main", Default: true}},
 		},
-		Providers: []config.Provider{prov},
-		Models: []config.ModelConfig{
+		Providers: []modelspec.Provider{prov},
+		Models: []modelspec.Model{
 			{ModelName: "Alice Model", Model: "alice-wire", Provider: prov.Name, Enabled: true, MaxTokens: 32768, ContextWindow: 200000, ThinkingLevel: "high"},
 			{ModelName: "Bob Model", Model: "bob-wire", Provider: prov.Name, Enabled: true, MaxTokens: 4096, ContextWindow: 32000},
 			{ModelName: "Plain Model", Model: "plain-wire", Provider: prov.Name, Enabled: true, NoTools: true},

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/audit"
@@ -299,7 +301,7 @@ func collectAssessment(ctx context.Context, cfg *config.Config, env Environment)
 	// row says what that means. One per CLI provider so each is named.
 	for i := range cfg.Providers {
 		p := &cfg.Providers[i]
-		if !config.IsCLIProtocol(p.Protocol) {
+		if !modelspec.IsCLIProtocol(p.Protocol) {
 			continue
 		}
 		if p.BypassRestrictions {
@@ -490,7 +492,7 @@ func certificateExpiryRow(cfg *config.Config, now time.Time) (action bool, item,
 // restrictions on, the condition under which a CLI model has its own shell.
 func anyCLIBypass(cfg *config.Config) bool {
 	for i := range cfg.Providers {
-		if p := &cfg.Providers[i]; config.IsCLIProtocol(p.Protocol) && p.BypassRestrictions {
+		if p := &cfg.Providers[i]; modelspec.IsCLIProtocol(p.Protocol) && p.BypassRestrictions {
 			return true
 		}
 	}

@@ -23,20 +23,20 @@ func TestModelFacts_CandidatesMatchTheConfiguration(t *testing.T) {
 	cfg.Agents.Defaults.MaxTokens = 4096
 	cfg.Agents.Defaults.ContextWindow = 64000
 	cfg.Providers = append(cfg.Providers,
-		config.Provider{Name: "Bob's API", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k", RequireReasoningContent: true})
+		modelspec.Provider{Name: "Bob's API", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k", RequireReasoningContent: true})
 	cfg.Models = append(cfg.Models,
-		config.ModelConfig{
+		modelspec.Model{
 			ModelName: "Alice Model", Model: "alice-wire", Provider: testProviderName, Enabled: true,
-			MaxTokens: 32768, ContextWindow: 200000, ThinkingLevel: "high", Vision: config.VisionUserMessage,
+			MaxTokens: 32768, ContextWindow: 200000, ThinkingLevel: "high", Vision: modelspec.VisionUserMessage,
 		},
-		config.ModelConfig{ModelName: "Bob Model", Model: "bob-wire", Provider: "Bob's API", Enabled: true},
-		config.ModelConfig{
+		modelspec.Model{ModelName: "Bob Model", Model: "bob-wire", Provider: "Bob's API", Enabled: true},
+		modelspec.Model{
 			ModelName: "Carol Model", Model: "carol-wire", Provider: testProviderName, Enabled: true,
-			ThinkingLevel: "off", NoTools: true, Vision: config.VisionToolResponse,
+			ThinkingLevel: "off", NoTools: true, Vision: modelspec.VisionToolResponse,
 		},
-		config.ModelConfig{
+		modelspec.Model{
 			ModelName: "Dave Model", Model: "dave-wire", Provider: "Bob's API", Enabled: true,
-			MaxTokens: 600, ThinkingLevel: "adaptive", Vision: config.VisionOff,
+			MaxTokens: 600, ThinkingLevel: "adaptive", Vision: modelspec.VisionOff,
 		})
 	iterations, temperature := 7, 0.3
 	cfg.Agents.List = append(cfg.Agents.List,

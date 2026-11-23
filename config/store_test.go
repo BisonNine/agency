@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -20,8 +22,8 @@ func newTestStore(t *testing.T) *Store {
 	t.Setenv("CLAW_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	cfg := DefaultConfig()
-	cfg.Providers = []Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-default-0123456789"}}
-	cfg.Models = []ModelConfig{{ModelName: "m", Model: "gpt-4o", Provider: "openai", Enabled: true}}
+	cfg.Providers = []modelspec.Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-default-0123456789"}}
+	cfg.Models = []modelspec.Model{{ModelName: "m", Model: "gpt-4o", Provider: "openai", Enabled: true}}
 	cfg.Agents.List = []AgentConfig{{ID: "main", Name: "Main", Default: true}}
 	if err := SaveConfig(p, cfg); err != nil {
 		t.Fatal(err)
@@ -105,7 +107,7 @@ func writeRawConfig(path string, cfg *Config) error {
 func TestSaveConfig_DropsOtherProtocolFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	cfg := DefaultConfig()
-	cfg.Providers = []Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "Claude CLI", Protocol: "claude-cli", BaseURL: "https://api.openai.com/v1", Command: "/usr/local/bin/claude"},
 		{Name: "Bob's API", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1", Command: "/usr/bin/stray", BypassRestrictions: true},
 	}
@@ -145,8 +147,8 @@ func TestStore_UpdateDropsCLIBaseURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Providers = append(cfg.Providers,
-		Provider{Name: "Claude CLI", Protocol: "claude-cli", BaseURL: "https://api.openai.com/v1"},
-		Provider{Name: "Bob's API", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1", APIKey: "sk-bob-0123456789"},
+		modelspec.Provider{Name: "Claude CLI", Protocol: "claude-cli", BaseURL: "https://api.openai.com/v1"},
+		modelspec.Provider{Name: "Bob's API", Protocol: "openai-chat", BaseURL: "https://api.example.com/v1", APIKey: "sk-bob-0123456789"},
 	)
 	if err = writeRawConfig(s.Path(), cfg); err != nil {
 		t.Fatal(err)
@@ -190,8 +192,8 @@ func TestStore_UpdateDropsCLIFieldsFromOtherProtocols(t *testing.T) {
 	}
 	cfg.Providers[0].Command = "/usr/bin/stray"
 	cfg.Providers = append(cfg.Providers,
-		Provider{Name: "Claude CLI", Protocol: "claude-cli", Command: "/usr/local/bin/claude", BypassRestrictions: true},
-		Provider{Name: "Codex CLI", Protocol: "codex-cli", Command: "/usr/local/bin/codex", BypassRestrictions: true},
+		modelspec.Provider{Name: "Claude CLI", Protocol: "claude-cli", Command: "/usr/local/bin/claude", BypassRestrictions: true},
+		modelspec.Provider{Name: "Codex CLI", Protocol: "codex-cli", Command: "/usr/local/bin/codex", BypassRestrictions: true},
 	)
 	if err = writeRawConfig(s.Path(), cfg); err != nil {
 		t.Fatal(err)
@@ -416,7 +418,7 @@ func TestStore_UpdateKeepsPreExistingDanglingModelReference(t *testing.T) {
 	}
 
 	err = s.Update(func(c *Config) error {
-		c.Providers = append(c.Providers, Provider{Name: "other", Protocol: "openai-chat", BaseURL: "https://example.invalid/v1", APIKey: "k"})
+		c.Providers = append(c.Providers, modelspec.Provider{Name: "other", Protocol: "openai-chat", BaseURL: "https://example.invalid/v1", APIKey: "k"})
 		return nil
 	})
 	if err != nil {

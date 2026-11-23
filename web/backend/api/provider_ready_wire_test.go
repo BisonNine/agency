@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -24,7 +26,7 @@ func readyFixture(t *testing.T) *Handler {
 	t.Setenv("PATH", dir)
 
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "Antigravity CLI", Protocol: "antigravity-cli"},
 		{Name: "Claude CLI", Protocol: "claude-cli", Command: filepath.Join(dir, "gone")},
 		{Name: "Keyed", Protocol: "openai-chat", BaseURL: "https://api.example/v1", APIKey: "sk-x"},
@@ -134,8 +136,8 @@ func TestSystemStatus_CountsConfiguredProvidersNotAllOfThem(t *testing.T) {
 // model definitions of which 3 can run is described by the 3.
 func TestSystemStatus_CountsEnabledModelsNotAllOfThem(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Providers = []config.Provider{{Name: "P", Protocol: "openai-chat", BaseURL: "https://x/v1", APIKey: "k"}}
-	cfg.Models = []config.ModelConfig{
+	cfg.Providers = []modelspec.Provider{{Name: "P", Protocol: "openai-chat", BaseURL: "https://x/v1", APIKey: "k"}}
+	cfg.Models = []modelspec.Model{
 		{ModelName: "on", Model: "m1", Provider: "P", Enabled: true},
 		{ModelName: "off", Model: "m2", Provider: "P", Enabled: false},
 		{ModelName: "off2", Model: "m3", Provider: "P", Enabled: false},

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/utils"
 )
@@ -22,8 +24,8 @@ var (
 	probeOpenAICompatibleModelFunc = probeOpenAICompatibleModel
 )
 
-func hasModelConfiguration(prov *config.Provider, m config.ModelConfig) bool {
-	if config.IsCLIProtocol(prov.Protocol) || config.IsHumanProtocol(prov.Protocol) {
+func hasModelConfiguration(prov *modelspec.Provider, m modelspec.Model) bool {
+	if modelspec.IsCLIProtocol(prov.Protocol) || config.IsHumanProtocol(prov.Protocol) {
 		return true
 	}
 	if hasLocalAPIBase(prov.BaseURL) {
@@ -34,7 +36,7 @@ func hasModelConfiguration(prov *config.Provider, m config.ModelConfig) bool {
 
 // isModelConfigured reports whether a model is currently available to use.
 // Local models must be reachable; remote/API-key models only need saved config.
-func isModelConfigured(prov *config.Provider, m config.ModelConfig) bool {
+func isModelConfigured(prov *modelspec.Provider, m modelspec.Model) bool {
 	if !hasModelConfiguration(prov, m) {
 		return false
 	}
@@ -44,16 +46,16 @@ func isModelConfigured(prov *config.Provider, m config.ModelConfig) bool {
 	return true
 }
 
-func requiresRuntimeProbe(prov *config.Provider) bool {
-	if config.IsCLIProtocol(prov.Protocol) {
+func requiresRuntimeProbe(prov *modelspec.Provider) bool {
+	if modelspec.IsCLIProtocol(prov.Protocol) {
 		return true
 	}
 	return hasLocalAPIBase(prov.BaseURL)
 }
 
-func probeLocalModelAvailability(prov *config.Provider, m config.ModelConfig) bool {
+func probeLocalModelAvailability(prov *modelspec.Provider, m modelspec.Model) bool {
 	// CLI providers authenticate out-of-band and are treated as available.
-	if config.IsCLIProtocol(prov.Protocol) {
+	if modelspec.IsCLIProtocol(prov.Protocol) {
 		return true
 	}
 	apiBase := normalizeModelProbeAPIBase(prov.BaseURL)

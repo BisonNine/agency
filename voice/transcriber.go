@@ -17,6 +17,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm/common"
 	"go.bison9.com/agent/spawnllm/speech"
 
@@ -108,13 +109,13 @@ type SpeechClient interface {
 // ElevenLabs. A non-empty problem is why the provider cannot serve speech.
 // These rules belong to the HTTP backends only; config and the Task models
 // page do not apply them.
-func SpeechBackend(p *config.Provider) (SpeechClient, string) {
+func SpeechBackend(p *modelspec.Provider) (SpeechClient, string) {
 	return SpeechBackendWith(p)
 }
 
 // SpeechBackendWith is SpeechBackend with options for the client (an HTTP
 // client of the caller's). The client logs to the host's logger.
-func SpeechBackendWith(p *config.Provider, opts ...speech.Option) (SpeechClient, string) {
+func SpeechBackendWith(p *modelspec.Provider, opts ...speech.Option) (SpeechClient, string) {
 	opts = append([]speech.Option{speech.WithLogger(logger.SDK())}, opts...)
 	switch {
 	case isOpenAIProtocol(p.Protocol):
@@ -125,12 +126,12 @@ func SpeechBackendWith(p *config.Provider, opts ...speech.Option) (SpeechClient,
 			return nil, "provider has no API key"
 		}
 		return speech.NewOpenAI(p.BaseURL, p.APIKey, opts...), ""
-	case p.Protocol == config.GeminiProtocol:
+	case p.Protocol == modelspec.GeminiProtocol:
 		if p.APIKey == "" {
 			return nil, "provider has no API key"
 		}
 		return speech.NewGemini(p.BaseURL, p.APIKey, opts...), ""
-	case p.Protocol == config.ElevenLabsProtocol:
+	case p.Protocol == modelspec.ElevenLabsProtocol:
 		if p.APIKey == "" {
 			return nil, "provider has no API key"
 		}

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
@@ -38,7 +39,7 @@ func TestNoChatModel_TurnFails(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 			cfg := newTestConfig(t)
-			cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: "off", Model: "off", Provider: testProviderName, Enabled: false})
+			cfg.Models = append(cfg.Models, modelspec.Model{ModelName: "off", Model: "off", Provider: testProviderName, Enabled: false})
 			cfg.Agents.List[0].Models = tc.models
 			msgBus := bus.NewMessageBus()
 			p := &replayProvider{errs: map[string]string{}}

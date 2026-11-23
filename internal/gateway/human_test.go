@@ -6,6 +6,8 @@ package gateway
 import (
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -79,8 +81,8 @@ func TestDeviceQuerier_HidesHumanAgents(t *testing.T) {
 				{ID: "bob", Name: "Bob", Models: []string{"Bob (human)"}},
 			},
 		},
-		Providers: []config.Provider{{Name: "People", Protocol: config.HumanProtocol}},
-		Models:    []config.ModelConfig{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true}},
+		Providers: []modelspec.Provider{{Name: "People", Protocol: config.HumanProtocol}},
+		Models:    []modelspec.Model{{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true}},
 	}
 	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {

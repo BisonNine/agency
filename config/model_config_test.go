@@ -8,11 +8,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 func TestGetModelConfig_Found(t *testing.T) {
 	cfg := &Config{
-		Models: []ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: "test-model", Model: "openai/gpt-4o", Enabled: true},
 			{ModelName: "other-model", Model: "anthropic/claude", Enabled: true},
 		},
@@ -29,7 +31,7 @@ func TestGetModelConfig_Found(t *testing.T) {
 
 func TestGetModelConfig_NotFound(t *testing.T) {
 	cfg := &Config{
-		Models: []ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: "test-model", Model: "openai/gpt-4o"},
 		},
 	}
@@ -42,7 +44,7 @@ func TestGetModelConfig_NotFound(t *testing.T) {
 
 func TestGetModelConfig_EmptyList(t *testing.T) {
 	cfg := &Config{
-		Models: []ModelConfig{},
+		Models: []modelspec.Model{},
 	}
 
 	_, err := cfg.GetModelConfig("any-model")
@@ -53,7 +55,7 @@ func TestGetModelConfig_EmptyList(t *testing.T) {
 
 func TestGetModelConfig_RoundRobin(t *testing.T) {
 	cfg := &Config{
-		Models: []ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: "lb-model", Model: "openai/gpt-4o-1", Enabled: true},
 			{ModelName: "lb-model", Model: "openai/gpt-4o-2", Enabled: true},
 			{ModelName: "lb-model", Model: "openai/gpt-4o-3", Enabled: true},
@@ -80,7 +82,7 @@ func TestGetModelConfig_RoundRobin(t *testing.T) {
 
 func TestGetModelConfig_Concurrent(t *testing.T) {
 	cfg := &Config{
-		Models: []ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: "concurrent-model", Model: "openai/gpt-4o-1", Enabled: true},
 			{ModelName: "concurrent-model", Model: "openai/gpt-4o-2", Enabled: true},
 		},
@@ -219,11 +221,11 @@ func TestConfig_ValidateModelList(t *testing.T) {
 		{
 			name: "valid list",
 			config: &Config{
-				Providers: []Provider{
+				Providers: []modelspec.Provider{
 					{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
 					{Name: "anthropic", Protocol: "anthropic", BaseURL: "https://api.anthropic.com"},
 				},
-				Models: []ModelConfig{
+				Models: []modelspec.Model{
 					{ModelName: "test1", Model: "gpt-4o", Provider: "openai"},
 					{ModelName: "test2", Model: "claude", Provider: "anthropic"},
 				},
@@ -233,10 +235,10 @@ func TestConfig_ValidateModelList(t *testing.T) {
 		{
 			name: "invalid entry",
 			config: &Config{
-				Providers: []Provider{
+				Providers: []modelspec.Provider{
 					{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
 				},
-				Models: []ModelConfig{
+				Models: []modelspec.Model{
 					{ModelName: "test1", Model: "gpt-4o", Provider: "openai"},
 					{ModelName: "", Model: "claude", Provider: "openai"}, // missing model_name
 				},
@@ -247,7 +249,7 @@ func TestConfig_ValidateModelList(t *testing.T) {
 		{
 			name: "unknown provider reference",
 			config: &Config{
-				Models: []ModelConfig{
+				Models: []modelspec.Model{
 					{ModelName: "test1", Model: "gpt-4o", Provider: "nope"},
 				},
 			},
@@ -257,7 +259,7 @@ func TestConfig_ValidateModelList(t *testing.T) {
 		{
 			name: "empty list",
 			config: &Config{
-				Models: []ModelConfig{},
+				Models: []modelspec.Model{},
 			},
 			wantErr: false,
 		},
@@ -265,10 +267,10 @@ func TestConfig_ValidateModelList(t *testing.T) {
 			// Load balancing: multiple entries with same model_name are allowed
 			name: "duplicate model_name for load balancing",
 			config: &Config{
-				Providers: []Provider{
+				Providers: []modelspec.Provider{
 					{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
 				},
-				Models: []ModelConfig{
+				Models: []modelspec.Model{
 					{ModelName: "gpt-4", Model: "gpt-4o", Provider: "openai"},
 					{ModelName: "gpt-4", Model: "gpt-4-turbo", Provider: "openai"},
 				},
@@ -279,11 +281,11 @@ func TestConfig_ValidateModelList(t *testing.T) {
 			// Load balancing: non-adjacent entries with same model_name are also allowed
 			name: "duplicate model_name non-adjacent for load balancing",
 			config: &Config{
-				Providers: []Provider{
+				Providers: []modelspec.Provider{
 					{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
 					{Name: "anthropic", Protocol: "anthropic", BaseURL: "https://api.anthropic.com"},
 				},
-				Models: []ModelConfig{
+				Models: []modelspec.Model{
 					{ModelName: "model-a", Model: "gpt-4o", Provider: "openai"},
 					{ModelName: "model-b", Model: "claude", Provider: "anthropic"},
 					{ModelName: "model-a", Model: "gpt-4-turbo", Provider: "openai"},

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -86,7 +88,7 @@ func (h *Handler) handleListProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleAddProvider(w http.ResponseWriter, r *http.Request) {
-	var p config.Provider
+	var p modelspec.Provider
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return

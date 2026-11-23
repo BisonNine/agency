@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/config"
 )
@@ -88,7 +89,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 		name         string
 		aliasName    string
 		modelName    string
-		provider     config.Provider
+		provider     modelspec.Provider
 		wantProvider string
 		wantModel    string
 	}{
@@ -96,7 +97,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 			name:      "alias routed through openrouter provider",
 			aliasName: "step-3.5-flash",
 			modelName: "stepfun/step-3.5-flash:free",
-			provider: config.Provider{
+			provider: modelspec.Provider{
 				Name: "openrouter", Protocol: "openai-chat",
 				BaseURL: "https://openrouter.ai/api/v1", APIKey: "k",
 			},
@@ -107,7 +108,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 			name:      "alias routed through openai-compatible provider",
 			aliasName: "glm-5",
 			modelName: "glm-5",
-			provider: config.Provider{
+			provider: modelspec.Provider{
 				Name: "openai", Protocol: "openai-chat",
 				BaseURL: "https://api.z.ai/api/coding/paas/v4", APIKey: "k",
 			},
@@ -127,8 +128,8 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 						Models: []string{tt.aliasName},
 					},
 				},
-				Providers: []config.Provider{tt.provider},
-				Models: []config.ModelConfig{
+				Providers: []modelspec.Provider{tt.provider},
+				Models: []modelspec.Model{
 					{
 						ModelName: tt.aliasName,
 						Model:     tt.modelName,

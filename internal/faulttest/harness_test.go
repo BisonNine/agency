@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/agent"
@@ -59,10 +60,10 @@ func TestMain(m *testing.M) {
 func newConfig(t *testing.T, primary, fallback *stubprovider.Server) *config.Config {
 	t.Helper()
 	cfg := &config.Config{
-		Providers: []config.Provider{
+		Providers: []modelspec.Provider{
 			{Name: primaryProvider, Protocol: "openai-chat", BaseURL: primary.URL(), APIKey: "test-key"},
 		},
-		Models: []config.ModelConfig{
+		Models: []modelspec.Model{
 			{ModelName: primaryAlias, Model: primaryModel, Provider: primaryProvider, Enabled: true},
 		},
 		Agents: config.AgentsConfig{
@@ -81,9 +82,9 @@ func newConfig(t *testing.T, primary, fallback *stubprovider.Server) *config.Con
 	}
 	if fallback != nil {
 		cfg.Providers = append(cfg.Providers,
-			config.Provider{Name: "stub-b", Protocol: "openai-chat", BaseURL: fallback.URL(), APIKey: "test-key"})
+			modelspec.Provider{Name: "stub-b", Protocol: "openai-chat", BaseURL: fallback.URL(), APIKey: "test-key"})
 		cfg.Models = append(cfg.Models,
-			config.ModelConfig{ModelName: fallbackAlias, Model: "stub-fallback", Provider: "stub-b", Enabled: true})
+			modelspec.Model{ModelName: fallbackAlias, Model: "stub-fallback", Provider: "stub-b", Enabled: true})
 		cfg.Agents.Defaults.Models = append(cfg.Agents.Defaults.Models, fallbackAlias)
 	}
 	return cfg

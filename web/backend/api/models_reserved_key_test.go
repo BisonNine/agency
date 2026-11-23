@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 )
@@ -60,7 +62,7 @@ func TestModelEndpoints_ReservedKeyKeepsTheHostWording(t *testing.T) {
 // validateConfig is what PUT /api/config runs before saving.
 func TestValidateConfig_ReservedKeyKeepsTheHostWording(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Models = append(cfg.Models, config.ModelConfig{
+	cfg.Models = append(cfg.Models, modelspec.Model{
 		ModelName: "bob-chat", Model: "gpt",
 		Provider: cfg.Providers[0].Name, ExtraBody: map[string]any{"model": "x"},
 	})

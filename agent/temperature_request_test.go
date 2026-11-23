@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -53,10 +55,10 @@ func TestNewDispatch_TemperatureInRequest(t *testing.T) {
 						Temperature: tt.defaultTemp,
 					},
 				},
-				Providers: []config.Provider{
+				Providers: []modelspec.Provider{
 					{Name: "test", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "dummy"},
 				},
-				Models: []config.ModelConfig{
+				Models: []modelspec.Model{
 					{ModelName: "alice-model", Model: "test-model", Provider: "test", Enabled: true},
 				},
 			}
@@ -122,10 +124,10 @@ func TestNewDispatch_AnthropicRequest(t *testing.T) {
 						Temperature: tt.defaultTemp,
 					},
 				},
-				Providers: []config.Provider{
+				Providers: []modelspec.Provider{
 					{Name: "test", Protocol: "anthropic", BaseURL: srv.URL + "/v1", APIKey: "dummy"},
 				},
-				Models: []config.ModelConfig{
+				Models: []modelspec.Model{
 					{ModelName: "alice-model", Model: "claude-test", Provider: "test", ThinkingLevel: tt.thinking, Enabled: true},
 				},
 			}

@@ -46,7 +46,7 @@ func (c *Config) IsHumanModel(name string) bool {
 	return false
 }
 
-func (c *Config) modelIsHuman(m *ModelConfig) bool {
+func (c *Config) modelIsHuman(m *modelspec.Model) bool {
 	p, err := c.GetProvider(m.Provider)
 	return err == nil && IsHumanProtocol(p.Protocol)
 }
@@ -324,7 +324,7 @@ func (c *Config) PruneHumanProblems() []HumanProblem {
 			humanNames[c.Models[i].ModelName] = true
 		}
 	}
-	c.Models = slices.DeleteFunc(c.Models, func(m ModelConfig) bool {
+	c.Models = slices.DeleteFunc(c.Models, func(m modelspec.Model) bool {
 		return humanNames[m.ModelName] && !c.modelIsHuman(&m)
 	})
 	return problems

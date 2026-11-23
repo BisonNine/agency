@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 )
@@ -612,7 +614,7 @@ func TestMCPClientEffectivelyEnabled(t *testing.T) {
 }
 
 func TestMCPHostEffectivelyEnabled(t *testing.T) {
-	cliProviders := []Provider{
+	cliProviders := []modelspec.Provider{
 		{Name: "claude-cli", Protocol: "claude-cli"},
 		{Name: "codex-cli", Protocol: "codex-cli"},
 		{Name: "gemini-cli", Protocol: "gemini-cli"},
@@ -623,8 +625,8 @@ func TestMCPHostEffectivelyEnabled(t *testing.T) {
 		name       string
 		enabled    bool
 		autoEnable bool
-		providers  []Provider
-		models     []ModelConfig
+		providers  []modelspec.Provider
+		models     []modelspec.Model
 		want       bool
 	}{
 		{
@@ -636,7 +638,7 @@ func TestMCPHostEffectivelyEnabled(t *testing.T) {
 			name:       "auto with claude-cli model starts",
 			autoEnable: true,
 			providers:  cliProviders,
-			models: []ModelConfig{
+			models: []modelspec.Model{
 				{ModelName: "sonnet", Model: "claude-sonnet-4.6", Provider: "claude-cli", Enabled: true},
 			},
 			want: true,
@@ -645,7 +647,7 @@ func TestMCPHostEffectivelyEnabled(t *testing.T) {
 			name:       "auto with codex-cli model starts",
 			autoEnable: true,
 			providers:  cliProviders,
-			models: []ModelConfig{
+			models: []modelspec.Model{
 				{ModelName: "codex", Model: "gpt-5-codex", Provider: "codex-cli", Enabled: true},
 			},
 			want: true,
@@ -654,7 +656,7 @@ func TestMCPHostEffectivelyEnabled(t *testing.T) {
 			name:       "auto with gemini-cli model starts",
 			autoEnable: true,
 			providers:  cliProviders,
-			models: []ModelConfig{
+			models: []modelspec.Model{
 				{ModelName: "gemini", Model: "gemini-2.5", Provider: "gemini-cli", Enabled: true},
 			},
 			want: true,
@@ -663,7 +665,7 @@ func TestMCPHostEffectivelyEnabled(t *testing.T) {
 			name:       "auto with only HTTP models does not start",
 			autoEnable: true,
 			providers:  cliProviders,
-			models: []ModelConfig{
+			models: []modelspec.Model{
 				{ModelName: "gpt", Model: "gpt-4o", Provider: "openai", Enabled: true},
 				{ModelName: "claude", Model: "claude-sonnet-4.6", Provider: "anthropic", Enabled: true},
 			},
@@ -673,7 +675,7 @@ func TestMCPHostEffectivelyEnabled(t *testing.T) {
 			name:       "auto disabled with cli model does not start",
 			autoEnable: false,
 			providers:  cliProviders,
-			models: []ModelConfig{
+			models: []modelspec.Model{
 				{ModelName: "sonnet", Model: "claude-sonnet-4.6", Provider: "claude-cli", Enabled: true},
 			},
 			want: false,
@@ -682,7 +684,7 @@ func TestMCPHostEffectivelyEnabled(t *testing.T) {
 			name:       "disabled cli model does not trigger auto-start",
 			autoEnable: true,
 			providers:  cliProviders,
-			models: []ModelConfig{
+			models: []modelspec.Model{
 				{ModelName: "sonnet", Model: "claude-sonnet-4.6", Provider: "claude-cli", Enabled: false},
 			},
 			want: false,

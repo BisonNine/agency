@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/bus"
@@ -145,13 +146,13 @@ func newTaskHostEnv(t *testing.T) *taskHostEnv {
 	srv := httptest.NewServer(http.HandlerFunc(v.handle))
 	t.Cleanup(srv.Close)
 	cfg := ownerTestConfig(t)
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "p", Protocol: "openai-chat", BaseURL: srv.URL + "/v1", APIKey: "k"},
-		{Name: "g", Protocol: config.GeminiProtocol, BaseURL: srv.URL, APIKey: "gk"},
-		{Name: "e", Protocol: config.ElevenLabsProtocol, BaseURL: srv.URL, APIKey: "ek"},
+		{Name: "g", Protocol: modelspec.GeminiProtocol, BaseURL: srv.URL, APIKey: "gk"},
+		{Name: "e", Protocol: modelspec.ElevenLabsProtocol, BaseURL: srv.URL, APIKey: "ek"},
 		{Name: "a", Protocol: "anthropic", BaseURL: srv.URL + "/v1", APIKey: "ak"},
 	}
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "chat-a", Model: "chat-a-wire", Provider: "p", Enabled: true},
 		{ModelName: "chat-b", Model: "chat-b-wire", Provider: "p", Enabled: true},
 		{ModelName: "imgapi", Model: "gpt-image", Provider: "p", Enabled: true},
@@ -875,7 +876,7 @@ func TestReadAtMost(t *testing.T) {
 // the next Images model is tried, and the empty one is not put in cooldown.
 func TestTaskModelHost_NoImagesFallsBack(t *testing.T) {
 	e := newTaskHostEnv(t)
-	e.cfg.Models = append(e.cfg.Models, config.ModelConfig{ModelName: "empty", Model: "empty-image", Provider: "p", Enabled: true})
+	e.cfg.Models = append(e.cfg.Models, modelspec.Model{ModelName: "empty", Model: "empty-image", Provider: "p", Enabled: true})
 	e.cfg.TaskModels.ImageModels = []config.ImageTaskModel{
 		{Model: "empty", ImageAPI: config.ImageAPIImages},
 		{Model: "imgapi", ImageAPI: config.ImageAPIImages},
@@ -891,14 +892,14 @@ func TestTaskModelHost_NoImagesFallsBack(t *testing.T) {
 
 func TestAttemptTimeout(t *testing.T) {
 	cfg := &config.Config{}
-	if got := attemptTimeout(cfg, &config.ModelConfig{}); got != taskAttemptTimeout {
+	if got := attemptTimeout(cfg, &modelspec.Model{}); got != taskAttemptTimeout {
 		t.Errorf("no timeout set = %v", got)
 	}
 	cfg.Agents.Defaults.RequestTimeout = 90
-	if got := attemptTimeout(cfg, &config.ModelConfig{}); got != 90*time.Second {
+	if got := attemptTimeout(cfg, &modelspec.Model{}); got != 90*time.Second {
 		t.Errorf("agents.defaults = %v, want 90s", got)
 	}
-	if got := attemptTimeout(cfg, &config.ModelConfig{RequestTimeout: 30}); got != 30*time.Second {
+	if got := attemptTimeout(cfg, &modelspec.Model{RequestTimeout: 30}); got != 30*time.Second {
 		t.Errorf("the model's own = %v, want 30s", got)
 	}
 }
@@ -938,10 +939,10 @@ func TestTaskModelHost_CheckSniffsExtensionlessInputs(t *testing.T) {
 func TestTaskModelHost_CLIIsolated(t *testing.T) {
 	e := newTaskHostEnv(t)
 	logDir := t.TempDir()
-	e.cfg.Providers = append(e.cfg.Providers, config.Provider{
+	e.cfg.Providers = append(e.cfg.Providers, modelspec.Provider{
 		Name: "Claude CLI", Protocol: "claude-cli", Command: fakeClaudeCLI(t, logDir), BypassRestrictions: true,
 	})
-	e.cfg.Models = append(e.cfg.Models, config.ModelConfig{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true})
+	e.cfg.Models = append(e.cfg.Models, modelspec.Model{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true})
 	e.cfg.TaskModels.TextModels = []config.TaskModelRef{{Model: "cc"}}
 	if err := os.MkdirAll(e.cfg.CLIPath(), 0o700); err != nil {
 		t.Fatal(err)

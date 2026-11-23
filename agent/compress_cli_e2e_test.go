@@ -14,6 +14,7 @@ import (
 
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
@@ -44,8 +45,8 @@ EOFMOCK
 	}
 
 	cfg := &config.Config{
-		Providers: []config.Provider{{Name: "claude", Protocol: "claude-cli", Command: script, BypassRestrictions: true}},
-		Models:    []config.ModelConfig{{ModelName: "claude-cli", Model: "claude-cli", Provider: "claude", Workspace: t.TempDir(), Enabled: true}},
+		Providers: []modelspec.Provider{{Name: "claude", Protocol: "claude-cli", Command: script, BypassRestrictions: true}},
+		Models:    []modelspec.Model{{ModelName: "claude-cli", Model: "claude-cli", Provider: "claude", Workspace: t.TempDir(), Enabled: true}},
 	}
 	caller := compressCaller(testCatalog(cfg, nil), "claude-cli")
 

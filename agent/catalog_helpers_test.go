@@ -15,6 +15,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
@@ -39,7 +40,7 @@ func withTestModels(cfg *config.Config) []string {
 				continue
 			}
 			// Defined, enabled or not: the test means it as configured.
-			if slices.ContainsFunc(cfg.Models, func(m config.ModelConfig) bool { return m.ModelName == n || m.Model == n }) {
+			if slices.ContainsFunc(cfg.Models, func(m modelspec.Model) bool { return m.ModelName == n || m.Model == n }) {
 				continue
 			}
 			names = append(names, n)
@@ -59,19 +60,19 @@ func withTestModels(cfg *config.Config) []string {
 	for i := range cfg.Models {
 		p := cfg.Models[i].Provider
 		if _, err := cfg.GetProvider(p); err != nil && p != "" {
-			cfg.Providers = append(cfg.Providers, config.Provider{Name: p, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "test"})
+			cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: p, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "test"})
 		}
 	}
 	if len(names) == 0 {
 		return nil
 	}
 	if _, err := cfg.GetProvider(testProviderName); err != nil {
-		cfg.Providers = append(cfg.Providers, config.Provider{
+		cfg.Providers = append(cfg.Providers, modelspec.Provider{
 			Name: testProviderName, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "test",
 		})
 	}
 	for _, n := range names {
-		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: n, Model: n, Provider: testProviderName, Enabled: true, Vision: config.VisionOff})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: n, Model: n, Provider: testProviderName, Enabled: true, Vision: modelspec.VisionOff})
 	}
 	return names
 }

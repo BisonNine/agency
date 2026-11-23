@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/utils"
 )
@@ -61,7 +63,7 @@ func testProviderConnectivity(req providerTestRequest) providerTestResponse {
 		return providerTestResponse{Message: "Azure needs deployment-specific settings; it can't be live-tested here — save and verify in chat."}
 	case proto == "anthropic" || proto == "anthropic-messages":
 		return probeAnthropicAuth(base, key)
-	case config.TaskOnlyProtocol(proto):
+	case modelspec.TaskOnlyProtocol(proto):
 		return providerTestResponse{Message: "This provider can't be tested here; add its model on the Task models page and try it."}
 	default: // openai, openai-chat, openai-responses, and other openai-compatible
 		return probeOpenAICompatAuth(base, key)

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/clock"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
@@ -114,7 +115,7 @@ func testConfig(t *testing.T) *config.Config {
 		{ID: "alice", Name: "Alice", Default: true, Models: []string{"m1"}, Tools: []string{"file_read", "file_write"}},
 		{ID: "bob", Name: "Bob"},
 	}
-	cfg.Models = []config.ModelConfig{{ModelName: "m1", Model: "model-one", Provider: "p", Enabled: true}}
+	cfg.Models = []modelspec.Model{{ModelName: "m1", Model: "model-one", Provider: "p", Enabled: true}}
 	return cfg
 }
 

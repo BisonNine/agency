@@ -33,7 +33,7 @@ func TestProviderProtocolsFixture(t *testing.T) {
 	if !slices.Equal(fixture.Protocols, want) {
 		t.Fatalf("provider_protocols.json protocols = %v, want %v", fixture.Protocols, want)
 	}
-	p := Provider{Name: "Alice", Protocol: fixture.DefaultProtocol, BaseURL: "https://api.example.com/v1"}
+	p := modelspec.Provider{Name: "Alice", Protocol: fixture.DefaultProtocol, BaseURL: "https://api.example.com/v1"}
 	if err := p.ValidateProtocol(); err != nil {
 		t.Fatalf("default protocol %q is refused: %v", fixture.DefaultProtocol, err)
 	}

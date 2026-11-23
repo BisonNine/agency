@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolkit/untrusted"
 
@@ -53,8 +54,8 @@ func TestNewClassifierService(t *testing.T) {
 				{ID: "bob", Name: "Bob"},
 			},
 		},
-		Providers: []config.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}},
-		Models:    []config.ModelConfig{{ModelName: "m", Model: "m-wire", Provider: "p", Enabled: true}},
+		Providers: []modelspec.Provider{{Name: "p", Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"}},
+		Models:    []modelspec.Model{{ModelName: "m", Model: "m-wire", Provider: "p", Enabled: true}},
 	}
 	cfg.Classifiers.Limits.MaxRules = 1
 	cfg.Security.Permissions.Agents = config.AreaPermissions{DirMode: "0750", FileMode: "0640"}

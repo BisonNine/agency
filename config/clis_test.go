@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/logger"
 )
 
@@ -39,11 +41,11 @@ func TestCLIArgs_WarnsOnceWhenStrippingABypassFlag(t *testing.T) {
 func TestProvider_BypassRestrictionsDefaultsOff(t *testing.T) {
 	cfg := DefaultConfig()
 	for i := range cfg.Providers {
-		if p := &cfg.Providers[i]; IsCLIProtocol(p.Protocol) && p.BypassRestrictions {
+		if p := &cfg.Providers[i]; modelspec.IsCLIProtocol(p.Protocol) && p.BypassRestrictions {
 			t.Errorf("seeded provider %q has bypass_restrictions on", p.Name)
 		}
 	}
-	if (Provider{}).BypassRestrictions {
+	if (modelspec.Provider{}).BypassRestrictions {
 		t.Error("zero-value provider has bypass_restrictions on")
 	}
 }
@@ -53,7 +55,7 @@ func TestProvider_BypassRestrictionsDefaultsOff(t *testing.T) {
 // no seeded model smuggles in a permission-bypass flag the checkbox is off for.
 func TestSeededCLIModelsMatchTheCatalogue(t *testing.T) {
 	cfg := DefaultConfig()
-	byName := map[string]*Provider{}
+	byName := map[string]*modelspec.Provider{}
 	for i := range cfg.Providers {
 		byName[cfg.Providers[i].Name] = &cfg.Providers[i]
 	}
@@ -61,10 +63,10 @@ func TestSeededCLIModelsMatchTheCatalogue(t *testing.T) {
 	for i := range cfg.Models {
 		m := &cfg.Models[i]
 		prov := byName[m.Provider]
-		if prov == nil || !IsCLIProtocol(prov.Protocol) {
+		if prov == nil || !modelspec.IsCLIProtocol(prov.Protocol) {
 			continue
 		}
-		agent := CLIAgentByProtocol(prov.Protocol)
+		agent := modelspec.CLIAgentByProtocol(prov.Protocol)
 		if agent == nil {
 			t.Errorf("seeded model %q uses CLI protocol %q with no catalogue row", m.ModelName, prov.Protocol)
 			continue
@@ -85,7 +87,7 @@ func TestSeededCLIModelsMatchTheCatalogue(t *testing.T) {
 				m.ModelName, m.RequestTimeout, agent.RequestTimeout)
 		}
 	}
-	for _, c := range CLIAgents {
+	for _, c := range modelspec.CLIAgents {
 		if !seen[c.Protocol] {
 			t.Errorf("no seeded sentinel model for %s", c.Protocol)
 		}

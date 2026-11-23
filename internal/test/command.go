@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
@@ -116,7 +117,7 @@ func testOne(cfg *config.Config, name string, deadline time.Duration) error {
 }
 
 func testAll(cfg *config.Config, deadline time.Duration) error {
-	var enabled []config.ModelConfig
+	var enabled []modelspec.Model
 	for _, mc := range cfg.Models {
 		if mc.Enabled {
 			enabled = append(enabled, mc)
@@ -144,7 +145,7 @@ func testAll(cfg *config.Config, deadline time.Duration) error {
 	var wg sync.WaitGroup
 	for i, mc := range enabled {
 		wg.Add(1)
-		go func(idx int, mc config.ModelConfig) {
+		go func(idx int, mc modelspec.Model) {
 			defer wg.Done()
 			results[idx] = testModel(cfg, cat, mc, deadline)
 		}(i, mc)
@@ -155,7 +156,7 @@ func testAll(cfg *config.Config, deadline time.Duration) error {
 	return nil
 }
 
-func testModel(cfg *config.Config, cat *models.Catalog, mc config.ModelConfig, timeout time.Duration) result {
+func testModel(cfg *config.Config, cat *models.Catalog, mc modelspec.Model, timeout time.Duration) result {
 	r := result{modelName: mc.ModelName}
 
 	if _, err := cfg.GetProvider(mc.Provider); err != nil {

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -349,7 +351,7 @@ func TestHandleDeleteModel_Unreferenced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.Models = append(cfg.Models, config.ModelConfig{
+	cfg.Models = append(cfg.Models, modelspec.Model{
 		ModelName: "spare",
 		Model:     "gpt-4o-mini",
 		Provider:  "openai",
@@ -451,7 +453,7 @@ func TestHandleSetDefaultModel_DisabledModelReturns400(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.Models = append(cfg.Models, config.ModelConfig{
+	cfg.Models = append(cfg.Models, modelspec.Model{
 		ModelName: "disabled-model",
 		Model:     "gpt-4o",
 		Provider:  "openai",
@@ -564,8 +566,8 @@ func TestHandleUpdateModel_VisionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if cfg.Models[0].Vision != config.VisionUserMessage {
-		t.Fatalf("Vision = %q, want %q", cfg.Models[0].Vision, config.VisionUserMessage)
+	if cfg.Models[0].Vision != modelspec.VisionUserMessage {
+		t.Fatalf("Vision = %q, want %q", cfg.Models[0].Vision, modelspec.VisionUserMessage)
 	}
 
 	// GET must expose it.
@@ -589,7 +591,7 @@ func TestHandleUpdateModel_VisionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if cfg.Models[0].Vision != config.VisionUserMessage {
-		t.Fatalf("vision not preserved on omit: got %q, want %q", cfg.Models[0].Vision, config.VisionUserMessage)
+	if cfg.Models[0].Vision != modelspec.VisionUserMessage {
+		t.Fatalf("vision not preserved on omit: got %q, want %q", cfg.Models[0].Vision, modelspec.VisionUserMessage)
 	}
 }

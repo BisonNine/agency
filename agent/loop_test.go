@@ -15,6 +15,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
@@ -53,9 +54,9 @@ func newTestConfig(t *testing.T) *config.Config {
 				{ID: "main", Name: "Main", Default: true},
 			},
 		},
-		Providers: []config.Provider{{Name: testProviderName, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "test"}},
-		Models: []config.ModelConfig{
-			{ModelName: "test-model", Model: "test-model", Provider: testProviderName, Enabled: true, Vision: config.VisionOff},
+		Providers: []modelspec.Provider{{Name: testProviderName, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "test"}},
+		Models: []modelspec.Model{
+			{ModelName: "test-model", Model: "test-model", Provider: testProviderName, Enabled: true, Vision: modelspec.VisionOff},
 		},
 	}
 }
@@ -496,10 +497,10 @@ func TestProcessMessage_CommandOutcomes(t *testing.T) {
 func TestProcessMessage_ModelSelectListConsistency(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.Agents.Defaults.Models = []string{"primary", "secondary"}
-	cfg.Providers = []config.Provider{
+	cfg.Providers = []modelspec.Provider{
 		{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "k"},
 	}
-	cfg.Models = []config.ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "primary", Model: "primary", Provider: "openai", Enabled: true},
 		{ModelName: "secondary", Model: "secondary", Provider: "openai", Enabled: true},
 	}
@@ -1631,8 +1632,8 @@ func fourModelLoop(t *testing.T) (*AgentLoop, *AgentInstance) {
 	cfg := newTestConfig(t)
 	names := make([]string, 0, 4)
 	for _, c := range fourCandidates() {
-		cfg.Providers = append(cfg.Providers, config.Provider{Name: c.Provider, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
-		cfg.Models = append(cfg.Models, config.ModelConfig{ModelName: c.Name, Model: c.Model, Provider: c.Provider, Enabled: true})
+		cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: c.Provider, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
+		cfg.Models = append(cfg.Models, modelspec.Model{ModelName: c.Name, Model: c.Model, Provider: c.Provider, Enabled: true})
 		names = append(names, c.Name)
 	}
 	cfg.Agents.List[0].Models = names

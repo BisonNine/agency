@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/modelspec"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -74,8 +75,8 @@ func (s *panickingSTI) Issue(_, _, _ string) string { panic("token store unavail
 func cancelCLITurn(t *testing.T, sti SessionTokenIssuer, model string, finished bool) (issuedAtStop int, dropped []bus.InboundMessage) {
 	t.Helper()
 	cfg := &config.Config{
-		Providers: []config.Provider{{Name: "Claude CLI", Protocol: "claude-cli"}},
-		Models:    []config.ModelConfig{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}},
+		Providers: []modelspec.Provider{{Name: "Claude CLI", Protocol: "claude-cli"}},
+		Models:    []modelspec.Model{{ModelName: "cc", Model: "claude-cli", Provider: "Claude CLI", Enabled: true}},
 	}
 	al := &AgentLoop{cfg: cfg, sessionTokenIssuer: sti}
 	alice := &AgentInstance{ID: "alice"}

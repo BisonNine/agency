@@ -5,13 +5,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.bison9.com/agent/modelspec"
 )
 
 // refTestConfig references "alpha" from every site the walker knows, plus
 // "beta" (disabled) and "ghost" (missing) where the test needs them.
 func refTestConfig() *Config {
 	cfg := &Config{}
-	cfg.Models = []ModelConfig{
+	cfg.Models = []modelspec.Model{
 		{ModelName: "alpha", Model: "a", Provider: "p", Enabled: true},
 		{ModelName: "beta", Model: "b", Provider: "p", Enabled: false},
 		{ModelName: "alpha", Model: "a2", Provider: "p2", Enabled: false}, // duplicate alias: legal

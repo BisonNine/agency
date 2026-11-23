@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
@@ -144,7 +146,7 @@ func DefaultConfig() *Config {
 		},
 		// Named endpoints. A model references one by name; the WebUI groups
 		// models by provider. Add your API key to the provider you want to use.
-		Providers: []Provider{
+		Providers: []modelspec.Provider{
 			// CLI providers run a local binary found on PATH; set `command` to
 			// override the path. base_url is unused for CLI protocols.
 			{Name: "Claude CLI", Protocol: "claude-cli"},
@@ -174,7 +176,7 @@ func DefaultConfig() *Config {
 			{Name: "Abliteration", Protocol: "openai-chat", BaseURL: "https://api.abliteration.ai/v1"},
 			{Name: "xAI", Protocol: "openai-chat", BaseURL: "https://api.x.ai/v1"},
 		},
-		Models: []ModelConfig{
+		Models: []modelspec.Model{
 			// ============================================
 			// A starter catalogue of tested providers/models, ALL DISABLED.
 			// Enable a model and add its provider's api_key to use it. CLI models
@@ -188,7 +190,7 @@ func DefaultConfig() *Config {
 			// bypass_restrictions is on.
 			{ModelName: "Claude CLI", Model: "claude-cli", Provider: "Claude CLI", RequestTimeout: 3600, Env: map[string]string{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}, Enabled: false},
 			{ModelName: "Claude CLI Opus", Model: "Opus", Provider: "Claude CLI", RequestTimeout: 3600, Env: map[string]string{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}, Enabled: false},
-			{ModelName: "Claude CLI Fable", Model: "Fable", Provider: "Claude CLI", RequestTimeout: 3600, Env: map[string]string{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}, ContextWindow: 750000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "Claude CLI Fable", Model: "Fable", Provider: "Claude CLI", RequestTimeout: 3600, Env: map[string]string{"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}, ContextWindow: 750000, Vision: modelspec.VisionToolResponse, Enabled: false},
 			{ModelName: "Codex CLI", Model: "codex-cli", Provider: "Codex CLI", RequestTimeout: 3600, Enabled: false},
 			// Antigravity (binary "agy") replaces the deprecated Gemini CLI. The
 			// prompt is piped on stdin and the provider never passes -p/--print:
@@ -223,17 +225,17 @@ func DefaultConfig() *Config {
 			{ModelName: "OpenRouter Fable Latest", Model: "anthropic/claude-fable-latest", Provider: "OpenRouter Chat", ContextWindow: 1000000, Enabled: false},
 			{ModelName: "OpenRouter Kimi Latest", Model: "moonshotai/kimi-latest", Provider: "OpenRouter Chat", ContextWindow: 1000000, Enabled: false},
 			{ModelName: "OpenRouter Gemini Flash Latest", Model: "google/gemini-flash-latest", Provider: "OpenRouter Chat", ContextWindow: 1000000, Enabled: false},
-			{ModelName: "OpenRouter GPT Terra Latest", Model: "openai/gpt-terra-latest", Provider: "OpenRouter Responses", ContextWindow: 750000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "OpenRouter GPT Terra Latest", Model: "openai/gpt-terra-latest", Provider: "OpenRouter Responses", ContextWindow: 750000, Vision: modelspec.VisionToolResponse, Enabled: false},
 			{ModelName: "OpenRouter GPT 6 Astra", Model: "openai/gpt-6-astra", Provider: "OpenRouter Responses", ContextWindow: 1000000, Enabled: false},
 			{ModelName: "OpenRouter GPT 6 Sol", Model: "openai/gpt-6-sol", Provider: "OpenRouter Responses", ContextWindow: 1000000, Enabled: false},
 			{ModelName: "OpenRouter GPT 6 Luna", Model: "openai/gpt-6-luna", Provider: "OpenRouter Responses", ContextWindow: 1000000, Enabled: false},
 			{ModelName: "OpenRouter GLM Latest", Model: "z-ai/glm-latest", Provider: "OpenRouter Responses", ContextWindow: 750000, Enabled: false},
 			{ModelName: "OpenRouter DeepSeek Flash Latest", Model: "~deepseek/deepseek-flash-latest", Provider: "OpenRouter Chat DeepSeek", ContextWindow: 500000, Enabled: false},
 			{ModelName: "OpenRouter DeepSeek Pro Latest", Model: "~deepseek/deepseek-pro-latest", Provider: "OpenRouter Chat DeepSeek", ContextWindow: 500000, Enabled: false},
-			{ModelName: "Grok 4.7", Model: "grok-4.7", Provider: "xAI", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
-			{ModelName: "Grok 4.7 High", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "high", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
-			{ModelName: "Grok 4.7 Medium", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "medium", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
-			{ModelName: "Grok 4.7 None", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "none", ThinkingLevel: "off", ContextWindow: 500000, Vision: VisionToolResponse, Enabled: false},
+			{ModelName: "Grok 4.7", Model: "grok-4.7", Provider: "xAI", ContextWindow: 500000, Vision: modelspec.VisionToolResponse, Enabled: false},
+			{ModelName: "Grok 4.7 High", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "high", ContextWindow: 500000, Vision: modelspec.VisionToolResponse, Enabled: false},
+			{ModelName: "Grok 4.7 Medium", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "medium", ContextWindow: 500000, Vision: modelspec.VisionToolResponse, Enabled: false},
+			{ModelName: "Grok 4.7 None", Model: "grok-4.7", Provider: "xAI", ReasoningEffort: "none", ThinkingLevel: "off", ContextWindow: 500000, Vision: modelspec.VisionToolResponse, Enabled: false},
 			{ModelName: "OpenRouter GPT 5.5", Model: "openai/gpt-5.5", Provider: "OpenRouter Strict", DropParams: []string{"temperature"}, Enabled: false},
 		},
 		Gateway: GatewayConfig{
