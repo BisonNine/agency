@@ -148,6 +148,18 @@
 
 ### Fixed
 
+- **`common_get` and `common_put` no longer follow a link out of the agent's
+  workspace or the shared common folder.** Such a path is refused, so
+  `common_put` cannot copy an outside file into common and `common_get`
+  cannot overwrite one. A link with an absolute target is refused too, as the
+  file tools already do.
+- **`file_list` with `recursive=true` reports a folder it cannot read**
+  (missing, or outside the read scope or the workspace) instead of returning
+  an empty list.
+- **`skill_install` with `force=true` no longer removes the installed skill**
+  when the registry it names does not exist.
+- **`cron_schedule` list shows an agent's disabled jobs**, so they can be
+  found and enabled again.
 - **Matrix no longer downloads attachments it will not use.** A file from a
   sender not on the allow list, or on a group message the agent ignores, is
   not fetched, and no file is left behind for a message that is not handed on.
