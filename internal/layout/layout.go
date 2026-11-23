@@ -22,6 +22,9 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
+// chmod is os.Chmod; a variable so tests can make it fail.
+var chmod = os.Chmod
+
 // Prepare creates internal/, bin/, cli/, skills/, cards/ and the common
 // directory under the data directory when they are missing, each with exactly
 // its area's folder mode (security.permissions): internal/ the secrets', bin/
@@ -51,7 +54,7 @@ func Prepare(cfg *config.Config) {
 		}
 		// MkdirAll's mode is narrowed by the umask; the folder takes exactly
 		// its configured one.
-		if err := os.Chmod(dir, mode); err != nil {
+		if err := chmod(dir, mode); err != nil {
 			logger.WarnCF("layout", "Cannot set a data directory's mode", map[string]any{"path": dir, "error": err.Error()})
 		}
 	}

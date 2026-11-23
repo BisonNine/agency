@@ -83,3 +83,61 @@ func TestPrepareCommonDirOverride(t *testing.T) {
 		t.Errorf("%s/common created although agents.common_dir is set (err %v)", home, err)
 	}
 }
+
+// Without a data directory there is nothing to prepare.
+func TestPrepareNoDataDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	Prepare(&config.Config{})
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Prepare without a data directory created %v", entries)
+	}
+}
+
+// A directory that cannot be created is skipped; the others are still made.
+func TestPrepareContinuesPastAFailedDirectory(t *testing.T) {
+	cfg, home := newConfig(t)
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A dangling link: it does not stat, and MkdirAll cannot replace it.
+	skills := filepath.Join(home, "skills")
+	if err := os.Symlink(filepath.Join(home, "missing"), skills); err != nil {
+		t.Fatal(err)
+	}
+
+	Prepare(cfg)
+
+	if fi, err := os.Lstat(skills); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("skills = %v, %v; want the link left alone", fi, err)
+	}
+	for _, dir := range []string{"internal", "bin", "cli", "cards", "common"} {
+		assertPrivateDir(t, filepath.Join(home, dir))
+	}
+}
+
+// A mode that cannot be set leaves the directory created and the start going.
+func TestPrepareContinuesPastAFailedChmod(t *testing.T) {
+	cfg, home := newConfig(t)
+	saved := chmod
+	t.Cleanup(func() { chmod = saved })
+	chmod = func(name string, mode os.FileMode) error {
+		if filepath.Base(name) == "cli" {
+			return os.ErrPermission
+		}
+		return saved(name, mode)
+	}
+
+	Prepare(cfg)
+
+	if fi, err := os.Stat(filepath.Join(home, "cli")); err != nil || !fi.IsDir() {
+		t.Errorf("cli = %v, %v; want it created", fi, err)
+	}
+	for _, dir := range []string{"internal", "bin", "skills", "cards", "common"} {
+		assertPrivateDir(t, filepath.Join(home, dir))
+	}
+}
