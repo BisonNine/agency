@@ -160,10 +160,10 @@ github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zI
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 go.bison9.com/agent v0.0.0-20261123055820-1053610dab36 h1:Ha+fFfdcX+qlYZy3rxy1D1+PKn6ZDwRlGC6cwQJgPIs=
 go.bison9.com/agent v0.0.0-20261123055820-1053610dab36/go.mod h1:6NvS4VCIIvoEqRu5bdXWIEmfoYcZtAN/bgyuek5Dn4o=
-go.bison9.com/maestro v0.0.0-20261122172411-1d2ea017f4ef h1:4kKrlJQhhHfUpOkSW1pri0kpGZqr/nqBR+swEZNtcgU=
-go.bison9.com/maestro v0.0.0-20261122172411-1d2ea017f4ef/go.mod h1:EOKR73W4MiUhtehHAyb0ib8uYlHJF1twAEP+8zmr3k4=
-go.bison9.com/mcpfusion v0.0.0-20261122132946-c0a928bec113 h1:gVlmM/Jj2eDzWxRZF66P/Mm+msRaNO2pwux7tA0CpRc=
-go.bison9.com/mcpfusion v0.0.0-20261122132946-c0a928bec113/go.mod h1:esEeCHNWJVke1xNIRx9BqDIsM8nYyj8l7E4fpfNPMfA=
+go.bison9.com/maestro v0.5.11 h1:I8Gs9ZpchEljTXdsAL16FIOrJjn3A6qpbMQ0vK6LC+c=
+go.bison9.com/maestro v0.5.11/go.mod h1:g2092I6KSq1vLxwrhn7GVPUTG0pf+v3paAN9tm9cc1w=
+go.bison9.com/mcpfusion v0.4.13 h1:S4k1XEVRmDEpCPfaYK8GddIdhm0Ep06FH7pIqZ0edI0=
+go.bison9.com/mcpfusion v0.4.13/go.mod h1:esEeCHNWJVke1xNIRx9BqDIsM8nYyj8l7E4fpfNPMfA=
 go.etcd.io/bbolt v1.5.0 h1:S7GAl7Fxv12yohbwFfIbQCGDWbQbtDGPET4P/bD4lxU=
 go.etcd.io/bbolt v1.5.0/go.mod h1:mkltfYE5aUHQxUct9N9V+Kp7aSjFqjgrhcXIS70Lrdk=
 go.mau.fi/util v0.11.1 h1:TOxiPZ0XLkpp3CBItIocTnW6rBsGv4fVLa70iBMTXh0=
