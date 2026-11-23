@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -121,11 +119,14 @@ func NewUninstallCommand() *cobra.Command {
 	return cmd
 }
 
+// geteuid is os.Geteuid; replaced in tests.
+var geteuid = os.Geteuid
+
 // resolveTargetUser identifies the user account that will own and execute ClawEh.
 // When running with sudo/root, it reads $SUDO_USER or explicitUser to guarantee
 // that the service never runs as root.
 func resolveTargetUser(explicitUser string) (*TargetUser, error) {
-	isRoot := os.Geteuid() == 0
+	isRoot := geteuid() == 0
 
 	var u *user.User
 	var err error
@@ -275,29 +276,33 @@ func confirmPrompt(prompt string, autoYes bool) (bool, error) {
 }
 
 func runInstall(host string, port int, allowedCIDRs, targetUser, customBinDir string, autoYes bool) error {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		return fmt.Errorf("`%s install` is only supported on Linux and macOS; this is %s", app.BinaryName(), runtime.GOOS)
+	return realHost().install(host, port, allowedCIDRs, targetUser, customBinDir, autoYes)
+}
+
+// install is `claw install` on h.
+func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBinDir string, autoYes bool) error {
+	if h.goos != "linux" && h.goos != "darwin" {
+		return fmt.Errorf("`%s install` is only supported on Linux and macOS; this is %s", app.BinaryName(), h.goos)
 	}
 
-	tu, err := resolveTargetUser(targetUser)
+	tu, err := h.targetUser(targetUser)
 	if err != nil {
 		return err
 	}
 
 	// Detect any pre-existing installation or service
-	h := realHost()
-	existing := DetectExistingInstall(tu.HomeDir)
+	existing := h.detect(tu.HomeDir)
 	if err = checkExistingMode(existing, tu.IsRoot); err != nil {
 		return err
 	}
 	if existing != nil && existing.User != "" && targetUser == "" && tu.IsRoot {
 		// Preserve user from existing service
-		if preservedUser, pErr := resolveTargetUser(existing.User); pErr == nil {
+		if preservedUser, pErr := h.targetUser(existing.User); pErr == nil {
 			tu = preservedUser
 		}
 	}
 
-	exePath, err := os.Executable()
+	exePath, err := h.executable()
 	if err != nil {
 		return fmt.Errorf("cannot locate running binary: %w", err)
 	}
@@ -318,14 +323,14 @@ func runInstall(host string, port int, allowedCIDRs, targetUser, customBinDir st
 	var modeName, serviceFilePath string
 	if tu.IsRoot {
 		modeName = "System Mode (starts at system boot)"
-		if runtime.GOOS == "linux" {
+		if h.goos == "linux" {
 			serviceFilePath = systemUnitPath
 		} else {
 			serviceFilePath = systemLaunchdPath
 		}
 	} else {
 		modeName = "User Mode (user space, no sudo required)"
-		if runtime.GOOS == "linux" {
+		if h.goos == "linux" {
 			serviceFilePath = userUnitPath(tu.HomeDir)
 		} else {
 			serviceFilePath = userLaunchdPath(tu.HomeDir)
@@ -353,7 +358,7 @@ func runInstall(host string, port int, allowedCIDRs, targetUser, customBinDir st
 			fmt.Printf("  Existing Binary:  %s\n", existing.BinaryPath)
 		}
 	}
-	fmt.Printf("  Platform:        %s (%s)\n", runtime.GOOS, serviceManagerName())
+	fmt.Printf("  Platform:        %s (%s)\n", h.goos, serviceManagerName(h.goos))
 	fmt.Printf("  Mode:            %s\n", modeName)
 	fmt.Printf("  Run As User:     %s (UID: %s, GID: %s)\n", tu.Username, tu.UID, tu.GID)
 	fmt.Printf("  Home Directory:  %s\n", tu.HomeDir)
@@ -436,7 +441,7 @@ func runInstall(host string, port int, allowedCIDRs, targetUser, customBinDir st
 	fmt.Printf("Admin account: %s (%s)\n", adminUser, admin.Path(clawHome))
 	fmt.Println()
 	fmt.Println("Hints:")
-	switch runtime.GOOS {
+	switch h.goos {
 	case "linux":
 		if tu.IsRoot {
 			fmt.Printf("  Check status: systemctl status %s\n", serviceName)
@@ -464,13 +469,18 @@ func runInstall(host string, port int, allowedCIDRs, targetUser, customBinDir st
 // registerService writes the service definition and enables and starts it.
 // It is replaced in tests.
 var registerService = func(tu *TargetUser, targetBin, binDir, clawHome string) error {
-	switch runtime.GOOS {
+	return realHost().register(tu, targetBin, binDir, clawHome)
+}
+
+// register is registerService on h.
+func (h *host) register(tu *TargetUser, targetBin, binDir, clawHome string) error {
+	switch h.goos {
 	case "linux":
-		if err := installSystemd(tu, targetBin, binDir, clawHome); err != nil {
+		if err := h.installSystemd(tu, targetBin, binDir, clawHome); err != nil {
 			return fmt.Errorf("installing systemd service: %w", err)
 		}
 	case "darwin":
-		if err := installLaunchd(tu, targetBin, binDir, clawHome); err != nil {
+		if err := h.installLaunchd(tu, targetBin, binDir, clawHome); err != nil {
 			return fmt.Errorf("installing launchd service: %w", err)
 		}
 	}
@@ -537,26 +547,31 @@ func chownToTarget(path string, tu *TargetUser) error {
 }
 
 func runUninstall(targetUser string, autoYes bool) error {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		return fmt.Errorf("`%s uninstall` is only supported on Linux and macOS; this is %s", app.BinaryName(), runtime.GOOS)
+	return realHost().uninstall(targetUser, autoYes)
+}
+
+// uninstall is `claw uninstall` on h.
+func (h *host) uninstall(targetUser string, autoYes bool) error {
+	if h.goos != "linux" && h.goos != "darwin" {
+		return fmt.Errorf("`%s uninstall` is only supported on Linux and macOS; this is %s", app.BinaryName(), h.goos)
 	}
 
-	tu, err := resolveTargetUser(targetUser)
+	tu, err := h.targetUser(targetUser)
 	if err != nil {
 		return err
 	}
 
-	existing := DetectExistingInstall(tu.HomeDir)
+	existing := h.detect(tu.HomeDir)
 	if existing != nil && existing.User != "" && targetUser == "" && tu.IsRoot {
-		if preservedUser, pErr := resolveTargetUser(existing.User); pErr == nil {
+		if preservedUser, pErr := h.targetUser(existing.User); pErr == nil {
 			tu = preservedUser
 		}
 	}
 
-	dataDirectory := uninstallDataDir(tu, existing, global.SystemDataDir)
+	dataDirectory := uninstallDataDir(tu, existing, h.path(global.SystemDataDir))
 
 	var serviceDesc string
-	if runtime.GOOS == "linux" {
+	if h.goos == "linux" {
 		if tu.IsRoot {
 			serviceDesc = fmt.Sprintf("systemd system service (%s)", systemUnitPath)
 		} else {
@@ -571,7 +586,7 @@ func runUninstall(targetUser string, autoYes bool) error {
 	}
 
 	fmt.Printf("\n%s Uninstallation Summary:\n", app.Name())
-	fmt.Printf("  Platform:     %s (%s)\n", runtime.GOOS, serviceManagerName())
+	fmt.Printf("  Platform:     %s (%s)\n", h.goos, serviceManagerName(h.goos))
 	fmt.Printf("  Target:       %s\n", serviceDesc)
 	fmt.Printf("  Action:       Stop service, disable autostart, and remove service file.\n")
 	fmt.Printf("  Note:         Installed binary and data in %s will NOT be deleted.\n\n", dataDirectory)
@@ -582,13 +597,13 @@ func runUninstall(targetUser string, autoYes bool) error {
 		return nil //nolint:nilerr // a declined or unreadable prompt cancels, which is not an error
 	}
 
-	switch runtime.GOOS {
+	switch h.goos {
 	case "linux":
-		if err := uninstallSystemd(tu); err != nil {
+		if err := h.uninstallSystemd(tu); err != nil {
 			return fmt.Errorf("uninstalling systemd service: %w", err)
 		}
 	case "darwin":
-		if err := uninstallLaunchd(tu); err != nil {
+		if err := h.uninstallLaunchd(tu); err != nil {
 			return fmt.Errorf("uninstalling launchd service: %w", err)
 		}
 	}
@@ -597,8 +612,8 @@ func runUninstall(targetUser string, autoYes bool) error {
 	return nil
 }
 
-func serviceManagerName() string {
-	if runtime.GOOS == "linux" {
+func serviceManagerName(goos string) string {
+	if goos == "linux" {
 		return "systemd"
 	}
 	return "launchd"
@@ -912,8 +927,8 @@ func fixOwnership(path string, tu *TargetUser) {
 // runBestEffort runs a command whose failure is expected and harmless, such
 // as unloading a service unit that may not be loaded, and records the failure
 // at debug level so it can be seen when diagnosing an install.
-func runBestEffort(name string, args ...string) {
-	if err := exec.Command(name, args...).Run(); err != nil { //nolint:gosec // fixed launchctl/systemctl binary; args are the installer's own label and unit paths
+func (h *host) runBestEffort(name string, args ...string) {
+	if _, err := h.run(name, args...); err != nil {
 		logger.DebugCF("install", "best-effort command failed", map[string]any{
 			"command": name + " " + strings.Join(args, " "),
 			"error":   err.Error(),

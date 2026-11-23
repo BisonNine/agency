@@ -3,7 +3,6 @@ package install
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -104,59 +103,52 @@ func userUnitPath(homeDir string) string {
 }
 
 // installSystemd writes the systemd unit file and enables/starts the service.
-func installSystemd(tu *TargetUser, targetBin, binDir, clawHome string) error {
+func (h *host) installSystemd(tu *TargetUser, targetBin, binDir, clawHome string) error {
 	if tu.IsRoot {
 		// System Mode: writes to /etc/systemd/system/claw.service
 		unit := buildSystemUnit(tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome)
-		if err := os.WriteFile(systemUnitPath, []byte(unit), 0o644); err != nil {
+		if err := os.WriteFile(h.path(systemUnitPath), []byte(unit), 0o644); err != nil {
 			return fmt.Errorf("writing systemd unit %s: %w", systemUnitPath, err)
 		}
 		fmt.Printf("Registered systemd system service: %s (running as %s:%s)\n", systemUnitPath, tu.Username, tu.GroupName)
 
-		cmdReload := exec.Command("systemctl", "daemon-reload")
-		if out, err := cmdReload.CombinedOutput(); err != nil {
+		if out, err := h.run("systemctl", "daemon-reload"); err != nil {
 			return fmt.Errorf("systemctl daemon-reload: %s (%w)", string(out), err)
 		}
 
-		cmdEnable := exec.Command("systemctl", "enable", serviceName)
-		if out, err := cmdEnable.CombinedOutput(); err != nil {
+		if out, err := h.run("systemctl", "enable", serviceName); err != nil {
 			return fmt.Errorf("systemctl enable %s: %s (%w)", serviceName, string(out), err)
 		}
 
-		cmdRestart := exec.Command("systemctl", "restart", serviceName)
-		if out, err := cmdRestart.CombinedOutput(); err != nil {
+		if out, err := h.run("systemctl", "restart", serviceName); err != nil {
 			return fmt.Errorf("systemctl restart %s: %s (%w)", serviceName, string(out), err)
 		}
 	} else {
 		// User Mode: writes to ~/.config/systemd/user/claw.service
 		unit := buildUserUnit(targetBin, tu.HomeDir, binDir, clawHome)
 		destPath := userUnitPath(tu.HomeDir)
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		if err := os.MkdirAll(h.path(filepath.Dir(destPath)), 0o755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", filepath.Dir(destPath), err)
 		}
-		if err := os.WriteFile(destPath, []byte(unit), 0o644); err != nil {
+		if err := os.WriteFile(h.path(destPath), []byte(unit), 0o644); err != nil {
 			return fmt.Errorf("writing user systemd unit %s: %w", destPath, err)
 		}
 		fmt.Printf("Registered systemd user service: %s\n", destPath)
 
-		cmdReload := exec.Command("systemctl", "--user", "daemon-reload")
-		if out, err := cmdReload.CombinedOutput(); err != nil {
+		if out, err := h.run("systemctl", "--user", "daemon-reload"); err != nil {
 			return fmt.Errorf("systemctl --user daemon-reload: %s (%w)", string(out), err)
 		}
 
-		cmdEnable := exec.Command("systemctl", "--user", "enable", serviceName)
-		if out, err := cmdEnable.CombinedOutput(); err != nil {
+		if out, err := h.run("systemctl", "--user", "enable", serviceName); err != nil {
 			return fmt.Errorf("systemctl --user enable %s: %s (%w)", serviceName, string(out), err)
 		}
 
-		cmdRestart := exec.Command("systemctl", "--user", "restart", serviceName)
-		if out, err := cmdRestart.CombinedOutput(); err != nil {
+		if out, err := h.run("systemctl", "--user", "restart", serviceName); err != nil {
 			return fmt.Errorf("systemctl --user restart %s: %s (%w)", serviceName, string(out), err)
 		}
 
 		// Try enabling lingering so user service continues running without active session
-		cmdLinger := exec.Command("loginctl", "enable-linger", tu.Username) //nolint:gosec // fixed loginctl binary; username from the resolved target user
-		if err := cmdLinger.Run(); err == nil {
+		if _, err := h.run("loginctl", "enable-linger", tu.Username); err == nil {
 			fmt.Printf("Enabled systemd user lingering for %s (service will start at boot).\n", tu.Username)
 		} else {
 			fmt.Printf("Note: To allow user service to start at boot without login, run: loginctl enable-linger %s\n", tu.Username)
@@ -166,25 +158,25 @@ func installSystemd(tu *TargetUser, targetBin, binDir, clawHome string) error {
 }
 
 // uninstallSystemd stops, disables, and removes the systemd unit.
-func uninstallSystemd(tu *TargetUser) error {
+func (h *host) uninstallSystemd(tu *TargetUser) error {
 	var errs []string
 
 	if tu.IsRoot {
 		// Stop and disable system service
-		runBestEffort("systemctl", "disable", "--now", serviceName)
-		if err := os.Remove(systemUnitPath); err != nil && !os.IsNotExist(err) {
+		h.runBestEffort("systemctl", "disable", "--now", serviceName)
+		if err := os.Remove(h.path(systemUnitPath)); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, fmt.Sprintf("removing %s: %v", systemUnitPath, err))
 		}
-		runBestEffort("systemctl", "daemon-reload")
+		h.runBestEffort("systemctl", "daemon-reload")
 		fmt.Printf("Removed systemd system service: %s\n", systemUnitPath)
 	} else {
 		// Stop and disable user service
-		runBestEffort("systemctl", "--user", "disable", "--now", serviceName)
+		h.runBestEffort("systemctl", "--user", "disable", "--now", serviceName)
 		destPath := userUnitPath(tu.HomeDir)
-		if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(h.path(destPath)); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, fmt.Sprintf("removing %s: %v", destPath, err))
 		}
-		runBestEffort("systemctl", "--user", "daemon-reload")
+		h.runBestEffort("systemctl", "--user", "daemon-reload")
 		fmt.Printf("Removed systemd user service: %s\n", destPath)
 	}
 

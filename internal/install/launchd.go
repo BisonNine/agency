@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -77,31 +76,29 @@ func buildLaunchdPlist(label, username, groupname, execPath, homeDir, binDir, cl
 }
 
 // installLaunchd writes the launchd plist and loads the service via launchctl.
-func installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string) error {
+func (h *host) installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string) error {
 	// Ensure user log directory exists
 	logsDir := filepath.Join(clawHome, "logs")
-	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+	if err := os.MkdirAll(h.path(logsDir), 0o755); err != nil {
 		return fmt.Errorf("creating logs directory %s: %w", logsDir, err)
 	}
 
 	if tu.IsRoot {
 		// System Mode: writes to /Library/LaunchDaemons/com.pivotllm.claweh.plist
 		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome, true)
-		if err := os.WriteFile(systemLaunchdPath, []byte(plist), 0o644); err != nil {
+		if err := os.WriteFile(h.path(systemLaunchdPath), []byte(plist), 0o644); err != nil {
 			return fmt.Errorf("writing launchd daemon %s: %w", systemLaunchdPath, err)
 		}
 		fmt.Printf("Registered launchd daemon: %s (running as %s:%s)\n", systemLaunchdPath, tu.Username, tu.GroupName)
 
 		// Unload previous instance if present
-		runBestEffort("launchctl", "bootout", "system/"+launchdLabel)
-		runBestEffort("launchctl", "unload", "-w", systemLaunchdPath)
+		h.runBestEffort("launchctl", "bootout", "system/"+launchdLabel)
+		h.runBestEffort("launchctl", "unload", "-w", systemLaunchdPath)
 
 		// Bootstrap service (modern launchctl fallback to load -w)
-		cmdBootstrap := exec.Command("launchctl", "bootstrap", "system", systemLaunchdPath)
-		if out, err := cmdBootstrap.CombinedOutput(); err != nil {
+		if out, err := h.run("launchctl", "bootstrap", "system", systemLaunchdPath); err != nil {
 			// Fallback to legacy launchctl load
-			cmdLoad := exec.Command("launchctl", "load", "-w", systemLaunchdPath)
-			if loadOut, loadErr := cmdLoad.CombinedOutput(); loadErr != nil {
+			if loadOut, loadErr := h.run("launchctl", "load", "-w", systemLaunchdPath); loadErr != nil {
 				return fmt.Errorf("launchctl bootstrap system: %s / %s (%w)", string(out), string(loadOut), loadErr)
 			}
 		}
@@ -110,25 +107,23 @@ func installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string) error {
 		// User Mode: writes to ~/Library/LaunchAgents/com.pivotllm.claweh.plist
 		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome, false)
 		destPath := userLaunchdPath(tu.HomeDir)
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		if err := os.MkdirAll(h.path(filepath.Dir(destPath)), 0o755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", filepath.Dir(destPath), err)
 		}
-		if err := os.WriteFile(destPath, []byte(plist), 0o644); err != nil {
+		if err := os.WriteFile(h.path(destPath), []byte(plist), 0o644); err != nil {
 			return fmt.Errorf("writing launchd agent %s: %w", destPath, err)
 		}
 		fmt.Printf("Registered launchd user agent: %s\n", destPath)
 
 		// Unload previous instance if present
 		guiTarget := "gui/" + tu.UID
-		runBestEffort("launchctl", "bootout", guiTarget+"/"+launchdLabel)
-		runBestEffort("launchctl", "unload", "-w", destPath)
+		h.runBestEffort("launchctl", "bootout", guiTarget+"/"+launchdLabel)
+		h.runBestEffort("launchctl", "unload", "-w", destPath)
 
 		// Bootstrap service (modern launchctl fallback to load -w)
-		cmdBootstrap := exec.Command("launchctl", "bootstrap", guiTarget, destPath) //nolint:gosec // fixed launchctl binary; args are the installer's own label and plist path
-		if out, err := cmdBootstrap.CombinedOutput(); err != nil {
+		if out, err := h.run("launchctl", "bootstrap", guiTarget, destPath); err != nil {
 			// Fallback to legacy launchctl load
-			cmdLoad := exec.Command("launchctl", "load", "-w", destPath) //nolint:gosec // fixed launchctl binary; args are the installer's own label and plist path
-			if loadOut, loadErr := cmdLoad.CombinedOutput(); loadErr != nil {
+			if loadOut, loadErr := h.run("launchctl", "load", "-w", destPath); loadErr != nil {
 				return fmt.Errorf("launchctl bootstrap %s: %s / %s (%w)", guiTarget, string(out), string(loadOut), loadErr)
 			}
 		}
@@ -138,21 +133,21 @@ func installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string) error {
 }
 
 // uninstallLaunchd unloads and removes the launchd service plist.
-func uninstallLaunchd(tu *TargetUser) error {
+func (h *host) uninstallLaunchd(tu *TargetUser) error {
 	var errs []string
 	if tu.IsRoot {
-		runBestEffort("launchctl", "bootout", "system/"+launchdLabel)
-		runBestEffort("launchctl", "unload", "-w", systemLaunchdPath)
-		if err := os.Remove(systemLaunchdPath); err != nil && !os.IsNotExist(err) {
+		h.runBestEffort("launchctl", "bootout", "system/"+launchdLabel)
+		h.runBestEffort("launchctl", "unload", "-w", systemLaunchdPath)
+		if err := os.Remove(h.path(systemLaunchdPath)); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, fmt.Sprintf("removing %s: %v", systemLaunchdPath, err))
 		}
 		fmt.Printf("Removed launchd daemon: %s\n", systemLaunchdPath)
 	} else {
 		guiTarget := "gui/" + tu.UID
 		destPath := userLaunchdPath(tu.HomeDir)
-		runBestEffort("launchctl", "bootout", guiTarget+"/"+launchdLabel)
-		runBestEffort("launchctl", "unload", "-w", destPath)
-		if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
+		h.runBestEffort("launchctl", "bootout", guiTarget+"/"+launchdLabel)
+		h.runBestEffort("launchctl", "unload", "-w", destPath)
+		if err := os.Remove(h.path(destPath)); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, fmt.Sprintf("removing %s: %v", destPath, err))
 		}
 		fmt.Printf("Removed launchd agent: %s\n", destPath)
@@ -165,9 +160,8 @@ func uninstallLaunchd(tu *TargetUser) error {
 }
 
 // isLaunchdServiceActive checks if launchd is managing the service.
-func isLaunchdServiceActive(label string) bool {
-	cmd := exec.Command("launchctl", "list")
-	out, err := cmd.Output()
+func (h *host) isLaunchdServiceActive(label string) bool {
+	out, err := h.run("launchctl", "list")
 	if err != nil {
 		return false
 	}

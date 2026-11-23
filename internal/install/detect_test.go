@@ -148,6 +148,7 @@ func fakeHost(t *testing.T) *host {
 		executable: func() (string, error) { return "", errors.New("no executable in tests") },
 		lookPath:   func(string) (string, error) { return "", exec.ErrNotFound },
 		commandOK:  func(string, ...string) bool { return false },
+		run:        func(string, ...string) ([]byte, error) { return nil, errors.New("no commands in tests") },
 	}
 }
 

@@ -46,20 +46,35 @@ func inOptClaw(p string) bool {
 // dir. The command hooks keep tests from consulting the real system.
 type host struct {
 	root       string
+	goos       string
 	executable func() (string, error)
 	lookPath   func(file string) (string, error)
 	commandOK  func(name string, args ...string) bool
+	// run runs a service manager command (systemctl, launchctl, loginctl)
+	// and returns its combined output.
+	run func(name string, args ...string) ([]byte, error)
+	// targetUser resolves the account the service runs as (resolveTargetUser).
+	targetUser func(explicitUser string) (*TargetUser, error)
+	// detect finds an existing install (DetectExistingInstall).
+	detect func(homeDir string) *ExistingInstall
 }
 
 // realHost is the machine the installer runs on.
 func realHost() *host {
-	return &host{
+	h := &host{
+		goos:       runtime.GOOS,
 		executable: os.Executable,
 		lookPath:   exec.LookPath,
 		commandOK: func(name string, args ...string) bool {
 			return exec.Command(name, args...).Run() == nil //nolint:gosec // fixed systemctl binary and the installer's own unit name
 		},
+		run: func(name string, args ...string) ([]byte, error) {
+			return exec.Command(name, args...).CombinedOutput() //nolint:gosec // fixed service manager binaries; args are the installer's own label, unit paths and target user
+		},
+		targetUser: resolveTargetUser,
 	}
+	h.detect = h.detectInstall
+	return h
 }
 
 // path maps one of the machine's paths to where it lies on disk.
@@ -128,8 +143,12 @@ func (h *host) leftoverOptClawFiles(binDir string) []string {
 // DetectExistingInstall searches for an existing ClawEh installation on the system.
 // It inspects systemd unit files, launchd plists, running process paths, and PATH.
 func DetectExistingInstall(homeDir string) *ExistingInstall {
-	h := realHost()
-	switch runtime.GOOS {
+	return realHost().detectInstall(homeDir)
+}
+
+// detectInstall is DetectExistingInstall on h.
+func (h *host) detectInstall(homeDir string) *ExistingInstall {
+	switch h.goos {
 	case "linux":
 		return h.detectLinuxInstall(homeDir)
 	case "darwin":
@@ -171,7 +190,7 @@ func (h *host) detectDarwinInstall(homeDir string) *ExistingInstall {
 	// 1. Check LaunchDaemon (/Library/LaunchDaemons/com.pivotllm.claweh.plist)
 	if h.fileExists(systemLaunchdPath) {
 		inst := h.parseLaunchdPlist(systemLaunchdPath, "launchd-daemon")
-		inst.IsActive = isLaunchdServiceActive(launchdLabel)
+		inst.IsActive = h.isLaunchdServiceActive(launchdLabel)
 		return inst
 	}
 
@@ -179,7 +198,7 @@ func (h *host) detectDarwinInstall(homeDir string) *ExistingInstall {
 	userPath := userLaunchdPath(homeDir)
 	if h.fileExists(userPath) {
 		inst := h.parseLaunchdPlist(userPath, "launchd-agent")
-		inst.IsActive = isLaunchdServiceActive(launchdLabel)
+		inst.IsActive = h.isLaunchdServiceActive(launchdLabel)
 		return inst
 	}
 
