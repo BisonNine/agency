@@ -155,6 +155,9 @@
 - **BREAKING: the `propose_domains` and `auto_promote` memory settings are
   removed.** They never had any effect; an existing config file that has them
   still loads, and the next save drops them.
+- **A `/cancel` or a shutdown that arrives at the same moment as the model's
+  answer now wins.** The answer is discarded (its tokens are still counted);
+  after a shutdown, the message is answered once the service restarts.
 
 ### Fixed
 
