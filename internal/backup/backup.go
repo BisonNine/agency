@@ -4,7 +4,8 @@
 // Package backup writes a dated tarball of everything ClawEh needs to come back
 // on a new host — config.json, the cron jobs file, internal/ (tokens and the device
 // pairing database), credentials.json, tls/ and cards/ (the character-card
-// library) when present, each agent's forums, Maestro data and classifiers, and every SQLite
+// library) when present, each agent's forums, Maestro data, classifiers and
+// own knowledge bases (okf/), and every SQLite
 // database under CLAW_HOME (session archives, cognitive memory, the fusion
 // OAuth store) — and restores one. It is driven on a nightly schedule by the
 // gateway, on demand from the WebUI, and by `claw backup` / `claw restore`.
@@ -36,6 +37,7 @@ import (
 	"go.bison9.com/agency/forum/forumfs"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/pidfile"
+	"go.bison9.com/agency/kbhost"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/utils"
 )
@@ -411,7 +413,7 @@ func collect(src Source, dest string) ([]entry, bool, error) {
 			return nil, false, err
 		}
 	}
-	// Every agent's forums, Maestro data and classifiers, before the database walk so a
+	// Every agent's forums, Maestro data, classifiers and knowledge bases, before the database walk so a
 	// forum file with a database extension (a materialised source) is copied
 	// as it is.
 	external := src.AgentsDir != "" && !within(src.Home, src.AgentsDir)
@@ -439,6 +441,11 @@ func collect(src Source, dest string) ([]entry, bool, error) {
 		}
 		if err := collectClassifiers(src.AgentsDir, agentsPrefix, dest, func(path, name string, db bool) {
 			add(entry{src: path, name: name, db: db})
+		}); err != nil {
+			return nil, false, err
+		}
+		if err := collectKnowledge(src.AgentsDir, agentsPrefix, dest, func(path, name string) {
+			add(entry{src: path, name: name})
 		}); err != nil {
 			return nil, false, err
 		}
@@ -525,6 +532,21 @@ func collectClassifiers(agentsDir, prefix, skip string, fn func(path, name strin
 		}, func(path, name string) {
 			fn(path, name, isDB(path))
 		})
+}
+
+// collectKnowledge calls fn(path, archiveName) for every file of every
+// agent's own knowledge bases (<agentsDir>/<agent>/okf/), whether or not its
+// knowledge switch is on, with archive name prefix+<agent>/okf/<rel>. Every
+// file is copied as it is (a file with a database extension too); only the
+// temporary file of a write in progress (.<name>.<hex>.tmp, renamed into
+// place) is skipped. Shared knowledge bases live outside the workspace and
+// are not backed up.
+func collectKnowledge(agentsDir, prefix, skip string, fn func(path, name string)) error {
+	return collectAgentFolder(agentsDir, prefix, kbhost.OwnDirName, skip,
+		func(_ string, d fs.DirEntry) bool {
+			n := d.Name()
+			return !d.IsDir() && strings.HasPrefix(n, ".") && strings.HasSuffix(n, ".tmp")
+		}, fn)
 }
 
 // collectAgentFolder calls fn(path, archiveName) for every regular file under

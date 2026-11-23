@@ -60,6 +60,7 @@ Each archive is complete on its own.
 | `agents/<agent>/forums/` | Each [forum](../forums/results.md#where-the-files-are)'s setup and every run's files. |
 | `agents/<agent>/classifiers/` | Each agent's [classifiers](../agents/classifiers.md) and what they have handled. |
 | `agents/<agent>/maestro/` | [Maestro](../maestro.md#where-its-data-lives) projects and playbooks. Lock and temporary files are left out. |
+| `agents/<agent>/okf/` | Each agent's own [knowledge bases](../agents/knowledge-bases.md), also while **Allow knowledge bases** is off. Shared knowledge bases are not included: back them up where they live. |
 | Any other database under the data directory | |
 
 Databases are copied safely while ClawEh keeps running. Each one is checked first; a damaged database is left out, the rest is still written, and the "Database failed integrity check" [alert](./alerts.md) names it.
@@ -77,7 +78,7 @@ A forum that is running during the backup is copied file by file. After a restor
 
 Only agents in the usual agents folder are fully covered. For an agent whose workspace is set to another folder:
 
-- inside the data directory: its conversations and memory are backed up, its forums, classifiers and Maestro data are not;
+- inside the data directory: its conversations and memory are backed up, its forums, classifiers, Maestro data and knowledge bases are not;
 - outside the data directory: nothing of it is backed up.
 
 Back such a folder up yourself, or move the agent back into the agents folder.

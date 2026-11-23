@@ -65,3 +65,7 @@ The file tools cannot read or write `okf/`: the agent reaches its knowledge base
 - `kb_put`: creates or replaces one concept. The whole concept is replaced, so the agent gets it, changes it and puts it back; `type` is required.
 
 Edits made to the files outside ClawEh, by hand or with Git, are seen at the next search.
+
+## Backup
+
+The agent's own knowledge bases are in the [backup](../admin/backup.md). Shared knowledge bases are not: back them up where they live.

@@ -71,7 +71,9 @@
   concepts. The agent's instructions list its knowledge bases. The file tools
   cannot reach `okf/`. A duplicate or invalid name, or a folder path that is
   not absolute, is refused on load and save. A shared folder that does not
-  exist is marked on the Agents page and in Check Up.
+  exist is marked on the Agents page and in Check Up. Each agent's own
+  knowledge bases are in the backup, also while the switch is off; shared
+  ones are not.
 
 ### Changed
 

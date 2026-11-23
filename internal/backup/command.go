@@ -31,7 +31,8 @@ func NewBackupCommand() *cobra.Command {
 			"file, internal/ (tokens and the device pairing database), credentials.json,\n" +
 			"tls/ and cards/ when present, and every SQLite database under CLAW_HOME (session archives,\n" +
 			"cognitive memory, the fusion OAuth store), each checked with quick_check and\n" +
-			"copied with VACUUM INTO, and the agents' forums. Safe to run while " + app.ShortName() + " is up.\n" +
+			"copied with VACUUM INTO, and the agents' forums, Maestro data, classifiers and\n" +
+			"knowledge bases. Safe to run while " + app.ShortName() + " is up.\n" +
 			"An agent with its own workspace outside agents.base_dir is not fully covered\n" +
 			"(see Backup and restore in the manual). Archives older than backup.retain_days are pruned from\n" +
 			"the destination.",
