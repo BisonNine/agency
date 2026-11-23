@@ -160,6 +160,8 @@
   when some session archives could not be read, instead of only reporting a
   failure.
 - **The WebUI setup error no longer repeats "failed to save config".**
+- **`claw agent`: an input error in interactive mode ends the session.** It
+  used to be retried in a loop that logged the same error over and over.
 - **A TLS certificate that passed several expiry marks between checks now
   gets one alert, for the most urgent mark.** It used to get the least urgent
   first, so an expired certificate was reported as expiring in 0 days.
