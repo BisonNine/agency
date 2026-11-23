@@ -468,7 +468,7 @@ func (e *OAuthFlowExecutor) ExecuteAuthCodeFlow(ctx context.Context) error {
 	fmt.Printf("Opening browser for OAuth authorization...\n")
 	fmt.Printf("If the browser doesn't open automatically, please visit:\n%s\n\n", authURL)
 
-	if err := openBrowser(authURL); err != nil {
+	if err := launchBrowser(authURL); err != nil {
 		if e.Verbose {
 			log.Printf("Failed to open browser automatically: %v", err)
 		}
@@ -806,6 +806,10 @@ func (e *OAuthFlowExecutor) writeErrorResponse(w http.ResponseWriter, errorMsg s
 		log.Printf("Warning: failed to write callback response: %v", err)
 	}
 }
+
+// launchBrowser opens the authorization URL; tests replace it so the flow
+// runs without a browser.
+var launchBrowser = openBrowser
 
 // openBrowser opens the default browser to the given URL
 func openBrowser(url string) error {

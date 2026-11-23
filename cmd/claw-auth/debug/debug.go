@@ -171,19 +171,22 @@ func replacePattern(text, pattern string) string {
 			result = strings.Join(lines, "\n")
 		}
 	} else {
-		// For form patterns like field=value
-		// Extract field name from pattern
+		// For form patterns like field=value: mask the value of every pair
+		// named field, wherever it sits in the body. Checking only the first
+		// pair of a line let client_secret and code through in a token
+		// request, whose pairs are sorted with client_id first.
 		fieldEnd := strings.Index(pattern, "=")
 		if fieldEnd > 0 {
 			field := pattern[:fieldEnd]
 			lines := strings.Split(result, "\n")
 			for i, line := range lines {
-				if strings.Contains(line, field+"=") {
-					parts := strings.Split(line, "=")
-					if len(parts) >= 2 && parts[0] == field {
-						lines[i] = parts[0] + "=***"
+				pairs := strings.Split(line, "&")
+				for j, pair := range pairs {
+					if key, _, ok := strings.Cut(pair, "="); ok && key == field {
+						pairs[j] = field + "=***"
 					}
 				}
+				lines[i] = strings.Join(pairs, "&")
 			}
 			result = strings.Join(lines, "\n")
 		}
