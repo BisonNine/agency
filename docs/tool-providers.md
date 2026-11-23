@@ -16,14 +16,14 @@ It also feeds the WebUI tool catalogue. You write a module once; all three get i
 ## 1. Architecture
 
 ```
-your package (tools/<ns>/)        ← implements global.ToolProvider, BARE tool names
+your package (tools/<ns>/)        ← implements toolspec.ToolProvider, BARE tool names
         │  RegisterTools(deps) []ToolDefinition
         ▼
-toolspec, aliased as global  (transport-neutral, stdlib-only)
+toolspec  (transport-neutral, stdlib-only)
         │  ToolProvider / ToolDefinition / Parameter / ToolCall / Result / Deps
         ▼
 tools.NamespacedProvider("<ns>", pkg.GlobalProvider)   ← applies the "<ns>_" prefix
-        │  each definition becomes a tools.Tool through toolkit.FromSpec
+        │  each definition becomes a toolkit.Tool through toolkit.FromSpec
         ▼
 tools registry  (RegisterProvider / GetProviders)
         ├──► agent loop  → per-agent *tools.ToolRegistry  → LLM tool calling
@@ -33,7 +33,7 @@ tools registry  (RegisterProvider / GetProviders)
 ```
 
 Key idea: a tool package is **transport-neutral and dependency-free** (it imports
-only `global`, which itself imports only the standard library). The package
+only `toolspec`, which itself imports only the standard library). The package
 returns tools with **bare names** (`"read_bytes"`). The *aggregator* mounts the package
 under a **namespace** (`"file"`), and the published tool name is
 `"<namespace>_<bare>"` (`"file_read_bytes"`). Namespacing lives in the aggregator, not
@@ -61,8 +61,7 @@ To add an internal module you (a) add its import and (b) add one
 
 ## 2. Core types (`go.bison9.com/agent/toolspec`)
 
-The types live in the agent SDK's `toolspec` package; `global/tools.go` re-exports
-them as aliases under the historical `global.*` names. Abridged below: toolspec
+The types live in the agent SDK's `toolspec` package. Abridged below: toolspec
 also has `Group`/`RevealTogether` on `ToolDefinition` and `ConfigDir`/`DB` on
 `Deps`.
 
@@ -140,7 +139,7 @@ hand-written schema.
 ### Default-allow
 
 An agent has only the tools its own `tools` list names; there is no install-wide
-per-tool switch. `DefaultAllow: global.Allow(true)` only puts the tool in the
+per-tool switch. `DefaultAllow: toolspec.Allow(true)` only puts the tool in the
 standard set the Agents page's **Default tools** button writes into a list
 (`tools.DefaultEnabledToolNames`). Omit it for tools few agents need. `shell_exec`
 is granted only by naming it: `"*"` and prefix entries never include it.
@@ -192,7 +191,7 @@ the mechanism.
 ### Step 1 — create the package
 
 `tools/<ns>/` (short namespace, e.g. `weather`). Implement
-`global.ToolProvider` on an exported zero-value, and optionally `global.HostMeta`:
+`toolspec.ToolProvider` on an exported zero-value, and optionally `toolspec.HostMeta`:
 
 ```go
 // tools/weather/global_provider.go
@@ -201,7 +200,7 @@ package weather
 import (
     "fmt"
 
-    "go.bison9.com/agency/global"
+    "go.bison9.com/agent/toolspec"
 )
 
 // GlobalProvider is the exported entry point the aggregator mounts.
@@ -209,32 +208,32 @@ var GlobalProvider globalWeatherProvider
 
 type globalWeatherProvider struct{}
 
-// global.HostMeta (optional but recommended): drives WebUI grouping + gating.
+// toolspec.HostMeta (optional but recommended): drives WebUI grouping + gating.
 func (globalWeatherProvider) Namespace() string   { return "weather" }
 func (globalWeatherProvider) Description() string  { return "Weather lookups" }
 func (globalWeatherProvider) Available(cfg any) (bool, string) { return true, "" }
 
-func (globalWeatherProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
-    return []global.ToolDefinition{
+func (globalWeatherProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
+    return []toolspec.ToolDefinition{
         {
             Name:         "forecast",                 // published as weather_forecast
             Description:  "Return the forecast for a city.",
             Category:     "weather",
-            DefaultAllow: global.Allow(true),         // omit/false ⇒ not in Default tools
-            Parameters: []global.Parameter{
+            DefaultAllow: toolspec.Allow(true),         // omit/false ⇒ not in Default tools
+            Parameters: []toolspec.Parameter{
                 {Name: "city", Type: "string", Required: true, Description: "City name."},
                 {Name: "days", Type: "integer", Description: "Days ahead (1-7).", Default: 1},
             },
-            Handler: func(call *global.ToolCall) (*global.Result, error) {
+            Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
                 city, _ := call.Args["city"].(string)
                 if city == "" {
-                    return &global.Result{IsError: true, ForLLM: "city is required"}, nil
+                    return &toolspec.Result{IsError: true, ForLLM: "city is required"}, nil
                 }
                 text, err := fetchForecast(call.Ctx, city) // your logic
                 if err != nil {
                     return nil, err                        // bridge marks IsError + ForLLM
                 }
-                return &global.Result{ForLLM: text}, nil
+                return &toolspec.Result{ForLLM: text}, nil
             },
         },
     }
@@ -269,7 +268,7 @@ network/LLM tools.
 ## 4. Rules & contracts
 
 - **Enumeration must be deps-free.** `Describe()` (WebUI/MCP cataloguing) calls
-  `RegisterTools(global.Deps{})` with a zero `Deps`. Return your full tool set
+  `RegisterTools(toolspec.Deps{})` with a zero `Deps`. Return your full tool set
   and build handler **closures lazily** — never dereference `deps.Cfg`/`deps.Host`
   at the top of `RegisterTools` in a way that panics on nil. Construct real
   instances only when the dep is present (`c, _ := deps.Cfg.(*config.Config); if c != nil { … }`).
@@ -281,7 +280,7 @@ network/LLM tools.
   `tools.ToolDeps` via `deps.Host`; recover it with
   `cd, _ := deps.Host.(tools.ToolDeps)` (gives `Workspace`, `AgentCfg`,
   `Dispatcher`, session closures, etc.). A pure module that needs none of that
-  imports only `global`.
+  imports only `toolspec`.
 - **Session-scoped tools** set `SessionScoped: true` and read `call.Session`.
 - **Async tools** set `Async: true`, return `Result{Async: true}` immediately,
   and deliver the late result via `call.Notify(...)` — but check `call.Notify != nil`
@@ -311,7 +310,7 @@ packages import only `tools`.
 | `Get`, `List`, `Count`, `Version`, `Snapshot`, `Subscribe` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version`, `Snapshot`, `Subscribe` |
 | `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
 | `GetDefinitions`, `GetSummaries` | `Listed()` |
-| `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `providers.ToolDefinition` |
+| `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `spawnllm.ToolDefinition` |
 | `RegisterDiscoveryTools(ctx, …)` | `discovery.NewIndex(catalogue, LogQueries(true)).MetaTools()`, each tool `Put` suite-exempt unless denied |
 
 Progressive discovery is the SDK's `discovery` package. The agent decides
@@ -345,11 +344,11 @@ call to a tool removed since the model's list returns an ordinary tool error.
 
 ## 5. Importing as an external module
 
-`toolspec` (re-exported as `global`) is intentionally dependency-free
+`toolspec` is intentionally dependency-free
 (standard library only), so the `ToolProvider`/`ToolDefinition` contract can be vendored or
 imported by another codebase (e.g. Maestro/MCPFusion) without pulling in Claw.
-A package written against `global` alone — no `tools`, `config`, etc.
-— is portable: any host that can adapt `global.ToolProvider` into its own
+A package written against `toolspec` alone — no `tools`, `config`, etc.
+— is portable: any host that can adapt `toolspec.ToolProvider` into its own
 registry can mount it. Claw's adapter is `tools.NamespacedProvider`; another host
 would supply its own equivalent.
 
@@ -393,11 +392,11 @@ host supplies the concrete implementation.
 | Thing | Location |
 |---|---|
 | Transport-neutral types | `go.bison9.com/agent/toolspec` (aliases in `global/tools.go`) |
-| Tool core (`Tool`, results, context helpers, bridge) | `go.bison9.com/agent/toolkit` (aliases in `tools/toolkit.go`) |
+| Tool core (`Tool`, results, context helpers, bridge) | `go.bison9.com/agent/toolkit` |
 | Namespacing adapter | `tools/namespaced.go` (`NamespacedProvider`, over `toolkit.FromSpec`) |
 | Provider list | `tools/providers.go` (`RegisterProvider` / `GetProviders`) |
 | Per-agent registry | `tools/registry.go` (`ToolRegistry`, over a `toolkit.Catalog`) |
-| Untrusted-content marking | `go.bison9.com/agent/toolkit/untrusted` (re-exported by `tools/untrusted`) |
+| Untrusted-content marking | `go.bison9.com/agent/toolkit/untrusted` |
 | **Aggregator (wire new modules here)** | `internal/gateway/tool_providers.go` |
 | Per-module entry points | `tools/<ns>/global_provider.go` (`var GlobalProvider`) |
 | Sub-agent recursion bound | `agents.defaults.max_subagent_depth` (`tools/agents/depth.go`) |

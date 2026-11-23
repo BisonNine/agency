@@ -1805,11 +1805,9 @@ next session must know.
       0.6.6, Fixed): on `/mcp` a client sees its own agent's description
       and hidden namespaces for a tool two agents both have. The real-CLI
       tests passed (`CLAW_TEST_CLI=1`).
-  - Left open, low risk, each needs a small SDK change: a panic in a
-    HOST callback during an MCP call is a tool error, not the -32603
-    protocol error, and records no statistic; a tool whose schema fails
-    to encode still claims its published name; the "registered tool" /
-    "removed tools" debug lines are gone.
+  - The three `mcphost` gaps left open here (host-callback panic answered
+    as a tool error; schema-failed tool claims its name; debug lines gone)
+    are fixed (SDK 5528a78, host faaacc5).
 - [x] Background shell (`refactor/bash.md`): SDK `toolbox/shell`
       (2d85433, 34d16bd); host mount f4f9306, old tool removed. The
       capabilities golden changed once, for `shell_ctrl` (the fixture
@@ -1817,4 +1815,7 @@ next session must know.
       jobs are not in the agent task list, so `/cancel` and
       `/cancel all` do not count or stop them; the host exposes
       `Running(owner)` and `StopAll(owner)` on the shell mount for that.
-- [ ] Alias cleanup
+- [x] Alias cleanup: the SDK aliases and forwarders in `global`, `providers`,
+      `tools`, `tools/untrusted` (deleted), `config` and `agent` are gone;
+      callers import the SDK packages. Kept: `global.Identity`, because
+      `config` may import no SDK package but `modelspec`.
