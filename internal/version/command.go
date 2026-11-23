@@ -21,9 +21,12 @@ func NewVersionCommand() *cobra.Command {
 	return cmd
 }
 
+// buildInfo is app.BuildInfo; a variable so tests can supply a stamped build.
+var buildInfo = app.BuildInfo
+
 func printVersion() {
 	fmt.Printf("%s %s\n", app.Name(), app.Version())
-	build, goVer := app.BuildInfo()
+	build, goVer := buildInfo()
 	if build != "" {
 		fmt.Printf("  Build: %s\n", build)
 	}
