@@ -81,7 +81,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 		},
 		{
 			Name:         "get",
-			Description:  "Copy a file from the shared common directory into this agent's workspace files/ directory.",
+			Description:  "Copy a file from the shared common directory into this agent's write folder (files/ by default).",
 			RawSchema:    getSchema,
 			Category:     "common",
 			DefaultAllow: new(true),
@@ -133,7 +133,7 @@ var getSchema = map[string]any{
 		},
 		"as": map[string]any{
 			"type":        "string",
-			"description": "Optional destination name (relative path) under the workspace files/ directory. Defaults to the source basename.",
+			"description": "Optional destination name (relative path) in the agent's write folder (files/ by default). Defaults to the source basename.",
 		},
 	},
 	"required": []string{"name"},

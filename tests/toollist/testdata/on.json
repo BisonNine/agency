@@ -1803,11 +1803,11 @@
     {
       "type": "function",
       "name": "common_get",
-      "description": "Copy a file from the shared common directory into this agent's workspace files/ directory.",
+      "description": "Copy a file from the shared common directory into this agent's write folder (files/ by default).",
       "parameters": {
         "properties": {
           "as": {
-            "description": "Optional destination name (relative path) under the workspace files/ directory. Defaults to the source basename.",
+            "description": "Optional destination name (relative path) in the agent's write folder (files/ by default). Defaults to the source basename.",
             "type": "string"
           },
           "name": {
