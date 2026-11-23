@@ -19,9 +19,13 @@ import (
 )
 
 // covChmod sets path's mode and restores 0o700 at cleanup, so t.TempDir
-// can remove what the test locked down.
+// can remove what the test locked down. Under root, which ignores modes,
+// the test is skipped.
 func covChmod(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file modes")
+	}
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatalf("chmod %s: %v", path, err)
 	}
