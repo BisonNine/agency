@@ -163,9 +163,9 @@ func TestRun_Errors(t *testing.T) {
 			t.Fatalf("run() = %v, want the config error", err)
 		}
 	})
-	t.Run("home is a file", func(t *testing.T) {
-		home := filepath.Join(t.TempDir(), "home")
-		if err := os.WriteFile(home, nil, 0o600); err != nil {
+	t.Run("credentials path is a directory", func(t *testing.T) {
+		home := t.TempDir()
+		if err := os.Mkdir(admin.Path(home), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		t.Setenv("CLAW_HOME", home)
