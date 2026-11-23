@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -64,6 +65,7 @@ type fakeGitHub struct {
 	status  map[string]int    // request path -> forced status
 	body    map[string]string // request path -> forced body
 	paths   []string          // every request path, in order
+	short   bool              // the archive download ends early
 }
 
 func newFakeGitHub(t *testing.T, tag string, archive []byte) *fakeGitHub {
@@ -133,6 +135,10 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			http.NotFound(w, r)
 			return
+		}
+		if f.short && strings.HasSuffix(r.URL.Path, archiveName) {
+			// Promise more than is sent, so the client sees the body end early.
+			w.Header().Set("Content-Length", strconv.Itoa(len(b)+100))
 		}
 		if _, cerr := w.Write(b); cerr != nil {
 			f.t.Error(cerr)
@@ -580,6 +586,14 @@ func TestRunUpgrade_Errors(t *testing.T) {
 			t.Helper()
 			e.gh.setArchive(makeTarGz(t, map[string]string{"README": "hi"}))
 		}, "extracting binary from archive"},
+		{"no temp directory", func(t *testing.T, _ *upgradeEnv) {
+			t.Helper()
+			t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+		}, "creating temp directory"},
+		{"archive cut short", func(t *testing.T, e *upgradeEnv) {
+			t.Helper()
+			e.gh.short = true
+		}, "downloading " + archiveName},
 		{"target is a directory", func(t *testing.T, e *upgradeEnv) {
 			t.Helper()
 			e.exe = filepath.Join(t.TempDir(), "claw")
