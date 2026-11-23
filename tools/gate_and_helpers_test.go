@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -233,7 +234,7 @@ func TestRedactArgs_NeverLogsText(t *testing.T) {
 			}
 		}
 	}
-	if m := redactArgs("file_write", map[string]any{"path": "f", "content": 42}).(map[string]any); m["content_bytes"] != 0 {
+	if m, ok := redactArgs("file_write", map[string]any{"path": "f", "content": 42}).(map[string]any); !ok || m["content_bytes"] != 0 {
 		t.Errorf("non-string content: %v", m)
 	}
 }
@@ -394,14 +395,7 @@ func TestRegisterProvider_IdempotentAndUnregister(t *testing.T) {
 	StaticToolDescriptors = []ToolDescriptor{{Name: "static_on", DefaultEnabled: true}, {Name: "static_off"}}
 	t.Cleanup(func() { StaticToolDescriptors = saved })
 	names := DefaultEnabledToolNames()
-	has := func(n string) bool {
-		for _, x := range names {
-			if x == n {
-				return true
-			}
-		}
-		return false
-	}
+	has := func(n string) bool { return slices.Contains(names, n) }
 	if !has("ztest_on") || !has("static_on") || has("static_off") {
 		t.Errorf("default tools = %v", names)
 	}

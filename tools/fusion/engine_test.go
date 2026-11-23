@@ -100,7 +100,11 @@ func TestDataStore_Failures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ds.(*sqliteDataStore).db.Close(); err != nil {
+	sqlite, ok := ds.(*sqliteDataStore)
+	if !ok {
+		t.Fatalf("store is %T", ds)
+	}
+	if err := sqlite.db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()

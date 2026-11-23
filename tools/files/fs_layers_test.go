@@ -41,7 +41,23 @@ func readOnlyDir(t *testing.T, dir string) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Errorf("restore %s: %v", dir, err)
+		}
+	})
+}
+
+// wantMode fails unless path has the permission bits want.
+func wantMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Errorf("%s: mode %v, want %v", path, got, want)
+	}
 }
 
 // noTempFiles fails when an atomic write left a temporary file in dir.
@@ -73,9 +89,7 @@ func TestHostFs_WriteAndRemove(t *testing.T) {
 		t.Fatalf("WriteFileMode: %v", err)
 	}
 	mustRead(t, p, "two")
-	if info, _ := os.Stat(p); info.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
-	}
+	wantMode(t, p, 0o600)
 	if err := h.MkdirAll(filepath.Join(dir, "x", "y")); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -92,9 +106,7 @@ func TestHostFs_WriteAndRemove(t *testing.T) {
 	if err := h.WriteFileExclMode(excl, []byte("new"), 0o640); err != nil {
 		t.Fatalf("WriteFileExclMode: %v", err)
 	}
-	if info, _ := os.Stat(excl); info.Mode().Perm() != 0o640 {
-		t.Errorf("excl mode = %v, want 0640", info.Mode().Perm())
-	}
+	wantMode(t, excl, 0o640)
 	if err := h.WriteFileExclMode(excl, []byte("again"), 0o640); !errors.Is(err, fs.ErrExist) {
 		t.Errorf("excl over an existing file: %v", err)
 	}
@@ -147,12 +159,12 @@ func TestRegularOpen_RefusesAnotherFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := regularOpen(f, a, other); err == nil || !strings.Contains(err.Error(), "changed while it was being opened") {
-		t.Errorf("a different file: %v", err)
+	if _, oerr := regularOpen(f, a, other); oerr == nil || !strings.Contains(oerr.Error(), "changed while it was being opened") {
+		t.Errorf("a different file: %v", oerr)
 	}
 	// The refused file was closed.
-	if err := f.Close(); !errors.Is(err, os.ErrClosed) {
-		t.Errorf("file left open: %v", err)
+	if cerr := f.Close(); !errors.Is(cerr, os.ErrClosed) {
+		t.Errorf("file left open: %v", cerr)
 	}
 
 	// A file that cannot be stat-ed (closed) is an error, not a refusal.
@@ -160,7 +172,9 @@ func TestRegularOpen_RefusesAnotherFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = g.Close()
+	if err := g.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := regularOpen(g, a, nil); err == nil || !strings.Contains(err.Error(), "failed to open file") {
 		t.Errorf("closed file: %v", err)
 	}
@@ -174,7 +188,9 @@ func TestDiscardPartial_RemovesThePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = f.Close() // a close failure is only logged
+	if err := f.Close(); err != nil { // closed again below: that failure is only logged
+		t.Fatal(err)
+	}
 	var removed []string
 	discardPartial(f, func(path string) error {
 		removed = append(removed, path)
@@ -229,8 +245,8 @@ func TestSandboxFs_PathEscapes(t *testing.T) {
 	mustNotExist(t, filepath.Join(outside, "new.txt"))
 
 	// Lstat names the link itself, inside the workspace.
-	if info, err := sb.Lstat("out"); err != nil || info.Mode()&fs.ModeSymlink == 0 {
-		t.Errorf("Lstat link: %v %v", info, err)
+	if info, lerr := sb.Lstat("out"); lerr != nil || info.Mode()&fs.ModeSymlink == 0 {
+		t.Errorf("Lstat link: %v %v", info, lerr)
 	}
 
 	// A refusal names what the sandbox stands for.
@@ -269,9 +285,7 @@ func TestSandboxFs_WriteFailures(t *testing.T) {
 	if err := sb.WriteFileExclMode("n/new.txt", []byte("new"), 0o640); err != nil {
 		t.Fatalf("excl: %v", err)
 	}
-	if info, _ := os.Stat(filepath.Join(ws, "n", "new.txt")); info.Mode().Perm() != 0o640 {
-		t.Errorf("mode = %v", info.Mode().Perm())
-	}
+	wantMode(t, filepath.Join(ws, "n", "new.txt"), 0o640)
 }
 
 func TestSandboxFs_ReadOnlyFolder(t *testing.T) {
@@ -519,8 +533,13 @@ func TestWriteScopedFs_Refusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := io.ReadAll(f)
-	_ = f.Close()
+	got, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if string(got) != "a" {
 		t.Errorf("Open read %q", got)
 	}

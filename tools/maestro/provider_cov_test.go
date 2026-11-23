@@ -43,8 +43,8 @@ func TestLogWriter_BlankAndDebugLines(t *testing.T) {
 	prev := logger.GetLevel()
 	logger.SetLevel(logger.DEBUG)
 	defer logger.SetLevel(prev)
-	real := &logWriter{agent: "alice"}
-	if _, err := real.Write([]byte("2026-09-19 10:00:00 [DEBUG] [1] fine detail\n")); err != nil {
+	lw := &logWriter{agent: "alice"}
+	if _, err := lw.Write([]byte("2026-09-19 10:00:00 [DEBUG] [1] fine detail\n")); err != nil {
 		t.Fatal(err)
 	}
 	if out := buf.String(); !strings.Contains(out, "fine detail") || !strings.Contains(out, `"level":"debug"`) {

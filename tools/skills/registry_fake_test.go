@@ -164,7 +164,11 @@ func TestInstall_FolderFailures(t *testing.T) {
 	if err := os.Chmod(skills, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(skills, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(skills, 0o700); err != nil {
+			t.Errorf("restore %s: %v", skills, err)
+		}
+	})
 	res = tool.Execute(context.Background(), map[string]any{"slug": "demo", "registry": "alicehub", "force": true})
 	if !res.IsError || !strings.HasPrefix(res.ForLLM, `failed to remove existing skill "demo": `) {
 		t.Errorf("read-only skills: %s", res.ForLLM)

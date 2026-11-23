@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,7 +143,13 @@ func TestToolNames(t *testing.T) {
 // byte tool's default length is its size limit.
 func TestReadFileTool_Parameters(t *testing.T) {
 	ws := t.TempDir()
-	props := func(p map[string]any) map[string]any { return p["properties"].(map[string]any) }
+	props := func(p map[string]any) map[string]any {
+		m, ok := p["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("no properties in %v", p)
+		}
+		return m
+	}
 	lines := props(NewReadLinesTool(ws, true, 0, nil).Parameters())
 	if _, ok := lines["start_line"]; !ok {
 		t.Error("read_lines has no start_line")
@@ -152,7 +159,7 @@ func TestReadFileTool_Parameters(t *testing.T) {
 	}
 	byteTool := NewReadFileTool(ws, true, 1234, nil)
 	b := props(byteTool.Parameters())
-	if b["length"].(map[string]any)["default"] != int64(1234) {
+	if length, ok := b["length"].(map[string]any); !ok || length["default"] != int64(1234) {
 		t.Errorf("length default = %v", b["length"])
 	}
 }
@@ -301,7 +308,11 @@ func TestRmdir_Failures(t *testing.T) {
 		if err := os.Chmod(d, 0o300); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(d, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(d, 0o700); err != nil {
+				t.Errorf("restore %s: %v", d, err)
+			}
+		})
 		res := NewRmdirToolScoped(ws, true, "").Execute(ctx, map[string]any{"path": "d", "sure": true})
 		wantToolError(t, "list", res, "permission denied")
 		mustExist(t, d)
@@ -329,7 +340,11 @@ func TestRmdir_Failures(t *testing.T) {
 		if err := os.Chmod(sub, 0o300); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(sub, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(sub, 0o700); err != nil {
+				t.Errorf("restore %s: %v", sub, err)
+			}
+		})
 		res := NewRmdirToolScoped(ws, true, "").Execute(ctx, map[string]any{"path": "top", "sure": true, "recursive": true})
 		wantToolError(t, "walk", res, "permission denied")
 		mustExist(t, filepath.Join(ws, "top"))
@@ -408,6 +423,7 @@ func TestMove_ArgumentsAndFailures(t *testing.T) {
 func TestMoveDir_Refusals(t *testing.T) {
 	ctx := context.Background()
 	setup := func(t *testing.T) string {
+		t.Helper()
 		ws := t.TempDir()
 		mustWrite(t, filepath.Join(ws, "src", "sub", "f.txt"), "f")
 		mustWrite(t, filepath.Join(ws, "src", "g.txt"), "g")
@@ -601,7 +617,7 @@ func TestBackupExistingFile_Failures(t *testing.T) {
 func TestEditTools_BackupAndWriteFailures(t *testing.T) {
 	ctx := context.Background()
 	type tool interface {
-		Execute(context.Context, map[string]any) *toolkit.Result
+		Execute(ctx context.Context, args map[string]any) *toolkit.Result
 	}
 	cases := []struct {
 		name string
@@ -672,9 +688,7 @@ func TestRangeEdit_ArgumentErrors(t *testing.T) {
 	for _, tc := range cases {
 		dir, p := writeTemp(t, tc.body)
 		args := map[string]any{"path": p, "backup": false}
-		for k, v := range tc.args {
-			args[k] = v
-		}
+		maps.Copy(args, tc.args)
 		res := rangeTool(tc.op, tc.unit, dir).Execute(ctx, args)
 		wantToolError(t, tc.op+"_"+tc.unit+" "+tc.want, res, tc.want)
 		if got := readBack(t, p); got != tc.body {

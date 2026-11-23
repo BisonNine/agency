@@ -47,7 +47,11 @@ func TestLibraryFailures(t *testing.T) {
 		if err := os.Chmod(home, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(home, 0o700); err != nil {
+				t.Errorf("restore %s: %v", home, err)
+			}
+		})
 		res := build(t, cfg, "alice")[0].Execute(ctx, map[string]any{"action": "list"})
 		if !res.IsError || res.ForLLM != "The card library could not be opened; try again later." {
 			t.Errorf("open: %+v", res)
@@ -72,7 +76,11 @@ func TestLibraryFailures(t *testing.T) {
 		if err := os.Chmod(dir, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(dir, 0o700); err != nil {
+				t.Errorf("restore %s: %v", dir, err)
+			}
+		})
 		for _, tc := range []struct {
 			args map[string]any
 			want string

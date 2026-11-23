@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,36 @@ import (
 
 	"go.bison9.com/agency/config"
 )
+
+// write writes body as the response, failing the test if it cannot.
+func write(t *testing.T, w http.ResponseWriter, body string) {
+	t.Helper()
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Errorf("write response: %v", err)
+	}
+}
+
+// hangUp closes the connection under w after what was written so far, so
+// the client sees the body cut short.
+func hangUp(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		t.Error("response writer cannot hijack")
+		return
+	}
+	conn, buf, err := hj.Hijack()
+	if err != nil {
+		t.Errorf("hijack: %v", err)
+		return
+	}
+	if err := buf.Flush(); err != nil {
+		t.Errorf("flush: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Errorf("close: %v", err)
+	}
+}
 
 // fakeDNS answers lookups, pre-flight and at dial time, from answers (or
 // with err) for the test.
@@ -63,7 +94,10 @@ func TestSafeDialContext_Refusals(t *testing.T) {
 		fakeDNS(t, tc.dns, tc.dnsErr)
 		conn, err := dial(ctx, "tcp", tc.address)
 		if conn != nil {
-			_ = conn.Close()
+			t.Errorf("%s: dialled", tc.address)
+			if cerr := conn.Close(); cerr != nil {
+				t.Error(cerr)
+			}
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: want %q, got %v", tc.address, tc.want, err)
@@ -103,16 +137,16 @@ func TestWebFetch_RedirectPolicy(t *testing.T) {
 	}
 	check := direct.client.CheckRedirect
 
-	if err := check(req("https://example.com/"), make([]*http.Request, maxRedirects)); err == nil || err.Error() != "stopped after 5 redirects" {
-		t.Errorf("redirect limit: %v", err)
+	if rerr := check(req("https://example.com/"), make([]*http.Request, maxRedirects)); rerr == nil || rerr.Error() != "stopped after 5 redirects" {
+		t.Errorf("redirect limit: %v", rerr)
 	}
 	for _, target := range []string{"http://localhost/x", "http://10.1.2.3/", "http://[fd00::1]/", "http://169.254.169.254/latest/meta-data"} {
-		if err := check(req(target), nil); err == nil || err.Error() != "redirect target is private or local network host" {
-			t.Errorf("redirect to %s: %v", target, err)
+		if rerr := check(req(target), nil); rerr == nil || rerr.Error() != "redirect target is private or local network host" {
+			t.Errorf("redirect to %s: %v", target, rerr)
 		}
 	}
-	if err := check(req("https://example.com/next"), nil); err != nil {
-		t.Errorf("public redirect: %v", err)
+	if rerr := check(req("https://example.com/next"), nil); rerr != nil {
+		t.Errorf("public redirect: %v", rerr)
 	}
 
 	proxied, err := NewWebFetchToolWithProxy(0, "http://proxy.example:3128", 0)
@@ -162,21 +196,18 @@ func TestWebFetch_ResponsesAndArguments(t *testing.T) {
 		switch r.URL.Path {
 		case "/badjson":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("{not json"))
+			write(t, w, "{not json")
 		case "/js":
 			w.Header().Set("Content-Type", "text/html")
-			_, _ = w.Write([]byte("<html><script>" + strings.Repeat("var a=1;", 300) + "</script><body>hi</body></html>"))
+			write(t, w, "<html><script>"+strings.Repeat("var a=1;", 300)+"</script><body>hi</body></html>")
 		case "/long":
 			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte(strings.Repeat("abcdefghij", 50)))
+			write(t, w, strings.Repeat("abcdefghij", 50))
 		case "/cut":
 			// Promise more than is sent, then hang up.
 			w.Header().Set("Content-Length", "1000")
-			_, _ = w.Write([]byte("partial"))
-			if hj, ok := w.(http.Hijacker); ok {
-				conn, _, _ := hj.Hijack()
-				_ = conn.Close()
-			}
+			write(t, w, "partial")
+			hangUp(t, w)
 		}
 	}))
 	defer server.Close()
@@ -201,7 +232,7 @@ func TestWebFetch_ResponsesAndArguments(t *testing.T) {
 		t.Errorf("invalid JSON body: %v", m)
 	}
 	res = tool.Execute(ctx, map[string]any{"url": server.URL + "/js"})
-	if m := decode(res.ForLLM); res.IsError || m["extractor"] != "text" || !strings.Contains(m["note"].(string), "JavaScript-rendered") {
+	if m := decode(res.ForLLM); res.IsError || m["extractor"] != "text" || !strings.Contains(fmt.Sprint(m["note"]), "JavaScript-rendered") {
 		t.Errorf("script page: %v", m)
 	}
 	// maxChars above 100 overrides the tool's limit; at or below, it is ignored.
@@ -264,7 +295,7 @@ func TestGlobalProvider_FromConfig(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
-		_, _ = w.Write([]byte(`{"results":[{"title":"Alice's page","url":"https://alice.example","content":"hello"}]}`))
+		write(t, w, `{"results":[{"title":"Alice's page","url":"https://alice.example","content":"hello"}]}`)
 	}))
 	defer server.Close()
 
@@ -313,7 +344,7 @@ func (s *scripted) server(t *testing.T) *httptest.Server {
 			i = len(s.steps) - 1
 		}
 		w.WriteHeader(s.steps[i].status)
-		_, _ = w.Write([]byte(s.steps[i].body))
+		write(t, w, s.steps[i].body)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -500,8 +531,12 @@ func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error
 func TestSearchProviders_DefaultEndpoints(t *testing.T) {
 	ctx := context.Background()
 	rec := &recordingTransport{}
-	_, _ = (&TavilySearchProvider{keyPool: NewAPIKeyPool([]string{"k"}), client: &http.Client{Transport: rec}}).Search(ctx, "q", 1)
-	_, _ = (&GLMSearchProvider{apiKey: "k", client: &http.Client{Transport: rec}}).Search(ctx, "q", 1)
+	if _, err := (&TavilySearchProvider{keyPool: NewAPIKeyPool([]string{"k"}), client: &http.Client{Transport: rec}}).Search(ctx, "q", 1); err == nil {
+		t.Error("tavily: no error from a failing transport")
+	}
+	if _, err := (&GLMSearchProvider{apiKey: "k", client: &http.Client{Transport: rec}}).Search(ctx, "q", 1); err == nil {
+		t.Error("glm: no error from a failing transport")
+	}
 	want := []string{"https://api.tavily.com/search", "https://open.bigmodel.cn/api/paas/v4/web_search"}
 	if len(rec.urls) != 2 || rec.urls[0] != want[0] || rec.urls[1] != want[1] {
 		t.Errorf("endpoints = %v", rec.urls)
@@ -514,11 +549,8 @@ func TestSearchProviders_CutResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Content-Length", "1000")
-		_, _ = w.Write([]byte("{"))
-		if hj, ok := w.(http.Hijacker); ok {
-			conn, _, _ := hj.Hijack()
-			_ = conn.Close()
-		}
+		write(t, w, "{")
+		hangUp(t, w)
 	}))
 	defer srv.Close()
 	ctx := context.Background()
