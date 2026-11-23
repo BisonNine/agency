@@ -92,3 +92,17 @@ func TestIsObject(t *testing.T) {
 		t.Error("IsObject accepted malformed JSON")
 	}
 }
+
+func TestMergePatchMalformedMessages(t *testing.T) {
+	for _, tc := range []struct{ patch, want string }{
+		{``, "merge patch: EOF"},
+		{`{1:2}`, "merge patch: object member name must be a string"},
+		{`{"a":1 "b":2}`, `merge patch: invalid character '"' after object key:value pair`},
+		{`{"a" 1}`, `merge patch: member "a": invalid character '1' after object key`},
+	} {
+		_, err := Apply(json.RawMessage(`{}`), json.RawMessage(tc.patch))
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("Apply({}, %s) error = %v, want %q", tc.patch, err, tc.want)
+		}
+	}
+}
