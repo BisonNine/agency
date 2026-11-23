@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 )
@@ -51,7 +52,7 @@ func TestToolDefs_DiscoveryOn_FullStableFlaggedList(t *testing.T) {
 	r, search, details := discoveryOnRegistry()
 	ctx := context.Background()
 
-	first := r.ToolDefs(nil).Send
+	first := loop.ToolDefs(r.Snapshot(), nil).Send
 	wantNames := []string{
 		"file_read", "get_tool_details", "mcp_alice_read", "mcp_alice_write",
 		"mcp_bob_fetch", "mcp_bob_post", "x_weather", "search_tools", "time_now",
@@ -92,7 +93,7 @@ func TestToolDefs_DiscoveryOn_FullStableFlaggedList(t *testing.T) {
 		if res := step.run(); res.IsError {
 			t.Fatalf("%s: %s", step.name, res.ForLLM)
 		}
-		if got := r.ToolDefs(nil).Send; !reflect.DeepEqual(got, first) {
+		if got := loop.ToolDefs(r.Snapshot(), nil).Send; !reflect.DeepEqual(got, first) {
 			t.Fatalf("after %s the definitions changed:\n got %+v\nwant %+v", step.name, got, first)
 		}
 	}
@@ -122,7 +123,7 @@ func TestToolDefs_DiscoveryOff_NoFlags(t *testing.T) {
 		}},
 	}
 	for range 3 {
-		if got := r.ToolDefs(nil).Send; !reflect.DeepEqual(got, want) {
+		if got := loop.ToolDefs(r.Snapshot(), nil).Send; !reflect.DeepEqual(got, want) {
 			t.Fatalf("defs =\n %+v\nwant\n %+v", got, want)
 		}
 	}
@@ -196,7 +197,7 @@ func TestSearchTool_ReferencesHits(t *testing.T) {
 func TestDiscovery_ReferencesUsePublishedNames(t *testing.T) {
 	r, search, details := discoveryOnRegistry()
 	ctx := context.Background()
-	offered := defNames(r.ToolDefs(nil).Send)
+	offered := defNames(loop.ToolDefs(r.Snapshot(), nil).Send)
 
 	res := search.Execute(ctx, map[string]any{"query": "weather forecast city"})
 	if !slices.Contains(res.ToolReferences, "x_weather") {

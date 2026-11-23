@@ -11,6 +11,7 @@ import (
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
 
 	climcp "go.bison9.com/agency/mcp"
@@ -110,7 +111,7 @@ func deferredNames(defs []spawnllm.ToolDefinition) []string {
 
 // sentToolList is the list a turn hands the provider.
 func sentToolList(agent *AgentInstance) []spawnllm.ToolDefinition {
-	return agent.Tools.ToolDefs(nil).Send
+	return loop.ToolDefs(agent.Tools.Snapshot(), nil).Send
 }
 
 // inContextToolList is what the tool-schema estimate counts for history:
@@ -123,5 +124,5 @@ func inContextToolList(agent *AgentInstance, history []spawnllm.Message) []spawn
 			refs = append(refs, m.ToolReferences)
 		}
 	}
-	return agent.Tools.ToolDefs(discovery.NewSession(refs...)).InContext
+	return loop.ToolDefs(agent.Tools.Snapshot(), discovery.NewSession(refs...)).InContext
 }

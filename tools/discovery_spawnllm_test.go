@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/common"
 	"go.bison9.com/agent/spawnllm/openai_compat"
@@ -66,7 +67,7 @@ func searchReferences(t *testing.T, search metaTool) []string {
 // tool, with no other hidden tool; without references, only the core tools.
 func TestSpawnllmRequestTools_ClawEhDefinitions(t *testing.T) {
 	r, search := spawnllmRegistry()
-	defs := r.ToolDefs(nil).Send
+	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	refs := searchReferences(t, search)
 
 	tests := []struct {
@@ -124,7 +125,7 @@ func TestSpawnllmOpenAICompat_ClawEhDefinitions(t *testing.T) {
 	defer server.Close()
 
 	r, search := spawnllmRegistry()
-	defs := r.ToolDefs(nil).Send
+	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	refs := searchReferences(t, search)
 	p := openai_compat.NewProvider("test-key", server.URL, "")
 
@@ -193,7 +194,7 @@ func TestToolDefsInContext_MatchesSpawnllmRequestTools(t *testing.T) {
 			for _, m := range msgs {
 				seen = append(seen, m.ToolReferences)
 			}
-			defs := r.ToolDefs(discovery.NewSession(seen...))
+			defs := loop.ToolDefs(r.Snapshot(), discovery.NewSession(seen...))
 			if want := common.RequestTools(defs.Send, msgs); !reflect.DeepEqual(defs.InContext, want) {
 				t.Errorf("InContext = %v, want spawnllm's %v", defNames(defs.InContext), defNames(want))
 			}

@@ -310,7 +310,6 @@ packages import only `tools`.
 | `Get`, `List`, `Count`, `Version`, `Snapshot`, `Subscribe` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version`, `Snapshot`, `Subscribe` |
 | `Catalog` | the catalogue itself, which a turn's SDK agent runs (`Spec.Tools`) |
 | `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
-| `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `spawnllm.ToolDefinition` |
 | `RegisterDiscoveryTools(ctx, …)` | `discovery.NewIndex(catalogue, LogQueries(true)).MetaTools()`, each tool `Put` suite-exempt unless denied |
 
 Progressive discovery is the SDK's `discovery` package. The agent decides
@@ -321,10 +320,12 @@ and the Maestro entry tool pin (`discovery.AlwaysShownFunc` asked with the
 internal name, matched by `config.MatchVisibility`). Each registry has its
 own `discovery.Index` behind `search_tools` and `get_tool_details`, so a
 search answers from that agent's tools only, and the index rebuilds when the
-catalogue changes. `ToolDefs.Send` is every tool, hidden ones `Deferred`,
+catalogue changes. The tool list for a model call is the SDK's
+`loop.ToolDefs(Snapshot(), revealed)`, the one the turn engine sends. Its
+`Send` is every tool, hidden ones `Deferred`,
 whatever the provider: the list is built before the fallback chain picks
 one, and spawnllm leaves out what a provider cannot load natively.
-`ToolDefs.InContext`, for the tool-schema estimate, is the listed tools plus
+Its `InContext`, for the tool-schema estimate, is the listed tools plus
 those the request's history has revealed: the host keeps no revealed-tools
 state, it builds a `discovery.Session` from the history's
 `ToolReferences` for each estimate (`agent.revealedIn`).
@@ -342,7 +343,7 @@ the same effect: `Spec.ToolContext` puts the chat and agent id on the call
 is `tools.AllowGate` for the name the model called (`agent/turn_agent.go`).
 
 Changes are safe at any time, including mid-turn: a write is visible to the
-next read as soon as it returns, the next `ToolDefs` carries it, and a
+next read as soon as it returns, the next tool list carries it, and a
 call to a tool removed since the model's list returns an ordinary tool error.
 
 ---

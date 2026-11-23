@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
@@ -128,7 +129,7 @@ func TestWrapper_ReadMethods(t *testing.T) {
 		t.Error("Get must match the internal name only")
 	}
 
-	defs := r.ToolDefs(nil).Send
+	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	if len(defs) != 2 {
 		t.Fatalf("ToolDefs = %d defs, want 2", len(defs))
 	}
@@ -227,7 +228,7 @@ func TestWrapper_AddRemoveMidTurn(t *testing.T) {
 	r.Register(newMockTool("keep", "keep"))
 	r.Register(newMockTool("gone", "gone"))
 
-	offered := r.ToolDefs(nil).Send // the model's list for this call
+	offered := loop.ToolDefs(r.Snapshot(), nil).Send // the model's list for this call
 	if len(offered) != 2 {
 		t.Fatalf("offered %d tools, want 2", len(offered))
 	}
@@ -239,7 +240,7 @@ func TestWrapper_AddRemoveMidTurn(t *testing.T) {
 		t.Errorf("call to a removed tool = %+v", res)
 	}
 
-	defs := r.ToolDefs(nil).Send
+	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	next := make([]string, 0, len(defs))
 	for _, d := range defs {
 		next = append(next, d.Function.Name)
@@ -272,7 +273,7 @@ func TestWrapper_ConcurrentChangeAndCall(t *testing.T) {
 				if res := r.ExecuteWithContext(context.Background(), fmt.Sprintf("dyn_%d_%d", i, j), nil, "", "", nil); res == nil {
 					t.Error("nil result")
 				}
-				_ = r.ToolDefs(nil).Send
+				_ = loop.ToolDefs(r.Snapshot(), nil).Send
 			}
 		}(i)
 	}

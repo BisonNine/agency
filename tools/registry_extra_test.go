@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/config"
@@ -30,7 +31,7 @@ func TestToolRegistry_ToolDefs_WithTools(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(&mockTool{name: "tool_x"})
 
-	defs := r.ToolDefs(nil).Send
+	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	if len(defs) != 1 {
 		t.Fatalf("ToolDefs len = %d, want 1", len(defs))
 	}

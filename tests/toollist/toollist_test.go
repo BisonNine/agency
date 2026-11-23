@@ -17,6 +17,7 @@ import (
 	"sort"
 	"testing"
 
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agent"
@@ -132,7 +133,7 @@ func capture(t *testing.T, v variant) []byte {
 
 // sentToolList is the list the agent's turn hands the provider.
 func sentToolList(inst *agent.AgentInstance) []spawnllm.ToolDefinition {
-	return inst.Tools.ToolDefs(nil).Send
+	return loop.ToolDefs(inst.Tools.Snapshot(), nil).Send
 }
 
 func toDefs(in []spawnllm.ToolDefinition) []def {

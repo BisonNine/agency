@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 )
@@ -116,7 +117,7 @@ func TestExternalName_AdvertisedBareAndDispatched(t *testing.T) {
 	r.Register(tool)
 
 	// Advertised under the bare name.
-	defs := r.ToolDefs(nil).Send
+	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	var advertised string
 	for _, d := range defs {
 		if d.Function.Description == "navigate" {
@@ -274,7 +275,7 @@ func TestToolRegistry_ToolDefs(t *testing.T) {
 		result: toolkit.SilentResult("ok"),
 	})
 
-	defs := r.ToolDefs(nil).Send
+	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	if len(defs) != 1 {
 		t.Fatalf("expected 1 provider def, got %d", len(defs))
 	}

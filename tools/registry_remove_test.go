@@ -3,6 +3,8 @@ package tools
 import (
 	"slices"
 	"testing"
+
+	"go.bison9.com/agent/loop"
 )
 
 // TestReplaceByPrefix: the prefix's old tools are swapped for the new entries
@@ -30,7 +32,7 @@ func TestReplaceByPrefix(t *testing.T) {
 		t.Fatalf("tools = %v, want %v", got, want)
 	}
 	deferred := make(map[string]bool)
-	for _, d := range r.ToolDefs(nil).Send {
+	for _, d := range loop.ToolDefs(r.Snapshot(), nil).Send {
 		deferred[d.Function.Name] = d.Deferred
 	}
 	if v, ok := deferred["mcp_alice_search"]; !ok || v {

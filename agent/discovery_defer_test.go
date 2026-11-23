@@ -17,6 +17,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
@@ -244,7 +245,7 @@ func TestTurn_EstimatesOnlySentTools(t *testing.T) {
 	}
 	var coreNow []spawnllm.ToolDefinition
 	hidden := map[string]spawnllm.ToolDefinition{}
-	for _, d := range agent.Tools.ToolDefs(nil).Send {
+	for _, d := range loop.ToolDefs(agent.Tools.Snapshot(), nil).Send {
 		if d.Deferred {
 			hidden[d.Function.Name] = d
 		} else {

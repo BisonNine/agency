@@ -267,61 +267,6 @@ func (r *ToolRegistry) ExecuteWithContext(
 	return r.cat.ExecuteGated(ctx, name, args, asyncCallback, AllowGate(name))
 }
 
-// ToolDefs is the tool list for one model call (discovery.Defs in the
-// provider type).
-type ToolDefs struct {
-	// Send is the list given to the provider.
-	Send []spawnllm.ToolDefinition
-	// InContext is what reaches the model's context, and so what the tool
-	// schemas cost: the tools that are not deferred, then the deferred ones
-	// revealed has seen, in order of first reveal.
-	InContext []spawnllm.ToolDefinition
-}
-
-// ToolDefs returns the tool list for one model call, from one snapshot of the
-// registry (discovery.ToolDefs). revealed is what the conversation's tool
-// results have referenced (nil for nothing); it only shapes InContext.
-//
-// Send is every registered tool, sorted by internal name, so it is the same
-// on every call while the registered set is unchanged (a stable prompt-cache
-// prefix). A tool hidden by progressive discovery is marked Deferred, as for
-// a provider that loads deferred tools natively: the list is built before the
-// fallback chain picks the provider, and spawnllm loads a deferred tool once a
-// tool result references it (ToolResult.ToolReferences), natively where the
-// provider can and otherwise by sending it as an ordinary tool from then on.
-// search_tools is marked ToolSearch and its description names the hidden
-// namespaces. With discovery off nothing is hidden and only ToolSearch can
-// be set.
-//
-// MCP tools are advertised under their bare ExternalName ("<server>_<tool>") so a
-// model sees a single naming convention across native, fusion, and upstream-MCP
-// tools (matching what the MCP host publishes to CLI clients). Presenting the
-// internal "mcp_" prefix here made it the lone prefixed outlier, so models routinely
-// dropped it and the call was then rejected as unknown/not-permitted. The
-// catalogue maps the bare name back for dispatch and gating.
-func (r *ToolRegistry) ToolDefs(revealed *discovery.Session) ToolDefs {
-	defs := discovery.ToolDefs(r.cat.Snapshot(), revealed, true)
-	return ToolDefs{Send: providerDefs(defs.Send), InContext: providerDefs(defs.InContext)}
-}
-
-// providerDefs copies discovery's definitions into the provider type.
-func providerDefs(in []discovery.Def) []spawnllm.ToolDefinition {
-	out := make([]spawnllm.ToolDefinition, 0, len(in))
-	for _, d := range in {
-		out = append(out, spawnllm.ToolDefinition{
-			Type: "function",
-			Function: spawnllm.ToolFunctionDefinition{
-				Name:        d.Name,
-				Description: d.Description,
-				Parameters:  d.Parameters,
-			},
-			Deferred:   d.Deferred,
-			ToolSearch: d.ToolSearch,
-		})
-	}
-	return out
-}
-
 // List returns a list of all registered tool names.
 func (r *ToolRegistry) List() []string {
 	return r.cat.Names()
