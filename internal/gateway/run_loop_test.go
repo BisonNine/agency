@@ -131,7 +131,9 @@ func (r *alertRecorder) has(title string) bool {
 // service-token file change reaches the MCP host, and a core service dying
 // shuts the gateway down with that failure as the exit reason.
 func TestGatewayRun_ReloadsAndFatal(t *testing.T) {
-	b := bootGateway(t, `, "mcp_host": {"enabled": true, "listen": "127.0.0.1:0"}`)
+	// A speech model makes the gateway set up transcription at start and on
+	// every reload.
+	b := bootGateway(t, `, "mcp_host": {"enabled": true, "listen": "127.0.0.1:0"}, "task_models": {"stt": [{"model": "m"}]}`)
 
 	// A watcher reload with a new allowlist is applied to the running loop.
 	newCfg := *b.cfg
@@ -253,11 +255,6 @@ func TestGatewayRun_TLSDevicesAndReloadWarnings(t *testing.T) {
 		}
 	}
 
-	// Regenerating the self-signed certificate re-applies the host policy.
-	if code, body := b.g.post(t, "/api/tls/regenerate"); code != http.StatusOK {
-		t.Errorf("regenerate = %d %s", code, body)
-	}
-
 	newCfg := *b.al.GetConfig()
 	newCfg.Gateway.AllowedCIDRs = []string{"not-a-cidr"}
 	newCfg.Gateway.TrustedProxies = []string{"not-a-proxy"}
@@ -277,6 +274,12 @@ func TestGatewayRun_TLSDevicesAndReloadWarnings(t *testing.T) {
 	b.g.waitReady(t)
 	if b.services.MediaStore == oldStore {
 		t.Error("changed media cleanup kept the old store")
+	}
+
+	// Regenerating the self-signed certificate re-applies the host policy;
+	// the reloaded external URL is unusable, so the previous policy stays.
+	if code, body := b.g.post(t, "/api/tls/regenerate"); code != http.StatusOK {
+		t.Errorf("regenerate = %d %s", code, body)
 	}
 
 	b.fatal.requestRestart()

@@ -4,7 +4,12 @@
 package gateway
 
 import (
+	"context"
+	"time"
+
 	"bytes"
+	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/clock"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,4 +94,41 @@ func TestConfigWatcher_UnparseableFileAlerts(t *testing.T) {
 	if len(got) != 1 || got[0].Title != "Config file invalid" {
 		t.Fatalf("alerts = %+v", got)
 	}
+}
+
+// TestConfigWatcher_EditRevertedIsNoReload: a file edited and put back as it
+// was before the change settled is not reloaded (here with debug logging on).
+func TestConfigWatcher_EditRevertedIsNoReload(t *testing.T) {
+	store, path := seedStore(t)
+	orig, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &watcherHarness{fc: clock.NewFake(time.Now()), polled: make(chan struct{})}
+	h.w = newConfigWatcher(store, testPollInterval, testDebounce, true, alerter.Nop{}, &modelRefAlerts{})
+	h.w.clock = h.fc
+	h.w.polled = h.polled
+	h.ch = h.w.out
+	h.w.start()
+	t.Cleanup(h.w.close)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := h.fc.BlockUntil(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	writeConfig(t, path, "an edit that is undone")
+	h.tick(t)
+	if err := os.WriteFile(path, orig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, fi.ModTime(), fi.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	h.ticks(t, 2*debounceTicks)
+	h.noReload(t, "a reverted edit was reloaded")
 }
