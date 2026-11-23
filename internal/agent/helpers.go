@@ -99,10 +99,25 @@ func agentCmd(message, model string, debug bool) error {
 	return nil
 }
 
+// lineReader is the part of the readline instance the interactive loop uses.
+type lineReader interface {
+	Readline() (string, error)
+	Close() error
+}
+
+// newLineReader opens the interactive line editor; replaced in tests.
+var newLineReader = func(cfg *readline.Config) (lineReader, error) {
+	rl, err := readline.NewEx(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return rl, nil
+}
+
 func interactiveMode(agentLoop *agent.AgentLoop) {
 	prompt := "You: "
 
-	rl, err := readline.NewEx(&readline.Config{
+	rl, err := newLineReader(&readline.Config{
 		Prompt:          prompt,
 		HistoryFile:     filepath.Join(os.TempDir(), ".claw_history"),
 		HistoryLimit:    100,
@@ -124,7 +139,8 @@ func interactiveMode(agentLoop *agent.AgentLoop) {
 				return
 			}
 			logger.ErrorCF("agent", "Error reading input", map[string]any{"error": err.Error()})
-			continue
+			// As in the plain loop: a failed read is not retried forever.
+			return
 		}
 
 		input := strings.TrimSpace(line)

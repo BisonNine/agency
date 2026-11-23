@@ -7,12 +7,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ergochat/readline"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
@@ -361,5 +364,73 @@ func TestNewAgentCommand_RunsMessage(t *testing.T) {
 	}
 	if reqs := stub.Requests(); len(reqs) != 1 || reqs[0].Model != "stub-other" {
 		t.Errorf("requests = %+v, want one to stub-other", reqs)
+	}
+}
+
+// fakeLines is a line editor that returns lines, then err for every later
+// read, counting the reads.
+type fakeLines struct {
+	lines  []string
+	err    error
+	reads  int
+	closed bool
+}
+
+func (f *fakeLines) Readline() (string, error) {
+	f.reads++
+	if len(f.lines) > 0 {
+		l := f.lines[0]
+		f.lines = f.lines[1:]
+		return l, nil
+	}
+	return "", f.err
+}
+
+func (f *fakeLines) Close() error { f.closed = true; return nil }
+
+func stubLineReader(t *testing.T, fn func(*readline.Config) (lineReader, error)) {
+	t.Helper()
+	orig := newLineReader
+	t.Cleanup(func() { newLineReader = orig })
+	newLineReader = fn
+}
+
+// TestInteractiveMode_ReadErrorStops: a line editor error other than
+// end of input or an interrupt is logged once and ends the session instead of
+// being retried forever.
+func TestInteractiveMode_ReadErrorStops(t *testing.T) {
+	stub := newHome(t)
+	stub.SetDefault(stubprovider.Reply("answer"))
+	loop := newLoop(t)
+	fake := &fakeLines{lines: []string{"first"}, err: errors.New("terminal gone")}
+	stubLineReader(t, func(*readline.Config) (lineReader, error) { return fake, nil })
+	done := make(chan string)
+	go func() { done <- captureStdout(t, func() { interactiveMode(loop) }) }()
+	select {
+	case out := <-done:
+		if !strings.Contains(out, "answer") {
+			t.Errorf("output = %q", out)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("interactiveMode kept retrying a failed read")
+	}
+	if fake.reads != 2 || !fake.closed {
+		t.Errorf("reads = %d, closed = %v; want 2 reads and the editor closed", fake.reads, fake.closed)
+	}
+}
+
+// TestInteractiveMode_NoLineEditor: without a line editor the plain input
+// loop takes over.
+func TestInteractiveMode_NoLineEditor(t *testing.T) {
+	stub := newHome(t)
+	stub.SetDefault(stubprovider.Reply("plain answer"))
+	loop := newLoop(t)
+	stubLineReader(t, func(*readline.Config) (lineReader, error) { return nil, errors.New("no ANSI") })
+	var out string
+	withStdin(t, "hello\nexit\n", func() {
+		out = captureStdout(t, func() { interactiveMode(loop) })
+	})
+	if !strings.Contains(out, "plain answer") || !strings.Contains(out, "Goodbye!") {
+		t.Errorf("output = %q", out)
 	}
 }
