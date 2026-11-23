@@ -151,6 +151,15 @@
 
 ### Fixed
 
+- **`claw-auth -debug` no longer writes the OAuth client secret and
+  authorization code to its log.** Only the first field of a request was
+  masked.
+- **The memory editor refuses an unknown status before changing anything.**
+  It used to change the memory's type and then fail as a server error.
+- **Erasing a sender's sessions from the WebUI says how many were erased**
+  when some session archives could not be read, instead of only reporting a
+  failure.
+- **The WebUI setup error no longer repeats "failed to save config".**
 - **A TLS certificate that passed several expiry marks between checks now
   gets one alert, for the most urgent mark.** It used to get the least urgent
   first, so an expired certificate was reported as expiring in 0 days.
