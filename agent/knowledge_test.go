@@ -311,3 +311,56 @@ func TestKnowledge_Reload(t *testing.T) {
 		t.Errorf("get from a removed shared bundle = %v %q", res.IsError, res.ForLLM)
 	}
 }
+
+// The prompt lists knowledge bases only while the agent has a knowledge-base
+// tool in this process: not without a store (as in the CLI), not with all
+// three denied; denying only kb_put keeps the lines (it can still read).
+func TestKnowledge_PromptFollowsTheTools(t *testing.T) {
+	t.Run("no store", func(t *testing.T) {
+		t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+		tools.RegisterProvider(tools.NamespacedProvider(toolsknowledge.Namespace, toolsknowledge.GlobalProvider))
+		al := mustNewAgentLoop(t, knowledgeConfig(t), bus.NewMessageBus(), &mockProvider{}, nil, OwnsDataDir())
+		main := configured(t, al, "main")
+		if got := kbTools(main); len(got) != 0 {
+			t.Fatalf("tools without a store = %v", got)
+		}
+		if got := main.ContextBuilder.BuildSystemPromptWithCache(); strings.Contains(got, "Bundles:") {
+			t.Errorf("bundles listed without the tools:\n%s", got)
+		}
+	})
+	for _, tc := range []struct {
+		name   string
+		deny   []string
+		listed bool
+	}{
+		{"all denied", []string{"kb_get", "kb_search", "kb_put"}, false},
+		{"all denied by prefix", []string{"kb_*"}, false},
+		{"only kb_put denied", []string{"kb_put"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := knowledgeConfig(t)
+			cfg.Agents.List[0].DenyTools = tc.deny
+			main := configured(t, newKnowledgeLoop(t, cfg), "main")
+			got := main.ContextBuilder.BuildSystemPromptWithCache()
+			if listed := strings.Contains(got, "Bundles: none yet"+kbNotice); listed != tc.listed {
+				t.Errorf("bundles listed = %v, want %v:\n%s", listed, tc.listed, got)
+			}
+		})
+	}
+}
+
+// The cached prompt follows the tools: a prompt built before the tools were
+// registered gains the lines once they are.
+func TestKnowledge_PromptCacheFollowsTheTools(t *testing.T) {
+	has := false
+	cb := NewContextBuilder(t.TempDir()).
+		WithKnowledge(kbhost.New(nil, nil, t.TempDir())).
+		WithKnowledgeTools(func() bool { return has })
+	if strings.Contains(cb.BuildSystemPromptWithCache(), "Bundles:") {
+		t.Fatal("bundles listed without the tools")
+	}
+	has = true
+	if !strings.Contains(cb.BuildSystemPromptWithCache(), "Bundles: none yet") {
+		t.Error("the cached prompt did not gain the bundles")
+	}
+}

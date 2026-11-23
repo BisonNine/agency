@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/fsmode"
 	"go.bison9.com/agent/modelspec"
+	kbtools "go.bison9.com/agent/toolbox/kb/tools"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/app"
@@ -317,8 +318,22 @@ func newAgentInstance(
 	if !inst.toolless() {
 		registry := inst.Tools
 		contextBuilder.WithToolsGranted(func() bool { return registry.Count() > 0 })
+		contextBuilder.WithKnowledgeTools(func() bool { return hasKnowledgeTool(registry) })
 	}
 	return inst, nil
+}
+
+// knowledgeToolNames are the knowledge-base tools as registered.
+var knowledgeToolNames = []string{kbtools.Namespace + "_get", kbtools.Namespace + "_search", kbtools.Namespace + "_put"}
+
+// hasKnowledgeTool reports whether registry holds any knowledge-base tool.
+func hasKnowledgeTool(registry *tools.ToolRegistry) bool {
+	for _, name := range knowledgeToolNames {
+		if _, ok := registry.Get(name); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // humanAgentConfig returns the human model of a human agent and the config

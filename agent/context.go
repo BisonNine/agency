@@ -37,8 +37,12 @@ type ContextBuilder struct {
 	// maestroEnabled adds the Maestro identity rule (global.MaestroPromptRule).
 	maestroEnabled bool
 	// knowledge, when set, lists the agent's knowledge bases in the
-	// Workspace section (WithKnowledge).
-	knowledge *kbhost.Resolver
+	// Workspace section (WithKnowledge), but only while knowledgeTools
+	// reports that the agent has a knowledge-base tool.
+	knowledge      *kbhost.Resolver
+	knowledgeTools func() bool
+	// cachedKnowledge is whether the cached prompt lists knowledge bases.
+	cachedKnowledge bool
 
 	// toolsGranted, when set, reports whether the agent has any tool at all;
 	// when it has none the dynamic prompt says so (noToolsNotice).
@@ -106,10 +110,24 @@ func (cb *ContextBuilder) WithMaestro(enabled bool) *ContextBuilder {
 }
 
 // WithKnowledge gives the agent's knowledge bases, listed in the Workspace
-// section; nil (or never calling it) lists none and adds nothing.
+// section while the agent has a knowledge-base tool (WithKnowledgeTools); nil
+// (or never calling it) lists none and adds nothing.
 func (cb *ContextBuilder) WithKnowledge(r *kbhost.Resolver) *ContextBuilder {
 	cb.knowledge = r
 	return cb
+}
+
+// WithKnowledgeTools sets the check of whether the agent has any of the
+// knowledge-base tools in this process. Without them (no store, as in the
+// CLI, or every one denied) the prompt lists no knowledge bases.
+func (cb *ContextBuilder) WithKnowledgeTools(has func() bool) *ContextBuilder {
+	cb.knowledgeTools = has
+	return cb
+}
+
+// listsKnowledge reports whether the prompt lists the knowledge bases.
+func (cb *ContextBuilder) listsKnowledge() bool {
+	return cb.knowledge != nil && cb.knowledgeTools != nil && cb.knowledgeTools()
 }
 
 // WithToolsGranted sets the check of whether the agent has any tool. It is
@@ -365,7 +383,7 @@ Folders your file tools can reach by absolute path:
 // set off by a blank line, or "" for an agent without knowledge bases (which
 // keeps that section exactly as it was).
 func (cb *ContextBuilder) knowledgeSection() string {
-	if cb.knowledge == nil {
+	if !cb.listsKnowledge() {
 		return ""
 	}
 	return "\n" + kbhost.PromptText(context.Background(), cb.knowledge) + "\n"
@@ -457,7 +475,9 @@ func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
 	// content with a too-new baseline, making the staleness invisible.
 	baseline := cb.buildCacheBaseline()
 	date := cb.currentDate()
+	knowledge := cb.listsKnowledge()
 	prompt := cb.BuildSystemPrompt()
+	cb.cachedKnowledge = knowledge
 	cb.cachedSystemPrompt = prompt
 	cb.cachedAt = baseline.maxMtime
 	cb.cachedDate = date
@@ -604,6 +624,12 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	// staleness here that produces a confidently wrong answer rather than a
 	// merely outdated one.
 	if cb.cachedDate != cb.currentDate() {
+		return true
+	}
+
+	// The knowledge-base tools came or went (tools are registered after
+	// the builder is made).
+	if cb.listsKnowledge() != cb.cachedKnowledge {
 		return true
 	}
 
