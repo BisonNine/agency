@@ -376,11 +376,9 @@ func (al *AgentLoop) agentClosed(_ agentreg.Spec, inst *AgentInstance) {
 }
 
 // registerExtraTools registers on agent the tools added with RegisterTool
-// (the gateway's cron tool), honouring its allowlist.
+// (the gateway's cron tool), honouring its allowlist. equipInstance calls it
+// only for an agent that has tools (not a human or fresh agent).
 func (al *AgentLoop) registerExtraTools(agent *AgentInstance) {
-	if agent.toolless() {
-		return
-	}
 	al.extraToolsMu.Lock()
 	extra := slices.Clone(al.extraTools)
 	al.extraToolsMu.Unlock()

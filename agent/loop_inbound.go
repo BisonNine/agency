@@ -80,9 +80,7 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID, peerKind string,
 ) (string, error) {
-	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return "", err
-	}
+	al.ensureMCPInitialized(ctx)
 
 	msg := bus.InboundMessage{
 		Channel:    channel,

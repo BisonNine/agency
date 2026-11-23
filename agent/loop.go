@@ -457,9 +457,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	al.runCtx = ctx
 	al.runMu.Unlock()
 
-	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return err
-	}
+	al.ensureMCPInitialized(ctx)
 
 	// Start the background context-manager eviction goroutine.
 	go al.evictContextManagers() //nolint:contextcheck // idle eviction closes managers on a fresh context so the archive flush completes regardless of the run context

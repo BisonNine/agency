@@ -22,7 +22,6 @@ type mcpRuntime struct {
 	initOnce sync.Once
 	mu       sync.Mutex
 	manager  *mcp.Manager
-	initErr  error
 	// host is the MCP host whose catalogue is refreshed after a server's tools
 	// are re-registered; nil while the host is not running.
 	host CatalogueRefresher
@@ -62,20 +61,7 @@ func (al *AgentLoop) refreshMCPHost() {
 func (r *mcpRuntime) setManager(manager *mcp.Manager) {
 	r.mu.Lock()
 	r.manager = manager
-	r.initErr = nil
 	r.mu.Unlock()
-}
-
-func (r *mcpRuntime) setInitErr(err error) {
-	r.mu.Lock()
-	r.initErr = err
-	r.mu.Unlock()
-}
-
-func (r *mcpRuntime) getInitErr() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.initErr
 }
 
 func (r *mcpRuntime) takeManager() *mcp.Manager {
@@ -114,14 +100,14 @@ func (al *AgentLoop) MCPStatus() []mcp.ServerStatus {
 
 // ensureMCPInitialized loads MCP servers/tools exactly once (the startup path),
 // so both Run() and direct agent mode share one initialization. Config reloads
-// use ReinitMCP, which bypasses the once-guard.
-func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+// use ReinitMCP, which bypasses the once-guard. A server that fails to
+// connect is not an error: the background retry loop reconnects it.
+func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) {
 	al.mcp.initOnce.Do(func() {
 		if mgr := al.connectAndRegisterMCP(ctx); mgr != nil {
 			al.mcp.setManager(mgr)
 		}
 	})
-	return al.mcp.getInitErr()
 }
 
 // EnsureMCPInitialized is the exported entry point the gateway calls at startup
@@ -129,8 +115,10 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 // server enumerates its catalogue — otherwise CLI-based agents would not see
 // the mcp_* tools until a tool-list refresh brought the host catalogue back in
 // step (see RefreshMCPServer and the tools-changed handler).
+// It returns nil: a server that fails to connect is retried in the background.
 func (al *AgentLoop) EnsureMCPInitialized(ctx context.Context) error {
-	return al.ensureMCPInitialized(ctx)
+	al.ensureMCPInitialized(ctx)
+	return nil
 }
 
 // ReinitMCP tears down the current MCP manager and reconnects/re-registers
@@ -151,11 +139,8 @@ func (al *AgentLoop) ReinitMCP(ctx context.Context) {
 					map[string]any{"error": err.Error()})
 			}
 		}
-		al.mcp.setInitErr(nil)
 		return
 	}
-
-	al.mcp.setInitErr(nil)
 
 	mgr := al.mcp.peekManager()
 	if mgr == nil {
@@ -173,38 +158,19 @@ func (al *AgentLoop) ReinitMCP(ctx context.Context) {
 		logger.WarnCF("agent", "Some MCP servers failed to reconcile on reload",
 			map[string]any{"error": err.Error()})
 	}
-	if err := al.registerMCPToolsFromManager(mgr); err != nil {
-		al.mcp.setInitErr(err)
-		if old := al.mcp.takeManager(); old != nil {
-			if closeErr := old.Close(context.WithoutCancel(ctx)); closeErr != nil {
-				logger.ErrorCF("agent", "Failed to close MCP manager", map[string]any{"error": closeErr.Error()})
-			}
-		}
-	}
+	al.registerMCPToolsFromManager(mgr)
 }
 
 // connectAndRegisterMCP applies the MCP enablement guards, connects to the
 // configured servers, and registers each server's tools onto every agent whose
 // mcp_tools allow-list admits them. It returns the live manager, or nil when MCP
-// is disabled/unconfigured or the connection failed. It reads the config and registry,
+// is not effectively enabled; a server that fails to connect is retried in the
+// background. It reads the config and registry,
 // which the caller must have already pointed at the desired (current) values.
 func (al *AgentLoop) connectAndRegisterMCP(ctx context.Context) *mcp.Manager {
 	cfg := al.GetConfig()
+	// Effectively enabled means at least one server is configured and enabled.
 	if !cfg.Tools.MCPClientEffectivelyEnabled() {
-		return nil
-	}
-	if len(cfg.Tools.MCP.Servers) == 0 {
-		logger.WarnCF("agent", "MCP is enabled but no servers are configured, skipping MCP initialization", nil)
-		return nil
-	}
-	findValidServer := false
-	for _, serverCfg := range cfg.Tools.MCP.Servers {
-		if serverCfg.Enabled {
-			findValidServer = true
-		}
-	}
-	if !findValidServer {
-		logger.WarnCF("agent", "MCP is enabled but no valid servers are configured, skipping MCP initialization", nil)
 		return nil
 	}
 
@@ -228,16 +194,7 @@ func (al *AgentLoop) connectAndRegisterMCP(ctx context.Context) *mcp.Manager {
 	// The manager is live from here: a tools-changed handler that fires during
 	// registration (a probe tick) must find it, or its refresh would be skipped.
 	al.mcp.setManager(mcpManager)
-
-	if err := al.registerMCPToolsFromManager(mcpManager); err != nil {
-		al.mcp.takeManager()
-		al.mcp.setInitErr(err)
-		if closeErr := mcpManager.Close(context.WithoutCancel(ctx)); closeErr != nil {
-			logger.ErrorCF("agent", "Failed to close MCP manager", map[string]any{"error": closeErr.Error()})
-		}
-		return nil
-	}
-
+	al.registerMCPToolsFromManager(mcpManager)
 	return mcpManager
 }
 
@@ -245,9 +202,8 @@ func (al *AgentLoop) connectAndRegisterMCP(ctx context.Context) *mcp.Manager {
 // agent whose mcp_tools allow-list admits them, and (when enabled) wires the tool
 // discovery helpers. It runs on both first init and after a reload's Sync, since a
 // reload rebuilds the agent registry and the new agents carry no MCP tools until
-// re-registered against the live manager. Returns an error only for an invalid
-// discovery configuration; the caller then tears the manager down.
-func (al *AgentLoop) registerMCPToolsFromManager(mgr *mcp.Manager) error {
+// re-registered against the live manager.
+func (al *AgentLoop) registerMCPToolsFromManager(mgr *mcp.Manager) {
 	// Serialized with per-server refreshes and with a new temporary agent's
 	// own registration (agentInserted).
 	al.mcp.refreshMu.Lock()
@@ -268,8 +224,6 @@ func (al *AgentLoop) registerMCPToolsFromManager(mgr *mcp.Manager) error {
 			"total_registrations": totalRegistrations,
 			"agent_count":         len(al.GetRegistry().List()),
 		})
-
-	return nil
 }
 
 // registerMCPServerTools replaces one server's tools on every agent with its

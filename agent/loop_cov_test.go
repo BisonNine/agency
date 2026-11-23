@@ -229,19 +229,6 @@ func TestLoopCov_RunEndsWithContext(t *testing.T) {
 	tl.al.Close(context.Background())
 }
 
-// Run returns the error of a failed MCP start without serving.
-func TestLoopCov_RunReturnsMCPInitError(t *testing.T) {
-	tl := newTestAgentLoop(t)
-	al := tl.al
-	want := errors.New("mcp tools could not be registered")
-	al.mcp.initOnce.Do(func() {})
-	al.mcp.setInitErr(want)
-
-	if err := al.Run(t.Context()); !errors.Is(err, want) {
-		t.Fatalf("Run = %v, want %v", err, want)
-	}
-}
-
 // WaitTurns gives up with ctx's error while a turn is still running.
 func TestLoopCov_WaitTurnsHonoursContext(t *testing.T) {
 	tl := newTestAgentLoop(t)
