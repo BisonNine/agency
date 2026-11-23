@@ -516,14 +516,23 @@ func (m *Manager) connectServer(
 
 	// Store connection. Guard against a concurrent Close so a reconnect racing
 	// shutdown can't resurrect a server on a closed manager (and leak a probe).
+	// A server that got connected meanwhile (a reload's Sync racing the retry
+	// loop) keeps that connection: callers disconnect before they reconnect,
+	// so a live entry is the one in use, and this duplicate is torn down.
 	m.mu.Lock()
-	if m.stopping() {
+	_, live := m.servers[name]
+	if m.stopping() || live {
 		m.mu.Unlock()
 		utils.CloseQuietly(c)
 		if stopListen != nil {
 			stopListen()
 		}
 		terminateStdioProcessTree(stdioCmd)
+		if live {
+			logger.InfoCF("mcp", "MCP server already connected; extra connection closed",
+				map[string]any{"server": name})
+			return nil
+		}
 		return errManagerStopping
 	}
 	conn := &ServerConnection{
