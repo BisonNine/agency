@@ -388,7 +388,7 @@ func formatNextRun(j *cron.CronJob) string {
 }
 
 func (t *CronTool) listJobs(agentID string) *toolkit.Result {
-	all := t.cronService.ListJobs(false)
+	all := t.cronService.ListJobs(true)
 	jobs := make([]cron.CronJob, 0, len(all))
 	for _, j := range all {
 		if agentID != "" && j.AgentID == agentID {
