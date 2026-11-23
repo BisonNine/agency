@@ -4,8 +4,10 @@
 package mcpserver
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -25,9 +27,25 @@ func TestBearerAuth(t *testing.T) {
 	}
 
 	check := func(name, token string, wantCode int) {
-		code, body := rpc(context.Background(), srv.httpServer.Handler, DefaultEndpointPath, token, "initialize", init)
-		if code != wantCode {
-			t.Errorf("%s: status = %d, want %d (%s)", name, code, wantCode, body)
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": init})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, DefaultEndpointPath, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		srv.httpServer.Handler.ServeHTTP(rec, req)
+		if rec.Code != wantCode {
+			t.Errorf("%s: status = %d, want %d (%s)", name, rec.Code, wantCode, rec.Body)
+		}
+		if wantCode == http.StatusUnauthorized {
+			if got := rec.Header().Get("WWW-Authenticate"); got != `Bearer realm="claw-mcp"` {
+				t.Errorf("%s: WWW-Authenticate = %q, want the claw-mcp Bearer challenge", name, got)
+			}
 		}
 	}
 	check("no token", "", http.StatusUnauthorized)

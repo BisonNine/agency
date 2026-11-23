@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime"
 	"sync"
 	"time"
+	"weak"
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/mcphost"
@@ -39,10 +41,6 @@ var subagentMessage = "sub-agents are not granted " + app.ShortName() + " MCP ac
 // tokenDescription describes the session_token argument of every tool
 // published on /internal.
 var tokenDescription = "Your session_token (format: 'SST<64 hex>'). Required on every " + global.HostMCPToolPrefix + "* call. Supplied verbatim from the agent's system prompt."
-
-// AgentResolver returns the per-agent tool registry for a given agent name,
-// or (nil, false) when the agent is unknown.
-type AgentResolver func(agentName string) (*tools.ToolRegistry, bool)
 
 // firstCallTracker debounces "first MCP call from agent=<name>" log entries
 // so we emit at most one per agent per server lifetime.
@@ -157,9 +155,17 @@ type endpointHost struct {
 	m      *MCPServer
 	bearer bool
 	allow  []string // the endpoint's visibility filter (internal names)
-	// views are the config agents' views, built once; a temporary agent's is
-	// built per call.
-	views map[*tools.ToolRegistry]*toolkit.Set
+	// views holds each agent's view, built on first use. An entry is keyed
+	// by the agent and its registry and dropped once the registry is gone (a
+	// temporary agent deleted), so it never keeps one alive.
+	viewsMu sync.Mutex
+	views   map[viewKey]*toolkit.Set
+}
+
+// viewKey names one agent's view of one registry.
+type viewKey struct {
+	agent string
+	reg   weak.Pointer[tools.ToolRegistry]
 }
 
 // visibility grants the tools an endpoint's filter admits, by internal name.
@@ -185,17 +191,25 @@ func (g callerGrant) IsToolAllowed(name string) bool {
 }
 
 func newEndpointHost(m *MCPServer, bearer bool, allow []string) *endpointHost {
-	h := &endpointHost{m: m, bearer: bearer, allow: allow, views: map[*tools.ToolRegistry]*toolkit.Set{}}
-	for agentID, reg := range m.agentRegistries {
-		if reg != nil {
-			h.views[reg] = h.newView(agentID, reg)
-		}
-	}
-	return h
+	return &endpointHost{m: m, bearer: bearer, allow: allow, views: map[viewKey]*toolkit.Set{}}
 }
 
-func (h *endpointHost) newView(agentID string, reg *tools.ToolRegistry) *toolkit.Set {
-	return reg.View(callerGrant{allow: h.allow, acl: h.m.policy, agent: agentID, bearer: h.bearer})
+// view returns agentID's view of reg on this endpoint.
+func (h *endpointHost) view(agentID string, reg *tools.ToolRegistry) *toolkit.Set {
+	key := viewKey{agent: agentID, reg: weak.Make(reg)}
+	h.viewsMu.Lock()
+	defer h.viewsMu.Unlock()
+	if set, ok := h.views[key]; ok {
+		return set
+	}
+	set := reg.View(callerGrant{allow: h.allow, acl: h.m.policy, agent: agentID, bearer: h.bearer})
+	h.views[key] = set
+	runtime.AddCleanup(reg, func(k viewKey) {
+		h.viewsMu.Lock()
+		delete(h.views, k)
+		h.viewsMu.Unlock()
+	}, key)
+	return set
 }
 
 // catalogue is the endpoint's published tools: the union of the config
@@ -244,10 +258,7 @@ func (h *endpointHost) authenticate(_ context.Context, token string) (mcphost.Ca
 	if !ok || reg == nil {
 		return mcphost.Caller{Set: emptySet, Scope: scope, Value: callerValue{rec: rec}}, nil
 	}
-	set, cached := h.views[reg]
-	if !cached {
-		set = h.newView(rec.agentID, reg)
-	}
+	set := h.view(rec.agentID, reg)
 	// Done stays nil: a call in flight finishes whatever happens to its
 	// token (a reissue on interrupt, a session clear).
 	return mcphost.Caller{Set: set, Scope: scope, Value: callerValue{rec: rec, reg: reg}}, nil
@@ -322,7 +333,11 @@ func (h *endpointHost) beforeTool(ctx context.Context, call *hook.ToolCall) (*to
 	if !ok {
 		return nil, nil
 	}
+	// The internal name when the call resolved, as the log lines name it.
 	toolName := call.Name
+	if r := resolvedTool(ctx); r.name != "" {
+		toolName = r.name
+	}
 	if r := v.refused; r != nil {
 		fields := map[string]any{"tool": toolName, "reason": r.reason}
 		maps.Copy(fields, r.fields)

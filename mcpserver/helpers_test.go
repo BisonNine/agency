@@ -257,3 +257,11 @@ func postBody(srv *MCPServer, path, bearer string, body []byte) ([]byte, error) 
 	_, raw := rpc(context.Background(), srv.httpServer.Handler, path, bearer, msg.Method, msg.Params)
 	return raw, nil
 }
+
+// sessionTokenParam is the argument that carries the session token on
+// /internal (mcphost.TokenArgument).
+const sessionTokenParam = "session_token"
+
+// AgentResolver returns the per-agent tool registry for a given agent name,
+// or (nil, false) when the agent is unknown.
+type AgentResolver func(agentName string) (*tools.ToolRegistry, bool)
