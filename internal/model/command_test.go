@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -385,4 +386,32 @@ func TestListAvailableModels_MarkerLogic(t *testing.T) {
 	assert.Contains(t, output, "  - first-model (first via openai)")
 	assert.Contains(t, output, "> - middle-model (middle via openai)")
 	assert.Contains(t, output, "  - last-model (last via openai)")
+}
+
+func TestListAvailableModels_SkipsDisabled(t *testing.T) {
+	cfg := &config.Config{
+		Providers: []modelspec.Provider{openaiProvider()},
+		Models: []modelspec.Model{
+			{ModelName: "alice", Model: "gpt-4", Provider: "openai", Enabled: true},
+			{ModelName: "bob", Model: "gpt-4", Provider: "openai"},
+		},
+	}
+	output := captureStdout(t, func() { listAvailableModels(cfg) })
+	assert.Contains(t, output, "- alice (gpt-4 via openai)")
+	assert.NotContains(t, output, "bob")
+}
+
+func TestModelCommandExecution_BadConfig(t *testing.T) {
+	initTest(t)
+	if err := os.WriteFile(configPath, []byte("{bad"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := NewModelCommand()
+	cmd.SetArgs(nil)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := cmd.Execute()
+	if err == nil || !strings.HasPrefix(err.Error(), "failed to load config: ") {
+		t.Errorf("err = %v, want a config load error", err)
+	}
 }
