@@ -35,12 +35,32 @@ import (
 const (
 	repoOwner   = "PivotLLM"
 	repoName    = global.ReleaseRepoName
-	apiBaseURL  = "https://api.github.com/repos/" + repoOwner + "/" + repoName
 	httpTimeout = 60 * time.Second
 
 	// Every release ships one signed checksum list covering all its archives.
 	checksumsAssetName = "checksums.txt"
 	signatureAssetName = checksumsAssetName + ".minisig"
+)
+
+// The release source and the machine the upgrade acts on. Variables only so
+// tests can point an upgrade at a fake release server, binary and service
+// manager instead of GitHub and the real system.
+var (
+	apiBaseURL    = "https://api.github.com/repos/" + repoOwner + "/" + repoName
+	executable    = os.Executable
+	detectInstall = install.DetectExistingInstall
+	releaseKeys   = app.ReleasePublicKeys
+	goos          = runtime.GOOS
+	geteuid       = os.Geteuid
+	getuid        = os.Getuid
+	// runCommand runs a service manager command (systemctl, launchctl).
+	runCommand = func(name string, args ...string) error {
+		return exec.Command(name, args...).Run() //nolint:gosec // fixed service manager binaries with arguments built by the upgrader
+	}
+	// commandOutput runs a service manager command and returns its stdout.
+	commandOutput = func(name string, args ...string) ([]byte, error) {
+		return exec.Command(name, args...).Output() //nolint:gosec // fixed service manager binaries with arguments built by the upgrader
+	}
 )
 
 // GitHubRelease represents the GitHub releases API response.
@@ -127,7 +147,7 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 	}
 
 	// Locate running executable
-	exePath, err := os.Executable()
+	exePath, err := executable()
 	if err != nil {
 		return fmt.Errorf("locating current executable: %w", err)
 	}
@@ -140,7 +160,7 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 	if err != nil {
 		return fmt.Errorf("determining home directory: %w", err)
 	}
-	existing := install.DetectExistingInstall(homeDir)
+	existing := detectInstall(homeDir)
 	if existing != nil && existing.BinaryPath != "" && (isBuildOrTempDir(exePath) || !fileExists(exePath)) {
 		fmt.Printf("Detected installed %s at: %s\n", app.ShortName(), existing.BinaryPath)
 		exePath = existing.BinaryPath
@@ -221,7 +241,7 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 	if err != nil {
 		return fmt.Errorf("downloading %s: %w", signatureAssetName, err)
 	}
-	if err = verifySignedArchive(app.ReleasePublicKeys(), checksums, signature, archiveName, archivePath); err != nil {
+	if err = verifySignedArchive(releaseKeys(), checksums, signature, archiveName, archivePath); err != nil {
 		return fmt.Errorf("release verification failed: %w", err)
 	}
 	fmt.Println("Signature and checksum verified.")
@@ -589,21 +609,21 @@ func compareSemVer(v1, v2 string) int {
 const upgradeServiceName = global.ServiceName
 
 func restartActiveService() {
-	switch runtime.GOOS {
+	switch goos {
 	case "linux":
 		// Check user service
-		if err := exec.Command("systemctl", "--user", "is-active", "--quiet", upgradeServiceName).Run(); err == nil {
+		if err := runCommand("systemctl", "--user", "is-active", "--quiet", upgradeServiceName); err == nil {
 			fmt.Printf("Restarting systemd user service %s...\n", upgradeServiceName)
-			if rErr := exec.Command("systemctl", "--user", "restart", upgradeServiceName).Run(); rErr == nil {
+			if rErr := runCommand("systemctl", "--user", "restart", upgradeServiceName); rErr == nil {
 				fmt.Println("User service restarted successfully.")
 				return
 			}
 		}
 		// Check system service
-		if err := exec.Command("systemctl", "is-active", "--quiet", upgradeServiceName).Run(); err == nil {
-			if os.Geteuid() == 0 {
+		if err := runCommand("systemctl", "is-active", "--quiet", upgradeServiceName); err == nil {
+			if geteuid() == 0 {
 				fmt.Printf("Restarting systemd system service %s...\n", upgradeServiceName)
-				if rErr := exec.Command("systemctl", "restart", upgradeServiceName).Run(); rErr == nil {
+				if rErr := runCommand("systemctl", "restart", upgradeServiceName); rErr == nil {
 					fmt.Println("System service restarted successfully.")
 					return
 				}
@@ -613,14 +633,14 @@ func restartActiveService() {
 		}
 	case "darwin":
 		const label = global.LaunchdLabel
-		out, err := exec.Command("launchctl", "list").Output()
+		out, err := commandOutput("launchctl", "list")
 		if err == nil && strings.Contains(string(out), label) {
 			fmt.Printf("Restarting launchd service %s...\n", label)
-			uid := strconv.Itoa(os.Getuid())
-			if kErr := exec.Command("launchctl", "kickstart", "-k", "gui/"+uid+"/"+label).Run(); kErr == nil { //nolint:gosec // fixed launchctl binary; label and uid computed by the upgrader
+			uid := strconv.Itoa(getuid())
+			if kErr := runCommand("launchctl", "kickstart", "-k", "gui/"+uid+"/"+label); kErr == nil {
 				fmt.Println("Launchd service restarted successfully.")
 			} else {
-				if sysErr := exec.Command("launchctl", "kickstart", "-k", "system/"+label).Run(); sysErr != nil {
+				if sysErr := runCommand("launchctl", "kickstart", "-k", "system/"+label); sysErr != nil {
 					fmt.Printf("Warning: could not restart launchd service %s (%v). Restart it manually.\n", label, sysErr)
 				}
 			}
