@@ -1088,7 +1088,7 @@ func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string
 			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 		}
 
-		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		ipAddrs, err := dialLookupIPAddr(ctx, host)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
 		}
@@ -1119,6 +1119,10 @@ func newSafeDialContext(dialer *net.Dialer) func(context.Context, string, string
 
 // lookupIPAddr resolves a hostname; tests replace it to simulate DNS answers.
 var lookupIPAddr = net.DefaultResolver.LookupIPAddr
+
+// dialLookupIPAddr resolves a hostname at connect time (newSafeDialContext);
+// tests replace it to simulate DNS answers.
+var dialLookupIPAddr = net.DefaultResolver.LookupIPAddr
 
 // checkProxiedTarget resolves host and rejects it if any address is private or
 // restricted. It is only used when a proxy is configured: the proxy makes the
