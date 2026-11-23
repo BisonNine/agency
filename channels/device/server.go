@@ -541,13 +541,15 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.unregister(lc)
 	defer cw.close()
+	// Deliverable before hello-ok too: a reply sent the moment the client
+	// has seen it is queued, and the writer sends it after hello-ok.
+	s.conns.Store(lc.chatID, lc)
+	defer s.conns.CompareAndDelete(lc.chatID, lc)
 
 	if err := cw.writeJSON(gatewayproto.NewOKResponse(hello.id, hello.payload)); err != nil {
 		return
 	}
 	go cw.run()
-	s.conns.Store(lc.chatID, lc)
-	defer s.conns.CompareAndDelete(lc.chatID, lc)
 
 	setReadDeadline(conn, time.Time{})
 	s.serveLoop(r.Context(), lc)
