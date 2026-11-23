@@ -9,14 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/tools/files"
 	"go.bison9.com/agency/utils"
 )
 
@@ -51,6 +54,15 @@ func confine(base, rel string) (string, error) {
 	return abs, nil
 }
 
+// mustRel is abs relative to base; confine has already put abs inside base.
+func mustRel(base, abs string) string {
+	rel, err := filepath.Rel(base, abs)
+	if err != nil {
+		return abs
+	}
+	return rel
+}
+
 // strArg extracts a string argument; ok is false when absent or empty.
 func strArg(args map[string]any, key string) (string, bool) {
 	v, present := args[key]
@@ -65,22 +77,53 @@ func strArg(args map[string]any, key string) (string, bool) {
 	return s, s != ""
 }
 
-// copyFile copies src to dst, creating intermediate directories for dst with
-// exactly modes.Dir and dst with exactly modes.File (the destination area's
-// modes), whatever the umask.
-func copyFile(src, dst string, modes config.Modes) error {
-	in, err := os.Open(src) //nolint:gosec // src confined to the common dir by confine()
+// location is a file named by a path inside a confining folder. The path is
+// resolved inside that folder with os.Root, as the file tools' sandbox does:
+// every component, links included, is opened relative to the folder, so a
+// link cannot lead a read or a write outside it, and nothing can be swapped
+// between a check and the use.
+type location struct {
+	base  string // the confining folder
+	rel   string // the path inside it
+	shown string // the path as the agent gave it, for a refusal
+	area  string // what base is, for a refusal
+}
+
+// refuse words err from the folder: a path that resolves outside it is
+// refused as the file tools refuse it; anything else is returned as is.
+func (l location) refuse(err error) error {
+	if err != nil && files.IsRootEscape(err) {
+		return toolkit.Refusal(fmt.Errorf("access denied: %s resolves outside %s", l.shown, l.area))
+	}
+	return err
+}
+
+// copyFile copies src to dst, each confined to its folder, creating
+// intermediate folders for dst with exactly modes.Dir and dst with exactly
+// modes.File (the destination area's modes), whatever the umask.
+func copyFile(src, dst location, modes config.Modes) error {
+	srcRoot, err := os.OpenRoot(src.base)
 	if err != nil {
 		return err
+	}
+	defer utils.CloseQuietly(srcRoot)
+	in, err := srcRoot.Open(src.rel)
+	if err != nil {
+		return src.refuse(err)
 	}
 	defer utils.CloseQuietly(in)
 
-	if mkErr := fileutil.MkdirAllExact(filepath.Dir(dst), modes.Dir); mkErr != nil {
-		return mkErr
-	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, modes.File) //nolint:gosec // dst confined to the common dir by confine()
+	dstRoot, err := os.OpenRoot(dst.base)
 	if err != nil {
 		return err
+	}
+	defer utils.CloseQuietly(dstRoot)
+	if mkErr := mkdirAllExact(dstRoot, filepath.Dir(dst.rel), modes.Dir); mkErr != nil {
+		return dst.refuse(mkErr)
+	}
+	out, err := dstRoot.OpenFile(dst.rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, modes.File)
+	if err != nil {
+		return dst.refuse(err)
 	}
 	if err := out.Chmod(modes.File); err != nil {
 		utils.CloseQuietly(out)
@@ -91,6 +134,43 @@ func copyFile(src, dst string, modes config.Modes) error {
 		return err
 	}
 	return out.Close()
+}
+
+// mkdirAllExact creates rel under root and any missing parents, each with
+// exactly mode, never leaving root.
+func mkdirAllExact(root *os.Root, rel string, mode os.FileMode) error {
+	rel = filepath.Clean(rel)
+	if rel == "." {
+		return nil
+	}
+	if fi, err := root.Stat(rel); err == nil {
+		if fi.IsDir() {
+			return nil
+		}
+		return &os.PathError{Op: "mkdir", Path: rel, Err: os.ErrExist}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := mkdirAllExact(root, filepath.Dir(rel), mode); err != nil {
+		return err
+	}
+	if err := root.Mkdir(rel, mode); err != nil {
+		if os.IsExist(err) {
+			return nil // created concurrently
+		}
+		return err
+	}
+	return root.Chmod(rel, mode)
+}
+
+// copyResult is the result of a failed copy: a refusal as itself, any other
+// failure as a failed copy.
+func copyResult(tool string, err error) *toolspec.Result {
+	if toolkit.IsExpectedRefusal(err) {
+		msg := fmt.Sprintf("%s: %v", tool, err)
+		return &toolspec.Result{ForLLM: msg, IsError: true, Err: err}
+	}
+	return errResult("%s: copy failed: %v", tool, err)
 }
 
 // listCommon lists files (name + size) under commonDir[/subdir].
@@ -162,8 +242,10 @@ func getCommon(commonDir, workspace string, workspaceModes config.Modes, args ma
 		return errResult("common_get: %v", err)
 	}
 
-	if err := copyFile(srcAbs, dstAbs, workspaceModes); err != nil {
-		return errResult("common_get: copy failed: %v", err)
+	src := location{base: commonDir, rel: mustRel(commonDir, srcAbs), shown: name, area: "the common folder"}
+	dst := location{base: workspace, rel: mustRel(workspace, dstAbs), shown: filepath.Join("files", dstRel), area: "the workspace"}
+	if err := copyFile(src, dst, workspaceModes); err != nil {
+		return copyResult("common_get", err)
 	}
 	rel, relErr := filepath.Rel(workspace, dstAbs)
 	if relErr != nil {
@@ -204,8 +286,10 @@ func putCommon(commonDir, workspace string, commonModes config.Modes, args map[s
 	if err := fileutil.MkdirAllExact(commonDir, commonModes.Dir); err != nil {
 		return errResult("common_put: %v", err)
 	}
-	if err := copyFile(srcAbs, dstAbs, commonModes); err != nil {
-		return errResult("common_put: copy failed: %v", err)
+	src := location{base: workspace, rel: mustRel(workspace, srcAbs), shown: path, area: "the workspace"}
+	dst := location{base: commonDir, rel: mustRel(commonDir, dstAbs), shown: dstRel, area: "the common folder"}
+	if err := copyFile(src, dst, commonModes); err != nil {
+		return copyResult("common_put", err)
 	}
 	return &toolspec.Result{ForLLM: fmt.Sprintf("Copied workspace %q to common %s", path, dstRel)}
 }

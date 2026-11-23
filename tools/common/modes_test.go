@@ -21,11 +21,13 @@ func TestCopyFile_ConfiguredModes(t *testing.T) {
 	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	dst := filepath.Join(t.TempDir(), "common", "shared", "notes.md")
-	if err := copyFile(src, dst, config.Modes{Dir: 0o770, File: 0o660}); err != nil {
+	base := t.TempDir()
+	dst := filepath.Join(base, "common", "shared", "notes.md")
+	to := location{base: base, rel: filepath.Join("common", "shared", "notes.md"), shown: dst, area: "the folder"}
+	if err := copyFile(at(src), to, config.Modes{Dir: 0o770, File: 0o660}); err != nil {
 		t.Fatal(err)
 	}
-	for path, want := range map[string]os.FileMode{filepath.Dir(dst): 0o770, dst: 0o660} {
+	for path, want := range map[string]os.FileMode{filepath.Join(base, "common"): 0o770, filepath.Dir(dst): 0o770, dst: 0o660} {
 		fi, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)

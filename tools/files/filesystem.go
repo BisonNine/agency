@@ -924,7 +924,7 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 	}
 
 	if err := fn(root, relPath); err != nil {
-		if isRootEscape(err) {
+		if IsRootEscape(err) {
 			// A link that leads out of the sandbox: a refusal in plain words,
 			// not os.Root's "openat …: path escapes from parent".
 			outside := r.outside
@@ -938,10 +938,11 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 	return nil
 }
 
-// isRootEscape reports whether err is os.Root refusing a path that leaves the
+// IsRootEscape reports whether err is os.Root refusing a path that leaves the
 // root (through a link or ".."). os exports no sentinel for it, so the text
-// is matched.
-func isRootEscape(err error) bool {
+// is matched. Other tools that confine a path with os.Root (common_get,
+// common_put) use it to word the refusal as the file tools do.
+func IsRootEscape(err error) bool {
 	return strings.Contains(err.Error(), "path escapes from parent")
 }
 

@@ -137,17 +137,17 @@ func TestCopyFile_DestinationFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	modes := config.Modes{Dir: 0o755, File: 0o644}
-	if err := copyFile(src, filepath.Join(src, "sub", "dst"), modes); err == nil {
+	if err := copyFile(at(src), at(filepath.Join(src, "sub", "dst")), modes); err == nil {
 		t.Error("destination under a file")
 	}
 	if err := os.Mkdir(filepath.Join(dir, "isdir"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyFile(src, filepath.Join(dir, "isdir"), modes); err == nil {
+	if err := copyFile(at(src), at(filepath.Join(dir, "isdir")), modes); err == nil {
 		t.Error("destination is a folder")
 	}
 	// A source that is a folder cannot be copied.
-	if err := copyFile(filepath.Join(dir, "isdir"), filepath.Join(dir, "out"), modes); err == nil {
+	if err := copyFile(at(filepath.Join(dir, "isdir")), at(filepath.Join(dir, "out")), modes); err == nil {
 		t.Error("source is a folder")
 	}
 }
