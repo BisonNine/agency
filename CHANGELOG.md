@@ -148,6 +148,13 @@
 
 ### Fixed
 
+- **A TLS certificate that passed several expiry marks between checks now
+  gets one alert, for the most urgent mark.** It used to get the least urgent
+  first, so an expired certificate was reported as expiring in 0 days.
+- **The permission report no longer fails when a secrets folder** (`internal/`,
+  `tls/`, `tokens/`) cannot be read. It skips the folder and still reports its
+  mode when it is too open.
+- **`cron disable` reported the job as enabled.**
 - **`common_get` and `common_put` no longer follow a link out of the agent's
   workspace or the shared common folder.** Such a path is refused, so
   `common_put` cannot copy an outside file into common and `common_get`
