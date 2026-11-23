@@ -257,7 +257,8 @@ func TestExtractInboundContent_ImageNoURLFallback(t *testing.T) {
 		Body:    "test.png",
 	}
 
-	content, mediaRefs, ok := ch.extractInboundContent(context.Background(), msg, "matrix:room:event")
+	content, ok := inboundText(msg)
+	mediaRefs := ch.fetchInboundMedia(context.Background(), msg, "matrix:room:event")
 	if !ok {
 		t.Fatal("expected ok for image fallback")
 	}
@@ -277,7 +278,8 @@ func TestExtractInboundContent_AudioNoURLFallback(t *testing.T) {
 		Body:     "please transcribe",
 	}
 
-	content, mediaRefs, ok := ch.extractInboundContent(context.Background(), msg, "matrix:room:event")
+	content, ok := inboundText(msg)
+	mediaRefs := ch.fetchInboundMedia(context.Background(), msg, "matrix:room:event")
 	if !ok {
 		t.Fatal("expected ok for audio fallback")
 	}

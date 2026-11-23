@@ -765,9 +765,11 @@ func TestExtractInboundMedia_DownloadFailureKeepsMarker(t *testing.T) {
 	hs := newStubHomeserver(t)
 	hs.setFail("/download/", http.StatusNotFound)
 	c := stubChannel(t, hs, nil, nil)
-	content, refs, ok := c.extractInboundContent(context.Background(), &event.MessageEventContent{
+	msg := &event.MessageEventContent{
 		MsgType: event.MsgVideo, Body: "clip.mp4", URL: "mxc://matrix.test/v",
-	}, "scope")
+	}
+	content, ok := inboundText(msg)
+	refs := c.fetchInboundMedia(context.Background(), msg, "scope")
 	if !ok || content != "[video: clip.mp4]" || len(refs) != 0 {
 		t.Fatalf("got %q %v %v", content, refs, ok)
 	}

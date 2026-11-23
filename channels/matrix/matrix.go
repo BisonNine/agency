@@ -677,12 +677,14 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 	roomID := evt.RoomID.String()
 	scope := channels.BuildMediaScope("matrix", roomID, evt.ID.String())
 
-	content, mediaPaths, ok := c.extractInboundContent(ctx, msgEvt, scope)
+	// The text the rules below look at, media marker included, needs no
+	// download: the attachment is fetched only once the message is handled.
+	content, ok := inboundText(msgEvt)
 	if !ok {
 		return
 	}
 	content = strings.TrimSpace(content)
-	if content == "" && len(mediaPaths) == 0 {
+	if content == "" {
 		return
 	}
 
@@ -751,6 +753,14 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 	if ctx.Err() != nil || !c.account.claim(evt.ID) {
 		return
 	}
+	// The claim makes the event's media scope this handler's own, so what it
+	// fetches can be discarded whole when the message is not handed on.
+	mediaPaths := c.fetchInboundMedia(ctx, msgEvt, scope)
+	if ctx.Err() != nil {
+		c.account.release(evt.ID)
+		c.discardInboundMedia(mediaPaths, scope)
+		return
+	}
 	if err := c.DeliverMessage(
 		ctx,
 		bus.Peer{Kind: peerKind, ID: peerID},
@@ -763,6 +773,7 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 		sender,
 	); err != nil {
 		c.account.release(evt.ID)
+		c.discardInboundMedia(mediaPaths, scope)
 		logger.WarnCF("matrix", "Message not handed on; it is fetched again when the channel restarts", map[string]any{
 			"room_id":  roomID,
 			"event_id": evt.ID.String(),
@@ -771,52 +782,83 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 	}
 }
 
-func (c *MatrixChannel) extractInboundContent(
-	ctx context.Context,
-	msgEvt *event.MessageEventContent,
-	scope string,
-) (string, []string, bool) {
+// inboundText returns the text of a supported message: its body, or for an
+// attachment its caption and a "[kind: name]" marker. ok is false for a
+// message type the channel does not handle.
+func inboundText(msgEvt *event.MessageEventContent) (string, bool) {
 	switch msgEvt.MsgType {
 	case event.MsgText, event.MsgNotice:
-		return msgEvt.Body, nil, true
+		return msgEvt.Body, true
 	case event.MsgImage, event.MsgAudio, event.MsgVideo, event.MsgFile:
-		return c.extractInboundMedia(ctx, msgEvt, scope)
+		mediaKind := matrixMediaKind(msgEvt.MsgType)
+		content := fmt.Sprintf("[%s: %s]", mediaKind, matrixMediaLabel(msgEvt, mediaKind))
+		if caption := strings.TrimSpace(msgEvt.GetCaption()); caption != "" {
+			content = caption + "\n" + content
+		}
+		return content, true
 	default:
 		logger.DebugCF("matrix", "Ignoring unsupported matrix msgtype", map[string]any{
 			"msgtype": msgEvt.MsgType,
 		})
-		return "", nil, false
+		return "", false
 	}
 }
 
-func (c *MatrixChannel) extractInboundMedia(
+// fetchInboundMedia downloads an attachment and registers it under scope. It
+// returns nothing for a message without one, or when the download fails: the
+// message is then handed on with its text marker only.
+func (c *MatrixChannel) fetchInboundMedia(
 	ctx context.Context,
 	msgEvt *event.MessageEventContent,
 	scope string,
-) (string, []string, bool) {
-	mediaKind := matrixMediaKind(msgEvt.MsgType)
-	label := matrixMediaLabel(msgEvt, mediaKind)
-	content := fmt.Sprintf("[%s: %s]", mediaKind, label)
-	if caption := strings.TrimSpace(msgEvt.GetCaption()); caption != "" {
-		content = caption + "\n" + content
+) []string {
+	switch msgEvt.MsgType {
+	case event.MsgImage, event.MsgAudio, event.MsgVideo, event.MsgFile:
+	default:
+		return nil
 	}
-
+	mediaKind := matrixMediaKind(msgEvt.MsgType)
 	localPath, err := c.downloadMedia(ctx, msgEvt, mediaKind)
 	if err != nil {
 		logger.WarnCF("matrix", "Failed to download media; forwarding as text-only marker", map[string]any{
 			"msgtype": msgEvt.MsgType,
 			"error":   err.Error(),
 		})
-		return content, nil, true
+		return nil
 	}
 
+	label := matrixMediaLabel(msgEvt, mediaKind)
 	filename := matrixMediaFilename(label, mediaKind, matrixContentType(msgEvt))
 	ref := c.storeMedia(localPath, media.MediaMeta{
 		Filename:    filename,
 		ContentType: matrixContentType(msgEvt),
 		Source:      "matrix",
 	}, scope)
-	return content, []string{ref}, true
+	return []string{ref}
+}
+
+// discardInboundMedia removes what fetchInboundMedia fetched for a message
+// that was not handed on: the media store's entries for scope, or the
+// downloaded file itself when it was handed on by path.
+func (c *MatrixChannel) discardInboundMedia(paths []string, scope string) {
+	store := c.GetMediaStore()
+	for _, p := range paths {
+		if store != nil {
+			if _, err := store.Resolve(p); err == nil {
+				if err := store.ReleaseAll(scope); err != nil {
+					logger.WarnCF("matrix", "Failed to release media of a message not handed on", map[string]any{
+						"scope": scope, "error": err.Error(),
+					})
+				}
+				continue
+			}
+		}
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			logger.WarnCF("matrix", "Failed to remove media of a message not handed on", map[string]any{
+				"path": p, "error": err.Error(),
+			})
+		}
+	}
 }
 
 func (c *MatrixChannel) storeMedia(localPath string, meta media.MediaMeta, scope string) string {
