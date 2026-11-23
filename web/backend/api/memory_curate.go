@@ -73,6 +73,12 @@ func (h *Handler) handlePatchMemory(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nothing to change: give type, status, or both", http.StatusBadRequest)
 		return
 	}
+	// Refuse a bad status before the type is written: checked only when it
+	// was applied, it failed as a server fault after the type had changed.
+	if req.Status != nil && !validMemoryStatus(*req.Status) {
+		http.Error(w, "unknown memory status", http.StatusBadRequest)
+		return
+	}
 	memoryID := r.PathValue("memoryID")
 	// Two writes: finish both even if the client hangs up between them.
 	ctx := context.WithoutCancel(r.Context())
@@ -101,6 +107,15 @@ func (h *Handler) handlePatchMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toMemoryMemory(m))
+}
+
+// validMemoryStatus reports whether status is one a memory can be moved to.
+func validMemoryStatus(status string) bool {
+	switch cogmemstore.Status(status) {
+	case cogmemstore.StatusActive, cogmemstore.StatusRetired:
+		return true
+	}
+	return false
 }
 
 // applyStatus moves a memory to active or retired. Any other value is an error

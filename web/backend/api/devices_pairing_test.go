@@ -53,6 +53,13 @@ func decodeMap(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	return out
 }
 
+func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, v any) {
+	t.Helper()
+	if err := json.Unmarshal(rec.Body.Bytes(), v); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+}
+
 // savedDevice reads channels.device back from the file the handler saved.
 func savedDevice(t *testing.T, h *Handler) config.DeviceChannelConfig {
 	t.Helper()

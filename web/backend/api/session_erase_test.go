@@ -84,3 +84,36 @@ func TestSessionRoutes_RequireLogin(t *testing.T) {
 		}
 	}
 }
+
+// A sessions folder that cannot be listed fails the erase with a 500, and an
+// unreadable config fails it before anything is touched.
+func TestHandleEraseSessions_Failures(t *testing.T) {
+	configPath := setupTestEnv(t)
+	dir := sessionsTestDir(t, configPath)
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/sessions?channel=telegram&chat_id=555", nil))
+	if rec.Code != http.StatusInternalServerError || rec.Body.String() != "failed to erase sessions\n" {
+		t.Fatalf("unlistable folder = %d %q", rec.Code, rec.Body.String())
+	}
+
+	if err := os.WriteFile(configPath, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h = NewHandler(configPath)
+	mux = http.NewServeMux()
+	h.RegisterRoutes(mux)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/sessions?channel=telegram&chat_id=555", nil))
+	if rec.Code != http.StatusInternalServerError || rec.Body.String() != "failed to load config\n" {
+		t.Fatalf("broken config = %d %q", rec.Code, rec.Body.String())
+	}
+}

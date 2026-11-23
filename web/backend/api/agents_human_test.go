@@ -72,3 +72,51 @@ func TestHandleHumanAgentProblems(t *testing.T) {
 		})
 	}
 }
+
+// Problems with a global setting point at the page that fixes it: a shared
+// model name at Models, a human model used as a default at System; a broken
+// rule that does not set the agent aside is "ignored".
+func TestHandleHumanAgentProblems_Kinds(t *testing.T) {
+	configPath := setupTestEnv(t)
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "People", Protocol: config.HumanProtocol})
+	cfg.Models = append(cfg.Models,
+		modelspec.Model{ModelName: "Bob (human)", Model: "bob", Provider: "People", Enabled: true},
+		modelspec.Model{ModelName: "Bob (human)", Model: "gpt-4o", Provider: "openai", Enabled: true},
+	)
+	cfg.Agents.Defaults.Models = []string{"custom-default", "Bob (human)"}
+	cfg.Agents.List = append(cfg.Agents.List, config.AgentConfig{ID: "bob", Models: []string{"Bob (human)"}})
+	cfg.Bindings = append(cfg.Bindings, config.AgentBinding{
+		AgentID: "bob", Default: true,
+		Match: config.BindingMatch{Channel: "telegram-main", Peer: &config.PeerMatch{Kind: "direct", ID: "4242"}},
+	})
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/agents/human", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Problems []humanAgentProblem `json:"problems"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]bool{}
+	for _, p := range body.Problems {
+		if p.Kind == "setting" {
+			pages[p.Page] = true
+		}
+	}
+	if !pages["/models"] || !pages["/system"] {
+		t.Fatalf("problems = %+v, want setting rows pointing at /models and /system", body.Problems)
+	}
+}

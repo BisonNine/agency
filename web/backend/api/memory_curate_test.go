@@ -168,7 +168,7 @@ func TestPatchMemoryRejectsBadInput(t *testing.T) {
 		want int
 	}{
 		"unknown type":   {map[string]string{"type": "observation"}, http.StatusBadRequest},
-		"unknown status": {map[string]string{"status": "review"}, http.StatusInternalServerError},
+		"unknown status": {map[string]string{"status": "review"}, http.StatusBadRequest},
 		"nothing to do":  {map[string]string{}, http.StatusBadRequest},
 	}
 	for name, tc := range cases {
@@ -177,11 +177,32 @@ func TestPatchMemoryRejectsBadInput(t *testing.T) {
 			t.Errorf("%s: status = %d, want %d (%s)", name, rec.Code, tc.want, rec.Body.String())
 		}
 	}
+	// A bad status is refused before the type is changed.
+	rec := do(t, mux, http.MethodPatch, "/api/memory/"+id+"/memories/"+target,
+		map[string]string{"type": "preference", "status": "review"})
+	if rec.Code != http.StatusBadRequest || rec.Body.String() != "unknown memory status\n" {
+		t.Errorf("bad status with a type: %d %q", rec.Code, rec.Body.String())
+	}
+	if got := memoriesOf(t, mux, id, domain, false)[0]; got.ID != target || got.Type != "fact" {
+		t.Errorf("refused patch changed the memory: %+v", got)
+	}
+	// A body that is not JSON is refused.
+	req := httptest.NewRequest(http.MethodPatch, "/api/memory/"+id+"/memories/"+target, strings.NewReader("{"))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || rec.Body.String() != "invalid request body\n" {
+		t.Errorf("bad body: %d %q", rec.Code, rec.Body.String())
+	}
 	// A missing memory is 404, not a server fault.
-	rec := do(t, mux, http.MethodPatch, "/api/memory/"+id+"/memories/hNOPE",
+	rec = do(t, mux, http.MethodPatch, "/api/memory/"+id+"/memories/hNOPE",
 		map[string]string{"type": "fact"})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("missing memory: status = %d, want 404 (%s)", rec.Code, rec.Body.String())
+	}
+	rec = do(t, mux, http.MethodPatch, "/api/memory/"+id+"/memories/hNOPE",
+		map[string]string{"status": "retired"})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("missing memory status: status = %d, want 404 (%s)", rec.Code, rec.Body.String())
 	}
 }
 

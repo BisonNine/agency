@@ -71,6 +71,7 @@ func TestHandlers_BrokenConfig(t *testing.T) {
 		{"POST", "/api/providers", 500, saveFailed},
 		{"PUT", "/api/providers/0", 500, saveFailed},
 		{"DELETE", "/api/providers/0", 500, saveFailed},
+		{"POST", "/api/webui/setup", 500, `{"errors":["Failed to save config: failed to save config: invalid character`},
 		{"GET", "/api/tls", 500, `{"error":"failed to load config: invalid character`},
 		{"GET", "/api/models", 500, loadFailed},
 		{"PUT", "/api/models/0", 500, saveFailed},
