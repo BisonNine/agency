@@ -87,6 +87,9 @@ type location struct {
 	rel   string // the path inside it
 	shown string // the path as the agent gave it, for a refusal
 	area  string // what base is, for a refusal
+	// scope, when set, is the agent's file-read permission: the source is
+	// read only if the file tools could read it.
+	scope *files.Reader
 }
 
 // refuse words err from the folder: a path that resolves outside it is
@@ -100,8 +103,20 @@ func (l location) refuse(err error) error {
 
 // copyFile copies src to dst, each confined to its folder, creating
 // intermediate folders for dst with exactly modes.Dir and dst with exactly
-// modes.File (the destination area's modes), whatever the umask.
+// modes.File (the destination area's modes), whatever the umask. A source
+// with a scope is first opened through it, so a path the file tools would
+// refuse is refused with their words, and must be the file opened in its
+// folder.
 func copyFile(src, dst location, modes config.Modes) error {
+	var scoped *os.File
+	if src.scope != nil {
+		f, err := src.scope.Open(filepath.Join(src.base, src.rel))
+		if err != nil {
+			return err
+		}
+		defer utils.CloseQuietly(f)
+		scoped = f
+	}
 	srcRoot, err := os.OpenRoot(src.base)
 	if err != nil {
 		return err
@@ -112,6 +127,11 @@ func copyFile(src, dst location, modes config.Modes) error {
 		return src.refuse(err)
 	}
 	defer utils.CloseQuietly(in)
+	if scoped != nil {
+		if sameErr := sameFile(scoped, in); sameErr != nil {
+			return fmt.Errorf("%s: %w", src.shown, sameErr)
+		}
+	}
 
 	dstRoot, err := os.OpenRoot(dst.base)
 	if err != nil {
@@ -134,6 +154,22 @@ func copyFile(src, dst location, modes config.Modes) error {
 		return err
 	}
 	return out.Close()
+}
+
+// sameFile returns an error unless a and b are the same file.
+func sameFile(a, b *os.File) error {
+	ai, err := a.Stat()
+	if err != nil {
+		return err
+	}
+	bi, err := b.Stat()
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(ai, bi) {
+		return errors.New("the file changed while it was being copied")
+	}
+	return nil
 }
 
 // mkdirAllExact creates rel under root and any missing parents, each with
@@ -255,8 +291,9 @@ func getCommon(commonDir, workspace string, workspaceModes config.Modes, args ma
 }
 
 // putCommon copies <workspace>/<path> into commonDir/<as|basename(path)>,
-// creating what it writes with the common area's modes.
-func putCommon(commonDir, workspace string, commonModes config.Modes, args map[string]any) *toolspec.Result {
+// creating what it writes with the common area's modes. It reads only what
+// reader, the agent's file-read permission, allows.
+func putCommon(commonDir, workspace string, commonModes config.Modes, reader *files.Reader, args map[string]any) *toolspec.Result {
 	path, ok := strArg(args, "path")
 	if !ok {
 		return errResult("common_put: 'path' is required")
@@ -267,7 +304,7 @@ func putCommon(commonDir, workspace string, commonModes config.Modes, args map[s
 	if commonDir == "" {
 		return errResult("common_put: common directory is not configured")
 	}
-	// Reads are allowed workspace-wide.
+	// The source is read only if the file tools could read it.
 	srcAbs, err := confine(workspace, path)
 	if err != nil {
 		return errResult("common_put: %v", err)
@@ -286,7 +323,7 @@ func putCommon(commonDir, workspace string, commonModes config.Modes, args map[s
 	if err := fileutil.MkdirAllExact(commonDir, commonModes.Dir); err != nil {
 		return errResult("common_put: %v", err)
 	}
-	src := location{base: workspace, rel: mustRel(workspace, srcAbs), shown: path, area: "the workspace"}
+	src := location{base: workspace, rel: mustRel(workspace, srcAbs), shown: path, area: "the workspace", scope: reader}
 	dst := location{base: commonDir, rel: mustRel(commonDir, dstAbs), shown: dstRel, area: "the common folder"}
 	if err := copyFile(src, dst, commonModes); err != nil {
 		return copyResult("common_put", err)

@@ -14,6 +14,7 @@ import (
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/tools"
+	"go.bison9.com/agency/tools/files"
 )
 
 // GlobalProvider exposes the shared-directory tools through the transport-neutral
@@ -51,7 +52,10 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 		return nil
 	}
 
-	var commonDir, workspace string
+	var (
+		commonDir, workspace string
+		reader               *files.Reader
+	)
 	workspaceModes := config.Modes{Dir: config.DefaultDirMode, File: config.DefaultFileMode}
 	commonModes := workspaceModes
 	if c != nil {
@@ -59,6 +63,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 		workspace = cd.Workspace
 		workspaceModes = c.AgentModes(workspace)
 		commonModes = c.PermissionModes(config.AreaCommon)
+		reader = files.NewReader(c, workspace)
 	}
 
 	return []toolspec.ToolDefinition{
@@ -89,7 +94,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 			Category:     "common",
 			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
-				return putCommon(commonDir, workspace, commonModes, call.Args), nil
+				return putCommon(commonDir, workspace, commonModes, reader, call.Args), nil
 			},
 		},
 		// Not in the default set: deleting from the folder every agent shares

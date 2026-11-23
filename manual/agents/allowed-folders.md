@@ -75,7 +75,7 @@ When **Maestro** is on, `maestro/` is simply part of the workspace; there is no 
 
 ## The common folder
 
-The common folder is shared by every agent that has **Share common directory** on (the default). Agents reach it with the `common_*` tools (`common_list`, `common_get`, `common_put`, `common_delete`), which must also be granted in the agent's tools; **Default tools** leaves out `common_delete`. They can copy files between it and their own folders.
+The common folder is shared by every agent that has **Share common directory** on (the default). Agents reach it with the `common_*` tools (`common_list`, `common_get`, `common_put`, `common_delete`), which must also be granted in the agent's tools; **Default tools** leaves out `common_delete`. They can copy files between it and their own folders. `common_put` copies only a file the agent's file tools may read.
 
 By default the common folder is `common` in the data directory (`~/.claw/common`). Change it with **Common directory** on the System page.
 
