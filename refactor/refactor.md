@@ -1817,3 +1817,17 @@ next session must know.
       `tools`, `tools/untrusted` (deleted), `config` and `agent` are gone;
       callers import the SDK packages. Kept: `global.Identity`, because
       `config` may import no SDK package but `modelspec`.
+
+- [x] Coverage pass (host 3e2b528, SDK 1053610): every SDK package with
+      logic is at 95% or above except `ctxengine/internal/iox` (92.3%);
+      91 host packages are at 95% or above, eleven at 93-95%, and
+      `cmd/claw-auth`, `fileutil`, `channels/internal/fdcheck` and the
+      module root lower (only `main`, OS write failures or non-Linux
+      branches are left). The defects it exposed are fixed and listed in
+      the changelog under 0.6.6.
+      Open, for the maintainer: the `common_put` `path` description (a
+      golden change); `common_get` writes under `files/` whatever the
+      write subdir and through in-workspace links; the cron store alert
+      against the start failure; `claw acp` cancel aborts nothing; the
+      unused `ProposeDomains` / `AutoPromote` settings and the
+      `Normalize` repair note in `cogmem/consolidate`.
