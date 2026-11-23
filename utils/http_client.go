@@ -13,19 +13,15 @@ import (
 // If proxyURL is empty, it uses the system environment proxy settings.
 // Supported proxy schemes: http, https, socks5, socks5h.
 func CreateHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-			TLSHandshakeTimeout: 15 * time.Second,
-		},
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  false,
+		TLSHandshakeTimeout: 15 * time.Second,
 	}
-
-	transport, ok := client.Transport.(*http.Transport)
-	if !ok {
-		return nil, fmt.Errorf("unexpected transport type %T", client.Transport)
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
 	}
 
 	if proxyURL != "" {
