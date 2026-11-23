@@ -28,7 +28,6 @@ import (
 // a context-window overflow (hook.DefaultRetries).
 const llmMaxRetries = hook.DefaultRetries
 
-
 // llmDispatch is one iteration's model request.
 type llmDispatch struct {
 	defs []spawnllm.ToolDefinition
