@@ -109,8 +109,10 @@ func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.Fallbac
 	}
 	chain := set.Begin(models.Chat)
 	al := &AgentLoop{cfg: &config.Config{}, catalog: cat}
-	return &chainRun{t: t, al: al, agent: &AgentInstance{ID: "alice", MaxIterations: 1},
-		tm: &turnModel{chain: chain, candidates: chain.Candidates(), model: candidates[0].Name}}
+	return &chainRun{
+		t: t, al: al, agent: &AgentInstance{ID: "alice", MaxIterations: 1},
+		tm: &turnModel{chain: chain, candidates: chain.Candidates(), model: candidates[0].Name},
+	}
 }
 
 // run runs the turn ("hi") on ctx and returns its reply and error.
