@@ -309,16 +309,10 @@ func (h *endpointHost) toolContext(ctx context.Context, c mcphost.Caller, info t
 }
 
 // gate runs on the exact tool a call resolved to: the ACL (decided when the
-// call resolved, asked again should the tool that runs be another), then the
-// registry's own grant check.
+// call resolved), then the registry's own grant check.
 func (h *endpointHost) gate(ctx context.Context, info toolkit.Info) *toolkit.Result {
-	allowed := false
-	if r := resolvedTool(ctx); r.name == info.Name {
-		allowed = r.allowed
-	} else if c, ok := mcphost.CallerOf(ctx); ok {
-		allowed = h.m.policy.IsAllowed(c.Scope.AgentID, info.Name)
-	}
-	if !allowed {
+	// The endpoint runs the tool the call resolved to; any other is refused.
+	if r := resolvedTool(ctx); r.name != info.Name || !r.allowed {
 		return toolkit.ErrorResult(tools.NotEnabledMessage(info.Name)).
 			WithError(toolkit.Refusal(fmt.Errorf("tool not permitted: %s", info.Name)))
 	}

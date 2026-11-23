@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agency/agenttoken"
 	"go.bison9.com/agency/tools"
 )
 
@@ -50,6 +51,7 @@ func TestBearerAuth(t *testing.T) {
 	}
 	check("no token", "", http.StatusUnauthorized)
 	check("unknown token", "SSTdeadbeef", http.StatusUnauthorized)
+	check("sub-agent sentinel", agenttoken.SubagentSentinel, http.StatusUnauthorized)
 	check("valid token", tok, http.StatusOK)
 }
 

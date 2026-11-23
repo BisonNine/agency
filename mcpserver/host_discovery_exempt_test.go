@@ -48,8 +48,11 @@ func TestHost_ListsAndDispatchesHiddenSuiteTool(t *testing.T) {
 	resolver := resolverFor(regs)
 
 	// (a) tools/list on the host includes the hidden suite tool.
-	if _, ok := listTools(t, hostFor(t, regs, st), DefaultEndpointPath, tok)["maestro_file_list"]; !ok {
-		t.Fatal("host catalogue must list the discovery-hidden suite tool")
+	srv := hostFor(t, regs, st)
+	for _, ep := range []struct{ path, tok string }{{InternalEndpointPath, ""}, {DefaultEndpointPath, tok}} {
+		if _, ok := listTools(t, srv, ep.path, ep.tok)["maestro_file_list"]; !ok {
+			t.Fatalf("%s must list the discovery-hidden suite tool", ep.path)
+		}
 	}
 
 	// (b) dispatch succeeds instead of returning tool_not_in_registry.
