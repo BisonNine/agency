@@ -162,6 +162,26 @@
 - **The WebUI setup error no longer repeats "failed to save config".**
 - **`claw agent`: an input error in interactive mode ends the session.** It
   used to be retried in a loop that logged the same error over and over.
+- **Media downloads no longer re-send the Authorization header on a redirect
+  from one IP address to another.** Two addresses that shared their last two
+  numbers were treated as one site.
+- **Tool-activity breadcrumbs for web tools no longer show a raw URL.** When
+  the URL has no clean host they show the tool name alone, without the path
+  and query string.
+- **A config reload that coincides with a background MCP reconnect no longer
+  leaves a duplicate connection running** (for a stdio server, a second
+  process).
+- **A failed MCP host start is reported once.** It was also sent as an "MCP
+  host server stopped" alert.
+- **Skill filter patterns match as written.** Every `*` is a wildcard (only
+  the first was), and a pattern such as `ab*ba` no longer matches `aba`.
+- **A forum launch that cannot record a temporary agent for cleanup no longer
+  leaves that agent behind**, and forum cleanup works in a workspace whose
+  path contains `[` or `\`.
+- **Opening a character-card store at an unusable path fails at once**
+  instead of failing every later card operation.
+- **With file logging off, the WebUI log view says so** instead of showing
+  the stale startup log.
 - **A TLS certificate that passed several expiry marks between checks now
   gets one alert, for the most urgent mark.** It used to get the least urgent
   first, so an expired certificate was reported as expiring in 0 days.
