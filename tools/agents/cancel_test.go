@@ -415,11 +415,24 @@ func TestCancelTask_ChildStartedLateIsCancelled(t *testing.T) {
 	parent, pctx := f.spawn(t, context.Background(), nil)
 	f.mgr.CancelTask(parent)
 	<-f.atCancel
-	id, cctx := f.spawn(t, pctx, nil)
-	if cctx.Err() == nil {
-		t.Fatal("a task started under a cancelled task runs")
+	events := make(chan hook.TaskInfo, 8)
+	f.reg.Observe(func(info hook.TaskInfo) { events <- info })
+	id, err := f.mgr.spawnCallback(pctx, originOf(pctx), "work", "job", "", "cli", "direct", "", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if rec, err := readStatus(tasksDirFor(f.ws), id); err != nil || rec.Status != StatusCancelled {
+	// Told twice it is cancelled: as it starts, and once its worker is gone.
+	for n := 0; n < 2; {
+		if info := <-events; info.ID == id && info.State == hook.TaskCancelled {
+			n++
+		}
+	}
+	select {
+	case <-f.started:
+		t.Fatal("a task started under a cancelled task ran")
+	default:
+	}
+	if rec, err := readStatus(tasksDirFor(f.ws), id); err != nil || rec.Status != StatusCancelled || rec.StartedAt != "" {
 		t.Fatalf("record = %+v (%v)", rec, err)
 	}
 }
@@ -544,6 +557,7 @@ func TestSupervise_ChildOfCancelledParentIsNotRelaunched(t *testing.T) {
 // snapshot, before that task itself was stopped, is cancelled too.
 func TestTaskRegistry_NothingEscapesACascade(t *testing.T) {
 	reg := NewTaskRegistry()
+	reg.grace = time.Nanosecond // these tasks have no worker to wait for
 	var late *Task
 	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "r", Owner: "alice"}, 0, nil, nil)
 	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "c", Owner: "alice", Parent: "r"}, 0, nil, func(error) bool {
@@ -572,5 +586,62 @@ func TestTaskRegistry_EndEventSurvivesALostCancel(t *testing.T) {
 	task.finished(hook.TaskDone)
 	if last.State != hook.TaskDone {
 		t.Fatalf("last event = %+v, want done", last)
+	}
+}
+
+// Once agent_cancel returns, the task's record and results file are final:
+// the worker's partial output is already in, and nothing is written later.
+// A worker that outlives the cancel's wait is sealed and writes nothing.
+func TestCancelTask_RecordFinalWhenCancelReturns(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stuck   bool
+		partial string
+	}{
+		{"worker returns at once", false, "half of it"},
+		{"worker outlives the wait", true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newCancelFixture(t)
+			if tc.stuck {
+				f.reg.grace = time.Millisecond // the wait gives up
+			} else {
+				f.reg.grace = time.Minute // never reached: the worker returns
+			}
+			release := make(chan struct{})
+			exited := make(chan struct{})
+			f.mgr.runFull = func(ctx context.Context, _, _, _, _ string, _ []string) (*global.SyncResult, func(), error) {
+				f.started <- ctx
+				<-ctx.Done()
+				if tc.stuck {
+					<-release
+				}
+				return &global.SyncResult{Content: "half of it"}, func() { close(exited) }, context.Cause(ctx)
+			}
+			id, _ := f.spawn(t, context.Background(), nil)
+			f.mgr.CancelTask(id)
+			dir := tasksDirFor(f.ws)
+			snapshot := func() string {
+				st, err := os.ReadFile(statusPath(dir, id))
+				if err != nil {
+					t.Fatal(err)
+				}
+				rs, err := os.ReadFile(resultsPath(dir, id))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return string(st) + string(rs)
+			}
+			before := snapshot()
+			r, err := readResults(dir, id)
+			if err != nil || r.Status != StatusCancelled || r.Content != tc.partial {
+				t.Fatalf("results when the cancel returned = %+v (%v), want %q", r, err, tc.partial)
+			}
+			close(release)
+			<-exited
+			if after := snapshot(); after != before {
+				t.Fatalf("the task's files changed after the cancel returned:\n%s\n---\n%s", before, after)
+			}
+		})
 	}
 }

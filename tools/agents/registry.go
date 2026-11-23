@@ -7,6 +7,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.bison9.com/agent/hook"
@@ -25,6 +26,9 @@ import (
 type TaskRegistry struct {
 	mu    sync.Mutex
 	tasks map[string]*Task
+	// grace bounds how long a cancel waits for its workers to return; 0
+	// means hook.DefaultCancelGrace.
+	grace time.Duration
 	// observers are told of every change of a task (Observe).
 	observers []func(hook.TaskInfo)
 	// stopped are the ids of the last maxStopped tasks cancelled: a task
@@ -82,6 +86,30 @@ type Task struct {
 	mu   sync.Mutex
 	info hook.TaskInfo
 	once sync.Once
+
+	// exited is closed once the task's worker has returned and written
+	// everything it writes (markExited); sealed tells a worker still
+	// running after a cancel gave up waiting for it that it may write
+	// nothing more.
+	exited     chan struct{}
+	exitedOnce sync.Once
+	sealed     atomic.Bool
+}
+
+// markExited records that the task's worker has returned.
+func (t *Task) markExited() { t.exitedOnce.Do(func() { close(t.exited) }) }
+
+// Sealed reports that a cancel stopped waiting for the worker: it must
+// write nothing more of the task.
+func (t *Task) Sealed() bool { return t.sealed.Load() }
+
+// stopAndWait is stop, then waitExited for the task if it was stopped.
+func (t *Task) stopAndWait(cause error) (hook.TaskInfo, bool) {
+	info, stopped := t.stop(cause)
+	if stopped {
+		t.reg.waitExited([]*Task{t})
+	}
+	return info, stopped
 }
 
 // Info is the task's description now.
@@ -175,7 +203,7 @@ func (r *TaskRegistry) start(parent context.Context, info hook.TaskInfo, depth i
 	if info.Started.IsZero() {
 		info.Started = time.Now()
 	}
-	t := &Task{reg: r, cancel: cancel, beforeCancel: beforeCancel, info: info}
+	t := &Task{reg: r, cancel: cancel, beforeCancel: beforeCancel, info: info, exited: make(chan struct{})}
 	r.mu.Lock()
 	r.tasks[info.ID] = t
 	orphan := info.Parent != "" && slices.Contains(r.stopped, info.Parent)
@@ -308,10 +336,45 @@ func (r *TaskRegistry) subtree(roots []string) []*Task {
 // stopAll stops each task in order and returns those this call stopped.
 func (r *TaskRegistry) stopAll(list []*Task, cause error) []hook.TaskInfo {
 	var out []hook.TaskInfo
+	var stopped []*Task
 	for _, t := range list {
-		if info, stopped := t.stop(cause); stopped {
+		if info, ok := t.stop(cause); ok {
 			out = append(out, info)
+			stopped = append(stopped, t)
 		}
 	}
+	r.waitExited(stopped)
 	return out
+}
+
+// waitExited waits, at most the cancel grace in all, for the workers of
+// the cancelled tasks to return, so what they write (their partial output)
+// is written before the cancel returns. A worker still running then is
+// sealed: it writes nothing more, and the record the cancel wrote is final.
+func (r *TaskRegistry) waitExited(list []*Task) {
+	if len(list) == 0 {
+		return
+	}
+	timer := time.NewTimer(r.cancelGrace())
+	defer timer.Stop()
+	expired := false
+	for _, t := range list {
+		if !expired {
+			select {
+			case <-t.exited:
+				continue
+			case <-timer.C:
+				expired = true
+			}
+		}
+		t.sealed.Store(true)
+	}
+}
+
+// cancelGrace is how long a cancel waits for the workers it stopped.
+func (r *TaskRegistry) cancelGrace() time.Duration {
+	if r.grace > 0 {
+		return r.grace
+	}
+	return hook.DefaultCancelGrace
 }

@@ -89,6 +89,11 @@ func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, c
 // recovered and recorded as errors.
 func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed bool) {
 	rec := tr.rec
+	tr.mu.Lock()
+	task := tr.task
+	tr.mu.Unlock()
+	// Last: the worker is gone and has written all it writes.
+	defer task.markExited()
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("panic: %v", r)
@@ -101,6 +106,13 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 	}()
 
 	tr.mu.Lock()
+	if tr.ended {
+		// Cancelled before it started: its record is final, nothing runs.
+		tr.mu.Unlock()
+		task.markExited()
+		sm.tasks.notify(task.Info())
+		return
+	}
 	rec.StartedAt = nowRFC()
 	if !tr.waiting {
 		sm.persistStatus(sm.tasksDir(), rec)
@@ -157,7 +169,9 @@ func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record fun
 	if tr.ended {
 		cancelled := tr.cancelled
 		tr.mu.Unlock()
-		if cancelled && partial != "" {
+		// The partial output, unless the cancel stopped waiting for it:
+		// the record it wrote is then final.
+		if cancelled && partial != "" && !tr.task.Sealed() {
 			sm.persistResults(sm.tasksDir(), cancelledResults(tr.rec, partial))
 		}
 		release()
@@ -302,14 +316,14 @@ func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tool
 		cause = hook.ErrShutdown
 	}
 	if isShutdown(cause) {
-		tr.task.stop(cause)
+		tr.task.stopAndWait(cause)
 		return <-tr.result
 	}
 	if onDetach == nil {
 		// Nowhere to deliver a later result (no chat to answer in, as for a
 		// callback spawn, which is refused there): the task is cancelled
 		// rather than left to report to no one.
-		tr.task.stop(errNoRoute)
+		tr.task.stopAndWait(errNoRoute)
 		return <-tr.result
 	}
 	if !sm.detach(tr, onDetach) {
