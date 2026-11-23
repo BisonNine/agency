@@ -66,6 +66,10 @@ const hRuleSubstitute = "──────────────────�
 // long-poll goroutine to exit. var (not const) so tests can shorten it.
 var pollExitTimeout = 10 * time.Second
 
+// typingInterval is how often StartTyping repeats the typing action; Telegram
+// shows it for about 5 s. var (not const) so tests can shorten it.
+var typingInterval = 4 * time.Second
+
 // pollTimeoutSeconds is the getUpdates long-poll timeout Telegram holds each
 // request open for.
 const pollTimeoutSeconds = 30
@@ -696,7 +700,7 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 
 	typingCtx, cancel := context.WithCancel(ctx)
 	go func() {
-		ticker := time.NewTicker(4 * time.Second)
+		ticker := time.NewTicker(typingInterval)
 		defer ticker.Stop()
 		for {
 			select {
