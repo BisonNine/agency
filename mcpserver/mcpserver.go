@@ -358,8 +358,8 @@ func (m *MCPServer) RefreshCatalogue() {
 	added, deleted := 0, 0
 	for _, ep := range []*mcphost.Endpoint{m.internal, m.bearer} {
 		r := ep.Refresh(ctx)
-		added += r.Added
-		deleted += r.Removed
+		added += len(r.Added)
+		deleted += len(r.Removed)
 	}
 	if added > 0 || deleted > 0 {
 		logger.InfoCF("mcpserver", "MCP host catalogue refreshed",
