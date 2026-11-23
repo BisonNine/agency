@@ -24,8 +24,8 @@ import (
 // probedAgent gives agent an SDK agent of its own whose first plugin
 // records, for each turn, how its model loop ended (before AfterTurn decides
 // the reply), so a test can read it. It replaces the instance's agent and
-// closes the one it replaced.
-func (al *AgentLoop) probedAgent(agent *AgentInstance, extra []hook.Plugin, specOpt func(*loop.Spec)) (func(*hostTurn) modelReply, error) {
+// closes the one it replaced (on ctx).
+func (al *AgentLoop) probedAgent(ctx context.Context, agent *AgentInstance, extra []hook.Plugin, specOpt func(*loop.Spec)) (func(*hostTurn) modelReply, error) {
 	var mu sync.Mutex
 	ends := map[*hostTurn]modelReply{}
 	probe := hook.Plugin{Name: "probe", AfterTurn: func(ctx context.Context, _ *hook.Turn, r *hook.TurnResult) {
@@ -54,7 +54,7 @@ func (al *AgentLoop) probedAgent(agent *AgentInstance, extra []hook.Plugin, spec
 	agent.turnAgent = a
 	agent.turnAgentMu.Unlock()
 	if prev != nil {
-		if err := prev.Close(context.Background()); err != nil {
+		if err := prev.Close(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -102,7 +102,7 @@ func runTestTurn(tb testing.TB, ctx context.Context, al *AgentLoop, agent *Agent
 		cm = &firstAssembly{ContextManager: cm, first: messages}
 		alreadyStored = true
 	}
-	ended, err := al.probedAgent(agent, extra, specOpt)
+	ended, err := al.probedAgent(ctx, agent, extra, specOpt)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func (al *AgentLoop) runLLMIteration(
 		tm = al.selectTurnModel(agent, opts.SessionKey)
 	}
 	opts.turnModel = tm
-	ended, err := al.probedAgent(agent, nil, nil)
+	ended, err := al.probedAgent(ctx, agent, nil, nil)
 	if err != nil {
 		return modelReply{}, err
 	}
