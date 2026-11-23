@@ -75,7 +75,7 @@ export interface MemoryRun {
   started_at: string
   /** Why the run failed. Absent on a successful run. */
   error?: string
-  /** Information about a run that SUCCEEDED, e.g. an auto-repair. */
+  /** Information about a run that SUCCEEDED: the keywords it did not add. */
   note?: string
 }
 

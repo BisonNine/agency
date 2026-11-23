@@ -1825,8 +1825,4 @@ next session must know.
       module root lower (only `main`, OS write failures or non-Linux
       branches are left). The defects it exposed are fixed and listed in
       the changelog under 0.6.6.
-      Open, for the maintainer: the `common_put` `path` description (a
-      golden change); the cron store alert
-      against the start failure; `claw acp` cancel aborts nothing; the
-      unused `ProposeDomains` / `AutoPromote` settings and the
-      `Normalize` repair note in `cogmem/consolidate`.
+      Open, for the maintainer: nothing.

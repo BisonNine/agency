@@ -164,3 +164,15 @@ func warnUnknownKeys(doc any) {
 		logger.WarnCF("config", "unknown config key: "+key, map[string]any{"key": key})
 	}
 }
+
+// retiredKey is the type of a removed setting that an existing config.json or
+// a WebUI patch may still carry: it is a known key, so neither a load nor a
+// patch reports it, it decodes any value and keeps none, and with omitzero it
+// is never written back, so the next save drops it.
+type retiredKey struct{}
+
+// UnmarshalJSON discards the value.
+func (*retiredKey) UnmarshalJSON([]byte) error { return nil }
+
+// IsZero reports true always, so omitzero leaves the key out of a save.
+func (retiredKey) IsZero() bool { return true }

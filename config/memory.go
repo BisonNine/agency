@@ -44,14 +44,17 @@ type MemoryConsolidationConfig struct {
 	IdleMinutes      int    `json:"idle_minutes"`
 	Nightly          bool   `json:"nightly"`
 	NightlyAt        string `json:"nightly_at"`
-	ProposeDomains   bool   `json:"propose_domains"`
-	AutoPromote      bool   `json:"auto_promote"`
 	DebugDump        bool   `json:"debug_dump"`
 	MaxBatchMessages int    `json:"max_batch_messages"`
 	MaxInputTokens   int    `json:"max_input_tokens"`
 	PerMessageChars  int    `json:"per_message_chars"`
 	MaxOutputTokens  int    `json:"max_output_tokens"`
 	MaxRuntimeSecs   int    `json:"max_runtime_seconds"`
+
+	// Removed settings that never had any effect. An existing config.json or
+	// a WebUI patch may still carry them; they are accepted and dropped.
+	ProposeDomains retiredKey `json:"propose_domains,omitzero"`
+	AutoPromote    retiredKey `json:"auto_promote,omitzero"`
 }
 
 // MemoryRetentionConfig bounds how long transient memory rows are kept.

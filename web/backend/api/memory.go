@@ -74,8 +74,8 @@ type memoryRun struct {
 	OpsApplied int    `json:"ops_applied"`
 	StartedAt  string `json:"started_at"`
 	// Error is why the run failed; Note is information about a run that
-	// succeeded (an auto-repair, say). Separate fields so the UI can style
-	// them differently — a note rendered as an error reads as a fault.
+	// succeeded (the keywords it did not add). Separate fields so the UI can
+	// style them differently — a note rendered as an error reads as a fault.
 	Error string `json:"error,omitempty"`
 	Note  string `json:"note,omitempty"`
 }

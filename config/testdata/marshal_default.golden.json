@@ -488,8 +488,6 @@
           "idle_minutes": 60,
           "nightly": true,
           "nightly_at": "03:20",
-          "propose_domains": true,
-          "auto_promote": false,
           "debug_dump": false,
           "max_batch_messages": 200,
           "max_input_tokens": 96000,

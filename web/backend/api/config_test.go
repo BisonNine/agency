@@ -300,6 +300,8 @@ func TestHandlePatchConfig_UnknownKeys(t *testing.T) {
 			"Unknown config key: channels.discord.mention_only",
 		},
 		{"discord group trigger accepted", `{"channels":{"discord":{"group_trigger":{"mention_only":true}}}}`, ""},
+		{"removed consolidation settings accepted", `{"agents":{"defaults":{"memory":{"consolidation":` +
+			`{"propose_domains":true,"auto_promote":false}}}}}`, ""},
 		{"valid patch", `{"logging":{"level":"warn"}}`, ""},
 		{"null deletes a known key", `{"agents":{"defaults":{"temperature":null}}}`, ""},
 		{"free-form maps take any key", `{"tools":{"mcp":{"servers":{"alice-files":{"enabled":false,"command":"true",` +

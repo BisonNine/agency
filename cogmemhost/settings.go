@@ -28,8 +28,6 @@ func Settings(mem config.MemoryConfig) cogmem.Settings {
 			IdleMinutes:      mem.Consolidation.IdleMinutes,
 			Nightly:          mem.Consolidation.Nightly,
 			NightlyAt:        mem.Consolidation.NightlyAt,
-			ProposeDomains:   mem.Consolidation.ProposeDomains,
-			AutoPromote:      mem.Consolidation.AutoPromote,
 			DebugDump:        mem.Consolidation.DebugDump,
 			MaxBatchMessages: mem.Consolidation.MaxBatchMessages,
 			MaxInputTokens:   mem.Consolidation.MaxInputTokens,

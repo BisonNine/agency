@@ -48,8 +48,7 @@ func DefaultConfig() *Config {
 					},
 					Consolidation: MemoryConsolidationConfig{
 						EveryNMessages: 50, IdleMinutes: 60, Nightly: true, NightlyAt: "03:20",
-						ProposeDomains: true, AutoPromote: false, DebugDump: false,
-						MaxBatchMessages: 200, MaxInputTokens: 96000, PerMessageChars: 12000,
+						DebugDump: false, MaxBatchMessages: 200, MaxInputTokens: 96000, PerMessageChars: 12000,
 						MaxOutputTokens: 8000, MaxRuntimeSecs: 120,
 					},
 					Export: MemoryExportConfig{Enabled: true},

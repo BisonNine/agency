@@ -152,11 +152,16 @@
   `claw` binary, the `claw` service, the `~/.claw` data directory, the
   `CLAW_*` environment variables and the `mcp__claw__` tool prefix keep their
   names, and `claw upgrade` still fetches releases from the same place.
+- **BREAKING: the `propose_domains` and `auto_promote` memory settings are
+  removed.** They never had any effect; an existing config file that has them
+  still loads, and the next save drops them.
 
 ### Fixed
 
 - **Cancelling in an ACP client now stops the agent's run.** The reply used to
   keep running and the prompt kept waiting for it.
+- **A message whose attachments cannot be sent to an OpenAI Responses model is
+  no longer sent with empty content.** Its text alone is sent.
 - **`claw-auth -debug` no longer writes the OAuth client secret and
   authorization code to its log.** Only the first field of a request was
   masked.
