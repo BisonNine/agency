@@ -113,7 +113,7 @@ func chainTurn(t *testing.T, p spawnllm.LLMProvider, parked []models.Candidate, 
 	chain := set.Begin(models.Chat)
 	al := &AgentLoop{cfg: &config.Config{}, catalog: cat}
 	return &chainRun{
-		t: t, al: al, agent: &AgentInstance{ID: "alice", MaxIterations: 1},
+		t: t, al: al, agent: &AgentInstance{ID: "alice", MaxIterations: 1, StateDir: t.TempDir()},
 		tm: &turnModel{chain: chain, candidates: chain.Candidates(), model: candidates[0].Name},
 	}
 }
