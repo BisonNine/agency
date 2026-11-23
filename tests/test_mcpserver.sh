@@ -158,9 +158,9 @@ run_test_ok() {
     local result
     result=$(probe_call "$tool" "$params")
 
-    if echo "$result" | grep -q "Tool call succeeded"; then
+    if grep -q "Tool call succeeded" <<<"$result"; then
         if [ -n "$expected" ]; then
-            if echo "$result" | grep -qF "$expected"; then
+            if grep -qF "$expected" <<<"$result"; then
                 echo "    ${GREEN}PASS${NC}: found expected substring"
                 PASS_COUNT=$((PASS_COUNT + 1))
             else
@@ -191,9 +191,9 @@ run_test_ok_auth() {
     local result
     result=$(probe_call_auth "$tool" "$params")
 
-    if echo "$result" | grep -q "Tool call succeeded"; then
+    if grep -q "Tool call succeeded" <<<"$result"; then
         if [ -n "$expected" ]; then
-            if echo "$result" | grep -qF "$expected"; then
+            if grep -qF "$expected" <<<"$result"; then
                 echo "    ${GREEN}PASS${NC}: found expected substring"
                 TIER2_PASS=$((TIER2_PASS + 1))
                 PASS_COUNT=$((PASS_COUNT + 1))
@@ -227,7 +227,7 @@ run_test_err() {
     local result
     result=$(probe_call "$tool" "$params")
 
-    if echo "$result" | grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"|not found"; then
+    if grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"|not found" <<<"$result"; then
         echo "    ${GREEN}PASS${NC}: tool returned an error as expected"
         PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -249,7 +249,7 @@ run_test_err_contains() {
     local result
     result=$(probe_call "$tool" "$params")
 
-    if echo "$result" | grep -qi "$substr"; then
+    if grep -qi "$substr" <<<"$result"; then
         echo "    ${GREEN}PASS${NC}: error contains '$substr'"
         PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -271,7 +271,7 @@ run_test_not_auth_err() {
     local result
     result=$(probe_call_auth "$tool" "$params")
 
-    if echo "$result" | grep -qi "invalid or missing session_token"; then
+    if grep -qi "invalid or missing session_token" <<<"$result"; then
         echo "    ${RED}FAIL${NC}: got auth error — session_token not accepted"
         echo "    Output: $result"
         TIER2_FAIL=$((TIER2_FAIL + 1))
@@ -294,7 +294,7 @@ run_test_err_auth() {
     local result
     result=$(probe_call_auth "$tool" "$params")
 
-    if echo "$result" | grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"|not found"; then
+    if grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"|not found" <<<"$result"; then
         echo "    ${GREEN}PASS${NC}: tool returned an error as expected"
         TIER2_PASS=$((TIER2_PASS + 1))
         PASS_COUNT=$((PASS_COUNT + 1))
@@ -318,7 +318,7 @@ run_test_err_msg_auth() {
     local result
     result=$(probe_call_auth "$tool" "$params")
 
-    if echo "$result" | grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"" && echo "$result" | grep -qF "$expected"; then
+    if grep -qiE "Tool call failed|Failed to call tool|isError|\"error\"" <<<"$result" && grep -qF "$expected" <<<"$result"; then
         echo "    ${GREEN}PASS${NC}: refused with \"$expected\""
         TIER2_PASS=$((TIER2_PASS + 1))
         PASS_COUNT=$((PASS_COUNT + 1))
@@ -425,7 +425,7 @@ fi
 echo "  0.5 At least one tool present per namespace"
 NS_OK=true
 for ns in $EXPECTED_NAMESPACES; do
-    if echo "$LIST_OUT" | grep -qF "$ns"; then
+    if grep -qF "$ns" <<<"$LIST_OUT"; then
         echo "    OK: namespace '${ns%_}'"
     else
         echo "    ${RED}FAIL${NC}: no tool found for namespace '${ns%_}' (expected a tool starting with '$ns')"
@@ -448,7 +448,7 @@ check_tool() {
     local num="$1"
     local tool_name="$2"
     echo "  ${num} Tool '${tool_name}' present"
-    if echo "$LIST_OUT" | grep -qF "$tool_name"; then
+    if grep -qF "$tool_name" <<<"$LIST_OUT"; then
         echo "    ${GREEN}PASS${NC}: found"
         PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -614,7 +614,7 @@ else
 
     echo "  3.8e file_edit_lines refuses empty replace (points at file_delete_lines)"
     r8e=$(probe_call_auth "file_edit_lines" "{\"path\":\"$LINEFILE\",\"start\":1,\"replace\":\"\"}")
-    if echo "$r8e" | grep -qi "file_delete_lines"; then
+    if grep -qi "file_delete_lines" <<<"$r8e"; then
         echo "    ${GREEN}PASS${NC}: empty replace refused"
         TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -700,7 +700,7 @@ else
     if [ -n "$NOSHELL_SERVICE_TOKEN" ]; then
         ns=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
             -call shell_exec -params "$(printf '{"command":"echo mcp-shell-ok","session_token":"%s"}' "$NOSHELL_SERVICE_TOKEN")" 2>&1)
-        if echo "$ns" | grep -qF "Permission denied: the tool \"shell_exec\" is not enabled for this agent." && ! echo "$ns" | grep -q "^mcp-shell-ok"; then
+        if grep -qF "Permission denied: the tool \"shell_exec\" is not enabled for this agent." <<<"$ns" && ! grep -q "^mcp-shell-ok" <<<"$ns"; then
             echo "    ${GREEN}PASS${NC}: refused, not enabled for Bob"
             tier2_pass
         else
@@ -719,7 +719,7 @@ else
     echo "  4b.1d shell_exec with background starts a job"
     bg=$(probe_call_auth shell_exec '{"command":"for i in 1 2 3 4 5 6 7 8 9 10; do echo mcp-job-line-$i; sleep 1; done","background":true,"notify":false}')
     JOB_ID=$(printf '%s' "$bg" | grep -o 'job j[0-9a-f]\{8\}' | head -1 | cut -d' ' -f2)
-    if echo "$bg" | grep -q "Tool call succeeded" && [ -n "$JOB_ID" ] && echo "$bg" | grep -qF "state/shell/${JOB_ID}.log"; then
+    if grep -q "Tool call succeeded" <<<"$bg" && [ -n "$JOB_ID" ] && grep -qF "state/shell/${JOB_ID}.log" <<<"$bg"; then
         echo "    ${GREEN}PASS${NC}: job $JOB_ID started, its log named"
         tier2_pass
     else
@@ -743,7 +743,7 @@ else
         echo "  4b.1c shell_exec refused for an agent whose tools are \"*\" only (service token)"
         ns=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
             -call shell_exec -params "$(printf '{"command":"echo mcp-shell-ok","session_token":"%s"}' "$UNGRANTED_SERVICE_TOKEN")" 2>&1)
-        if echo "$ns" | grep -qF "Permission denied: the tool \"shell_exec\" is not enabled for this agent." && ! echo "$ns" | grep -q "^mcp-shell-ok"; then
+        if grep -qF "Permission denied: the tool \"shell_exec\" is not enabled for this agent." <<<"$ns" && ! grep -q "^mcp-shell-ok" <<<"$ns"; then
             echo "    ${GREEN}PASS${NC}: refused, not enabled for alice"
             tier2_pass
         else
@@ -794,7 +794,7 @@ else
     # fine — these probes assert the session token is accepted, not that the call
     # succeeds (agent_status needs a uuid).
     for opt_tool in agent_spawn agent_status agent_list; do
-        if echo "$LIST_OUT" | grep -qw "$opt_tool"; then
+        if grep -qw "$opt_tool" <<<"$LIST_OUT"; then
             run_test_not_auth_err "4b.* $opt_tool — token accepted" "$opt_tool" '{}'
         else
             echo "  4b.* $opt_tool not registered on this host (skipped)"
@@ -804,7 +804,7 @@ else
     # agent_message needs a target in the caller's subagents.allow_agents,
     # which the test config does not grant: the whisper must be refused with
     # a tool error (the gating holds on the running binary).
-    if echo "$LIST_OUT" | grep -qw "agent_message"; then
+    if grep -qw "agent_message" <<<"$LIST_OUT"; then
         run_test_err_msg_auth "4b.8 agent_message — refused without allow_agents" \
             "agent_message" '{"agent":"alice","message":"probe","wait_seconds":0}' "You may not message alice"
     else
@@ -814,7 +814,7 @@ else
     # agent_spawn with a kind calls a task model; the test agent has no
     # task-model grant (and no task model is ticked), so the call must be
     # refused with a tool error naming the kind.
-    if echo "$LIST_OUT" | grep -qw "agent_spawn"; then
+    if grep -qw "agent_spawn" <<<"$LIST_OUT"; then
         run_test_err_msg_auth "4b.9 agent_spawn kind — refused without a task-model grant" \
             "agent_spawn" '{"kind":"text","task":"probe","mode":"wait"}' "is not allowed to use task models for text"
     else
@@ -824,7 +824,7 @@ else
     # agent_cancel comes with agent_spawn: a task the agent does not own (here
     # none at all) is reported unknown, not an error; a call naming nothing
     # is refused.
-    if echo "$LIST_OUT" | grep -qw "agent_cancel"; then
+    if grep -qw "agent_cancel" <<<"$LIST_OUT"; then
         run_test_ok_auth "4b.10 agent_cancel — unknown task" \
             "agent_cancel" '{"uuid":"no-such-task"}' '"unknown":["no-such-task"]'
         run_test_err_msg_auth "4b.11 agent_cancel — uuid or all required" \
@@ -998,7 +998,7 @@ else
         echo "  4f.1 cron_schedule add listen — listener created"
         LISTEN_ADD=$(probe_call_service "cron_schedule" "{\"action\":\"add\",\"message\":\"listen probe $$\",\"listen\":true,\"watch_tool\":\"time_now\",\"watch_timeout_seconds\":5}")
         LISTEN_ID=$(printf '%s' "$LISTEN_ADD" | grep -o 'id: [A-Za-z0-9_-]*' | head -1 | cut -d' ' -f2)
-        if echo "$LISTEN_ADD" | grep -q "Listener added" && [ -n "$LISTEN_ID" ]; then
+        if grep -q "Listener added" <<<"$LISTEN_ADD" && [ -n "$LISTEN_ID" ]; then
             echo "    ${GREEN}PASS${NC}: listener $LISTEN_ID created"
             TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
         else
@@ -1022,7 +1022,7 @@ else
 
         echo "  4f.3 cron_schedule list — shows the listener as continuous"
         LISTEN_LIST=$(probe_call_service "cron_schedule" '{"action":"list"}')
-        if echo "$LISTEN_LIST" | grep -q "listen (continuous)"; then
+        if grep -q "listen (continuous)" <<<"$LISTEN_LIST"; then
             echo "    ${GREEN}PASS${NC}: listed as continuous"
             TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
         else
@@ -1035,7 +1035,7 @@ else
         LISTEN_RM=$(probe_call_service "cron_schedule" "{\"action\":\"remove\",\"job_id\":\"$LISTEN_ID\"}")
         sleep 3
         LISTEN_STOPPED=$(grep -c "listen: stopped" "$GATEWAY_LOG" || true)
-        if echo "$LISTEN_RM" | grep -q "removed" && [ "$LISTEN_STOPPED" -ge 1 ]; then
+        if grep -q "removed" <<<"$LISTEN_RM" && [ "$LISTEN_STOPPED" -ge 1 ]; then
             echo "    ${GREEN}PASS${NC}: listener stopped after removal"
             TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
         else
@@ -1060,7 +1060,7 @@ else
     # status with a bad run number (refused) and delete. No run is started.
     #---------------------------------------------------------------------------
 
-    if echo "$LIST_OUT" | grep -qw "forum_launch"; then
+    if grep -qw "forum_launch" <<<"$LIST_OUT"; then
         print_section "4g. Forum tools (forum)"
         FORUM_ID="00000000-0000-4000-8000-$(printf '%012d' "$$")"
 
@@ -1142,7 +1142,7 @@ else
     # uses the card.
     #---------------------------------------------------------------------------
 
-    if echo "$LIST_OUT" | grep -qw "ccv3"; then
+    if grep -qw "ccv3" <<<"$LIST_OUT"; then
         print_section "4h. Character cards (ccv3)"
         CARD_ID="probe-$(printf '%06d' "$$")"
 
@@ -1196,7 +1196,7 @@ else
     # delete removes the classifier.
     #---------------------------------------------------------------------------
 
-    if echo "$LIST_OUT" | grep -qw "classifier_create"; then
+    if grep -qw "classifier_create" <<<"$LIST_OUT"; then
         print_section "4i. Classifier tools (classifiers)"
         CLS_ID="probe-cls-$(printf '%06d' "$$")"
         CLS_DEF="{\"id\":\"$CLS_ID\",\"enabled\":true,\"trigger\":{\"every_seconds\":3600},\"source\":{\"tool\":\"forum_status\",\"items\":\"\",\"id\":\"id\"},\"classify\":{\"instructions\":\"Sort the forums.\",\"categories\":[{\"name\":\"keep\"},{\"name\":\"drop\"}]}}"
@@ -1266,7 +1266,7 @@ if [ -n "$BEARER_ENDPOINT" ] && [ -n "$SESSION_TOKEN" ]; then
     echo "  6.1 tools/list over bearer endpoint with valid token"
     bl=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
         -headers "Authorization:Bearer ${SESSION_TOKEN}" -list 2>&1)
-    if echo "$bl" | grep -q "file_read_bytes"; then
+    if grep -q "file_read_bytes" <<<"$bl"; then
         echo "    ${GREEN}PASS${NC}: bearer tools/list returned the catalogue"
         TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -1280,7 +1280,7 @@ if [ -n "$BEARER_ENDPOINT" ] && [ -n "$SESSION_TOKEN" ]; then
     bc=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
         -headers "Authorization:Bearer ${SESSION_TOKEN}" \
         -call "session_info" -params '{}' 2>&1)
-    if echo "$bc" | grep -q "Tool call succeeded"; then
+    if grep -q "Tool call succeeded" <<<"$bc"; then
         echo "    ${GREEN}PASS${NC}: tool call succeeded over bearer transport"
         TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -1293,7 +1293,7 @@ if [ -n "$BEARER_ENDPOINT" ] && [ -n "$SESSION_TOKEN" ]; then
     echo "  6.3 missing bearer is rejected (401)"
     nb=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
         -call "session_info" -params '{}' 2>&1)
-    if echo "$nb" | grep -qiE "401|unauthorized|bearer|failed|error"; then
+    if grep -qiE "401|unauthorized|bearer|failed|error" <<<"$nb"; then
         echo "    ${GREEN}PASS${NC}: request without bearer was rejected"
         TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -1307,7 +1307,7 @@ if [ -n "$BEARER_ENDPOINT" ] && [ -n "$SESSION_TOKEN" ]; then
     ib=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
         -headers "Authorization:Bearer SSTdeadbeef" \
         -call "session_info" -params '{}' 2>&1)
-    if echo "$ib" | grep -qiE "401|unauthorized|bearer|failed|error"; then
+    if grep -qiE "401|unauthorized|bearer|failed|error" <<<"$ib"; then
         echo "    ${GREEN}PASS${NC}: request with invalid bearer was rejected"
         TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -1332,7 +1332,7 @@ if [ -n "$SERVICE_TOKEN" ]; then
         st_b=$("$PROBE_PATH" -url "$BEARER_URL" -transport http \
             -headers "Authorization:Bearer ${SERVICE_TOKEN}" \
             -call "session_info" -params '{}' 2>&1)
-        if echo "$st_b" | grep -q "Tool call succeeded"; then
+        if grep -q "Tool call succeeded" <<<"$st_b"; then
             echo "    ${GREEN}PASS${NC}: service token accepted on bearer endpoint"
             TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
         else
@@ -1345,7 +1345,7 @@ if [ -n "$SERVICE_TOKEN" ]; then
     echo "  7.2 service token works as session_token on $ENDPOINT"
     st_i=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
         -call "session_info" -params "$(printf '{"session_token":"%s"}' "$SERVICE_TOKEN")" 2>&1)
-    if echo "$st_i" | grep -q "Tool call succeeded"; then
+    if grep -q "Tool call succeeded" <<<"$st_i"; then
         echo "    ${GREEN}PASS${NC}: service token accepted as session_token parameter"
         TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -1357,7 +1357,7 @@ if [ -n "$SERVICE_TOKEN" ]; then
     echo "  7.3 service token of an agent allowed shell_exec runs it"
     st_sh=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
         -call "shell_exec" -params "$(printf '{"command":"echo svc-shell-ok","session_token":"%s"}' "$SERVICE_TOKEN")" 2>&1)
-    if echo "$st_sh" | grep -q "Tool call succeeded" && echo "$st_sh" | grep -qF "svc-shell-ok"; then
+    if grep -q "Tool call succeeded" <<<"$st_sh" && grep -qF "svc-shell-ok" <<<"$st_sh"; then
         echo "    ${GREEN}PASS${NC}: shell_exec ran with the service token"
         TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -1380,7 +1380,7 @@ if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
     BASELINE_COUNT=$(echo "$LIST_OUT" | grep -cE "^[0-9]+:" || true)
     BASELINE_NS_OK=true
     for ns in $EXPECTED_NAMESPACES; do
-        if ! echo "$LIST_OUT" | grep -qF "$ns"; then
+        if ! grep -qF "$ns" <<<"$LIST_OUT"; then
             echo "    ${RED}FAIL${NC}: namespace '${ns%_}' missing before reload — baseline invalid"
             FAIL_COUNT=$((FAIL_COUNT + 1))
             BASELINE_NS_OK=false
@@ -1426,7 +1426,7 @@ if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
         echo "  5.3 Full tool catalogue intact after reload"
         RELOAD_TOOLS_OK=true
         for tool in $EXPECTED_TOOLS; do
-            if ! echo "$LIST_RELOAD" | grep -qF "$tool"; then
+            if ! grep -qF "$tool" <<<"$LIST_RELOAD"; then
                 echo "    ${RED}FAIL${NC}: '$tool' missing after reload"
                 FAIL_COUNT=$((FAIL_COUNT + 1))
                 RELOAD_TOOLS_OK=false
@@ -1452,7 +1452,7 @@ if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
         echo "  5.5 All namespaces present after reload"
         RELOAD_NS_OK=true
         for ns in $EXPECTED_NAMESPACES; do
-            if ! echo "$LIST_RELOAD" | grep -qF "$ns"; then
+            if ! grep -qF "$ns" <<<"$LIST_RELOAD"; then
                 echo "    ${RED}FAIL${NC}: namespace '${ns%_}' missing after reload"
                 FAIL_COUNT=$((FAIL_COUNT + 1))
                 RELOAD_NS_OK=false
@@ -1470,7 +1470,7 @@ if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
             echo "  5.6 service token still works after reload"
             rl_svc=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
                 -call "session_info" -params "$(printf '{"session_token":"%s"}' "$SERVICE_TOKEN")" 2>&1)
-            if echo "$rl_svc" | grep -q "Tool call succeeded"; then
+            if grep -q "Tool call succeeded" <<<"$rl_svc"; then
                 echo "    ${GREEN}PASS${NC}: service token accepted after reload"
                 TIER2_PASS=$((TIER2_PASS + 1)); PASS_COUNT=$((PASS_COUNT + 1))
             else
@@ -1503,7 +1503,7 @@ if [ -n "$FUSION_SERVICE" ]; then
     FUSION_TOOL="${FUSION_SERVICE}_city_search"
 
     echo "  8.1 tools/list publishes the granted agent's Fusion tools"
-    if echo "$LIST_OUT" | grep -qF "$FUSION_TOOL"; then
+    if grep -qF "$FUSION_TOOL" <<<"$LIST_OUT"; then
         echo "    ${GREEN}PASS${NC}: $FUSION_TOOL listed"
         PASS_COUNT=$((PASS_COUNT + 1))
     else
@@ -1514,7 +1514,7 @@ if [ -n "$FUSION_SERVICE" ]; then
     echo "  8.2 the agent listing the service may call its tools"
     if [ -n "$SESSION_TOKEN" ]; then
         fg=$(probe_call_auth "$FUSION_TOOL" '{"q":"Ottawa"}')
-        if echo "$fg" | grep -qi "not enabled for this agent"; then
+        if grep -qi "not enabled for this agent" <<<"$fg"; then
             echo "    ${RED}FAIL${NC}: refused although mcp_tools lists $FUSION_SERVICE"
             echo "$fg" | head -5 | sed 's/^/      /'
             FAIL_COUNT=$((FAIL_COUNT + 1))
@@ -1532,7 +1532,7 @@ if [ -n "$FUSION_SERVICE" ]; then
     if [ -n "$UNGRANTED_SERVICE_TOKEN" ]; then
         ug=$("$PROBE_PATH" -url "$FULL_URL" -transport http \
             -call "$FUSION_TOOL" -params "$(printf '{"q":"Ottawa","session_token":"%s"}' "$UNGRANTED_SERVICE_TOKEN")" 2>&1)
-        if echo "$ug" | grep -qi "not enabled for this agent"; then
+        if grep -qi "not enabled for this agent" <<<"$ug"; then
             echo "    ${GREEN}PASS${NC}: refused with the not-enabled message"
             PASS_COUNT=$((PASS_COUNT + 1))
         else
