@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
-
 	"go.bison9.com/agent/discovery"
 
 	climcp "go.bison9.com/agency/mcp"
