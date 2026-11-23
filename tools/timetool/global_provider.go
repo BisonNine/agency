@@ -32,7 +32,7 @@ func (globalTimeProvider) RegisterTools(_ toolspec.Deps) []toolspec.ToolDefiniti
 			// prompt points the model here for the time. Withholding the tool
 			// while telling the model to use it is the one combination that
 			// leaves it unable to answer a question about the current time.
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return toolkit.ResultToSpec(now.Execute(call.Ctx, call.Args)), nil
 			},

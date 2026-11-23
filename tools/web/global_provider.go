@@ -77,7 +77,7 @@ func (globalWebProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 			Description:  (&WebSearchTool{}).Description(),
 			RawSchema:    (&WebSearchTool{}).Parameters(),
 			Category:     "web",
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				// search is nil when no web-search provider is configured/enabled.
 				// The tool is still advertised, so guard here and report it to the
@@ -94,7 +94,7 @@ func (globalWebProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 			Description:  (&WebFetchTool{}).Description(),
 			RawSchema:    (&WebFetchTool{}).Parameters(),
 			Category:     "web",
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if fetch == nil {
 					return toolkit.ResultToSpec(toolkit.ErrorResult(

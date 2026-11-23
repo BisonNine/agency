@@ -22,7 +22,7 @@ func (fakeGlobalProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefin
 			Parameters: []toolspec.Parameter{
 				{Name: "path", Type: "string", Required: true, Description: "the path"},
 			},
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				path, ok := call.Args["path"].(string)
 				if !ok {
@@ -150,7 +150,7 @@ type denyByDefaultProvider struct{}
 func (denyByDefaultProvider) RegisterTools(toolspec.Deps) []toolspec.ToolDefinition {
 	handler := func(*toolspec.ToolCall) (*toolspec.Result, error) { return &toolspec.Result{ForLLM: "ok"}, nil }
 	return []toolspec.ToolDefinition{
-		{Name: "purge", Description: "purge a thing", DefaultAllow: toolspec.Allow(false), Handler: handler},
+		{Name: "purge", Description: "purge a thing", DefaultAllow: new(false), Handler: handler},
 		{Name: "probe", Description: "probe a thing", Handler: handler},
 	}
 }

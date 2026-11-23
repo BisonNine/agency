@@ -67,7 +67,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 			Description:  "List files in the shared common directory (optionally under a subdir).",
 			RawSchema:    listSchema,
 			Category:     "common",
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return listCommon(commonDir, call.Args), nil
 			},
@@ -77,7 +77,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 			Description:  "Copy a file from the shared common directory into this agent's workspace files/ directory.",
 			RawSchema:    getSchema,
 			Category:     "common",
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return getCommon(commonDir, workspace, workspaceModes, call.Args), nil
 			},
@@ -87,7 +87,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 			Description:  "Copy a file from this agent's workspace into the shared common directory.",
 			RawSchema:    putSchema,
 			Category:     "common",
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return putCommon(commonDir, workspace, commonModes, call.Args), nil
 			},
@@ -99,7 +99,7 @@ func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 			Description:  "Delete a file from the shared common directory.",
 			RawSchema:    deleteSchema,
 			Category:     "common",
-			DefaultAllow: toolspec.Allow(false),
+			DefaultAllow: new(false),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return deleteCommon(commonDir, call.Args), nil
 			},

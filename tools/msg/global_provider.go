@@ -67,7 +67,7 @@ func (globalMsgProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 			Description:  sendDesc,
 			RawSchema:    sendSchema,
 			Category:     "communication",
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if cd.MessageTool == nil {
 					return &toolspec.Result{IsError: true, ForLLM: "message tool not available"}, nil
@@ -80,7 +80,7 @@ func (globalMsgProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefini
 			Description:  sendFileDesc,
 			RawSchema:    sendFileSchema,
 			Category:     "communication",
-			DefaultAllow: toolspec.Allow(true),
+			DefaultAllow: new(true),
 			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if sendFile == nil {
 					return &toolspec.Result{IsError: true, ForLLM: "send_file tool not available"}, nil
