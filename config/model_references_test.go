@@ -57,7 +57,7 @@ func TestModelReferences_LabelsEverySite(t *testing.T) {
 	}
 }
 
-func TestRenameModelReferences_CoversSubagentsModels(t *testing.T) {
+func TestRenameModelReferences_EdgeersSubagentsModels(t *testing.T) {
 	cfg := refTestConfig()
 	cfg.RenameModelReferences("alpha", "omega")
 
