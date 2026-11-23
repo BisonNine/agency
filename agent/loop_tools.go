@@ -513,7 +513,7 @@ func (al *AgentLoop) startProgressUpdates(
 // superviseTasks periodically relaunches interrupted callback tasks across every
 // agent's workspace. It exits on ctx cancellation or Close().
 func (al *AgentLoop) superviseTasks(ctx context.Context) {
-	ticker := time.NewTicker(global.TaskSupervisorInterval)
+	ticker := al.clk().NewTicker(global.TaskSupervisorInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -521,8 +521,8 @@ func (al *AgentLoop) superviseTasks(ctx context.Context) {
 			return
 		case <-al.superStop:
 			return
-		case <-ticker.C:
-			al.runTaskSupervision() //nolint:contextcheck // relaunched callback tasks run detached from the supervisor, like fresh spawns
+		case <-ticker.C():
+			al.runTaskSupervision()
 		}
 	}
 }

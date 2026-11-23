@@ -67,6 +67,9 @@ func toolActivitySummary(name string, args map[string]any) string {
 		if h := urlHost(toolArgStr(args, "url")); h != "" {
 			return head + " " + code(h)
 		}
+		// No clean host: show the name alone, never the raw URL (its path or
+		// query string) through the generic detail below.
+		return head
 	}
 	// Unknown/MCP tool: append a short, privacy-safe summary of its scalar args
 	// (e.g. "get_tool_details wxca_city_get", "metar_get CYOW") so the user gets
@@ -256,8 +259,8 @@ func editLineRange(args map[string]any) string {
 }
 
 // urlHost returns the host of a URL string, or "" when it can't be parsed to a
-// clean host (so a malformed/absent URL falls back to the generic breadcrumb and
-// never leaks a query string).
+// clean host (so a malformed/absent URL shows the bare tool name and never leaks
+// a query string).
 func urlHost(raw string) string {
 	if raw == "" {
 		return ""

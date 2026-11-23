@@ -64,8 +64,9 @@ func TestProviderVisionClient_Complete(t *testing.T) {
 	if !ok {
 		t.Fatal("vision model v not resolved")
 	}
-	if m := c.(*providerVisionClient).Model(); m != "v-wire" {
-		t.Errorf("Model = %q", m)
+	pc, isProvider := c.(*providerVisionClient)
+	if !isProvider || pc.Model() != "v-wire" {
+		t.Errorf("client = %+v, want a provider client for v-wire", c)
 	}
 	msgs := []spawnllm.Message{{Role: "user", Content: "describe", Media: []string{"data:image/png;base64,AAA"}}}
 	if r, err := c.Complete(context.Background(), msgs); err != nil || r.Content != "a red square" {
@@ -74,7 +75,8 @@ func TestProviderVisionClient_Complete(t *testing.T) {
 
 	fresh := &AgentInstance{ID: "fresh-1", Workspace: t.TempDir(), Spec: agentreg.Spec{Fresh: true}}
 	fc, ok := al.buildVisionLLMClient(cfg, fresh, "v")
-	if !ok || fc.(*providerVisionClient).workspace != fresh.Workspace {
+	fpc, isProvider := fc.(*providerVisionClient)
+	if !ok || !isProvider || fpc.workspace != fresh.Workspace {
 		t.Fatalf("fresh agent's vision client = %+v, %v; want its workspace", fc, ok)
 	}
 	if r, err := fc.Complete(context.Background(), msgs); err != nil || r.Content != "a red square" {

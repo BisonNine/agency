@@ -444,7 +444,7 @@ const mcpRetryInterval = 15 * time.Second
 // come up. Runs until mcpRetryStop is closed. Complements the probe-driven
 // reconnect, which only covers servers that were once connected.
 func (al *AgentLoop) mcpRetryLoop(ctx context.Context) {
-	ticker := time.NewTicker(mcpRetryInterval)
+	ticker := al.clk().NewTicker(mcpRetryInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -452,7 +452,7 @@ func (al *AgentLoop) mcpRetryLoop(ctx context.Context) {
 			return
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			mgr := al.mcp.peekManager()
 			if mgr == nil {
 				continue

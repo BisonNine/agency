@@ -862,7 +862,8 @@ func matchGlob(pattern, name string) bool {
 		return pattern == name
 	}
 	prefix, suffix := parts[0], parts[1]
-	if !strings.HasPrefix(name, prefix) {
+	// The prefix and suffix must not overlap: "ab*ba" does not match "aba".
+	if len(name) < len(prefix)+len(suffix) || !strings.HasPrefix(name, prefix) {
 		return false
 	}
 	return strings.HasSuffix(name, suffix)

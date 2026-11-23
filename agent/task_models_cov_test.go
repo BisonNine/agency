@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -77,10 +78,10 @@ func TestTaskModelHost_SpeechRefusesFiles(t *testing.T) {
 // instead of failing on a nil.
 func TestTaskModelHost_LoopNotReady(t *testing.T) {
 	h := &taskModelHost{al: &AgentLoop{}}
-	if err := h.Check(context.Background(), "alice", t.TempDir(), toolsagents.TaskModelRequest{Kind: "text", Prompt: "x"}); err != errLoopNotReady {
+	if err := h.Check(context.Background(), "alice", t.TempDir(), toolsagents.TaskModelRequest{Kind: "text", Prompt: "x"}); !errors.Is(err, errLoopNotReady) {
 		t.Errorf("Check on an unready loop = %v", err)
 	}
-	if _, _, err := h.isolatedFolder(&config.Config{}, "alice"); err != errLoopNotReady {
+	if _, _, err := h.isolatedFolder(&config.Config{}, "alice"); !errors.Is(err, errLoopNotReady) {
 		t.Errorf("isolatedFolder on an unready loop = %v", err)
 	}
 }
@@ -149,7 +150,7 @@ func TestTaskModelHost_CanceledCall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := e.host.Run(ctx, "alice", e.workspace, toolsagents.TaskModelRequest{Kind: "text", Prompt: "hi"})
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Run on a canceled context = %v, want context.Canceled", err)
 	}
 }
