@@ -227,6 +227,14 @@
 - **An ask no longer waits past its `wait_seconds`.** When the message took
   a moment to queue, the asking agent waited that much longer, even after a
   person it asked had already been told the request timed out.
+- **`sessions erase` reports a session archive it cannot read** instead of
+  "No sessions found", and still erases the sender's sessions it can read.
+- **A tool call from an Anthropic model whose streamed arguments arrive
+  malformed or cut short no longer runs silently with empty arguments.** The
+  text received is kept and a warning is logged.
+- **Memory consolidation no longer applies the same batch twice** after its
+  progress failed to save, and fails the run instead of sending the model an
+  empty state when the current memory cannot be read.
 
 ## [0.6.5]
 

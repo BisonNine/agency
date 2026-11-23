@@ -76,10 +76,11 @@ func Erase(cfg *config.Config, req EraseRequest, release func(key string) error)
 		Peer:    &routing.RoutePeer{Kind: "direct", ID: chatID},
 	})
 	for _, dir := range cfg.AgentSessionDirs() {
+		// keys are the readable sessions even when err names archives that
+		// could not be read: erase those and report the rest.
 		keys, err := memory.ListSessions(dir, logger.SDK())
 		if err != nil {
 			errs = append(errs, err)
-			continue
 		}
 		for _, key := range keys {
 			switch {
@@ -138,8 +139,10 @@ func matchesSender(key, channel string, peers map[string]bool) bool {
 }
 
 // FormatReport renders rep the way the CLI prints it: one line per session,
-// then the shared-session and cogmem notes and a total.
-func FormatReport(rep EraseReport, req EraseRequest) string {
+// then the shared-session and cogmem notes and a total. eraseErr is what Erase
+// returned with rep: when it is non-nil an archive may exist that could not be
+// read, so "No sessions found" is not claimed.
+func FormatReport(rep EraseReport, req EraseRequest, eraseErr error) string {
 	var b strings.Builder
 	for _, key := range rep.Erased {
 		fmt.Fprintf(&b, "erased %s\n", key)
@@ -152,7 +155,7 @@ func FormatReport(rep EraseReport, req EraseRequest) string {
 			"re-run with --all to delete the whole session\n", rep.Shared)
 	}
 	fmt.Fprintf(&b, "%s\n", rep.Cogmem)
-	if len(rep.Erased) == 0 && rep.Shared == "" && len(rep.Skipped) == 0 {
+	if eraseErr == nil && len(rep.Erased) == 0 && rep.Shared == "" && len(rep.Skipped) == 0 {
 		fmt.Fprintf(&b, "No sessions found for %s/%s.\n", req.Channel, req.ChatID)
 	} else {
 		fmt.Fprintf(&b, "Erased %d session(s).\n", len(rep.Erased))

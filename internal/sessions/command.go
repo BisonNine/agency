@@ -70,7 +70,7 @@ func runErase(cmd *cobra.Command, req EraseRequest) error {
 		return fmt.Errorf("%s is running (pid %d); stop the service before erasing sessions, or use DELETE /api/sessions", app.ShortName(), pid)
 	}
 	rep, err := Erase(cfg, req, nil)
-	if _, werr := fmt.Fprint(cmd.OutOrStdout(), FormatReport(rep, req)); werr != nil {
+	if _, werr := fmt.Fprint(cmd.OutOrStdout(), FormatReport(rep, req, err)); werr != nil {
 		return werr
 	}
 	return err

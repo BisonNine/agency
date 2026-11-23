@@ -132,6 +132,46 @@ func TestEraseReportsDirectoryErrors(t *testing.T) {
 	})
 }
 
+// corruptArchive writes a file that is not a database where key's archive
+// would be, in agentID's sessions directory, and returns its file name.
+func corruptArchive(t *testing.T, cfg *config.Config, agentID, key string) string {
+	t.Helper()
+	dir := filepath.Join(cfg.Agents.BaseDir, agentID, "sessions")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	path := memory.ArchivePath(dir, key)
+	require.NoError(t, os.WriteFile(path, []byte("not a database, just text long enough to be read as a header"), 0o600))
+	return filepath.Base(path)
+}
+
+// A directory with one readable and one unreadable archive: the readable
+// session is still erased and the error names the unreadable archive.
+func TestEraseReadableBesideUnreadableArchive(t *testing.T) {
+	cfg := eraseTestConfig(t)
+	const readable = "agent:alice:telegram:direct:42"
+	dir := seedKeys(t, cfg, "alice", readable)
+	bad := corruptArchive(t, cfg, "alice", "agent:alice:telegram:group:42")
+
+	rep, err := Erase(cfg, EraseRequest{Channel: "telegram", ChatID: "42"}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), bad)
+	assert.Equal(t, []string{readable}, rep.Erased)
+	assert.False(t, exists(t, dir, readable))
+}
+
+// When the only matching archive cannot be read, the command fails and does
+// not claim that no sessions were found.
+func TestEraseCommandUnreadableArchiveOnly(t *testing.T) {
+	home := setupHome(t)
+	bad := corruptArchive(t, homeConfig(home), "alice", "agent:alice:telegram:direct:42")
+
+	out, err := runSessions(t, "erase", "--channel", "telegram", "--chat", "42")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), bad)
+	assert.NotContains(t, out, "No sessions found")
+	// cobra appends usage after a failing RunE here; the report comes first.
+	assert.True(t, strings.HasPrefix(out, CogmemNote+"\nErased 0 session(s).\n"), out)
+}
+
 // An archive whose file holds another session is refused, not deleted.
 func TestEraseReportsKeyCollision(t *testing.T) {
 	cfg := eraseTestConfig(t)

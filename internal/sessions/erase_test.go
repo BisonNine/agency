@@ -225,7 +225,7 @@ func TestFormatReport(t *testing.T) {
 		Skipped: []string{"agent:alice:telegram:group:555: turn in flight"},
 		Shared:  "agent:alice:main",
 		Cogmem:  CogmemNote,
-	}, req)
+	}, req, nil)
 	for _, want := range []string{
 		"erased agent:alice:telegram:direct:555\n",
 		"skipped agent:alice:telegram:group:555: turn in flight\n",
@@ -237,8 +237,12 @@ func TestFormatReport(t *testing.T) {
 			t.Errorf("report missing %q:\n%s", want, out)
 		}
 	}
-	empty := FormatReport(EraseReport{Cogmem: CogmemNote}, req)
+	empty := FormatReport(EraseReport{Cogmem: CogmemNote}, req, nil)
 	if !strings.Contains(empty, "No sessions found for telegram/555.") {
 		t.Errorf("empty report:\n%s", empty)
+	}
+	failed := FormatReport(EraseReport{Cogmem: CogmemNote}, req, errors.New("archive unreadable"))
+	if strings.Contains(failed, "No sessions found") {
+		t.Errorf("report after a failed erase claims nothing was found:\n%s", failed)
 	}
 }
