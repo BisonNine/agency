@@ -371,13 +371,17 @@ func (c *WebUIChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if maxConns <= 0 {
 		maxConns = 100
 	}
-	if int(c.connCount.Load()) >= maxConns {
+	// Reserve the slot before the upgrade, so handshakes in progress at the
+	// same time are counted against the limit too. readLoop releases it.
+	if int(c.connCount.Add(1)) > maxConns {
+		c.connCount.Add(-1)
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
 		return
 	}
 
 	conn, err := c.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		c.connCount.Add(-1)
 		logger.ErrorCF("webui", "WebSocket upgrade failed", map[string]any{
 			"error": err.Error(),
 		})
@@ -399,7 +403,6 @@ func (c *WebUIChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c.connections.Store(pc.id, pc)
-	c.connCount.Add(1)
 
 	logger.InfoCF("webui", "WebSocket client connected", map[string]any{
 		"conn_id":    pc.id,
