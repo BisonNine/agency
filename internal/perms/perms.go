@@ -621,12 +621,13 @@ func (t treeWalk) subtree(root string, skip map[string]bool) (bool, error) {
 	truncated := false
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if path == root {
-				return err
+			if d == nil {
+				return err // root itself could not be stat'ed
 			}
-			// An unreadable entry below the root is skipped, not fatal: one
-			// odd subtree must not stop the rest of the walk.
-			if d != nil && d.IsDir() {
+			// An unreadable folder, the root included, is skipped, not
+			// fatal: one odd subtree must not stop the rest of the walk. Its
+			// own mode was already checked when it was visited.
+			if d.IsDir() {
 				return fs.SkipDir
 			}
 			return nil

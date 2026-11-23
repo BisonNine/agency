@@ -223,3 +223,46 @@ func (fakeInfo) Sys() any { return nil }
 func TestLinkCountWithoutPlatformData(t *testing.T) {
 	assert.Equal(t, uint64(1), linkCount(fakeInfo{}))
 }
+
+// An owner-unreadable secrets folder does not fail the report: its own mode
+// is still a finding when it grants too much, and the rest is checked.
+func TestCheckUnreadableSecretsFolder(t *testing.T) {
+	skipIfRoot(t)
+	noExecutable(t)
+	for _, tc := range []struct {
+		name     string
+		mode     fs.FileMode
+		reported bool
+	}{
+		{"more open than configured", 0o077, true},
+		{"no access at all", 0o000, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			cfg := operatorConfig(t, home)
+			place(t, home, "internal/state.db", 0o600)
+			internalDir := filepath.Join(home, "internal")
+			loose := place(t, home, "skills/demo/SKILL.md", 0o666)
+			require.NoError(t, os.Chmod(internalDir, tc.mode))
+			t.Cleanup(func() {
+				if err := os.Chmod(internalDir, 0o700); err != nil {
+					t.Error(err)
+				}
+			})
+
+			got, err := Check(home, "", PolicyFor(cfg))
+			require.NoError(t, err)
+			byPath := map[string]Finding{}
+			for _, f := range got {
+				byPath[f.Path] = f
+			}
+			assert.Contains(t, byPath, loose)
+			f, ok := byPath[internalDir]
+			assert.Equal(t, tc.reported, ok)
+			if ok {
+				assert.Equal(t, tc.mode, f.Mode)
+				assert.Equal(t, fs.FileMode(0o700), f.Want)
+			}
+		})
+	}
+}
