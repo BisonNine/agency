@@ -146,7 +146,11 @@ func TestNewManager_MigrationSaveFails(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	sm := NewManager(dir, 0o700, 0o600)
 	if got, ok := sm.GetPendingTurn("k"); !ok || got.ChatID != "7" {
 		t.Fatalf("migrated turn = %+v, %v", got, ok)

@@ -34,7 +34,7 @@ func TestWrite_Contents(t *testing.T) {
 		Input    json.RawMessage `json:"input"`
 		Output   json.RawMessage `json:"output"`
 	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	if err = json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("json dump is not JSON: %v", err)
 	}
 	if doc.Metadata["reason"] != "empty_response" || doc.Metadata["agent"] != "alice" {
@@ -81,7 +81,11 @@ func TestWrite_Errors(t *testing.T) {
 	if err := os.Mkdir(ro, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(ro, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	if _, err := Write(Dir{Path: filepath.Join(ro, "dumps")}, "r", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "dump: create dir") {
 		t.Errorf("unwritable parent err = %v", err)
 	}

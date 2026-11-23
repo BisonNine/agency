@@ -44,7 +44,11 @@ func TestDetectNewFiles_SkipsHiddenAndUnreadableDirs(t *testing.T) {
 	if err := os.Mkdir(locked, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(locked, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	added := e.add(t, "new.md")
 
 	got := detect(w, e.ws, e.folder)
@@ -84,7 +88,11 @@ func TestRemoveStaleMarkers_RemoveFails(t *testing.T) {
 	if err := os.Chmod(markers, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(markers, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(markers, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	removeStaleMarkers(markers, map[string]bool{})
 	if _, err := os.Stat(marker); err != nil {
 		t.Errorf("marker gone despite a read-only folder: %v", err)

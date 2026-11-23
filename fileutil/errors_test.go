@@ -28,7 +28,11 @@ func readOnlyDir(t *testing.T) string {
 	if err := os.Mkdir(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	return dir
 }
 
@@ -57,7 +61,7 @@ func TestMkdirAllWith_PerFolderModes(t *testing.T) {
 	if err := MkdirAllWith(target, func(string) os.FileMode { return 0o777 }); err != nil {
 		t.Fatal(err)
 	}
-	if fi, _ := os.Stat(target); fi.Mode().Perm() != 0o700 {
+	if fi, err := os.Stat(target); err != nil || fi.Mode().Perm() != 0o700 {
 		t.Errorf("existing folder mode changed to %04o", fi.Mode().Perm())
 	}
 }
@@ -101,7 +105,7 @@ func TestWriteFileExact_ExistingFileGetsMode(t *testing.T) {
 	if fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %04o, want 0600", fi.Mode().Perm())
 	}
-	if data, _ := os.ReadFile(path); string(data) != "new" {
+	if data, err := os.ReadFile(path); err != nil || string(data) != "new" {
 		t.Errorf("content = %q, want new", data)
 	}
 }
@@ -120,14 +124,14 @@ func TestWriteFileAtomic_Errors(t *testing.T) {
 	// file is removed.
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target")
-	if err := os.MkdirAll(filepath.Join(target, "child"), 0o700); err != nil {
+	if err = os.MkdirAll(filepath.Join(target, "child"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	err = WriteFileAtomic(target, []byte("x"), 0o600)
 	if err == nil || !strings.Contains(err.Error(), "failed to rename temp file") {
 		t.Errorf("target is a dir: err = %v", err)
 	}
-	entries, _ := os.ReadDir(dir)
+	entries := dirEntries(t, dir)
 	if len(entries) != 1 {
 		t.Errorf("dir holds %d entries after failed write, want only the target", len(entries))
 	}
@@ -151,4 +155,14 @@ func TestWritable(t *testing.T) {
 	if Writable(readOnlyDir(t)) {
 		t.Error("Writable on a 0500 dir = true")
 	}
+}
+
+// dirEntries lists dir, failing the test when it cannot be read.
+func dirEntries(t *testing.T, dir string) []os.DirEntry {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
 }

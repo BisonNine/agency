@@ -271,7 +271,8 @@ func TestClawHubRegistry_DownloadAndInstallOutcomes(t *testing.T) {
 	require.ErrorContains(t, err, "download too large")
 
 	// Every temp download was removed.
-	entries, _ := os.ReadDir(os.Getenv("TMPDIR"))
+	entries, err := os.ReadDir(os.Getenv("TMPDIR"))
+	require.NoError(t, err)
 	assert.Empty(t, entries)
 
 	// No writable temp dir.
@@ -473,6 +474,7 @@ func TestDownloadFileAndRaw_LocalErrors(t *testing.T) {
 	assert.Error(t, installer.downloadFile(ctx, "http://a b/", filepath.Join(ws, "f")))
 
 	// Nothing is left in the temp dir.
-	entries, _ := os.ReadDir(os.Getenv("TMPDIR"))
+	entries, err := os.ReadDir(os.Getenv("TMPDIR"))
+	require.NoError(t, err)
 	assert.Empty(t, entries)
 }

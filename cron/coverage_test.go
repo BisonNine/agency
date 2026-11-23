@@ -92,7 +92,11 @@ func TestStart_Errors(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	if err := cs.Start(); err == nil || !strings.Contains(err.Error(), "failed to save store") {
 		t.Errorf("unwritable store Start = %v", err)
 	}
@@ -149,7 +153,7 @@ func TestExecuteJobByID_AtJobOutcomes(t *testing.T) {
 	}
 	j := cs.ListJobs(true)[0]
 	j.DeleteAfterRun = false
-	if err := cs.UpdateJob(&j); err != nil {
+	if err = cs.UpdateJob(&j); err != nil {
 		t.Fatal(err)
 	}
 	cs.executeJobByID(job.ID)

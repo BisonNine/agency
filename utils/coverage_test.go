@@ -131,7 +131,7 @@ func TestDownloadFile_Success(t *testing.T) {
 		}
 		gotAuth.Store(r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("PNGDATA"))
+		mustWrite(t, w, []byte("PNGDATA"))
 	}))
 	defer srv.Close()
 
@@ -164,7 +164,7 @@ func TestDownloadFile_Success(t *testing.T) {
 		t.Errorf("dir mode = %04o, want 0700", di.Mode().Perm())
 	}
 	// A same-host redirect keeps the Authorization header.
-	if got, _ := gotAuth.Load().(string); got != "Bearer t" {
+	if got := gotAuth.Load(); got != "Bearer t" {
 		t.Errorf("Authorization after redirect = %q, want Bearer t", got)
 	}
 }
@@ -176,16 +176,16 @@ func TestDownloadFile_Failures(t *testing.T) {
 			http.NotFound(w, r)
 		case "/html":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write([]byte("<html>login</html>"))
+			mustWrite(t, w, []byte("<html>login</html>"))
 		case "/slack":
 			http.Redirect(w, r, "/slack.com/login?redir=x", http.StatusFound)
 		case "/slack.com/login":
 			w.Header().Set("Content-Type", "text/html")
-			_, _ = w.Write([]byte("<html>sign in</html>"))
+			mustWrite(t, w, []byte("<html>sign in</html>"))
 		case "/short":
 			// Promise more than is sent so the copy fails mid-body.
 			w.Header().Set("Content-Length", "100")
-			_, _ = w.Write([]byte("partial"))
+			mustWrite(t, w, []byte("partial"))
 		case "/loop":
 			http.Redirect(w, r, "/loop", http.StatusFound)
 		}
@@ -212,7 +212,7 @@ func TestDownloadFile_Failures(t *testing.T) {
 				t.Fatalf("DownloadFile = %q, want empty", got)
 			}
 			// Nothing is left behind in the staging dir.
-			entries, _ := os.ReadDir(dir)
+			entries := dirEntries(t, dir)
 			if len(entries) != 0 {
 				t.Errorf("staging dir holds %d entries, want none", len(entries))
 			}
@@ -225,7 +225,7 @@ func TestDownloadFile_ViaProxy(t *testing.T) {
 	var proxied atomic.Bool
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxied.Store(r.URL.Host == "files.example.invalid")
-		_, _ = w.Write([]byte("via proxy"))
+		mustWrite(t, w, []byte("via proxy"))
 	}))
 	defer proxy.Close()
 
@@ -253,7 +253,7 @@ func TestDownloadFile_MediaDirUnderFile(t *testing.T) {
 func TestDownloadFileSimple(t *testing.T) {
 	useMediaDir(t, 0, 0)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("ok"))
+		mustWrite(t, w, []byte("ok"))
 	}))
 	defer srv.Close()
 	if path := DownloadFileSimple(srv.URL, "ok.txt"); path == "" {
@@ -276,12 +276,12 @@ func TestDownloadToFile(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/ok":
-			_, _ = w.Write([]byte("0123456789"))
+			mustWrite(t, w, []byte("0123456789"))
 		case "/err":
 			http.Error(w, "nope", http.StatusTeapot)
 		case "/short":
 			w.Header().Set("Content-Length", "100")
-			_, _ = w.Write([]byte("partial"))
+			mustWrite(t, w, []byte("partial"))
 		}
 	}))
 	defer srv.Close()
@@ -303,7 +303,9 @@ func TestDownloadToFile(t *testing.T) {
 		if err != nil || string(data) != "0123456789" {
 			t.Errorf("max %d: content %q, %v", maxBytes, data, err)
 		}
-		_ = os.Remove(p)
+		if err := os.Remove(p); err != nil {
+			t.Error(err)
+		}
 	}
 
 	if _, err := get("/ok", 9); err == nil || !strings.Contains(err.Error(), "download too large") {
@@ -318,13 +320,16 @@ func TestDownloadToFile(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/ok", nil)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/ok", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := DownloadToFile(ctx, srv.Client(), req, 0); err == nil || !strings.Contains(err.Error(), "request failed") {
 		t.Errorf("cancelled err = %v", err)
 	}
 
 	// Every failure removed its temp file.
-	entries, _ := os.ReadDir(os.Getenv("TMPDIR"))
+	entries := dirEntries(t, os.Getenv("TMPDIR"))
 	if len(entries) != 0 {
 		t.Errorf("TMPDIR holds %d leftover entries", len(entries))
 	}
@@ -463,7 +468,7 @@ func TestExtractZipFile_CorruptEntry(t *testing.T) {
 	// Flip a byte of the stored body so the CRC check fails on read.
 	i := strings.Index(string(data), "hello")
 	data[i] ^= 0xff
-	if err := os.WriteFile(zp, data, 0o600); err != nil {
+	if err = os.WriteFile(zp, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(tmp, "out")
@@ -489,12 +494,17 @@ func TestDoRequestWithRetry_NonRetryableStatus(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	resp, err := DoRequestWithRetry(srv.Client(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	CloseQuietly(resp.Body)
+	if err := resp.Body.Close(); err != nil {
+		t.Error(err)
+	}
 	if resp.StatusCode != http.StatusNotFound || calls.Load() != 1 {
 		t.Fatalf("status %d after %d calls, want 404 after 1", resp.StatusCode, calls.Load())
 	}
@@ -512,13 +522,13 @@ func TestExtractZipFile_UnsupportedMethod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Write([]byte("hi")); err != nil {
+	if _, err = w.Write([]byte("hi")); err != nil {
 		t.Fatal(err)
 	}
-	if err := zw.Close(); err != nil {
+	if err = zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := zf.Close(); err != nil {
+	if err = zf.Close(); err != nil {
 		t.Fatal(err)
 	}
 	err = ExtractZipFile(zp, filepath.Join(tmp, "out"), 0o700, 0o600)
@@ -535,9 +545,13 @@ func TestDownloadFile_ReadOnlyMediaDir(t *testing.T) {
 	if err := os.Mkdir(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("ok"))
+		mustWrite(t, w, []byte("ok"))
 	}))
 	defer srv.Close()
 	if got := DownloadFile(srv.URL, "f", DownloadOptions{}); got != "" {
@@ -553,7 +567,11 @@ func TestMkdirExact_ReadOnlyParent(t *testing.T) {
 	if err := os.Mkdir(parent, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(parent, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	if err := mkdirExact(filepath.Join(parent, "child"), 0o700); err == nil {
 		t.Fatal("mkdirExact under a read-only parent: want error")
 	}
@@ -578,9 +596,30 @@ func TestDownloadToFile_ErrorBodyUnreadable(t *testing.T) {
 		Body:       failingBody{},
 		Header:     http.Header{},
 	}}}
-	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid/x", nil)
-	_, err := DownloadToFile(context.Background(), client, req, 0)
+	req, err := http.NewRequest(http.MethodGet, "http://example.invalid/x", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = DownloadToFile(context.Background(), client, req, 0)
 	if err == nil || err.Error() != "HTTP 502: " {
 		t.Fatalf("err = %v, want HTTP 502 with no body", err)
 	}
+}
+
+// mustWrite writes b from a test handler, reporting a failure on t.
+func mustWrite(t *testing.T, w http.ResponseWriter, b []byte) {
+	t.Helper()
+	if _, err := w.Write(b); err != nil {
+		t.Errorf("write response: %v", err)
+	}
+}
+
+// dirEntries lists dir, failing the test when it cannot be read.
+func dirEntries(t *testing.T, dir string) []os.DirEntry {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
 }

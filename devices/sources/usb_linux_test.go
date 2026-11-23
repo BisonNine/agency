@@ -4,6 +4,7 @@ package sources
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,9 +18,7 @@ import (
 func TestParseUSBEvent(t *testing.T) {
 	base := func(extra map[string]string) map[string]string {
 		p := map[string]string{"SUBSYSTEM": "usb", "DEVTYPE": "usb_device"}
-		for k, v := range extra {
-			p[k] = v
-		}
+		maps.Copy(p, extra)
 		return p
 	}
 	tests := []struct {
@@ -76,7 +75,7 @@ func fakeUdevadm(t *testing.T, body, tail string) {
 	t.Helper()
 	dir := t.TempDir()
 	script := "#!/bin/sh\ncat <<'EOF'\n" + body + "EOF\n" + tail + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "udevadm"), []byte(script), 0o700); err != nil { //nolint:gosec // test helper script must be executable
+	if err := os.WriteFile(filepath.Join(dir, "udevadm"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+":/bin:/usr/bin")

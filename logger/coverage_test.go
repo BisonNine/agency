@@ -17,8 +17,7 @@ import (
 func messages(lines []map[string]any) []string {
 	out := make([]string, 0, len(lines))
 	for _, l := range lines {
-		s, _ := l["message"].(string)
-		out = append(out, s)
+		out = append(out, str(l["message"]))
 	}
 	return out
 }
@@ -84,7 +83,7 @@ func TestLoggerType_Methods(t *testing.T) {
 	if got := strings.Join(messages(lines), ","); got != want {
 		t.Fatalf("messages = %s, want %s", got, want)
 	}
-	if !strings.HasPrefix(lines[0]["caller"].(string), "alice") {
+	if !strings.HasPrefix(str(lines[0]["caller"]), "alice") {
 		t.Errorf("caller = %v, want the component first", lines[0]["caller"])
 	}
 	if len(*codes) != 1 {
@@ -129,9 +128,9 @@ func TestLoggerType_LogMapsLevels(t *testing.T) {
 		l.WithLevels(map[int]LogLevel{0: ERROR}).Log(0, 0, "mapped")
 		l.Log(int(INFO), 0, "unmapped")
 	})
-	got := []string{}
+	got := make([]string, 0, len(lines))
 	for _, line := range lines {
-		got = append(got, line["level"].(string)+":"+line["message"].(string))
+		got = append(got, str(line["level"])+":"+str(line["message"]))
 	}
 	want := "warn:plain warn,error:mapped,info:unmapped"
 	if strings.Join(got, ",") != want {
@@ -141,7 +140,7 @@ func TestLoggerType_LogMapsLevels(t *testing.T) {
 
 func TestParseLevel(t *testing.T) {
 	tests := map[string]LogLevel{
-		"debug": DEBUG, " DEBUG ": DEBUG, "warn": WARN, "warning": WARN,
+		"debug": DEBUG, "\tDEBUG\n": DEBUG, "warn": WARN, "warning": WARN,
 		"error": ERROR, "fatal": FATAL, "info": INFO, "": INFO, "loud": INFO,
 	}
 	for in, want := range tests {
@@ -186,7 +185,11 @@ func TestEnableFileLogging_Errors(t *testing.T) {
 		if err := os.Mkdir(ro, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+		t.Cleanup(func() {
+			if err := os.Chmod(ro, 0o700); err != nil {
+				t.Error(err)
+			}
+		})
 		if err := EnableFileLogging(filepath.Join(ro, "logs", "claw.log"), false); err == nil || !strings.Contains(err.Error(), "failed to create log directory") {
 			t.Errorf("log dir under a read-only dir: %v", err)
 		}
@@ -304,10 +307,10 @@ func TestSDKHandler_EmptyAttrsAndGroups(t *testing.T) {
 	// ungrouped.
 	h := SDK().Handler().WithAttrs(nil).WithGroup("")
 	lines := captureSDK(t, DEBUG, func() {
-		slog.New(h).Info("m",
-			slog.Attr{},                 // empty: ignored
-			slog.Group("g"),             // empty group: skipped
-			slog.Group("", "inline", 1), // keyless group: inlined
+		slog.New(h).LogAttrs(t.Context(), slog.LevelInfo, "m",
+			slog.Attr{},                           // empty: ignored
+			slog.Group("g"),                       // empty group: skipped
+			slog.Group("", slog.Int("inline", 1)), // keyless group: inlined
 		)
 	})
 	if len(lines) != 1 {
@@ -322,4 +325,12 @@ func TestSDKHandler_EmptyAttrsAndGroups(t *testing.T) {
 	if _, ok := lines[0][""]; ok {
 		t.Error("empty attribute produced a field")
 	}
+}
+
+// str is v as a string, or "" when it is not one.
+func str(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }

@@ -55,7 +55,11 @@ func TestLoad_MigrationWriteFails(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "rewrite") {
 		t.Fatalf("err = %v, want rewrite failure", err)
 	}

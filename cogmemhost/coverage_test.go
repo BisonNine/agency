@@ -30,7 +30,11 @@ func TestLoaderReadFailure(t *testing.T) {
 	if err := os.Chmod(p, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+	t.Cleanup(func() {
+		if err := os.Chmod(p, 0o600); err != nil {
+			t.Error(err)
+		}
+	})
 	_, err := NewLoader(testConfig(), "alice", ws)("files/locked.md", 100)
 	if err == nil || !strings.Contains(err.Error(), "cannot read files/locked.md") {
 		t.Fatalf("err = %v", err)
@@ -77,7 +81,11 @@ func TestPruneSnapshots_Errors(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Error(err)
+		}
+	})
 	removed, err := PruneSnapshots(dir, time.Now(), time.Hour)
 	if err == nil || len(removed) != 0 {
 		t.Errorf("read-only dir = %v, %v; want an error and nothing removed", removed, err)
