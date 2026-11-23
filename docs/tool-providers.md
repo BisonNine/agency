@@ -308,6 +308,7 @@ packages import only `tools`.
 | `RegisterSuite` | the same `Put`, with `Meta` marking the tool suite-exempt |
 | `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (entries as given, `SuiteExempt` in `Meta`), returning the removed count |
 | `Get`, `List`, `Count`, `Version`, `Snapshot`, `Subscribe` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version`, `Snapshot`, `Subscribe` |
+| `Catalog` | the catalogue itself, which a turn's SDK agent runs (`Spec.Tools`) |
 | `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
 | `GetDefinitions`, `GetSummaries` | `Listed()` |
 | `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `spawnllm.ToolDefinition` |
@@ -335,6 +336,11 @@ agent's allow checker from the context to exactly the tool that will run
 suite tool skips the allow list but not the deny list). It also puts the chat (`toolkit.WithChat`) and the agent id of the turn
 (`toolkit.WithAgentID`, which the toolspec bridge hands to handlers as
 `call.AgentID`) on the context, and runs it through the catalogue.
+
+A turn runs its calls on the catalogue through the SDK agent instead, with
+the same effect: `Spec.ToolContext` puts the chat and agent id on the call
+(`tools.CallContext`), then the allow checker and reply chat, and `Spec.Gate`
+is `tools.AllowGate` for the name the model called (`agent/turn_agent.go`).
 
 Changes are safe at any time, including mid-turn: a write is visible to the
 next read as soon as it returns, the next `ToolDefs` carries it, and a

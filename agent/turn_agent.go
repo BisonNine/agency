@@ -68,7 +68,13 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 			s.Sessions = inst.Sessions
 		}
 		if inst.Tools != nil {
-			s.Tools = agentTools{r: inst.Tools}
+			s.Tools = inst.Tools.Catalog()
+			// The host's per-call grant check, on the exact tool the call
+			// resolved to; a refusal names the tool as the model called it.
+			s.Gate = func(ctx context.Context, info toolkit.Info) *toolkit.Result {
+				call, _ := hook.ToolCallFrom(ctx)
+				return tools.AllowGate(call.Name)(ctx, info)
+			}
 		}
 		s.Temperature = inst.Temperature
 		s.RepeatHint = fileEditRepeatHint
@@ -144,11 +150,15 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 			}
 			return al.promptLayers(inst, *t.opts)
 		}
+		// Every call carries who it is for (the turn's chat, none without a
+		// host turn, and the agent id); a turn's call also its allow checker
+		// and reply chat. The gate and the tool run on this context.
 		s.ToolContext = func(ctx context.Context, _ hook.ToolCall) context.Context {
 			t := hostTurnOf(ctx)
 			if t == nil {
-				return nil
+				return tools.CallContext(ctx, "", "")
 			}
+			ctx = tools.CallContext(ctx, t.opts.Channel, t.opts.ChatID)
 			ctx = tools.WithToolAllowChecker(ctx, inst.Config)
 			return tools.WithReplyChat(ctx, tools.ReplyChat{Channel: t.opts.Channel, ChatID: t.opts.ChatID})
 		}
@@ -182,24 +192,3 @@ func (r sessionRef) manager() (ctxengine.ContextManager, func()) {
 
 // errNoTurnSession ends a run given no session context (withHostTurn).
 var errNoTurnSession = errors.New("no session context for the turn")
-
-// agentTools is an instance's tool registry as the SDK agent runs it: the
-// catalogue's snapshot and version, and each call through the registry's
-// own execution (its allow gate, the chat and the agent id on the call),
-// for the chat of the turn on the call's context.
-type agentTools struct{ r *tools.ToolRegistry }
-
-var _ toolkit.Registry = agentTools{}
-
-func (t agentTools) Snapshot() *toolkit.Snapshot { return t.r.Snapshot() }
-func (t agentTools) Version() uint64             { return t.r.Version() }
-
-func (t agentTools) Subscribe(fn func(toolkit.Change)) func() { return t.r.Subscribe(fn) }
-
-func (t agentTools) Execute(ctx context.Context, name string, args map[string]any, cb toolkit.AsyncCallback) *toolkit.Result {
-	var channel, chatID string
-	if ht := hostTurnOf(ctx); ht != nil {
-		channel, chatID = ht.opts.Channel, ht.opts.ChatID
-	}
-	return t.r.ExecuteWithContext(ctx, name, args, channel, chatID, cb)
-}

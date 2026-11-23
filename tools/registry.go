@@ -172,6 +172,13 @@ func (r *ToolRegistry) Snapshot() *toolkit.Snapshot {
 	return r.cat.Snapshot()
 }
 
+// Catalog is the catalogue the registry wraps, for a caller that runs it
+// itself (the SDK agent of a turn). A call run on it directly is not gated:
+// the caller applies AllowGate and CallContext, as ExecuteWithContext does.
+func (r *ToolRegistry) Catalog() *toolkit.Catalog {
+	return r.cat
+}
+
 // Subscribe registers fn for the catalogue's change notices, so the
 // registry can stand as a toolkit.Registry.
 func (r *ToolRegistry) Subscribe(fn func(toolkit.Change)) (unsubscribe func()) {
@@ -202,7 +209,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 // The tool can tell such a call by IsUnattended.
 func (r *ToolRegistry) ExecuteUnattended(ctx context.Context, name string, args map[string]any) (string, error) {
 	ctx = withUnattended(withCallAgent(toolkit.WithChat(ctx, "", "")))
-	return r.cat.ExecuteUnattendedGated(ctx, name, args, allowGate(name))
+	return r.cat.ExecuteUnattendedGated(ctx, name, args, AllowGate(name))
 }
 
 // withCallAgent puts the agent the host's turn runs for (spawnllm's key) on
@@ -211,7 +218,7 @@ func withCallAgent(ctx context.Context) context.Context {
 	return toolkit.WithAgentID(ctx, spawnllm.AgentIDFromContext(ctx))
 }
 
-// allowGate is the host's per-call grant check, run by the catalogue on the
+// AllowGate is the host's per-call grant check, run by the catalogue on the
 // exact tool a call resolved to (name is the name the caller used). It is
 // defense in depth over registration: the agent's allow checker on the
 // context refuses a tool it denies, and one it does not allow unless the
@@ -219,7 +226,7 @@ func withCallAgent(ctx context.Context) context.Context {
 // per-agent suite flag at registration). The check uses the internal name,
 // so MCP tools route to the mcp_tools allow-list even when called by their
 // bare ExternalName. With no checker on the context every tool may run.
-func allowGate(name string) toolkit.Gate {
+func AllowGate(name string) toolkit.Gate {
 	return func(ctx context.Context, info toolkit.Info) *toolkit.Result {
 		checker := ToolAllowCheckerFromCtx(ctx)
 		if checker == nil {
@@ -247,10 +254,10 @@ func CallContext(ctx context.Context, channel, chatID string) context.Context {
 	return withCallAgent(toolkit.WithChat(ctx, channel, chatID))
 }
 
-// CallGate is the per-call grant check ExecuteWithContext runs (allowGate),
+// CallGate is the per-call grant check ExecuteWithContext runs (AllowGate),
 // for a caller that executes the exact tool through a View of the registry.
 func CallGate(ctx context.Context, info toolkit.Info) *toolkit.Result {
-	return allowGate(info.Name)(ctx, info)
+	return AllowGate(info.Name)(ctx, info)
 }
 
 // ExecuteWithContext executes a registered tool, hidden by discovery or not,
@@ -270,7 +277,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 	// bridged toolspec tools the agent id. Always set — tools validate what
 	// they require.
 	ctx = withCallAgent(toolkit.WithChat(ctx, channel, chatID))
-	return r.cat.ExecuteGated(ctx, name, args, asyncCallback, allowGate(name))
+	return r.cat.ExecuteGated(ctx, name, args, asyncCallback, AllowGate(name))
 }
 
 // GetDefinitions returns the schemas of the core tools (those not hidden by

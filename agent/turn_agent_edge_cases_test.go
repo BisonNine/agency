@@ -10,6 +10,7 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/loop"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
@@ -47,8 +48,14 @@ func TestTurnAgent_SpecWithoutHostTurn(t *testing.T) {
 	if layers := s.InstructionLayers(ctx); layers != nil {
 		t.Fatalf("InstructionLayers = %v, want none", layers)
 	}
-	if got := s.ToolContext(ctx, hook.ToolCall{Name: "x"}); got != nil {
-		t.Fatalf("ToolContext = %v, want none", got)
+	// A call without a host turn carries the agent id, an empty chat and no
+	// allow checker.
+	callCtx := s.ToolContext(spawnllm.WithAgentID(ctx, "alice"), hook.ToolCall{Name: "x"})
+	if callCtx == nil || toolkit.AgentID(callCtx) != "alice" || toolkit.Channel(callCtx) != "" || toolkit.ChatID(callCtx) != "" {
+		t.Fatalf("ToolContext = %v, want the agent id and the empty chat", callCtx)
+	}
+	if tools.ToolAllowCheckerFromCtx(callCtx) != nil {
+		t.Fatal("ToolContext set an allow checker without a host turn")
 	}
 	s.AsyncResult(ctx, hook.ToolCall{Name: "x"}, toolkit.Info{}, &toolkit.Result{ForLLM: "late"})
 	if _, err := s.Session(ctx, hook.Scope{}); !errors.Is(err, errNoTurnSession) {
@@ -64,10 +71,11 @@ func TestTurnAgent_SpecWithoutHostTurn(t *testing.T) {
 	}
 }
 
-// The agent's tool registry reports its version and changes.
+// The agent's tools are the registry's catalogue: its version and changes
+// are the registry's.
 func TestTurnAgent_ToolsVersionAndSubscribe(t *testing.T) {
 	r := tools.NewToolRegistry()
-	at := agentTools{r: r}
+	at := r.Catalog()
 	before := at.Version()
 	changes := make(chan toolkit.Change, 4)
 	stop := at.Subscribe(func(c toolkit.Change) { changes <- c })
