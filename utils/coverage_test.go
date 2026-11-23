@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -87,6 +88,11 @@ func TestRegisteredDomain(t *testing.T) {
 		"a.b.example.co":  "example.co",
 		"example.com":     "example.com",
 		"localhost":       "localhost",
+		// An IP address is its own site.
+		"10.0.0.1":    "10.0.0.1",
+		"192.168.0.1": "192.168.0.1",
+		"2001:db8::1": "2001:db8::1",
+		"::1":         "::1",
 	}
 	for in, want := range tests {
 		if got := registeredDomain(in); got != want {
@@ -622,4 +628,31 @@ func dirEntries(t *testing.T, dir string) []os.DirEntry {
 		t.Fatal(err)
 	}
 	return entries
+}
+
+// A redirect between two IP addresses never carries the Authorization header,
+// even when their last two octets match (127.0.0.1 and 127.1.0.1).
+func TestDownloadFile_RedirectBetweenIPsDropsAuthorization(t *testing.T) {
+	useMediaDir(t, 0, 0)
+	lnB, err := net.Listen("tcp", "127.1.0.1:0")
+	if err != nil {
+		t.Skipf("cannot listen on 127.1.0.1: %v", err)
+	}
+	var gotAuth atomic.Value
+	b := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth.Store(r.Header.Get("Authorization"))
+		mustWrite(t, w, []byte("data"))
+	}))
+	b.Listener = lnB
+	b.Start()
+	defer b.Close()
+	a := httptest.NewServer(http.RedirectHandler(b.URL+"/file", http.StatusFound))
+	defer a.Close()
+
+	if path := DownloadFile(a.URL, "f.bin", DownloadOptions{ExtraHeaders: map[string]string{"Authorization": "Bearer t"}}); path == "" {
+		t.Fatal("download failed")
+	}
+	if got := gotAuth.Load(); got != "" {
+		t.Errorf("Authorization at the second IP = %q, want none", got)
+	}
 }

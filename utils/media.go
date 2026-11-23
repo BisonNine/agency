@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -285,8 +286,13 @@ func DownloadFileSimple(url, filename string) string {
 
 // registeredDomain returns the registered domain (last two labels) of a hostname.
 // Used by CheckRedirect to decide whether to forward auth headers across a redirect.
-// Examples: "files.slack.com" → "slack.com", "example.com" → "example.com".
+// Examples: "files.slack.com" → "slack.com", "example.com" → "example.com",
+// "10.0.0.1" → "10.0.0.1".
 func registeredDomain(hostname string) string {
+	// An IP address is its own site: two different addresses never share one.
+	if ip := net.ParseIP(hostname); ip != nil {
+		return ip.String()
+	}
 	parts := strings.Split(hostname, ".")
 	if len(parts) <= 2 {
 		return hostname
