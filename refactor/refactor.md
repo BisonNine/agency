@@ -1650,14 +1650,12 @@ next session must know.
       (`tests/toollist`, `agent/discovery_toollist_test.go`). Agent
       construction now takes a context (`agentreg.BuildFunc`,
       `NewAgentLoop`).
-- [ ] Known bug, pre-existing since Maestro 0.5.7, found by a flaky
-      test (`TestIntegration_ModelHintAndPermanentFailure`): Maestro
-      deletes a taskset's lock file after a dispatch, so a call right
-      after the completion notice can fail with "failed to create lock
-      file". Fix belongs in Maestro (`runner/runner.go`
-      `runDispatchExecution`, `tasks/tasksets.go`
-      `RemoveTaskSetLock`); waiting for the maintainer's go-ahead.
-- [ ] Phase 5 groundwork: `hook` and `ident` landed in the SDK
+- [x] Bug, pre-existing since Maestro 0.5.7, found by a flaky test
+      (`TestIntegration_ModelHintAndPermanentFailure`): Maestro deleted a
+      taskset's lock file after a dispatch, so a call right after the
+      completion notice could fail with "failed to create lock file".
+      Fixed in Maestro (1d2ea01); host pins it (52e17bd).
+- [x] Phase 5 groundwork: `hook` and `ident` landed in the SDK
       (765f25e). `hook/DESIGN.md` there is the brief for 5a and holds
       the open questions for the maintainer.
 - [x] Phase 5a: callbacks and events in place (host 2570d57, 3f98aad;
