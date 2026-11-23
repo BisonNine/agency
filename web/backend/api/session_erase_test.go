@@ -117,3 +117,39 @@ func TestHandleEraseSessions_Failures(t *testing.T) {
 		t.Fatalf("broken config = %d %q", rec.Code, rec.Body.String())
 	}
 }
+
+// When some archives cannot be read the readable ones are still erased, and
+// the error says how many were.
+func TestHandleEraseSessions_PartialErase(t *testing.T) {
+	configPath := setupTestEnv(t)
+	dir := sessionsTestDir(t, configPath)
+	const mine, theirs = "agent:main:telegram:direct:555", "agent:main:telegram:direct:777"
+	seedSession(t, dir, mine, "", spawnllm.Message{Role: "user", Content: "erase me"})
+	seedSession(t, dir, theirs, "", spawnllm.Message{Role: "user", Content: "keep me"})
+	broken := memory.ArchivePath(dir, "agent:main:telegram:direct:999")
+	if err := os.WriteFile(broken, []byte("not a database, not a database, not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/sessions?channel=telegram&chat_id=555", nil))
+	if rec.Code != http.StatusInternalServerError ||
+		rec.Body.String() != "Erased 1 session(s); some session archives could not be read.\n" {
+		t.Fatalf("partial erase = %d %q", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(memory.ArchivePath(dir, mine)); !os.IsNotExist(err) {
+		t.Fatalf("readable session not erased: %v", err)
+	}
+	if _, err := os.Stat(memory.ArchivePath(dir, theirs)); err != nil {
+		t.Fatalf("other sender's session removed: %v", err)
+	}
+
+	// Nothing of the sender's readable: the plain failure text.
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/api/sessions?channel=telegram&chat_id=555", nil))
+	if rec.Code != http.StatusInternalServerError || rec.Body.String() != "failed to erase sessions\n" {
+		t.Fatalf("nothing erased = %d %q", rec.Code, rec.Body.String())
+	}
+}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -65,7 +66,12 @@ func (h *Handler) handleEraseSessions(w http.ResponseWriter, r *http.Request) {
 		logger.WarnCF("api", "session erase failed", map[string]any{
 			"channel": req.Channel, "chat_id": req.ChatID, "erased": len(rep.Erased), "error": err.Error(),
 		})
-		http.Error(w, "failed to erase sessions", http.StatusInternalServerError)
+		msg := "failed to erase sessions"
+		if n := len(rep.Erased); n > 0 {
+			// Readable sessions were erased beside the unreadable ones; say so.
+			msg = fmt.Sprintf("Erased %d session(s); some session archives could not be read.", n)
+		}
+		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
 	logger.InfoCF("api", "sessions erased for sender", map[string]any{
