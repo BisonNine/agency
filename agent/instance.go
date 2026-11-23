@@ -49,7 +49,7 @@ type AgentInstance struct {
 	MaxIterations int
 	MaxTokens     int
 	Temperature   *float64 // nil: no temperature is sent, the model default applies
-	ThinkingLevel ThinkingLevel
+	ThinkingLevel modelspec.ThinkingLevel
 	NoTools       bool
 	ContextWindow int
 	// modelLimits are the limits of each model in chatModels, by model_name:
@@ -480,7 +480,7 @@ type runLimits struct {
 	maxTokens     int
 	temperature   *float64 // nil: send none, the model's own default applies
 	contextWindow int
-	thinkingLevel ThinkingLevel
+	thinkingLevel modelspec.ThinkingLevel
 	noTools       bool
 }
 
