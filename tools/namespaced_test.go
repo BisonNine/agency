@@ -5,28 +5,29 @@ import (
 	"fmt"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 )
 
 // fakeGlobalProvider returns bare-named tools for bridge testing.
 type fakeGlobalProvider struct{}
 
-func (fakeGlobalProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
-	return []global.ToolDefinition{
+func (fakeGlobalProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
+	return []toolspec.ToolDefinition{
 		{
 			Name:        "read",
 			Description: "read a thing",
-			Parameters: []global.Parameter{
+			Parameters: []toolspec.Parameter{
 				{Name: "path", Type: "string", Required: true, Description: "the path"},
 			},
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				path, ok := call.Args["path"].(string)
 				if !ok {
 					return nil, fmt.Errorf("path is %T, want string", call.Args["path"])
 				}
-				return &global.Result{ForLLM: "read:" + path + " sess=" + call.Session}, nil
+				return &toolspec.Result{ForLLM: "read:" + path + " sess=" + call.Session}, nil
 			},
 		},
 		{
@@ -34,11 +35,11 @@ func (fakeGlobalProvider) RegisterTools(deps global.Deps) []global.ToolDefinitio
 			Description:   "watch a thing",
 			SessionScoped: true,
 			Async:         true,
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if call.Notify != nil {
-					call.Notify(&global.Result{ForLLM: "done"})
+					call.Notify(&toolspec.Result{ForLLM: "done"})
 				}
-				return &global.Result{ForLLM: "started", Async: true}, nil
+				return &toolspec.Result{ForLLM: "started", Async: true}, nil
 			},
 		},
 	}
@@ -145,10 +146,10 @@ func TestNamespacedProvider_Describe(t *testing.T) {
 // allowed, and one that leaves DefaultAllow unset.
 type denyByDefaultProvider struct{}
 
-func (denyByDefaultProvider) RegisterTools(global.Deps) []global.ToolDefinition {
-	handler := func(*global.ToolCall) (*global.Result, error) { return &global.Result{ForLLM: "ok"}, nil }
-	return []global.ToolDefinition{
-		{Name: "purge", Description: "purge a thing", DefaultAllow: global.Allow(false), Handler: handler},
+func (denyByDefaultProvider) RegisterTools(toolspec.Deps) []toolspec.ToolDefinition {
+	handler := func(*toolspec.ToolCall) (*toolspec.Result, error) { return &toolspec.Result{ForLLM: "ok"}, nil }
+	return []toolspec.ToolDefinition{
+		{Name: "purge", Description: "purge a thing", DefaultAllow: toolspec.Allow(false), Handler: handler},
 		{Name: "probe", Description: "probe a thing", Handler: handler},
 	}
 }

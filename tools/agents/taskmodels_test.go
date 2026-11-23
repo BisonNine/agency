@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
@@ -51,7 +53,7 @@ func newTaskSpawner(t *testing.T, runner TaskModelRunner) (*Spawner, string) {
 	return NewSpawner(mgr), ws
 }
 
-func mustSpawn(t *testing.T, sp *Spawner, ctx context.Context, req global.SpawnRequest) *global.Result {
+func mustSpawn(t *testing.T, sp *Spawner, ctx context.Context, req global.SpawnRequest) *toolspec.Result {
 	t.Helper()
 	res, err := sp.Spawn(ctx, req)
 	if err != nil || res == nil {
@@ -118,10 +120,10 @@ func TestSpawnTask_WaitError(t *testing.T) {
 func TestSpawnTask_Callback(t *testing.T) {
 	runner := &fakeTaskRunner{res: &TaskModelResult{Model: "tts-1", Paths: []string{"files/generated/d/speech-1.mp3"}}}
 	sp, _ := newTaskSpawner(t, runner)
-	done := make(chan *global.Result, 1)
+	done := make(chan *toolspec.Result, 1)
 	ack := mustSpawn(t, sp, context.Background(), global.SpawnRequest{
 		Mode: global.SpawnCallback, Kind: "tts", Task: "Hello Bob", Name: "greet", Voice: "nova", Format: "mp3",
-		OnResult: func(r *global.Result) { done <- r },
+		OnResult: func(r *toolspec.Result) { done <- r },
 	})
 	if ack == nil || !ack.Async || !strings.Contains(ack.ForLLM, "kind tts") {
 		t.Fatalf("ack = %+v", ack)
@@ -263,10 +265,10 @@ func (p *panicRunner) Run(context.Context, string, string, TaskModelRequest) (*T
 // task-model call, reported like one.
 func TestSpawnTask_CallbackPanicFinalizesAsTask(t *testing.T) {
 	sp, _ := newTaskSpawner(t, &panicRunner{})
-	done := make(chan *global.Result, 1)
+	done := make(chan *toolspec.Result, 1)
 	ack := mustSpawn(t, sp, context.Background(), global.SpawnRequest{
 		Mode: global.SpawnCallback, Kind: "text", Task: "x", Name: "p",
-		OnResult: func(r *global.Result) { done <- r },
+		OnResult: func(r *toolspec.Result) { done <- r },
 	})
 	select {
 	case r := <-done:

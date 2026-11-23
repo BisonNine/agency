@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/toolspec"
 	mconfig "go.bison9.com/maestro/config"
 	mlogging "go.bison9.com/maestro/logging"
 	mmaestro "go.bison9.com/maestro/pkg/maestro"
@@ -38,7 +39,7 @@ func (globalMaestroProvider) Available(cfg any) (bool, string) { return true, ""
 // `maestro` flag (default off), not the per-tool allowlist.
 func (globalMaestroProvider) Suite() string { return "maestro" }
 
-func (globalMaestroProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalMaestroProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	c, ok := deps.Cfg.(*config.Config)
 	var cd tools.ToolDeps
 	if v, hostOK := deps.Host.(tools.ToolDeps); hostOK {
@@ -142,7 +143,7 @@ func (globalMaestroProvider) RegisterTools(deps global.Deps) []global.ToolDefini
 			disp, mcfg, mlog)
 	}
 	p := &mmaestro.Provider{}
-	defs := p.RegisterTools(global.Deps{
+	defs := p.RegisterTools(toolspec.Deps{
 		Cfg:       mcfg,
 		AgentID:   deps.AgentID,
 		Workspace: workspace,

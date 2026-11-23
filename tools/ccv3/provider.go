@@ -10,8 +10,9 @@
 package ccv3
 
 import (
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 )
 
 // Suite is the suite's name: the per-agent switch (`ccv3`) and the tool's
@@ -36,7 +37,7 @@ func (globalCCv3Provider) Suite() string { return Suite }
 // RegisterTools returns the ccv3 tool when the agent's switch is on. A clone
 // acts as its source (deps.AgentID), so a clone of an agent with the switch,
 // a forum participant included, has the tool.
-func (globalCCv3Provider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalCCv3Provider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	c, ok := deps.Cfg.(*config.Config)
 	if !ok || c == nil {
 		// Enumeration pass: the suite is one toggle, not catalogue entries.
@@ -45,5 +46,5 @@ func (globalCCv3Provider) RegisterTools(deps global.Deps) []global.ToolDefinitio
 	if !c.AgentSuiteEnabled(deps.AgentID, Suite) {
 		return nil
 	}
-	return []global.ToolDefinition{definition(&tool{cfg: c, agentID: deps.AgentID})}
+	return []toolspec.ToolDefinition{definition(&tool{cfg: c, agentID: deps.AgentID})}
 }

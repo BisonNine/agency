@@ -10,8 +10,9 @@
 package common
 
 import (
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
@@ -23,7 +24,7 @@ var GlobalProvider globalCommonProvider
 
 type globalCommonProvider struct{}
 
-// Namespace/Description/Available satisfy global.HostMeta.
+// Namespace/Description/Available satisfy toolspec.HostMeta.
 func (globalCommonProvider) Namespace() string { return "common" }
 
 func (globalCommonProvider) Description() string {
@@ -32,7 +33,7 @@ func (globalCommonProvider) Description() string {
 
 func (globalCommonProvider) Available(cfg any) (bool, string) { return true, "" }
 
-func (globalCommonProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalCommonProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	var (
 		cd tools.ToolDeps
 		c  *config.Config
@@ -60,14 +61,14 @@ func (globalCommonProvider) RegisterTools(deps global.Deps) []global.ToolDefinit
 		commonModes = c.PermissionModes(config.AreaCommon)
 	}
 
-	return []global.ToolDefinition{
+	return []toolspec.ToolDefinition{
 		{
 			Name:         "list",
 			Description:  "List files in the shared common directory (optionally under a subdir).",
 			RawSchema:    listSchema,
 			Category:     "common",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return listCommon(commonDir, call.Args), nil
 			},
 		},
@@ -76,8 +77,8 @@ func (globalCommonProvider) RegisterTools(deps global.Deps) []global.ToolDefinit
 			Description:  "Copy a file from the shared common directory into this agent's workspace files/ directory.",
 			RawSchema:    getSchema,
 			Category:     "common",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return getCommon(commonDir, workspace, workspaceModes, call.Args), nil
 			},
 		},
@@ -86,8 +87,8 @@ func (globalCommonProvider) RegisterTools(deps global.Deps) []global.ToolDefinit
 			Description:  "Copy a file from this agent's workspace into the shared common directory.",
 			RawSchema:    putSchema,
 			Category:     "common",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return putCommon(commonDir, workspace, commonModes, call.Args), nil
 			},
 		},
@@ -98,8 +99,8 @@ func (globalCommonProvider) RegisterTools(deps global.Deps) []global.ToolDefinit
 			Description:  "Delete a file from the shared common directory.",
 			RawSchema:    deleteSchema,
 			Category:     "common",
-			DefaultAllow: global.Allow(false),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(false),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return deleteCommon(commonDir, call.Args), nil
 			},
 		},

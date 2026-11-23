@@ -13,25 +13,26 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
-// newDeps builds a global.Deps with a config whose common dir is commonDir and a
+// newDeps builds a toolspec.Deps with a config whose common dir is commonDir and a
 // ToolDeps for an agent rooted at workspace with the given per-agent config.
-func newDeps(t *testing.T, commonDir, workspace string, agentCfg *config.AgentConfig) global.Deps {
+func newDeps(t *testing.T, commonDir, workspace string, agentCfg *config.AgentConfig) toolspec.Deps {
 	t.Helper()
 	cfg := &config.Config{}
 	cfg.Agents.CommonDir = commonDir
-	return global.Deps{
+	return toolspec.Deps{
 		Cfg:  cfg,
 		Host: tools.ToolDeps{Workspace: workspace, AgentCfg: agentCfg},
 	}
 }
 
 // findTool returns the named bare tool definition, or fails.
-func findTool(t *testing.T, defs []global.ToolDefinition, name string) global.ToolDefinition {
+func findTool(t *testing.T, defs []toolspec.ToolDefinition, name string) toolspec.ToolDefinition {
 	t.Helper()
 	for _, d := range defs {
 		if d.Name == name {
@@ -39,12 +40,12 @@ func findTool(t *testing.T, defs []global.ToolDefinition, name string) global.To
 		}
 	}
 	t.Fatalf("tool %q not registered", name)
-	return global.ToolDefinition{}
+	return toolspec.ToolDefinition{}
 }
 
-func call(t *testing.T, d global.ToolDefinition, args map[string]any) *global.Result {
+func call(t *testing.T, d toolspec.ToolDefinition, args map[string]any) *toolspec.Result {
 	t.Helper()
-	res, err := d.Handler(&global.ToolCall{Ctx: context.Background(), Args: args})
+	res, err := d.Handler(&toolspec.ToolCall{Ctx: context.Background(), Args: args})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}

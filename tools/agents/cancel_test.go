@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
@@ -249,8 +250,8 @@ func TestCancelAllTasks(t *testing.T) {
 func TestCancelTool(t *testing.T) {
 	f := newCancelFixture(t)
 	sp := NewSpawner(f.mgr)
-	var cancel global.ToolDefinition
-	deps := global.Deps{Spawn: sp, Host: tools.ToolDeps{Cfg: &config.Config{}}}
+	var cancel toolspec.ToolDefinition
+	deps := toolspec.Deps{Spawn: sp, Host: tools.ToolDeps{Cfg: &config.Config{}}}
 	for _, d := range GlobalProvider.RegisterTools(deps) {
 		if d.Name == "cancel" {
 			cancel = d
@@ -259,9 +260,9 @@ func TestCancelTool(t *testing.T) {
 	if cancel.Handler == nil {
 		t.Fatal("agent_cancel is not built")
 	}
-	call := func(args map[string]any) *global.Result {
+	call := func(args map[string]any) *toolspec.Result {
 		t.Helper()
-		res, err := cancel.Handler(&global.ToolCall{Ctx: context.Background(), Args: args})
+		res, err := cancel.Handler(&toolspec.ToolCall{Ctx: context.Background(), Args: args})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -291,7 +292,7 @@ func TestCancelTool(t *testing.T) {
 // agent_cancel is never in the catalogue's tool list: it comes with
 // agent_spawn.
 func TestCancelTool_NotEnumerated(t *testing.T) {
-	for _, d := range GlobalProvider.RegisterTools(global.Deps{}) {
+	for _, d := range GlobalProvider.RegisterTools(toolspec.Deps{}) {
 		if d.Name == "cancel" {
 			t.Fatal("agent_cancel enumerated without an agent")
 		}

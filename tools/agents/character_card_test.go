@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/global"
 )
 
@@ -44,7 +46,7 @@ func TestSpawn_CharacterCardReachesRunFull(t *testing.T) {
 	done := make(chan struct{})
 	res, err := sp.Spawn(context.Background(), global.SpawnRequest{
 		Mode: global.SpawnCallback, Name: "bg", Task: "t", CharacterCard: "sherlock",
-		OnResult: func(*global.Result) { close(done) },
+		OnResult: func(*toolspec.Result) { close(done) },
 	})
 	if err != nil || res.IsError {
 		t.Fatalf("callback spawn with a card: %v %+v", err, res)

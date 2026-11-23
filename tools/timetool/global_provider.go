@@ -4,7 +4,8 @@
 package timetool
 
 import (
-	"go.bison9.com/agency/global"
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/tools"
 )
 
@@ -20,9 +21,9 @@ func (globalTimeProvider) Description() string { return "Current date, time, and
 
 func (globalTimeProvider) Available(_ any) (bool, string) { return true, "" }
 
-func (globalTimeProvider) RegisterTools(_ global.Deps) []global.ToolDefinition {
+func (globalTimeProvider) RegisterTools(_ toolspec.Deps) []toolspec.ToolDefinition {
 	now := NewNowTool()
-	return []global.ToolDefinition{
+	return []toolspec.ToolDefinition{
 		{
 			Name:        now.Name(),
 			Description: now.Description(),
@@ -32,8 +33,8 @@ func (globalTimeProvider) RegisterTools(_ global.Deps) []global.ToolDefinition {
 			// prompt points the model here for the time. Withholding the tool
 			// while telling the model to use it is the one combination that
 			// leaves it unable to answer a question about the current time.
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(now.Execute(call.Ctx, call.Args)), nil
 			},
 		},

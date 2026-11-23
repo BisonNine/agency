@@ -7,8 +7,9 @@ import (
 	"slices"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 )
 
 // TestProvider_GatingOff verifies the per-agent gate: an agent without the fusion
@@ -19,12 +20,12 @@ func TestProvider_GatingOff(t *testing.T) {
 		{ID: "bob"}, // fusion off
 	}}}
 
-	if got := GlobalProvider.RegisterTools(global.Deps{Cfg: cfg, AgentID: "bob"}); got != nil {
+	if got := GlobalProvider.RegisterTools(toolspec.Deps{Cfg: cfg, AgentID: "bob"}); got != nil {
 		t.Errorf("bob (fusion off) should get no tools, got %d", len(got))
 	}
 
 	// Enumeration pass: no live config.
-	if got := GlobalProvider.RegisterTools(global.Deps{AgentID: "bob"}); got != nil {
+	if got := GlobalProvider.RegisterTools(toolspec.Deps{AgentID: "bob"}); got != nil {
 		t.Errorf("enumeration pass should return nil, got %d", len(got))
 	}
 }
@@ -45,14 +46,14 @@ func TestProvider_Metadata(t *testing.T) {
 // on with no entry yields none, a service entry yields that service, a group
 // entry yields that group.
 func TestAllowedDefs(t *testing.T) {
-	defs := []global.ToolDefinition{
+	defs := []toolspec.ToolDefinition{
 		{Name: "wxca_city_get"},
 		{Name: "wxca_city_hourly"},
 		{Name: "microsoft365_calendar_read_summary"},
 		{Name: "microsoft365_mail_search"},
 		{Name: "google_auth_setup"},
 	}
-	names := func(ds []global.ToolDefinition) []string {
+	names := func(ds []toolspec.ToolDefinition) []string {
 		out := make([]string, 0, len(ds))
 		for _, d := range ds {
 			out = append(out, d.Name)

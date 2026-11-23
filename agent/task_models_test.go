@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
@@ -778,8 +780,8 @@ func TestTaskModelHost_ResultShapeEveryKind(t *testing.T) {
 
 		cb := tc.req
 		cb.Mode, cb.Name = global.SpawnCallback, "c-"+tc.req.Kind
-		done := make(chan *global.Result, 1)
-		cb.OnResult = func(r *global.Result) { done <- r }
+		done := make(chan *toolspec.Result, 1)
+		cb.OnResult = func(r *toolspec.Result) { done <- r }
 		if ack, err := sp.Spawn(context.Background(), cb); err != nil || !ack.Async {
 			t.Fatalf("%s callback ack = %+v, %v", tc.req.Kind, ack, err)
 		}

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/global"
 )
 
@@ -105,7 +107,7 @@ func TestDepthPropagation_AcrossAsyncDetach(t *testing.T) {
 	// which this fake runFull stands in for).
 	if _, err := sp.Spawn(WithSpawnDepth(context.Background(), 2), global.SpawnRequest{
 		Mode: global.SpawnCallback, Name: "n", Task: "t",
-		OnResult: func(*global.Result) { close(finished) },
+		OnResult: func(*toolspec.Result) { close(finished) },
 	}); err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}

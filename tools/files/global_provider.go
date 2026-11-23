@@ -6,8 +6,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
@@ -22,13 +23,13 @@ var GlobalProvider globalFilesProvider
 
 type globalFilesProvider struct{}
 
-// Namespace/Description/Available satisfy global.HostMeta.
+// Namespace/Description/Available satisfy toolspec.HostMeta.
 func (globalFilesProvider) Namespace() string   { return "file" }
 func (globalFilesProvider) Description() string { return "File read/write/list/edit operations" }
 
 func (globalFilesProvider) Available(cfg any) (bool, string) { return true, "" }
 
-func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalFilesProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	// Construct the real tool instances only when real config is present.
 	// Enumeration (Describe) passes a zero Deps; handlers are never called then,
 	// so leaving the instances nil is safe.
@@ -131,18 +132,18 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 
 	// rangeDef builds a ToolDefinition for one range-edit tool. The handler closes
 	// over rangeTools[key]; schema/description use a config-free probe instance.
-	rangeDef := func(op, unit string) global.ToolDefinition {
+	rangeDef := func(op, unit string) toolspec.ToolDefinition {
 		key := op + "_" + unit
 		probe := &rangeEditTool{op: op, unit: unit}
-		return global.ToolDefinition{
+		return toolspec.ToolDefinition{
 			Name:        key, // namespace "file" → file_<op>_<unit>
 			Description: probe.Description(),
 			RawSchema:   probe.Parameters(),
 			Category:    "filesystem",
 			// Byte-addressed edit tools are edge-case; most assistants work in text
 			// (line-addressed). Default them off, enableable per agent.
-			DefaultAllow: global.Allow(unit != "bytes"),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(unit != "bytes"),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				rt := rangeTools[key]
 				if rt == nil {
 					return tools.ResultToGlobal(tools.ErrorResult("file edit is not available")), nil
@@ -152,15 +153,15 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 		}
 	}
 
-	return []global.ToolDefinition{
+	return []toolspec.ToolDefinition{
 		{
 			Name:        "read_bytes",
 			Description: (&ReadFileTool{lineMode: false}).Description(),
 			RawSchema:   readBytesSchema,
 			Category:    "filesystem",
 			// Edge-case; file_read_lines is the default. Enableable per agent.
-			DefaultAllow: global.Allow(false),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(false),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(readBytes.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -169,8 +170,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&ReadFileTool{lineMode: true}).Description(),
 			RawSchema:    readLinesSchema,
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(readLines.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -179,8 +180,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&CountFileTool{}).Description(),
 			RawSchema:    (&CountFileTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(count.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -189,8 +190,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&ViewImageTool{}).Description(),
 			RawSchema:    (&ViewImageTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(viewImage.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -199,8 +200,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&WriteFileTool{}).Description(),
 			RawSchema:    (&WriteFileTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(write.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -209,8 +210,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&ListDirTool{}).Description(),
 			RawSchema:    (&ListDirTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(list.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -219,8 +220,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&SearchFilesTool{byteMode: false}).Description(),
 			RawSchema:    (&SearchFilesTool{byteMode: false}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if searchLines == nil {
 					return tools.ResultToGlobal(tools.ErrorResult("file search is not available")), nil
 				}
@@ -233,8 +234,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			RawSchema:   (&GlobTool{}).Parameters(),
 			Category:    "filesystem",
 			// Part of the coding tools; not in the default set.
-			DefaultAllow: global.Allow(false),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(false),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if glob == nil {
 					return tools.ResultToGlobal(tools.ErrorResult("file glob is not available")), nil
 				}
@@ -247,8 +248,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			RawSchema:   (&SearchFilesTool{byteMode: true}).Parameters(),
 			Category:    "filesystem",
 			// Edge-case; file_search_lines is the default. Enableable per agent.
-			DefaultAllow: global.Allow(false),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(false),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if searchBytes == nil {
 					return tools.ResultToGlobal(tools.ErrorResult("file search is not available")), nil
 				}
@@ -260,8 +261,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&EditFileTool{}).Description(),
 			RawSchema:    (&EditFileTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(edit.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -270,8 +271,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&AppendFileTool{}).Description(),
 			RawSchema:    (&AppendFileTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(apnd.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -280,8 +281,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&CopyFileTool{}).Description(),
 			RawSchema:    (&CopyFileTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(cp.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -296,8 +297,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&DeleteFileTool{}).Description(),
 			RawSchema:    (&DeleteFileTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(del.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -306,8 +307,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&MoveFileTool{}).Description(),
 			RawSchema:    (&MoveFileTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(mv.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -316,8 +317,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&MkdirTool{}).Description(),
 			RawSchema:    (&MkdirTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(mkdir.Execute(call.Ctx, call.Args)), nil
 			},
 		},
@@ -326,8 +327,8 @@ func (globalFilesProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description:  (&RmdirTool{}).Description(),
 			RawSchema:    (&RmdirTool{}).Parameters(),
 			Category:     "filesystem",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(rmdir.Execute(call.Ctx, call.Args)), nil
 			},
 		},

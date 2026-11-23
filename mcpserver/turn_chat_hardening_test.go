@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/global"
@@ -249,9 +251,9 @@ func TestNoChatReason(t *testing.T) {
 // recordingSpawner records the spawns it is asked for and acknowledges them.
 type recordingSpawner struct{ reqs []global.SpawnRequest }
 
-func (s *recordingSpawner) Spawn(_ context.Context, req global.SpawnRequest) (*global.Result, error) {
+func (s *recordingSpawner) Spawn(_ context.Context, req global.SpawnRequest) (*toolspec.Result, error) {
 	s.reqs = append(s.reqs, req)
-	return &global.Result{ForLLM: "started"}, nil
+	return &toolspec.Result{ForLLM: "started"}, nil
 }
 
 // agent_spawn over the MCP host: a background task is refused while the

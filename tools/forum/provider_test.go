@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
 	forumpkg "go.bison9.com/agency/forum"
 	"go.bison9.com/agency/forum/forumfs"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 	"go.bison9.com/agency/tools/files"
@@ -29,8 +30,8 @@ func scopeConfig() *config.Config {
 	return c
 }
 
-func callAt(depth int) *global.ToolCall {
-	return &global.ToolCall{Ctx: toolsagents.WithSpawnDepth(context.Background(), depth)}
+func callAt(depth int) *toolspec.ToolCall {
+	return &toolspec.ToolCall{Ctx: toolsagents.WithSpawnDepth(context.Background(), depth)}
 }
 
 // Scope is the agent and <workspace>/forums, and is refused inside a forum
@@ -60,8 +61,8 @@ func TestToolHostScope(t *testing.T) {
 // The provider registers nothing without the switch or without a service.
 func TestProviderGating(t *testing.T) {
 	cfg := scopeConfig()
-	deps := func(id string) global.Deps {
-		return global.Deps{Cfg: cfg, AgentID: id, Host: tools.ToolDeps{Workspace: t.TempDir()}}
+	deps := func(id string) toolspec.Deps {
+		return toolspec.Deps{Cfg: cfg, AgentID: id, Host: tools.ToolDeps{Workspace: t.TempDir()}}
 	}
 	SetService(nil)
 	if defs := GlobalProvider.RegisterTools(deps("alice")); len(defs) != 0 {
@@ -115,11 +116,11 @@ func TestProviderGating(t *testing.T) {
 	if defs := GlobalProvider.RegisterTools(deps("bob")); len(defs) != 0 {
 		t.Fatalf("bob (forum off) got %d tools", len(defs))
 	}
-	participant := global.Deps{Cfg: cfg, AgentID: "alice", Host: tools.ToolDeps{Workspace: t.TempDir(), TempPurpose: tools.TempPurposeForum}}
+	participant := toolspec.Deps{Cfg: cfg, AgentID: "alice", Host: tools.ToolDeps{Workspace: t.TempDir(), TempPurpose: tools.TempPurposeForum}}
 	if defs := GlobalProvider.RegisterTools(participant); len(defs) != 0 {
 		t.Fatalf("a forum participant acting as alice got %d tools", len(defs))
 	}
-	if defs := GlobalProvider.RegisterTools(global.Deps{}); len(defs) != 0 {
+	if defs := GlobalProvider.RegisterTools(toolspec.Deps{}); len(defs) != 0 {
 		t.Fatalf("enumeration pass listed %d tools", len(defs))
 	}
 }

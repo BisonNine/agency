@@ -16,10 +16,11 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
 	forumpkg "go.bison9.com/agency/forum"
 	"go.bison9.com/agency/forum/forumfs"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
@@ -53,7 +54,7 @@ func (globalForumProvider) Available(any) (bool, string) { return true, "" }
 // Suite marks the forum tools as a suite gated by the agent's `forum` switch.
 func (globalForumProvider) Suite() string { return Suite }
 
-func (globalForumProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalForumProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	c, ok := deps.Cfg.(*config.Config)
 	if !ok || c == nil {
 		// Enumeration pass: the suite is one toggle, not catalogue entries.
@@ -105,7 +106,7 @@ var _ forumpkg.ToolHost = (*toolHost)(nil)
 // (where every forum ask runs) with forum.ErrForumDepth, and a call by an
 // agent without the `forum` switch; otherwise it is the agent and its
 // <workspace>/forums.
-func (h *toolHost) Scope(call *global.ToolCall) (forumpkg.Scope, error) {
+func (h *toolHost) Scope(call *toolspec.ToolCall) (forumpkg.Scope, error) {
 	if h.purpose == tools.TempPurposeForum {
 		return forumpkg.Scope{}, fmt.Errorf("agent %s is a forum participant: %w", h.agentID, forumpkg.ErrForumTurn)
 	}

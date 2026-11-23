@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	sdkagent "go.bison9.com/agent"
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
@@ -140,9 +141,9 @@ func (a *AgentInstance) DisplayName() string {
 // Identity is who the agent's model and API calls are billed to. A clone is
 // billed to the agent it was cloned from, under its own label, so its spend
 // rolls up to the agent that caused it; every other agent to itself.
-func (a *AgentInstance) Identity() global.Identity {
+func (a *AgentInstance) Identity() accounting.Identity {
 	if a.Spec.IsClone() {
-		return global.Identity{Agent: config.NormalizeAgentID(a.Spec.SourceID), Name: a.Label(), Project: global.Project}
+		return accounting.Identity{Agent: config.NormalizeAgentID(a.Spec.SourceID), Name: a.Label(), Project: global.Project}
 	}
 	return (&config.AgentConfig{ID: a.ID, Name: a.Name}).Identity()
 }
@@ -767,7 +768,7 @@ func compressionOptions(c *config.CompressionConfig) []ctxengine.Option {
 // identityOf is who a call made on behalf of agentID is billed to: the
 // running agent's Identity, or, for an id the registry does not hold, the id
 // itself. An empty id has no owner.
-func (al *AgentLoop) identityOf(agentID string) global.Identity {
+func (al *AgentLoop) identityOf(agentID string) accounting.Identity {
 	if strings.TrimSpace(agentID) == "" {
 		return global.NoOwnerIdentity
 	}

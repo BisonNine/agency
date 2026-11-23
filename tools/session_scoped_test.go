@@ -6,7 +6,8 @@ package tools_test
 import (
 	"testing"
 
-	"go.bison9.com/agency/global"
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/tools"
 	toolsfiles "go.bison9.com/agency/tools/files"
 	toolssession "go.bison9.com/agency/tools/session"
@@ -16,7 +17,7 @@ import (
 // publishes declares SessionScoped, so the MCP dispatcher injects the session
 // key for each of them without a hardcoded list.
 func TestSessionScopedInterface(t *testing.T) {
-	defs := toolssession.GlobalProvider.RegisterTools(global.Deps{})
+	defs := toolssession.GlobalProvider.RegisterTools(toolspec.Deps{})
 	if len(defs) == 0 {
 		t.Fatal("session provider published no tools")
 	}

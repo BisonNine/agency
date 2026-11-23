@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/fsmode"
@@ -26,7 +27,6 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/dump"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
@@ -55,7 +55,7 @@ type compressModelCaller struct {
 	sessionKey string
 	// id is who the calls are billed to: the agent whose conversation or
 	// memory is being summarized.
-	id global.Identity
+	id accounting.Identity
 	// noSessionKey leaves session_key off the finish line, for a caller whose
 	// sessionKey names no conversation (memory consolidation).
 	noSessionKey bool

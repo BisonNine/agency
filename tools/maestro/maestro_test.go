@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
 	mllm "go.bison9.com/maestro/llm"
 
 	"go.bison9.com/agency/config"
@@ -34,7 +35,7 @@ func TestProvider_NoSyncRunner_DisablesTools(t *testing.T) {
 	cfg := &config.Config{Agents: config.AgentsConfig{List: []config.AgentConfig{{ID: "alice", Maestro: &config.MaestroConfig{Enabled: true}}}}}
 	var typedNil *toolsagents.Spawner
 	for name, spawn := range map[string]any{"nil": nil, "not-a-runner": struct{}{}, "typed-nil": typedNil} {
-		defs := GlobalProvider.RegisterTools(global.Deps{
+		defs := GlobalProvider.RegisterTools(toolspec.Deps{
 			Cfg:     cfg,
 			AgentID: "alice",
 			Host:    tools.ToolDeps{Workspace: filepath.Join(tmp, name)},
@@ -58,8 +59,8 @@ func TestProvider_GatingAndDispatch(t *testing.T) {
 	}}}
 	fr := &fakeRunner{out: "the answer"}
 
-	register := func(agentID string) []global.ToolDefinition {
-		return GlobalProvider.RegisterTools(global.Deps{
+	register := func(agentID string) []toolspec.ToolDefinition {
+		return GlobalProvider.RegisterTools(toolspec.Deps{
 			Cfg:     cfg,
 			AgentID: agentID,
 			Host:    tools.ToolDeps{Workspace: filepath.Join(tmp, agentID)},

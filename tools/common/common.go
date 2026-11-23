@@ -13,17 +13,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/fileutil"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/utils"
 )
 
 // errResult builds an error Result carrying err both as the LLM-facing text and
 // the internal Err field.
-func errResult(format string, args ...any) *global.Result {
+func errResult(format string, args ...any) *toolspec.Result {
 	msg := fmt.Sprintf(format, args...)
-	return &global.Result{ForLLM: msg, IsError: true, Err: fmt.Errorf("%s", msg)}
+	return &toolspec.Result{ForLLM: msg, IsError: true, Err: fmt.Errorf("%s", msg)}
 }
 
 // confine cleans rel and joins it under base, verifying the result stays within
@@ -93,7 +94,7 @@ func copyFile(src, dst string, modes config.Modes) error {
 }
 
 // listCommon lists files (name + size) under commonDir[/subdir].
-func listCommon(commonDir string, args map[string]any) *global.Result {
+func listCommon(commonDir string, args map[string]any) *toolspec.Result {
 	dir := commonDir
 	if subdir, ok := strArg(args, "subdir"); ok {
 		abs, err := confine(commonDir, subdir)
@@ -109,7 +110,7 @@ func listCommon(commonDir string, args map[string]any) *global.Result {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &global.Result{ForLLM: "(empty)"}
+			return &toolspec.Result{ForLLM: "(empty)"}
 		}
 		return errResult("common_list: %v", err)
 	}
@@ -129,14 +130,14 @@ func listCommon(commonDir string, args map[string]any) *global.Result {
 		count++
 	}
 	if count == 0 {
-		return &global.Result{ForLLM: "(empty)"}
+		return &toolspec.Result{ForLLM: "(empty)"}
 	}
-	return &global.Result{ForLLM: strings.TrimRight(b.String(), "\n")}
+	return &toolspec.Result{ForLLM: strings.TrimRight(b.String(), "\n")}
 }
 
 // getCommon copies commonDir/<name> into <workspace>/files/<as|basename(name)>,
 // creating what it writes with the workspace's modes.
-func getCommon(commonDir, workspace string, workspaceModes config.Modes, args map[string]any) *global.Result {
+func getCommon(commonDir, workspace string, workspaceModes config.Modes, args map[string]any) *toolspec.Result {
 	name, ok := strArg(args, "name")
 	if !ok {
 		return errResult("common_get: 'name' is required")
@@ -168,12 +169,12 @@ func getCommon(commonDir, workspace string, workspaceModes config.Modes, args ma
 	if relErr != nil {
 		rel = dstAbs
 	}
-	return &global.Result{ForLLM: fmt.Sprintf("Copied %q to workspace %s", name, rel)}
+	return &toolspec.Result{ForLLM: fmt.Sprintf("Copied %q to workspace %s", name, rel)}
 }
 
 // putCommon copies <workspace>/<path> into commonDir/<as|basename(path)>,
 // creating what it writes with the common area's modes.
-func putCommon(commonDir, workspace string, commonModes config.Modes, args map[string]any) *global.Result {
+func putCommon(commonDir, workspace string, commonModes config.Modes, args map[string]any) *toolspec.Result {
 	path, ok := strArg(args, "path")
 	if !ok {
 		return errResult("common_put: 'path' is required")
@@ -206,11 +207,11 @@ func putCommon(commonDir, workspace string, commonModes config.Modes, args map[s
 	if err := copyFile(srcAbs, dstAbs, commonModes); err != nil {
 		return errResult("common_put: copy failed: %v", err)
 	}
-	return &global.Result{ForLLM: fmt.Sprintf("Copied workspace %q to common %s", path, dstRel)}
+	return &toolspec.Result{ForLLM: fmt.Sprintf("Copied workspace %q to common %s", path, dstRel)}
 }
 
 // deleteCommon removes commonDir/<name>.
-func deleteCommon(commonDir string, args map[string]any) *global.Result {
+func deleteCommon(commonDir string, args map[string]any) *toolspec.Result {
 	name, ok := strArg(args, "name")
 	if !ok {
 		return errResult("common_delete: 'name' is required")
@@ -222,5 +223,5 @@ func deleteCommon(commonDir string, args map[string]any) *global.Result {
 	if err := os.Remove(abs); err != nil {
 		return errResult("common_delete: %v", err)
 	}
-	return &global.Result{ForLLM: fmt.Sprintf("Deleted %q from common", name)}
+	return &toolspec.Result{ForLLM: fmt.Sprintf("Deleted %q from common", name)}
 }

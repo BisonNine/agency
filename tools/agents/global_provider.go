@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
@@ -144,7 +146,7 @@ func listToolSchema() map[string]any {
 	}
 }
 
-func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalAgentProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	// Recover the injected robust spawner. nil during deps-free enumeration; the
 	// handlers guard that case.
 	var sp global.Spawner
@@ -160,7 +162,7 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 		canceller = v
 	}
 
-	defs := []global.ToolDefinition{
+	defs := []toolspec.ToolDefinition{
 		{
 			Name:        "spawn",
 			Description: spawnToolDescription,
@@ -169,9 +171,9 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Async:       true,
 			// Sub-agents may spawn too; runaway recursion is bounded by
 			// MaxSpawnDepth in the Spawner (see depth.go), not by hiding the tool.
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if sp == nil {
-					return &global.Result{IsError: true, ForLLM: "spawn tool not available"}, nil
+					return &toolspec.Result{IsError: true, ForLLM: "spawn tool not available"}, nil
 				}
 				task := strArg(call.Args, "task")
 				name := strArg(call.Args, "name")
@@ -181,11 +183,11 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 				characterCard := strArg(call.Args, "character_card")
 				media, badMedia := parseMediaArg(call.Args["media"])
 				if badMedia != "" {
-					return &global.Result{IsError: true, ForLLM: badMedia}, nil
+					return &toolspec.Result{IsError: true, ForLLM: badMedia}, nil
 				}
 				files, badFiles := parseFilesArg(call.Args["files"])
 				if badFiles != "" {
-					return &global.Result{IsError: true, ForLLM: badFiles}, nil
+					return &toolspec.Result{IsError: true, ForLLM: badFiles}, nil
 				}
 
 				mode, onResult := resolveSpawnMode(modeStr, call)
@@ -193,7 +195,7 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 				// turn; a call that can't be tied to one turn has none.
 				if _, problem := tools.TurnChat(call.Ctx); problem == tools.ChatAmbiguous {
 					if mode == global.SpawnCallback {
-						return &global.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: tools.Refusal(errSpawnAmbiguous)}, nil
+						return &toolspec.Result{IsError: true, ForLLM: spawnAmbiguousText, Err: tools.Refusal(errSpawnAmbiguous)}, nil
 					}
 					// A waited task whose turn stops waiting would have no
 					// chat to report to either: it is cancelled then.
@@ -223,23 +225,23 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description: "Check the status of a background task by uuid. Returns one of: unknown, running, done, error, cancelled — with a pointer to the result file when available.",
 			RawSchema:   statusToolSchema(),
 			Category:    "agents",
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if inspector == nil {
-					return &global.Result{IsError: true, ForLLM: "task status not available"}, nil
+					return &toolspec.Result{IsError: true, ForLLM: "task status not available"}, nil
 				}
 				id, ok := call.Args["uuid"].(string)
 				if !ok || strings.TrimSpace(id) == "" {
-					return &global.Result{IsError: true, ForLLM: "uuid is required"}, nil
+					return &toolspec.Result{IsError: true, ForLLM: "uuid is required"}, nil
 				}
 				st, err := inspector.TaskStatus(id)
 				if err != nil {
-					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("status lookup failed: %v", err)}, nil
+					return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("status lookup failed: %v", err)}, nil
 				}
 				b, err := json.Marshal(st)
 				if err != nil {
-					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("status encode failed: %v", err)}, nil
+					return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("status encode failed: %v", err)}, nil
 				}
-				return &global.Result{ForLLM: string(b), Silent: true}, nil
+				return &toolspec.Result{ForLLM: string(b), Silent: true}, nil
 			},
 		},
 		{
@@ -247,19 +249,19 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 			Description: "List this agent's background tasks. Returns uuid, name, and status for each.",
 			RawSchema:   listToolSchema(),
 			Category:    "agents",
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if inspector == nil {
-					return &global.Result{IsError: true, ForLLM: "task list not available"}, nil
+					return &toolspec.Result{IsError: true, ForLLM: "task list not available"}, nil
 				}
 				list, err := inspector.TaskList()
 				if err != nil {
-					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("task list failed: %v", err)}, nil
+					return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("task list failed: %v", err)}, nil
 				}
 				b, err := json.Marshal(map[string]any{"tasks": list})
 				if err != nil {
-					return &global.Result{IsError: true, ForLLM: fmt.Sprintf("task list encode failed: %v", err)}, nil
+					return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("task list encode failed: %v", err)}, nil
 				}
-				return &global.Result{ForLLM: string(b), Silent: true}, nil
+				return &toolspec.Result{ForLLM: string(b), Silent: true}, nil
 			},
 		},
 		messageTool(hostDeps(deps)),
@@ -274,15 +276,15 @@ func (globalAgentProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 }
 
 // cancelTool is agent_cancel: the caller cancels its own tasks.
-func cancelTool(canceller global.TaskCanceller) global.ToolDefinition {
-	return global.ToolDefinition{
+func cancelTool(canceller global.TaskCanceller) toolspec.ToolDefinition {
+	return toolspec.ToolDefinition{
 		Name:        strings.TrimPrefix(config.AgentCancelTool, "agent_"),
 		Description: cancelToolDescription,
 		RawSchema:   cancelToolSchema(),
 		Category:    "agents",
-		Handler: func(call *global.ToolCall) (*global.Result, error) {
+		Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 			if canceller == nil {
-				return &global.Result{IsError: true, ForLLM: "task cancel not available"}, nil
+				return &toolspec.Result{IsError: true, ForLLM: "task cancel not available"}, nil
 			}
 			id := strings.TrimSpace(strArg(call.Args, "uuid"))
 			all, isBool := call.Args["all"].(bool)
@@ -291,22 +293,22 @@ func cancelTool(canceller global.TaskCanceller) global.ToolDefinition {
 			var err error
 			switch {
 			case all && id != "":
-				return &global.Result{IsError: true, ForLLM: "give either uuid or all, not both"}, nil
+				return &toolspec.Result{IsError: true, ForLLM: "give either uuid or all, not both"}, nil
 			case all:
 				res, err = canceller.CancelAllTasks()
 			case id != "":
 				res, err = canceller.CancelTask(id)
 			default:
-				return &global.Result{IsError: true, ForLLM: "uuid or all is required"}, nil
+				return &toolspec.Result{IsError: true, ForLLM: "uuid or all is required"}, nil
 			}
 			if err != nil {
-				return &global.Result{IsError: true, ForLLM: fmt.Sprintf("cancel failed: %v", err)}, nil
+				return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("cancel failed: %v", err)}, nil
 			}
 			b, err := json.Marshal(res)
 			if err != nil {
-				return &global.Result{IsError: true, ForLLM: fmt.Sprintf("cancel result encode failed: %v", err)}, nil
+				return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("cancel result encode failed: %v", err)}, nil
 			}
-			return &global.Result{ForLLM: string(b), Silent: true}, nil
+			return &toolspec.Result{ForLLM: string(b), Silent: true}, nil
 		},
 	}
 }
@@ -381,7 +383,7 @@ var errSpawnAmbiguous = errors.New("background spawn while the agent answers mor
 // stops waiting before the worker finishes. When no async path is offered
 // (Notify == nil), the task still runs and is tracked — the result is
 // retrieved via agent_status / the result file — but no push fires.
-func resolveSpawnMode(modeStr string, call *global.ToolCall) (global.SpawnMode, func(*global.Result)) {
+func resolveSpawnMode(modeStr string, call *toolspec.ToolCall) (global.SpawnMode, func(*toolspec.Result)) {
 	switch strings.ToLower(strings.TrimSpace(modeStr)) {
 	case "wait", "sync", "synchronous":
 		return global.SpawnAndWait, call.Notify

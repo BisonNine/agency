@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/global"
+	"go.bison9.com/agent/toolspec"
 )
 
 // TestGlobalProvider_NilToolsReturnGracefulError reproduces the crash where an
@@ -15,8 +15,8 @@ import (
 // result instead of panicking.
 func TestGlobalProvider_NilToolsReturnGracefulError(t *testing.T) {
 	// Zero Deps → Cfg is nil → search and fetch are left nil.
-	defs := globalWebProvider{}.RegisterTools(global.Deps{})
-	handlers := map[string]global.ToolHandler{}
+	defs := globalWebProvider{}.RegisterTools(toolspec.Deps{})
+	handlers := map[string]toolspec.ToolHandler{}
 	for _, d := range defs {
 		handlers[d.Name] = d.Handler
 	}
@@ -26,7 +26,7 @@ func TestGlobalProvider_NilToolsReturnGracefulError(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s tool not registered", name)
 		}
-		res, err := h(&global.ToolCall{Ctx: context.Background(), Args: map[string]any{"query": "x", "url": "http://example.com"}})
+		res, err := h(&toolspec.ToolCall{Ctx: context.Background(), Args: map[string]any{"query": "x", "url": "http://example.com"}})
 		if err != nil {
 			t.Fatalf("%s handler returned go error: %v", name, err)
 		}

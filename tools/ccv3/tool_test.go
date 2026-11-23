@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	ccv3pkg "go.bison9.com/agency/ccv3"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
@@ -104,7 +106,7 @@ func TestGating(t *testing.T) {
 		t.Error("card argument schema is not the closed card schema")
 	}
 	// The enumeration pass registers nothing.
-	if defs := GlobalProvider.RegisterTools(global.Deps{}); len(defs) != 0 {
+	if defs := GlobalProvider.RegisterTools(toolspec.Deps{}); len(defs) != 0 {
 		t.Errorf("enumeration pass: %d tools", len(defs))
 	}
 }

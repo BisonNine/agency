@@ -1,8 +1,9 @@
 package web
 
 import (
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
@@ -15,7 +16,7 @@ var GlobalProvider globalWebProvider
 
 type globalWebProvider struct{}
 
-// Namespace/Description/Available satisfy global.HostMeta.
+// Namespace/Description/Available satisfy toolspec.HostMeta.
 func (globalWebProvider) Namespace() string   { return "web" }
 func (globalWebProvider) Description() string { return "Web search and fetch operations" }
 
@@ -23,7 +24,7 @@ func (globalWebProvider) Available(cfg any) (bool, string) {
 	return true, ""
 }
 
-func (globalWebProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalWebProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	// Construct the real tool instances only when real config is present.
 	// Enumeration (Describe) passes a zero Deps; handlers are never called then,
 	// so leaving the instances nil is safe. Static metadata below is derived from
@@ -70,14 +71,14 @@ func (globalWebProvider) RegisterTools(deps global.Deps) []global.ToolDefinition
 		}
 	}
 
-	return []global.ToolDefinition{
+	return []toolspec.ToolDefinition{
 		{
 			Name:         "search",
 			Description:  (&WebSearchTool{}).Description(),
 			RawSchema:    (&WebSearchTool{}).Parameters(),
 			Category:     "web",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				// search is nil when no web-search provider is configured/enabled.
 				// The tool is still advertised, so guard here and report it to the
 				// model rather than dereferencing a nil receiver (which segfaults).
@@ -93,8 +94,8 @@ func (globalWebProvider) RegisterTools(deps global.Deps) []global.ToolDefinition
 			Description:  (&WebFetchTool{}).Description(),
 			RawSchema:    (&WebFetchTool{}).Parameters(),
 			Category:     "web",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if fetch == nil {
 					return tools.ResultToGlobal(tools.ErrorResult(
 						"web fetch is not configured on this server")), nil

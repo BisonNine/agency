@@ -13,10 +13,10 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm/speech"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 )
 
@@ -318,7 +318,7 @@ type stubTranscriber struct {
 }
 
 func (s stubTranscriber) Name() string { return s.name }
-func (s stubTranscriber) Transcribe(context.Context, global.Identity, AudioFile) (*TranscriptionResponse, error) {
+func (s stubTranscriber) Transcribe(context.Context, accounting.Identity, AudioFile) (*TranscriptionResponse, error) {
 	if s.err != nil {
 		return nil, s.err
 	}

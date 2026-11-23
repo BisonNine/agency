@@ -10,12 +10,12 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/providers"
 )
 
@@ -263,7 +263,7 @@ func TestSessionToken_IssuedAndReissuedOnEntry(t *testing.T) {
 }
 
 // withID bills c's calls to id.
-func withID(c *compressModelCaller, id global.Identity) *compressModelCaller {
+func withID(c *compressModelCaller, id accounting.Identity) *compressModelCaller {
 	c.id = id
 	return c
 }

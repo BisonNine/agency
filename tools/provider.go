@@ -85,7 +85,7 @@ type ToolDeps struct {
 
 	// Spawn holds the robust sub-agent launcher (a global.Spawner). The AgentLoop
 	// builds it per agent and sets it here; toGlobalDeps forwards it to
-	// global.Deps.Spawn so any tool package can launch workers by DI. Typed as any
+	// toolspec.Deps.Spawn so any tool package can launch workers by DI. Typed as any
 	// to keep tools free of an import dependency on the spawner implementation.
 	Spawn any
 

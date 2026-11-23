@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
@@ -176,7 +178,7 @@ func TestGlob_PermissionRules(t *testing.T) {
 
 // file_glob is not a default tool.
 func TestGlob_NotDefault(t *testing.T) {
-	for _, d := range GlobalProvider.RegisterTools(global.Deps{}) {
+	for _, d := range GlobalProvider.RegisterTools(toolspec.Deps{}) {
 		if d.Name == "glob" {
 			if d.DefaultAllow == nil || *d.DefaultAllow {
 				t.Error("file_glob must not be in the default tools")

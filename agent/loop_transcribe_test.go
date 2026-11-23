@@ -15,11 +15,11 @@ import (
 	"testing"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/accounting"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
 	"go.bison9.com/agency/voice"
@@ -33,7 +33,7 @@ type stubTranscriber struct {
 
 func (s stubTranscriber) Name() string { return "stub" }
 
-func (s stubTranscriber) Transcribe(context.Context, global.Identity, voice.AudioFile) (*voice.TranscriptionResponse, error) {
+func (s stubTranscriber) Transcribe(context.Context, accounting.Identity, voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -278,7 +278,7 @@ type failTranscriber struct{ t *testing.T }
 
 func (failTranscriber) Name() string { return "fail" }
 
-func (f failTranscriber) Transcribe(context.Context, global.Identity, voice.AudioFile) (*voice.TranscriptionResponse, error) {
+func (f failTranscriber) Transcribe(context.Context, accounting.Identity, voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	f.t.Error("a voice message to a human agent was transcribed")
 	return &voice.TranscriptionResponse{Text: "heard"}, nil
 }
@@ -325,12 +325,12 @@ func TestPrepareInbound_HumanAgentNeverTranscribed(t *testing.T) {
 // call was billed to.
 type recordingTranscriber struct {
 	got *[]voice.AudioFile
-	ids *[]global.Identity
+	ids *[]accounting.Identity
 }
 
 func (r recordingTranscriber) Name() string { return "recording" }
 
-func (r recordingTranscriber) Transcribe(_ context.Context, id global.Identity, a voice.AudioFile) (*voice.TranscriptionResponse, error) {
+func (r recordingTranscriber) Transcribe(_ context.Context, id accounting.Identity, a voice.AudioFile) (*voice.TranscriptionResponse, error) {
 	*r.got = append(*r.got, a)
 	if r.ids != nil {
 		*r.ids = append(*r.ids, id)
@@ -348,7 +348,7 @@ func TestPrepareInbound_VoicePassesNameAndType(t *testing.T) {
 	store := media.NewFileMediaStore()
 	al.SetMediaStore(store)
 	var got []voice.AudioFile
-	var ids []global.Identity
+	var ids []accounting.Identity
 	al.SetTranscriber(recordingTranscriber{got: &got, ids: &ids})
 
 	src := filepath.Join(t.TempDir(), "file_3")

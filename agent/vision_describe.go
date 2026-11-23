@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
@@ -44,7 +44,7 @@ type providerVisionClient struct {
 	caller      llmCaller
 	ourProvider string
 	// id is who the calls are billed to: the agent the chain belongs to.
-	id global.Identity
+	id accounting.Identity
 }
 
 // Model returns the model name, used to label log lines.

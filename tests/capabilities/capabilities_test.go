@@ -30,10 +30,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/classifier"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/forum"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/gateway"
 	"go.bison9.com/agency/tools"
 	toolsccv3 "go.bison9.com/agency/tools/ccv3"
@@ -135,7 +136,7 @@ func render(t *testing.T, cfg *config.Config) string {
 		sort.Strings(native)
 		w("  native tools: %s\n", list(native))
 
-		defs := fusion.GlobalProvider.RegisterTools(global.Deps{Cfg: cfg, AgentID: a.ID})
+		defs := fusion.GlobalProvider.RegisterTools(toolspec.Deps{Cfg: cfg, AgentID: a.ID})
 		fusionTools := make([]string, 0, len(defs))
 		for _, d := range defs {
 			name := d.Name
@@ -147,7 +148,7 @@ func render(t *testing.T, cfg *config.Config) string {
 		sort.Strings(fusionTools)
 		w("  fusion tools: %s\n", list(fusionTools))
 
-		forumDefs := toolsforum.GlobalProvider.RegisterTools(global.Deps{
+		forumDefs := toolsforum.GlobalProvider.RegisterTools(toolspec.Deps{
 			Cfg: cfg, AgentID: a.ID, Host: tools.ToolDeps{Cfg: cfg, AgentID: a.ID, Workspace: t.TempDir()},
 		})
 		forumTools := make([]string, 0, len(forumDefs))
@@ -161,7 +162,7 @@ func render(t *testing.T, cfg *config.Config) string {
 		sort.Strings(forumTools)
 		w("  forum tools: %s\n", list(forumTools))
 
-		cardDefs := toolsccv3.GlobalProvider.RegisterTools(global.Deps{
+		cardDefs := toolsccv3.GlobalProvider.RegisterTools(toolspec.Deps{
 			Cfg: cfg, AgentID: a.ID, Host: tools.ToolDeps{Cfg: cfg, AgentID: a.ID, Workspace: t.TempDir()},
 		})
 		cardTools := make([]string, 0, len(cardDefs))
@@ -175,7 +176,7 @@ func render(t *testing.T, cfg *config.Config) string {
 		sort.Strings(cardTools)
 		w("  ccv3 tool: %s\n", list(cardTools))
 
-		classifierDefs := toolsclassifier.GlobalProvider.RegisterTools(global.Deps{
+		classifierDefs := toolsclassifier.GlobalProvider.RegisterTools(toolspec.Deps{
 			Cfg: cfg, AgentID: a.ID, Host: tools.ToolDeps{Cfg: cfg, AgentID: a.ID, Workspace: t.TempDir()},
 		})
 		classifierTools := make([]string, 0, len(classifierDefs))

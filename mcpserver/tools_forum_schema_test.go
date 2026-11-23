@@ -10,8 +10,9 @@ import (
 	"reflect"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/forum"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
@@ -19,7 +20,7 @@ import (
 // not touch the service or host.
 type forumDefs struct{}
 
-func (forumDefs) RegisterTools(global.Deps) []global.ToolDefinition { return forum.Tools(nil, nil) }
+func (forumDefs) RegisterTools(toolspec.Deps) []toolspec.ToolDefinition { return forum.Tools(nil, nil) }
 
 // tools/list publishes forum_config_import's config and
 // forum_config_update's changes with the configuration's full schema.

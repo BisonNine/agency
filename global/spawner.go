@@ -6,6 +6,8 @@ package global
 import (
 	"context"
 	"errors"
+
+	"go.bison9.com/agent/toolspec"
 )
 
 // SpawnMode selects how a sub-agent worker is launched.
@@ -62,7 +64,7 @@ type SpawnRequest struct {
 	// finishes (it goes on in the background). The host supplies it; a nil OnResult is fine — the worker
 	// still runs and is tracked, the push is simply skipped (the result remains in
 	// the file and is available via agent_status).
-	OnResult func(*Result)
+	OnResult func(*toolspec.Result)
 }
 
 // Spawner launches sub-agent workers. The host injects a concrete implementation
@@ -74,7 +76,7 @@ type SpawnRequest struct {
 // SpawnAndWait it blocks until the worker finishes and returns the worker's own
 // Result.
 type Spawner interface {
-	Spawn(ctx context.Context, req SpawnRequest) (*Result, error)
+	Spawn(ctx context.Context, req SpawnRequest) (*toolspec.Result, error)
 }
 
 // TaskStatus is one task's state, returned by agent_status.

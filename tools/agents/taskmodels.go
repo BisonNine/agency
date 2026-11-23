@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
@@ -251,9 +252,9 @@ func taskResultText(rec *TaskRecord, res *TaskModelResult, runErr error) string 
 
 // spawnTask is Spawn for a request with a kind: a task-model call instead
 // of a sub-agent. The depth check has already run.
-func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*global.Result, error) {
-	refuse := func(text string) (*global.Result, error) {
-		return &global.Result{IsError: true, ForLLM: text, Err: tools.Refusal(errors.New(text))}, nil
+func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*toolspec.Result, error) {
+	refuse := func(text string) (*toolspec.Result, error) {
+		return &toolspec.Result{IsError: true, ForLLM: text, Err: tools.Refusal(errors.New(text))}, nil
 	}
 	kind := strings.ToLower(strings.TrimSpace(req.Kind))
 	switch {
@@ -294,7 +295,7 @@ func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*glob
 	}
 	id, err := s.mgr.spawnTaskCallback(ctx, originOf(ctx), name, channel, chatID, treq, onResultCallback(req.OnResult))
 	if err != nil {
-		return &global.Result{IsError: true, ForLLM: fmt.Sprintf("failed to start the task: %v", err)}, nil
+		return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("failed to start the task: %v", err)}, nil
 	}
 	msg := fmt.Sprintf("Started background task '%s' (uuid: %s, kind %s). You'll be notified with the result, "+
 		"or poll agent_status with uuid=%q.", name, id, kind, id)

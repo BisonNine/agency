@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
@@ -236,19 +237,19 @@ func TestTaskRegistry_RunningByOwner(t *testing.T) {
 func TestSpawnTool_WaitInAmbiguousChatIsCancelledNotDetached(t *testing.T) {
 	w := newBlockingWorker()
 	mgr, _, ws := newBlockingManager(t, w)
-	var spawn global.ToolDefinition
-	for _, d := range GlobalProvider.RegisterTools(global.Deps{Spawn: NewSpawner(mgr)}) {
+	var spawn toolspec.ToolDefinition
+	for _, d := range GlobalProvider.RegisterTools(toolspec.Deps{Spawn: NewSpawner(mgr)}) {
 		if d.Name == "spawn" {
 			spawn = d
 		}
 	}
 	ctx, cancel := context.WithCancel(tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true}))
 	notified := make(chan struct{}, 1)
-	done := make(chan *global.Result, 1)
+	done := make(chan *toolspec.Result, 1)
 	go func() {
-		res, err := spawn.Handler(&global.ToolCall{
+		res, err := spawn.Handler(&toolspec.ToolCall{
 			Ctx: ctx, Args: map[string]any{"task": "work", "mode": "wait"},
-			Notify: func(*global.Result) { notified <- struct{}{} },
+			Notify: func(*toolspec.Result) { notified <- struct{}{} },
 		})
 		if err != nil {
 			t.Errorf("handler: %v", err)

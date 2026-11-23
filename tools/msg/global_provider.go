@@ -1,8 +1,9 @@
 package msg
 
 import (
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/tools/files"
 )
@@ -16,13 +17,13 @@ var GlobalProvider globalMsgProvider
 
 type globalMsgProvider struct{}
 
-// Namespace/Description/Available satisfy global.HostMeta.
+// Namespace/Description/Available satisfy toolspec.HostMeta.
 func (globalMsgProvider) Namespace() string   { return "msg" }
 func (globalMsgProvider) Description() string { return "Message sending to users and channels" }
 
 func (globalMsgProvider) Available(cfg any) (bool, string) { return true, "" }
 
-func (globalMsgProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalMsgProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	// Recover the real config and Claw host deps. Enumeration (Describe) passes a
 	// zero Deps; handlers are never called then, so nil recovery is safe.
 	var c *config.Config
@@ -59,16 +60,16 @@ func (globalMsgProvider) RegisterTools(deps global.Deps) []global.ToolDefinition
 		)
 	}
 
-	return []global.ToolDefinition{
+	return []toolspec.ToolDefinition{
 		{
 			Name:         "send",
 			Description:  sendDesc,
 			RawSchema:    sendSchema,
 			Category:     "communication",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if cd.MessageTool == nil {
-					return &global.Result{IsError: true, ForLLM: "message tool not available"}, nil
+					return &toolspec.Result{IsError: true, ForLLM: "message tool not available"}, nil
 				}
 				return tools.ResultToGlobal(cd.MessageTool.Execute(call.Ctx, call.Args)), nil
 			},
@@ -78,10 +79,10 @@ func (globalMsgProvider) RegisterTools(deps global.Deps) []global.ToolDefinition
 			Description:  sendFileDesc,
 			RawSchema:    sendFileSchema,
 			Category:     "communication",
-			DefaultAllow: global.Allow(true),
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			DefaultAllow: toolspec.Allow(true),
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				if sendFile == nil {
-					return &global.Result{IsError: true, ForLLM: "send_file tool not available"}, nil
+					return &toolspec.Result{IsError: true, ForLLM: "send_file tool not available"}, nil
 				}
 				return tools.ResultToGlobal(sendFile.Execute(call.Ctx, call.Args)), nil
 			},

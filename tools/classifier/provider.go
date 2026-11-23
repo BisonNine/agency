@@ -13,10 +13,11 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
+	"go.bison9.com/agent/toolspec"
+
 	classifierpkg "go.bison9.com/agency/classifier"
 	"go.bison9.com/agency/classifier/classifierfs"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
@@ -52,7 +53,7 @@ func (globalClassifierProvider) Available(any) (bool, string) { return true, "" 
 // `classifiers` switch.
 func (globalClassifierProvider) Suite() string { return Suite }
 
-func (globalClassifierProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalClassifierProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	c, ok := deps.Cfg.(*config.Config)
 	if !ok || c == nil {
 		// Enumeration pass: the suite is one toggle, not catalogue entries.
@@ -104,7 +105,7 @@ var _ classifierpkg.ToolHost = (*toolHost)(nil)
 // Scope refuses a call by a forum participant and by an agent without the
 // `classifiers` switch; otherwise it is the agent and its
 // <workspace>/classifiers.
-func (h *toolHost) Scope(*global.ToolCall) (classifierpkg.Scope, error) {
+func (h *toolHost) Scope(*toolspec.ToolCall) (classifierpkg.Scope, error) {
 	if h.purpose == tools.TempPurposeForum {
 		return classifierpkg.Scope{}, fmt.Errorf("agent %s is a forum participant and has no classifiers", h.agentID)
 	}

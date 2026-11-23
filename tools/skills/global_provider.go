@@ -3,8 +3,9 @@ package skills
 import (
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	skillspkg "go.bison9.com/agency/skills"
 	"go.bison9.com/agency/tools"
 )
@@ -18,7 +19,7 @@ var GlobalProvider globalSkillProvider
 
 type globalSkillProvider struct{}
 
-// Namespace/Description/Available satisfy global.HostMeta. Available gates the
+// Namespace/Description/Available satisfy toolspec.HostMeta. Available gates the
 // whole package on the skills registry being enabled (the old package-level
 // gate); when false the host reports the tools as blocked.
 func (globalSkillProvider) Namespace() string   { return "skill" }
@@ -35,7 +36,7 @@ func (globalSkillProvider) Available(cfg any) (bool, string) {
 	return true, ""
 }
 
-func (globalSkillProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalSkillProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	// Construct the shared registry manager only when real config is present.
 	// Enumeration (Describe) passes a zero Deps; handlers are never called then,
 	// so leaving mgr/cache nil is safe.
@@ -56,30 +57,30 @@ func (globalSkillProvider) RegisterTools(deps global.Deps) []global.ToolDefiniti
 	find := NewFindSkillsTool(mgr, cache)
 	install := NewInstallSkillTool(mgr, workspace)
 
-	return []global.ToolDefinition{
+	return []toolspec.ToolDefinition{
 		{
 			Name:        "find",
 			Description: "Search for installable skills from skill registries. Returns skill slugs, descriptions, versions, and relevance scores. Use this to discover skills before installing them with skill_install.",
-			Parameters: []global.Parameter{
+			Parameters: []toolspec.Parameter{
 				{Name: "query", Type: "string", Required: true, Description: "Search query describing the desired skill capability (e.g., 'github integration', 'database management')"},
 				{Name: "limit", Type: "integer", Description: "Maximum number of results to return (1-20, default 5)", Minimum: new(float64(1)), Maximum: new(float64(20))},
 			},
 			Category: "skills",
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(find.Execute(call.Ctx, call.Args)), nil
 			},
 		},
 		{
 			Name:        "install",
 			Description: "Install a skill from a registry by slug. Downloads and extracts the skill into the workspace. Use skill_find first to discover available skills.",
-			Parameters: []global.Parameter{
+			Parameters: []toolspec.Parameter{
 				{Name: "slug", Type: "string", Required: true, Description: "The unique slug of the skill to install (e.g., 'github', 'docker-compose')"},
 				{Name: "registry", Type: "string", Required: true, Description: "Registry to install from (required, e.g., 'clawhub')"},
 				{Name: "version", Type: "string", Description: "Specific version to install (optional, defaults to latest)"},
 				{Name: "force", Type: "boolean", Description: "Force reinstall if skill already exists (default false)"},
 			},
 			Category: "skills",
-			Handler: func(call *global.ToolCall) (*global.Result, error) {
+			Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 				return tools.ResultToGlobal(install.Execute(call.Ctx, call.Args)), nil
 			},
 		},

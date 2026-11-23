@@ -6,8 +6,9 @@ package fusion
 import (
 	"sort"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
 )
@@ -31,7 +32,7 @@ func (globalFusionProvider) Available(cfg any) (bool, string) { return true, "" 
 // `fusion` flag (default off), not the per-tool allowlist.
 func (globalFusionProvider) Suite() string { return "fusion" }
 
-func (globalFusionProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalFusionProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	c, ok := deps.Cfg.(*config.Config)
 	if !ok || c == nil {
 		// Enumeration pass (no live config): Fusion is per-agent + all-or-nothing,
@@ -52,7 +53,7 @@ func (globalFusionProvider) RegisterTools(deps global.Deps) []global.ToolDefinit
 	// The tenant keys per-agent OAuth token storage; normalize it the same way
 	// the rest of ClawEh does so tokens survive across restarts consistently.
 	// ToolSpecDefinitions returns []toolspec.ToolDefinition, which is identical to
-	// []global.ToolDefinition (both toolspec v0.2.0) — no conversion needed.
+	// []toolspec.ToolDefinition (both toolspec v0.2.0) — no conversion needed.
 	tenant := routing.NormalizeAgentID(deps.AgentID)
 	all := eng.ToolSpecDefinitions(tenant)
 	defs := allowedDefs(all, c.AgentByID(deps.AgentID))
@@ -67,8 +68,8 @@ func (globalFusionProvider) RegisterTools(deps global.Deps) []global.ToolDefinit
 // allowedDefs keeps the Fusion tools the agent's mcp_tools entries admit
 // (config.AgentConfig.FusionToolAllowed): Fusion on with no matching entry
 // yields none. A nil agent yields none.
-func allowedDefs(defs []global.ToolDefinition, a *config.AgentConfig) []global.ToolDefinition {
-	var out []global.ToolDefinition
+func allowedDefs(defs []toolspec.ToolDefinition, a *config.AgentConfig) []toolspec.ToolDefinition {
+	var out []toolspec.ToolDefinition
 	for _, d := range defs {
 		if a.FusionToolAllowed(d.Name) {
 			out = append(out, d)

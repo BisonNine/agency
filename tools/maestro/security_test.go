@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
 	mconfig "go.bison9.com/maestro/config"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
@@ -209,9 +209,9 @@ func TestRunnerConfig_NegativeValuesTakeMaestroDefaults(t *testing.T) {
 
 // ---- registration negatives -------------------------------------------------
 
-func registerFor(t *testing.T, cfg *config.Config, agentID, workspace string, spawn any) []global.ToolDefinition {
+func registerFor(t *testing.T, cfg *config.Config, agentID, workspace string, spawn any) []toolspec.ToolDefinition {
 	t.Helper()
-	return GlobalProvider.RegisterTools(global.Deps{
+	return GlobalProvider.RegisterTools(toolspec.Deps{
 		Cfg: cfg, AgentID: agentID, Host: tools.ToolDeps{Workspace: workspace}, Spawn: spawn,
 	})
 }

@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
@@ -49,13 +50,13 @@ func messageToolSchema() map[string]any {
 // messageTool builds agent_message for the agent host was built for. host is
 // the zero ToolDeps during deps-free enumeration; the handler then reports
 // the tool unavailable.
-func messageTool(host tools.ToolDeps) global.ToolDefinition {
-	return global.ToolDefinition{
+func messageTool(host tools.ToolDeps) toolspec.ToolDefinition {
+	return toolspec.ToolDefinition{
 		Name:        "message",
 		Description: messageToolDescription,
 		RawSchema:   messageToolSchema(),
 		Category:    "agents",
-		Handler: func(call *global.ToolCall) (*global.Result, error) {
+		Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 			return runMessageTool(host, call), nil
 		},
 	}
@@ -63,15 +64,15 @@ func messageTool(host tools.ToolDeps) global.ToolDefinition {
 
 // runMessageTool validates the call, checks the target against the caller's
 // subagents.allow_agents, then whispers (wait_seconds 0) or asks.
-func runMessageTool(host tools.ToolDeps, call *global.ToolCall) *global.Result {
-	fail := func(format string, args ...any) *global.Result {
-		return &global.Result{IsError: true, ForLLM: fmt.Sprintf(format, args...)}
+func runMessageTool(host tools.ToolDeps, call *toolspec.ToolCall) *toolspec.Result {
+	fail := func(format string, args ...any) *toolspec.Result {
+		return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf(format, args...)}
 	}
 	// refuse is fail for a configured permission or limit: logged as a
 	// warning, not an error.
-	refuse := func(format string, args ...any) *global.Result {
+	refuse := func(format string, args ...any) *toolspec.Result {
 		text := fmt.Sprintf(format, args...)
-		return &global.Result{IsError: true, ForLLM: text, Err: tools.Refusal(errors.New(text))}
+		return &toolspec.Result{IsError: true, ForLLM: text, Err: tools.Refusal(errors.New(text))}
 	}
 	if host.Cfg == nil || host.Agents == nil || host.Messenger == nil {
 		return fail("agent_message is not available")
@@ -109,7 +110,7 @@ func runMessageTool(host tools.ToolDeps, call *global.ToolCall) *global.Result {
 		if err := host.Messenger.Whisper(call.Ctx, host.AgentID, from, target.ID, message); err != nil {
 			return fail("Could not whisper to %s: %v", name, err)
 		}
-		return &global.Result{ForLLM: "Whispered to " + name + "."}
+		return &toolspec.Result{ForLLM: "Whispered to " + name + "."}
 	}
 
 	// The target's request_timeout caps the wait anyway; the clamp only keeps
@@ -126,22 +127,22 @@ func runMessageTool(host tools.ToolDeps, call *global.ToolCall) *global.Result {
 }
 
 // askResult renders an ask's reply as the tool result.
-func askResult(name string, reply tools.AgentReply) *global.Result {
+func askResult(name string, reply tools.AgentReply) *toolspec.Result {
 	switch reply.Outcome {
 	case tools.OutcomeTimeout, tools.OutcomePersonCancelled:
-		return &global.Result{ForLLM: reply.Text}
+		return &toolspec.Result{ForLLM: reply.Text}
 	case tools.OutcomePersonUnreachable:
 		// The person's chat could not be reached: expected, not a fault.
-		return &global.Result{IsError: true, ForLLM: reply.Text, Err: tools.Refusal(errors.New(reply.Text))}
+		return &toolspec.Result{IsError: true, ForLLM: reply.Text, Err: tools.Refusal(errors.New(reply.Text))}
 	case bus.OutcomeError:
-		return &global.Result{IsError: true, ForLLM: fmt.Sprintf("%s's turn failed: %s", name, reply.Text)}
+		return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("%s's turn failed: %s", name, reply.Text)}
 	case bus.OutcomeCancelled:
-		return &global.Result{ForLLM: name + "'s turn was cancelled before it replied."}
+		return &toolspec.Result{ForLLM: name + "'s turn was cancelled before it replied."}
 	}
 	if strings.TrimSpace(reply.Text) == "" {
-		return &global.Result{ForLLM: name + " gave no reply."}
+		return &toolspec.Result{ForLLM: name + " gave no reply."}
 	}
-	return &global.Result{ForLLM: reply.Text}
+	return &toolspec.Result{ForLLM: reply.Text}
 }
 
 // numArg returns the numeric argument under key (a JSON number, or an
@@ -161,7 +162,7 @@ func numArg(args map[string]any, key string) (float64, bool) {
 
 // hostDeps recovers Claw's ToolDeps from deps (the zero value during
 // deps-free enumeration).
-func hostDeps(deps global.Deps) tools.ToolDeps {
+func hostDeps(deps toolspec.Deps) tools.ToolDeps {
 	if host, ok := deps.Host.(tools.ToolDeps); ok {
 		return host
 	}

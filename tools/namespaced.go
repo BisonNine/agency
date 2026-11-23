@@ -3,8 +3,8 @@
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
-// This file adapts a toolspec provider (global.ToolProvider) into a host
-// ToolProvider. A tool package implements global.ToolProvider with BARE tool
+// This file adapts a toolspec provider (toolspec.ToolProvider) into a host
+// ToolProvider. A tool package implements toolspec.ToolProvider with BARE tool
 // names; NamespacedProvider mounts it under a namespace, so the published tool
 // name is "<namespace>_<bare>". Each definition becomes a Tool through the
 // SDK's bridge (toolkit.FromSpec), which satisfies AsyncExecutor and
@@ -14,27 +14,27 @@ package tools
 
 import (
 	"go.bison9.com/agent/toolkit"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 )
 
 // ---- Provider adapter ------------------------------------------------------
 
-// namespacedProvider adapts a global.ToolProvider into a tools.ToolProvider,
+// namespacedProvider adapts a toolspec.ToolProvider into a tools.ToolProvider,
 // applying the namespace prefix to every tool it produces.
 type namespacedProvider struct {
 	ns string
-	p  global.ToolProvider
+	p  toolspec.ToolProvider
 	// bare suppresses the "<ns>_" tool-name prefix while keeping ns as the
 	// suite/catalog identity — for providers whose tool names are already
 	// globally unique (e.g. fusion's service-prefixed names). See namePrefix.
 	bare bool
 }
 
-// NamespacedProvider mounts a global.ToolProvider under ns. The resulting
+// NamespacedProvider mounts a toolspec.ToolProvider under ns. The resulting
 // provider plugs into RegisterProvider/GetProviders exactly like a legacy one.
-func NamespacedProvider(ns string, p global.ToolProvider) ToolProvider {
+func NamespacedProvider(ns string, p toolspec.ToolProvider) ToolProvider {
 	return namespacedProvider{ns: ns, p: p}
 }
 
@@ -42,7 +42,7 @@ func NamespacedProvider(ns string, p global.ToolProvider) ToolProvider {
 // its own bare name (no "<ns>_" prefix). ns still groups the tools as a suite and
 // names the catalog/config entry; the caller guarantees the tool names are
 // globally unique.
-func BareNamespacedProvider(ns string, p global.ToolProvider) ToolProvider {
+func BareNamespacedProvider(ns string, p toolspec.ToolProvider) ToolProvider {
 	return namespacedProvider{ns: ns, p: p, bare: true}
 }
 
@@ -57,7 +57,7 @@ func (a namespacedProvider) namePrefix() string {
 func (a namespacedProvider) Namespace() string { return a.ns }
 
 func (a namespacedProvider) Description() string {
-	if m, ok := a.p.(global.HostMeta); ok {
+	if m, ok := a.p.(toolspec.HostMeta); ok {
 		return m.Description()
 	}
 	return a.ns
@@ -76,7 +76,7 @@ func (a namespacedProvider) Suite() string {
 }
 
 func (a namespacedProvider) Available(cfg *config.Config) (bool, string) {
-	if m, ok := a.p.(global.HostMeta); ok {
+	if m, ok := a.p.(toolspec.HostMeta); ok {
 		return m.Available(cfg)
 	}
 	return true, ""
@@ -103,7 +103,7 @@ func (a namespacedProvider) Describe() []ToolDescriptor {
 	// toggle), so the per-tool catalog is not cluttered with the whole suite.
 	if suite := a.Suite(); suite != "" {
 		desc := a.ns
-		if m, ok := a.p.(global.HostMeta); ok {
+		if m, ok := a.p.(toolspec.HostMeta); ok {
 			desc = m.Description()
 		}
 		return []ToolDescriptor{{
@@ -116,7 +116,7 @@ func (a namespacedProvider) Describe() []ToolDescriptor {
 	// Enumeration is deps-free: global providers must return their full tool set
 	// from RegisterTools and build handler closures lazily (no eager deref of
 	// deps), so a zero Deps is safe for cataloguing.
-	defs := a.p.RegisterTools(global.Deps{})
+	defs := a.p.RegisterTools(toolspec.Deps{})
 	out := make([]ToolDescriptor, 0, len(defs))
 	for _, d := range defs {
 		out = append(out, ToolDescriptor{
@@ -128,11 +128,11 @@ func (a namespacedProvider) Describe() []ToolDescriptor {
 	return out
 }
 
-// toGlobalDeps converts Claw's rich ToolDeps into the portable global.Deps,
+// toGlobalDeps converts Claw's rich ToolDeps into the portable toolspec.Deps,
 // passing the full ToolDeps through Host so converted packages can recover their
 // strongly-typed dependencies via deps.Host.(tools.ToolDeps).
-func (a namespacedProvider) toGlobalDeps(deps ToolDeps) global.Deps {
-	return global.Deps{
+func (a namespacedProvider) toGlobalDeps(deps ToolDeps) toolspec.Deps {
+	return toolspec.Deps{
 		Cfg:       deps.Cfg,
 		AgentID:   deps.AgentID,
 		Workspace: deps.Workspace,

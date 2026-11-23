@@ -56,7 +56,7 @@ func TestAgentInstance_Identity(t *testing.T) {
 
 	reg := newTestAgentLoop(t).al.GetRegistry()
 	main, _ := reg.Get("main")
-	if got, want := main.Identity(), (global.Identity{Agent: "main", Name: "Main", Project: "default"}); got != want {
+	if got, want := main.Identity(), (accounting.Identity{Agent: "main", Name: "Main", Project: "default"}); got != want {
 		t.Errorf("config agent identity = %+v, want %+v", got, want)
 	}
 
@@ -65,7 +65,7 @@ func TestAgentInstance_Identity(t *testing.T) {
 		t.Fatalf("CreateClone: %v", err)
 	}
 	clone, _ := reg.Get(cloneID)
-	want := global.Identity{Agent: "main", Name: "main (clone " + agentreg.ShortID(cloneID) + ")", Project: "default"}
+	want := accounting.Identity{Agent: "main", Name: "main (clone " + agentreg.ShortID(cloneID) + ")", Project: "default"}
 	if got := clone.Identity(); got != want {
 		t.Errorf("clone identity = %+v, want %+v", got, want)
 	}
@@ -75,7 +75,7 @@ func TestAgentInstance_Identity(t *testing.T) {
 		t.Fatalf("CreateFresh: %v", err)
 	}
 	fresh, _ := reg.Get(freshID)
-	if got, want := fresh.Identity(), (global.Identity{Agent: freshID, Name: "Bob", Project: "default"}); got != want {
+	if got, want := fresh.Identity(), (accounting.Identity{Agent: freshID, Name: "Bob", Project: "default"}); got != want {
 		t.Errorf("fresh agent identity = %+v, want %+v", got, want)
 	}
 }
@@ -98,11 +98,11 @@ func TestIdentityOf(t *testing.T) {
 	tests := []struct {
 		name string
 		id   string
-		want global.Identity
+		want accounting.Identity
 	}{
 		{"config agent", "Main", main.Identity()},
 		{"clone", cloneID, clone.Identity()},
-		{"unknown", "Alice", global.Identity{Agent: "alice", Name: "Alice", Project: "default"}},
+		{"unknown", "Alice", accounting.Identity{Agent: "alice", Name: "Alice", Project: "default"}},
 		{"empty", " ", global.NoOwnerIdentity},
 	}
 	for _, tt := range tests {
@@ -146,7 +146,7 @@ func TestTurn_BillsTheAgent(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		rec  *identityRecorder
-		want global.Identity
+		want accounting.Identity
 	}{
 		{"agent", rec, main.Identity()},
 		{"clone", cloneRec, clone.Identity()},
@@ -237,7 +237,7 @@ func TestTaskModelHost_BillsTheSpawner(t *testing.T) {
 	t.Cleanup(func() { accounting.SetLogger(nil) })
 
 	e := newTaskHostEnv(t)
-	want := global.Identity{Agent: "alice", Name: "alice (clone 1a2b3c4d)", Project: "default"}
+	want := accounting.Identity{Agent: "alice", Name: "alice (clone 1a2b3c4d)", Project: "default"}
 	e.host = &taskModelHost{al: e.al, clone: "1a2b3c4d", id: want}
 	e.write(t, "files/clip.ogg", []byte("OggS fake"))
 	e.write(t, "files/in.png", pngBytes)

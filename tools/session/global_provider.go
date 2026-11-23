@@ -20,10 +20,10 @@ import (
 	"runtime"
 
 	sessiontools "go.bison9.com/agent/ctxengine/tools"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/constants"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
@@ -33,14 +33,14 @@ var GlobalProvider globalSessionProvider
 
 type globalSessionProvider struct{}
 
-// Namespace/Description/Available satisfy global.HostMeta. Session tools are
+// Namespace/Description/Available satisfy toolspec.HostMeta. Session tools are
 // always available; per-tool gating happens via the config-driven enabled map.
 func (globalSessionProvider) Namespace() string   { return "session" }
 func (globalSessionProvider) Description() string { return "Session history and management tools" }
 
 func (globalSessionProvider) Available(cfg any) (bool, string) { return true, "" }
 
-func (globalSessionProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalSessionProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	// Recover Claw's rich, strongly-typed dependencies. A deps-free enumeration
 	// (Describe) passes a zero Deps, so cd is the zero ToolDeps: the sessions
 	// directory is empty and the closures are nil, and every handler reports
@@ -89,18 +89,18 @@ var errClearAmbiguous = errors.New("the conversation can't be cleared now: this 
 // expected refusal, in an asked turn (its tool channel is the ask),
 // in-process and over MCP alike, and over MCP while the call can't be tied
 // to one turn.
-func refuseClearInAsk(defs []global.ToolDefinition) []global.ToolDefinition {
+func refuseClearInAsk(defs []toolspec.ToolDefinition) []toolspec.ToolDefinition {
 	for i := range defs {
 		if defs[i].Name != "clear" || defs[i].Handler == nil {
 			continue
 		}
 		next := defs[i].Handler
-		defs[i].Handler = func(call *global.ToolCall) (*global.Result, error) {
+		defs[i].Handler = func(call *toolspec.ToolCall) (*toolspec.Result, error) {
 			if tools.ToolChannel(call.Ctx) == constants.AgentMessageChannel {
-				return &global.Result{IsError: true, ForLLM: errClearInAsk.Error(), Err: tools.Refusal(errClearInAsk)}, nil
+				return &toolspec.Result{IsError: true, ForLLM: errClearInAsk.Error(), Err: tools.Refusal(errClearInAsk)}, nil
 			}
 			if _, problem := tools.TurnChat(call.Ctx); problem == tools.ChatAmbiguous {
-				return &global.Result{IsError: true, ForLLM: errClearAmbiguous.Error(), Err: tools.Refusal(errClearAmbiguous)}, nil
+				return &toolspec.Result{IsError: true, ForLLM: errClearAmbiguous.Error(), Err: tools.Refusal(errClearAmbiguous)}, nil
 			}
 			return next(call)
 		}

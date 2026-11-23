@@ -14,9 +14,10 @@ import (
 	"slices"
 	"strings"
 
+	"go.bison9.com/agent/toolspec"
+
 	ccv3pkg "go.bison9.com/agency/ccv3"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
@@ -47,7 +48,7 @@ const description = `Manage the character-card library (Character Card V3). A ca
 	`The schema is strict: unknown fields are refused. changes is an RFC 7386 merge patch: null removes a field, objects merge, arrays are replaced whole. ` +
 	`Cards are attached to agents by the operator in the WebUI, by agent_spawn's character_card, or by a forum participant's character_card; an attached card cannot be renamed or deleted.`
 
-var parameters = []global.Parameter{
+var parameters = []toolspec.Parameter{
 	{
 		Name: "action", Type: "string", Required: true, Description: "list, get, create, update, rename, copy or delete",
 		Enum: actionEnum(),
@@ -59,8 +60,8 @@ var parameters = []global.Parameter{
 }
 
 // definition is the ccv3 tool of t.
-func definition(t *tool) global.ToolDefinition {
-	schema := global.ParametersToSchema(parameters)
+func definition(t *tool) toolspec.ToolDefinition {
+	schema := toolspec.ParametersToSchema(parameters)
 	props, ok := schema["properties"].(map[string]any)
 	if !ok {
 		panic("ccv3: tool schema without properties")
@@ -72,7 +73,7 @@ func definition(t *tool) global.ToolDefinition {
 		}
 		props[name] = arg
 	}
-	return global.ToolDefinition{
+	return toolspec.ToolDefinition{
 		Name:        Suite,
 		Description: description,
 		Parameters:  parameters,
@@ -90,25 +91,25 @@ type tool struct {
 
 // refused is a refusal result: one sentence for the model, logged by the
 // host as an expected refusal.
-func refused(err error) *global.Result {
+func refused(err error) *toolspec.Result {
 	if !tools.IsExpectedRefusal(err) {
 		err = tools.Refusal(err)
 	}
-	return &global.Result{ForLLM: err.Error(), IsError: true, Err: err}
+	return &toolspec.Result{ForLLM: err.Error(), IsError: true, Err: err}
 }
 
-func refusedf(format string, args ...any) *global.Result {
+func refusedf(format string, args ...any) *toolspec.Result {
 	return refused(fmt.Errorf(format, args...))
 }
 
 // failed reports an error from the store: a refusal as its own sentence,
 // anything else (an I/O failure) in a fixed sentence with the detail kept
 // for the log.
-func failed(err error, action, id string) *global.Result {
+func failed(err error, action, id string) *toolspec.Result {
 	if tools.IsExpectedRefusal(err) {
 		return refused(err)
 	}
-	return &global.Result{ForLLM: fmt.Sprintf("Card %q could not be %s; try again later.", id, pastTense[action]), IsError: true, Err: err}
+	return &toolspec.Result{ForLLM: fmt.Sprintf("Card %q could not be %s; try again later.", id, pastTense[action]), IsError: true, Err: err}
 }
 
 var pastTense = map[string]string{
@@ -116,13 +117,13 @@ var pastTense = map[string]string{
 	"rename": "renamed", "copy": "copied", "delete": "deleted",
 }
 
-func (t *tool) handle(call *global.ToolCall) (*global.Result, error) {
+func (t *tool) handle(call *toolspec.ToolCall) (*toolspec.Result, error) {
 	return t.run(call), nil
 }
 
 // run performs one call; every outcome, refusals and failures included, is
 // a result.
-func (t *tool) run(call *global.ToolCall) *global.Result {
+func (t *tool) run(call *toolspec.ToolCall) *toolspec.Result {
 	if res, ok := unknownArgs(call.Args); ok {
 		return res
 	}
@@ -161,7 +162,7 @@ func (t *tool) run(call *global.ToolCall) *global.Result {
 
 	store, err := ccv3pkg.Open(t.cfg.CardsPath())
 	if err != nil {
-		return &global.Result{ForLLM: "The card library could not be opened; try again later.", IsError: true, Err: err}
+		return &toolspec.Result{ForLLM: "The card library could not be opened; try again later.", IsError: true, Err: err}
 	}
 	id, newID := args["id"], args["new_id"]
 	switch action {
@@ -228,10 +229,10 @@ type listEntry struct {
 	AttachedTo []string `json:"attached_to"`
 }
 
-func (t *tool) list(store *ccv3pkg.Store) *global.Result {
+func (t *tool) list(store *ccv3pkg.Store) *toolspec.Result {
 	summaries, invalid, err := store.List()
 	if err != nil {
-		return &global.Result{ForLLM: "The card library could not be listed; try again later.", IsError: true, Err: err}
+		return &toolspec.Result{ForLLM: "The card library could not be listed; try again later.", IsError: true, Err: err}
 	}
 	cards := make([]listEntry, len(summaries))
 	for i, s := range summaries {
@@ -260,7 +261,7 @@ func (t *tool) attached(id string) []*config.AgentConfig {
 
 // refuseAttached refuses renaming or deleting a card a configured agent
 // names.
-func (t *tool) refuseAttached(id string) (*global.Result, bool) {
+func (t *tool) refuseAttached(id string) (*toolspec.Result, bool) {
 	agents := t.attached(id)
 	if len(agents) == 0 {
 		return nil, false
@@ -289,10 +290,10 @@ func (t *tool) logWrite(action, id, newID string, size int) {
 }
 
 // unknownArgs refuses an argument the tool does not declare.
-func unknownArgs(args map[string]any) (*global.Result, bool) {
+func unknownArgs(args map[string]any) (*toolspec.Result, bool) {
 	var unknown []string
 	for name := range args {
-		if !slices.ContainsFunc(parameters, func(p global.Parameter) bool { return p.Name == name }) {
+		if !slices.ContainsFunc(parameters, func(p toolspec.Parameter) bool { return p.Name == name }) {
 			unknown = append(unknown, name)
 		}
 	}
@@ -332,10 +333,10 @@ func marshal(v any) (json.RawMessage, error) {
 	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
 
-func jsonResult(v any, action, id string) *global.Result {
+func jsonResult(v any, action, id string) *toolspec.Result {
 	data, err := marshal(v)
 	if err != nil {
-		return &global.Result{ForLLM: fmt.Sprintf("Card %q could not be %s; try again later.", id, pastTense[action]), IsError: true, Err: err}
+		return &toolspec.Result{ForLLM: fmt.Sprintf("Card %q could not be %s; try again later.", id, pastTense[action]), IsError: true, Err: err}
 	}
-	return &global.Result{ForLLM: string(data)}
+	return &toolspec.Result{ForLLM: string(data)}
 }

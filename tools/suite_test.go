@@ -7,16 +7,17 @@ import (
 	"context"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 )
 
 type fakeSuiteProvider struct{ suite string }
 
-func (f fakeSuiteProvider) RegisterTools(global.Deps) []global.ToolDefinition {
+func (f fakeSuiteProvider) RegisterTools(toolspec.Deps) []toolspec.ToolDefinition {
 	// Tools outside the default set (no DefaultAllow): a suite registers them
 	// as a unit.
-	return []global.ToolDefinition{{Name: "alpha"}, {Name: "beta"}}
+	return []toolspec.ToolDefinition{{Name: "alpha"}, {Name: "beta"}}
 }
 func (f fakeSuiteProvider) Suite() string { return f.suite }
 

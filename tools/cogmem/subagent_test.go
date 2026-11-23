@@ -10,17 +10,17 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/cogmemhost"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
 const mainSession = "agent:alice:main"
 
-func handlersFor(deps tools.ToolDeps) map[string]global.ToolHandler {
-	defs := GlobalProvider.RegisterTools(global.Deps{Host: deps})
-	m := make(map[string]global.ToolHandler, len(defs))
+func handlersFor(deps tools.ToolDeps) map[string]toolspec.ToolHandler {
+	defs := GlobalProvider.RegisterTools(toolspec.Deps{Host: deps})
+	m := make(map[string]toolspec.ToolHandler, len(defs))
 	for _, d := range defs {
 		m[d.Name] = d.Handler
 	}

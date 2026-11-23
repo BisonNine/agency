@@ -10,10 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	classifierpkg "go.bison9.com/agency/classifier"
 	"go.bison9.com/agency/classifier/classifierfs"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
@@ -69,21 +70,21 @@ func withService(t *testing.T) {
 func TestToolHostScope(t *testing.T) {
 	ws := t.TempDir()
 	alice := &toolHost{cfg: scopeConfig(), agentID: "alice", workspace: ws}
-	got, err := alice.Scope(&global.ToolCall{})
+	got, err := alice.Scope(&toolspec.ToolCall{})
 	want := classifierpkg.Scope{AgentID: "alice", BaseDirectory: filepath.Join(ws, classifierfs.BaseDirName)}
 	if err != nil || got != want {
 		t.Fatalf("Scope = %+v, %v; want %+v", got, err, want)
 	}
 	clone := &toolHost{cfg: scopeConfig(), agentID: "alice", workspace: ws, clone: "1a2b3c4d"}
-	if got, err := clone.Scope(&global.ToolCall{}); err != nil || got.AgentID != "alice" || got.Clone != "1a2b3c4d" {
+	if got, err := clone.Scope(&toolspec.ToolCall{}); err != nil || got.AgentID != "alice" || got.Clone != "1a2b3c4d" {
 		t.Errorf("Scope of a clone = %+v, %v; want alice with the clone named", got, err)
 	}
 	bob := &toolHost{cfg: scopeConfig(), agentID: "bob", workspace: ws}
-	if _, err := bob.Scope(&global.ToolCall{}); err == nil {
+	if _, err := bob.Scope(&toolspec.ToolCall{}); err == nil {
 		t.Error("Scope of an agent with classifiers off succeeded")
 	}
 	participant := &toolHost{cfg: scopeConfig(), agentID: "alice", workspace: ws, purpose: tools.TempPurposeForum}
-	if _, err := participant.Scope(&global.ToolCall{}); err == nil {
+	if _, err := participant.Scope(&toolspec.ToolCall{}); err == nil {
 		t.Error("Scope of a forum participant succeeded")
 	}
 }
@@ -93,8 +94,8 @@ func TestToolHostScope(t *testing.T) {
 // for a forum participant.
 func TestProviderGating(t *testing.T) {
 	cfg := scopeConfig()
-	deps := func(id, purpose, ws string) global.Deps {
-		return global.Deps{Cfg: cfg, AgentID: id, Host: tools.ToolDeps{Workspace: ws, TempPurpose: purpose}}
+	deps := func(id, purpose, ws string) toolspec.Deps {
+		return toolspec.Deps{Cfg: cfg, AgentID: id, Host: tools.ToolDeps{Workspace: ws, TempPurpose: purpose}}
 	}
 	ws := t.TempDir()
 
@@ -117,12 +118,12 @@ func TestProviderGating(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		what string
-		deps global.Deps
+		deps toolspec.Deps
 	}{
 		{"switch off", deps("bob", "", ws)},
 		{"forum participant", deps("alice", tools.TempPurposeForum, ws)},
 		{"no workspace", deps("alice", "", "")},
-		{"enumeration (no config)", global.Deps{AgentID: "alice"}},
+		{"enumeration (no config)", toolspec.Deps{AgentID: "alice"}},
 	} {
 		if defs := GlobalProvider.RegisterTools(tc.deps); len(defs) != 0 {
 			t.Errorf("%s: got %d tools, want none", tc.what, len(defs))

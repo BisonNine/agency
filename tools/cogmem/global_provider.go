@@ -18,10 +18,10 @@ package cogmem
 
 import (
 	cogmemtools "go.bison9.com/agent/cogmem/tools"
+	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
 
@@ -30,7 +30,7 @@ var GlobalProvider globalCogmemProvider
 
 type globalCogmemProvider struct{}
 
-// Namespace/Description/Available satisfy global.HostMeta. The tools are always
+// Namespace/Description/Available satisfy toolspec.HostMeta. The tools are always
 // available (the store is created on demand); access is gated per-agent via the
 // cogmem suite flag.
 func (globalCogmemProvider) Namespace() string { return "cogmem" }
@@ -53,7 +53,7 @@ var consolidateTrigger func(agentID, sessionKey string)
 // SetConsolidateTrigger installs the (non-blocking) consolidation trigger.
 func SetConsolidateTrigger(fn func(agentID, sessionKey string)) { consolidateTrigger = fn }
 
-func (globalCogmemProvider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (globalCogmemProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	// Recover Claw's rich, strongly-typed dependencies. A deps-free enumeration
 	// (Describe) passes a zero Deps, so cd is the zero ToolDeps and workspace is
 	// empty — handlers guard on an empty session/workspace and never touch disk

@@ -10,22 +10,23 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 	toolfiles "go.bison9.com/agency/tools/files"
 )
 
 const testSession = "chan:123"
 
-func newCall(session string, args map[string]any) *global.ToolCall {
+func newCall(session string, args map[string]any) *toolspec.ToolCall {
 	if args == nil {
 		args = map[string]any{}
 	}
-	return &global.ToolCall{Ctx: context.Background(), Args: args, AgentID: "alice", Session: session}
+	return &toolspec.ToolCall{Ctx: context.Background(), Args: args, AgentID: "alice", Session: session}
 }
 
-func run(t *testing.T, h global.ToolHandler, call *global.ToolCall) *global.Result {
+func run(t *testing.T, h toolspec.ToolHandler, call *toolspec.ToolCall) *toolspec.Result {
 	t.Helper()
 	res, err := h(call)
 	if err != nil {
@@ -40,7 +41,7 @@ func run(t *testing.T, h global.ToolHandler, call *global.ToolCall) *global.Resu
 // buildHandlersWithFiles builds the cogmem handlers against a workspace whose
 // reads are confined to files/, matching the default agent posture. Attachment
 // validation needs a real config, which the plain buildHandlers helper omits.
-func buildHandlersWithFiles(t *testing.T) (map[string]global.ToolHandler, string) {
+func buildHandlersWithFiles(t *testing.T) (map[string]toolspec.ToolHandler, string) {
 	t.Helper()
 	ws := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(ws, "files"), 0o755); err != nil {
@@ -53,11 +54,11 @@ func buildHandlersWithFiles(t *testing.T) (map[string]global.ToolHandler, string
 	cfg.Agents.Defaults.RestrictToWorkspace = true
 	cfg.Agents.Defaults.AllowReadOutsideWorkspace = false
 
-	defs := GlobalProvider.RegisterTools(global.Deps{
+	defs := GlobalProvider.RegisterTools(toolspec.Deps{
 		Cfg:  cfg,
 		Host: tools.ToolDeps{Workspace: ws, AgentID: "alice"},
 	})
-	m := make(map[string]global.ToolHandler, len(defs))
+	m := make(map[string]toolspec.ToolHandler, len(defs))
 	for _, d := range defs {
 		m[d.Name] = d.Handler
 	}

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/toolkit"
+	"go.bison9.com/agent/toolspec"
 
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/providers"
 )
 
@@ -159,12 +159,12 @@ func TestWrapper_ReadMethods(t *testing.T) {
 // for.
 type agentProbe struct{}
 
-func (agentProbe) RegisterTools(global.Deps) []global.ToolDefinition {
-	return []global.ToolDefinition{{
+func (agentProbe) RegisterTools(toolspec.Deps) []toolspec.ToolDefinition {
+	return []toolspec.ToolDefinition{{
 		Name:        "whoami",
 		Description: "reports the caller",
-		Handler: func(call *global.ToolCall) (*global.Result, error) {
-			return &global.Result{ForLLM: fmt.Sprintf("agent=%s chat=%s/%s", call.AgentID, call.Channel, call.ChatID)}, nil
+		Handler: func(call *toolspec.ToolCall) (*toolspec.Result, error) {
+			return &toolspec.Result{ForLLM: fmt.Sprintf("agent=%s chat=%s/%s", call.AgentID, call.Channel, call.ChatID)}, nil
 		},
 	}}
 }

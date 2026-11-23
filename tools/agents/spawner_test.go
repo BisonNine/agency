@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/toolspec"
+
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/tools"
 )
@@ -50,14 +52,14 @@ func TestSpawner_CallbackMode_DeliversPointer(t *testing.T) {
 	sp := newTestSpawner(t)
 	var (
 		mu   sync.Mutex
-		got  *global.Result
+		got  *toolspec.Result
 		done = make(chan struct{})
 	)
 	res, err := sp.Spawn(context.Background(), global.SpawnRequest{
 		Mode: global.SpawnCallback,
 		Name: "bg",
 		Task: "background work",
-		OnResult: func(r *global.Result) {
+		OnResult: func(r *toolspec.Result) {
 			mu.Lock()
 			got = r
 			mu.Unlock()
@@ -143,7 +145,7 @@ func TestSpawner_NilManager_IsError(t *testing.T) {
 }
 
 func TestResolveSpawnMode(t *testing.T) {
-	notify := func(*global.Result) {}
+	notify := func(*toolspec.Result) {}
 	cases := []struct {
 		in        string
 		hasNotify bool
@@ -158,7 +160,7 @@ func TestResolveSpawnMode(t *testing.T) {
 		{"bogus", false, global.SpawnCallback, false},
 	}
 	for _, tc := range cases {
-		call := &global.ToolCall{}
+		call := &toolspec.ToolCall{}
 		if tc.hasNotify {
 			call.Notify = notify
 		}
@@ -175,7 +177,7 @@ func TestResolveSpawnMode(t *testing.T) {
 // TestGlobalProvider_TaskToolsWiredToDeps verifies the provider exposes the three
 // task tools and the spawn handler uses the injected spawner.
 func TestGlobalProvider_TaskToolsWiredToDeps(t *testing.T) {
-	defs := GlobalProvider.RegisterTools(global.Deps{Spawn: newTestSpawner(t)})
+	defs := GlobalProvider.RegisterTools(toolspec.Deps{Spawn: newTestSpawner(t)})
 	names := map[string]bool{}
 	for _, d := range defs {
 		names[d.Name] = true
@@ -186,7 +188,7 @@ func TestGlobalProvider_TaskToolsWiredToDeps(t *testing.T) {
 		}
 	}
 
-	var spawnDef *global.ToolDefinition
+	var spawnDef *toolspec.ToolDefinition
 	for i := range defs {
 		if defs[i].Name == "spawn" {
 			spawnDef = &defs[i]
@@ -196,7 +198,7 @@ func TestGlobalProvider_TaskToolsWiredToDeps(t *testing.T) {
 	if spawnDef == nil {
 		t.Fatal("spawn tool not found")
 	}
-	res, err := spawnDef.Handler(&global.ToolCall{
+	res, err := spawnDef.Handler(&toolspec.ToolCall{
 		Ctx:  context.Background(),
 		Args: map[string]any{"task": "hello", "mode": "wait"},
 	})
@@ -212,27 +214,27 @@ func TestGlobalProvider_TaskToolsWiredToDeps(t *testing.T) {
 // while more than one turn of the session runs) is refused: its result would
 // have no chat to return to. A waited spawn still runs.
 func TestSpawnTool_CallbackRefusedWhenTurnAmbiguous(t *testing.T) {
-	var spawn global.ToolDefinition
-	for _, d := range (globalAgentProvider{}).RegisterTools(global.Deps{Spawn: newTestSpawner(t)}) {
+	var spawn toolspec.ToolDefinition
+	for _, d := range (globalAgentProvider{}).RegisterTools(toolspec.Deps{Spawn: newTestSpawner(t)}) {
 		if d.Name == "spawn" {
 			spawn = d
 		}
 	}
 	ambiguous := tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true})
-	res, err := spawn.Handler(&global.ToolCall{Ctx: ambiguous, Args: map[string]any{"task": "x", "name": "bg"}})
+	res, err := spawn.Handler(&toolspec.ToolCall{Ctx: ambiguous, Args: map[string]any{"task": "x", "name": "bg"}})
 	if err != nil || !res.IsError || res.ForLLM != spawnAmbiguousText || !tools.IsExpectedRefusal(res.Err) {
 		t.Fatalf("callback = %+v, %v, want the refusal", res, err)
 	}
-	res, err = spawn.Handler(&global.ToolCall{Ctx: ambiguous, Args: map[string]any{"task": "x", "mode": "wait"}})
+	res, err = spawn.Handler(&toolspec.ToolCall{Ctx: ambiguous, Args: map[string]any{"task": "x", "mode": "wait"}})
 	if err != nil || res.IsError {
 		t.Fatalf("wait = %+v, %v, want it run", res, err)
 	}
 	chat := tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: "telegram", ChatID: "42"})
 	// The background task finishes before the test removes its workspace.
 	finished := make(chan struct{})
-	res, err = spawn.Handler(&global.ToolCall{
+	res, err = spawn.Handler(&toolspec.ToolCall{
 		Ctx: chat, Args: map[string]any{"task": "x", "name": "bg"},
-		Notify: func(*global.Result) { close(finished) },
+		Notify: func(*toolspec.Result) { close(finished) },
 	})
 	if err != nil || res.IsError {
 		t.Fatalf("callback in one turn = %+v, %v, want it started", res, err)

@@ -29,7 +29,6 @@ import (
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/internal/childenv"
 	"go.bison9.com/agency/logger"
@@ -81,11 +80,11 @@ var GlobalProvider = provider{m: Host}
 
 type provider struct{ m *Mount }
 
-// Namespace, Description and Available satisfy global.HostMeta.
+// Namespace, Description and Available satisfy toolspec.HostMeta.
 func (provider) Namespace() string            { return sdkshell.Namespace }
 func (provider) Description() string          { return "Shell commands and background jobs" }
 func (provider) Available(any) (bool, string) { return true, "" }
-func (p provider) RegisterTools(deps global.Deps) []global.ToolDefinition {
+func (p provider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
 	return p.m.definitions(deps)
 }
 
@@ -110,12 +109,12 @@ func infoOf(call *toolspec.ToolCall) (callInfo, bool) {
 // definitions builds the tools for one agent. Without real dependencies (the
 // catalogue's enumeration) it returns shell_exec alone: shell_ctrl is never a
 // tool of its own in the tools list, it comes with shell_exec.
-func (m *Mount) definitions(deps global.Deps) []global.ToolDefinition {
+func (m *Mount) definitions(deps toolspec.Deps) []toolspec.ToolDefinition {
 	td, ok := deps.Host.(tools.ToolDeps)
 	if !ok || td.Cfg == nil {
 		for _, d := range new(sdkshell.Tools).Definitions() {
 			if sdkshell.Namespace+"_"+d.Name == config.ShellExecTool {
-				return []global.ToolDefinition{d}
+				return []toolspec.ToolDefinition{d}
 			}
 		}
 		return nil

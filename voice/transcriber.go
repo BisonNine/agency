@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/spawnllm/common"
 	"go.bison9.com/agent/spawnllm/speech"
 
 	"go.bison9.com/agency/alerts"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/utils"
 )
@@ -29,7 +29,7 @@ import (
 // Transcriber turns one audio file into text. id is who the call is for.
 type Transcriber interface {
 	Name() string
-	Transcribe(ctx context.Context, id global.Identity, audio AudioFile) (*TranscriptionResponse, error)
+	Transcribe(ctx context.Context, id accounting.Identity, audio AudioFile) (*TranscriptionResponse, error)
 }
 
 // AudioFile is one audio file to transcribe: where it is, and the name and
@@ -163,7 +163,7 @@ func NewTranscriber(name, model string, backend speech.Transcriber, a alerter.Al
 func (t *speechTranscriber) Name() string { return t.name }
 
 // Transcribe sends the file to the model, giving it attemptTimeout.
-func (t *speechTranscriber) Transcribe(ctx context.Context, id global.Identity, audio AudioFile) (*TranscriptionResponse, error) {
+func (t *speechTranscriber) Transcribe(ctx context.Context, id accounting.Identity, audio AudioFile) (*TranscriptionResponse, error) {
 	logger.InfoCF("voice", "Starting transcription", map[string]any{"audio_file": audio.Path, "model": t.name})
 	f, err := os.Open(audio.Path)
 	if err != nil {
@@ -287,7 +287,7 @@ func (f *fallbackTranscriber) Name() string {
 	return strings.Join(names, ",")
 }
 
-func (f *fallbackTranscriber) Transcribe(ctx context.Context, id global.Identity, audio AudioFile) (*TranscriptionResponse, error) {
+func (f *fallbackTranscriber) Transcribe(ctx context.Context, id accounting.Identity, audio AudioFile) (*TranscriptionResponse, error) {
 	var lastErr error
 	for i, t := range f.transcribers {
 		result, err := t.Transcribe(ctx, id, audio)
