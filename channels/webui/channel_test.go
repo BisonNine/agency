@@ -415,20 +415,31 @@ func TestWriteJSON_Closed(t *testing.T) {
 	pc.send(newMessage(TypePong, nil))
 }
 
-// Once the channel's context is cancelled, the read loop finishes the message
-// in hand and then closes the socket.
+// Once the channel's context is cancelled, the read loop closes the socket:
+// at once if it was between messages, else after the message in hand (whose
+// reply may still arrive).
 func TestReadLoop_StopsOnContextCancel(t *testing.T) {
 	c, _, wsURL := liveChannel(t, config.WebUIConfig{})
 	conn := mustDial(t, wsURL)
 	roundTrip(t, conn, "before")
 
 	c.cancel()
-	roundTrip(t, conn, "in-hand")
+	// Wake a read loop blocked in its read. One that already returned has
+	// closed the socket, which the read below reports either way.
+	if err := conn.WriteJSON(WebUIMessage{Type: TypePing, ID: "in-hand"}); err != nil {
+		t.Logf("write after cancel: %v", err)
+	}
 	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := conn.ReadMessage(); err == nil {
-		t.Fatal("socket still open after the context was cancelled")
+	for replies := 0; ; replies++ {
+		var m WebUIMessage
+		if err := conn.ReadJSON(&m); err != nil {
+			break
+		}
+		if replies > 0 || m.Type != TypePong || m.ID != "in-hand" {
+			t.Fatalf("socket still open after the context was cancelled: got %+v", m)
+		}
 	}
 	waitUntil(t, "connection released", func() bool { return c.connCount.Load() == 0 })
 }
