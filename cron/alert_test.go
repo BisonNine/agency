@@ -118,17 +118,13 @@ func TestRemoveJob_EndsItsFailureAlert(t *testing.T) {
 	}
 }
 
-// TestCronStore_LoadErrorAndSaveAlert: a corrupt store is reported through
-// LoadError (the gateway alerts on it), and a store that cannot be written
-// raises one low alert keyed "cron-store".
-func TestCronStore_LoadErrorAndSaveAlert(t *testing.T) {
+// TestCronStore_SaveAlert: a store that cannot be written raises one low
+// alert keyed "cron-store".
+func TestCronStore_SaveAlert(t *testing.T) {
 	dir := t.TempDir()
 	corrupt := filepath.Join(dir, "jobs.json")
 	if err := os.WriteFile(corrupt, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
-	}
-	if cs := NewCronService(corrupt, nil); cs.LoadError() == nil {
-		t.Fatal("corrupt store must surface through LoadError")
 	}
 
 	// A job runs and its state cannot be saved because the store path has

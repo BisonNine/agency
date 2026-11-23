@@ -85,4 +85,4 @@ claw cron add --name "Standup" --message "Time for the standup." --cron "0 9 * *
 
 The message is handled by whichever agent that chat is bound to (see [Routing and bindings](../channels/routing.md)). All `claw cron` options are in [Command line](../reference/cli.md). Use `--every <seconds>` instead of `--cron` for an interval.
 
-Jobs are stored in `cron/jobs.json` in the data directory and survive restarts.
+Jobs are stored in `cron/jobs.json` in the data directory and survive restarts. If that file cannot be read, it is renamed to `jobs.json.unreadable-<date-time>`, scheduling starts again with no jobs, and you get an alert.

@@ -281,7 +281,7 @@ func TestGatewayCmd_NoModel(t *testing.T) {
 }
 
 // TestSetupCronTool_UnreadableStoreAlerts: a cron store that cannot be read
-// is reported when the cron service is built.
+// is set aside when the cron service starts, and reported once.
 func TestSetupCronTool_UnreadableStoreAlerts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv(global.EnvVarHome, home)
@@ -302,9 +302,19 @@ func TestSetupCronTool_UnreadableStoreAlerts(t *testing.T) {
 	t.Cleanup(func() { al.Close(context.Background()) })
 	rec := &alertRecorder{}
 	al.SetAlerter(rec)
-	setupCronTool(al, bus.NewMessageBus(), cfg)
-	if !rec.has("Cron store unreadable") {
+	svc, _ := setupCronTool(al, bus.NewMessageBus(), cfg)
+	if len(rec.alerts) != 0 {
+		t.Fatalf("alerts before Start = %v", rec.titles())
+	}
+	if err := svc.Start(); err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	t.Cleanup(svc.Stop)
+	if len(rec.alerts) != 1 || !rec.has("Cron store unreadable") {
 		t.Fatalf("alerts = %v", rec.titles())
+	}
+	if m, gerr := filepath.Glob(filepath.Join(cfg.CronPath(), "jobs.json.unreadable-*")); gerr != nil || len(m) != 1 {
+		t.Errorf("set-aside files = %v, want one", m)
 	}
 }
 

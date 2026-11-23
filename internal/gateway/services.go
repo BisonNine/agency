@@ -876,15 +876,9 @@ func setupCronTool(
 
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
+	// A store file that cannot be loaded is set aside, and the alert sent, by
+	// Start.
 	cronService.SetAlerter(agentLoop.Alerter())
-	if err := cronService.LoadError(); err != nil {
-		agentLoop.Alerter().Send(alerter.Alert{
-			Title:       "Cron store unreadable",
-			Description: cronStorePath + ": no scheduled jobs run, and the next save overwrites the file",
-			Details:     err.Error(),
-			EventID:     "cron-store",
-		})
-	}
 
 	// Create CronTool if enabled
 	var cronTool *toolschedule.CronTool

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"sync"
@@ -167,19 +168,15 @@ type CronService struct {
 	gronx       *gronx.Gronx
 	fileModTime time.Time // mtime of store file at last load or save
 	alerter     alerter.Alerter
-	loadErr     error // store load failure at construction, see LoadError
+	// damaged is set while the file at storePath could not be loaded and is
+	// still there (it could not be set aside): nothing is saved over it.
+	damaged bool
 	// jobFaults holds each job's "Scheduled job failed" alerts to one when its
 	// runs start failing and one a day while they keep failing; a run that
 	// succeeds ends it, and so does removing the job.
 	jobFaults alerts.Incidents
 	// clock times jobFaults; nil means clock.Real (tests set a fake).
 	clock clock.Clock
-}
-
-// LoadError returns the error from loading the store when the service was
-// created, or nil. The service starts with an empty store in that case.
-func (cs *CronService) LoadError() error {
-	return cs.loadErr
 }
 
 // SetAlerter routes job failures to an alerter.
@@ -198,7 +195,7 @@ func NewCronService(storePath string, onJob JobHandler) *CronService {
 	// Initialize and load store on creation
 	if err := cs.loadStore(); err != nil {
 		logger.WarnCF("cron", "Failed to load cron store", map[string]any{"path": storePath, "error": err.Error()})
-		cs.loadErr = err
+		cs.damaged = true
 	}
 	return cs
 }
@@ -211,13 +208,16 @@ func (cs *CronService) Start() error {
 		return nil
 	}
 
+	cs.damaged = false
 	if err := cs.loadStore(); err != nil {
-		return fmt.Errorf("failed to load store: %w", err)
+		cs.setAsideUnsafe(err)
 	}
 
 	cs.recomputeNextRuns()
-	if err := cs.saveStoreUnsafe(); err != nil {
-		return fmt.Errorf("failed to save store: %w", err)
+	if !cs.damaged {
+		if err := cs.saveStoreUnsafe(); err != nil {
+			return fmt.Errorf("failed to save store: %w", err)
+		}
 	}
 
 	cs.stopChan = make(chan struct{})
@@ -270,6 +270,8 @@ func (cs *CronService) checkJobs() {
 		if err := cs.loadStore(); err != nil {
 			logger.WarnCF("cron", "failed to reload store, keeping existing", map[string]any{"error": err.Error()})
 			cs.store = prev
+		} else {
+			cs.damaged = false // the file was repaired: saving resumes
 		}
 	}
 
@@ -494,7 +496,9 @@ func (cs *CronService) getNextWakeMS() *int64 {
 func (cs *CronService) Load() error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	return cs.loadStore()
+	err := cs.loadStore()
+	cs.damaged = err != nil
+	return err
 }
 
 func (cs *CronService) SetOnJob(handler JobHandler) {
@@ -564,6 +568,9 @@ func (cs *CronService) loadStore() error {
 }
 
 func (cs *CronService) saveStoreUnsafe() error {
+	if cs.damaged {
+		return cs.damagedError()
+	}
 	data, err := json.MarshalIndent(cs.store, "", "  ")
 	if err != nil {
 		return err
@@ -587,6 +594,10 @@ func (cs *CronService) AddJob(
 ) (*CronJob, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
+
+	if cs.damaged {
+		return nil, cs.damagedError()
+	}
 
 	now := time.Now().UnixMilli()
 
@@ -759,4 +770,82 @@ func (cs *CronService) alertSaveFailed(err error) {
 		Details:     err.Error(),
 		EventID:     "cron-store",
 	})
+}
+
+// setAsideStamp is the time in a set-aside store's name.
+const setAsideStamp = "20060102-150405"
+
+// setAsideUnsafe handles a store file that exists but could not be loaded: it
+// is renamed next to the original (setAside) and the service goes on with the
+// empty store loadStore left, which the next save writes as a new file. If it
+// cannot be renamed the service is marked damaged, so it runs with no jobs and
+// never writes over the file. Either way the operator gets one alert.
+func (cs *CronService) setAsideUnsafe(loadErr error) {
+	aside, err := setAside(cs.storePath, clock.Or(cs.clock).Now())
+	if err != nil {
+		cs.damaged = true
+		// Reload it only once it changes, as when the operator repairs it.
+		if info, serr := os.Stat(cs.storePath); serr == nil {
+			cs.fileModTime = info.ModTime()
+		}
+		logger.ErrorCF("cron", "Cron store could not be read or set aside; no jobs run and it is not saved over",
+			map[string]any{"path": cs.storePath, "error": loadErr.Error(), "set_aside_error": err.Error()})
+		cs.alert(alerter.Alert{
+			Title:       "Cron store unreadable",
+			Description: "The scheduled jobs file " + cs.storePath + " could not be read or set aside, so no scheduled jobs are running",
+			Details:     loadErr.Error() + "; set aside: " + err.Error(),
+			EventID:     "cron-store",
+		})
+		return
+	}
+	logger.WarnCF("cron", "Cron store could not be read; set aside and started empty",
+		map[string]any{"path": cs.storePath, "set_aside_as": aside, "error": loadErr.Error()})
+	cs.alert(alerter.Alert{
+		Title:       "Cron store unreadable",
+		Description: "The scheduled jobs file could not be read and was set aside as " + aside + ", so no scheduled jobs are running",
+		Details:     loadErr.Error(),
+		EventID:     "cron-store",
+	})
+}
+
+// setAside renames path to "<path>.unreadable-<stamp>", or
+// "<path>.unreadable-<stamp>-<n>" when that name is taken, and returns the new
+// name. The name is first created exclusively, so an earlier set-aside file is
+// never replaced; the rename keeps the file's bytes and mode.
+func setAside(path string, now time.Time) (string, error) {
+	base := path + ".unreadable-" + now.Format(setAsideStamp)
+	for n := 1; n <= 100; n++ {
+		name := base
+		if n > 1 {
+			name = base + "-" + strconv.Itoa(n)
+		}
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // a name next to the configured store
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		// The reservation is empty, so a failed close loses nothing; renaming
+		// onto it replaces it.
+		cerr := f.Close()
+		if err := os.Rename(path, name); err != nil {
+			return "", errors.Join(err, cerr, os.Remove(name))
+		}
+		return name, nil
+	}
+	return "", fmt.Errorf("no free name like %s", base)
+}
+
+// damagedError is returned by writes while the store file could not be loaded
+// and is still in place.
+func (cs *CronService) damagedError() error {
+	return fmt.Errorf("the scheduled jobs file %s could not be read, so it is not saved over", cs.storePath)
+}
+
+// alert sends a to the alerter, if one is set.
+func (cs *CronService) alert(a alerter.Alert) {
+	if cs.alerter != nil {
+		cs.alerter.Send(a)
+	}
 }

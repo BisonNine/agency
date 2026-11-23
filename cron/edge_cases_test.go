@@ -75,14 +75,6 @@ func TestLoadAndSetOnJob(t *testing.T) {
 }
 
 func TestStart_Errors(t *testing.T) {
-	corrupt := filepath.Join(t.TempDir(), "jobs.json")
-	if err := os.WriteFile(corrupt, []byte("{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := NewCronService(corrupt, nil).Start(); err == nil || !strings.Contains(err.Error(), "failed to load store") {
-		t.Errorf("corrupt store Start = %v", err)
-	}
-
 	if os.Geteuid() == 0 {
 		return // root ignores directory permissions
 	}

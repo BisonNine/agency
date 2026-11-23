@@ -273,6 +273,11 @@
 - **Memory consolidation no longer applies the same batch twice** after its
   progress failed to save, and fails the run instead of sending the model an
   empty state when the current memory cannot be read.
+- **A damaged scheduled jobs file no longer stops the service from starting.**
+  `cron/jobs.json` is renamed to `jobs.json.unreadable-<date-time>`, scheduling
+  starts again with no jobs, and the "Cron store unreadable" alert names the
+  renamed file; a config reload does the same. `claw cron add` refuses to save
+  over a file it cannot read.
 
 ## [0.6.5]
 

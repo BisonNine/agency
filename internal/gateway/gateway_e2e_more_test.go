@@ -172,3 +172,67 @@ func TestListenerWarnings(t *testing.T) {
 		t.Errorf("reload trigger without a web server = %v", ch)
 	}
 }
+
+// TestGatewayCmd_DamagedCronStore: the gateway starts with a cron store it
+// cannot parse, and a reload with a store damaged again succeeds too; each
+// time the file is set aside with its bytes and an empty store replaces it.
+// The start sends one alert; the reload's repeat falls inside the alerter's
+// suppress window.
+func TestGatewayCmd_DamagedCronStore(t *testing.T) {
+	g := newE2EHome(t, "")
+	cronDir := filepath.Join(g.home, "cron")
+	store := filepath.Join(cronDir, "jobs.json")
+	if err := os.MkdirAll(cronDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g.start(t)
+	g.login(t)
+
+	requireCronSetAside := func(n int, content string) {
+		// n set-aside files, one alert.
+		t.Helper()
+		aside, err := filepath.Glob(store + ".unreadable-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(aside) != n {
+			t.Fatalf("set-aside files = %v, want %d", aside, n)
+		}
+		found := false
+		for _, a := range aside {
+			if b, err := os.ReadFile(a); err == nil && string(b) == content {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no set-aside file holds %q", content)
+		}
+		if b, err := os.ReadFile(store); err != nil || !strings.Contains(string(b), `"jobs": []`) {
+			t.Errorf("new store = %q, %v; want an empty store", b, err)
+		}
+		waitFor(t, "one set-aside alert in the alerts log", func() bool {
+			log, err := os.ReadFile(filepath.Join(g.home, "logs", "alerts.log"))
+			return err == nil && strings.Count(string(log), "The scheduled jobs file could not be read and was set aside as") == 1
+		})
+	}
+	requireCronSetAside(1, "{not json")
+
+	if err := os.WriteFile(store, []byte("[damaged again"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := g.post(t, "/api/gateway/reload"); code != http.StatusOK || !strings.Contains(body, "reloaded") {
+		t.Fatalf("reload = %d %s", code, body)
+	}
+	g.waitReady(t)
+	requireCronSetAside(2, "[damaged again")
+
+	if code, body := g.post(t, "/api/system/restart"); code != http.StatusAccepted {
+		t.Fatalf("restart = %d %s", code, body)
+	}
+	if err := g.wait(t); exitCode(err) != exitCodeServiceDied {
+		t.Fatalf("gatewayCmd = %v", err)
+	}
+}
