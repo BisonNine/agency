@@ -91,7 +91,7 @@ func TestOpenTerminal(t *testing.T) {
 		if !errors.Is(err, ErrNoTerminal) {
 			t.Fatalf("err = %v, want ErrNoTerminal", err)
 		}
-		if _, werr := opened.Write([]byte("x")); werr == nil {
+		if _, werr := opened.WriteString("x"); werr == nil {
 			t.Error("the non-terminal /dev/tty was left open")
 		}
 	})
@@ -111,7 +111,7 @@ func TestOpenTerminal(t *testing.T) {
 		if err := term.Close(); err != nil {
 			t.Fatal(err)
 		}
-		if _, werr := f.Write([]byte("x")); werr == nil {
+		if _, werr := f.WriteString("x"); werr == nil {
 			t.Error("Close did not close /dev/tty")
 		}
 	})
@@ -197,7 +197,11 @@ func TestWrite_Errors(t *testing.T) {
 		if err := os.Mkdir(ro, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(ro, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		err := Write(Path(ro), "alice", "a long enough password", DefaultFileMode)
 		if err == nil || !strings.Contains(err.Error(), "create temp file") {
 			t.Fatalf("err = %v, want a temp file error", err)
@@ -321,10 +325,14 @@ func TestEnsureAccount_WriteFails(t *testing.T) {
 		return // root writes anywhere
 	}
 	ro := filepath.Join(t.TempDir(), "ro")
-	if err := os.Mkdir(ro, 0o500); err != nil {
-		t.Fatal(err)
+	if ierr := os.Mkdir(ro, 0o500); ierr != nil {
+		t.Fatal(ierr)
 	}
-	t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+	t.Cleanup(func() {
+		if cerr := os.Chmod(ro, 0o700); cerr != nil {
+			t.Error(cerr)
+		}
+	})
 	_, created, err := EnsureAccount(EnsureOptions{Home: ro, Getenv: env("alice", "a long enough password")})
 	if err == nil || created || !strings.Contains(err.Error(), "create temp file") {
 		t.Fatalf("EnsureAccount in a read-only home = %v (created %v)", err, created)
@@ -413,14 +421,18 @@ func TestWrite_TempFileFailures(t *testing.T) {
 		want string
 	}{
 		{"chmod fails", func(t *testing.T, name string) *os.File {
+			t.Helper()
 			f, err := os.Open(name)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_ = f.Close() // a closed file refuses Chmod
+			if cerr := f.Close(); cerr != nil { // a closed file refuses Chmod
+				t.Error(cerr)
+			}
 			return f
 		}, "chmod temp file"},
 		{"write fails", func(t *testing.T, name string) *os.File {
+			t.Helper()
 			f, err := os.Open(name) // read-only
 			if err != nil {
 				t.Fatal(err)
@@ -447,7 +459,10 @@ func TestWrite_TempFileFailures(t *testing.T) {
 			if rerr != nil || string(after) != string(before) {
 				t.Errorf("existing account changed by a failed write (%v)", rerr)
 			}
-			entries, _ := os.ReadDir(home)
+			entries, rerr := os.ReadDir(home)
+			if rerr != nil {
+				t.Fatal(rerr)
+			}
 			if len(entries) != 1 {
 				t.Errorf("temp file left behind: %v", entries)
 			}
@@ -460,6 +475,7 @@ func TestWrite_TempFileFailures(t *testing.T) {
 func TestWrite_TempFileGoneStillFails(t *testing.T) {
 	home := t.TempDir()
 	stubCreateTemp(t, func(t *testing.T, name string) *os.File {
+		t.Helper()
 		f, err := os.Open(name)
 		if err != nil {
 			t.Fatal(err)

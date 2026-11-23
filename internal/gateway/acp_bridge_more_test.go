@@ -63,11 +63,11 @@ func TestACPBridgeSessionManagement(t *testing.T) {
 	if err != nil || list.Sessions == nil || len(list.Sessions) != 0 {
 		t.Errorf("ListSessions = %+v, %v; want an empty, non-nil list", list, err)
 	}
-	if _, err := br.SetSessionMode(ctx, acplib.SetSessionModeRequest{}); err != nil {
-		t.Errorf("SetSessionMode: %v", err)
+	if _, ierr := br.SetSessionMode(ctx, acplib.SetSessionModeRequest{}); ierr != nil {
+		t.Errorf("SetSessionMode: %v", ierr)
 	}
-	if _, err := br.SetSessionModel(ctx, acplib.SetSessionModelRequest{}); err != nil {
-		t.Errorf("SetSessionModel: %v", err)
+	if _, ierr := br.SetSessionModel(ctx, acplib.SetSessionModelRequest{}); ierr != nil {
+		t.Errorf("SetSessionModel: %v", ierr)
 	}
 	opts, err := br.SetSessionConfigOption(ctx, acplib.SetSessionConfigOptionRequest{})
 	if err != nil || opts.ConfigOptions == nil {
@@ -171,7 +171,10 @@ func TestACPBridgeEvents(t *testing.T) {
 	br.handleGatewayEvent(protocol.Event{EventName: "something.else"})
 	br.handleGatewayEvent(chatEvent(t, "unknown-run", "final"))
 	// Text without a delta is sent; the client refusing it is only logged.
-	payload, _ := json.Marshal(map[string]any{"runId": "r1", "stream": "assistant", "data": map[string]any{"text": "whole"}})
+	payload, rerr := json.Marshal(map[string]any{"runId": "r1", "stream": "assistant", "data": map[string]any{"text": "whole"}})
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
 	br.handleGatewayEvent(protocol.Event{EventName: protocol.EventAgent, Payload: payload})
 	if note.calls != 1 {
 		t.Errorf("session updates = %d, want 1", note.calls)

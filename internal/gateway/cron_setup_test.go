@@ -38,8 +38,8 @@ func TestSetupCronTool_JobsRun(t *testing.T) {
 	if tool == nil {
 		t.Fatal("no cron tool with cron enabled")
 	}
-	if err := svc.Start(); err != nil {
-		t.Fatal(err)
+	if ierr := svc.Start(); ierr != nil {
+		t.Fatal(ierr)
 	}
 	t.Cleanup(svc.Stop)
 

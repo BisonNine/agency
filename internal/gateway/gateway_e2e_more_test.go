@@ -27,11 +27,13 @@ func TestGatewayCmd_MoreStartupErrors(t *testing.T) {
 		want  string
 	}{
 		{"config readable by others", func(t *testing.T, g *e2eGateway) {
+			t.Helper()
 			if err := os.Chmod(filepath.Join(g.home, "config.json"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}, "startup aborted"},
 		{"config is a folder", func(t *testing.T, g *e2eGateway) {
+			t.Helper()
 			p := filepath.Join(g.home, "config.json")
 			if err := os.Remove(p); err != nil {
 				t.Fatal(err)
@@ -41,11 +43,13 @@ func TestGatewayCmd_MoreStartupErrors(t *testing.T) {
 			}
 		}, "error loading config"},
 		{"no channels", func(t *testing.T, g *e2eGateway) {
+			t.Helper()
 			g.rewriteConfig(t, func(s string) string {
 				return strings.Replace(s, `"webui": {"enabled": true, "token": "e2e-webui-token"}`, `"webui": {"enabled": false}`, 1)
 			})
 		}, "error starting channels"},
 		{"certificate files missing", func(t *testing.T, g *e2eGateway) {
+			t.Helper()
 			missing := filepath.Join(t.TempDir(), "missing")
 			g.rewriteConfig(t, func(s string) string {
 				return strings.Replace(s, `"tls": {"mode": "off"}`,
@@ -77,8 +81,8 @@ func TestGatewayCmd_ForceReloadErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(cfgPath, []byte(`{"models": [`), 0o600); err != nil {
-		t.Fatal(err)
+	if ierr := os.WriteFile(cfgPath, []byte(`{"models": [`), 0o600); ierr != nil {
+		t.Fatal(ierr)
 	}
 	if code, body := g.post(t, "/api/gateway/reload"); code != http.StatusInternalServerError {
 		t.Errorf("reload of an unparseable config = %d %s", code, body)
@@ -88,10 +92,14 @@ func TestGatewayCmd_ForceReloadErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = taken.Close() }()
+	defer func() {
+		if cerr := taken.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
 	var doc map[string]any
-	if err := json.Unmarshal(good, &doc); err != nil {
-		t.Fatal(err)
+	if ierr := json.Unmarshal(good, &doc); ierr != nil {
+		t.Fatal(ierr)
 	}
 	doc["mcp_host"] = map[string]any{"enabled": true, "listen": taken.Addr().String()}
 	withHost, err := json.Marshal(doc)
@@ -139,7 +147,7 @@ func TestGatewayCmd_QuietLogging(t *testing.T) {
 		t.Fatalf("gatewayCmd = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(g.home, "logs", "claw.log")); err == nil {
-		if b, _ := os.ReadFile(filepath.Join(g.home, "logs", "claw.log")); strings.Contains(string(b), "Shutting down") {
+		if b, rerr := os.ReadFile(filepath.Join(g.home, "logs", "claw.log")); rerr != nil || strings.Contains(string(b), "Shutting down") {
 			t.Error("claw.log written with file logging off")
 		}
 	}

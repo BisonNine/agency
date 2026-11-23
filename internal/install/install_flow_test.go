@@ -123,7 +123,10 @@ func TestInstall_UserModeLinux(t *testing.T) {
 			t.Errorf(".bashrc lacks %q:\n%s", want, rc)
 		}
 	}
-	gw, _ := readJSON(t, filepath.Join(e.clawHome, "config.json"))["gateway"].(map[string]any)
+	gw, ok := readJSON(t, filepath.Join(e.clawHome, "config.json"))["gateway"].(map[string]any)
+	if !ok {
+		t.Fatal("config has no gateway object")
+	}
 	if gw["host"] != "0.0.0.0" || gw["port"] != float64(18999) || fmt.Sprint(gw["allowed_cidrs"]) != "[192.168.1.0/24]" {
 		t.Errorf("gateway = %v", gw)
 	}
@@ -249,6 +252,7 @@ func TestInstall_Errors(t *testing.T) {
 			return "", "", ""
 		}, "cannot locate running binary: no /proc"},
 		{"bin dir blocked", func(t *testing.T, _ *installEnv) (string, string, string) {
+			t.Helper()
 			f := filepath.Join(t.TempDir(), "file")
 			if err := os.WriteFile(f, nil, 0o600); err != nil {
 				t.Fatal(err)
@@ -256,10 +260,12 @@ func TestInstall_Errors(t *testing.T) {
 			return "", "", filepath.Join(f, "bin")
 		}, "creating bin dir"},
 		{"binary missing", func(t *testing.T, e *installEnv) (string, string, string) {
+			t.Helper()
 			e.exe = filepath.Join(t.TempDir(), "gone")
 			return "", "", t.TempDir()
 		}, "copying binary to"},
 		{"config unreadable", func(t *testing.T, e *installEnv) (string, string, string) {
+			t.Helper()
 			if err := os.MkdirAll(e.clawHome, 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -269,12 +275,15 @@ func TestInstall_Errors(t *testing.T) {
 			return "127.0.0.1", "", t.TempDir()
 		}, "applying server settings"},
 		{"network bind without allowlist", func(t *testing.T, _ *installEnv) (string, string, string) {
+			t.Helper()
 			return "0.0.0.0", "", t.TempDir()
 		}, "but the allowlist is empty"},
 		{"bad allowlist", func(t *testing.T, _ *installEnv) (string, string, string) {
+			t.Helper()
 			return "", "not-a-cidr", t.TempDir()
 		}, "applying allowlist"},
 		{"no admin account", func(t *testing.T, _ *installEnv) (string, string, string) {
+			t.Helper()
 			t.Setenv(admin.EnvUser, "")
 			t.Setenv(admin.EnvPassword, "")
 			orig := adminTerminal
@@ -359,6 +368,7 @@ func TestUninstall(t *testing.T) {
 
 func TestUninstall_Paths(t *testing.T) {
 	newUninstallHost := func(t *testing.T, goos string) (*host, *cmdLog) {
+		t.Helper()
 		h, log := svcHost(t, goos)
 		h.targetUser = func(explicit string) (*TargetUser, error) {
 			name := "alice"

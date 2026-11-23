@@ -33,7 +33,10 @@ func TestDetectInstall_ByPlatform(t *testing.T) {
 
 func TestEnsureUserEnv(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
-	tuFor := func(t *testing.T) *TargetUser { return &TargetUser{HomeDir: t.TempDir()} }
+	tuFor := func(t *testing.T) *TargetUser {
+		t.Helper()
+		return &TargetUser{HomeDir: t.TempDir()}
+	}
 
 	t.Run("shell rc by shell", func(t *testing.T) {
 		for shell, rc := range map[string]string{"/bin/zsh": ".zshrc", "/bin/bash": ".bashrc", "/bin/fish": ".profile", "": ".profile"} {
@@ -103,7 +106,11 @@ func TestEnsureUserEnv(t *testing.T) {
 		if err := os.Chmod(tu.HomeDir, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(tu.HomeDir, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(tu.HomeDir, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		if note := ensureUserEnv(tu, "/opt/x", "/srv/x"); !strings.HasPrefix(note, "Could not update ") {
 			t.Errorf("note = %q", note)
 		}
@@ -225,7 +232,11 @@ func TestApplyServerSettings_Errors(t *testing.T) {
 		if err := os.Chmod(ro, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(ro, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		var err error
 		captureStdout(t, func() { err = applyServerSettings("127.0.0.1", 1, ro) })
 		if err == nil {

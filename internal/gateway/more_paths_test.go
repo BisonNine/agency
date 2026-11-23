@@ -38,7 +38,11 @@ func TestHTTPHost_NoMuxYet(t *testing.T) {
 	if err := h.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = h.Stop(context.Background()) })
+	t.Cleanup(func() {
+		if cerr := h.Stop(context.Background()); cerr != nil {
+			t.Error(cerr)
+		}
+	})
 	rec := &statusRecorder{header: http.Header{}}
 	h.serveMux(rec, httpRequest(t, "/anything"))
 	if rec.code != http.StatusNotFound {
@@ -71,21 +75,31 @@ func TestHTTPHost_HTTPSBindFailureClosesHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = taken.Close() }()
+	defer func() {
+		if cerr := taken.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
 	httpPort := freeLoopbackPort(t)
-	tlsPort := taken.Addr().(*net.TCPAddr).Port
+	takenAddr, ok := taken.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("listener address is %T", taken.Addr())
+	}
+	tlsPort := takenAddr.Port
 	h, err := newHTTPHost(hostOptions{HTTPHosts: []string{"127.0.0.1"}, Port: httpPort, TLSHosts: []string{"127.0.0.1"}, TLSPort: tlsPort})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := h.Start(); err == nil || !strings.Contains(err.Error(), "bind HTTPS listener") {
-		t.Fatalf("Start = %v", err)
+	if startErr := h.Start(); startErr == nil || !strings.Contains(startErr.Error(), "bind HTTPS listener") {
+		t.Fatalf("Start = %v", startErr)
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(httpPort)))
 	if err != nil {
 		t.Fatalf("the HTTP port is still held: %v", err)
 	}
-	_ = ln.Close()
+	if cerr := ln.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 }
 
 // TestBindAll_IPv6LoopbackOptional: an unavailable [::1] is skipped, not
@@ -95,15 +109,25 @@ func TestBindAll_IPv6LoopbackOptional(t *testing.T) {
 	if err != nil {
 		t.Skip("no IPv6 loopback here")
 	}
-	defer func() { _ = v6.Close() }()
-	port := v6.Addr().(*net.TCPAddr).Port
+	defer func() {
+		if cerr := v6.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
+	v6Addr, ok := v6.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("listener address is %T", v6.Addr())
+	}
+	port := v6Addr.Port
 	lns, got, err := bindAll("HTTP", []string{"127.0.0.1", "::1"}, port)
 	if err != nil {
 		t.Skipf("IPv4 port %d taken too: %v", port, err)
 	}
 	defer func() {
 		for _, l := range lns {
-			_ = l.Close()
+			if cerr := l.Close(); cerr != nil {
+				t.Error(cerr)
+			}
 		}
 	}()
 	if got != port || len(lns) != 1 {
@@ -150,7 +174,9 @@ func TestHTTPHost_StopTimesOut(t *testing.T) {
 	go func() {
 		resp, err := http.Get("http://" + h.LoopbackAddr() + "/health")
 		if err == nil {
-			_ = resp.Body.Close()
+			if cerr := resp.Body.Close(); cerr != nil {
+				t.Error(cerr)
+			}
 		}
 	}()
 	<-entered
@@ -160,7 +186,9 @@ func TestHTTPHost_StopTimesOut(t *testing.T) {
 		t.Error("Stop with a request in flight and no time left succeeded")
 	}
 	close(release)
-	_ = h.Stop(context.Background())
+	if cerr := h.Stop(context.Background()); cerr != nil {
+		t.Error(cerr)
+	}
 }
 
 // TestSetupAndStartServices_Errors: listener settings the start cannot use
@@ -170,7 +198,11 @@ func TestSetupAndStartServices_Errors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = taken.Close() }()
+	defer func() {
+		if cerr := taken.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
 	tests := []struct {
 		name   string
 		mutate func(cfg *config.Config)
@@ -317,7 +349,11 @@ func TestPruneOldLogs_Edges(t *testing.T) {
 		if err := os.Chmod(dir, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(dir, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		if out := logLines(t, func() { pruneOldLogs(dir, 7, time.Now()) }); !strings.Contains(out, "failed to prune rolled log") {
 			t.Errorf("log = %s", out)
 		}

@@ -27,7 +27,7 @@ func startBackupScheduler(getConfig func() *config.Config, configPath string, a 
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				nb.tick(now)
+				nb.tick(now) //nolint:contextcheck // as `claw backup`: the backup has no context; its quick_check runs on its own busy_timeout-bounded connection
 			}
 		}
 	}()

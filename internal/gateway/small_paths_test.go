@@ -39,7 +39,9 @@ func TestFatalService_UnknownService(t *testing.T) {
 	if len(got) != 1 || got[0].Title != "Core service stopped" || !strings.Contains(got[0].Description, "telemetry died") {
 		t.Fatalf("alerts = %+v", got)
 	}
-	<-f.failed
+	if died := <-f.failed; died.Service != "telemetry" {
+		t.Errorf("failure for %q", died.Service)
+	}
 }
 
 // TestRecoverForums_NoScopes: with no agent to recover, recovery ends at once
@@ -152,19 +154,4 @@ func TestBridgeLocalStoreErrors(t *testing.T) {
 	if _, err := autoApproveLocalDevice(context.Background(), home, "dev"); err == nil || !strings.Contains(err.Error(), "open device store") {
 		t.Errorf("autoApproveLocalDevice = %v", err)
 	}
-}
-
-// TestAbortSessionKeyClient: chat.abort from the bridge names the node's
-// "main" session when the caller gave none.
-func TestAbortSessionKeyClient(t *testing.T) {
-	g := startACPTestGateway(t, t.TempDir(), false)
-	conn, err := g.connect(t, true, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { utils.CloseQuietly(conn.client) })
-	c := &abortSessionKeyClient{Client: conn.client}
-	// The run is unknown to the gateway; the call reaches it either way.
-	_ = c.ChatAbort(context.Background(), protocol.ChatAbortParams{RunID: "no-such-run"})
-	_ = c.ChatAbort(context.Background(), protocol.ChatAbortParams{RunID: "no-such-run", SessionKey: "main"})
 }

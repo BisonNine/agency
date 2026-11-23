@@ -29,7 +29,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	done := make(chan string)
 	go func() {
 		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
+		if _, cerr := io.Copy(&buf, r); cerr != nil {
+			t.Error(cerr)
+		}
 		done <- buf.String()
 	}()
 	os.Stdout = w
@@ -238,7 +240,7 @@ func TestListApproveRemove(t *testing.T) {
 	if !strings.Contains(out, "Approved device dev-alice") {
 		t.Errorf("approve output = %q", out)
 	}
-	out = captureStdout(t, func() { err = approve(unnamed) })
+	captureStdout(t, func() { err = approve(unnamed) })
 	if err != nil {
 		t.Fatalf("approve: %v", err)
 	}

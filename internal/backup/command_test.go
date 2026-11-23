@@ -34,7 +34,7 @@ func (errWriter) Write([]byte) (int, error) { return 0, errors.New("write refuse
 
 func runCmd(t *testing.T, args []string, stdin string) (string, string, error) {
 	t.Helper()
-	var cmd = NewBackupCommand()
+	cmd := NewBackupCommand()
 	if len(args) > 0 && args[0] == "restore" {
 		cmd = NewRestoreCommand()
 		args = args[1:]
@@ -204,11 +204,14 @@ func TestRestoreCommand(t *testing.T) {
 	if got, rerr := os.ReadFile(filepath.Join(home, "config.json")); rerr != nil || string(got) != `{"agents":{}}` {
 		t.Errorf("config.json = %q (%v), want the archived one", got, rerr)
 	}
-	parked, _ := filepath.Glob(filepath.Join(home, restoreBackupPrefix+"*", "config.json"))
+	parked, rerr := filepath.Glob(filepath.Join(home, restoreBackupPrefix+"*", "config.json"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
 	if len(parked) != 1 {
 		t.Fatalf("parked config = %v", parked)
 	}
-	if got, _ := os.ReadFile(parked[0]); string(got) != `{"old":true}` {
+	if got, rerr := os.ReadFile(parked[0]); rerr != nil || string(got) != `{"old":true}` {
 		t.Errorf("parked config = %q", got)
 	}
 }
@@ -222,8 +225,8 @@ func TestRestoreCommand_ExternalAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Restore over the original agents directory's place, which is empty now.
-	if err := os.RemoveAll(plan.Manifest.AgentsDir); err != nil {
-		t.Fatal(err)
+	if ierr := os.RemoveAll(plan.Manifest.AgentsDir); ierr != nil {
+		t.Fatal(ierr)
 	}
 	home := t.TempDir()
 	t.Setenv(global.EnvVarHome, home)
@@ -252,7 +255,7 @@ func TestRestoreCommand_NotConfirmed(t *testing.T) {
 		if err == nil || err.Error() != tc.want {
 			t.Errorf("stdin %q: err = %v, want %q", tc.stdin, err, tc.want)
 		}
-		if entries, _ := os.ReadDir(home); len(entries) != 0 {
+		if entries, rerr := os.ReadDir(home); rerr != nil || len(entries) != 0 {
 			t.Errorf("stdin %q: home changed without confirmation: %v", tc.stdin, entries)
 		}
 	}
@@ -316,7 +319,11 @@ func TestRestoreCommand_Errors(t *testing.T) {
 		if err := os.Chmod(home, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(home, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		if _, _, err := runCmd(t, []string{"restore", "--yes", archive}, ""); err == nil {
 			t.Fatal("restore into a read-only home succeeded")
 		}

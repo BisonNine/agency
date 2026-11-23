@@ -4,16 +4,16 @@
 package gateway
 
 import (
-	"context"
-	"time"
-
 	"bytes"
-	"github.com/tenebris-tech/alerter"
-	"go.bison9.com/agent/clock"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/clock"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/testalerts"
@@ -73,7 +73,11 @@ func TestSavePermissionDefaults_WriteFails(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if cerr := os.Chmod(dir, 0o700); cerr != nil {
+			t.Error(cerr)
+		}
+	})
 	if out := logLines(t, func() { savePermissionDefaults(store) }); !strings.Contains(out, "could not write the security.permissions defaults") {
 		t.Errorf("log = %s", out)
 	}

@@ -279,8 +279,8 @@ func TestNewAdminCommand(t *testing.T) {
 	cmd = NewAdminCommand()
 	cmd.SetOut(&out)
 	cmd.SetArgs(nil)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute without a username: %v", err)
+	if ierr := cmd.Execute(); ierr != nil {
+		t.Fatalf("Execute without a username: %v", ierr)
 	}
 	if creds, err = admin.Load(admin.Path(home), admin.DefaultFileMode); err != nil || creds.Username != "alice" {
 		t.Fatalf("Load = %+v, %v; want alice (prompted)", creds, err)

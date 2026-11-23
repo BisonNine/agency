@@ -50,7 +50,7 @@ func TestNightlyBackup_Tick(t *testing.T) {
 	cfg, path := backupCfg(t, true, dest)
 	rec := &alertRecorder{}
 	nb := &nightlyBackup{getConfig: func() *config.Config { return cfg }, configPath: path, alerter: rec}
-	at := time.Date(2026, 3, 4, 2, 30, 0, 0, time.Local)
+	at := time.Date(2026, 3, 4, 2, 30, 0, 0, time.UTC)
 
 	nb.tick(at.Add(-time.Minute))
 	if archives(t, dest) != 0 {
@@ -91,7 +91,7 @@ func TestNightlyBackup_FailureAlerts(t *testing.T) {
 	cfg, path := backupCfg(t, true, filepath.Join(blocker, "dest"))
 	rec := &alertRecorder{}
 	nb := &nightlyBackup{getConfig: func() *config.Config { return cfg }, configPath: path, alerter: rec}
-	nb.tick(time.Date(2026, 3, 4, 2, 30, 0, 0, time.Local))
+	nb.tick(time.Date(2026, 3, 4, 2, 30, 0, 0, time.UTC))
 	if !rec.has("Nightly backup failed") {
 		t.Fatalf("alerts = %v", rec.titles())
 	}

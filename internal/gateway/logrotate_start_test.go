@@ -4,7 +4,6 @@
 package gateway
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,8 +34,7 @@ func staleLog(t *testing.T) (string, string) {
 // archived under its date at startup.
 func TestStartLogRotation_RollsStaleLog(t *testing.T) {
 	logPath, archived := staleLog(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	rec := &alertRecorder{}
 	startLogRotation(ctx, logPath, 30, rec)
 	if _, err := os.Stat(archived); err != nil {
@@ -54,8 +52,7 @@ func TestStartLogRotation_FailureAlerts(t *testing.T) {
 	if err := os.Mkdir(archived, 0o700); err != nil { // the archive name is taken by a folder
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	rec := &alertRecorder{}
 	startLogRotation(ctx, logPath, 0, rec)
 	if !rec.has("Log rotation failed") {

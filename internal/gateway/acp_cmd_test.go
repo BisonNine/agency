@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/utils"
 )
 
 // acpStdio swaps os.Stdin, os.Stdout and os.Stderr for pipes while acpCmd
@@ -50,8 +52,9 @@ func withACPStdio(t *testing.T) *acpStdio {
 		restoreLog()
 		logger.SetLevel(level)
 		logger.DisableFileLogging()
+		// Some ends are closed by the test already.
 		for _, f := range []*os.File{inR, inW, outR, outW, devNull} {
-			_ = f.Close()
+			utils.CloseQuietly(f)
 		}
 	})
 	return &acpStdio{in: inW, out: bufio.NewReader(outR)}
@@ -97,7 +100,9 @@ func TestACPCmd_ServesStdio(t *testing.T) {
 			if err := json.Unmarshal([]byte(line), &resp); err != nil || resp.ID != 1 || !strings.Contains(string(resp.Result), "protocolVersion") {
 				t.Fatalf("initialize response %q (%v)", line, err)
 			}
-			_ = io.in.Close()
+			if cerr := io.in.Close(); cerr != nil {
+				t.Error(cerr)
+			}
 			select {
 			case err := <-done:
 				if err != nil {
@@ -127,7 +132,7 @@ func readLine(r *bufio.Reader, done <-chan error) (string, error) {
 	case err := <-done:
 		return "", fmt.Errorf("acp exited before answering: %w", err)
 	case <-time.After(30 * time.Second):
-		return "", fmt.Errorf("no answer on stdout")
+		return "", errors.New("no answer on stdout")
 	}
 }
 

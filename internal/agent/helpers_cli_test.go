@@ -39,7 +39,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	done := make(chan string)
 	go func() {
 		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
+		if _, cerr := io.Copy(&buf, r); cerr != nil {
+			t.Error(cerr)
+		}
 		done <- buf.String()
 	}()
 	os.Stdout = w
@@ -60,13 +62,19 @@ func withStdin(t *testing.T, input string, fn func()) {
 		t.Fatal(err)
 	}
 	go func() {
-		_, _ = io.WriteString(w, input)
-		_ = w.Close()
+		if _, cerr := io.WriteString(w, input); cerr != nil {
+			t.Error(cerr)
+		}
+		if cerr := w.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 	}()
 	os.Stdin = r
 	defer func() {
 		os.Stdin = old
-		_ = r.Close()
+		if cerr := r.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 	}()
 	fn()
 }
@@ -316,8 +324,12 @@ func TestSimpleInteractiveMode_ReadErrorStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = w.Close()
-	_ = r.Close() // reads now fail with os.ErrClosed, not io.EOF
+	if cerr := w.Close(); cerr != nil {
+		t.Error(cerr)
+	}
+	if cerr := r.Close(); cerr != nil { // reads now fail with os.ErrClosed, not io.EOF
+		t.Error(cerr)
+	}
 	old := os.Stdin
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = old })

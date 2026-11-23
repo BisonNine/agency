@@ -6,14 +6,16 @@ package gateway
 import (
 	"errors"
 	"fmt"
-	"go.bison9.com/agent/cogmem/store"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"go.bison9.com/agent/cogmem/store"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
@@ -118,12 +120,7 @@ func (r *alertRecorder) titles() []string {
 }
 
 func (r *alertRecorder) has(title string) bool {
-	for _, got := range r.titles() {
-		if got == title {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(r.titles(), title)
 }
 
 // TestGatewayRun_ReloadsAndFatal drives the main loop: a config the watcher
@@ -163,7 +160,11 @@ func TestGatewayRun_ReloadsAndFatal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = taken.Close() }()
+	defer func() {
+		if cerr := taken.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
 	badCfg := *b.al.GetConfig()
 	badCfg.MCPHost.Listen = taken.Addr().String()
 	b.run.configReloads <- &badCfg
@@ -240,7 +241,9 @@ func TestGatewayRun_TLSDevicesAndReloadWarnings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = resp.Body.Close()
+	if cerr := resp.Body.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("device remove = %d", resp.StatusCode)
 	}
@@ -249,7 +252,9 @@ func TestGatewayRun_TLSDevicesAndReloadWarnings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_ = resp.Body.Close()
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("secmsg link on %s = %d, want 404", name, resp.StatusCode)
 		}

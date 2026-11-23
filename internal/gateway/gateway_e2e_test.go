@@ -163,7 +163,9 @@ func (g *e2eGateway) waitReady(t *testing.T) {
 		}
 		resp, err := g.client.Get(g.url("/ready"))
 		if err == nil {
-			_ = resp.Body.Close()
+			if cerr := resp.Body.Close(); cerr != nil {
+				t.Error(cerr)
+			}
 			if resp.StatusCode == http.StatusOK {
 				return
 			}
@@ -187,12 +189,17 @@ func (g *e2eGateway) wait(t *testing.T) error {
 
 func (g *e2eGateway) login(t *testing.T) {
 	t.Helper()
-	body, _ := json.Marshal(map[string]string{"username": e2eAdmin, "password": e2ePassword})
+	body, rerr := json.Marshal(map[string]string{"username": e2eAdmin, "password": e2ePassword})
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
 	resp, err := g.client.Post(g.url("/api/auth/login"), "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = resp.Body.Close()
+	if cerr := resp.Body.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("login = %d", resp.StatusCode)
 	}
@@ -204,9 +211,15 @@ func (g *e2eGateway) post(t *testing.T, path string) (int, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
 	var b bytes.Buffer
-	_, _ = b.ReadFrom(resp.Body)
+	if _, cerr := b.ReadFrom(resp.Body); cerr != nil {
+		t.Error(cerr)
+	}
 	return resp.StatusCode, b.String()
 }
 

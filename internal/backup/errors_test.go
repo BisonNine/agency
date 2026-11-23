@@ -32,7 +32,11 @@ func lockDir(t *testing.T, dir string) {
 	if err := os.Chmod(dir, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	t.Cleanup(func() {
+		if cerr := os.Chmod(dir, 0o700); cerr != nil {
+			t.Error(cerr)
+		}
+	})
 }
 
 // TestRun_UnreadableTreeFails: a folder the backup cannot read fails the run
@@ -92,7 +96,11 @@ func TestRun_OptionalFileUnstatable(t *testing.T) {
 				if err := os.Chmod(src.Home, 0o600); err != nil {
 					t.Fatal(err)
 				}
-				t.Cleanup(func() { _ = os.Chmod(src.Home, 0o700) })
+				t.Cleanup(func() {
+					if cerr := os.Chmod(src.Home, 0o700); cerr != nil {
+						t.Error(cerr)
+					}
+				})
 				src.ConfigPath, src.CronDir, src.AgentsDir = "", "", ""
 			} else {
 				set(&src, blocker)
@@ -143,7 +151,11 @@ func TestRun_DestinationErrors(t *testing.T) {
 		if err := os.Mkdir(dest, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(dest, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(dest, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		if _, err := Run(src, dest, time.Now(), &testalerts.Recorder{}); err == nil || !strings.Contains(err.Error(), "backup: temp dir") {
 			t.Fatalf("err = %v", err)
 		}
@@ -188,7 +200,11 @@ func TestPrune_Errors(t *testing.T) {
 		if err := os.Chmod(old, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(old, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(old, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		n, err := Prune(dest, 7, time.Now())
 		if err != nil || n != 1 {
 			t.Fatalf("Prune = %d, %v; want the archive removed and the stuck folder skipped", n, err)
@@ -245,8 +261,12 @@ const goodManifest = `{"version":1,"created_at":"2026-01-01T00:00:00Z","home":"/
 func TestReadArchive_Errors(t *testing.T) {
 	var garbageTar bytes.Buffer
 	gz := gzip.NewWriter(&garbageTar)
-	_, _ = gz.Write([]byte(strings.Repeat("not a tar header ", 40)))
-	_ = gz.Close()
+	if _, cerr := gz.Write([]byte(strings.Repeat("not a tar header ", 40))); cerr != nil {
+		t.Error(cerr)
+	}
+	if cerr := gz.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 	garbagePath := filepath.Join(t.TempDir(), "garbage.tar.gz")
 	writeFileT(t, garbagePath, garbageTar.String(), 0o600)
 
@@ -265,8 +285,12 @@ func TestReadArchive_Errors(t *testing.T) {
 	}
 	var cut bytes.Buffer
 	gz = gzip.NewWriter(&cut)
-	_, _ = gz.Write(plain.Bytes()[:2048])
-	_ = gz.Close()
+	if _, cerr := gz.Write(plain.Bytes()[:2048]); cerr != nil {
+		t.Error(cerr)
+	}
+	if cerr := gz.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 	cutPath := filepath.Join(t.TempDir(), "cut.tar.gz")
 	writeFileT(t, cutPath, cut.String(), 0o600)
 
@@ -356,7 +380,7 @@ func TestApply_Errors(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "restore: create") {
 			t.Fatalf("err = %v", err)
 		}
-		if got, _ := os.ReadFile(filepath.Join(home, "config.json")); string(got) != `{"old":true}` {
+		if got, rerr := os.ReadFile(filepath.Join(home, "config.json")); rerr != nil || string(got) != `{"old":true}` {
 			t.Errorf("config.json = %q, want unchanged", got)
 		}
 	})
@@ -392,7 +416,11 @@ func TestApply_Errors(t *testing.T) {
 		if err := os.Chmod(cards, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(cards, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(cards, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		if _, err := plan.Apply(time.Now()); err == nil {
 			t.Fatal("Apply succeeded although the old card could not be moved aside")
 		}
@@ -417,7 +445,7 @@ func TestMoveFile_CopyFallback(t *testing.T) {
 	if err != nil || fi.Mode().Perm() != 0o640 {
 		t.Fatalf("dst = %v, %v; want mode 0640", fi, err)
 	}
-	if got, _ := os.ReadFile(dst); string(got) != "payload" {
+	if got, rerr := os.ReadFile(dst); rerr != nil || string(got) != "payload" {
 		t.Errorf("dst = %q", got)
 	}
 	if _, err := os.Stat(src); !errors.Is(err, os.ErrNotExist) {
@@ -455,7 +483,11 @@ func TestMoveFile_CopyFallback(t *testing.T) {
 		if err := os.Chmod(ro, 0o500); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+		t.Cleanup(func() {
+			if cerr := os.Chmod(ro, 0o700); cerr != nil {
+				t.Error(cerr)
+			}
+		})
 		if err := moveFile(s, filepath.Join(dir, "d4")); err == nil || !strings.Contains(err.Error(), "restore: remove") {
 			t.Fatalf("err = %v", err)
 		}
@@ -480,7 +512,11 @@ func TestPark_Errors(t *testing.T) {
 	if err := os.Chmod(hidden, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(hidden, 0o700) })
+	t.Cleanup(func() {
+		if cerr := os.Chmod(hidden, 0o700); cerr != nil {
+			t.Error(cerr)
+		}
+	})
 	if err := park(filepath.Join(hidden, "f"), filepath.Join(dir, "parked", "f")); err == nil || !strings.Contains(err.Error(), "restore: stat") {
 		t.Fatalf("park of an unstatable file = %v", err)
 	}
@@ -532,7 +568,11 @@ func TestApply_PlaceErrors(t *testing.T) {
 			if err := os.Mkdir(cards, 0o500); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = os.Chmod(cards, 0o700) })
+			t.Cleanup(func() {
+				if cerr := os.Chmod(cards, 0o700); cerr != nil {
+					t.Error(cerr)
+				}
+			})
 			plan, err := PlanRestore(archive, home)
 			if err != nil {
 				t.Fatal(err)
@@ -562,13 +602,17 @@ func TestApply_ArchiveTruncatedSincePlanning(t *testing.T) {
 	}
 	var cut bytes.Buffer
 	gz := gzip.NewWriter(&cut)
-	_, _ = gz.Write(plain.Bytes()[:2048])
-	_ = gz.Close()
+	if _, cerr := gz.Write(plain.Bytes()[:2048]); cerr != nil {
+		t.Error(cerr)
+	}
+	if cerr := gz.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 	writeFileT(t, plan.Archive, cut.String(), 0o600)
 	if _, err := plan.Apply(time.Now()); err == nil || !strings.Contains(err.Error(), "restore: write") {
 		t.Fatalf("Apply = %v, want a write error", err)
 	}
-	if got, _ := os.ReadFile(filepath.Join(home, "config.json")); string(got) != `{"old":true}` {
+	if got, rerr := os.ReadFile(filepath.Join(home, "config.json")); rerr != nil || string(got) != `{"old":true}` {
 		t.Errorf("config.json = %q, want unchanged", got)
 	}
 }

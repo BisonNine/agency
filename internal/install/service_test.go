@@ -58,7 +58,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	done := make(chan string)
 	go func() {
 		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
+		if _, cerr := io.Copy(&buf, r); cerr != nil {
+			t.Error(cerr)
+		}
 		done <- buf.String()
 	}()
 	os.Stdout = w
@@ -412,7 +414,9 @@ func TestUninstallLaunchd(t *testing.T) {
 func TestIsLaunchdServiceActive(t *testing.T) {
 	h, log := svcHost(t, "darwin")
 	h.run = func(name string, args ...string) ([]byte, error) {
-		_, _ = log.run(name, args...)
+		if _, cerr := log.run(name, args...); cerr != nil {
+			t.Error(cerr)
+		}
 		return []byte("PID\tStatus\tLabel\n12\t0\t" + launchdLabel + "\n"), nil
 	}
 	if !h.isLaunchdServiceActive(launchdLabel) {
@@ -448,8 +452,8 @@ func TestRegister(t *testing.T) {
 		if err != nil || !strings.HasPrefix(joinLines(log.lines()), "launchctl") {
 			t.Fatalf("err = %v, commands %v", err, log.lines())
 		}
-		if err := os.RemoveAll(h.path("/home/alice/.claw/logs")); err != nil {
-			t.Fatal(err)
+		if ierr := os.RemoveAll(h.path("/home/alice/.claw/logs")); ierr != nil {
+			t.Fatal(ierr)
 		}
 		writeHostFile(t, h, "/home/alice/.claw/logs", "", 0o600)
 		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.claw") })
@@ -511,10 +515,15 @@ func TestConfirmPrompt(t *testing.T) {
 	if ok, err := confirmPrompt("go?", true); !ok || err != nil {
 		t.Fatalf("auto yes = %v, %v", ok, err)
 	}
-	for input, want := range map[string]bool{"y\n": true, " Yes \n": true, "n\n": false, "": false} {
+	for input, want := range map[string]bool{"y\n": true, "  YES\n": true, "n\n": false, "": false} {
 		var ok bool
 		withStdin(t, input, func() {
-			out := captureStdout(t, func() { ok, _ = confirmPrompt("go?", false) })
+			out := captureStdout(t, func() {
+				var err error
+				if ok, err = confirmPrompt("go?", false); err != nil {
+					t.Error(err)
+				}
+			})
 			if out != "go? [y/N]: " {
 				t.Errorf("prompt = %q", out)
 			}
@@ -534,13 +543,19 @@ func withStdin(t *testing.T, input string, fn func()) {
 		t.Fatal(err)
 	}
 	go func() {
-		_, _ = io.WriteString(w, input)
-		_ = w.Close()
+		if _, cerr := io.WriteString(w, input); cerr != nil {
+			t.Error(cerr)
+		}
+		if cerr := w.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 	}()
 	os.Stdin = r
 	defer func() {
 		os.Stdin = old
-		_ = r.Close()
+		if cerr := r.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 	}()
 	fn()
 }

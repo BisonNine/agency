@@ -5,6 +5,7 @@ package gateway
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,7 +49,7 @@ func TestMessageRoute_Outcomes(t *testing.T) {
 	server.RegisterOnMux(mux)
 	RegisterMessageRoute(server, al)
 
-	post := func(token string, body interface{ Read([]byte) (int, error) }) int {
+	post := func(token string, body io.Reader) int {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/message/"+token, body))
 		return rec.Code

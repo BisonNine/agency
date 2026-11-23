@@ -53,6 +53,7 @@ func makeTarGz(t *testing.T, files map[string]string) []byte {
 // fakeGitHub serves one release over the GitHub releases API shape, plus its
 // assets, from an httptest server.
 type fakeGitHub struct {
+	t      *testing.T
 	srv    *httptest.Server
 	signer *testSigner
 
@@ -67,7 +68,7 @@ type fakeGitHub struct {
 
 func newFakeGitHub(t *testing.T, tag string, archive []byte) *fakeGitHub {
 	t.Helper()
-	f := &fakeGitHub{signer: newTestSigner(t), tag: tag, status: map[string]int{}, body: map[string]string{}}
+	f := &fakeGitHub{t: t, signer: newTestSigner(t), tag: tag, status: map[string]int{}, body: map[string]string{}}
 	f.setArchive(archive)
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
@@ -99,16 +100,22 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 	f.paths = append(f.paths, r.URL.Path)
 	if st, ok := f.status[r.URL.Path]; ok {
 		w.WriteHeader(st)
-		_, _ = io.WriteString(w, f.body[r.URL.Path])
+		if _, cerr := io.WriteString(w, f.body[r.URL.Path]); cerr != nil {
+			f.t.Error(cerr)
+		}
 		return
 	}
 	if b, ok := f.body[r.URL.Path]; ok {
-		_, _ = io.WriteString(w, b)
+		if _, cerr := io.WriteString(w, b); cerr != nil {
+			f.t.Error(cerr)
+		}
 		return
 	}
 	switch {
 	case r.URL.Path == "/releases/latest":
-		_ = json.NewEncoder(w).Encode(f.release())
+		if cerr := json.NewEncoder(w).Encode(f.release()); cerr != nil {
+			f.t.Error(cerr)
+		}
 	case strings.HasPrefix(r.URL.Path, "/releases/tags/"):
 		want := f.tag
 		if f.bareTag {
@@ -118,14 +125,18 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(f.release())
+		if cerr := json.NewEncoder(w).Encode(f.release()); cerr != nil {
+			f.t.Error(cerr)
+		}
 	case strings.HasPrefix(r.URL.Path, "/assets/"):
 		b, ok := f.assets[strings.TrimPrefix(r.URL.Path, "/assets/")]
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = w.Write(b)
+		if _, cerr := w.Write(b); cerr != nil {
+			f.t.Error(cerr)
+		}
 	default:
 		http.NotFound(w, r)
 	}
@@ -214,7 +225,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	done := make(chan string)
 	go func() {
 		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
+		if _, cerr := io.Copy(&buf, r); cerr != nil {
+			t.Error(cerr)
+		}
 		done <- buf.String()
 	}()
 	os.Stdout = w
@@ -235,13 +248,19 @@ func withStdin(t *testing.T, input string, fn func()) {
 		t.Fatal(err)
 	}
 	go func() {
-		_, _ = io.WriteString(w, input)
-		_ = w.Close()
+		if _, cerr := io.WriteString(w, input); cerr != nil {
+			t.Error(cerr)
+		}
+		if cerr := w.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 	}()
 	os.Stdin = r
 	defer func() {
 		os.Stdin = old
-		_ = r.Close()
+		if cerr := r.Close(); cerr != nil {
+			t.Error(cerr)
+		}
 	}()
 	fn()
 }
@@ -352,7 +371,10 @@ func TestRunUpgrade_InstallsVerifiedRelease(t *testing.T) {
 			t.Errorf("download directory %s left behind", ent.Name())
 		}
 	}
-	leftovers, _ := filepath.Glob(filepath.Join(e.binDir, "*.new.*"))
+	leftovers, rerr := filepath.Glob(filepath.Join(e.binDir, "*.new.*"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
 	if len(leftovers) != 0 {
 		t.Errorf("temporary binaries left behind: %v", leftovers)
 	}
@@ -533,9 +555,11 @@ func TestRunUpgrade_Errors(t *testing.T) {
 			executable = func() (string, error) { return "", errors.New("no /proc") }
 		}, "locating current executable: no /proc"},
 		{"no home directory", func(t *testing.T, _ *upgradeEnv) {
+			t.Helper()
 			t.Setenv("HOME", "")
 		}, "determining home directory"},
 		{"install directory not writable", func(t *testing.T, e *upgradeEnv) {
+			t.Helper()
 			e.exe = filepath.Join(t.TempDir(), "missing", "claw")
 		}, "permission denied writing to"},
 		{"archive download fails", func(_ *testing.T, e *upgradeEnv) {
@@ -548,13 +572,16 @@ func TestRunUpgrade_Errors(t *testing.T) {
 			e.gh.status["/assets/"+signatureAssetName] = http.StatusNotFound
 		}, "downloading checksums.txt.minisig: HTTP 404"},
 		{"signed by a foreign key", func(t *testing.T, _ *upgradeEnv) {
+			t.Helper()
 			stranger := newTestSigner(t)
 			releaseKeys = func() []string { return []string{stranger.publicKeyLine()} }
 		}, "release verification failed"},
 		{"archive without claw", func(t *testing.T, e *upgradeEnv) {
+			t.Helper()
 			e.gh.setArchive(makeTarGz(t, map[string]string{"README": "hi"}))
 		}, "extracting binary from archive"},
 		{"target is a directory", func(t *testing.T, e *upgradeEnv) {
+			t.Helper()
 			e.exe = filepath.Join(t.TempDir(), "claw")
 			if err := os.Mkdir(e.exe, 0o755); err != nil {
 				t.Fatal(err)
@@ -602,7 +629,11 @@ func TestDownloadHelpers_Errors(t *testing.T) {
 			t.Errorf("downloadBytes(%q) succeeded", url)
 		}
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "data") }))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, werr := io.WriteString(w, "data"); werr != nil {
+			t.Error(werr)
+		}
+	}))
 	defer srv.Close()
 	if err := downloadFile(srv.URL, filepath.Join(t.TempDir(), "missing", "out")); err == nil {
 		t.Error("downloadFile into a missing directory succeeded")
@@ -669,8 +700,12 @@ func TestExtractBinariesFromTarGz_Errors(t *testing.T) {
 	}
 	var badTar bytes.Buffer
 	gz := gzip.NewWriter(&badTar)
-	_, _ = gz.Write([]byte("this is not a tar stream, but long enough to be read as a header block ...."))
-	_ = gz.Close()
+	if _, cerr := gz.Write([]byte("this is not a tar stream, but long enough to be read as a header block ....")); cerr != nil {
+		t.Error(cerr)
+	}
+	if cerr := gz.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 	badTarPath := filepath.Join(dir, "bad.tar.gz")
 	if err := os.WriteFile(badTarPath, badTar.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
@@ -698,16 +733,23 @@ func TestExtractBinariesFromTarGz_Errors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain, _ := io.ReadAll(raw)
+	plain, rerr := io.ReadAll(raw)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
 	var trunc bytes.Buffer
 	gz = gzip.NewWriter(&trunc)
-	_, _ = gz.Write(plain[:512+100])
-	_ = gz.Close()
-	truncPath := filepath.Join(dir, "trunc.tar.gz")
-	if err := os.WriteFile(truncPath, trunc.Bytes(), 0o600); err != nil {
-		t.Fatal(err)
+	if _, cerr := gz.Write(plain[:512+100]); cerr != nil {
+		t.Error(cerr)
 	}
-	if _, err := extractBinariesFromTarGz(truncPath, filepath.Join(dir, "c2"), filepath.Join(dir, "a2")); err == nil {
+	if cerr := gz.Close(); cerr != nil {
+		t.Error(cerr)
+	}
+	truncPath := filepath.Join(dir, "trunc.tar.gz")
+	if ierr := os.WriteFile(truncPath, trunc.Bytes(), 0o600); ierr != nil {
+		t.Fatal(ierr)
+	}
+	if _, ierr := extractBinariesFromTarGz(truncPath, filepath.Join(dir, "c2"), filepath.Join(dir, "a2")); ierr == nil {
 		t.Error("truncated claw member accepted")
 	}
 	authFull := makeTarGz(t, map[string]string{"claw-auth": strings.Repeat("x", 4096)})
@@ -715,11 +757,18 @@ func TestExtractBinariesFromTarGz_Errors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain, _ = io.ReadAll(raw)
+	plain, err = io.ReadAll(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
 	trunc.Reset()
 	gz = gzip.NewWriter(&trunc)
-	_, _ = gz.Write(plain[:512+100])
-	_ = gz.Close()
+	if _, cerr := gz.Write(plain[:512+100]); cerr != nil {
+		t.Error(cerr)
+	}
+	if cerr := gz.Close(); cerr != nil {
+		t.Error(cerr)
+	}
 	if err := os.WriteFile(truncPath, trunc.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -760,8 +809,10 @@ func TestRestartActiveService(t *testing.T) {
 			goos:   "linux",
 			euid:   0,
 			active: []string{"systemctl --user is-active --quiet " + svc, "systemctl is-active --quiet " + svc, "systemctl restart " + svc},
-			wantCmds: []string{"systemctl --user is-active --quiet " + svc, "systemctl --user restart " + svc,
-				"systemctl is-active --quiet " + svc, "systemctl restart " + svc},
+			wantCmds: []string{
+				"systemctl --user is-active --quiet " + svc, "systemctl --user restart " + svc,
+				"systemctl is-active --quiet " + svc, "systemctl restart " + svc,
+			},
 			wantOut: "System service restarted successfully.",
 		},
 		{
