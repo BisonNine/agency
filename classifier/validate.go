@@ -391,13 +391,11 @@ func decodeJSON(s string) (any, error) {
 // plainArgs is a definition's static arguments as passed to a tool (a copy,
 // so a tool cannot change the definition).
 func plainArgs(args map[string]any) map[string]any {
-	if args == nil {
-		return map[string]any{}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = plainJSON(v)
 	}
-	if m, ok := plainJSON(args).(map[string]any); ok {
-		return m
-	}
-	return map[string]any{}
+	return out
 }
 
 func sortedKeys[V any](m map[string]V) []string {

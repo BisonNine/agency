@@ -232,6 +232,16 @@ func TestValidPathAndItemID(t *testing.T) {
 	if got := plainArgs(nil); got == nil || len(got) != 0 {
 		t.Errorf("plainArgs(nil) = %#v, want an empty map", got)
 	}
+	src := map[string]any{"n": json.Number("3"), "nested": map[string]any{"f": json.Number("1.5")}}
+	got := plainArgs(src)
+	nested, isMap := got["nested"].(map[string]any)
+	if got["n"] != float64(3) || !isMap || nested["f"] != 1.5 {
+		t.Errorf("plainArgs = %#v, want plain numbers", got)
+	}
+	got["n"] = "changed"
+	if src["n"] != json.Number("3") {
+		t.Error("plainArgs returned the definition's own map")
+	}
 }
 
 func TestClassifierToolRefusal(t *testing.T) {
