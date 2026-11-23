@@ -220,15 +220,15 @@ func TestArrayMalformed(t *testing.T) {
 func TestAllowNull(t *testing.T) {
 	s := map[string]any{"type": []string{"integer", "string"}, "enum": []any{"a"}}
 	allowNull(s)
-	if typ, _ := s["type"].([]string); !slices.Equal(typ, []string{"integer", "string", "null"}) {
+	if typ, ok := s["type"].([]string); !ok || !slices.Equal(typ, []string{"integer", "string", "null"}) {
 		t.Errorf("type = %v", typ)
 	}
-	if enum, _ := s["enum"].([]any); len(enum) != 2 || enum[1] != nil {
+	if enum, ok := s["enum"].([]any); !ok || len(enum) != 2 || enum[1] != nil {
 		t.Errorf("enum = %v", enum)
 	}
 	s = map[string]any{"type": []string{"string", "null"}}
 	allowNull(s)
-	if typ, _ := s["type"].([]string); !slices.Equal(typ, []string{"string", "null"}) {
+	if typ, ok := s["type"].([]string); !ok || !slices.Equal(typ, []string{"string", "null"}) {
 		t.Errorf("type = %v, want null once", typ)
 	}
 }
