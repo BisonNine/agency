@@ -115,12 +115,15 @@ func (n *certNames) coveredBy(cert *x509.Certificate) bool {
 	return true
 }
 
+// lookupCNAME is the resolver's CNAME lookup; a variable so tests need no DNS.
+var lookupCNAME = net.DefaultResolver.LookupCNAME
+
 // lookupFQDN returns the host's canonical name when the resolver knows one
 // that is more than the bare host name, else "".
 func lookupFQDN(hostname string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), fqdnLookupTimeout)
 	defer cancel()
-	cname, err := net.DefaultResolver.LookupCNAME(ctx, hostname)
+	cname, err := lookupCNAME(ctx, hostname)
 	if err != nil {
 		return ""
 	}
