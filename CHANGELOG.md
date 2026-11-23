@@ -61,6 +61,18 @@
   config is reloaded; a running job older than a shortened `max_job_seconds`
   is stopped at once.
 
+- **Knowledge bases.** A new per-agent switch, **Allow knowledge bases**
+  (`knowledge.enabled`, off by default), gives the agent the `kb_get`,
+  `kb_search` and `kb_put` tools. The agent keeps knowledge bases of its own
+  in its workspace under `okf/` and creates one by writing to a new name.
+  Folders listed under `knowledge.shared` (`name`, absolute `path`, `write`,
+  default false) are shared with it as `shared/<name>`, read-only unless
+  writing is allowed. Knowledge bases are OKF v0.3 bundles of Markdown
+  concepts. The agent's instructions list its knowledge bases. The file tools
+  cannot reach `okf/`. A duplicate or invalid name, or a folder path that is
+  not absolute, is refused on load and save. A shared folder that does not
+  exist is marked on the Agents page and in Check Up.
+
 ### Changed
 
 - **Background tasks stop when Agency stops.** They used to run until the

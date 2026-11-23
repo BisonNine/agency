@@ -24,6 +24,7 @@ import (
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/global"
 	agentws "go.bison9.com/agency/internal/workspace"
+	"go.bison9.com/agency/kbhost"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
@@ -467,6 +468,11 @@ func newAgentContextBuilder(spec agentreg.Spec, agentCfg *config.AgentConfig, cf
 			contextBuilder = contextBuilder.WithAllowedFolders(folders)
 		}
 		contextBuilder = contextBuilder.WithMaestro(agentCfg.MaestroEnabled())
+	}
+	if !spec.Fresh && agentCfg.KnowledgeEnabled() {
+		// A clone has its source's workspace and config, so its source's
+		// knowledge bases.
+		contextBuilder = contextBuilder.WithKnowledge(kbhost.New(cfg, agentCfg, spec.Workspace))
 	}
 	if !spec.Fresh {
 		contextBuilder = withCharacterCard(contextBuilder, spec, agentCfg, cfg)

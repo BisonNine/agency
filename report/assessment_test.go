@@ -555,6 +555,37 @@ func TestAssessment_IgnoredAllowedFolder(t *testing.T) {
 	}
 }
 
+// TestAssessment_MissingSharedKnowledge: a shared knowledge base whose folder
+// is missing gets an action row naming the agent, the folder and the name,
+// only while the agent's knowledge bases are on; an existing folder gets none.
+func TestAssessment_MissingSharedKnowledge(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	missing := filepath.Join(t.TempDir(), "missing")
+	cfg.Agents.List[0].Knowledge = &config.KnowledgeConfig{Shared: []config.SharedKnowledgeConfig{
+		{Name: "here", Path: t.TempDir()}, {Name: "gone", Path: missing},
+	}}
+	hasRow := func() bool {
+		for _, row := range collectAssessment(t.Context(), cfg, env).Tables[0].Rows {
+			if strings.HasPrefix(row[1], "Shared knowledge base (") {
+				return true
+			}
+		}
+		return false
+	}
+	if hasRow() {
+		t.Fatal("row present while knowledge bases are off")
+	}
+	cfg.Agents.List[0].Knowledge.Enabled = true
+	r := assessmentRow(t, collectAssessment(t.Context(), cfg, env), "Shared knowledge base (Alice)")
+	if r[0] == "" || r[2] != `Not used: folder "`+missing+`" for "gone" not found.` {
+		t.Errorf("row = %v", r)
+	}
+	cfg.Agents.List[0].Knowledge.Shared = cfg.Agents.List[0].Knowledge.Shared[:1]
+	if hasRow() {
+		t.Error("row present for an existing folder")
+	}
+}
+
 // TestAssessment_PersonChatNotSetUp: a human agent whose chat is on a channel
 // the configuration does not start is marked for action; a chat on a running
 // channel, or on a secmsg daemon that discovers its accounts, is not listed.

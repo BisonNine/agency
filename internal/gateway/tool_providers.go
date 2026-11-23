@@ -10,6 +10,7 @@ import (
 	"go.bison9.com/agency/tools/files"
 	toolsforum "go.bison9.com/agency/tools/forum"
 	fusion "go.bison9.com/agency/tools/fusion"
+	toolsknowledge "go.bison9.com/agency/tools/knowledge"
 	maestro "go.bison9.com/agency/tools/maestro"
 	"go.bison9.com/agency/tools/msg"
 	"go.bison9.com/agency/tools/schedule"
@@ -36,6 +37,7 @@ func registerToolProviders() {
 	tools.RegisterProvider(tools.NamespacedProvider("maestro", maestro.GlobalProvider))
 	tools.RegisterProvider(tools.NamespacedProvider(toolsforum.Suite, toolsforum.GlobalProvider))
 	tools.RegisterProvider(tools.NamespacedProvider(toolsclassifier.Namespace, toolsclassifier.GlobalProvider))
+	tools.RegisterProvider(tools.NamespacedProvider(toolsknowledge.Namespace, toolsknowledge.GlobalProvider))
 	// Bare names: fusion tool names are already service-prefixed (e.g.
 	// microsoft365_mail_read_inbox), so publish them without a "fusion_" prefix.
 	// "fusion" still identifies the per-agent suite toggle. Service configs must

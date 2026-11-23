@@ -276,6 +276,16 @@ func collectAssessment(ctx context.Context, cfg *config.Config, env Environment)
 		add(true, "Allowed folder ("+agentNames(cfg, []string{f.Agent})[0]+")", status)
 	}
 
+	// A shared knowledge base whose folder is missing: the agent does not
+	// have it. Only where the agent's knowledge bases are on.
+	for _, m := range cfg.MissingSharedKnowledgeFolders() {
+		if !cfg.AgentByID(m.Agent).KnowledgeEnabled() {
+			continue
+		}
+		add(true, "Shared knowledge base ("+agentNames(cfg, []string{m.Agent})[0]+")",
+			"Not used: folder "+strconv.Quote(m.Path)+" for "+strconv.Quote(m.Name)+" not found.")
+	}
+
 	// A built-in use with no task model: voice is not transcribed, images are
 	// not described for text-only models.
 	for _, r := range taskModelAssessment(cfg) {

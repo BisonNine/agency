@@ -10,6 +10,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/cogmem/consolidate"
+	"go.bison9.com/agent/toolbox/kb"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/app"
@@ -82,6 +83,10 @@ type gatewayServices struct {
 	// Classifiers is the classifier service. Like Forum it lives for the
 	// whole process; shutdownGateway closes it before the agent loop stops.
 	Classifiers *classifier.Service
+	// Knowledge is the knowledge-base store. Like Forum it lives for the
+	// whole process (a reload keeps it); shutdownGateway closes it once the
+	// agent loop is closed.
+	Knowledge *kb.Store
 	// AuthStore holds the WebUI login sessions and the admin credentials;
 	// stopAuthWatch ends its credentials-file poller at shutdown.
 	AuthStore     *middleware.AuthStore
@@ -628,6 +633,10 @@ func shutdownGateway(
 	agentLoop.Close(drainCtx)
 	drainCancel()
 	phases.done("agent loop closed")
+	if services.Knowledge != nil {
+		closeKnowledge(services.Knowledge)
+		phases.done("knowledge bases closed")
+	}
 	// The model clients close once no turn can call them any more: earlier,
 	// a turn still running would end with a closed client's error instead
 	// of being cancelled.

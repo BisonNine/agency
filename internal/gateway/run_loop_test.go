@@ -65,6 +65,10 @@ func bootGatewayWith(t *testing.T, extra string, mutate func(string) string) *bo
 	msgBus := bus.NewMessageBus()
 	forumHost := agent.NewForumHost()
 	classifierHost := agent.NewClassifierHost()
+	knowledgeStore, err := newKnowledgeStore()
+	if err != nil {
+		t.Fatal(err)
+	}
 	b.al, err = newGatewayAgentLoop(cfg, msgBus, forumHost, classifierHost, b.alerts)
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +79,7 @@ func bootGatewayWith(t *testing.T, extra string, mutate func(string) string) *bo
 	}
 	b.services.Forum = newForumService(forumHost)
 	b.services.Classifiers = newClassifierService(classifierHost)
+	b.services.Knowledge = knowledgeStore
 	wireGatewayAPI(b.services, b.al, b.fatal, "")
 	var stop func()
 	b.run, stop = startGatewayRun(cfg, false, b.al, b.services, msgBus, store, &modelRefAlerts{}, b.fatal)

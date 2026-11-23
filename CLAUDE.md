@@ -405,7 +405,7 @@ shortcoming in the module, never here.
   implicit default set and no install-wide per-tool switch (no Tools page).
   `tools.DefaultEnabledToolNames()` (each tool's `DefaultAllow`) is only what the Agents
   page's "Default tools" button writes into a list (`GET /api/agents/tools`
-  `default_tools`). Suites (`forum`, `fusion`, `maestro`, `cogmem`, `ccv3`, `classifiers`) and
+  `default_tools`). Suites (`forum`, `fusion`, `maestro`, `cogmem`, `ccv3`, `classifiers`, `knowledge`) and
   `mcp_tools` have their own switches. **Implied tools:** a tool in
   `config.ImpliedTools` (`shell_ctrl`, implied by `shell_exec`; `agent_cancel`,
   implied by `agent_spawn`) is granted only with the tool that implies it
@@ -866,6 +866,7 @@ shortcoming in the module, never here.
   "Task models" table in the providers section (one row per list: its models
   in order and those whose provider can't serve it), a per-agent "Task
   models" settings row; the capabilities golden lists each agent's kinds.
+- **Knowledge bases** (the SDK's `go.bison9.com/agent/toolbox/kb` and `toolbox/kb/tools`; host `kbhost/`, `tools/knowledge/`, `config/knowledge.go`; `manual/agents/knowledge-bases.md`): per-agent `knowledge` block `{enabled, shared: [{name, path, write}]}` (`config.KnowledgeConfig`; `AgentSuiteEnabled` case `knowledge`, `config.KnowledgeSuite`, default off, WebUI "Allow knowledge bases" and "Shared knowledge bases" next to Allowed folders). The switch grants the suite `kb` (provider `tools/knowledge`, namespace `kb`: `kb_get`, `kb_search`, `kb_put`; discovery-hidden like the other non-cogmem suites; `deny_tools` still removes one; nothing for an agent with the switch off, so the MCP host neither lists nor runs them). One `kb.Store` per process: `internal/gateway/knowledge.go` `newKnowledgeStore` opens it before `NewAgentLoop` and installs it (`knowledge.SetStore`; without one, as in `claw agent`, no agent gets the tools), a reload keeps it (the tools, and with them each agent's resolver, are rebuilt from the new config), `shutdownGateway` closes it after the loop is closed (`services.Knowledge`). `kbhost.Resolver` (`kbhost.New(cfg, agentCfg, workspace)`) is the only place that knows the naming: own bundles are the directories directly under `<workspace>/okf` (`kbhost.OwnDirName`), bare names (one segment, not dot-prefixed, no separators or control characters), `Confine` the okf folder, writable, created by a put, modes `cfg.AgentModes(okf)`; shared bundles are `shared/<name>` (`kbhost.SharedPrefix`), `Root` the configured path, never created, writable only with `write`, modes those of the shared root folder (files without execute bits), and unknown (`kb.ErrUnknownKB`) while the folder is missing or not a directory. A clone has its source's id, config and workspace, so its source's knowledge bases. Prompt: `ContextBuilder.WithKnowledge` (not for fresh agents) adds `kbhost.PromptText` (`Bundles: a, b, shared/x (read only)` or `Bundles: none yet`, then the fixed conflict note) after the Workspace folder list; agents with the switch off get nothing; the okf folder and each shared folder are tracked for cache invalidation (`Resolver.WatchPaths`). Config refusals (`knowledgeProblems` in `loadProblems`, so `LoadConfig` and `Store.Update`): a missing or invalid name (`config.ValidSharedKnowledgeName`: letters, digits, `-`, `_`, `.`, not starting with a dot), a name twice for one agent, a path that is not absolute. A missing shared folder is a configuration state: `Config.MissingSharedKnowledgeFolders`, `GET /api/agents/knowledge/missing` ("Folder not found" on its row), the Check Up row "Shared knowledge base (<agent>)" for agents with the switch on; no alert. `okf/` is in no default file-tool read or write folder and not in `AlwaysReadableWorkspaceDirs` (`kbhost` test), so the file tools and `common_*` cannot reach it. Knowledge bases are not in the backup.
 - **Tool schemas**: `toolkit.ToolToSchema` (models) and the MCP host publish every
   object parameter that lists no members with `"additionalProperties": true`
   (`tools.OpenObjectProperties`); some upstreams otherwise send a blank string.
@@ -1331,7 +1332,7 @@ The suite logs in first (the WebUI and `/api/*` require the admin account), so
 the dev instance needs one (`claw admin`) and the two variables must be
 exported; it exits 2 with a hint otherwise.
 
-- **The plan is `docs/webui-test-plan.md`** — 178 numbered checks, each with a
+- **The plan is `docs/webui-test-plan.md`** — 183 numbered checks, each with a
   process and an expected result, followable by hand. `tests/frontend-e2e.mjs`
   executes it and prints the same step IDs. Keep the two in step: a step added
   to one belongs in the other.
@@ -1339,7 +1340,7 @@ exported; it exits 2 with a hint otherwise.
   throwaway agent whose May message it ticks, in F14 one whose
   classifiers switch it toggles and in F15 one whose Images task-model
   grant it toggles, in F16 one whose allowed-folder note it sets and in F17–F20 one
-  (`e2e-code`) whose tools it sets with the Coding tools and Default tools buttons and the `shell_exec` box, G edits three config fields and, in G8, the Images through
+  (`e2e-code`) whose tools it sets with the Coding tools and Default tools buttons and the `shell_exec` box, in F21–F25 one (`e2e-kb`) whose knowledge switch and shared knowledge bases it sets, G edits three config fields and, in G8, the Images through
   setting of a Generate images entry on the Task models page, N
   creates a memory domain and curates inside it and, in N17, imports a domain it shows and deletes, S5 creates a throwaway agent
   and toggles one of its tools, T imports a card and creates a throwaway agent

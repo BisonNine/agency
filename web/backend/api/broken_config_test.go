@@ -37,6 +37,7 @@ func TestHandlers_BrokenConfig(t *testing.T) {
 	}{
 		{"GET", "/api/agents/human", 500, "invalid character"},
 		{"GET", "/api/agents/allowed-folders/ignored", 500, "invalid character"},
+		{"GET", "/api/agents/knowledge/missing", 500, "invalid character"},
 		{"GET", "/api/config", 500, loadFailed},
 		{"PUT", "/api/config", 500, saveFailed},
 		{"PATCH", "/api/config", 500, loadFailed},

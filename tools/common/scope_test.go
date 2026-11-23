@@ -17,7 +17,8 @@ import (
 
 // scopeFixture is an agent whose file tools and common tools are registered
 // from one config, as the gateway registers them, with a workspace holding a
-// file in each of files/, skills/, sessions/, maestro/ and the root.
+// file in each of files/, skills/, sessions/, maestro/, okf/ (an own
+// knowledge base) and the root.
 type scopeFixture struct {
 	ws, common string
 	fileDefs   []toolspec.ToolDefinition
@@ -37,7 +38,7 @@ func newScopeFixture(t *testing.T, readSubdirs []string, restrict bool, agentCfg
 func newScopeFixtureWith(t *testing.T, agentCfg *config.AgentConfig, configure func(*config.Config)) *scopeFixture {
 	t.Helper()
 	f := &scopeFixture{ws: t.TempDir(), common: t.TempDir()}
-	for _, p := range []string{"files/notes.md", "skills/s/SKILL.md", "sessions/alice.jsonl", "maestro/plan.md", "COGMEM.md"} {
+	for _, p := range []string{"files/notes.md", "skills/s/SKILL.md", "sessions/alice.jsonl", "maestro/plan.md", "okf/notes/a.md", "COGMEM.md"} {
 		mustWriteFile(t, filepath.Join(f.ws, p), "body of "+p)
 	}
 	cfg := config.DefaultConfig()
@@ -105,6 +106,7 @@ func (f *scopeFixture) wantRefused(t *testing.T, path string) {
 // common_put reads a source only if the agent's file tools could read it.
 func TestPut_ReadScope(t *testing.T) {
 	maestro := &config.AgentConfig{ID: "alice", Maestro: &config.MaestroConfig{Enabled: true}}
+	knowledge := &config.AgentConfig{ID: "alice", Knowledge: &config.KnowledgeConfig{Enabled: true}}
 	tests := []struct {
 		name     string
 		subdirs  []string
@@ -116,7 +118,7 @@ func TestPut_ReadScope(t *testing.T) {
 		{
 			name: "default scope", subdirs: []string{"files", "skills"}, restrict: true,
 			copied:  []string{"files/notes.md", "skills/s/SKILL.md"},
-			refused: []string{"sessions/alice.jsonl", "COGMEM.md", "maestro/plan.md"},
+			refused: []string{"sessions/alice.jsonl", "COGMEM.md", "maestro/plan.md", "okf/notes/a.md"},
 		},
 		{
 			name: "wider scope", subdirs: []string{"files", "skills", "sessions"}, restrict: true,
@@ -131,7 +133,13 @@ func TestPut_ReadScope(t *testing.T) {
 		{
 			name: "agent with Maestro", subdirs: []string{"files", "skills"}, restrict: true, agent: maestro,
 			copied:  []string{"files/notes.md", "maestro/plan.md"},
-			refused: []string{"sessions/alice.jsonl"},
+			refused: []string{"sessions/alice.jsonl", "okf/notes/a.md"},
+		},
+		{
+			// Knowledge bases are reached only through the kb_* tools.
+			name: "agent with knowledge bases", subdirs: []string{"files", "skills"}, restrict: true, agent: knowledge,
+			copied:  []string{"files/notes.md"},
+			refused: []string{"okf/notes/a.md"},
 		},
 		{
 			name: "not confined to the workspace", subdirs: []string{"files"}, restrict: false,

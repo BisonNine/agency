@@ -185,6 +185,16 @@
             "note": "x"
           }
         ],
+        "knowledge": {
+          "enabled": true,
+          "shared": [
+            {
+              "name": "x",
+              "path": "x",
+              "write": true
+            }
+          ]
+        },
         "mounts": [
           {
             "name": "x",

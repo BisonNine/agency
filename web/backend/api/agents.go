@@ -38,6 +38,7 @@ func (h *Handler) registerAgentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/agents/tools", h.handleListAgentTools)
 	mux.HandleFunc("GET /api/agents/human", h.handleHumanAgentProblems)
 	mux.HandleFunc("GET /api/agents/allowed-folders/ignored", h.handleIgnoredAllowedFolders)
+	mux.HandleFunc("GET /api/agents/knowledge/missing", h.handleMissingSharedKnowledge)
 }
 
 // ignoredAllowedFolder is an allowed folder of the saved configuration the
@@ -62,6 +63,31 @@ func (h *Handler) handleIgnoredAllowedFolders(w http.ResponseWriter, _ *http.Req
 	}
 	w.Header().Set("Content-Type", "application/json")
 	encodeJSON(w, map[string]any{"ignored": out})
+}
+
+// missingSharedKnowledge is a shared knowledge base of the saved
+// configuration whose folder is missing or not a directory
+// (config.MissingSharedKnowledgeFolders); the Agents page marks its row.
+type missingSharedKnowledge struct {
+	Agent string `json:"agent"`
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+}
+
+// handleMissingSharedKnowledge lists the shared knowledge bases whose
+// folder is missing.
+func (h *Handler) handleMissingSharedKnowledge(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := h.currentConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := []missingSharedKnowledge{}
+	for _, m := range cfg.MissingSharedKnowledgeFolders() {
+		out = append(out, missingSharedKnowledge(m))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	encodeJSON(w, map[string]any{"missing": out})
 }
 
 // humanAgentProblem is one way the configuration breaks the human-agent

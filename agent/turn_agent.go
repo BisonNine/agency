@@ -150,7 +150,7 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 			if t == nil {
 				return nil
 			}
-			return al.promptLayers(inst, *t.opts)
+			return al.promptLayers(inst, *t.opts) //nolint:contextcheck // the static prompt is cached across turns; listing the agent's knowledge bases is a local directory read no turn's end should cut short
 		}
 		// Every call carries who it is for (the turn's chat, none without a
 		// host turn, and the agent id); a turn's call also its allow checker

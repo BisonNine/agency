@@ -112,6 +112,17 @@ func TestPatchConfig_StoreRefusalsAreJSON(t *testing.T) {
 			},
 		},
 		{
+			name: "shared knowledge bases",
+			patch: `{"agents":{"list":[{"id":"main","name":"Main","default":true,"knowledge":{"enabled":true,"shared":[` +
+				`{"name":"pentesting","path":"/opt/okf/pentesting"},{"name":"pentesting","path":"/opt/okf/other"},` +
+				`{"name":"a/b","path":"/opt/okf/ab"},{"name":"notes","path":"notes"}]}}]}}`,
+			want: []string{
+				`Main has more than one shared knowledge base named "pentesting".`,
+				`Main's shared knowledge base name "a/b" may contain only letters, digits, -, _ and . and may not start with a dot.`,
+				`Main's shared knowledge base "notes" must have an absolute folder path.`,
+			},
+		},
+		{
 			name:  "agent id",
 			patch: `{"agents":{"list":[{"id":"main","name":"Main","default":true,"subagents":{"allow_agents":["Alice Smith"]}}]}}`,
 			want:  []string{`Agent id "Alice Smith" in Main's subagents.allow_agents may use only letters, digits, - and _; use "Alice-Smith".`},

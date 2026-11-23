@@ -97,6 +97,17 @@ func gatewayCmd(debug bool) error {
 			closeClassifiers(classifierSvc)
 		}
 	}()
+	// And the knowledge-base store.
+	knowledgeStore, err := newKnowledgeStore()
+	if err != nil {
+		return err
+	}
+	knowledgeOwned := true
+	defer func() {
+		if knowledgeOwned {
+			closeKnowledge(knowledgeStore)
+		}
+	}()
 	agentLoop, err := newGatewayAgentLoop(cfg, msgBus, forumHost, classifierHost, operatorAlerter)
 	if err != nil {
 		return err
@@ -123,6 +134,8 @@ func gatewayCmd(debug bool) error {
 	forumOwned = false
 	services.Classifiers = classifierSvc
 	classifierOwned = false
+	services.Knowledge = knowledgeStore
+	knowledgeOwned = false
 	wireGatewayAPI(services, agentLoop, fatal, alertsPath)
 
 	logger.InfoF(app.ShortName()+" started", map[string]any{"http": services.HTTPHost.HTTPAddrs(), "https": services.HTTPHost.HTTPSAddrs()})

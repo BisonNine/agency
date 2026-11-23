@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -21,6 +22,7 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/kbhost"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/skills"
 )
@@ -34,6 +36,9 @@ type ContextBuilder struct {
 	toolDiscoveryActive bool
 	// maestroEnabled adds the Maestro identity rule (global.MaestroPromptRule).
 	maestroEnabled bool
+	// knowledge, when set, lists the agent's knowledge bases in the
+	// Workspace section (WithKnowledge).
+	knowledge *kbhost.Resolver
 
 	// toolsGranted, when set, reports whether the agent has any tool at all;
 	// when it has none the dynamic prompt says so (noToolsNotice).
@@ -97,6 +102,13 @@ type ContextBuilder struct {
 // Maestro rule to the identity section.
 func (cb *ContextBuilder) WithMaestro(enabled bool) *ContextBuilder {
 	cb.maestroEnabled = enabled
+	return cb
+}
+
+// WithKnowledge gives the agent's knowledge bases, listed in the Workspace
+// section; nil (or never calling it) lists none and adds nothing.
+func (cb *ContextBuilder) WithKnowledge(r *kbhost.Resolver) *ContextBuilder {
+	cb.knowledge = r
 	return cb
 }
 
@@ -332,10 +344,10 @@ Your workspace is %s. Relative paths start there; write your work under files/.
 Your configuration and memory are already included in this prompt; you do not need to read workspace files.
 Folders your file tools can reach by absolute path:
 %s
-
+%s
 ## Important Rules
 
-`, app.ShortName(), version, identity, workspacePath, cb.accessibleFolders(workspacePath))
+`, app.ShortName(), version, identity, workspacePath, cb.accessibleFolders(workspacePath), cb.knowledgeSection())
 	for i, r := range rules {
 		if i > 0 {
 			b.WriteString("\n\n")
@@ -347,6 +359,16 @@ Folders your file tools can reach by absolute path:
 		b.WriteString("\n\n")
 	}
 	return b.String()
+}
+
+// knowledgeSection is the knowledge-base lines of the Workspace section,
+// set off by a blank line, or "" for an agent without knowledge bases (which
+// keeps that section exactly as it was).
+func (cb *ContextBuilder) knowledgeSection() string {
+	if cb.knowledge == nil {
+		return ""
+	}
+	return "\n" + kbhost.PromptText(context.Background(), cb.knowledge) + "\n"
 }
 
 // discoveryRule is appended to the identity rules when progressive tool
@@ -477,6 +499,11 @@ func (cb *ContextBuilder) sourcePaths() []string {
 		filepath.Join(cb.workspace, "IDENTITY.md"),
 		filepath.Join(cb.workspace, "MEMORY.md"),
 		filepath.Join(cb.workspace, "state", "message-tokens.json"),
+	}
+	if cb.knowledge != nil {
+		// A new own bundle, or a shared folder that appears or goes, changes
+		// the bundle list.
+		paths = append(paths, cb.knowledge.WatchPaths()...)
 	}
 	if cb.cardPath != "" && cb.cardPrompt == "" {
 		// The character card is a prompt source too: an edit through the

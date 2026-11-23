@@ -182,6 +182,10 @@ type AgentConfig struct {
 	// file-system permissions of the account ClawEh runs as.
 	AllowedFolders []AllowedFolderConfig `json:"allowed_folders,omitempty"`
 
+	// Knowledge gives the agent knowledge bases (OKF bundles) and the kb_*
+	// tools; off by default. See KnowledgeConfig.
+	Knowledge *KnowledgeConfig `json:"knowledge,omitempty"`
+
 	// LegacyMounts is the retired `mounts` list, retained ONLY as an inlet for
 	// migrateLegacyMounts, which turns each entry into an allowed folder at
 	// load and clears it; nothing else reads it.
@@ -678,7 +682,7 @@ func (c *Config) AgentHasFusion(agentID string) bool {
 // AgentSuiteEnabled reports whether the named all-or-nothing tool suite is
 // enabled for the agent. Suites are gated as a unit by a per-agent flag rather
 // than the per-tool allowlist. cogmem defaults ON; maestro, fusion, forum,
-// ccv3 and classifiers default OFF.
+// ccv3, classifiers and knowledge default OFF.
 func (c *Config) AgentSuiteEnabled(agentID, suite string) bool {
 	for i := range c.Agents.List {
 		if SameAgentID(c.Agents.List[i].ID, agentID) {
@@ -696,6 +700,8 @@ func (c *Config) AgentSuiteEnabled(agentID, suite string) bool {
 				return a.ClassifiersEnabled()
 			case "cogmem":
 				return a.CognitiveMemoryEnabled()
+			case KnowledgeSuite:
+				return a.KnowledgeEnabled()
 			default:
 				return false
 			}
