@@ -6,6 +6,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"sort"
 	"strings"
 	"testing"
@@ -29,8 +30,7 @@ func listedToolNames(t *testing.T, srv *MCPServer, params map[string]any) []stri
 		t.Fatal(err)
 	}
 
-	resp := srv.srv.HandleMessage(context.Background(), body)
-	raw, err := json.Marshal(resp)
+	raw, err := postBody(srv, InternalEndpointPath, "", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,13 +144,11 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// listedOnBearer sends tools/list to the /mcp endpoint with the bearer token
-// in the context, as bearerContextFunc puts it there.
+// listedOnBearer sends tools/list to the /mcp endpoint with the bearer token.
 func listedOnBearer(t *testing.T, srv *MCPServer, bearer string) []string {
 	t.Helper()
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
-	ctx := withBearerToken(context.Background(), bearer)
-	raw, err := json.Marshal(srv.endpoints[1].srv.HandleMessage(ctx, body))
+	raw, err := postBody(srv, DefaultEndpointPath, bearer, body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,12 +200,15 @@ func TestToolsList_BearerListsOnlyTheAgentsTools(t *testing.T) {
 	}{
 		{"alice-token", []string{"read_file", "write_file"}},
 		{"bob-token", []string{"list_dir"}}, // read_file is denied by the policy
-		{"unknown", []string{}},
 	}
 	for _, tc := range cases {
 		if got := listedOnBearer(t, srv, tc.bearer); strings.Join(got, ",") != strings.Join(tc.want, ",") {
 			t.Errorf("/mcp tools/list with %s = %v, want %v", tc.bearer, got, tc.want)
 		}
+	}
+	// An unknown token lists nothing: it is refused before MCP.
+	if code, _ := rpc(context.Background(), srv.httpServer.Handler, DefaultEndpointPath, "unknown", "tools/list", map[string]any{}); code != http.StatusUnauthorized {
+		t.Errorf("/mcp tools/list with an unknown token: HTTP %d, want 401", code)
 	}
 	if got := listedToolNames(t, srv, map[string]any{}); strings.Join(got, ",") != "list_dir,read_file,write_file" {
 		t.Errorf("/internal tools/list = %v, want the union", got)

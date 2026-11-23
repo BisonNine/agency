@@ -693,7 +693,7 @@
     "headers": {
       "Content-Type": "application/json"
     },
-    "response": "{\"jsonrpc\":\"2.0\",\"id\":34,\"result\":{\"tools\":[{\"description\":\"Only Bob has it\",\"inputSchema\":{},\"name\":\"bob_only\"},{\"description\":\"Always fails\",\"inputSchema\":{\"properties\":{},\"type\":\"object\"},\"name\":\"fail_tool\"}]}}\n"
+    "response": "{\"jsonrpc\":\"2.0\",\"id\":34,\"result\":{\"tools\":[{\"description\":\"Only Bob has it\",\"inputSchema\":{},\"name\":\"bob_only\"},{\"description\":\"Bob's failing tool\",\"inputSchema\":{\"properties\":{},\"type\":\"object\"},\"name\":\"fail_tool\"}]}}\n"
   },
   {
     "name": "bearer tools/list bob service token",
@@ -709,7 +709,7 @@
     "headers": {
       "Content-Type": "application/json"
     },
-    "response": "{\"jsonrpc\":\"2.0\",\"id\":35,\"result\":{\"tools\":[{\"description\":\"Only Bob has it\",\"inputSchema\":{},\"name\":\"bob_only\"},{\"description\":\"Always fails\",\"inputSchema\":{\"properties\":{},\"type\":\"object\"},\"name\":\"fail_tool\"}]}}\n"
+    "response": "{\"jsonrpc\":\"2.0\",\"id\":35,\"result\":{\"tools\":[{\"description\":\"Only Bob has it\",\"inputSchema\":{},\"name\":\"bob_only\"},{\"description\":\"Bob's failing tool\",\"inputSchema\":{\"properties\":{},\"type\":\"object\"},\"name\":\"fail_tool\"}]}}\n"
   },
   {
     "name": "bearer call success",

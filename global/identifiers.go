@@ -43,6 +43,10 @@ const (
 	// tools mcp__<key>__<tool>. Changing it would rename every host tool.
 	HostMCPToolPrefix = "mcp__claw__"
 
+	// HostMCPRealm is the realm of the WWW-Authenticate challenge the host's
+	// bearer MCP endpoint answers a refused request with.
+	HostMCPRealm = "claw-mcp"
+
 	// ReleaseRepoName is the GitHub repository `upgrade` downloads releases
 	// from (owner PivotLLM).
 	ReleaseRepoName = "ClawEh"

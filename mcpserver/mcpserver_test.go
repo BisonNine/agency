@@ -126,7 +126,7 @@ func TestAddTools_AllowlistFiltersTools(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	listed := srv.srv.ListTools()
+	listed := listTools(t, srv, InternalEndpointPath, "")
 	if _, ok := listed["read_file"]; !ok {
 		t.Error("expected allowed tool 'read_file' to be registered")
 	}
@@ -146,7 +146,7 @@ func TestAddTools_WildcardAllowlistExposesAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	listed := srv.srv.ListTools()
+	listed := listTools(t, srv, InternalEndpointPath, "")
 	if _, ok := listed["read_file"]; !ok {
 		t.Error("expected 'read_file' exposed by wildcard")
 	}
@@ -171,7 +171,7 @@ func TestAddTools_PrefixWildcardAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	listed := srv.srv.ListTools()
+	listed := listTools(t, srv, InternalEndpointPath, "")
 	if _, ok := listed["read_file"]; !ok {
 		t.Error("expected 'read_file' exposed by 'read_*'")
 	}
@@ -192,7 +192,7 @@ func TestAddTools_EmptyAllowlistRegistersNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := len(srv.srv.ListTools()); got != 0 {
+	if got := len(listTools(t, srv, InternalEndpointPath, "")); got != 0 {
 		t.Errorf("expected no tools registered with empty allowlist, got %d", got)
 	}
 }
@@ -208,7 +208,7 @@ func TestAddTools_MsgSendExposedWhenAllowlisted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := srv.srv.ListTools()["msg_send"]; !ok {
+	if _, ok := listTools(t, srv, InternalEndpointPath, "")["msg_send"]; !ok {
 		t.Fatal("'msg_send' must be exposed when allowlisted (no hard exclusion)")
 	}
 }
@@ -222,7 +222,7 @@ func TestAddTools_NilParametersStillRegisters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := srv.srv.ListTools()["noparams"]; !ok {
+	if _, ok := listTools(t, srv, InternalEndpointPath, "")["noparams"]; !ok {
 		t.Error("expected tool with nil parameters to register with synthetic empty-object schema")
 	}
 }
@@ -242,7 +242,7 @@ func TestAddTools_ExternalNaming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed := srv.srv.ListTools()
+	listed := listTools(t, srv, InternalEndpointPath, "")
 
 	if _, ok := listed["file_read"]; !ok {
 		t.Error("built-in should publish under its bare/internal name")

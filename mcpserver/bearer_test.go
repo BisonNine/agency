@@ -4,103 +4,55 @@
 package mcpserver
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/server"
-
-	"go.bison9.com/agency/mcpserver/acl"
+	"go.bison9.com/agency/agenttoken"
 	"go.bison9.com/agency/tools"
 )
 
-func TestExtractBearer(t *testing.T) {
-	cases := []struct {
-		header string
-		want   string
-	}{
-		{"Bearer SST123", "SST123"},
-		{"bearer SST123", "SST123"},    // scheme is case-insensitive
-		{"BEARER  SST123  ", "SST123"}, // surrounding space trimmed
-		{"Basic abc", ""},              // wrong scheme
-		{"", ""},                       // absent
-		{"Bearer", ""},                 // scheme only, no token
-	}
-	for _, c := range cases {
-		r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
-		if c.header != "" {
-			r.Header.Set("Authorization", c.header)
-		}
-		if got := extractBearer(r); got != c.want {
-			t.Errorf("extractBearer(%q) = %q, want %q", c.header, got, c.want)
-		}
-	}
-}
-
-// TestBearerAuthMiddleware covers the HTTP-layer 401 gate: missing token,
-// unknown token, and a valid registered token (which reaches the next handler).
-func TestBearerAuthMiddleware(t *testing.T) {
+// TestBearerAuth covers the /mcp 401 gate: missing token, unknown token, the
+// sub-agent sentinel, and a valid registered token (which reaches MCP). The
+// header parsing itself is mcphost's (TestBearer_401 there).
+func TestBearerAuth(t *testing.T) {
 	st, tok := seedSessionToken("alice")
+	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(&mockTool{name: "read_file", params: map[string]any{}})}
+	srv := hostFor(t, regs, st)
+	init := map[string]any{
+		"protocolVersion": "2025-03-26", "capabilities": map[string]any{},
+		"clientInfo": map[string]any{"name": "t", "version": "1"},
+	}
 
-	var reached atomic.Bool
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		reached.Store(true)
-		w.WriteHeader(http.StatusOK)
-	})
-	h := bearerAuthMiddleware(st, next)
-
-	check := func(name, header string, wantCode int, wantReached bool) {
-		reached.Store(false)
-		r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
-		if header != "" {
-			r.Header.Set("Authorization", header)
+	check := func(name, token string, wantCode int) {
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": init})
+		if err != nil {
+			t.Fatal(err)
 		}
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		if w.Code != wantCode {
-			t.Errorf("%s: status = %d, want %d", name, w.Code, wantCode)
+		req := httptest.NewRequest(http.MethodPost, DefaultEndpointPath, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
 		}
-		if reached.Load() != wantReached {
-			t.Errorf("%s: next reached = %v, want %v", name, reached.Load(), wantReached)
+		rec := httptest.NewRecorder()
+		srv.httpServer.Handler.ServeHTTP(rec, req)
+		if rec.Code != wantCode {
+			t.Errorf("%s: status = %d, want %d (%s)", name, rec.Code, wantCode, rec.Body)
 		}
 		if wantCode == http.StatusUnauthorized {
-			if got := w.Header().Get("WWW-Authenticate"); !strings.Contains(got, "Bearer") {
-				t.Errorf("%s: missing WWW-Authenticate Bearer challenge, got %q", name, got)
+			if got := rec.Header().Get("WWW-Authenticate"); got != `Bearer realm="claw-mcp"` {
+				t.Errorf("%s: WWW-Authenticate = %q, want the claw-mcp Bearer challenge", name, got)
 			}
 		}
 	}
-
-	check("no token", "", http.StatusUnauthorized, false)
-	check("unknown token", "Bearer SSTdeadbeef", http.StatusUnauthorized, false)
-	check("valid token", "Bearer "+tok, http.StatusOK, true)
-}
-
-// TestBearerAuthMode_CopiesTokenIntoArgs verifies the bearer authMode lifts the
-// context token into args under the session_token key, so dispatch is
-// transport-agnostic, while the internal mode leaves args untouched.
-func TestBearerAuthMode_CopiesTokenIntoArgs(t *testing.T) {
-	ctx := withBearerToken(context.Background(), "SSTfromheader")
-
-	bArgs := map[string]any{}
-	bearerAuthMode.prepareArgs(ctx, bArgs)
-	if bArgs[sessionTokenParam] != "SSTfromheader" {
-		t.Errorf("bearer prepareArgs did not inject token: %v", bArgs)
-	}
-	if bearerAuthMode.injectParam {
-		t.Error("bearer mode must not inject the session_token schema param")
-	}
-
-	iArgs := map[string]any{sessionTokenParam: "SSTinarg"}
-	internalAuthMode.prepareArgs(context.Background(), iArgs)
-	if iArgs[sessionTokenParam] != "SSTinarg" {
-		t.Errorf("internal prepareArgs altered args: %v", iArgs)
-	}
-	if !internalAuthMode.injectParam {
-		t.Error("internal mode must inject the session_token schema param")
-	}
+	check("no token", "", http.StatusUnauthorized)
+	check("unknown token", "SSTdeadbeef", http.StatusUnauthorized)
+	check("sub-agent sentinel", agenttoken.SubagentSentinel, http.StatusUnauthorized)
+	check("valid token", tok, http.StatusOK)
 }
 
 // TestEndpointSchemas_DifferByParam asserts the two endpoints publish the same
@@ -111,24 +63,20 @@ func TestEndpointSchemas_DifferByParam(t *testing.T) {
 		"properties": map[string]any{"path": map[string]any{"type": "string"}},
 	}, result: tools.NewToolResult("ok")}
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(rf)}
-	st, _ := seedSessionToken("alice")
-	resolver := resolverFor(regs)
+	st, tok := seedSessionToken("alice")
+	srv := hostFor(t, regs, st)
 
-	build := func(mode authMode) string {
-		srv := server.NewMCPServer("t", "0")
-		addToolsToServer(srv, mode, regs, []string{"*"}, st, resolver, nil, acl.Default, nil, nil, nil)
-		listed := srv.ListTools()
-		tool, ok := listed["read_file"]
+	schema := func(path, bearer string) string {
+		tool, ok := listTools(t, srv, path, bearer)["read_file"]
 		if !ok {
-			t.Fatal("read_file not registered")
+			t.Fatalf("read_file not published on %s", path)
 		}
 		return string(tool.Tool.RawInputSchema)
 	}
-
-	if internal := build(internalAuthMode); !strings.Contains(internal, sessionTokenParam) {
+	if internal := schema(InternalEndpointPath, ""); !strings.Contains(internal, sessionTokenParam) {
 		t.Errorf("/internal schema missing %s param: %s", sessionTokenParam, internal)
 	}
-	if bearer := build(bearerAuthMode); strings.Contains(bearer, sessionTokenParam) {
+	if bearer := schema(DefaultEndpointPath, tok); strings.Contains(bearer, sessionTokenParam) {
 		t.Errorf("/mcp schema must not carry %s param: %s", sessionTokenParam, bearer)
 	}
 }

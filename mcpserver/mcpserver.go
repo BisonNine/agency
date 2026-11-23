@@ -22,6 +22,12 @@
 // auth mechanism: it identifies both the calling agent and the active session.
 // If the token is missing, malformed, unknown, or the sub-agent sentinel, the
 // call fails closed.
+//
+// The MCP mechanism (serving, the session_token argument, dispatch with its
+// callbacks, published names, tools/list_changed) is the agent SDK's mcphost;
+// this package is the policy: the listener and paths, who a token is (session
+// and service tokens), the visibility filters and the ACL, the per-call turn
+// scope, and what a call publishes on the bus (host.go).
 package mcpserver
 
 import (
@@ -31,13 +37,12 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"sync"
+	"slices"
 	"sync/atomic"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/mcphost"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/bus"
@@ -58,12 +63,11 @@ const DefaultEndpointPath = "/mcp"
 // endpoint ClawEh's own CLI providers point at.
 const InternalEndpointPath = "/internal"
 
-// MCPServer wraps the mcp-go streamable HTTP server and registers claw tools.
-// Tool enumeration via tools/list is global — the catalogue published is the
-// union of every agent registry, since tool names/schemas are not sensitive.
-// Tool execution via tools/call dispatches through the agent-token manager:
-// the token in the call body resolves to an agent identity, the per-agent
-// ACL gates the (agent, tool) pair, and the per-agent registry executes.
+// MCPServer serves claw tools on two mcphost endpoints. tools/list on
+// /internal is the union of every agent registry, since tool names/schemas
+// are not sensitive; on /mcp it is the bearer's agent's own tools. A
+// tools/call resolves its token to an agent identity, the per-agent ACL gates
+// the (agent, tool) pair, and the agent's own registry executes.
 type MCPServer struct {
 	// alerter hears when the listener dies after startup and no onServeError
 	// handler is installed; nothing restarts it.
@@ -98,20 +102,11 @@ type MCPServer struct {
 	toolOutput    func() bool          // whether a tool's own output goes to the chat (optional; nil = never)
 
 	httpServer *http.Server
-	streamable *server.StreamableHTTPServer
+	tracker    *firstCallTracker
 
-	// activeDispatches counts tool/call POST requests currently executing.
-	// Used by Shutdown to distinguish idle SSE connections from in-flight work.
-	activeDispatches atomic.Int32
-
-	// srv is kept for test introspection.
-	srv *server.MCPServer
-
-	// endpoints are the two published catalogues (/internal and /mcp), kept so
-	// RefreshCatalogue can diff the live registries against what each has
-	// registered. catalogueMu serializes refreshes.
-	catalogueMu sync.Mutex
-	endpoints   []*endpointCatalogue
+	// internal and bearer are the two endpoints (/internal and /mcp), served
+	// by the agent SDK's mcphost over the same registries, ACL and tokens.
+	internal, bearer *mcphost.Endpoint
 }
 
 // ToolActivityNotifier renders the one-line "/tools on" breadcrumb for a tool
@@ -305,61 +300,26 @@ func New(opts ...Option) (*MCPServer, error) {
 			})
 	}
 
-	tracker := newFirstCallTracker(m.workspaces)
-
-	resolver := m.registryFor
-
-	newSrv := func(hooks *server.Hooks) *server.MCPServer {
-		// Protocol handshake: bare semver, not app.Version(). A client may
-		// compare serverInfo.version, so it must not carry a build suffix.
-		return server.NewMCPServer(app.Name(), app.SemVer(),
-			server.WithToolCapabilities(true),
-			server.WithRecovery(),
-			server.WithHooks(hooks),
-		)
-	}
-
-	deps := dispatchDeps{
-		sessionTokens:    m.sessionTokens,
-		resolver:         resolver,
-		tracker:          tracker,
-		policy:           m.policy,
-		msgBus:           m.msgBus,
-		toolActivity:     m.toolActivity,
-		toolOutput:       m.toolOutput,
-		activeDispatches: &m.activeDispatches,
-	}
+	m.tracker = newFirstCallTracker(m.workspaces)
 
 	// /internal — session-token parameter on every tool (ClawEh's CLI providers).
-	internalSrv := newSrv(&server.Hooks{})
-	internal := newEndpointCatalogue(internalSrv, internalAuthMode, m.internalAllow, deps)
-
-	// /mcp — standard bearer endpoint, clean tool schemas (probe / external MCP).
-	bearerHooks := &server.Hooks{}
-	bearerSrv := newSrv(bearerHooks)
-	bearer := newEndpointCatalogue(bearerSrv, bearerAuthMode, m.externalAllow, deps)
-	// The bearer token names the caller, so tools/list offers only what that
-	// agent may call.
-	bearerHooks.AddAfterListTools(func(ctx context.Context, _ any, _ *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
-		bearer.listForCaller(ctx, result)
-	})
-
-	m.endpoints = []*endpointCatalogue{internal, bearer}
-	for _, ep := range m.endpoints {
-		ep.refresh(m.agentRegistries)
+	internal, err := mcphost.New(newEndpointHost(m, false, m.internalAllow).config())
+	if err != nil {
+		return nil, fmt.Errorf("mcpserver: internal endpoint: %w", err)
 	}
-
-	internalStreamable := newStreamable(internalSrv, m.internalPath, false)
-	bearerStreamable := newStreamable(bearerSrv, m.endpointPath, true)
-
-	// srv/streamable keep the internal server for test introspection (its schemas
-	// carry the session_token param, matching the historical single-endpoint).
-	m.srv = internalSrv
-	m.streamable = internalStreamable
+	// /mcp — standard bearer endpoint, clean tool schemas (probe / external MCP).
+	// The bearer token names the caller, so tools/list offers only what that
+	// agent may call, described as that agent's tools.
+	bearer, err := mcphost.New(newEndpointHost(m, true, m.externalAllow).config())
+	if err != nil {
+		internal.Close()
+		return nil, fmt.Errorf("mcpserver: bearer endpoint: %w", err)
+	}
+	m.internal, m.bearer = internal, bearer
 
 	mux := http.NewServeMux()
-	mux.Handle(m.internalPath, internalStreamable)
-	mux.Handle(m.endpointPath, bearerAuthMiddleware(m.sessionTokens, bearerStreamable))
+	mux.Handle(m.internalPath, internal)
+	mux.Handle(m.endpointPath, bearer)
 	m.httpServer = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	return m, nil
@@ -388,20 +348,18 @@ func (m *MCPServer) EndpointPath() string { return m.endpointPath }
 // revoke tokens on session clear or eviction.
 func (m *MCPServer) SessionTokens() *SessionTokenStore { return m.sessionTokens }
 
-// RefreshCatalogue recomputes the union of the agent registries and brings each
-// endpoint's published tools in step with it: tools that appeared are added,
-// tools whose schema changed are replaced, tools that disappeared are deleted.
-// mcp-go sends tools/list_changed to connected clients for the adds and the
-// deletes, so an external client picks the change up without reconnecting. The
-// agent loop calls it after an external MCP server's tools are re-registered.
+// RefreshCatalogue brings each endpoint's published tools in step with the
+// agent registries (mcphost.Endpoint.Refresh): connected clients get
+// tools/list_changed when what an endpoint publishes changed, so an external
+// client picks the change up without reconnecting. The agent loop calls it
+// after an external MCP server's tools are re-registered.
 func (m *MCPServer) RefreshCatalogue() {
-	m.catalogueMu.Lock()
-	defer m.catalogueMu.Unlock()
+	ctx := context.Background()
 	added, deleted := 0, 0
-	for _, ep := range m.endpoints {
-		a, d := ep.refresh(m.agentRegistries)
-		added += a
-		deleted += d
+	for _, ep := range []*mcphost.Endpoint{m.internal, m.bearer} {
+		r := ep.Refresh(ctx)
+		added += r.Added
+		deleted += r.Removed
 	}
 	if added > 0 || deleted > 0 {
 		logger.InfoCF("mcpserver", "MCP host catalogue refreshed",
@@ -481,14 +439,24 @@ func (m *MCPServer) Shutdown(ctx context.Context) error {
 
 	// Wait up to 3 s for in-flight tool dispatches to finish.
 	deadline := time.Now().Add(3 * time.Second)
-	for m.activeDispatches.Load() > 0 && time.Now().Before(deadline) {
+	for m.inFlight() > 0 && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	if remaining := m.activeDispatches.Load(); remaining > 0 {
+	if remaining := m.inFlight(); remaining > 0 {
 		logger.WarnCF("mcpserver", "Shutdown with active dispatches still in flight",
 			map[string]any{"count": remaining})
 	}
 
+	m.internal.Close()
+	m.bearer.Close()
 	return nil
+}
+
+// inFlight is the number of tool calls running on both endpoints.
+func (m *MCPServer) inFlight() int { return m.internal.InFlight() + m.bearer.InFlight() }
+
+// sortedKeys returns m's keys in order.
+func sortedKeys[V any](m map[string]V) []string {
+	return slices.Sorted(maps.Keys(m))
 }

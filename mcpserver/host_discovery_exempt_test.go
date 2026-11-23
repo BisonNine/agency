@@ -7,7 +7,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/server"
 	"go.bison9.com/agent/discovery"
 	"go.bison9.com/agent/toolkit"
 
@@ -49,10 +48,11 @@ func TestHost_ListsAndDispatchesHiddenSuiteTool(t *testing.T) {
 	resolver := resolverFor(regs)
 
 	// (a) tools/list on the host includes the hidden suite tool.
-	srv := server.NewMCPServer("t", "0")
-	addToolsToServer(srv, bearerAuthMode, regs, []string{"*"}, st, resolver, nil, acl.Default, nil, nil, nil)
-	if _, ok := srv.ListTools()["maestro_file_list"]; !ok {
-		t.Fatal("host catalogue must list the discovery-hidden suite tool")
+	srv := hostFor(t, regs, st)
+	for _, ep := range []struct{ path, tok string }{{InternalEndpointPath, ""}, {DefaultEndpointPath, tok}} {
+		if _, ok := listTools(t, srv, ep.path, ep.tok)["maestro_file_list"]; !ok {
+			t.Fatalf("%s must list the discovery-hidden suite tool", ep.path)
+		}
 	}
 
 	// (b) dispatch succeeds instead of returning tool_not_in_registry.

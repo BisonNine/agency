@@ -23,10 +23,6 @@ import (
 // Chosen to be distinct from the agent token prefix (AGT) and redactable by regex.
 const sessionTokenPrefix = "SST"
 
-// sessionTokenParam is the snake_case parameter name added to session-scoped tool
-// schemas. The MCP server strips it before dispatching to the tool implementation.
-const sessionTokenParam = "session_token"
-
 // sessionRecord holds the mapping from a session token to its session. The
 // chat a call's output goes to is not kept here: it is the chat of the turn
 // running on the session (BeginTurn, ReplyChat).

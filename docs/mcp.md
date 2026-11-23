@@ -47,7 +47,8 @@ is transport-agnostic), so **the same token works on both**.
 - A missing/invalid bearer is rejected at the HTTP layer with a proper **`401`**
   (not a tool-result error), matching standard MCP client expectations.
 - `tools/list` lists only the tools the token's agent may call (its own tools,
-  under its allowlists), the same check a call goes through. On `/internal` the
+  under its allowlists), each described as that agent's own tool, the same check
+  a call goes through. On `/internal` the
   token is a parameter of each call, so `tools/list` there is the union of every
   agent's tools and the check happens at the call.
 
@@ -95,18 +96,21 @@ at.
 
 ## Implementation shape (high level — no code here)
 
-- Two `StreamableHTTPServer` instances over the **same** agent registries, ACL
-  policy, and token store:
-  - `/internal`: tools registered **with** the injected `session_token` param;
-    dispatch reads the param (current path, verbatim).
-  - `/mcp`: tools registered **without** the param; an `HTTPContextFunc` extracts
-    the bearer into context; dispatch reads the token from context.
-- The only difference between the two registrations is *inject-param* vs
-  *read-header*, so duplication is minimal. Both are served by the MCP host's own
+- Two endpoints of the agent SDK's `mcphost` over the **same** agent
+  registries, ACL policy, and token store (`mcpserver/mcpserver.go`,
+  `mcpserver/host.go`):
+  - `/internal`: an `Argument` endpoint; every published schema gains the
+    required `session_token` argument, which is removed before the tool runs.
+  - `/mcp`: a `Bearer` endpoint; the `Authorization: Bearer` token is checked on
+    every request and a refused one is a 401 with realm `claw-mcp`.
+- The host supplies who a token is (session and service tokens), each agent's
+  view of its own registry (the endpoint's visibility filter; on `/mcp` the ACL
+  too), the turn scope a call runs in, the ACL gate on the exact tool that runs,
+  and what a call publishes on the bus. Both are served by the MCP host's own
   listener (`mcp_host.listen`, default `127.0.0.1:5911`), not the WebUI mux.
-- `WithStateLess(true)` is retained; the context func runs per request, so each
-  request's bearer routes consistently (and a single client could even drive
-  multiple sessions via per-request bearers, though that is unusual).
+- Both are stateless HTTP: each request's credential routes consistently (and a
+  single client could even drive multiple sessions via per-request bearers,
+  though that is unusual).
 
 ## Testing (`probe`)
 

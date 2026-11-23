@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/server"
-
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/mcpserver/acl"
@@ -50,21 +48,22 @@ func TestHost_ServesRealMaestroSuiteInFull(t *testing.T) {
 	st, tok := seedSessionToken("alice")
 	resolver := resolverFor(regs)
 
-	srv := server.NewMCPServer("t", "0")
-	addToolsToServer(srv, bearerAuthMode, regs, []string{"*"}, st, resolver, nil, acl.Default, nil, nil, nil)
-	listed := srv.ListTools()
-	n := 0
-	for name := range listed {
-		if strings.HasPrefix(name, "maestro_") {
-			n++
+	srv := hostFor(t, regs, st)
+	for _, ep := range []struct{ path, tok string }{{InternalEndpointPath, ""}, {DefaultEndpointPath, tok}} {
+		listed := listTools(t, srv, ep.path, ep.tok)
+		n := 0
+		for name := range listed {
+			if strings.HasPrefix(name, "maestro_") {
+				n++
+			}
 		}
-	}
-	if n != 61 {
-		t.Fatalf("host lists %d maestro tools, want all 61", n)
-	}
-	for _, absent := range []string{"maestro_llm_list", "maestro_llm_dispatch", "maestro_llm_test"} {
-		if _, ok := listed[absent]; ok {
-			t.Errorf("%s must not be served", absent)
+		if n != 61 {
+			t.Fatalf("%s lists %d maestro tools, want all 61", ep.path, n)
+		}
+		for _, absent := range []string{"maestro_llm_list", "maestro_llm_dispatch", "maestro_llm_test"} {
+			if _, ok := listed[absent]; ok {
+				t.Errorf("%s must not be served", absent)
+			}
 		}
 	}
 

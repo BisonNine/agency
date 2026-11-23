@@ -234,6 +234,25 @@ func allowGate(name string) toolkit.Gate {
 	}
 }
 
+// View returns a view of the registry's tools granted what allow allows, by
+// internal name (toolkit.Catalog.View): what one MCP host endpoint serves an
+// agent. Calls through it are gated with CallGate and carry CallContext.
+func (r *ToolRegistry) View(allow toolkit.AllowChecker) *toolkit.Set {
+	return r.cat.View(allow)
+}
+
+// CallContext returns ctx carrying who a call is for, as ExecuteWithContext
+// sets it: the chat, and the turn's agent id copied from spawnllm's key.
+func CallContext(ctx context.Context, channel, chatID string) context.Context {
+	return withCallAgent(toolkit.WithChat(ctx, channel, chatID))
+}
+
+// CallGate is the per-call grant check ExecuteWithContext runs (allowGate),
+// for a caller that executes the exact tool through a View of the registry.
+func CallGate(ctx context.Context, info toolkit.Info) *ToolResult {
+	return allowGate(info.Name)(ctx, info)
+}
+
 // ExecuteWithContext executes a registered tool, hidden by discovery or not,
 // with channel/chatID context and optional async callback. The model may name
 // an MCP tool by its bare ExternalName as well as its internal name. If the

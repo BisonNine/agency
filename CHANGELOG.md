@@ -148,6 +148,9 @@
 
 ### Fixed
 
+- **An MCP client now sees its own agent's tools.** On the `/mcp` endpoint,
+  a tool two agents both have could be described with the other agent's
+  description; each client now sees its own agent's tool.
 - **Messages written while the service was stopping or restarting are no
   longer lost.** An interrupted reply, a tool result or a message queued at
   that moment could overwrite another in the conversation history, so one of
@@ -160,6 +163,10 @@
   the agent was busy, which it answers together in one reply, used to leave
   every run but the last open; each now ends with that reply's state
   (`final`, `error` or `aborted`) under its own id.
+- **A device that has just connected no longer misses a reply sent to it at
+  that moment.** A reply could be refused as "device not connected" for a
+  short while after the device had been told its connection was accepted; it
+  is now delivered.
 
 - **An image or file in a message could reach the model as an unreadable
   reference.** When the conversation was compacted, or old tool output was
