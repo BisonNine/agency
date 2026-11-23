@@ -88,7 +88,11 @@ func cronSetJobEnabled(storePath, jobID string, enabled bool) {
 	if err != nil {
 		fmt.Printf("✗ Failed to update job %s: %v\n", jobID, err)
 	} else if job != nil {
-		fmt.Printf("✓ Job '%s' enabled\n", job.Name)
+		state := "enabled"
+		if !enabled {
+			state = "disabled"
+		}
+		fmt.Printf("✓ Job '%s' %s\n", job.Name, state)
 	} else {
 		fmt.Printf("✗ Job %s not found\n", jobID)
 	}
