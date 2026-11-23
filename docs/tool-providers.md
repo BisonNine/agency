@@ -308,7 +308,7 @@ packages import only `tools`.
 | `RegisterEntries` | `Put(entry)` as given (a hidden one from `discovery.HideEntries`), with `Meta` marking a `SuiteExempt` one |
 | `RegisterSuite` | the same `Put`, with `Meta` marking the tool suite-exempt |
 | `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (entries as given, `SuiteExempt` in `Meta`), returning the removed count |
-| `Get`, `List`, `Count`, `Version` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version` |
+| `Get`, `List`, `Count`, `Version`, `Snapshot`, `Subscribe` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version`, `Snapshot`, `Subscribe` |
 | `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
 | `GetDefinitions`, `GetSummaries` | `Listed()` |
 | `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `providers.ToolDefinition` |

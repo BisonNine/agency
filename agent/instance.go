@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	sdkagent "go.bison9.com/agent"
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
@@ -108,6 +110,11 @@ type AgentInstance struct {
 	// and no cognitive memory; its turns are answered in the person's chat
 	// (runHumanTurn).
 	HumanModel string
+
+	// turnAgent is the instance's SDK agent (newTurnAgent), built with the
+	// instance and closed with it; nil for an instance built without the
+	// agent builder.
+	turnAgent sdkagent.Agent
 }
 
 // Label names the agent in logs and audit rows: its id, or "alice (clone
@@ -595,10 +602,17 @@ func resolveAgentModels(agentCfg *config.AgentConfig, defaults *config.AgentDefa
 
 // Close releases resources held by the agent's session store.
 func (a *AgentInstance) Close() error {
-	if a.Sessions != nil {
-		return a.Sessions.Close()
+	var err error
+	if a.turnAgent != nil {
+		// No turn runs on it, so it closes at once.
+		err = a.turnAgent.Close(context.Background())
 	}
-	return nil
+	if a.Sessions != nil {
+		if serr := a.Sessions.Close(); err == nil {
+			err = serr
+		}
+	}
+	return err
 }
 
 // initSessionStore opens the per-session SQLite store under dir, creating

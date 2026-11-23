@@ -1732,6 +1732,51 @@ next session must know.
     picked up (message loss on stop or restart; the key guard).
   - Browser suite: 178/178 on the dev instance at 3dd42d6.
 - [ ] Phase 5c: engine moved, root package, conformance suite
+  - Host adoption against SDK 2e190af (branch `phase5c2`): SDK bumped;
+    every instance builds its SDK agent (`agent/turn_agent.go`, held as
+    `agent.Agent`, closed by `AgentInstance.Close`); the host's engine
+    copy records a tool panic as `*hook.ToolPanicError`, as `loop` does.
+    No turn runs on the SDK agent: routing turns through `Run` would
+    change what the host does in the cases below, so the host engine
+    still serves every turn. SDK changes needed before routing:
+    - A panic the engine hands to the host in `TurnFinished`
+      (`*loop.EnginePanicError`, set-up or not) is also logged by
+      `runTurn` ("panic in turn", ERROR): one line more than today. The
+      agent should not log a panic it reports.
+    - `runTurn` logs "turn ended with an error" (DEBUG) for every failed
+      turn; the host has no such line. Drop it or make it opt-out.
+    - A run with no turn id gets a generated one, so engine lines gain a
+      `turn_id` the host never had (a sub-agent or Maestro run started
+      over MCP has none today). Needed: a way to run with none.
+    - Memory recalls for the message as the last `BeforeTurn` left it;
+      the host recalls for the text before its inbound media are
+      described and their refs appended (`opts.UserMessage`). Needed: a
+      recall text a `BeforeTurn` can set (e.g. `Turn.RecallText`).
+    - `Spec.AsyncResult` gets the tool's callback context, not the call's;
+      the host reads the turn's spawn depth and chat from the call's
+      context and publishes on the callback's. Needed: both contexts.
+    - The overflow retry compacts through the turn's `Session.Context`;
+      the host takes a new reference (`getContextManager`), a rebuilt
+      manager after a reload during the turn. Needed: an optional
+      `Session.Compaction func() (ctxengine.ContextManager, func())`.
+    - The agent queues runs per session; the host's direct turns
+      (`ProcessDirect`) can run beside a dispatched turn of the same
+      session today. Needed: a run that does not wait for its session,
+      or the maintainer accepts the wait.
+    - A human agent's turn needs no session context, but `Spec.Session`
+      must return one; without `Spec.Session` the agent keeps an
+      in-memory manager per session until `ForgetSession`, which is not
+      on `agent.Agent`. Needed: a nil `Session.Context` for a turn that
+      `BeforeTurn` answers, or a capability interface for `ForgetSession`.
+    - Host work once these are in, no SDK change: the callbacks of
+      `turnHooksFor` as plugins built once per agent, reading the turn's
+      state from the run's context (`withTurnRun`); `/cancel` through the
+      `Run` handle in place of `claimTurnHandle`; `Spec.AsyncResult`;
+      `ctxengine.WithCompactionStartFunc(loop.CompactionStart)` on the
+      cached managers; a bounded context for `AgentInstance.Close`; then
+      the engine files and their tests deleted. `max_tool_iterations` at
+      or below zero runs no iteration on the host engine and the default
+      on `loop` (`Limits.WithDefaults`): confirm config refuses it.
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
   - SDK half done (SDK 181800b): endpoint, session-token store,

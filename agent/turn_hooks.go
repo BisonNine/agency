@@ -771,7 +771,7 @@ func recordToolCall(ctx context.Context, agent *AgentInstance, opts processOptio
 	if f.Result == nil {
 		return
 	}
-	if panicked := new(*toolPanicError); errors.As(f.Result.Err, panicked) {
+	if panicked := new(*hook.ToolPanicError); errors.As(f.Result.Err, panicked) {
 		tools.RecordToolResult(opts.SessionKey, f.Call.Name, tools.ErrorResult(f.Result.ForLLM))
 		return
 	}

@@ -167,6 +167,17 @@ func (r *ToolRegistry) Version() uint64 {
 	return r.cat.Version()
 }
 
+// Snapshot is the tools offered now (the catalogue's Snapshot).
+func (r *ToolRegistry) Snapshot() *toolkit.Snapshot {
+	return r.cat.Snapshot()
+}
+
+// Subscribe registers fn for the catalogue's change notices, so the
+// registry can stand as a toolkit.Registry.
+func (r *ToolRegistry) Subscribe(fn func(toolkit.Change)) (unsubscribe func()) {
+	return r.cat.Subscribe(fn)
+}
+
 // Get returns the tool registered under name (the internal registry key),
 // hidden or not: progressive discovery only defers loading a tool's
 // definition, it never makes a registered tool uncallable.
