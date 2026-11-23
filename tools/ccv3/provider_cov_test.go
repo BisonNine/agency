@@ -60,9 +60,19 @@ func TestLibraryFailures(t *testing.T) {
 
 	t.Run("cannot be listed", func(t *testing.T) {
 		cfg := testConfig(t)
-		if err := os.WriteFile(cfg.CardsPath(), []byte("not a folder"), 0o600); err != nil {
+		dir := cfg.CardsPath()
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		// A folder that exists but cannot be read opens and then fails to list.
+		if err := os.Chmod(dir, 0o300); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := os.Chmod(dir, 0o700); err != nil {
+				t.Errorf("restore %s: %v", dir, err)
+			}
+		})
 		res := build(t, cfg, "alice")[0].Execute(ctx, map[string]any{"action": "list"})
 		if !res.IsError || res.ForLLM != "The card library could not be listed; try again later." {
 			t.Errorf("list: %+v", res)
