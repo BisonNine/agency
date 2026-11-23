@@ -100,6 +100,10 @@ func Load(path string, allowed fs.FileMode) (*Credentials, error) {
 	return &c, nil
 }
 
+// createTemp creates the temp file Write fills; replaced in tests to make its
+// writes fail.
+var createTemp = os.CreateTemp
+
 // Write hashes password and writes the credentials file atomically with
 // exactly mode (the secrets file mode), replacing any existing account. The
 // directory is created if missing.
@@ -122,7 +126,7 @@ func Write(path, username, password string, mode fs.FileMode) error {
 	if mkErr := os.MkdirAll(dir, 0o700); mkErr != nil {
 		return fmt.Errorf("create %s: %w", dir, mkErr)
 	}
-	tmp, err := os.CreateTemp(dir, ".credentials-*.json")
+	tmp, err := createTemp(dir, ".credentials-*.json")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

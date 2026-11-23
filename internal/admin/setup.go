@@ -46,12 +46,19 @@ type Terminal struct {
 	Close        func() error
 }
 
+// isTerminal and openTTY are what OpenTerminal consults; replaced in tests,
+// which have no terminal of their own.
+var (
+	isTerminal = term.IsTerminal
+	openTTY    = func() (*os.File, error) { return os.OpenFile("/dev/tty", os.O_RDWR, 0) }
+)
+
 // OpenTerminal returns stdin when it is a terminal, with prompts on out.
 // Otherwise it opens /dev/tty for both, which is the case under
 // `curl … | bash`, where stdin is the script. It returns ErrNoTerminal
 // (wrapped) when neither is available; a password is never read from a pipe.
 func OpenTerminal(out io.Writer) (*Terminal, error) {
-	if fd := int(os.Stdin.Fd()); term.IsTerminal(fd) {
+	if fd := int(os.Stdin.Fd()); isTerminal(fd) {
 		return &Terminal{
 			In:           os.Stdin,
 			Out:          out,
@@ -59,12 +66,12 @@ func OpenTerminal(out io.Writer) (*Terminal, error) {
 			Close:        func() error { return nil },
 		}, nil
 	}
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	tty, err := openTTY()
 	if err != nil {
 		return nil, fmt.Errorf("%w: stdin is not a terminal and /dev/tty: %w", ErrNoTerminal, err)
 	}
 	fd := int(tty.Fd())
-	if !term.IsTerminal(fd) {
+	if !isTerminal(fd) {
 		_ = tty.Close() //nolint:errcheck // already failing; the close error adds nothing
 		return nil, fmt.Errorf("%w: /dev/tty is not a terminal", ErrNoTerminal)
 	}
