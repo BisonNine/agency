@@ -65,6 +65,18 @@ func TestCallEffectsUnchanged(t *testing.T) {
 			}},
 			&wireTool{name: "denied_tool", desc: "Denied", params: map[string]any{}, run: wireText("never")},
 			&effectsAsync{wireTool{name: "bg_tool", desc: "Background", params: map[string]any{}, run: wireText("sync")}},
+			// An upstream tool the ACL denies.
+			&wireExternal{wireTool{name: "mcp_ext_denied", desc: "Upstream, denied", params: map[string]any{}, run: wireText("never")}, "ext_denied"},
+			// Two tools that want the published name srv_write.
+			&wireTool{name: "srv_write", desc: "Native write", params: map[string]any{}, run: wireText("native write")},
+			&wireExternal{wireTool{name: "mcp_srv_write", desc: "Upstream write", params: map[string]any{}, run: wireText("upstream write")}, "srv_write"},
+			// A schema that cannot be encoded.
+			&wireTool{name: "bad_schema", desc: "Bad schema", params: map[string]any{"type": "object", "x": make(chan int)}, run: wireText("never")},
+		),
+		// Bob's tools Alice does not have: an upstream one and a native one.
+		"bob": newRegistryWith(
+			&wireExternal{wireTool{name: "mcp_bob_fetch", desc: "Bob's upstream", params: map[string]any{}, run: wireText("bob")}, "bob_fetch"},
+			&wireTool{name: "bob_tool", desc: "Bob's tool", params: map[string]any{}, run: wireText("bob")},
 		),
 	}
 	msgBus := bus.NewMessageBus()
@@ -84,7 +96,7 @@ func TestCallEffectsUnchanged(t *testing.T) {
 			return "tool " + toolName + " for " + agentID
 		}),
 		WithToolOutput(func() bool { return true }),
-		WithACLPolicy(acl.PolicyFunc(func(_, tool string) bool { return tool != "denied_tool" })),
+		WithACLPolicy(acl.PolicyFunc(func(_, tool string) bool { return tool != "denied_tool" && tool != "mcp_ext_denied" })),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +104,6 @@ func TestCallEffectsUnchanged(t *testing.T) {
 	ts := httptest.NewServer(srv.httpServer.Handler)
 	defer ts.Close()
 
-	tools.BeginToolStats(session)
 	var rec effectsRecord
 	post := func(path, bearer, tool string, args map[string]any) {
 		body, perr := json.Marshal(map[string]any{
@@ -124,14 +135,38 @@ func TestCallEffectsUnchanged(t *testing.T) {
 		}
 		rec.Responses = append(rec.Responses, string(raw))
 	}
-	post(InternalEndpointPath, "", "write_note", map[string]any{"session_token": tok})
-	post(DefaultEndpointPath, tok, "write_note", map[string]any{})
-	post(InternalEndpointPath, "", "bg_tool", map[string]any{"session_token": tok})
-	post(InternalEndpointPath, "", "denied_tool", map[string]any{"session_token": tok})
-	post(InternalEndpointPath, "", "write_note", map[string]any{"session_token": "SST" + strings.Repeat("0", 64)})
+	// Each call's own tally: calls, errors, the last error.
+	counted := func(call func()) {
+		tools.BeginToolStats(session)
+		call()
+		calls, errs, last := tools.EndToolStats(session)
+		rec.Tally = append(rec.Tally, []any{calls, errs, last})
+	}
+	for _, c := range []struct {
+		path, bearer, tool string
+		args               map[string]any
+	}{
+		{InternalEndpointPath, "", "write_note", map[string]any{"session_token": tok}},
+		{DefaultEndpointPath, tok, "write_note", map[string]any{}},
+		{InternalEndpointPath, "", "bg_tool", map[string]any{"session_token": tok}},
+		{InternalEndpointPath, "", "denied_tool", map[string]any{"session_token": tok}},
+		{InternalEndpointPath, "", "write_note", map[string]any{"session_token": "SST" + strings.Repeat("0", 64)}},
+		{InternalEndpointPath, "", "ext_denied", map[string]any{"session_token": tok}},
+		{DefaultEndpointPath, tok, "ext_denied", map[string]any{}},
+		{InternalEndpointPath, "", "bob_fetch", map[string]any{"session_token": tok}},
+		{DefaultEndpointPath, tok, "bob_fetch", map[string]any{}},
+		{InternalEndpointPath, "", "bob_tool", map[string]any{"session_token": tok}},
+		{DefaultEndpointPath, tok, "bob_tool", map[string]any{}},
+		{InternalEndpointPath, "", "ext_denied", map[string]any{}},
+		{InternalEndpointPath, "", "srv_write", map[string]any{"session_token": tok}},
+	} {
+		counted(func() { post(c.path, c.bearer, c.tool, c.args) })
+	}
 
-	calls, errs, last := tools.EndToolStats(session)
-	rec.Tally = []any{calls, errs, last}
+	// A refresh after a tool appears, with the collision and the bad schema
+	// still there.
+	regs["alice"].Register(&wireTool{name: "late_tool", desc: "Late", params: map[string]any{}, run: wireText("late")})
+	srv.RefreshCatalogue()
 
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -161,7 +196,8 @@ func TestCallEffectsUnchanged(t *testing.T) {
 	// Each record at INFO and above, without its time and call site.
 	for line := range strings.SplitSeq(logs.String(), "\n") {
 		var fields map[string]any
-		if json.Unmarshal([]byte(line), &fields) != nil || fields["level"] == "debug" {
+		// The boot lines per agent come in map order.
+		if json.Unmarshal([]byte(line), &fields) != nil || fields["level"] == "debug" || fields["message"] == "Agent registry bound" {
 			continue
 		}
 		delete(fields, "time")

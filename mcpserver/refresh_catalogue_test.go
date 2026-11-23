@@ -57,7 +57,7 @@ func TestRefreshCatalogue_FollowsRegistryChanges(t *testing.T) {
 	}
 
 	// A refresh with nothing changed publishes nothing new on either endpoint.
-	if srv.internal.Refresh(context.Background()) || srv.bearer.Refresh(context.Background()) {
+	if srv.internal.Refresh(context.Background()).Changed || srv.bearer.Refresh(context.Background()).Changed {
 		t.Error("a no-op refresh reported a change")
 	}
 }

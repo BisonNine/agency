@@ -1,0 +1,68 @@
+{
+  "deliveries": [
+    {
+      "case": "after the turn ended",
+      "outbound": [
+        {
+          "channel": "telegram",
+          "chat_id": "chat-1",
+          "content": "first result (for the user)"
+        }
+      ],
+      "inbound": [
+        {
+          "channel": "system",
+          "sender_id": "async:bg_later",
+          "sender": {},
+          "chat_id": "chat-1",
+          "content": "first result",
+          "peer": {
+            "kind": "",
+            "id": ""
+          },
+          "session_key": "agent:alice:main",
+          "metadata": {
+            "origin_channel": "telegram",
+            "preresolved_agent_id": "alice"
+          },
+          "internal": true
+        }
+      ]
+    },
+    {
+      "case": "while another turn runs",
+      "outbound": [
+        {
+          "channel": "telegram",
+          "chat_id": "chat-1",
+          "content": "second result (for the user)"
+        }
+      ],
+      "inbound": [
+        {
+          "channel": "system",
+          "sender_id": "async:bg_later",
+          "sender": {},
+          "chat_id": "chat-1",
+          "content": "second result",
+          "peer": {
+            "kind": "",
+            "id": ""
+          },
+          "session_key": "agent:alice:main",
+          "metadata": {
+            "origin_channel": "telegram",
+            "preresolved_agent_id": "alice"
+          },
+          "internal": true
+        }
+      ]
+    }
+  ],
+  "logs": [
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":27,\"level\":\"info\",\"message\":\"mcp.foruser.delivered\",\"session_key\":\"agent:alice:main\",\"tool\":\"bg_later\"}",
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":12,\"level\":\"info\",\"message\":\"mcp.async.reinject\",\"session_key\":\"agent:alice:main\",\"tool\":\"bg_later\"}",
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":28,\"level\":\"info\",\"message\":\"mcp.foruser.delivered\",\"session_key\":\"agent:alice:main\",\"tool\":\"bg_later\"}",
+    "{\"agent\":\"alice\",\"channel\":\"telegram\",\"content_len\":13,\"level\":\"info\",\"message\":\"mcp.async.reinject\",\"session_key\":\"agent:alice:main\",\"tool\":\"bg_later\"}"
+  ]
+}

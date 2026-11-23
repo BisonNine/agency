@@ -333,11 +333,8 @@ func (h *endpointHost) beforeTool(ctx context.Context, call *hook.ToolCall) (*to
 	if !ok {
 		return nil, nil
 	}
-	// The internal name when the call resolved, as the log lines name it.
-	toolName := call.Name
-	if r := resolvedTool(ctx); r.name != "" {
-		toolName = r.name
-	}
+	// The internal name of the published tool, as the log lines name it.
+	toolName := internalName(ctx, call.Name)
 	if r := v.refused; r != nil {
 		fields := map[string]any{"tool": toolName, "reason": r.reason}
 		maps.Copy(fields, r.fields)
@@ -357,7 +354,8 @@ func (h *endpointHost) beforeTool(ctx context.Context, call *hook.ToolCall) (*to
 	internal := r.name
 	if internal == "" {
 		// Not in the agent's tools on this endpoint; the endpoint refuses it as
-		// not enabled. On /mcp that includes a tool the ACL denies.
+		// not enabled, by its internal name. On /mcp that includes a tool the
+		// ACL denies.
 		if _, has := v.reg.Get(toolName); has && !h.m.policy.IsAllowed(agentName, toolName) {
 			logger.WarnCF("mcpserver", "MCP tool denied",
 				map[string]any{"agent": agentName, "tool": toolName, "reason": "acl_denied"})
@@ -398,10 +396,7 @@ func (h *endpointHost) afterTool(ctx context.Context, call *hook.ToolCall, res *
 	if !ok || v.refused != nil {
 		return
 	}
-	name := resolvedTool(ctx).name
-	if name == "" {
-		name = call.Name
-	}
+	name := internalName(ctx, call.Name)
 	// A panicking tool counts as a failure under its own text, as it always
 	// has; its answer is MCP's internal error.
 	if _, panicked := errors.AsType[*hook.ToolPanicError](res.Err); panicked {
@@ -421,24 +416,26 @@ func (h *endpointHost) afterTool(ctx context.Context, call *hook.ToolCall, res *
 // asyncResult delivers a background tool's late result the way the agent
 // loop does: ForUser to the user, and ForLLM re-injected as a "system"
 // message into the agent's session, at the dispatching call's spawn depth.
-func (h *endpointHost) asyncResult(cbCtx context.Context, c mcphost.Caller, call hook.ToolCall, r *toolkit.Result) {
+// ctx is the context the call ran on (detached from the request), so the
+// result answers the chat of the call's turn, captured when the call was
+// made, whatever turns run now.
+func (h *endpointHost) asyncResult(ctx context.Context, c mcphost.Caller, _ hook.ToolCall, info toolkit.Info, r *toolkit.Result) {
 	v, ok := c.Value.(callerValue)
 	if !ok || v.refused != nil {
 		return
 	}
-	dest, ok := callDest(cbCtx)
-	if !ok {
-		dest, _ = h.m.sessionTokens.ReplyChat(v.rec)
+	dest, _ := callDest(ctx)
+	publishMCPForUser(ctx, h.m.msgBus, v.rec, dest, info.Name, r)
+	publishMCPAsyncToLLM(ctx, h.m.msgBus, v.rec, dest, info.Name, r, v.rec.depth)
+}
+
+// internalName is the internal name of the tool the call on ctx was
+// published for (mcphost.TargetOf), or name when there is none.
+func internalName(ctx context.Context, name string) string {
+	if t, ok := mcphost.TargetOf(ctx); ok && t.Internal != "" {
+		return t.Internal
 	}
-	name := resolvedTool(cbCtx).name
-	if name == "" {
-		name = call.Name
-	}
-	// The originating request may be long gone when a background tool
-	// finishes; deliver on its values but not its cancellation.
-	deliverCtx := context.WithoutCancel(cbCtx)
-	publishMCPForUser(deliverCtx, h.m.msgBus, v.rec, dest, name, r)
-	publishMCPAsyncToLLM(deliverCtx, h.m.msgBus, v.rec, dest, name, r, v.rec.depth)
+	return name
 }
 
 // config is the endpoint's mcphost configuration.
@@ -447,15 +444,17 @@ func (h *endpointHost) config() mcphost.Config {
 		// Protocol handshake: bare semver, not app.Version(). A client may
 		// compare serverInfo.version, so it must not carry a build suffix.
 		Name: app.Name(), Version: app.SemVer(),
-		Transport:            mcphost.Argument,
-		TokenDescription:     tokenDescription,
-		Authenticator:        mcphost.AuthenticatorFunc(h.authenticate),
-		Catalogue:            h.catalogue(),
-		Names:                mcphost.ExternalFirst,
-		PanicAsProtocolError: true,
-		Gate:                 h.gate,
-		CallContext:          h.callContext,
-		ToolContext:          h.toolContext,
+		Transport:              mcphost.Argument,
+		TokenDescription:       tokenDescription,
+		Authenticator:          mcphost.AuthenticatorFunc(h.authenticate),
+		Catalogue:              h.catalogue(),
+		Names:                  mcphost.ExternalFirst,
+		RefuseWithInternalName: true,
+		PanicAsProtocolError:   true,
+		OnSkip:                 logSkip,
+		Gate:                   h.gate,
+		CallContext:            h.callContext,
+		ToolContext:            h.toolContext,
 		Plugins: []hook.Plugin{{
 			Name:       "mcpserver",
 			BeforeTool: h.beforeTool,
@@ -469,6 +468,32 @@ func (h *endpointHost) config() mcphost.Config {
 		cfg.Realm = global.HostMCPRealm
 	}
 	return cfg
+}
+
+// logSkip logs a tool an endpoint leaves out of what it publishes, as the
+// host's catalogue build always has (each endpoint, at start and on every
+// refresh).
+func logSkip(s mcphost.Skip) {
+	switch s.Reason {
+	case mcphost.SkipNameTaken:
+		logger.WarnCF("mcpserver", "skipping tool: external name collision",
+			map[string]any{"external": s.Published, "tool": s.Internal, "conflicts_with": s.Other})
+	case mcphost.SkipSchema:
+		// The encoder's own error, as the host's build logged it.
+		errText := ""
+		if err := errors.Unwrap(s.Err); err != nil {
+			errText = err.Error()
+		} else if s.Err != nil {
+			errText = s.Err.Error()
+		}
+		logger.WarnCF("mcpserver", "skipping tool: failed to marshal schema",
+			map[string]any{"tool": s.Internal, "error": errText})
+	case mcphost.SkipRefused:
+		// The host's own build registered every encodable schema, and MCP's
+		// refusal of one stopped it; the endpoint now leaves that tool out.
+		logger.WarnCF("mcpserver", "skipping tool: MCP refused its schema",
+			map[string]any{"tool": s.Internal, "external": s.Published})
+	}
 }
 
 // publishMCPAsyncToLLM re-injects an async tool's completion (ForLLM, or the

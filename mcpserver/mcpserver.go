@@ -355,11 +355,15 @@ func (m *MCPServer) SessionTokens() *SessionTokenStore { return m.sessionTokens 
 // after an external MCP server's tools are re-registered.
 func (m *MCPServer) RefreshCatalogue() {
 	ctx := context.Background()
-	internal := m.internal.Refresh(ctx)
-	bearer := m.bearer.Refresh(ctx)
-	if internal || bearer {
+	added, deleted := 0, 0
+	for _, ep := range []*mcphost.Endpoint{m.internal, m.bearer} {
+		r := ep.Refresh(ctx)
+		added += r.Added
+		deleted += r.Removed
+	}
+	if added > 0 || deleted > 0 {
 		logger.InfoCF("mcpserver", "MCP host catalogue refreshed",
-			map[string]any{"internal": internal, "external": bearer})
+			map[string]any{"added": added, "deleted": deleted})
 	}
 }
 
