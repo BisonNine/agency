@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -27,8 +28,8 @@ func countInHistory(agent *AgentInstance, text string) int {
 }
 
 // reasoningOnly is a response with reasoning and no reply.
-func reasoningOnly() *providers.LLMResponse {
-	return &providers.LLMResponse{Reasoning: "thinking", Normal: true, FinishReason: "stop"}
+func reasoningOnly() *spawnllm.LLMResponse {
+	return &spawnllm.LLMResponse{Reasoning: "thinking", Normal: true, FinishReason: "stop"}
 }
 
 // An image sent on a tool-call iteration does not make an empty final
@@ -36,10 +37,10 @@ func reasoningOnly() *providers.LLMResponse {
 // and the empty outcome.
 func TestGeneratedImages_EarlierImageThenDegenerateFinal(t *testing.T) {
 	l := newSendFilesLoop(t)
-	responses := make([]*providers.LLMResponse, 0, maxEmptyRetries+2)
-	responses = append(responses, &providers.LLMResponse{
-		Images:    []providers.GeneratedImage{pngImage()},
-		ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "no_such_tool")},
+	responses := make([]*spawnllm.LLMResponse, 0, maxEmptyRetries+2)
+	responses = append(responses, &spawnllm.LLMResponse{
+		Images:    []spawnllm.GeneratedImage{pngImage()},
+		ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "no_such_tool")},
 		Normal:    true,
 	})
 	for range maxEmptyRetries + 1 {
@@ -62,7 +63,7 @@ func TestGeneratedImages_EarlierImageThenDegenerateFinal(t *testing.T) {
 func TestGeneratedImages_TruncatedImagesOnlyFinal(t *testing.T) {
 	l := newSendFilesLoop(t)
 	reply, outcome, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Images: []providers.GeneratedImage{pngImage()}, FinishReason: "length"})
+		&spawnllm.LLMResponse{Images: []spawnllm.GeneratedImage{pngImage()}, FinishReason: "length"})
 	<-l.delivered
 	if outcome != bus.OutcomeError || !strings.Contains(reply, "finish reason: length") {
 		t.Fatalf("reply = %q, outcome = %q; want the empty-response error", reply, outcome)
@@ -79,12 +80,12 @@ func TestGeneratedImages_ToolIterationNoteStoredOnce(t *testing.T) {
 	l := newSendFilesLoop(t)
 	const url = "https://images.example.com/cat.png"
 	reply, outcome, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{
+		&spawnllm.LLMResponse{
 			Content:   "Drawing.",
-			Images:    []providers.GeneratedImage{{URL: url, Size: -1}},
-			ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "no_such_tool")},
+			Images:    []spawnllm.GeneratedImage{{URL: url, Size: -1}},
+			ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "no_such_tool")},
 		},
-		&providers.LLMResponse{Content: "All done.", Normal: true})
+		&spawnllm.LLMResponse{Content: "All done.", Normal: true})
 	if reply != "All done.\n\nImage: "+url || (outcome != "" && outcome != bus.OutcomeOK) {
 		t.Fatalf("reply = %q, outcome %q; want the text and the image line", reply, outcome)
 	}
@@ -109,7 +110,7 @@ func TestGeneratedImages_CloneAnsweringAgentNamesSourceWorkspace(t *testing.T) {
 		t.Fatalf("clone workspace %q, want alice's %q", clone.Workspace, l.agent.Workspace)
 	}
 	reply, _, _ := l.imageTurn(t, clone, "agent_message", "ask-1",
-		&providers.LLMResponse{Content: "Done.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+		&spawnllm.LLMResponse{Content: "Done.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 	if !strings.Contains(reply, "Image saved in Alice's workspace as files/generated/") {
 		t.Fatalf("reply = %q, want alice's workspace named", reply)
 	}
@@ -136,7 +137,7 @@ func TestGeneratedImages_FreshAgentAnsweringAgentKeepsNothing(t *testing.T) {
 	for _, channel := range []string{"agent_message", "cli"} {
 		t.Run(channel, func(t *testing.T) {
 			reply, _, _ := l.imageTurn(t, fresh, channel, "ask-1",
-				&providers.LLMResponse{Content: "Done.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+				&spawnllm.LLMResponse{Content: "Done.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 			if reply != "Done.\n\nAn image was made but not kept: Bob is a temporary agent." {
 				t.Fatalf("reply = %q", reply)
 			}
@@ -147,7 +148,7 @@ func TestGeneratedImages_FreshAgentAnsweringAgentKeepsNothing(t *testing.T) {
 	}
 	// Answering a chat that takes files, it sends the image.
 	reply, _, _ := l.imageTurn(t, fresh, "telegram", "42",
-		&providers.LLMResponse{Content: "Here.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+		&spawnllm.LLMResponse{Content: "Here.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 	if d := <-l.delivered; d.content != testPNG || reply != "Here." {
 		t.Fatalf("delivered %q, reply %q; want the image sent", d.content, reply)
 	}
@@ -158,7 +159,7 @@ func TestGeneratedImages_DataSchemeAndLongURL(t *testing.T) {
 	l := newSendFilesLoop(t)
 	long := "https://images.example.com/" + strings.Repeat("a", 600)
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "Cats.", Normal: true, Images: []providers.GeneratedImage{
+		&spawnllm.LLMResponse{Content: "Cats.", Normal: true, Images: []spawnllm.GeneratedImage{
 			{URL: "DATA:image/png;base64,@@@", Size: -1},
 			{URL: long, Size: -1},
 		}})
@@ -176,7 +177,7 @@ func TestGeneratedImages_DeliveryFailed(t *testing.T) {
 	l := newSendFilesLoop(t)
 	l.report = func(bus.OutboundMediaMessage) (error, bool) { return errors.New("chat not found"), true }
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+		&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 	<-l.delivered
 	if !strings.Contains(reply, "Image not sent (chat not found). Image saved as files/generated/") {
 		t.Fatalf("reply = %q, want the reason and the path", reply)
@@ -193,7 +194,7 @@ func TestGeneratedImages_DeliveryUnconfirmed(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		reply, outcome, _ := l.imageTurn(t, l.agent, "telegram", "42",
-			&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+			&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 		done <- result{reply, outcome}
 	}()
 	<-l.delivered
@@ -213,7 +214,7 @@ func TestGeneratedImages_SendError(t *testing.T) {
 	l := newSendFilesLoop(t)
 	l.al.mediaStore = nil
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+		&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 	if !strings.Contains(reply, "Image not sent (no media store). Image saved as files/generated/") {
 		t.Fatalf("reply = %q", reply)
 	}
@@ -230,7 +231,7 @@ func TestGeneratedImages_NotSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+		&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 	if reply != "A cat.\n\nAn image could not be saved." {
 		t.Fatalf("reply = %q", reply)
 	}
@@ -256,7 +257,7 @@ func TestGeneratedImages_TurnKinds(t *testing.T) {
 		t.Run(tt.channel+"/"+tt.chatID, func(t *testing.T) {
 			l := newSendFilesLoop(t)
 			reply, _, _ := l.imageTurn(t, l.agent, tt.channel, tt.chatID,
-				&providers.LLMResponse{Content: "Done.", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+				&spawnllm.LLMResponse{Content: "Done.", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 			if tt.sent {
 				if d := <-l.delivered; d.msg.Channel != tt.channel || d.msg.ChatID != tt.chatID {
 					t.Fatalf("delivered to %s/%s", d.msg.Channel, d.msg.ChatID)
@@ -300,8 +301,8 @@ func TestPublishToolMedia_ToTheTurnsChat(t *testing.T) {
 	}
 	l.agent.Tools.Register(mediaTool{refs: []string{ref, "media://unknown"}})
 	l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "media_tool")}},
-		&providers.LLMResponse{Content: "Here.", Normal: true})
+		&spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "media_tool")}},
+		&spawnllm.LLMResponse{Content: "Here.", Normal: true})
 	var d deliveredFile
 	select {
 	case d = <-l.delivered:

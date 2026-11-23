@@ -11,8 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // lastStepNote is the note on a turn's last step.
@@ -31,9 +33,9 @@ var sixStepNotes = []string{
 }
 
 // optsChatFunc is a scripted model that also sees the request options.
-type optsChatFunc func(ctx context.Context, messages []providers.Message, options map[string]any) (*providers.LLMResponse, error)
+type optsChatFunc func(ctx context.Context, messages []spawnllm.Message, options map[string]any) (*spawnllm.LLMResponse, error)
 
-func (f optsChatFunc) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, options map[string]any) (*providers.LLMResponse, error) {
+func (f optsChatFunc) Chat(ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, options map[string]any) (*spawnllm.LLMResponse, error) {
 	return f(ctx, messages, options)
 }
 
@@ -46,7 +48,7 @@ func (cliChatFunc) IsCLI() bool { return true }
 
 // lowStepsRequest is one request the model was sent.
 type lowStepsRequest struct {
-	messages []providers.Message
+	messages []spawnllm.Message
 	options  map[string]any
 }
 
@@ -56,7 +58,7 @@ type lowStepsRequest struct {
 // fallback routes the turn through the fallback chain (chatCandidate) rather
 // than straight to the provider; cli makes the model a CLI provider; noTools
 // offers the model no tools.
-func lowStepsTurn(t *testing.T, steps int, fallback, cli, noTools bool) ([]lowStepsRequest, []providers.Message) {
+func lowStepsTurn(t *testing.T, steps int, fallback, cli, noTools bool) ([]lowStepsRequest, []spawnllm.Message) {
 	t.Helper()
 	al := newTestAgentLoop(t).al
 	agentInstance := al.registry.Default()
@@ -79,21 +81,21 @@ func lowStepsTurn(t *testing.T, steps int, fallback, cli, noTools bool) ([]lowSt
 		mu       sync.Mutex
 		requests []lowStepsRequest
 	)
-	model := optsChatFunc(func(_ context.Context, messages []providers.Message, options map[string]any) (*providers.LLMResponse, error) {
+	model := optsChatFunc(func(_ context.Context, messages []spawnllm.Message, options map[string]any) (*spawnllm.LLMResponse, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		requests = append(requests, lowStepsRequest{
-			messages: append([]providers.Message(nil), messages...),
+			messages: append([]spawnllm.Message(nil), messages...),
 			options:  maps.Clone(options),
 		})
 		// Distinct arguments per call, so the repeated-batch guard never stops
 		// the turn early.
 		args := fmt.Sprintf(`{"text":"step %d"}`, len(requests))
-		return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+		return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 			ID:       fmt.Sprintf("tc-%d", len(requests)),
 			Type:     "function",
 			Name:     "echo_tool",
-			Function: &providers.FunctionCall{Name: "echo_tool", Arguments: args},
+			Function: &spawnllm.FunctionCall{Name: "echo_tool", Arguments: args},
 		}}}, nil
 	})
 	if cli {
@@ -111,7 +113,7 @@ func lowStepsTurn(t *testing.T, steps int, fallback, cli, noTools bool) ([]lowSt
 	cm, releaseCM := al.getContextManager(agentInstance, opts.SessionKey)
 	defer releaseCM()
 
-	messages := []providers.Message{{Role: "user", Content: "go"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "go"}}
 	if _, err := al.runLLMIteration(context.Background(), agentInstance, messages, opts, cm, nil); err != nil {
 		t.Fatalf("runLLMIteration: %v", err)
 	}
@@ -125,7 +127,7 @@ func lowStepsTurn(t *testing.T, steps int, fallback, cli, noTools bool) ([]lowSt
 }
 
 // lowStepsNotes are the low-steps notes a request carries.
-func lowStepsNotes(req []providers.Message) []string {
+func lowStepsNotes(req []spawnllm.Message) []string {
 	var notes []string
 	for _, m := range req {
 		if strings.HasPrefix(m.Content, "[System notice]") {
@@ -215,7 +217,7 @@ func TestRunLLMIteration_LowStepsNoteSkipped(t *testing.T) {
 				if notes := lowStepsNotes(r.messages); len(notes) != 0 {
 					t.Errorf("request %d carries notes %q, want none", i+1, notes)
 				}
-				if choice, set := r.options[providers.ToolChoiceOption]; set {
+				if choice, set := r.options[spawnllm.ToolChoiceOption]; set {
 					t.Errorf("request %d sets tool choice %v, want it unset", i+1, choice)
 				}
 			}
@@ -238,10 +240,10 @@ func TestRunLLMIteration_LastStepForbidsTools(t *testing.T) {
 			requests, _ := lowStepsTurn(t, 6, tc.fallback, false, false)
 			last := len(requests) - 1
 			for i, r := range requests {
-				choice, set := r.options[providers.ToolChoiceOption]
+				choice, set := r.options[spawnllm.ToolChoiceOption]
 				if i == last {
-					if choice != providers.ToolChoiceNone {
-						t.Errorf("last request tool choice = %v (set %v), want %q", choice, set, providers.ToolChoiceNone)
+					if choice != spawnllm.ToolChoiceNone {
+						t.Errorf("last request tool choice = %v (set %v), want %q", choice, set, spawnllm.ToolChoiceNone)
 					}
 					continue
 				}

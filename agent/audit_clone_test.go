@@ -9,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 )
 
@@ -31,8 +32,8 @@ func TestToolCall_AuditCloneUnderSource(t *testing.T) {
 	defer restore()
 
 	provider := &sequenceProvider{
-		responses: []*providers.LLMResponse{
-			{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "file_write")}},
+		responses: []*spawnllm.LLMResponse{
+			{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "file_write")}},
 			{Content: "done"},
 		},
 		errors: []error{nil, nil},

@@ -11,9 +11,9 @@ import (
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/spawnllm"
 
 	climcp "go.bison9.com/agency/mcp"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -61,7 +61,7 @@ func TestDiscovery_MCPToolListsUnchanged(t *testing.T) {
 			}
 
 			sent := sentToolList(agent)
-			history := []providers.Message{
+			history := []spawnllm.Message{
 				{Role: "tool", ToolCallID: "tc-1", ToolReferences: []string{"bob_post", "alpha_read"}},
 				{Role: "tool", ToolCallID: "tc-2", ToolReferences: []string{"alpha_read", "mcp_alpha_scan"}},
 			}
@@ -95,7 +95,7 @@ func TestDiscovery_MCPToolListsUnchanged(t *testing.T) {
 
 // deferredNames lists the deferred and tool-search flags, which the JSON form
 // of a definition leaves out.
-func deferredNames(defs []providers.ToolDefinition) []string {
+func deferredNames(defs []spawnllm.ToolDefinition) []string {
 	var out []string
 	for _, d := range defs {
 		if d.Deferred {
@@ -109,14 +109,14 @@ func deferredNames(defs []providers.ToolDefinition) []string {
 }
 
 // sentToolList is the list a turn hands the provider.
-func sentToolList(agent *AgentInstance) []providers.ToolDefinition {
+func sentToolList(agent *AgentInstance) []spawnllm.ToolDefinition {
 	return agent.Tools.ToolDefs(nil).Send
 }
 
 // inContextToolList is what the tool-schema estimate counts for history:
 // discovery's InContext for what history's tool results have revealed, as
 // the SDK agent computes it over the same registry snapshot.
-func inContextToolList(agent *AgentInstance, history []providers.Message) []providers.ToolDefinition {
+func inContextToolList(agent *AgentInstance, history []spawnllm.Message) []spawnllm.ToolDefinition {
 	var refs [][]string
 	for _, m := range history {
 		if len(m.ToolReferences) > 0 {

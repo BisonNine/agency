@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 const finishEventMaxErrLen = 500
@@ -109,7 +109,7 @@ type llmFinish struct {
 	chatID         string
 	turnID         string
 	elapsedMs      int64
-	resp           *providers.LLMResponse
+	resp           *spawnllm.LLMResponse
 	err            error
 }
 
@@ -187,11 +187,11 @@ func (f llmFinish) fields() map[string]any {
 // nil). The synthesized status records what the call site does know: requested
 // model, wall-clock duration, and success=false on error.
 func resolveDispatchStatus(
-	resp *providers.LLMResponse,
+	resp *spawnllm.LLMResponse,
 	callErr error,
 	requestedModel string,
 	elapsed int64,
-) *providers.DispatchStatus {
+) *spawnllm.DispatchStatus {
 	if resp != nil && resp.Status != nil {
 		return resp.Status
 	}
@@ -200,7 +200,7 @@ func resolveDispatchStatus(
 	if !success {
 		stopReason = "error"
 	}
-	return &providers.DispatchStatus{
+	return &spawnllm.DispatchStatus{
 		Success:    success,
 		Model:      requestedModel,
 		StopReason: stopReason,

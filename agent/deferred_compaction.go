@@ -8,8 +8,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // The context engine defers a compaction that only the age trigger asks for
@@ -133,7 +134,7 @@ func (al *AgentLoop) runDeferredCompaction(parent context.Context, agent *AgentI
 
 	// The summarization chain's request timeouts bound the pass; the turn
 	// budget is only a backstop against a hung call.
-	ctx, cancel := al.clk().WithTimeout(providers.WithAgentID(parent, agent.ID), al.GetConfig().Agents.Defaults.GetTurnTimeout())
+	ctx, cancel := al.clk().WithTimeout(spawnllm.WithAgentID(parent, agent.ID), al.GetConfig().Agents.Defaults.GetTurnTimeout())
 	defer cancel()
 	ran, err := entry.cm.CompactIfDue(ctx)
 	if !ran {

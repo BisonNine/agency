@@ -10,9 +10,11 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
 )
@@ -20,16 +22,16 @@ import (
 // agentRecordingProvider wraps a provider and records the agent each call was
 // made for, so a test can find the temporary clone a sub-agent ran as.
 type agentRecordingProvider struct {
-	providers.LLMProvider
+	spawnllm.LLMProvider
 	mu     sync.Mutex
 	agents []string
 }
 
 func (p *agentRecordingProvider) Chat(
-	ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
-) (*providers.LLMResponse, error) {
+	ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, defs []spawnllm.ToolDefinition, model string, opts map[string]any,
+) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
-	p.agents = append(p.agents, providers.AgentIDFromContext(ctx))
+	p.agents = append(p.agents, spawnllm.AgentIDFromContext(ctx))
 	p.mu.Unlock()
 	return p.LLMProvider.Chat(ctx, testIdentity, messages, defs, model, opts)
 }
@@ -46,7 +48,7 @@ func (p *agentRecordingProvider) lastAgent() string {
 // newSubagentTestLoop builds a loop whose one agent ("main") allows every
 // tool and whose model calls go to provider. Tools added with RegisterTool
 // reach the sub-agent clones built later.
-func newSubagentTestLoop(t *testing.T, provider providers.LLMProvider) *AgentLoop {
+func newSubagentTestLoop(t *testing.T, provider spawnllm.LLMProvider) *AgentLoop {
 	t.Helper()
 	cfg := newTestConfig(t)
 	cfg.Agents.List[0].Tools = []string{"*"}
@@ -61,10 +63,10 @@ func TestRunSubagentTask_CarriesToolTally(t *testing.T) {
 	defer restore()
 
 	provider := &sequenceProvider{
-		responses: []*providers.LLMResponse{
-			{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "file_write")}},
-			{ToolCalls: []providers.ToolCall{toolCallTo("tc-2", "no_such_tool")}},
-			{ToolCalls: []providers.ToolCall{toolCallTo("tc-3", "panic_tool")}},
+		responses: []*spawnllm.LLMResponse{
+			{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "file_write")}},
+			{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-2", "no_such_tool")}},
+			{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-3", "panic_tool")}},
 			{Content: "done"},
 		},
 		errors: []error{nil, nil, nil, nil},
@@ -102,8 +104,8 @@ func TestRunSubagentTask_ErrorPathRemovesTally(t *testing.T) {
 
 	boom := errors.New("provider exploded")
 	// One working tool call, then the provider fails on every attempt.
-	responses := make([]*providers.LLMResponse, 11)
-	responses[0] = &providers.LLMResponse{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "file_write")}}
+	responses := make([]*spawnllm.LLMResponse, 11)
+	responses[0] = &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "file_write")}}
 	errs := make([]error, 11)
 	for i := 1; i < len(errs); i++ {
 		errs[i] = boom
@@ -132,10 +134,10 @@ func TestRunSubagentTask_ErrorPathRemovesTally(t *testing.T) {
 }
 
 // toolCallTo is a provider tool call to name with no arguments.
-func toolCallTo(id, name string) providers.ToolCall {
-	return providers.ToolCall{
+func toolCallTo(id, name string) spawnllm.ToolCall {
+	return spawnllm.ToolCall{
 		ID: id, Type: "function", Name: name,
-		Function: &providers.FunctionCall{Name: name, Arguments: "{}"},
+		Function: &spawnllm.FunctionCall{Name: name, Arguments: "{}"},
 	}
 }
 

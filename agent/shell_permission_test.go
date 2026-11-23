@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
@@ -46,9 +48,9 @@ type shellModel struct {
 
 func (m *shellModel) GetDefaultModel() string { return "mock-model" }
 
-func (m *shellModel) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (m *shellModel) Chat(_ context.Context, _ accounting.Identity, messages []spawnllm.Message, defs []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	m.mu.Lock()
-	m.offered = append(m.offered, slices.ContainsFunc(defs, func(d providers.ToolDefinition) bool {
+	m.offered = append(m.offered, slices.ContainsFunc(defs, func(d spawnllm.ToolDefinition) bool {
 		return d.Function.Name == config.ShellExecTool
 	}))
 	m.mu.Unlock()
@@ -57,11 +59,11 @@ func (m *shellModel) Chat(_ context.Context, _ providers.Identity, messages []pr
 		m.mu.Lock()
 		m.results = append(m.results, last.Content)
 		m.mu.Unlock()
-		return &providers.LLMResponse{Content: "done: " + last.Content}, nil
+		return &spawnllm.LLMResponse{Content: "done: " + last.Content}, nil
 	}
-	return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+	return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 		ID: "tc-1", Type: "function", Name: "shell_exec",
-		Function: &providers.FunctionCall{Name: "shell_exec", Arguments: shellArgs},
+		Function: &spawnllm.FunctionCall{Name: "shell_exec", Arguments: shellArgs},
 	}}}, nil
 }
 

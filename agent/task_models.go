@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/imagegen"
 	"go.bison9.com/agent/spawnllm/protocoltypes"
 	"go.bison9.com/agent/spawnllm/speech"
@@ -432,7 +433,7 @@ func (h *taskModelHost) Run(ctx context.Context, agentID, workspace string, req 
 // a while (cooldownWorthy) is recorded against its health. No same-model
 // retry is made.
 func taskVerdict(err error, c models.Candidate) models.Verdict {
-	fe := providers.ClassifyError(err, c.Provider, c.Model)
+	fe := spawnllm.ClassifyError(err, c.Provider, c.Model)
 	if fe == nil {
 		return models.Verdict{Next: true}
 	}
@@ -445,13 +446,13 @@ func taskVerdict(err error, c models.Candidate) models.Verdict {
 // (a bad input, a format or size the model refused, an unknown model) is
 // not: the model stays available to the agents chatting with it and to the
 // next call.
-func cooldownWorthy(fe *providers.FailoverError) bool {
+func cooldownWorthy(fe *spawnllm.FailoverError) bool {
 	if fe.Status >= 500 {
 		return true
 	}
 	switch fe.Reason {
-	case providers.FailoverRateLimit, providers.FailoverOverloaded, providers.FailoverTimeout,
-		providers.FailoverAuth, providers.FailoverBilling:
+	case spawnllm.FailoverRateLimit, spawnllm.FailoverOverloaded, spawnllm.FailoverTimeout,
+		spawnllm.FailoverAuth, spawnllm.FailoverBilling:
 		return true
 	default:
 		return false
@@ -461,7 +462,7 @@ func cooldownWorthy(fe *providers.FailoverError) bool {
 // callOutput is what one model call returned.
 type callOutput struct {
 	text   string
-	images []providers.GeneratedImage
+	images []spawnllm.GeneratedImage
 	audio  []byte
 	// audioType is the audio's media type, as the API declared it.
 	audioType string
@@ -543,7 +544,7 @@ func (h *taskModelHost) chat(ctx context.Context, cfg *config.Config, chain *mod
 		}
 		fmt.Fprintf(&content, "\n\n--- %s ---\n%s", in.name, string(in.data))
 	}
-	resp, err := provider.Chat(ctx, id, []providers.Message{{Role: "user", Content: content.String(), Media: media}}, nil, mc.Model, nil)
+	resp, err := provider.Chat(ctx, id, []spawnllm.Message{{Role: "user", Content: content.String(), Media: media}}, nil, mc.Model, nil)
 	out := &callOutput{}
 	if resp != nil && resp.Status != nil {
 		out.cost = resp.Status.CostUSD
@@ -844,7 +845,7 @@ func formatType(format string) string {
 }
 
 // usageText is usage as a short phrase.
-func usageText(u *protocoltypes.TaskUsage, images []providers.GeneratedImage) string {
+func usageText(u *protocoltypes.TaskUsage, images []spawnllm.GeneratedImage) string {
 	var parts []string
 	if u != nil {
 		if u.InputTokens > 0 || u.OutputTokens > 0 {

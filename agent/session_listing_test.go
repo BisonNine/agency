@@ -15,7 +15,6 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 )
 
@@ -32,7 +31,7 @@ func TestSessionListing_RealisticDataDir(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.Agents.List = []config.AgentConfig{{ID: "alice", Name: "Alice", Default: true}}
 	msgBus := bus.NewMessageBus()
-	al := mustNewAgentLoop(t, cfg, msgBus, &fixedProvider{resp: &providers.LLMResponse{Content: "hi"}}, nil, OwnsDataDir())
+	al := mustNewAgentLoop(t, cfg, msgBus, &fixedProvider{resp: &spawnllm.LLMResponse{Content: "hi"}}, nil, OwnsDataDir())
 	alice, _ := al.GetRegistry().Get("alice")
 	dir := alice.SessionsDir()
 
@@ -41,7 +40,7 @@ func TestSessionListing_RealisticDataDir(t *testing.T) {
 	mainKey := routing.BuildAgentMainSessionKey("alice")
 
 	// An earlier release's per-sender session, written by the store.
-	addFullMessage(t, alice.Sessions, oldKey, providers.Message{Role: "user", Content: "old"})
+	addFullMessage(t, alice.Sessions, oldKey, spawnllm.Message{Role: "user", Content: "old"})
 	// An earlier release's archive with no session state.
 	a, err := memory.Open(memory.ArchivePath(dir, archiveOnlyKey))
 	if err != nil {
@@ -82,7 +81,7 @@ func TestSessionListing_RealisticDataDir(t *testing.T) {
 	}
 	clone, _ := al.GetRegistry().Get(id)
 	cloneKey := routing.BuildAgentMainSessionKey(id)
-	addFullMessage(t, clone.Sessions, cloneKey, providers.Message{Role: "user", Content: "temp"})
+	addFullMessage(t, clone.Sessions, cloneKey, spawnllm.Message{Role: "user", Content: "temp"})
 	if got := list(clone.SessionsDir()); !slices.Equal(got, []string{cloneKey}) {
 		t.Fatalf("temporary agent's sessions = %q, want [%s]", got, cloneKey)
 	}

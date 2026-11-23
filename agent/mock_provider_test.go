@@ -3,21 +3,22 @@ package agent
 import (
 	"context"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
 )
 
 type mockProvider struct{}
 
 func (m *mockProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	messages []providers.Message,
-	tools []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	messages []spawnllm.Message,
+	tools []spawnllm.ToolDefinition,
 	model string,
 	opts map[string]any,
-) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{
+) (*spawnllm.LLMResponse, error) {
+	return &spawnllm.LLMResponse{
 		Content:   "Mock response",
-		ToolCalls: []providers.ToolCall{},
+		ToolCalls: []spawnllm.ToolCall{},
 	}, nil
 }
 

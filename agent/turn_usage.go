@@ -4,15 +4,16 @@
 package agent
 
 import (
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/providers"
 )
 
 // addTurnUsage folds one successful LLM call's dispatch status into the turn's
 // usage accumulator. No-op when the caller did not ask for usage (u == nil).
 // The model the provider reports as served is preferred over the requested one,
 // so a turn that failed over records the model that actually answered.
-func addTurnUsage(u *global.TurnUsage, resp *providers.LLMResponse, provider, requestedModel string) {
+func addTurnUsage(u *global.TurnUsage, resp *spawnllm.LLMResponse, provider, requestedModel string) {
 	if u == nil || resp == nil {
 		return
 	}

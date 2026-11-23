@@ -8,7 +8,8 @@ import (
 	"slices"
 	"testing"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
+
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
@@ -24,7 +25,7 @@ func TestRunAgentLoop_RecordsTurnDepthOnSessionToken(t *testing.T) {
 	rec := &recordingSTI{}
 	al.SetSessionTokenIssuer(rec)
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{{Content: "one"}, {Content: "two"}},
+		responses: []*spawnllm.LLMResponse{{Content: "one"}, {Content: "two"}},
 		errors:    []error{nil, nil},
 	})
 
@@ -51,7 +52,7 @@ func TestRunAgentLoop_RecordsTurnDepthOnSessionToken(t *testing.T) {
 // its turn runs on the internal "subagent" channel.
 func TestRunSubagentTask_CloneTokenCarriesParentDepthPlusOne(t *testing.T) {
 	provider := &sequenceProvider{
-		responses: []*providers.LLMResponse{{Content: "done"}},
+		responses: []*spawnllm.LLMResponse{{Content: "done"}},
 		errors:    []error{nil},
 	}
 	al := newSubagentTestLoop(t, provider)

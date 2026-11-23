@@ -10,6 +10,7 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
@@ -19,7 +20,7 @@ import (
 // visionClient is one vision-describe side-model: a one-shot chat call against
 // a resolved provider+model that returns the model's text.
 type visionClient interface {
-	Complete(ctx context.Context, messages []providers.Message) (visionReply, error)
+	Complete(ctx context.Context, messages []spawnllm.Message) (visionReply, error)
 }
 
 // visionReply is the text a visionClient produced.
@@ -51,14 +52,14 @@ type providerVisionClient struct {
 func (c *providerVisionClient) Model() string { return c.model }
 
 // client is the model's chat client and its release.
-func (c *providerVisionClient) client() (providers.LLMProvider, func(), error) {
+func (c *providerVisionClient) client() (spawnllm.LLMProvider, func(), error) {
 	if c.workspace != "" {
 		return providers.ModelSet(c.catalog, c.alias).Begin(models.Chat).Isolated(c.workspace).Client(c.alias)
 	}
 	return c.catalog.Client(c.alias)
 }
 
-func (c *providerVisionClient) Complete(ctx context.Context, messages []providers.Message) (visionReply, error) {
+func (c *providerVisionClient) Complete(ctx context.Context, messages []spawnllm.Message) (visionReply, error) {
 	provider, release, err := c.client()
 	if err != nil {
 		return visionReply{}, err
@@ -187,7 +188,7 @@ func (al *AgentLoop) describeImages(ctx context.Context, agent *AgentInstance, i
 	if f := strings.TrimSpace(focus); f != "" {
 		userContent = f
 	}
-	msgs := []providers.Message{
+	msgs := []spawnllm.Message{
 		{Role: "system", Content: visionDescribeSystemPrompt},
 		{Role: "user", Content: userContent, Media: images},
 	}
@@ -236,7 +237,7 @@ func (al *AgentLoop) describeImages(ctx context.Context, agent *AgentInstance, i
 // dispatch iteration) carries usable text instead of an image the model cannot
 // see. Vision-capable primaries are left untouched (the normal path handles the
 // image). No-op when vision is not configured or there is no image to describe.
-func (al *AgentLoop) describeInboundMedia(ctx context.Context, agent *AgentInstance, userMsg *providers.Message) {
+func (al *AgentLoop) describeInboundMedia(ctx context.Context, agent *AgentInstance, userMsg *spawnllm.Message) {
 	if agent == nil || len(agent.VisionClients) == 0 || len(userMsg.Media) == 0 {
 		return
 	}

@@ -10,10 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
-
-	"go.bison9.com/agency/providers"
 )
 
 // exempt reports whether name is registered as suite-exempt.
@@ -176,7 +175,7 @@ func TestWrapper_BridgedToolSeesAgent(t *testing.T) {
 	for _, tool := range NamespacedProvider("probe", agentProbe{}).Build(ToolDeps{}) {
 		r.Register(tool)
 	}
-	ctx := providers.WithAgentID(context.Background(), "alice")
+	ctx := spawnllm.WithAgentID(context.Background(), "alice")
 
 	res := r.ExecuteWithContext(ctx, "probe_whoami", nil, "telegram", "42", nil)
 	if res.IsError || res.ForLLM != "agent=alice chat=telegram/42" {
@@ -186,7 +185,7 @@ func TestWrapper_BridgedToolSeesAgent(t *testing.T) {
 	if err != nil || out != "agent=alice chat=/" {
 		t.Errorf("ExecuteUnattended = %q, %v", out, err)
 	}
-	if res := r.Execute(providers.WithAgentID(context.Background(), "bob"), "probe_whoami", nil); res.ForLLM != "agent=bob chat=/" {
+	if res := r.Execute(spawnllm.WithAgentID(context.Background(), "bob"), "probe_whoami", nil); res.ForLLM != "agent=bob chat=/" {
 		t.Errorf("Execute = %+v", res)
 	}
 }

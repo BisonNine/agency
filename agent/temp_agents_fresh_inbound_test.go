@@ -14,12 +14,13 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/utils"
 )
@@ -144,7 +145,7 @@ func TestSingleShot_RetryStartsBlankWithTheMessage(t *testing.T) {
 	}
 	fresh, _ := al.GetRegistry().Get(id)
 	key := routing.BuildAgentMainSessionKey(id)
-	if _, err := fresh.Sessions.AddFullMessage(key, providers.Message{Role: "user", Content: "left over"}); err != nil {
+	if _, err := fresh.Sessions.AddFullMessage(key, spawnllm.Message{Role: "user", Content: "left over"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := al.runAgentLoop(context.Background(), fresh, processOptions{
@@ -238,7 +239,7 @@ func TestDiscardConversation_ConcurrentWithSessionUse(t *testing.T) {
 					release()
 				default:
 					cm, _, release := al.getSessionContext(fresh, key)
-					if _, err := cm.AddUserMessage(context.Background(), providers.Message{Role: "user", Content: fmt.Sprint(w, i)}); err != nil &&
+					if _, err := cm.AddUserMessage(context.Background(), spawnllm.Message{Role: "user", Content: fmt.Sprint(w, i)}); err != nil &&
 						!errors.Is(err, os.ErrNotExist) {
 						t.Logf("AddUserMessage: %v", err)
 					}

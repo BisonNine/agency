@@ -15,10 +15,10 @@ import (
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/loop"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // probedAgent gives agent an SDK agent of its own whose first plugin
@@ -67,7 +67,7 @@ func (al *AgentLoop) probedAgent(ctx context.Context, agent *AgentInstance, extr
 // with messages the first request is messages, as given (already stored).
 // al defaults to a loop on an empty configuration. It returns how the model
 // loop ended and the turn's reply and error as the host sees them.
-func testTurn(tb testing.TB, al *AgentLoop, agent *AgentInstance, opts processOptions, tm *turnModel, cm ctxengine.ContextManager, messages ...providers.Message) (modelReply, string, error) {
+func testTurn(tb testing.TB, al *AgentLoop, agent *AgentInstance, opts processOptions, tm *turnModel, cm ctxengine.ContextManager, messages ...spawnllm.Message) (modelReply, string, error) {
 	tb.Helper()
 	end, _, reply, err := runTestTurn(tb, context.Background(), al, agent, opts, tm, cm, nil, nil, messages...)
 	return end, reply, err
@@ -76,7 +76,7 @@ func testTurn(tb testing.TB, al *AgentLoop, agent *AgentInstance, opts processOp
 // runTestTurn is testTurn on ctx, with extra plugins after the agent's own
 // and specOpt (when set) changing the agent's settings, also returning the
 // turn's result.
-func runTestTurn(tb testing.TB, ctx context.Context, al *AgentLoop, agent *AgentInstance, opts processOptions, tm *turnModel, cm ctxengine.ContextManager, extra []hook.Plugin, specOpt func(*loop.Spec), messages ...providers.Message) (modelReply, hook.TurnResult, string, error) {
+func runTestTurn(tb testing.TB, ctx context.Context, al *AgentLoop, agent *AgentInstance, opts processOptions, tm *turnModel, cm ctxengine.ContextManager, extra []hook.Plugin, specOpt func(*loop.Spec), messages ...spawnllm.Message) (modelReply, hook.TurnResult, string, error) {
 	tb.Helper()
 	if al == nil {
 		al = &AgentLoop{cfg: &config.Config{}}
@@ -107,7 +107,7 @@ func runTestTurn(tb testing.TB, ctx context.Context, al *AgentLoop, agent *Agent
 		tb.Fatal(err)
 	}
 	opts.turnModel = tm
-	ctx = providers.WithAgentID(ctx, agent.ID)
+	ctx = spawnllm.WithAgentID(ctx, agent.ID)
 	ht, res, err := al.runTurnOnAgent(ctx, agent, opts, tm, cm, nil, alreadyStored)
 	if err != nil {
 		tb.Fatal(err)
@@ -123,12 +123,12 @@ func runTestTurn(tb testing.TB, ctx context.Context, al *AgentLoop, agent *Agent
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
 	agent *AgentInstance,
-	messages []providers.Message,
+	messages []spawnllm.Message,
 	opts processOptions,
 	cm ctxengine.ContextManager,
 	mem *cogmem.Session,
 ) (modelReply, error) {
-	ctx = providers.WithAgentID(ctx, agent.ID)
+	ctx = spawnllm.WithAgentID(ctx, agent.ID)
 	opts.IsRetry = true
 	tm := opts.turnModel
 	if tm == nil {
@@ -153,7 +153,7 @@ func (al *AgentLoop) runLLMIteration(
 // given; every other call is the manager's own.
 type firstAssembly struct {
 	ctxengine.ContextManager
-	first []providers.Message
+	first []spawnllm.Message
 	done  bool
 }
 

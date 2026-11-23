@@ -12,12 +12,12 @@ import (
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
@@ -26,24 +26,24 @@ import (
 // identity each call was billed to.
 type identityRecorder struct {
 	mu  sync.Mutex
-	ids []providers.Identity
+	ids []accounting.Identity
 }
 
-func (r *identityRecorder) Chat(_ context.Context, id providers.Identity, _ []providers.Message,
-	_ []providers.ToolDefinition, _ string, _ map[string]any,
-) (*providers.LLMResponse, error) {
+func (r *identityRecorder) Chat(_ context.Context, id accounting.Identity, _ []spawnllm.Message,
+	_ []spawnllm.ToolDefinition, _ string, _ map[string]any,
+) (*spawnllm.LLMResponse, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ids = append(r.ids, id)
-	return &providers.LLMResponse{Content: "ok", FinishReason: "stop"}, nil
+	return &spawnllm.LLMResponse{Content: "ok", FinishReason: "stop"}, nil
 }
 
 func (r *identityRecorder) GetDefaultModel() string { return "test-model" }
 
-func (r *identityRecorder) seen() []providers.Identity {
+func (r *identityRecorder) seen() []accounting.Identity {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]providers.Identity(nil), r.ids...)
+	return append([]accounting.Identity(nil), r.ids...)
 }
 
 // TestAgentInstance_Identity: a config agent is billed to itself under its
@@ -181,7 +181,7 @@ func TestCompressModelCaller_BillsTheAgent(t *testing.T) {
 	}
 
 	rec := &identityRecorder{}
-	cat := compressCatalog(map[string]providers.LLMProvider{"m": rec})
+	cat := compressCatalog(map[string]spawnllm.LLMProvider{"m": rec})
 	c := withID(compressCaller(cat, "m"), main.Identity())
 	if _, _, _, err := c.complete(context.Background(), "sys", "user", false, nil); err != nil {
 		t.Fatalf("complete: %v", err)

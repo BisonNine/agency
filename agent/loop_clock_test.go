@@ -12,10 +12,10 @@ import (
 
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // The backoff before retrying a timed-out dispatch is waited out on the
@@ -25,7 +25,7 @@ import (
 func TestWaitToRetry_OnTheClock(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	var calls atomic.Int32
-	timingOut := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+	timingOut := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 		if calls.Add(1) == 1 {
 			return nil, fmt.Errorf("%w: timed out", context.DeadlineExceeded)
 		}

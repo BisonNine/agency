@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/h2non/filetype"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
@@ -64,7 +64,7 @@ func (t *turnImages) afterModel(ctx context.Context, _ *hook.ModelInfo, resp *ho
 }
 
 // handleImage handles one generated image and logs what became of it.
-func (t *turnImages) handleImage(ctx context.Context, img providers.GeneratedImage) imageResult {
+func (t *turnImages) handleImage(ctx context.Context, img spawnllm.GeneratedImage) imageResult {
 	fields := map[string]any{"agent_id": t.agent.ID, "agent": t.agent.Label(), "model": t.model, "size": img.Size}
 	if len(img.Data) == 0 {
 		if len(img.URL) >= len("data:") && strings.EqualFold(img.URL[:len("data:")], "data:") {
@@ -110,7 +110,7 @@ func (t *turnImages) handleImage(ctx context.Context, img providers.GeneratedIma
 
 // deliverImage sends a saved image to the turn's chat when it can go there,
 // returning the outcome for the log and the result.
-func (t *turnImages) deliverImage(ctx context.Context, img providers.GeneratedImage, path string) (string, imageResult) {
+func (t *turnImages) deliverImage(ctx context.Context, img spawnllm.GeneratedImage, path string) (string, imageResult) {
 	saved := "Image saved as " + path + "."
 	channel, chatID := t.opts.Channel, t.opts.ChatID
 	switch {
@@ -184,7 +184,7 @@ func capImageURL(url string) string {
 
 // saveImage writes img's data in the agent's workspace, under a folder for
 // the day, with the area's exact modes; it returns the workspace path.
-func (t *turnImages) saveImage(img providers.GeneratedImage) (string, error) {
+func (t *turnImages) saveImage(img spawnllm.GeneratedImage) (string, error) {
 	now := t.al.clk().Now()
 	name := fmt.Sprintf("image-%s%03d-%s%s", now.Format("150405"), now.Nanosecond()/1e6,
 		uuid.NewString()[:8], imageExtension(img))
@@ -202,7 +202,7 @@ func (t *turnImages) saveImage(img providers.GeneratedImage) (string, error) {
 
 // imageExtension is the file extension for an image: from its content type,
 // else from its bytes, else ".bin".
-func imageExtension(img providers.GeneratedImage) string {
+func imageExtension(img spawnllm.GeneratedImage) string {
 	ct, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(img.ContentType)), ";")
 	switch ct {
 	case "image/png":

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/models"
 	mllm "go.bison9.com/maestro/llm"
 
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
@@ -146,10 +146,10 @@ func TestDispatcher_PermanentErrors(t *testing.T) {
 // models are all unavailable, fails the task permanently without running a
 // worker.
 func TestDispatcher_WorkerModels(t *testing.T) {
-	workers := []providers.FallbackCandidate{{Provider: "p", Model: "cheap-wire", Name: "Cheap"}}
+	workers := []models.Candidate{{Provider: "p", Model: "cheap-wire", Name: "Cheap"}}
 	tests := []struct {
 		name      string
-		workers   []providers.FallbackCandidate
+		workers   []models.Candidate
 		llmID     string
 		permanent bool
 	}{
@@ -162,7 +162,7 @@ func TestDispatcher_WorkerModels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var runs []string
 			mgr := toolsagents.NewSubagentManager(toolsagents.SubagentManagerConfig{
-				Workspace: t.TempDir(), Live: toolsagents.NewLiveSet(), CallerAgentID: "alice", SelfResolver: func() []providers.FallbackCandidate { return tt.workers },
+				Workspace: t.TempDir(), Live: toolsagents.NewLiveSet(), CallerAgentID: "alice", SelfResolver: func() []models.Candidate { return tt.workers },
 				WorkerModelsSet: func(string) bool { return true },
 				RunFull: func(_ context.Context, _, _, model, _ string, _ []string) (*global.SyncResult, func(), error) {
 					runs = append(runs, model)

@@ -6,12 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/models"
+
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/providers"
 )
 
-func candList() []providers.FallbackCandidate {
-	return []providers.FallbackCandidate{
+func candList() []models.Candidate {
+	return []models.Candidate{
 		{Provider: "p", Model: "flash-wire", Name: "Flash"},
 		{Provider: "p", Model: "pro-wire", Name: "Pro"},
 	}
@@ -93,10 +94,10 @@ func TestSpawner_ValidModel_Runs(t *testing.T) {
 // no configured worker models and no models at all runs as before. A
 // targeted spawn checks the target's worker models.
 func TestSpawner_WorkerModelCheck(t *testing.T) {
-	bobCands := []providers.FallbackCandidate{{Provider: "p", Model: "lite-wire", Name: "Lite"}}
+	bobCands := []models.Candidate{{Provider: "p", Model: "lite-wire", Name: "Lite"}}
 	tests := []struct {
 		name    string
-		self    []providers.FallbackCandidate
+		self    []models.Candidate
 		unset   bool // no agent has configured worker models
 		target  string
 		model   string
@@ -117,8 +118,8 @@ func TestSpawner_WorkerModelCheck(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var ran int
 			mgr := NewSubagentManager(SubagentManagerConfig{
-				Workspace: t.TempDir(), Live: NewLiveSet(), CallerAgentID: "alice", SelfResolver: func() []providers.FallbackCandidate { return tt.self },
-				CandidateResolver: func(id string) ([]providers.FallbackCandidate, bool) {
+				Workspace: t.TempDir(), Live: NewLiveSet(), CallerAgentID: "alice", SelfResolver: func() []models.Candidate { return tt.self },
+				CandidateResolver: func(id string) ([]models.Candidate, bool) {
 					switch id {
 					case "bob":
 						return bobCands, true

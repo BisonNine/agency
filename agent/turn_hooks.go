@@ -413,7 +413,7 @@ func (al *AgentLoop) startModelLoop(ctx context.Context, agent *AgentInstance, o
 // removed is released at once. A request kept from the step before has its
 // media resolved already, so nothing is read again.
 func (al *AgentLoop) requestMediaPlugin() hook.BeforeModelFunc {
-	return func(ctx context.Context, call *hook.ModelInfo) (*providers.LLMResponse, error) {
+	return func(ctx context.Context, call *hook.ModelInfo) (*spawnllm.LLMResponse, error) {
 		if !call.Rebuilt {
 			return nil, nil
 		}
@@ -683,14 +683,14 @@ func (al *AgentLoop) modelFacts(agent *AgentInstance, model string) models.Candi
 
 // fallbackAttempts are the models a Fallback event passed over, as the
 // fallback notice renders them.
-func fallbackAttempts(passed []hook.Attempt) []providers.FallbackAttempt {
-	out := make([]providers.FallbackAttempt, 0, len(passed))
+func fallbackAttempts(passed []hook.Attempt) []models.Attempt {
+	out := make([]models.Attempt, 0, len(passed))
 	for _, a := range passed {
 		reason := a.Reason
 		if a.Disabled && reason == "disabled" {
 			reason = "" // the engine's name for what models leaves unnamed
 		}
-		out = append(out, providers.FallbackAttempt{
+		out = append(out, models.Attempt{
 			Name: a.Model.Name, Provider: a.Model.Provider, Model: a.Model.Model,
 			Err: a.Err, Reason: spawnllm.FailoverReason(reason), Duration: a.Duration,
 			Skipped: a.Skipped, Disabled: a.Disabled, Remaining: a.Remaining,
@@ -700,14 +700,14 @@ func fallbackAttempts(passed []hook.Attempt) []providers.FallbackAttempt {
 }
 
 // fallbackCandidate is the model a Fallback event moves to.
-func fallbackCandidate(m hook.ModelRef) providers.FallbackCandidate {
+func fallbackCandidate(m hook.ModelRef) models.Candidate {
 	return models.Candidate{Name: m.Name, Provider: m.Provider, Protocol: m.Protocol, Model: m.Model}
 }
 
 // hookToolCall is call in the provider's form, for the breadcrumb and the
 // audit row.
-func hookToolCall(call hook.ToolCall) providers.ToolCall {
-	return providers.ToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments}
+func hookToolCall(call hook.ToolCall) spawnllm.ToolCall {
+	return spawnllm.ToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments}
 }
 
 // emitFinish writes the "LLM finish" line for one provider call: the config
@@ -742,7 +742,7 @@ func (al *AgentLoop) dumpResponse(agent *AgentInstance, opts processOptions, mod
 	if al.dumpsDir.Path == "" || cfg == nil {
 		return
 	}
-	var sent []providers.Message
+	var sent []spawnllm.Message
 	if c.Request != nil {
 		sent = c.Request.Messages
 	}

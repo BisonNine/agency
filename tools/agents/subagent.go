@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -29,9 +29,9 @@ type SubagentManager struct {
 
 	// Worker model candidates: selfResolver's for self-spawns, or the target
 	// agent's (resolved via candidateResolver). Used to validate a spawn.
-	selfResolver      func() []providers.FallbackCandidate
+	selfResolver      func() []models.Candidate
 	callerAgentID     string
-	candidateResolver func(agentID string) ([]providers.FallbackCandidate, bool)
+	candidateResolver func(agentID string) ([]models.Candidate, bool)
 	workerModelsSet   func(agentID string) bool
 
 	// runFull runs the target agent's FULL pipeline (curated prompt, full tools,
@@ -61,13 +61,13 @@ type SubagentManagerConfig struct {
 	Tasks *TaskRegistry
 	// SelfResolver returns the calling agent's worker model candidates for
 	// self-spawns, at the time of each spawn.
-	SelfResolver func() []providers.FallbackCandidate
+	SelfResolver func() []models.Candidate
 	// CallerAgentID is the ID of the agent that owns this manager (for allowlist
 	// and as the task record's owner).
 	CallerAgentID string
 	// CandidateResolver resolves the worker model candidates of a named target
 	// agent. Returns false if the agent is unknown.
-	CandidateResolver func(agentID string) ([]providers.FallbackCandidate, bool)
+	CandidateResolver func(agentID string) ([]models.Candidate, bool)
 	// WorkerModelsSet reports whether an agent has configured worker models
 	// (subagents.models). When it has and none of them is available, a spawn
 	// of it is refused rather than run on the agent's own models. Nil: no
@@ -177,10 +177,10 @@ func errRunnerNotConfigured() error {
 // caller's own, for a self-spawn with empty agentID): that agent's configured
 // worker models, else its own models. Used to validate a spawn and its
 // requested model.
-func (sm *SubagentManager) CandidatesFor(agentID string) []providers.FallbackCandidate {
+func (sm *SubagentManager) CandidatesFor(agentID string) []models.Candidate {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	var candidates []providers.FallbackCandidate
+	var candidates []models.Candidate
 	if sm.selfResolver != nil {
 		candidates = sm.selfResolver()
 	}
@@ -219,22 +219,22 @@ func normalizeModelName(s string) string {
 // user-facing Name (model_name) first, then the wire Model. Matching is
 // case-insensitive and tolerant of surrounding quotes and extra whitespace.
 // Returns the matched candidate.
-func MatchCandidate(candidates []providers.FallbackCandidate, model string) (providers.FallbackCandidate, bool) {
+func MatchCandidate(candidates []models.Candidate, model string) (models.Candidate, bool) {
 	m := normalizeModelName(model)
 	if m == "" {
-		return providers.FallbackCandidate{}, false
+		return models.Candidate{}, false
 	}
 	for _, c := range candidates {
 		if strings.EqualFold(normalizeModelName(c.Name), m) || strings.EqualFold(normalizeModelName(c.Model), m) {
 			return c, true
 		}
 	}
-	return providers.FallbackCandidate{}, false
+	return models.Candidate{}, false
 }
 
 // candidateNames lists the user-facing names of the candidates (Name, falling
 // back to the wire Model) for an error/help message.
-func candidateNames(candidates []providers.FallbackCandidate) string {
+func candidateNames(candidates []models.Candidate) string {
 	names := make([]string, 0, len(candidates))
 	for _, c := range candidates {
 		n := c.Name

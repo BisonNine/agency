@@ -14,6 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -51,7 +54,7 @@ func callCLI(t *testing.T, script string, bypass bool) error {
 		t.Fatal(err)
 	}
 	defer release()
-	_, err = client.Chat(context.Background(), testIdentity, []Message{{Role: "user", Content: "hi"}}, nil, "claude-cli", nil)
+	_, err = client.Chat(context.Background(), testIdentity, []spawnllm.Message{{Role: "user", Content: "hi"}}, nil, "claude-cli", nil)
 	return err
 }
 
@@ -96,7 +99,7 @@ func TestCatalogue_CLIModelWiring(t *testing.T) {
 	if args := readLines(t, filepath.Join(dir, "args")); slices.Contains(args, "--dangerously-skip-permissions") {
 		t.Errorf("bypass off: args %v carry the bypass flag", args)
 	}
-	declined, ok := errors.AsType[*CLIDeclinedError](err)
+	declined, ok := errors.AsType[*models.CLIDeclinedError](err)
 	const want = "The Claude CLI declined to use tools. Tick *Allow CLI to bypass restrictions* for this CLI on the Providers page, or allow the tools in the CLI's own settings."
 	if !ok || declined.Error() != want {
 		t.Fatalf("empty answer without bypass: err = %v, want %q", err, want)

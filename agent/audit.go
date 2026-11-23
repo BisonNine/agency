@@ -8,9 +8,10 @@ import (
 	"encoding/json"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/internal/audit"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -27,7 +28,7 @@ func recordToolCallAudit(
 	ctx context.Context,
 	agent *AgentInstance,
 	opts processOptions,
-	tc providers.ToolCall,
+	tc spawnllm.ToolCall,
 	result *tools.ToolResult,
 	elapsed time.Duration,
 ) {
@@ -64,7 +65,7 @@ func cloneMarker(a *AgentInstance) string {
 // toolCallAuditDetails is the JSON details column for a tool_call row: the
 // chat the call was made in and the redacted argument digest, plus the
 // clone's short id when a sub-agent clone made the call.
-func toolCallAuditDetails(chatID, clone string, tc providers.ToolCall) string {
+func toolCallAuditDetails(chatID, clone string, tc spawnllm.ToolCall) string {
 	details := map[string]any{
 		"chat_id": chatID,
 		"args":    tools.RedactArgs(tc.Name, tc.Arguments),

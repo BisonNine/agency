@@ -16,10 +16,10 @@ import (
 
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // promptParityGolden is the parity oracle for the prompt-layer refactor: the
@@ -31,8 +31,8 @@ const promptParityGolden = "testdata/prompt_parity.golden.json"
 
 // parityCase is one assembled request captured in the golden file.
 type parityCase struct {
-	Name     string              `json:"name"`
-	Messages []providers.Message `json:"messages"`
+	Name     string             `json:"name"`
+	Messages []spawnllm.Message `json:"messages"`
 }
 
 // parityContextBuilder builds a ContextBuilder over a workspace with every
@@ -80,13 +80,13 @@ func parityContextBuilder(t *testing.T) *ContextBuilder {
 // parityHistory is a stored history that exercises the provider sanitiser: a
 // stale system message, a complete tool group, an orphaned tool result and a
 // plain exchange.
-func parityHistory() []providers.Message {
-	return []providers.Message{
+func parityHistory() []spawnllm.Message {
+	return []spawnllm.Message{
 		{Role: "system", Content: "stale system prompt from a previous build"},
 		{Role: "user", Content: "Read the outline and tell me the first heading."},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{
+		{Role: "assistant", ToolCalls: []spawnllm.ToolCall{{
 			ID: "call_1", Type: "function", Name: "file_read_lines",
-			Function: &providers.FunctionCall{Name: "file_read_lines", Arguments: `{"path":"files/outline.md"}`},
+			Function: &spawnllm.FunctionCall{Name: "file_read_lines", Arguments: `{"path":"files/outline.md"}`},
 		}}},
 		{Role: "tool", ToolCallID: "call_1", Content: "# Outline\n\n## Chapter one"},
 		{Role: "assistant", Content: "The first heading is \"Outline\"."},
@@ -127,7 +127,7 @@ func parityStore(t *testing.T, key, summary string) session.SessionStore {
 
 // parityAssemble runs one Assemble through the engine the way the agent loop
 // does for a dispatch on channel "webui", chat "chat-1", with a session token.
-func parityAssemble(t *testing.T, cb *ContextBuilder, store session.SessionStore, key, archiveDir string) []providers.Message {
+func parityAssemble(t *testing.T, cb *ContextBuilder, store session.SessionStore, key, archiveDir string) []spawnllm.Message {
 	t.Helper()
 	const token = "SST-parity-token"
 	cm := ctxengine.New(key, store,
@@ -167,7 +167,7 @@ func parityCases(t *testing.T) ([]parityCase, *ContextBuilder) {
 	// Route one message through a manager with an archive so the archive holds
 	// rows and the assembled prompt carries the bounds note instead of a summary.
 	seed := ctxengine.New(archiveKey, store, ctxengine.WithArchiveDir(archiveDir))
-	if _, err := seed.AddUserMessage(context.Background(), providers.Message{Role: "user", Content: "archived turn"}); err != nil {
+	if _, err := seed.AddUserMessage(context.Background(), spawnllm.Message{Role: "user", Content: "archived turn"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := seed.Close(context.Background()); err != nil {

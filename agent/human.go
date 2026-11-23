@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
@@ -436,7 +437,7 @@ func (al *AgentLoop) runHumanTurn(ctx context.Context, agent *AgentInstance, opt
 		return al.askHuman(ctx, agent.ID, channel, chatID, request, timeout, ask)
 	}
 	resp, err := hp.Chat(providers.WithHumanRelay(ctx, relay), agent.Identity(),
-		[]providers.Message{{Role: "user", Content: opts.UserMessage}}, nil, agent.HumanModel, nil)
+		[]spawnllm.Message{{Role: "user", Content: opts.UserMessage}}, nil, agent.HumanModel, nil)
 	if errors.Is(err, errHumanCancelled) {
 		return "", humanCancelledError{label: agent.DisplayName()}
 	}

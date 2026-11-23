@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -34,7 +37,7 @@ func renderTurnErrorFor(assistant string, turnCtx context.Context, budget time.D
 	if assistant == "" || out == "" {
 		return out
 	}
-	if declined, ok := errors.AsType[*providers.CLIDeclinedError](err); ok && declined != nil {
+	if declined, ok := errors.AsType[*models.CLIDeclinedError](err); ok && declined != nil {
 		return assistant + ": " + out
 	}
 	return out
@@ -72,7 +75,7 @@ func (al *AgentLoop) fallbackNotifier(ctx context.Context, opts processOptions) 
 	// per iteration. One notifier spans the turn (see runLLMIteration), so this
 	// memory suppresses the repeats; a different change is still announced.
 	seen := make(map[string]bool)
-	return func(passed []providers.FallbackAttempt, next providers.FallbackCandidate) {
+	return func(passed []models.Attempt, next models.Candidate) {
 		notice := formatFallbackNotice(passed, next)
 		change := modelChange(passed, next)
 		if notice == "" || seen[change] {
@@ -94,7 +97,7 @@ func (al *AgentLoop) fallbackNotifier(ctx context.Context, opts processOptions) 
 
 // modelChange identifies a fallback by the models it passed over and the one
 // it uses instead, ignoring why and for how long, for fallbackNotifier.
-func modelChange(passed []providers.FallbackAttempt, next providers.FallbackCandidate) string {
+func modelChange(passed []models.Attempt, next models.Candidate) string {
 	names := make([]string, 0, len(passed)+1)
 	for _, a := range passed {
 		names = append(names, attemptName(a))
@@ -108,7 +111,7 @@ func modelChange(passed []providers.FallbackAttempt, next providers.FallbackCand
 // e.g. "⚠️ 3 models unavailable — out of credits (retry in up to 58m). Using
 // Grok Medium." — so a skip is never silent after an earlier "Trying <this>…"
 // but a fully-parked provider costs one line per turn, not one per model.
-func formatFallbackNotice(passed []providers.FallbackAttempt, next providers.FallbackCandidate) string {
+func formatFallbackNotice(passed []models.Attempt, next models.Candidate) string {
 	if len(passed) == 0 {
 		return ""
 	}
@@ -127,7 +130,7 @@ func formatFallbackNotice(passed []providers.FallbackAttempt, next providers.Fal
 // line that names WHY they are parked — "in cooldown" on its own tells the user
 // nothing actionable, which is the whole point of carrying the tracker's reason
 // through the skip.
-func formatSkipNotice(skipped []providers.FallbackAttempt, nextName string) string {
+func formatSkipNotice(skipped []models.Attempt, nextName string) string {
 	reasons := distinctReasons(skipped)
 	cause := strings.Join(reasons, ", ")
 	if cause == "" {
@@ -160,14 +163,14 @@ func formatSkipNotice(skipped []providers.FallbackAttempt, nextName string) stri
 // distinctReasons lists the human-readable failure reasons across a batch of
 // skipped attempts, in first-seen order and without repeats, so a mixed batch
 // reads "out of credits, rate limited" rather than repeating one cause N times.
-func distinctReasons(attempts []providers.FallbackAttempt) []string {
+func distinctReasons(attempts []models.Attempt) []string {
 	seen := make(map[string]bool, len(attempts))
 	var out []string
 	for _, a := range attempts {
 		if a.Reason == "" {
 			continue
 		}
-		text := providers.ReasonText(a.Reason)
+		text := spawnllm.ReasonText(a.Reason)
 		if seen[text] {
 			continue
 		}
@@ -190,7 +193,7 @@ func formatRemaining(d time.Duration) string {
 }
 
 // candidateName prefers the user-facing alias over the wire model id.
-func candidateName(c providers.FallbackCandidate) string {
+func candidateName(c models.Candidate) string {
 	if c.Name != "" {
 		return c.Name
 	}
@@ -198,7 +201,7 @@ func candidateName(c providers.FallbackCandidate) string {
 }
 
 // attemptName prefers the user-facing alias over the wire model id.
-func attemptName(a providers.FallbackAttempt) string {
+func attemptName(a models.Attempt) string {
 	if a.Name != "" {
 		return a.Name
 	}
@@ -212,7 +215,7 @@ func renderFailoverError(err error) string {
 	if err == nil {
 		return ""
 	}
-	if exhausted, ok := errors.AsType[*providers.FallbackExhaustedError](err); ok {
+	if exhausted, ok := errors.AsType[*models.ExhaustedError](err); ok {
 		var attempts []string
 		for _, a := range exhausted.Attempts {
 			if a.Skipped {
@@ -228,13 +231,13 @@ func renderFailoverError(err error) string {
 		}
 		return "All models failed:\n  • " + strings.Join(attempts, "\n  • ")
 	}
-	if fe, ok := errors.AsType[*providers.FailoverError](err); ok {
+	if fe, ok := errors.AsType[*spawnllm.FailoverError](err); ok {
 		return attemptText(fe.Model, fe, fe.Reason) + "."
 	}
 	// The declined-tools error has no HTTP status or known pattern, so the chain
 	// returns it unclassified (wrapped in "fallback: unclassified error from …")
 	// rather than as an exhausted chain. Its text is the whole point: show it.
-	if declined, ok := errors.AsType[*providers.CLIDeclinedError](err); ok {
+	if declined, ok := errors.AsType[*models.CLIDeclinedError](err); ok {
 		return declined.Error()
 	}
 	return ""
@@ -244,8 +247,8 @@ func renderFailoverError(err error) string {
 // guard's error is written for the user (it names the setting to change), so it
 // is shown verbatim rather than reduced to its failover classification; every
 // other error is rendered by attemptDescription with its HTTP status.
-func attemptText(model string, err error, reason providers.FailoverReason) string {
-	if declined, ok := errors.AsType[*providers.CLIDeclinedError](err); ok {
+func attemptText(model string, err error, reason spawnllm.FailoverReason) string {
+	if declined, ok := errors.AsType[*models.CLIDeclinedError](err); ok {
 		if model == "" {
 			model = "model"
 		}
@@ -272,7 +275,7 @@ var providerMessageRe = regexp.MustCompile(`"message"\s*:\s*("(?:[^"\\]|\\.)*")`
 // redacted (redactSecrets) and trimmed to maxProviderMessageRunes, or "" when
 // the error carries none.
 func providerMessage(err error) string {
-	fe, ok := errors.AsType[*providers.FailoverError](err)
+	fe, ok := errors.AsType[*spawnllm.FailoverError](err)
 	if !ok || fe == nil || fe.Wrapped == nil {
 		return ""
 	}
@@ -321,7 +324,7 @@ func jsonErrorMessage(body string) string {
 // failoverStatus extracts the HTTP status code carried by a classified
 // FailoverError, or 0 when the error has none (timeout, network, …).
 func failoverStatus(err error) int {
-	if fe, ok := errors.AsType[*providers.FailoverError](err); ok {
+	if fe, ok := errors.AsType[*spawnllm.FailoverError](err); ok {
 		return fe.Status
 	}
 	return 0
@@ -330,12 +333,12 @@ func failoverStatus(err error) int {
 // attemptDescription renders one model failure: it ALWAYS includes the HTTP
 // status when present (e.g. "grok error HTTP 402 (billing)") and otherwise falls
 // back to the classified reason (e.g. "grok error: timeout").
-func attemptDescription(model string, status int, reason providers.FailoverReason) string {
+func attemptDescription(model string, status int, reason spawnllm.FailoverReason) string {
 	name := model
 	if name == "" {
 		name = "model"
 	}
-	r := providers.ReasonText(reason)
+	r := spawnllm.ReasonText(reason)
 	if status > 0 {
 		return fmt.Sprintf("%s error HTTP %d (%s)", name, status, r)
 	}

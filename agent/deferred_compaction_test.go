@@ -10,15 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // compactMarkerChannel is the outbound channel dueContextManager queues a
@@ -42,7 +43,7 @@ func newDueContextManager(msgBus *bus.MessageBus) *dueContextManager {
 	return &dueContextManager{msgBus: msgBus, calls: make(chan context.Context, 8), release: make(chan struct{})}
 }
 
-func (c *dueContextManager) AddUserMessage(ctx context.Context, msg providers.Message) (int64, error) {
+func (c *dueContextManager) AddUserMessage(ctx context.Context, msg spawnllm.Message) (int64, error) {
 	if c.onAdd != nil {
 		c.onAdd(ctx)
 	}
@@ -112,17 +113,17 @@ func TestDeferredCompaction_AfterReply(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		msg       bus.InboundMessage
-		resp      providers.LLMResponse
+		resp      spawnllm.LLMResponse
 		wantReply bool
 	}{
-		{name: "reply", msg: inbound("c1", "id1", "hi"), resp: providers.LLMResponse{Content: "hello"}, wantReply: true},
+		{name: "reply", msg: inbound("c1", "id1", "hi"), resp: spawnllm.LLMResponse{Content: "hello"}, wantReply: true},
 		{
 			name: "no reply",
 			msg: bus.InboundMessage{
 				Channel: "test", ChatID: "c1", SenderID: "u1", Content: "hi",
 				Metadata: map[string]string{"is_group": "true"},
 			},
-			resp: providers.LLMResponse{FinishReason: "stop", Normal: true},
+			resp: spawnllm.LLMResponse{FinishReason: "stop", Normal: true},
 		},
 		{
 			name: "system",
@@ -130,7 +131,7 @@ func TestDeferredCompaction_AfterReply(t *testing.T) {
 				Channel: "system", ChatID: "c1", SenderID: "async:job", Content: "done", Internal: true,
 				Metadata: map[string]string{bus.MetaOriginChannel: "test"},
 			},
-			resp: providers.LLMResponse{Content: "hello"}, wantReply: true,
+			resp: spawnllm.LLMResponse{Content: "hello"}, wantReply: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,7 +167,7 @@ func TestDeferredCompaction_AfterReply(t *testing.T) {
 			if ctx.Err() != nil {
 				t.Errorf("CompactIfDue's context ended with the turn: %v", ctx.Err())
 			}
-			if got := providers.AgentIDFromContext(ctx); got != agent.ID {
+			if got := spawnllm.AgentIDFromContext(ctx); got != agent.ID {
 				t.Errorf("CompactIfDue's context names agent %q, want %q", got, agent.ID)
 			}
 		})
@@ -270,7 +271,7 @@ func TestDeferredCompaction_WaitsForTheTurnsQueue(t *testing.T) {
 	defer restore()
 
 	msgBus := bus.NewMessageBus()
-	al := mustNewAgentLoop(t, newTestConfig(t), msgBus, &fixedProvider{resp: &providers.LLMResponse{Content: "hello"}}, nil)
+	al := mustNewAgentLoop(t, newTestConfig(t), msgBus, &fixedProvider{resp: &spawnllm.LLMResponse{Content: "hello"}}, nil)
 	agent := al.registry.Default()
 	cm := newDueContextManager(nil)
 	defer close(cm.release)
@@ -293,12 +294,12 @@ type ageProvider struct {
 	summaries chan struct{}
 }
 
-func (p *ageProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, _ string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *ageProvider) Chat(_ context.Context, _ accounting.Identity, _ []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, opts map[string]any) (*spawnllm.LLMResponse, error) {
 	if _, summary := opts[openai_compat.ResponseFormatJSONObjectOption]; summary {
 		p.summaries <- struct{}{}
-		return &providers.LLMResponse{Content: `{"version":2,"state":{"goals":[{"text":"weekly notes with Bob","refs":[{"seq_start":1,"seq_end":2}]}]},"covered_seq_start":0,"covered_seq_end":0}`, FinishReason: "stop"}, nil
+		return &spawnllm.LLMResponse{Content: `{"version":2,"state":{"goals":[{"text":"weekly notes with Bob","refs":[{"seq_start":1,"seq_end":2}]}]},"covered_seq_start":0,"covered_seq_end":0}`, FinishReason: "stop"}, nil
 	}
-	return &providers.LLMResponse{Content: "hello", FinishReason: "stop"}, nil
+	return &spawnllm.LLMResponse{Content: "hello", FinishReason: "stop"}, nil
 }
 
 func (p *ageProvider) GetDefaultModel() string { return "age-model" }
@@ -326,7 +327,7 @@ func TestDeferredCompaction_RealEngineAge(t *testing.T) {
 	ages := []int{10, 10, 4, 4}
 	seeded := make([]memory.StoredMessage, 0, len(ages))
 	for i, daysAgo := range ages {
-		m := providers.Message{Role: "user", Content: fmt.Sprintf("Bob's weekly note %d", i)}
+		m := spawnllm.Message{Role: "user", Content: fmt.Sprintf("Bob's weekly note %d", i)}
 		add := cm.AddUserMessage
 		if i%2 == 1 {
 			m.Role, add = "assistant", cm.AddAssistantMessage

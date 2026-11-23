@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/config"
 )
 
@@ -19,7 +21,7 @@ func TestHumanProvider_FromCatalogue(t *testing.T) {
 	}
 	b := NewCatalogBuilder(nil, nil)
 	human := func(c interface {
-		Client(name string) (LLMProvider, func(), error)
+		Client(name string) (spawnllm.LLMProvider, func(), error)
 	},
 	) *HumanProvider {
 		t.Helper()
@@ -57,7 +59,7 @@ func TestHumanProvider_FromCatalogue(t *testing.T) {
 
 // Outside a human agent's turn there is nobody to ask: the provider refuses.
 func TestHumanProvider_RefusesWithoutRelay(t *testing.T) {
-	_, err := NewHumanProvider("Bob (human)", 0).Chat(context.Background(), testIdentity, []Message{{Role: "user", Content: "hi"}}, nil, "", nil)
+	_, err := NewHumanProvider("Bob (human)", 0).Chat(context.Background(), testIdentity, []spawnllm.Message{{Role: "user", Content: "hi"}}, nil, "", nil)
 	if !errors.Is(err, ErrHumanUnreachable) {
 		t.Fatalf("err = %v, want ErrHumanUnreachable", err)
 	}
@@ -74,7 +76,7 @@ func TestHumanProvider_RelaysLatestUserMessage(t *testing.T) {
 		asked = append(asked, request)
 		return "Looks good", nil
 	}
-	msgs := []Message{
+	msgs := []spawnllm.Message{
 		{Role: "system", Content: "You are Bob."},
 		{Role: "user", Content: "old question"},
 		{Role: "assistant", Content: "old answer"},
@@ -102,7 +104,7 @@ func TestHumanProvider_Timeout(t *testing.T) {
 		<-waitCtx.Done()
 		return "", waitCtx.Err()
 	}
-	msgs := []Message{{Role: "user", Content: "hi"}}
+	msgs := []spawnllm.Message{{Role: "user", Content: "hi"}}
 
 	resp, err := NewHumanProvider("Bob (human)", 20*time.Millisecond).Chat(WithHumanRelay(context.Background(), wait), testIdentity, msgs, nil, "", nil)
 	if err != nil || resp == nil || resp.Content != "" {

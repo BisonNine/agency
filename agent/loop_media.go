@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/h2non/filetype"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/utils"
 )
 
@@ -26,12 +26,12 @@ import (
 // Non-image files (documents, audio, video) have their local path injected
 // into Content so the agent can access them via file tools like read_file.
 // Returns a new slice; original messages are not mutated.
-func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxSize int) []providers.Message {
+func resolveMediaRefs(messages []spawnllm.Message, store media.MediaStore, maxSize int) []spawnllm.Message {
 	if store == nil {
 		return messages
 	}
 
-	result := make([]providers.Message, len(messages))
+	result := make([]spawnllm.Message, len(messages))
 	copy(result, messages)
 
 	for i, m := range result {
@@ -200,8 +200,8 @@ func buildPathTag(mime, localPath string) string {
 }
 
 // buildAttachment creates a MessageAttachment from file metadata.
-func buildAttachment(filename, localPath string, info os.FileInfo) providers.MessageAttachment {
-	att := providers.MessageAttachment{
+func buildAttachment(filename, localPath string, info os.FileInfo) spawnllm.MessageAttachment {
+	att := spawnllm.MessageAttachment{
 		Filename:  filename,
 		Size:      info.Size(),
 		LocalPath: localPath,

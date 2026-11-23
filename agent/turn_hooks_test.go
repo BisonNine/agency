@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/dump"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -80,8 +80,8 @@ func TestModelCall_FinishUsageDumpsReasoning(t *testing.T) {
 
 	h.emit(context.Background(), hook.ModelCall{
 		Iteration: 1, Model: hook.ModelRef{Name: "m", Provider: "Alice's API", Model: "m-wire"},
-		Request:  &hook.ModelRequest{Messages: []providers.Message{{Role: "user", Content: "hi"}}},
-		Response: &providers.LLMResponse{Content: "hello", Reasoning: "Bob asked", Status: &providers.DispatchStatus{Success: true, Model: "m-wire"}},
+		Request:  &hook.ModelRequest{Messages: []spawnllm.Message{{Role: "user", Content: "hi"}}},
+		Response: &spawnllm.LLMResponse{Content: "hello", Reasoning: "Bob asked", Status: &spawnllm.DispatchStatus{Success: true, Model: "m-wire"}},
 	})
 
 	if !strings.Contains(buf.String(), "LLM finish") {

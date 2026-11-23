@@ -14,12 +14,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -43,40 +44,40 @@ func (n *notebookTool) Execute(context.Context, map[string]any) *tools.ToolResul
 // and messages of every request.
 type defsRecordingProvider struct {
 	mu        sync.Mutex
-	responses []*providers.LLMResponse
-	defs      [][]providers.ToolDefinition
-	messages  [][]providers.Message
+	responses []*spawnllm.LLMResponse
+	defs      [][]spawnllm.ToolDefinition
+	messages  [][]spawnllm.Message
 }
 
-func (p *defsRecordingProvider) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *defsRecordingProvider) Chat(_ context.Context, _ accounting.Identity, messages []spawnllm.Message, defs []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.defs = append(p.defs, slices.Clone(defs))
 	p.messages = append(p.messages, slices.Clone(messages))
 	i := len(p.defs) - 1
 	if i >= len(p.responses) {
-		return &providers.LLMResponse{Content: "done"}, nil
+		return &spawnllm.LLMResponse{Content: "done"}, nil
 	}
 	return p.responses[i], nil
 }
 
 func (p *defsRecordingProvider) GetDefaultModel() string { return "test" }
 
-func toolCallResponse(id, name, args string) *providers.LLMResponse {
-	return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+func toolCallResponse(id, name, args string) *spawnllm.LLMResponse {
+	return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 		ID: id, Type: "function", Name: name,
-		Function: &providers.FunctionCall{Name: name, Arguments: args},
+		Function: &spawnllm.FunctionCall{Name: name, Arguments: args},
 	}}}
 }
 
 // toolMessageFor returns the tool message answering callID in msgs.
-func toolMessageFor(msgs []providers.Message, callID string) (providers.Message, bool) {
+func toolMessageFor(msgs []spawnllm.Message, callID string) (spawnllm.Message, bool) {
 	for _, m := range msgs {
 		if m.Role == "tool" && m.ToolCallID == callID {
 			return m, true
 		}
 	}
-	return providers.Message{}, false
+	return spawnllm.Message{}, false
 }
 
 // A turn in which the model searches, then calls the hidden tool it found:
@@ -94,7 +95,7 @@ func TestDiscovery_TurnSendsSameToolsAndRunsFoundTool(t *testing.T) {
 	registerHiddenSuite(agent, notebook)
 	agent.Tools.RegisterDiscoveryTools(context.Background(), 5, nil)
 
-	provider := &defsRecordingProvider{responses: []*providers.LLMResponse{
+	provider := &defsRecordingProvider{responses: []*spawnllm.LLMResponse{
 		toolCallResponse("tc-search", "search_tools", `{"query":"Alice notebook page"}`),
 		toolCallResponse("tc-read", "mcp_alice_notebook", `{}`),
 		{Content: "Alice's notebook says to buy milk."},
@@ -181,11 +182,11 @@ func TestSessionStore_KeepsToolReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range []providers.Message{
+	for _, m := range []spawnllm.Message{
 		{Role: "user", Content: "find Alice's notebook"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{
+		{Role: "assistant", ToolCalls: []spawnllm.ToolCall{{
 			ID: "tc-1", Type: "function", Name: "search_tools",
-			Function: &providers.FunctionCall{Name: "search_tools", Arguments: `{"query":"notebook"}`},
+			Function: &spawnllm.FunctionCall{Name: "search_tools", Arguments: `{"query":"notebook"}`},
 		}}},
 		{Role: "tool", ToolCallID: "tc-1", Content: "Found 1 tool(s)", ToolReferences: []string{"mcp_alice_notebook"}},
 	} {
@@ -241,8 +242,8 @@ func TestTurn_EstimatesOnlySentTools(t *testing.T) {
 	for i := range 200 {
 		agent.Tools.RegisterEntries(tools.ToolEntry{Entry: discovery.HideEntries([]toolkit.Entry{{Tool: bulkyTool{name: fmt.Sprintf("mcp_bob_tool_%03d", i)}}})[0]})
 	}
-	var coreNow []providers.ToolDefinition
-	hidden := map[string]providers.ToolDefinition{}
+	var coreNow []spawnllm.ToolDefinition
+	hidden := map[string]spawnllm.ToolDefinition{}
 	for _, d := range agent.Tools.ToolDefs(nil).Send {
 		if d.Deferred {
 			hidden[d.Function.Name] = d
@@ -264,7 +265,7 @@ func TestTurn_EstimatesOnlySentTools(t *testing.T) {
 		return ctxengine.EstimateToolDefinitionTokens(defs)
 	}
 
-	provider := &defsRecordingProvider{responses: []*providers.LLMResponse{
+	provider := &defsRecordingProvider{responses: []*spawnllm.LLMResponse{
 		toolCallResponse("tc-1", "search_tools", `{"query":"mcp_bob_tool_007"}`),
 		{Content: "Found Bob's tool."},
 	}}

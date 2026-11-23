@@ -11,9 +11,9 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // TestResolveCompressModelTarget covers the alias / shorthand / fully-qualified
@@ -101,7 +101,7 @@ func TestCompressCaller_ResolvesThroughCatalogue(t *testing.T) {
 	cfg := compressTestConfig()
 	cfg.Summarization.Models = []string{"test-compress-model"}
 	target := &scriptedProvider{content: "summary"}
-	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, map[string]providers.LLMProvider{"compress-target": target})}
+	al := &AgentLoop{cfg: cfg, catalog: testCatalog(cfg, map[string]spawnllm.LLMProvider{"compress-target": target})}
 	agent := &AgentInstance{ID: "compress-test", Model: "sonnet-4-5"}
 	assignAgentModels(al.catalog, cfg, agent)
 

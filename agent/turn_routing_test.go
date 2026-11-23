@@ -11,11 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -72,10 +73,10 @@ func (g gatedAsyncTool) ExecuteAsync(ctx context.Context, _ map[string]any, cb t
 type hookedProvider struct {
 	mu   sync.Mutex
 	n    int
-	next func(n int) *providers.LLMResponse
+	next func(n int) *spawnllm.LLMResponse
 }
 
-func (p *hookedProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
+func (p *hookedProvider) Chat(context.Context, accounting.Identity, []spawnllm.Message, []spawnllm.ToolDefinition, string, map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	n := p.n
 	p.n++
@@ -95,16 +96,16 @@ func TestAsyncResult_GoesToTheCallsChat(t *testing.T) {
 	cfg.Agents.List[0].Tools = []string{"*"}
 	secondTurn := make(chan struct{})
 	release := make(chan struct{})
-	p := &hookedProvider{next: func(n int) *providers.LLMResponse {
+	p := &hookedProvider{next: func(n int) *spawnllm.LLMResponse {
 		switch n {
 		case 0:
-			return &providers.LLMResponse{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "gated_async"), toolCallTo("tc-2", "gated_async")}}
+			return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "gated_async"), toolCallTo("tc-2", "gated_async")}}
 		case 1:
-			return &providers.LLMResponse{Content: "started both"}
+			return &spawnllm.LLMResponse{Content: "started both"}
 		default:
 			close(secondTurn)
 			<-release
-			return &providers.LLMResponse{Content: "second"}
+			return &spawnllm.LLMResponse{Content: "second"}
 		}
 	}}
 	msgBus := bus.NewMessageBus()
@@ -168,7 +169,7 @@ func TestTurn_NoModelAndUnavailableChain(t *testing.T) {
 		t.Fatalf("no model: text = %q, want %q", err.Error(), want)
 	}
 
-	run := chainTurn(t, modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+	run := chainTurn(t, modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 		return answerOK(model), nil
 	}}, nil, candAlice)
 	if derr := run.al.catalog.Disable(candAlice.Name); derr != nil {

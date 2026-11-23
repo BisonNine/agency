@@ -10,10 +10,11 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/app"
-	"go.bison9.com/agency/providers"
 )
 
 // capturingContextManager records the agent ID observed in ctx on the entry
@@ -35,25 +36,25 @@ func (c *capturingContextManager) capture(field *string, ctx context.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if *field == "" {
-		*field = providers.AgentIDFromContext(ctx)
+		*field = spawnllm.AgentIDFromContext(ctx)
 	}
 }
 
-func (c *capturingContextManager) AddUserMessage(ctx context.Context, _ providers.Message) (int64, error) {
+func (c *capturingContextManager) AddUserMessage(ctx context.Context, _ spawnllm.Message) (int64, error) {
 	c.capture(&c.addUserMsgAgentID, ctx)
 	return 1, nil
 }
 
-func (c *capturingContextManager) AddAssistantMessage(ctx context.Context, _ providers.Message) (int64, error) {
+func (c *capturingContextManager) AddAssistantMessage(ctx context.Context, _ spawnllm.Message) (int64, error) {
 	c.capture(&c.addAssistantMessageAgentID, ctx)
 	return 2, nil
 }
 
-func (c *capturingContextManager) AddToolCallMessage(_ context.Context, _ providers.Message) (int64, error) {
+func (c *capturingContextManager) AddToolCallMessage(_ context.Context, _ spawnllm.Message) (int64, error) {
 	return 3, nil
 }
 
-func (c *capturingContextManager) AddToolResult(_ context.Context, _ providers.Message) (int64, error) {
+func (c *capturingContextManager) AddToolResult(_ context.Context, _ spawnllm.Message) (int64, error) {
 	return 4, nil
 }
 
@@ -64,7 +65,7 @@ func (c *capturingContextManager) Assemble(ctx context.Context, req ctxengine.As
 	c.layers = req.Layers
 	c.channel, c.chatID = req.Channel, req.ChatID
 	c.mu.Unlock()
-	return ctxengine.Assembly{Messages: []providers.Message{{Role: "user", Content: "hi"}}}, nil
+	return ctxengine.Assembly{Messages: []spawnllm.Message{{Role: "user", Content: "hi"}}}, nil
 }
 func (c *capturingContextManager) ObserveUsage(_, _ int)                             {}
 func (c *capturingContextManager) SetContextWindow(int) error                        { return nil }
@@ -84,19 +85,19 @@ type finalLLMProvider struct {
 }
 
 func (p *finalLLMProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	_ []providers.Message,
-	_ []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	_ []spawnllm.Message,
+	_ []spawnllm.ToolDefinition,
 	_ string,
 	_ map[string]any,
-) (*providers.LLMResponse, error) {
-	if id := providers.AgentIDFromContext(ctx); id != "" {
+) (*spawnllm.LLMResponse, error) {
+	if id := spawnllm.AgentIDFromContext(ctx); id != "" {
 		p.seenAgentID.Store(id)
 	}
-	return &providers.LLMResponse{
+	return &spawnllm.LLMResponse{
 		Content:   "ok",
 		Normal:    true,
-		ToolCalls: []providers.ToolCall{},
+		ToolCalls: []spawnllm.ToolCall{},
 	}, nil
 }
 

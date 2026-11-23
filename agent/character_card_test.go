@@ -13,12 +13,13 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/ccv3"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 const testCardPrompt = "# Character\n\nYou are Bob.\n\n## Personality\nDry."
@@ -139,7 +140,7 @@ func TestRunSubagentTask_CharacterCard(t *testing.T) {
 	defer restore()
 	cfg := cardsConfig(t)
 	cfg.Agents.List[0].Tools = []string{"*"}
-	provider := &sequenceProvider{responses: []*providers.LLMResponse{{Content: "done"}}, errors: []error{nil}}
+	provider := &sequenceProvider{responses: []*spawnllm.LLMResponse{{Content: "done"}}, errors: []error{nil}}
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), provider, nil)
 
 	before := len(al.GetRegistry().ListTemp())

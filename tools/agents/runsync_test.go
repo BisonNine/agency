@@ -9,8 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/models"
+
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/providers"
 )
 
 // newRunSyncSpawner builds a Spawner whose manager has one configured model
@@ -19,17 +20,17 @@ import (
 func newRunSyncSpawner(t *testing.T) (*Spawner, *sync.Mutex, *[]string) {
 	t.Helper()
 	var mu sync.Mutex
-	var models []string
+	var seen []string
 	mgr := NewSubagentManager(SubagentManagerConfig{
 		Workspace:     t.TempDir(),
 		Live:          NewLiveSet(),
 		CallerAgentID: "alice",
-		SelfResolver: func() []providers.FallbackCandidate {
-			return []providers.FallbackCandidate{{Name: "Pro", Model: "claude-x", Provider: "anthropic"}}
+		SelfResolver: func() []models.Candidate {
+			return []models.Candidate{{Name: "Pro", Model: "claude-x", Provider: "anthropic"}}
 		},
 		RunFull: func(_ context.Context, _, _, model, _ string, _ []string) (*global.SyncResult, func(), error) {
 			mu.Lock()
-			models = append(models, model)
+			seen = append(seen, model)
 			mu.Unlock()
 			return &global.SyncResult{
 				Content: "done", Iterations: 3,
@@ -37,7 +38,7 @@ func newRunSyncSpawner(t *testing.T) (*Spawner, *sync.Mutex, *[]string) {
 			}, func() {}, nil
 		},
 	})
-	return NewSpawner(mgr), &mu, &models
+	return NewSpawner(mgr), &mu, &seen
 }
 
 func TestSpawner_RunSync_ReturnsContentAndUsage(t *testing.T) {

@@ -12,8 +12,7 @@ import (
 
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
-
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // seedRetentionArchive writes one message to key's archive through the real
@@ -26,7 +25,7 @@ func seedRetentionArchive(t *testing.T, dir, key string, updated time.Time, pend
 	if err != nil {
 		t.Fatal(err)
 	}
-	addFullMessage(t, store, key, providers.Message{Role: "user", Content: "hello"})
+	addFullMessage(t, store, key, spawnllm.Message{Role: "user", Content: "hello"})
 	closeT(t, store)
 	path := memory.ArchivePath(dir, key)
 	a, err := memory.Open(path)

@@ -11,9 +11,9 @@ import (
 
 	"go.bison9.com/agent/cogmem/store"
 	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/cogmemhost"
-	"go.bison9.com/agency/providers"
 )
 
 func openSessionStore(t *testing.T, agent *AgentInstance, key string) *store.Store {
@@ -71,7 +71,7 @@ func TestMemorySession_BackfillsInboxFromArchiveOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for seq, m := range []providers.Message{
+	for seq, m := range []spawnllm.Message{
 		{Role: "user", Content: "one"},
 		{Role: "assistant", Content: "two"},
 		{Role: "tool", Content: "three"},

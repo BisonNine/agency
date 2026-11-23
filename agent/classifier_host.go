@@ -17,6 +17,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/classifier"
@@ -313,10 +314,10 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 	// The chain records a failure against the model's health, and an answer
 	// clears it, as for any other call.
 	var last finishRecorder
-	_, chatErr := chain.Chat(ctx, a.Identity(), models.Request{Messages: []providers.Message{
+	_, chatErr := chain.Chat(ctx, a.Identity(), models.Request{Messages: []spawnllm.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
-	}}, models.WithClassify(noSameModelRetry), last.option(func(c models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+	}}, models.WithClassify(noSameModelRetry), last.option(func(c models.Candidate, elapsed time.Duration, resp *spawnllm.LLMResponse, err error) {
 		emitLLMFinishEvent(llmFinish{
 			caller:         llmCaller{agentID: a.ID, label: a.DisplayName()},
 			kind:           llmKindClassifier,

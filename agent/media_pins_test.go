@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 )
 
 func TestMediaRefsIn(t *testing.T) {
@@ -42,7 +43,7 @@ func TestAppendMediaRefMarker(t *testing.T) {
 }
 
 func TestCollectMediaRefs(t *testing.T) {
-	msgs := []providers.Message{
+	msgs := []spawnllm.Message{
 		{Role: "user", Content: "hi", Media: []string{"media://11111111-1111-1111-1111-111111111111"}},
 		// Flow B folded message: ref lives only in the text marker.
 		{Role: "user", Content: "described\n[attachment ref(s): media://22222222-2222-2222-2222-222222222222]"},
@@ -83,7 +84,7 @@ func TestSessionPinLifecycle(t *testing.T) {
 	al.pinSessionMediaRefs(session, []string{refA, refB})
 
 	// Context now only references refA (refB compacted away) → reconcile unpins refB.
-	al.reconcileSessionPins(session, []providers.Message{
+	al.reconcileSessionPins(session, []spawnllm.Message{
 		{Role: "user", Content: "[attachment ref(s): " + refA + "]"},
 	})
 

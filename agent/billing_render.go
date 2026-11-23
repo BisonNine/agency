@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/common"
-
-	"go.bison9.com/agency/providers"
 )
 
 // renderBillingError converts a provider-billing failure into a short,
@@ -26,9 +26,9 @@ func renderBillingError(err error) string {
 
 	var summaries []billingSummary
 
-	if exhausted, ok := errors.AsType[*providers.FallbackExhaustedError](err); ok {
+	if exhausted, ok := errors.AsType[*models.ExhaustedError](err); ok {
 		for _, a := range exhausted.Attempts {
-			if a.Skipped || a.Reason != providers.FailoverBilling {
+			if a.Skipped || a.Reason != spawnllm.FailoverBilling {
 				continue
 			}
 			summaries = append(summaries, billingSummary{
@@ -40,8 +40,8 @@ func renderBillingError(err error) string {
 	} else {
 		// Single-attempt path: an unwrapped FailoverError can also surface
 		// here when only the primary was configured.
-		var fe *providers.FailoverError
-		if errors.As(err, &fe) && fe.Reason == providers.FailoverBilling {
+		var fe *spawnllm.FailoverError
+		if errors.As(err, &fe) && fe.Reason == spawnllm.FailoverBilling {
 			summaries = append(summaries, billingSummary{
 				Provider: fe.Provider,
 				Model:    fe.Model,

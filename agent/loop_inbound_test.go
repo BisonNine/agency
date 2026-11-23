@@ -12,10 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // blockingProvider records the user message of every Chat call and holds each
@@ -32,7 +34,7 @@ func newBlockingProvider() *blockingProvider {
 	return &blockingProvider{started: make(chan struct{}, 32), release: make(chan struct{})}
 }
 
-func (p *blockingProvider) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *blockingProvider) Chat(ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	user := ""
 	for _, m := range slices.Backward(messages) {
 		if m.Role == "user" {
@@ -46,7 +48,7 @@ func (p *blockingProvider) Chat(ctx context.Context, _ providers.Identity, messa
 	p.started <- struct{}{}
 	select {
 	case <-p.release:
-		return &providers.LLMResponse{Content: "ok"}, nil
+		return &spawnllm.LLMResponse{Content: "ok"}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

@@ -17,11 +17,12 @@ import (
 	"sort"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/gateway"
-	"go.bison9.com/agency/providers"
 )
 
 // variant is one configuration the lists are captured for.
@@ -130,11 +131,11 @@ func capture(t *testing.T, v variant) []byte {
 }
 
 // sentToolList is the list the agent's turn hands the provider.
-func sentToolList(inst *agent.AgentInstance) []providers.ToolDefinition {
+func sentToolList(inst *agent.AgentInstance) []spawnllm.ToolDefinition {
 	return inst.Tools.ToolDefs(nil).Send
 }
 
-func toDefs(in []providers.ToolDefinition) []def {
+func toDefs(in []spawnllm.ToolDefinition) []def {
 	out := make([]def, 0, len(in))
 	for _, d := range in {
 		out = append(out, def{

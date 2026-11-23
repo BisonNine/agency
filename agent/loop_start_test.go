@@ -20,12 +20,12 @@ import (
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // toolsOnAtAssembly is a context manager whose first assembly, after the
@@ -55,10 +55,10 @@ func TestLoopStart_ToolsReadAfterFirstAssembly(t *testing.T) {
 		agent.Config.Tools = []string{"*"}
 	}
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{
-			{ToolCalls: []providers.ToolCall{{
+		responses: []*spawnllm.LLMResponse{
+			{ToolCalls: []spawnllm.ToolCall{{
 				ID: "tc-1", Type: "function", Name: "display_tool",
-				Function: &providers.FunctionCall{Name: "display_tool", Arguments: `{}`},
+				Function: &spawnllm.FunctionCall{Name: "display_tool", Arguments: `{}`},
 			}}},
 			{Content: "done"},
 		},

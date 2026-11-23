@@ -14,10 +14,10 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/loop"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // storeThenSendContextManager fails the test when the turn's reply is
@@ -29,7 +29,7 @@ type storeThenSendContextManager struct {
 	stored    atomic.Bool
 }
 
-func (m *storeThenSendContextManager) AddAssistantMessage(ctx context.Context, msg providers.Message) (int64, error) {
+func (m *storeThenSendContextManager) AddAssistantMessage(ctx context.Context, msg spawnllm.Message) (int64, error) {
 	peek, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Millisecond)
 	defer cancel()
 	if _, ok := m.msgBus.SubscribeOutbound(peek); ok {

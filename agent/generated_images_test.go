@@ -10,15 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 const testPNG = "\x89PNG\r\n\x1a\n-generated-image-bytes"
 
-func pngImage() providers.GeneratedImage {
-	return providers.GeneratedImage{ContentType: "image/png", Data: []byte(testPNG), Size: int64(len(testPNG))}
+func pngImage() spawnllm.GeneratedImage {
+	return spawnllm.GeneratedImage{ContentType: "image/png", Data: []byte(testPNG), Size: int64(len(testPNG))}
 }
 
 // savedPathRe matches the workspace path of a saved image.
@@ -26,7 +27,7 @@ var savedPathRe = regexp.MustCompile(`files/generated/\d{4}-\d{2}-\d{2}/image-\d
 
 // imageTurn runs one turn of agent on channel/chatID with the provider
 // answering responses in order; it returns the reply and the turn's outcome.
-func (l *sendFilesLoop) imageTurn(t *testing.T, agent *AgentInstance, channel, chatID string, responses ...*providers.LLMResponse) (string, string, *sequenceProvider) {
+func (l *sendFilesLoop) imageTurn(t *testing.T, agent *AgentInstance, channel, chatID string, responses ...*spawnllm.LLMResponse) (string, string, *sequenceProvider) {
 	t.Helper()
 	provider := &sequenceProvider{responses: responses, errors: make([]error, len(responses))}
 	setTestProvider(agent, provider)
@@ -76,7 +77,7 @@ func expectNoDelivery(t *testing.T, l *sendFilesLoop) {
 func TestGeneratedImages_ChatTurnSavesAndSends(t *testing.T) {
 	l := newSendFilesLoop(t)
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "Here is your cat.", Images: []providers.GeneratedImage{pngImage()}})
+		&spawnllm.LLMResponse{Content: "Here is your cat.", Images: []spawnllm.GeneratedImage{pngImage()}})
 
 	saved := savedImages(t, l.agent.Workspace)
 	if len(saved) != 1 {
@@ -105,7 +106,7 @@ func TestGeneratedImages_AgentReplySavesWithPath(t *testing.T) {
 		t.Run(channel, func(t *testing.T) {
 			l := newSendFilesLoop(t)
 			reply, _, _ := l.imageTurn(t, l.agent, channel, "ask-1",
-				&providers.LLMResponse{Content: "Done.", Images: []providers.GeneratedImage{pngImage()}})
+				&spawnllm.LLMResponse{Content: "Done.", Images: []spawnllm.GeneratedImage{pngImage()}})
 			expectNoDelivery(t, l)
 			if len(savedImages(t, l.agent.Workspace)) != 1 {
 				t.Fatal("image not saved")
@@ -123,7 +124,7 @@ func TestGeneratedImages_TooLargeToSend(t *testing.T) {
 	l := newSendFilesLoop(t)
 	l.al.GetConfig().Agents.Defaults.MaxMediaSize = 4
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "Big cat.", Images: []providers.GeneratedImage{pngImage()}})
+		&spawnllm.LLMResponse{Content: "Big cat.", Images: []spawnllm.GeneratedImage{pngImage()}})
 	expectNoDelivery(t, l)
 	if len(savedImages(t, l.agent.Workspace)) != 1 {
 		t.Fatal("image not saved")
@@ -140,7 +141,7 @@ func TestGeneratedImages_ChannelWithoutFiles(t *testing.T) {
 		t.Run(channel, func(t *testing.T) {
 			l := newSendFilesLoop(t)
 			reply, _, _ := l.imageTurn(t, l.agent, channel, "42",
-				&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{pngImage()}})
+				&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{pngImage()}})
 			expectNoDelivery(t, l)
 			if len(savedImages(t, l.agent.Workspace)) != 1 {
 				t.Fatal("image not saved")
@@ -157,7 +158,7 @@ func TestGeneratedImages_ChannelWithoutFiles(t *testing.T) {
 func TestGeneratedImages_URL(t *testing.T) {
 	l := newSendFilesLoop(t)
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{
+		&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{
 			{URL: "https://images.example.com/cat.png", Size: -1},
 			{URL: "data:;base64,@@@", Size: -1},
 		}})
@@ -175,12 +176,12 @@ func TestGeneratedImages_URL(t *testing.T) {
 func TestGeneratedImages_OnToolCallIteration(t *testing.T) {
 	l := newSendFilesLoop(t)
 	reply, _, _ := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{
+		&spawnllm.LLMResponse{
 			Content:   "Drawing, then checking.",
-			Images:    []providers.GeneratedImage{pngImage()},
-			ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "no_such_tool")},
+			Images:    []spawnllm.GeneratedImage{pngImage()},
+			ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "no_such_tool")},
 		},
-		&providers.LLMResponse{Content: "All done."})
+		&spawnllm.LLMResponse{Content: "All done."})
 	d := <-l.delivered
 	if d.msg.Channel != "telegram" || d.content != testPNG {
 		t.Fatalf("delivered %+v", d.msg)
@@ -207,7 +208,7 @@ func TestGeneratedImages_OnToolCallIteration(t *testing.T) {
 func TestGeneratedImages_ImagesOnlyReplyIsNotEmpty(t *testing.T) {
 	l := newSendFilesLoop(t)
 	reply, outcome, provider := l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Reasoning: "drawing", Images: []providers.GeneratedImage{pngImage()}, Normal: true})
+		&spawnllm.LLMResponse{Reasoning: "drawing", Images: []spawnllm.GeneratedImage{pngImage()}, Normal: true})
 	<-l.delivered
 	if provider.idx != 1 {
 		t.Fatalf("model called %d times, want once (no poke)", provider.idx)
@@ -236,7 +237,7 @@ func TestGeneratedImages_CloneSavesInSourceWorkspace(t *testing.T) {
 		t.Fatal("clone not found")
 	}
 	l.imageTurn(t, clone, "telegram", "42",
-		&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{pngImage()}})
+		&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{pngImage()}})
 	<-l.delivered
 	if saved := savedImages(t, l.agent.Workspace); len(saved) != 1 {
 		t.Fatalf("saved in alice's workspace: %v, want one image", saved)
@@ -248,7 +249,7 @@ func TestGeneratedImages_Modes(t *testing.T) {
 	l := newSendFilesLoop(t)
 	l.al.GetConfig().Security.Permissions.Agents = config.AreaPermissions{DirMode: "0770", FileMode: "0660"}
 	l.imageTurn(t, l.agent, "telegram", "42",
-		&providers.LLMResponse{Content: "A cat.", Images: []providers.GeneratedImage{pngImage()}})
+		&spawnllm.LLMResponse{Content: "A cat.", Images: []spawnllm.GeneratedImage{pngImage()}})
 	<-l.delivered
 	saved := savedImages(t, l.agent.Workspace)
 	if len(saved) != 1 {
@@ -271,13 +272,13 @@ func TestGeneratedImages_Modes(t *testing.T) {
 
 func TestImageExtension(t *testing.T) {
 	for _, tt := range []struct {
-		img  providers.GeneratedImage
+		img  spawnllm.GeneratedImage
 		want string
 	}{
-		{providers.GeneratedImage{ContentType: "image/jpeg"}, ".jpg"},
-		{providers.GeneratedImage{ContentType: "image/webp; q=1"}, ".webp"},
-		{providers.GeneratedImage{Data: []byte(testPNG)}, ".png"},
-		{providers.GeneratedImage{Data: []byte("??")}, ".bin"},
+		{spawnllm.GeneratedImage{ContentType: "image/jpeg"}, ".jpg"},
+		{spawnllm.GeneratedImage{ContentType: "image/webp; q=1"}, ".webp"},
+		{spawnllm.GeneratedImage{Data: []byte(testPNG)}, ".png"},
+		{spawnllm.GeneratedImage{Data: []byte("??")}, ".bin"},
 	} {
 		if got := imageExtension(tt.img); got != tt.want {
 			t.Errorf("imageExtension(%q) = %q, want %q", tt.img.ContentType, got, tt.want)

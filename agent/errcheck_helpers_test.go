@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 )
 
 // removeAll removes path and reports a failure instead of silently leaking
@@ -37,7 +37,7 @@ func addMessage(tb testing.TB, store session.SessionStore, key, role, content st
 }
 
 // addFullMessage appends m to key in store or fails the test.
-func addFullMessage(tb testing.TB, store session.SessionStore, key string, m providers.Message) {
+func addFullMessage(tb testing.TB, store session.SessionStore, key string, m spawnllm.Message) {
 	tb.Helper()
 	if _, err := store.AddFullMessage(key, m); err != nil {
 		tb.Fatalf("AddFullMessage(%s): %v", key, err)
@@ -45,7 +45,7 @@ func addFullMessage(tb testing.TB, store session.SessionStore, key string, m pro
 }
 
 // setHistory replaces key's history in store or fails the test.
-func setHistory(tb testing.TB, store session.SessionStore, key string, history []providers.Message) {
+func setHistory(tb testing.TB, store session.SessionStore, key string, history []spawnllm.Message) {
 	tb.Helper()
 	if err := store.SetHistory(key, history); err != nil {
 		tb.Fatalf("SetHistory(%s): %v", key, err)

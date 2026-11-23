@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/spawnllm"
 
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/web/backend/middleware"
 )
 
@@ -19,8 +19,8 @@ func TestHandleEraseSessions_RemovesSenderOnly(t *testing.T) {
 	configPath := setupTestEnv(t)
 	dir := sessionsTestDir(t, configPath)
 	const mine, theirs = "agent:main:telegram:direct:555", "agent:main:telegram:direct:777"
-	seedSession(t, dir, mine, "", providers.Message{Role: "user", Content: "erase me"})
-	seedSession(t, dir, theirs, "", providers.Message{Role: "user", Content: "keep me"})
+	seedSession(t, dir, mine, "", spawnllm.Message{Role: "user", Content: "erase me"})
+	seedSession(t, dir, theirs, "", spawnllm.Message{Role: "user", Content: "keep me"})
 
 	released := []string{}
 	h := NewHandler(configPath)

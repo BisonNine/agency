@@ -9,9 +9,11 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	toolsshell "go.bison9.com/agency/tools/shell"
 )
 
@@ -24,20 +26,20 @@ type jobModel struct {
 
 func (m *jobModel) GetDefaultModel() string { return "mock-model" }
 
-func (m *jobModel) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (m *jobModel) Chat(_ context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	last := messages[len(messages)-1]
 	switch {
 	case last.Role == "tool":
-		return &providers.LLMResponse{Content: "started"}, nil
+		return &spawnllm.LLMResponse{Content: "started"}, nil
 	case strings.Contains(last.Content, "Shell job "):
 		m.mu.Lock()
 		m.notices = append(m.notices, last.Content)
 		m.mu.Unlock()
-		return &providers.LLMResponse{Content: "notice: " + last.Content}, nil
+		return &spawnllm.LLMResponse{Content: "notice: " + last.Content}, nil
 	}
-	return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+	return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 		ID: "tc-1", Type: "function", Name: "shell_exec",
-		Function: &providers.FunctionCall{Name: "shell_exec", Arguments: `{"command":"echo alice-bg-done","background":true}`},
+		Function: &spawnllm.FunctionCall{Name: "shell_exec", Arguments: `{"command":"echo alice-bg-done","background":true}`},
 	}}}, nil
 }
 

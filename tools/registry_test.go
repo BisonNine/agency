@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // --- mock types ---
@@ -301,9 +301,9 @@ func TestToolRegistry_ToolDefs(t *testing.T) {
 		t.Fatalf("expected 1 provider def, got %d", len(defs))
 	}
 
-	want := providers.ToolDefinition{
+	want := spawnllm.ToolDefinition{
 		Type: "function",
-		Function: providers.ToolFunctionDefinition{
+		Function: spawnllm.ToolFunctionDefinition{
 			Name:        "beta",
 			Description: "tool B",
 			Parameters:  params,

@@ -15,13 +15,13 @@ import (
 
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/mcphost"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/skills"
 )
 
@@ -815,10 +815,10 @@ func sessionTokenLayer(token string) ctxengine.Layer {
 }
 
 func (cb *ContextBuilder) AddToolResult(
-	messages []providers.Message,
+	messages []spawnllm.Message,
 	toolCallID, toolName, result string,
-) []providers.Message {
-	messages = append(messages, providers.Message{
+) []spawnllm.Message {
+	messages = append(messages, spawnllm.Message{
 		Role:       "tool",
 		Content:    result,
 		ToolCallID: toolCallID,
@@ -827,11 +827,11 @@ func (cb *ContextBuilder) AddToolResult(
 }
 
 func (cb *ContextBuilder) AddAssistantMessage(
-	messages []providers.Message,
+	messages []spawnllm.Message,
 	content string,
 	toolCalls []map[string]any,
-) []providers.Message {
-	msg := providers.Message{
+) []spawnllm.Message {
+	msg := spawnllm.Message{
 		Role:    "assistant",
 		Content: content,
 	}

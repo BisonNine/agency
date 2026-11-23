@@ -8,32 +8,34 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/providers"
 )
 
 func TestAttemptDescriptionIncludesHTTPStatus(t *testing.T) {
 	// With a status code, it must be surfaced verbatim (technical users).
-	got := attemptDescription("grok-2", 402, providers.FailoverBilling)
+	got := attemptDescription("grok-2", 402, spawnllm.FailoverBilling)
 	if got != "grok-2 error HTTP 402 (out of credits)" {
 		t.Fatalf("got %q", got)
 	}
 	// Without a status (timeout/network), fall back to the reason — no "HTTP 0".
-	got = attemptDescription("gpt-4o", 0, providers.FailoverTimeout)
+	got = attemptDescription("gpt-4o", 0, spawnllm.FailoverTimeout)
 	if got != "gpt-4o error: timeout" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestRenderFailoverErrorExhausted(t *testing.T) {
-	err := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
+	err := &models.ExhaustedError{Attempts: []models.Attempt{
 		{
-			Provider: "x", Model: "grok-2", Reason: providers.FailoverBilling,
-			Err: &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
+			Provider: "x", Model: "grok-2", Reason: spawnllm.FailoverBilling,
+			Err: &spawnllm.FailoverError{Reason: spawnllm.FailoverBilling, Status: 402},
 		},
 		{
-			Provider: "y", Model: "gpt-4o", Reason: providers.FailoverOverloaded,
-			Err: &providers.FailoverError{Reason: providers.FailoverOverloaded, Status: 529},
+			Provider: "y", Model: "gpt-4o", Reason: spawnllm.FailoverOverloaded,
+			Err: &spawnllm.FailoverError{Reason: spawnllm.FailoverOverloaded, Status: 529},
 		},
 	}}
 	out := renderFailoverError(err)
@@ -44,7 +46,7 @@ func TestRenderFailoverErrorExhausted(t *testing.T) {
 
 func TestRenderFailoverErrorSkipsCooldownOnly(t *testing.T) {
 	// All attempts skipped (cooldown) → nothing to render; caller falls through.
-	err := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
+	err := &models.ExhaustedError{Attempts: []models.Attempt{
 		{Provider: "x", Model: "grok-2", Skipped: true},
 	}}
 	if out := renderFailoverError(err); out != "" {
@@ -58,16 +60,16 @@ func TestRenderFailoverErrorSkipsCooldownOnly(t *testing.T) {
 // when the chain returns it unclassified (it carries no HTTP status or pattern).
 func TestRenderFailoverErrorKeepsCLIDeclinedMessage(t *testing.T) {
 	const declinedText = "The Claude CLI declined to use tools. Tick *Bypass CLI restrictions* for this CLI in the WebUI, or allow the tools in the CLI's own settings."
-	declined := &providers.CLIDeclinedError{Message: declinedText}
+	declined := &models.CLIDeclinedError{Message: declinedText}
 
-	exhausted := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
+	exhausted := &models.ExhaustedError{Attempts: []models.Attempt{
 		{
-			Provider: "Claude CLI", Model: "claude-cli", Reason: providers.FailoverUnknown,
-			Err: &providers.FailoverError{Reason: providers.FailoverUnknown, Model: "claude-cli", Wrapped: declined},
+			Provider: "Claude CLI", Model: "claude-cli", Reason: spawnllm.FailoverUnknown,
+			Err: &spawnllm.FailoverError{Reason: spawnllm.FailoverUnknown, Model: "claude-cli", Wrapped: declined},
 		},
 		{
-			Provider: "x", Model: "grok-2", Reason: providers.FailoverBilling,
-			Err: &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
+			Provider: "x", Model: "grok-2", Reason: spawnllm.FailoverBilling,
+			Err: &spawnllm.FailoverError{Reason: spawnllm.FailoverBilling, Status: 402},
 		},
 	}}
 	out := renderFailoverError(exhausted)
@@ -78,17 +80,17 @@ func TestRenderFailoverErrorKeepsCLIDeclinedMessage(t *testing.T) {
 		t.Fatalf("exhausted render lost the other attempt: %q", out)
 	}
 
-	single := &providers.FailoverError{Reason: providers.FailoverUnknown, Model: "claude-cli", Wrapped: declined}
+	single := &spawnllm.FailoverError{Reason: spawnllm.FailoverUnknown, Model: "claude-cli", Wrapped: declined}
 	if out := renderFailoverError(single); out != "claude-cli error: "+declinedText+"." {
 		t.Fatalf("single FailoverError render: %q", out)
 	}
 
 	notice := formatFallbackNotice(
-		[]providers.FallbackAttempt{{
-			Model: "claude-cli", Name: "Claude", Reason: providers.FailoverUnknown,
-			Err: &providers.FailoverError{Reason: providers.FailoverUnknown, Wrapped: declined},
+		[]models.Attempt{{
+			Model: "claude-cli", Name: "Claude", Reason: spawnllm.FailoverUnknown,
+			Err: &spawnllm.FailoverError{Reason: spawnllm.FailoverUnknown, Wrapped: declined},
 		}},
-		providers.FallbackCandidate{Model: "gpt-4o"},
+		models.Candidate{Model: "gpt-4o"},
 	)
 	if !strings.Contains(notice, "Claude error: "+declinedText+".\nTrying gpt-4o…") {
 		t.Fatalf("fallback notice dropped the declined message: %q", notice)
@@ -96,7 +98,7 @@ func TestRenderFailoverErrorKeepsCLIDeclinedMessage(t *testing.T) {
 
 	// The cause (agy names the denied action) stays behind the message.
 	withCause := fmt.Errorf("fallback: unclassified error from Claude CLI/claude-cli: %w",
-		&providers.CLIDeclinedError{Message: declinedText, Cause: errors.New("agy denied RunCommand")})
+		&models.CLIDeclinedError{Message: declinedText, Cause: errors.New("agy denied RunCommand")})
 	if out := renderTurnError(context.Background(), time.Minute, withCause); out != declinedText+": agy denied RunCommand" {
 		t.Fatalf("unclassified render: %q", out)
 	}
@@ -113,13 +115,13 @@ func TestRenderTurnErrorTimeout(t *testing.T) {
 }
 
 func TestFormatFallbackNotice(t *testing.T) {
-	failed := providers.FallbackAttempt{
+	failed := models.Attempt{
 		Model:  "grok-2",
-		Reason: providers.FailoverBilling,
-		Err:    &providers.FailoverError{Reason: providers.FailoverBilling, Status: 402},
+		Reason: spawnllm.FailoverBilling,
+		Err:    &spawnllm.FailoverError{Reason: spawnllm.FailoverBilling, Status: 402},
 	}
-	next := providers.FallbackCandidate{Model: "gpt-4o", Name: "smart"}
-	got := formatFallbackNotice([]providers.FallbackAttempt{failed}, next)
+	next := models.Candidate{Model: "gpt-4o", Name: "smart"}
+	got := formatFallbackNotice([]models.Attempt{failed}, next)
 	// Alias preferred for the next model; HTTP code surfaced for the failed one;
 	// period + newline before "Trying".
 	if !strings.Contains(got, "HTTP 402") || !strings.Contains(got, ").\nTrying smart…") {
@@ -150,20 +152,20 @@ func TestFallbackNotifier_DedupsAcrossTurn(t *testing.T) {
 		}
 	}()
 
-	failA := providers.FallbackAttempt{
+	failA := models.Attempt{
 		Model: "deepseek-v4-pro", Name: "DeepSeek 4 Pro",
-		Reason: providers.FailoverFormat,
-		Err:    &providers.FailoverError{Reason: providers.FailoverFormat, Status: 400},
+		Reason: spawnllm.FailoverFormat,
+		Err:    &spawnllm.FailoverError{Reason: spawnllm.FailoverFormat, Status: 400},
 	}
-	nextW := providers.FallbackCandidate{Model: "deepseek-v4-pro", Name: "DeepSeek V4 Pro Writing"}
-	failB := providers.FallbackAttempt{
+	nextW := models.Candidate{Model: "deepseek-v4-pro", Name: "DeepSeek V4 Pro Writing"}
+	failB := models.Attempt{
 		Model: "grok", Name: "Grok",
-		Reason: providers.FailoverRateLimit,
-		Err:    &providers.FailoverError{Reason: providers.FailoverRateLimit, Status: 429},
+		Reason: spawnllm.FailoverRateLimit,
+		Err:    &spawnllm.FailoverError{Reason: spawnllm.FailoverRateLimit, Status: 429},
 	}
 
-	batchA := []providers.FallbackAttempt{failA}
-	batchB := []providers.FallbackAttempt{failB}
+	batchA := []models.Attempt{failA}
+	batchB := []models.Attempt{failB}
 	notifier(batchA, nextW) // published
 	notifier(batchA, nextW) // duplicate → suppressed
 	notifier(batchA, nextW) // duplicate → suppressed
@@ -203,17 +205,17 @@ func TestFallbackNotifier_OncePerModelChange(t *testing.T) {
 		}
 	}()
 
-	luna := providers.FallbackCandidate{Model: "luna", Name: "Luna"}
-	haikuFailed := providers.FallbackAttempt{
-		Model: "haiku", Name: "Haiku", Reason: providers.FailoverFormat,
-		Err: &providers.FailoverError{Reason: providers.FailoverFormat, Status: 404},
+	luna := models.Candidate{Model: "luna", Name: "Luna"}
+	haikuFailed := models.Attempt{
+		Model: "haiku", Name: "Haiku", Reason: spawnllm.FailoverFormat,
+		Err: &spawnllm.FailoverError{Reason: spawnllm.FailoverFormat, Status: 404},
 	}
-	notifier([]providers.FallbackAttempt{haikuFailed}, luna)
+	notifier([]models.Attempt{haikuFailed}, luna)
 	for _, left := range []time.Duration{59 * time.Second, 41 * time.Second, 17 * time.Second, 3 * time.Second} {
-		notifier([]providers.FallbackAttempt{{Model: "haiku", Name: "Haiku", Skipped: true, Reason: providers.FailoverFormat, Remaining: left}}, luna)
+		notifier([]models.Attempt{{Model: "haiku", Name: "Haiku", Skipped: true, Reason: spawnllm.FailoverFormat, Remaining: left}}, luna)
 	}
-	notifier([]providers.FallbackAttempt{haikuFailed, {Model: "luna", Name: "Luna", Reason: providers.FailoverRateLimit}},
-		providers.FallbackCandidate{Model: "scout", Name: "Scout"})
+	notifier([]models.Attempt{haikuFailed, {Model: "luna", Name: "Luna", Reason: spawnllm.FailoverRateLimit}},
+		models.Candidate{Model: "scout", Name: "Scout"})
 
 	var got []string
 	deadline := time.After(2 * time.Second)
@@ -236,15 +238,15 @@ func TestFallbackNotifier_OncePerModelChange(t *testing.T) {
 // A single cooldown-skipped candidate names the CAUSE and the retry time (using
 // its alias), so the skip is neither silent nor uninformative.
 func TestFormatFallbackNotice_Skip(t *testing.T) {
-	skipped := providers.FallbackAttempt{
+	skipped := models.Attempt{
 		Model:     "deepseek-v4-pro",
 		Name:      "DeepSeek V4 Pro Writing",
 		Skipped:   true,
-		Reason:    providers.FailoverRateLimit,
+		Reason:    spawnllm.FailoverRateLimit,
 		Remaining: 9 * time.Minute,
 	}
-	next := providers.FallbackCandidate{Model: "abliterated-model", Name: "Abliteration"}
-	got := formatFallbackNotice([]providers.FallbackAttempt{skipped}, next)
+	next := models.Candidate{Model: "abliterated-model", Name: "Abliteration"}
+	got := formatFallbackNotice([]models.Attempt{skipped}, next)
 	want := "⚠️ DeepSeek V4 Pro Writing unavailable — rate limited (retry in 9m). Using Abliteration."
 	if got != want {
 		t.Fatalf("skip notice:\n got %q\nwant %q", got, want)
@@ -255,21 +257,21 @@ func TestFormatFallbackNotice_Skip(t *testing.T) {
 // wall of "skipped (in cooldown)" on every turn while OpenRouter is out of
 // credits.
 func TestFormatFallbackNotice_SkipBatchCoalesced(t *testing.T) {
-	skips := []providers.FallbackAttempt{
+	skips := []models.Attempt{
 		{
 			Model: "deepseek-v4-flash", Name: "OR Chat DeepSeek V4 Flash", Skipped: true,
-			Reason: providers.FailoverBilling, Remaining: 41 * time.Minute,
+			Reason: spawnllm.FailoverBilling, Remaining: 41 * time.Minute,
 		},
 		{
 			Model: "deepseek-v4-pro", Name: "OR Chat DeepSeek V4 Pro", Skipped: true,
-			Reason: providers.FailoverBilling, Remaining: 58 * time.Minute,
+			Reason: spawnllm.FailoverBilling, Remaining: 58 * time.Minute,
 		},
 		{
 			Model: "glm-5.2", Name: "OR GLM 5.2", Skipped: true,
-			Reason: providers.FailoverBilling, Remaining: 12 * time.Minute,
+			Reason: spawnllm.FailoverBilling, Remaining: 12 * time.Minute,
 		},
 	}
-	next := providers.FallbackCandidate{Model: "grok-medium", Name: "Grok Medium"}
+	next := models.Candidate{Model: "grok-medium", Name: "Grok Medium"}
 	got := formatFallbackNotice(skips, next)
 	want := "⚠️ 3 models unavailable — out of credits (retry in up to 58m). Using Grok Medium."
 	if got != want {
@@ -279,12 +281,12 @@ func TestFormatFallbackNotice_SkipBatchCoalesced(t *testing.T) {
 
 // Mixed causes across a batch are listed once each, in first-seen order.
 func TestFormatFallbackNotice_SkipBatchMixedReasons(t *testing.T) {
-	skips := []providers.FallbackAttempt{
-		{Model: "a", Skipped: true, Reason: providers.FailoverBilling, Remaining: time.Minute},
-		{Model: "b", Skipped: true, Reason: providers.FailoverRateLimit, Remaining: 2 * time.Minute},
-		{Model: "c", Skipped: true, Reason: providers.FailoverBilling, Remaining: time.Minute},
+	skips := []models.Attempt{
+		{Model: "a", Skipped: true, Reason: spawnllm.FailoverBilling, Remaining: time.Minute},
+		{Model: "b", Skipped: true, Reason: spawnllm.FailoverRateLimit, Remaining: 2 * time.Minute},
+		{Model: "c", Skipped: true, Reason: spawnllm.FailoverBilling, Remaining: time.Minute},
 	}
-	got := formatFallbackNotice(skips, providers.FallbackCandidate{Model: "grok"})
+	got := formatFallbackNotice(skips, models.Candidate{Model: "grok"})
 	want := "⚠️ 3 models unavailable — out of credits, rate limited (retry in up to 2m). Using grok."
 	if got != want {
 		t.Fatalf("mixed-reason notice:\n got %q\nwant %q", got, want)
@@ -294,8 +296,8 @@ func TestFormatFallbackNotice_SkipBatchMixedReasons(t *testing.T) {
 // With no recorded reason (and no remaining), the notice degrades to the plain
 // "in cooldown" wording rather than inventing a cause.
 func TestFormatFallbackNotice_SkipUnknownReason(t *testing.T) {
-	skips := []providers.FallbackAttempt{{Model: "a", Skipped: true}}
-	got := formatFallbackNotice(skips, providers.FallbackCandidate{Model: "grok"})
+	skips := []models.Attempt{{Model: "a", Skipped: true}}
+	got := formatFallbackNotice(skips, models.Candidate{Model: "grok"})
 	want := "⚠️ a unavailable — in cooldown. Using grok."
 	if got != want {
 		t.Fatalf("unknown-reason notice:\n got %q\nwant %q", got, want)
@@ -303,7 +305,7 @@ func TestFormatFallbackNotice_SkipUnknownReason(t *testing.T) {
 }
 
 func TestFormatFallbackNotice_Empty(t *testing.T) {
-	if got := formatFallbackNotice(nil, providers.FallbackCandidate{Model: "grok"}); got != "" {
+	if got := formatFallbackNotice(nil, models.Candidate{Model: "grok"}); got != "" {
 		t.Fatalf("empty batch = %q, want empty", got)
 	}
 }
@@ -330,7 +332,7 @@ func TestFormatRemaining(t *testing.T) {
 // With the assistant named, the declined-tools reply starts with the name so a
 // shared channel shows whose CLI refused; other errors are unchanged.
 func TestRenderTurnErrorFor_NamesTheAssistant(t *testing.T) {
-	declined := &providers.CLIDeclinedError{Message: "The Claude CLI declined to use tools (Write)."}
+	declined := &models.CLIDeclinedError{Message: "The Claude CLI declined to use tools (Write)."}
 	got := renderTurnErrorFor("Alice", context.Background(), time.Minute, declined)
 	if got != "Alice: The Claude CLI declined to use tools (Write)." {
 		t.Errorf("got %q", got)

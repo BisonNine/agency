@@ -10,12 +10,13 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	toolsshell "go.bison9.com/agency/tools/shell"
 )
 
@@ -24,13 +25,13 @@ type longJobModel struct{}
 
 func (longJobModel) GetDefaultModel() string { return "mock-model" }
 
-func (longJobModel) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (longJobModel) Chat(_ context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	if messages[len(messages)-1].Role == "tool" {
-		return &providers.LLMResponse{Content: "started"}, nil
+		return &spawnllm.LLMResponse{Content: "started"}, nil
 	}
-	return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+	return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 		ID: "tc-1", Type: "function", Name: "shell_exec",
-		Function: &providers.FunctionCall{Name: "shell_exec", Arguments: `{"command":"sleep 60","background":true,"notify":false}`},
+		Function: &spawnllm.FunctionCall{Name: "shell_exec", Arguments: `{"command":"sleep 60","background":true,"notify":false}`},
 	}}}, nil
 }
 
@@ -77,12 +78,12 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	workerStarted := make(chan struct{}, 4)
 	replyStarted := make(chan struct{}, 4)
-	model := chatFunc(func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
+	model := chatFunc(func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
 		switch user := lastUser(messages); {
 		case user == "the work" && messages[len(messages)-1].Role != "tool":
-			return &providers.LLMResponse{Content: "first part", ToolCalls: []providers.ToolCall{{
+			return &spawnllm.LLMResponse{Content: "first part", ToolCalls: []spawnllm.ToolCall{{
 				ID: "tc-w", Type: "function", Name: "time_now",
-				Function: &providers.FunctionCall{Name: "time_now", Arguments: `{}`},
+				Function: &spawnllm.FunctionCall{Name: "time_now", Arguments: `{}`},
 			}}}, nil
 		case user == "the work":
 			workerStarted <- struct{}{}
@@ -93,11 +94,11 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		case messages[len(messages)-1].Role == "tool":
-			return &providers.LLMResponse{Content: "started"}, nil
+			return &spawnllm.LLMResponse{Content: "started"}, nil
 		default:
-			return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+			return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 				ID: "tc-1", Type: "function", Name: "agent_spawn",
-				Function: &providers.FunctionCall{Name: "agent_spawn", Arguments: `{"task":"the work","name":"job"}`},
+				Function: &spawnllm.FunctionCall{Name: "agent_spawn", Arguments: `{"task":"the work","name":"job"}`},
 			}}}, nil
 		}
 	})

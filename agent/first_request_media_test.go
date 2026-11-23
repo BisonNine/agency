@@ -14,13 +14,14 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 )
 
 // pinRecordingStore is a media store that records the pins its owners set
@@ -58,7 +59,7 @@ func (s *pinRecordingStore) SetPins(owner string, refs []string) {
 // before, and whose first assembly of the model loop compacts it to after.
 type compactingFirstIteration struct {
 	capturingContextManager
-	before, after []providers.Message
+	before, after []spawnllm.Message
 	assembles     int
 }
 
@@ -73,14 +74,14 @@ func (c *compactingFirstIteration) Assemble(context.Context, ctxengine.AssembleR
 // messagesProvider records the messages of every call and answers "done".
 type messagesProvider struct {
 	mu    sync.Mutex
-	calls [][]providers.Message
+	calls [][]spawnllm.Message
 }
 
-func (p *messagesProvider) Chat(_ context.Context, _ providers.Identity, msgs []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *messagesProvider) Chat(_ context.Context, _ accounting.Identity, msgs []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls = append(p.calls, slices.Clone(msgs))
-	return &providers.LLMResponse{Content: "done", FinishReason: "stop", Normal: true}, nil
+	return &spawnllm.LLMResponse{Content: "done", FinishReason: "stop", Normal: true}, nil
 }
 
 func (p *messagesProvider) GetDefaultModel() string { return "test-model" }
@@ -114,8 +115,8 @@ func TestFirstRequest_MediaResolvedAfterIterationOneCompaction(t *testing.T) {
 	p := &messagesProvider{}
 	setTestProvider(agent, p)
 	cm := &compactingFirstIteration{
-		before: []providers.Message{{Role: "user", Content: "old"}, {Role: "user", Content: "look", Media: []string{gone, kept}}},
-		after:  []providers.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look", Media: []string{kept}}},
+		before: []spawnllm.Message{{Role: "user", Content: "old"}, {Role: "user", Content: "look", Media: []string{gone, kept}}},
+		after:  []spawnllm.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look", Media: []string{kept}}},
 	}
 	entry := &cmEntry{cm: cm, sessionKey: "s"}
 	entry.touch()
@@ -210,7 +211,7 @@ func TestSessionClear_ResetsOnce(t *testing.T) {
 // rebuild nil every assembly leaves the history unchanged.
 type rebuildingSecondStep struct {
 	capturingContextManager
-	before, after []providers.Message
+	before, after []spawnllm.Message
 	rebuild       func(*ctxengine.Assembly)
 	assembles     int
 }
@@ -232,14 +233,14 @@ type toolThenDoneProvider struct {
 	messagesProvider
 }
 
-func (p *toolThenDoneProvider) Chat(_ context.Context, _ providers.Identity, msgs []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *toolThenDoneProvider) Chat(_ context.Context, _ accounting.Identity, msgs []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls = append(p.calls, slices.Clone(msgs))
 	if len(p.calls) == 1 {
-		return &providers.LLMResponse{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "file_write")}}, nil
+		return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "file_write")}}, nil
 	}
-	return &providers.LLMResponse{Content: "done", FinishReason: "stop", Normal: true}, nil
+	return &spawnllm.LLMResponse{Content: "done", FinishReason: "stop", Normal: true}, nil
 }
 
 // mediaTurn is a turn of the default agent on session "s" whose history
@@ -295,7 +296,7 @@ func newMediaTurn(t *testing.T) *mediaTurn {
 }
 
 // mediaOf is every media entry of msgs, in order.
-func mediaOf(msgs []providers.Message) []string {
+func mediaOf(msgs []spawnllm.Message) []string {
 	var out []string
 	for _, m := range msgs {
 		out = append(out, m.Media...)
@@ -322,8 +323,8 @@ func TestRequestMedia_ResolvedAfterSecondStepRebuild(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mt := newMediaTurn(t)
 			cm := &rebuildingSecondStep{
-				before:  []providers.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
-				after:   []providers.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+				before:  []spawnllm.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+				after:   []spawnllm.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
 				rebuild: tt.rebuild,
 			}
 			mt.runWithCM(cm)
@@ -359,7 +360,7 @@ func TestRequestMedia_ResolvedAfterSecondStepRebuild(t *testing.T) {
 func TestRequestMedia_ResolvedOnceWithoutRebuild(t *testing.T) {
 	mt := newMediaTurn(t)
 	cm := &rebuildingSecondStep{
-		before: []providers.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+		before: []spawnllm.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
 	}
 	mt.runWithCM(cm)
 
@@ -405,8 +406,8 @@ func TestRequestMedia_RebuildWithoutAttachmentsUnpins(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mt := newMediaTurn(t)
 			cm := &rebuildingSecondStep{
-				before:  []providers.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
-				after:   []providers.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look"}},
+				before:  []spawnllm.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+				after:   []spawnllm.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look"}},
 				rebuild: tt.rebuild,
 			}
 			mt.runWithCM(cm)
@@ -434,7 +435,7 @@ func TestRequestMedia_RebuildWithoutAttachmentsUnpins(t *testing.T) {
 // the next assembly return after.
 type overflowingOnce struct {
 	capturingContextManager
-	before, after []providers.Message
+	before, after []spawnllm.Message
 	compressed    bool
 }
 
@@ -456,14 +457,14 @@ type overflowThenDoneProvider struct {
 	messagesProvider
 }
 
-func (p *overflowThenDoneProvider) Chat(_ context.Context, _ providers.Identity, msgs []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *overflowThenDoneProvider) Chat(_ context.Context, _ accounting.Identity, msgs []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls = append(p.calls, slices.Clone(msgs))
 	if len(p.calls) == 1 {
 		return nil, errors.New("context window exceeded: Alice's request is too long")
 	}
-	return &providers.LLMResponse{Content: "done", FinishReason: "stop", Normal: true}, nil
+	return &spawnllm.LLMResponse{Content: "done", FinishReason: "stop", Normal: true}, nil
 }
 
 // When a request overflows the context window, the request the retry rebuilds
@@ -475,8 +476,8 @@ func TestRequestMedia_ResolvedAfterOverflowRetry(t *testing.T) {
 	p := &overflowThenDoneProvider{}
 	setTestProvider(mt.agent, p)
 	cm := &overflowingOnce{
-		before: []providers.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
-		after:  []providers.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+		before: []spawnllm.Message{{Role: "user", Content: "old", Media: []string{mt.gone}}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
+		after:  []spawnllm.Message{{Role: "user", Content: "summary"}, {Role: "user", Content: "look", Media: []string{mt.kept}}},
 	}
 	mt.run(cm)
 

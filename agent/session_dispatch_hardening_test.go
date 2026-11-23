@@ -7,16 +7,17 @@ import (
 	"context"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
-	"go.bison9.com/agency/providers"
 )
 
 // A turn with no chat takes no chat hold: there is no typing indicator,
 // reaction or placeholder of its to keep.
 func TestRunQueuedTurn_NoChatNoHold(t *testing.T) {
-	answer := chatFunc(func(context.Context, []providers.Message) (*providers.LLMResponse, error) {
-		return &providers.LLMResponse{Content: "done"}, nil
+	answer := chatFunc(func(context.Context, []spawnllm.Message) (*spawnllm.LLMResponse, error) {
+		return &spawnllm.LLMResponse{Content: "done"}, nil
 	})
 	al := mustNewAgentLoop(t, newTestConfig(t), bus.NewMessageBus(), answer, nil)
 	holder := newFakeChatHolder()

@@ -7,9 +7,10 @@ import (
 	"encoding/json"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/dump"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // dumpRefusal writes a diagnostic file capturing the full LLM input and output
@@ -17,8 +18,8 @@ import (
 // cfg.Logging.DumpRefusals is true and dumpsDir is set.
 func (al *AgentLoop) dumpRefusal(
 	agent *AgentInstance,
-	messages []providers.Message,
-	response *providers.LLMResponse,
+	messages []spawnllm.Message,
+	response *spawnllm.LLMResponse,
 	opts processOptions,
 	model string,
 	iteration int,
@@ -66,8 +67,8 @@ func (al *AgentLoop) dumpRefusal(
 // for every response when cfg.Logging.DumpAll is true and dumpsDir is set.
 func (al *AgentLoop) dumpAll(
 	agent *AgentInstance,
-	messages []providers.Message,
-	response *providers.LLMResponse,
+	messages []spawnllm.Message,
+	response *spawnllm.LLMResponse,
 	opts processOptions,
 	model string,
 	iteration int,

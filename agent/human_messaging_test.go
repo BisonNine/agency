@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
@@ -34,7 +35,7 @@ func humanMessagingConfig(t *testing.T, timeoutSec int) *config.Config {
 
 // humanMessagingLoop runs a loop over cfg whose model agents answer with
 // model; Bob's turns go to the person through the provider dispatcher.
-func humanMessagingLoop(t *testing.T, cfg *config.Config, model providers.LLMProvider) (*AgentLoop, *bus.MessageBus) {
+func humanMessagingLoop(t *testing.T, cfg *config.Config, model spawnllm.LLMProvider) (*AgentLoop, *bus.MessageBus) {
 	t.Helper()
 	return messagingLoopWith(t, cfg, model, realClients{})
 }
@@ -72,8 +73,8 @@ func TestHumanAgent_AgentMessageAskIsAnswered(t *testing.T) {
 	cfg.Agents.Defaults.MaxConcurrentTurns = 1
 	al, msgBus := humanMessagingLoop(t, cfg,
 		callThenText("agent_message", `{"agent":"bob","message":"Please review the draft.","wait_seconds":30}`))
-	setModel(t, al, "helper", chatFunc(func(context.Context, []providers.Message) (*providers.LLMResponse, error) {
-		return &providers.LLMResponse{Content: "Helper here"}, nil
+	setModel(t, al, "helper", chatFunc(func(context.Context, []spawnllm.Message) (*spawnllm.LLMResponse, error) {
+		return &spawnllm.LLMResponse{Content: "Helper here"}, nil
 	}))
 
 	publishIn(t, msgBus, inbound("c2", "a1", "Get Bob's review"))

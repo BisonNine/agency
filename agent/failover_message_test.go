@@ -12,9 +12,10 @@ import (
 
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 const anthropic400 = `bad request (400): {"type":"error","error":{"type":"invalid_request_error","message":"thinking.type: adaptive is required for this model."}}`
@@ -22,9 +23,9 @@ const anthropic400 = `bad request (400): {"type":"error","error":{"type":"invali
 const openai400 = "API request failed:\n  Status: 400\n  Body:   " +
 	`{"error":{"message":"Invalid  value\nfor tools.","type":"invalid_request_error"}}`
 
-func fable400() *providers.FailoverError {
-	return &providers.FailoverError{
-		Reason: providers.FailoverFormat, Provider: "Anthropic", Model: "claude-fable-5-1",
+func fable400() *spawnllm.FailoverError {
+	return &spawnllm.FailoverError{
+		Reason: spawnllm.FailoverFormat, Provider: "Anthropic", Model: "claude-fable-5-1",
 		Status: 400, Wrapped: errors.New(anthropic400),
 	}
 }
@@ -37,13 +38,13 @@ func TestProviderMessage(t *testing.T) {
 		want string
 	}{
 		{"anthropic error body", fable400(), "thinking.type: adaptive is required for this model"},
-		{"openai error body", &providers.FailoverError{Status: 400, Wrapped: errors.New(openai400)}, "Invalid value for tools"},
-		{"string error", &providers.FailoverError{Wrapped: errors.New(`failed: {"error":"model not found"}`)}, "model not found"},
-		{"top-level message", &providers.FailoverError{Wrapped: errors.New(`{"message":"quota"}`)}, "quota"},
-		{"cut-short body", &providers.FailoverError{Wrapped: errors.New(`bad request (400): {"error":{"message":"too long","details":"abc`)}, "too long"},
-		{"long message", &providers.FailoverError{Wrapped: errors.New(`{"message":"` + long + `"}`)}, strings.Repeat("x", 200) + "…"},
-		{"no body", &providers.FailoverError{Status: 500, Wrapped: errors.New("internal server error")}, ""},
-		{"no wrapped error", &providers.FailoverError{Status: 402}, ""},
+		{"openai error body", &spawnllm.FailoverError{Status: 400, Wrapped: errors.New(openai400)}, "Invalid value for tools"},
+		{"string error", &spawnllm.FailoverError{Wrapped: errors.New(`failed: {"error":"model not found"}`)}, "model not found"},
+		{"top-level message", &spawnllm.FailoverError{Wrapped: errors.New(`{"message":"quota"}`)}, "quota"},
+		{"cut-short body", &spawnllm.FailoverError{Wrapped: errors.New(`bad request (400): {"error":{"message":"too long","details":"abc`)}, "too long"},
+		{"long message", &spawnllm.FailoverError{Wrapped: errors.New(`{"message":"` + long + `"}`)}, strings.Repeat("x", 200) + "…"},
+		{"no body", &spawnllm.FailoverError{Status: 500, Wrapped: errors.New("internal server error")}, ""},
+		{"no wrapped error", &spawnllm.FailoverError{Status: 402}, ""},
 		{"not a failover error", errors.New(anthropic400), ""},
 	}
 	for _, tt := range tests {
@@ -62,16 +63,16 @@ func TestRenderFailoverErrorShowsProviderMessage(t *testing.T) {
 		t.Fatalf("single render = %q, want %q", got, want)
 	}
 
-	exhausted := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverFormat, Err: fable400()},
+	exhausted := &models.ExhaustedError{Attempts: []models.Attempt{
+		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: spawnllm.FailoverFormat, Err: fable400()},
 	}}
 	if got := renderFailoverError(exhausted); got != "All models failed. "+want {
 		t.Fatalf("exhausted render = %q", got)
 	}
 
-	notice := formatFallbackNotice([]providers.FallbackAttempt{
-		{Provider: "Anthropic", Model: "claude-fable-5-1", Name: "Claude Fable 5.1", Reason: providers.FailoverFormat, Err: fable400()},
-	}, providers.FallbackCandidate{Model: "claude-opus-5-5", Name: "Claude Opus 5.5"})
+	notice := formatFallbackNotice([]models.Attempt{
+		{Provider: "Anthropic", Model: "claude-fable-5-1", Name: "Claude Fable 5.1", Reason: spawnllm.FailoverFormat, Err: fable400()},
+	}, models.Candidate{Model: "claude-opus-5-5", Name: "Claude Opus 5.5"})
 	if !strings.Contains(notice, "Claude Fable 5.1 error HTTP 400 (bad response format): thinking.type: adaptive is required for this model.") {
 		t.Fatalf("fallback notice = %q, want the provider's message", notice)
 	}
@@ -94,7 +95,7 @@ func TestLogPassedLogsProviderMessage(t *testing.T) {
 // failFirst answers for every model but the chain's first (opus-wire), which
 // fails with err.
 func failFirst(err error) modelScriptProvider {
-	return modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+	return modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 		if model == candOpus.Model {
 			return nil, err
 		}
@@ -123,8 +124,8 @@ var secretBodies = map[string]string{
 func TestProviderMessageRedactsSecrets(t *testing.T) {
 	for secret, body := range secretBodies {
 		t.Run(secret, func(t *testing.T) {
-			fe := &providers.FailoverError{
-				Reason: providers.FailoverAuth, Provider: "Anthropic", Model: "claude-opus-5-5",
+			fe := &spawnllm.FailoverError{
+				Reason: spawnllm.FailoverAuth, Provider: "Anthropic", Model: "claude-opus-5-5",
 				Status: 401, Wrapped: errors.New("unauthorized (401): " + body),
 			}
 			msg := providerMessage(fe)
@@ -134,15 +135,15 @@ func TestProviderMessageRedactsSecrets(t *testing.T) {
 			if reply := renderTurnError(context.Background(), time.Minute, fe); strings.Contains(reply, secret) {
 				t.Fatalf("reply carries the secret: %q", reply)
 			}
-			exhausted := &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Err: fe},
+			exhausted := &models.ExhaustedError{Attempts: []models.Attempt{
+				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: spawnllm.FailoverAuth, Err: fe},
 			}}
 			if reply := renderFailoverError(exhausted); strings.Contains(reply, secret) {
 				t.Fatalf("exhausted reply carries the secret: %q", reply)
 			}
-			notice := formatFallbackNotice([]providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Err: fe},
-			}, providers.FallbackCandidate{Model: "gpt-4o"})
+			notice := formatFallbackNotice([]models.Attempt{
+				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: spawnllm.FailoverAuth, Err: fe},
+			}, models.Candidate{Model: "gpt-4o"})
 			if notice == "" || strings.Contains(notice, secret) {
 				t.Fatalf("fallback notice = %q, must not carry the secret", notice)
 			}
@@ -233,7 +234,7 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		var buf bytes.Buffer
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
-		failing := modelScriptProvider{answer: func(context.Context, string) (*providers.LLMResponse, error) {
+		failing := modelScriptProvider{answer: func(context.Context, string) (*spawnllm.LLMResponse, error) {
 			return nil, providerErrorWithKey()
 		}}
 		if _, err := chainTurn(t, failing, nil, candAlice).run(context.Background()); err == nil {
@@ -247,7 +248,7 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
 		var calls atomic.Int32
-		timingOut := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+		timingOut := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 			if calls.Add(1) == 1 {
 				// A timeout whose text carries the key (no status that would
 				// classify it otherwise).
@@ -279,7 +280,7 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		var buf bytes.Buffer
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
-		cat := compressCatalog(map[string]providers.LLMProvider{"model-a": &scriptedProvider{err: providerErrorWithKey()}})
+		cat := compressCatalog(map[string]spawnllm.LLMProvider{"model-a": &scriptedProvider{err: providerErrorWithKey()}})
 		c := compressCaller(cat, "model-a")
 		if _, err := c.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u"}); err == nil {
 			t.Fatal("Complete succeeded with a failing model")

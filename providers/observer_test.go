@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/alerts"
 	"go.bison9.com/agency/config"
@@ -85,13 +87,13 @@ func newAlertRig(t *testing.T) *alertRig {
 }
 
 // statusFor maps a reason to a representative HTTP status.
-func statusFor(reason FailoverReason) int {
+func statusFor(reason spawnllm.FailoverReason) int {
 	switch reason {
-	case FailoverBilling:
+	case spawnllm.FailoverBilling:
 		return 402
-	case FailoverAuth:
+	case spawnllm.FailoverAuth:
 		return 401
-	case FailoverRateLimit:
+	case spawnllm.FailoverRateLimit:
 		return 429
 	default:
 		return 500
@@ -101,7 +103,7 @@ func statusFor(reason FailoverReason) int {
 // call makes one call to the model on provider, answering with the failure
 // reason gives, or with an answer when reason is empty. A model still parked
 // is not called.
-func (r *alertRig) call(t *testing.T, provider string, reason FailoverReason) {
+func (r *alertRig) call(t *testing.T, provider string, reason spawnllm.FailoverReason) {
 	t.Helper()
 	step := modelstest.Reply("ok")
 	if reason != "" {
@@ -109,7 +111,7 @@ func (r *alertRig) call(t *testing.T, provider string, reason FailoverReason) {
 	}
 	r.client.Script("m", step)
 	_, err := ModelSet(r.cat, "m@"+provider).Begin(models.Chat).Chat(context.Background(),
-		Identity{Agent: "alice", Name: "Alice", Project: "default"}, models.Request{})
+		accounting.Identity{Agent: "alice", Name: "Alice", Project: "default"}, models.Request{})
 	if (err == nil) != (reason == "") {
 		t.Fatalf("call to m@%s: err = %v, want a failure: %v", provider, err, reason != "")
 	}
@@ -117,7 +119,7 @@ func (r *alertRig) call(t *testing.T, provider string, reason FailoverReason) {
 
 // fail fails the model on provider once, waiting out its cooldown first, so
 // the call reaches it.
-func (r *alertRig) fail(t *testing.T, provider string, reason FailoverReason) {
+func (r *alertRig) fail(t *testing.T, provider string, reason spawnllm.FailoverReason) {
 	t.Helper()
 	if info, _ := r.cat.Get("m@" + provider); !info.Health.Available {
 		r.clk.Advance(r.clk.Until(info.Health.Until))
@@ -129,16 +131,16 @@ func (r *alertRig) fail(t *testing.T, provider string, reason FailoverReason) {
 // retry fixes a logged-out CLI; so does a billing failure of another model.
 func TestModelAlerts_AuthAtOnce(t *testing.T) {
 	r := newAlertRig(t)
-	r.fail(t, "claude-cli", FailoverAuth)
+	r.fail(t, "claude-cli", spawnllm.FailoverAuth)
 	got := r.rec.got()
 	if len(got) != 1 || got[0].Priority != alerter.Normal || got[0].Title != alertModelAuth ||
-		got[0].EventID != ModelKey("claude-cli", "m") {
+		got[0].EventID != spawnllm.ModelKey("claude-cli", "m") {
 		t.Fatalf("auth failure must alert once with the model as event id, got %+v", got)
 	}
 	if want := "claude-cli/m parked for 30m0s after 1 consecutive failure(s): auth (status 401)"; got[0].Description != want {
 		t.Fatalf("description = %q, want %q", got[0].Description, want)
 	}
-	r.fail(t, "openrouter", FailoverBilling)
+	r.fail(t, "openrouter", spawnllm.FailoverBilling)
 	if got := r.rec.got(); len(got) != 2 || got[1].Title != alertModelAuth {
 		t.Fatalf("billing failure of another model must alert, got %+v", got)
 	}
@@ -149,23 +151,23 @@ func TestModelAlerts_AuthAtOnce(t *testing.T) {
 // the count of parks held back.
 func TestModelAlerts_RepeatsHeldForADay(t *testing.T) {
 	r := newAlertRig(t)
-	r.fail(t, "openrouter", FailoverBilling)
+	r.fail(t, "openrouter", spawnllm.FailoverBilling)
 	held := 0
 	for r.clk.Since(alertStart)+time.Hour < alerts.RemindEvery {
-		r.fail(t, "openrouter", FailoverBilling)
+		r.fail(t, "openrouter", spawnllm.FailoverBilling)
 		held++
 	}
 	// An auth failure of the same model is the same trouble, not a new alert.
-	r.fail(t, "openrouter", FailoverAuth)
+	r.fail(t, "openrouter", spawnllm.FailoverAuth)
 	held++
 	if got := r.rec.got(); len(got) != 1 {
 		t.Fatalf("re-parks inside a day must not alert again, got %d alerts", len(got))
 	}
 
 	r.clk.Advance(alertStart.Add(alerts.RemindEvery).Sub(r.clk.Now()))
-	r.fail(t, "openrouter", FailoverBilling)
+	r.fail(t, "openrouter", spawnllm.FailoverBilling)
 	got := r.rec.got()
-	if len(got) != 2 || got[1].Title != alertModelAuth || got[1].EventID != ModelKey("openrouter", "m") {
+	if len(got) != 2 || got[1].Title != alertModelAuth || got[1].EventID != spawnllm.ModelKey("openrouter", "m") {
 		t.Fatalf("a day later the model must alert once more, got %+v", got)
 	}
 	want := "; ongoing since Nov 14 09:02, " + strconv.Itoa(held) + " more since the last alert"
@@ -178,8 +180,8 @@ func TestModelAlerts_RepeatsHeldForADay(t *testing.T) {
 // alert, and its next failure is a new incident that alerts at once.
 func TestModelAlerts_RecoveryAlertsOnceAndStartsAfresh(t *testing.T) {
 	r := newAlertRig(t)
-	id := ModelKey("openrouter", "m")
-	r.fail(t, "openrouter", FailoverBilling)
+	id := spawnllm.ModelKey("openrouter", "m")
+	r.fail(t, "openrouter", spawnllm.FailoverBilling)
 	r.clk.Advance(2 * time.Hour)
 	r.call(t, "openrouter", "")
 
@@ -195,7 +197,7 @@ func TestModelAlerts_RecoveryAlertsOnceAndStartsAfresh(t *testing.T) {
 		t.Fatalf("a model that keeps working must not alert again, got %+v", got)
 	}
 	r.clk.Advance(time.Hour)
-	r.fail(t, "openrouter", FailoverBilling)
+	r.fail(t, "openrouter", spawnllm.FailoverBilling)
 	got = r.rec.got()
 	if len(got) != 3 || got[2].Title != alertModelAuth || strings.Contains(got[2].Description, "ongoing") {
 		t.Fatalf("a failure after recovery must alert as a new incident, got %+v", got)
@@ -207,7 +209,7 @@ func TestModelAlerts_RecoveryAlertsOnceAndStartsAfresh(t *testing.T) {
 func TestModelAlerts_NoRecoveryAlertWithoutAnAlert(t *testing.T) {
 	r := newAlertRig(t)
 	r.call(t, "openai", "")
-	r.fail(t, "openai", FailoverRateLimit) // one transient failure: no alert
+	r.fail(t, "openai", spawnllm.FailoverRateLimit) // one transient failure: no alert
 	r.fail(t, "openai", "")
 	if got := r.rec.got(); len(got) != 0 {
 		t.Fatalf("no alert was raised, so none may say it is over, got %+v", got)
@@ -224,7 +226,7 @@ func TestModelAlerts_ClearRearmsTheAlert(t *testing.T) {
 	}{
 		{"one model", func(r *alertRig) {
 			r.cat.ResetHealth("m@openrouter")
-			r.alerts.Rearm(ModelKey("openrouter", "m"))
+			r.alerts.Rearm(spawnllm.ModelKey("openrouter", "m"))
 		}},
 		{"all models", func(r *alertRig) {
 			r.cat.ResetHealth()
@@ -233,11 +235,11 @@ func TestModelAlerts_ClearRearmsTheAlert(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newAlertRig(t)
-			r.fail(t, "openrouter", FailoverBilling)
+			r.fail(t, "openrouter", spawnllm.FailoverBilling)
 
 			r.clk.Advance(10 * time.Minute)
 			tc.clear(r)
-			r.call(t, "openrouter", FailoverBilling)
+			r.call(t, "openrouter", spawnllm.FailoverBilling)
 			got := r.rec.got()
 			if len(got) != 2 || got[1].Title != alertModelAuth ||
 				!strings.HasSuffix(got[1].Description, "; ongoing since Nov 14 09:02") {
@@ -260,11 +262,11 @@ func TestModelAlerts_ClearRearmsTheAlert(t *testing.T) {
 func TestModelAlerts_SettledAndAuthAreSeparateIncidents(t *testing.T) {
 	r := newAlertRig(t)
 	for range 4 {
-		r.fail(t, "openai", FailoverRateLimit)
+		r.fail(t, "openai", spawnllm.FailoverRateLimit)
 	}
 	r.clk.Advance(time.Hour)
-	r.fail(t, "openai", FailoverRateLimit) // a new park of the same incident: held
-	r.fail(t, "openai", FailoverBilling)
+	r.fail(t, "openai", spawnllm.FailoverRateLimit) // a new park of the same incident: held
+	r.fail(t, "openai", spawnllm.FailoverBilling)
 	got := r.rec.got()
 	if len(got) != 2 || got[0].Title != alertModelParked || got[1].Title != alertModelAuth {
 		t.Fatalf("want the parked alert, then the billing alert, got %+v", got)
@@ -285,14 +287,14 @@ func TestModelAlerts_SettledAndAuthAreSeparateIncidents(t *testing.T) {
 func TestModelAlerts_TransientOnlyWhenSettled(t *testing.T) {
 	r := newAlertRig(t)
 	for range 3 {
-		r.fail(t, "openai", FailoverRateLimit)
+		r.fail(t, "openai", spawnllm.FailoverRateLimit)
 	}
 	if got := r.rec.got(); len(got) != 0 {
 		t.Fatalf("no alert during escalation, got %+v", got)
 	}
-	r.fail(t, "openai", FailoverRateLimit)
+	r.fail(t, "openai", spawnllm.FailoverRateLimit)
 	got := r.rec.got()
-	if len(got) != 1 || got[0].Priority != alerter.Normal || got[0].EventID != ModelKey("openai", "m") {
+	if len(got) != 1 || got[0].Priority != alerter.Normal || got[0].EventID != spawnllm.ModelKey("openai", "m") {
 		t.Fatalf("settled cooldown must alert once, got %+v", got)
 	}
 }
@@ -301,7 +303,7 @@ func TestModelAlerts_TransientOnlyWhenSettled(t *testing.T) {
 func TestModelAlerts_NoAlerterIsFine(t *testing.T) {
 	r := newAlertRig(t)
 	r.alerts.SetAlerter(nil)
-	r.fail(t, "openai", FailoverAuth)
+	r.fail(t, "openai", spawnllm.FailoverAuth)
 	if info, _ := r.cat.Get("m@openai"); info.Health.Available {
 		t.Fatal("model should be parked")
 	}

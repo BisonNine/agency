@@ -12,10 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 	toolsmsg "go.bison9.com/agency/tools/msg"
@@ -23,11 +25,11 @@ import (
 
 // fixedProvider answers every Chat call with the same response and error.
 type fixedProvider struct {
-	resp *providers.LLMResponse
+	resp *spawnllm.LLMResponse
 	err  error
 }
 
-func (p *fixedProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
+func (p *fixedProvider) Chat(context.Context, accounting.Identity, []spawnllm.Message, []spawnllm.ToolDefinition, string, map[string]any) (*spawnllm.LLMResponse, error) {
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -133,39 +135,39 @@ func TestRunTurn_ReplyOutcome(t *testing.T) {
 		wantExact   bool
 	}{
 		{
-			name: "ok", provider: &fixedProvider{resp: &providers.LLMResponse{Content: "hello"}},
+			name: "ok", provider: &fixedProvider{resp: &spawnllm.LLMResponse{Content: "hello"}},
 			wantSent: true, wantOutcome: bus.OutcomeOK, wantContent: "hello", wantExact: true,
 		},
 		{
-			name: "ok required", provider: &fixedProvider{resp: &providers.LLMResponse{Content: "hello"}},
+			name: "ok required", provider: &fixedProvider{resp: &spawnllm.LLMResponse{Content: "hello"}},
 			flag: true, wantSent: true, wantOutcome: bus.OutcomeOK, wantContent: "hello", wantExact: true,
 		},
 		{
-			name: "empty direct", provider: &fixedProvider{resp: &providers.LLMResponse{FinishReason: "stop", Normal: true}},
+			name: "empty direct", provider: &fixedProvider{resp: &spawnllm.LLMResponse{FinishReason: "stop", Normal: true}},
 			wantSent: true, wantOutcome: bus.OutcomeEmpty, wantContent: "empty response",
 		},
 		{
-			name: "empty direct required", provider: &fixedProvider{resp: &providers.LLMResponse{FinishReason: "stop", Normal: true}},
+			name: "empty direct required", provider: &fixedProvider{resp: &spawnllm.LLMResponse{FinishReason: "stop", Normal: true}},
 			flag: true, wantSent: true, wantOutcome: bus.OutcomeEmpty, wantContent: "", wantExact: true,
 		},
 		{
-			name: "empty group", provider: &fixedProvider{resp: &providers.LLMResponse{FinishReason: "stop", Normal: true}},
+			name: "empty group", provider: &fixedProvider{resp: &spawnllm.LLMResponse{FinishReason: "stop", Normal: true}},
 			group: true, wantSent: false,
 		},
 		{
-			name: "empty group required", provider: &fixedProvider{resp: &providers.LLMResponse{FinishReason: "stop", Normal: true}},
+			name: "empty group required", provider: &fixedProvider{resp: &spawnllm.LLMResponse{FinishReason: "stop", Normal: true}},
 			group: true, flag: true, wantSent: true, wantOutcome: bus.OutcomeEmpty, wantContent: "", wantExact: true,
 		},
 		{
-			name: "no-response sentinel required", provider: &fixedProvider{resp: &providers.LLMResponse{Content: noResponseSentinel}},
+			name: "no-response sentinel required", provider: &fixedProvider{resp: &spawnllm.LLMResponse{Content: noResponseSentinel}},
 			flag: true, wantSent: true, wantOutcome: bus.OutcomeEmpty, wantContent: "", wantExact: true,
 		},
 		{
-			name: "abnormal empty", provider: &fixedProvider{resp: &providers.LLMResponse{FinishReason: "length"}},
+			name: "abnormal empty", provider: &fixedProvider{resp: &spawnllm.LLMResponse{FinishReason: "length"}},
 			wantSent: true, wantOutcome: bus.OutcomeError, wantContent: "finish reason: length",
 		},
 		{
-			name: "abnormal empty required", provider: &fixedProvider{resp: &providers.LLMResponse{FinishReason: "length"}},
+			name: "abnormal empty required", provider: &fixedProvider{resp: &spawnllm.LLMResponse{FinishReason: "length"}},
 			flag: true, wantSent: true, wantOutcome: bus.OutcomeError, wantContent: "finish reason: length",
 		},
 		{
@@ -258,8 +260,8 @@ func TestRunTurn_MsgSendSuppressesUnlessRequired(t *testing.T) {
 		cfg := newTestConfig(t)
 		cfg.Agents.List[0].Tools = []string{"*"}
 		provider := &sequenceProvider{
-			responses: []*providers.LLMResponse{
-				{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "fake_send")}},
+			responses: []*spawnllm.LLMResponse{
+				{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "fake_send")}},
 				{Content: "final"},
 			},
 			errors: []error{nil, nil},
@@ -438,8 +440,8 @@ func TestInbound_SpawnDepthReachesTools(t *testing.T) {
 		cfg := newTestConfig(t)
 		cfg.Agents.List[0].Tools = []string{"*"}
 		provider := &sequenceProvider{
-			responses: []*providers.LLMResponse{
-				{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "depth_probe")}},
+			responses: []*spawnllm.LLMResponse{
+				{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "depth_probe")}},
 				{Content: "done"},
 			},
 			errors: []error{nil, nil},
@@ -490,7 +492,7 @@ func TestRunTurn_SystemMessageOneReply(t *testing.T) {
 	defer restore()
 
 	msgBus := bus.NewMessageBus()
-	al := mustNewAgentLoop(t, newTestConfig(t), msgBus, &fixedProvider{resp: &providers.LLMResponse{Content: "done"}}, nil)
+	al := mustNewAgentLoop(t, newTestConfig(t), msgBus, &fixedProvider{resp: &spawnllm.LLMResponse{Content: "done"}}, nil)
 	al.runTurn(context.Background(), context.Background(), bus.InboundMessage{
 		Channel: "system", SenderID: "forum", ChatID: "webui:c-1", Content: "Forum run 1 finished: completed.",
 		Metadata: map[string]string{bus.MetaOriginChannel: "webui"}, Internal: true,
@@ -624,8 +626,8 @@ func TestAsyncResult_CarriesTurnDepth(t *testing.T) {
 		cfg := newTestConfig(t)
 		cfg.Agents.List[0].Tools = []string{"*"}
 		provider := &sequenceProvider{
-			responses: []*providers.LLMResponse{
-				{ToolCalls: []providers.ToolCall{toolCallTo("tc-1", "async_probe")}},
+			responses: []*spawnllm.LLMResponse{
+				{ToolCalls: []spawnllm.ToolCall{toolCallTo("tc-1", "async_probe")}},
 				{Content: "done"},
 			},
 			errors: []error{nil, nil},

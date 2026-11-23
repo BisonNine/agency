@@ -15,11 +15,11 @@ import (
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 	"go.bison9.com/agency/utils"
@@ -80,7 +80,7 @@ func (al *AgentLoop) runAgentLoop(
 ) (string, error) {
 	// Every provider call of the turn names the agent in its error logs,
 	// including the compression paths that fan out from the turn.
-	ctx = providers.WithAgentID(ctx, agent.ID)
+	ctx = spawnllm.WithAgentID(ctx, agent.ID)
 
 	agent, endTurn, err := al.beginAgentTurn(agent, opts.SessionKey)
 	if err != nil {
@@ -231,7 +231,7 @@ func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, c
 	// described and their references appended.
 	turn.RecallText = opts.UserMessage
 	if len(opts.Media) > 0 && !turn.Options.AlreadyStored {
-		userMsg := providers.Message{Role: "user", Content: turn.Message.Text}
+		userMsg := spawnllm.Message{Role: "user", Content: turn.Message.Text}
 		al.attachInboundMedia(ctx, agent, *opts, &userMsg)
 		turn.Message.Text, turn.Message.Media = userMsg.Content, userMsg.Media
 	}
@@ -239,7 +239,7 @@ func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, c
 }
 
 // attachInboundMedia puts the inbound message's media on userMsg.
-func (al *AgentLoop) attachInboundMedia(ctx context.Context, agent *AgentInstance, opts processOptions, userMsg *providers.Message) {
+func (al *AgentLoop) attachInboundMedia(ctx context.Context, agent *AgentInstance, opts processOptions, userMsg *spawnllm.Message) {
 	userMsg.Media = opts.Media
 	// A text-only primary with a vision side-model configured gets the
 	// image(s) described once here, the description folded into the text
@@ -632,7 +632,7 @@ func (al *AgentLoop) promptLayers(agent *AgentInstance, opts processOptions) []c
 // estimateTokens estimates the number of tokens in a message list.
 // Uses a safe heuristic of 2.5 characters per token to account for CJK and other
 // overheads better than the previous 3 chars/token.
-func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
+func (al *AgentLoop) estimateTokens(messages []spawnllm.Message) int {
 	totalChars := 0
 	for _, m := range messages {
 		totalChars += utf8.RuneCountInString(m.Content)

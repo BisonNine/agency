@@ -7,17 +7,17 @@ import (
 	"context"
 
 	"go.bison9.com/agent/loop"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // publishBreadcrumb posts the one-line, privacy-safe note for a tool call.
-func (al *AgentLoop) publishBreadcrumb(ctx context.Context, opts processOptions, tc providers.ToolCall) {
+func (al *AgentLoop) publishBreadcrumb(ctx context.Context, opts processOptions, tc spawnllm.ToolCall) {
 	line := toolCallBreadcrumb(tc)
 	if line == "" {
 		return

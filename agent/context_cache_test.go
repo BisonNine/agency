@@ -11,15 +11,15 @@ import (
 
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/app"
-	"go.bison9.com/agency/providers"
 )
 
 // assembleWithLayers runs the builder's prompt layers through the engine over
 // a session holding history plus the current user message, with an optional
 // stored summary — the request the agent loop sends for one dispatch.
-func assembleWithLayers(t *testing.T, cb *ContextBuilder, history []providers.Message, summary, message, channel, chatID string) []providers.Message {
+func assembleWithLayers(t *testing.T, cb *ContextBuilder, history []spawnllm.Message, summary, message, channel, chatID string) []spawnllm.Message {
 	t.Helper()
 	const key = "layers-test"
 	store, err := session.NewSQLiteStore(t.TempDir())
@@ -30,7 +30,7 @@ func assembleWithLayers(t *testing.T, cb *ContextBuilder, history []providers.Me
 	for _, m := range history {
 		addFullMessage(t, store, key, m)
 	}
-	addFullMessage(t, store, key, providers.Message{Role: "user", Content: message})
+	addFullMessage(t, store, key, spawnllm.Message{Role: "user", Content: message})
 	if summary != "" {
 		setSummary(t, store, key, summary)
 	}
@@ -78,7 +78,7 @@ func TestSingleSystemMessage(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		history []providers.Message
+		history []spawnllm.Message
 		summary string
 		message string
 	}{
@@ -94,7 +94,7 @@ func TestSingleSystemMessage(t *testing.T) {
 		},
 		{
 			name: "with history and summary",
-			history: []providers.Message{
+			history: []spawnllm.Message{
 				{Role: "user", Content: "hi"},
 				{Role: "assistant", Content: "hello"},
 			},
@@ -103,7 +103,7 @@ func TestSingleSystemMessage(t *testing.T) {
 		},
 		{
 			name: "system message in history is filtered",
-			history: []providers.Message{
+			history: []spawnllm.Message{
 				{Role: "system", Content: "stale system prompt from previous session"},
 				{Role: "user", Content: "hi"},
 				{Role: "assistant", Content: "hello"},

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
@@ -174,7 +175,7 @@ func testModel(cfg *config.Config, cat *models.Catalog, mc config.ModelConfig, t
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: testPrompt},
 	}
 

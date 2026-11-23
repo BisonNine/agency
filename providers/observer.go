@@ -10,6 +10,7 @@ import (
 
 	"github.com/tenebris-tech/alerter"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/alerts"
 )
@@ -72,14 +73,14 @@ func (o *ModelAlerts) Parked(e models.Parked) {
 
 // parked raises the alert for one park of the model keyed id, when it is
 // one to raise.
-func (o *ModelAlerts) parked(id string, reason FailoverReason, status, failures int, settled bool, cooldown time.Duration, now time.Time) {
+func (o *ModelAlerts) parked(id string, reason spawnllm.FailoverReason, status, failures int, settled bool, cooldown time.Duration, now time.Time) {
 	a := o.current()
 	if a == nil {
 		return
 	}
 	var title, incident string
 	switch {
-	case reason == FailoverAuth || reason == FailoverBilling:
+	case reason == spawnllm.FailoverAuth || reason == spawnllm.FailoverBilling:
 		title, incident = alertModelAuth, incidentAuth+id
 	case settled:
 		title, incident = alertModelParked, incidentParked+id

@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -26,7 +26,7 @@ func TestInterrupt_WaitTaskFinishesAndReports(t *testing.T) {
 	workerStarted := make(chan struct{}, 1)
 	releaseWorker := make(chan struct{})
 	reported := make(chan string, 4)
-	model := chatFunc(func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
+	model := chatFunc(func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
 		user := lastUser(messages)
 		last := messages[len(messages)-1]
 		switch {
@@ -35,19 +35,19 @@ func TestInterrupt_WaitTaskFinishesAndReports(t *testing.T) {
 			workerStarted <- struct{}{}
 			select {
 			case <-releaseWorker:
-				return &providers.LLMResponse{Content: "work finished"}, nil
+				return &spawnllm.LLMResponse{Content: "work finished"}, nil
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
 		case strings.Contains(user, "TASK NOTIFICATION"):
 			reported <- user
-			return &providers.LLMResponse{Content: "the background work is done"}, nil
+			return &spawnllm.LLMResponse{Content: "the background work is done"}, nil
 		case last.Role == "tool":
-			return &providers.LLMResponse{Content: "unexpected: the turn went on"}, nil
+			return &spawnllm.LLMResponse{Content: "unexpected: the turn went on"}, nil
 		default:
-			return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+			return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 				ID: "tc-1", Type: "function", Name: "agent_spawn",
-				Function: &providers.FunctionCall{Name: "agent_spawn", Arguments: `{"task":"the work","mode":"wait"}`},
+				Function: &spawnllm.FunctionCall{Name: "agent_spawn", Arguments: `{"task":"the work","mode":"wait"}`},
 			}}}, nil
 		}
 	})
@@ -100,7 +100,7 @@ func TestInterrupt_WaitTaskFinishesAndReports(t *testing.T) {
 func TestInterrupt_WaitTaskDuringShutdownIsCancelled(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	workerStarted := make(chan struct{}, 1)
-	model := chatFunc(func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
+	model := chatFunc(func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
 		workerStarted <- struct{}{}
 		<-ctx.Done()
 		return nil, ctx.Err()

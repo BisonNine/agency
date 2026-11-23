@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/commands"
 	"go.bison9.com/agency/config"
@@ -69,9 +70,9 @@ func TestTurnConfigReads_RaceWithReload(t *testing.T) {
 		}
 	})
 	for range 200 {
-		hooks.emit(context.Background(), hook.ModelCall{Response: &providers.LLMResponse{Content: "hi"}, Request: &hook.ModelRequest{}})
+		hooks.emit(context.Background(), hook.ModelCall{Response: &spawnllm.LLMResponse{Content: "hi"}, Request: &hook.ModelRequest{}})
 		// Reasoning with no content: the reasoning-as-content setting is read.
-		resp := &providers.LLMResponse{Reasoning: "thinking"}
+		resp := &spawnllm.LLMResponse{Reasoning: "thinking"}
 		hooks.callAfterModel(context.Background(), &hook.ModelInfo{}, &hook.ModelResponse{Response: resp})
 	}
 	close(stop)

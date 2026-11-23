@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 var turnIDPattern = regexp.MustCompile(`^[0-9a-f]{8}$`)
@@ -188,10 +189,10 @@ func TestToolCall_AuditRecorded(t *testing.T) {
 		t.Fatalf("marshal args: %v", err)
 	}
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{
-			{ToolCalls: []providers.ToolCall{{
+		responses: []*spawnllm.LLMResponse{
+			{ToolCalls: []spawnllm.ToolCall{{
 				ID: "tc-1", Type: "function", Name: "file_write",
-				Function: &providers.FunctionCall{Name: "file_write", Arguments: string(argsJSON)},
+				Function: &spawnllm.FunctionCall{Name: "file_write", Arguments: string(argsJSON)},
 			}}},
 			{Content: "done"},
 		},
@@ -208,7 +209,7 @@ func TestToolCall_AuditRecorded(t *testing.T) {
 	defer releaseCM()
 
 	ctx := withTurnID(context.Background(), "cafe0001")
-	messages := []providers.Message{{Role: "user", Content: "go"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "go"}}
 	if _, err = al.runLLMIteration(ctx, agentInstance, messages, opts, cm, nil); err != nil {
 		t.Fatalf("runLLMIteration: %v", err)
 	}
@@ -268,10 +269,10 @@ func TestToolCall_AuditOutcomeError(t *testing.T) {
 		agentInstance.Config.Tools = []string{"*"}
 	}
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{
-			{ToolCalls: []providers.ToolCall{{
+		responses: []*spawnllm.LLMResponse{
+			{ToolCalls: []spawnllm.ToolCall{{
 				ID: "tc-1", Type: "function", Name: "no_such_tool",
-				Function: &providers.FunctionCall{Name: "no_such_tool", Arguments: "{}"},
+				Function: &spawnllm.FunctionCall{Name: "no_such_tool", Arguments: "{}"},
 			}}},
 			{Content: "done"},
 		},
@@ -280,7 +281,7 @@ func TestToolCall_AuditOutcomeError(t *testing.T) {
 	opts := processOptions{SessionKey: "audit-err", Channel: "cli", ChatID: "direct"}
 	cm, releaseCM := al.getContextManager(agentInstance, opts.SessionKey)
 	defer releaseCM()
-	messages := []providers.Message{{Role: "user", Content: "go"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "go"}}
 	if _, err := al.runLLMIteration(context.Background(), agentInstance, messages, opts, cm, nil); err != nil {
 		t.Fatalf("runLLMIteration: %v", err)
 	}

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // TestRunLLMIteration_AnthropicThinkingReplayed verifies that the Anthropic
@@ -28,14 +28,14 @@ func TestRunLLMIteration_AnthropicThinkingReplayed(t *testing.T) {
 		json.RawMessage(`{"type":"redacted_thinking","data":"opaque"}`),
 	}
 	provider := &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{
 				AnthropicThinking: thinking,
-				ToolCalls: []providers.ToolCall{{
+				ToolCalls: []spawnllm.ToolCall{{
 					ID:   "tc-1",
 					Type: "function",
 					Name: "echo_tool",
-					Function: &providers.FunctionCall{
+					Function: &spawnllm.FunctionCall{
 						Name:      "echo_tool",
 						Arguments: `{"text":"hi"}`,
 					},
@@ -56,7 +56,7 @@ func TestRunLLMIteration_AnthropicThinkingReplayed(t *testing.T) {
 	cm, releaseCM := al.getContextManager(agentInstance, opts.SessionKey)
 	defer releaseCM()
 
-	messages := []providers.Message{{Role: "user", Content: "go"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "go"}}
 	if _, err := al.runLLMIteration(context.Background(), agentInstance, messages, opts, cm, nil); err != nil {
 		t.Fatalf("runLLMIteration: %v", err)
 	}

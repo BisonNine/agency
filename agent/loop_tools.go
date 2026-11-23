@@ -12,6 +12,8 @@ import (
 	"time"
 
 	sdkdiscovery "go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/agentreg"
@@ -20,7 +22,6 @@ import (
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
@@ -181,7 +182,7 @@ func (al *AgentLoop) newMessageTool() tools.Tool {
 // candidates of the target agent, possibly none. The registry is looked up at
 // call time, because tools are registered while the registry is still being
 // built.
-func (al *AgentLoop) spawnCandidates(targetAgentID string) ([]providers.FallbackCandidate, bool) {
+func (al *AgentLoop) spawnCandidates(targetAgentID string) ([]models.Candidate, bool) {
 	target, ok := al.GetRegistry().Get(targetAgentID)
 	if !ok {
 		return nil, false
@@ -205,7 +206,7 @@ func (al *AgentLoop) newSpawner(
 	currentAgent *AgentInstance,
 	agentID string,
 	cfg *config.Config,
-	candidateResolver func(string) ([]providers.FallbackCandidate, bool),
+	candidateResolver func(string) ([]models.Candidate, bool),
 	spawnAllowlist func(callerID, targetID string) bool,
 ) *toolsagents.Spawner {
 	spawnMgr := toolsagents.NewSubagentManager(toolsagents.SubagentManagerConfig{
@@ -213,7 +214,7 @@ func (al *AgentLoop) newSpawner(
 		Live:              al.taskLive,
 		Tasks:             al.tasks,
 		ShuttingDown:      al.stopping.Load,
-		SelfResolver:      func() []providers.FallbackCandidate { return al.workerCandidates(currentAgent) },
+		SelfResolver:      func() []models.Candidate { return al.workerCandidates(currentAgent) },
 		CallerAgentID:     agentID,
 		CandidateResolver: candidateResolver,
 		WorkerModelsSet:   al.hasWorkerModels,
@@ -236,7 +237,7 @@ func (al *AgentLoop) newSpawner(
 // compaction report and the resulting rendered summary alongside the error.
 func (al *AgentLoop) compactFn(agent *AgentInstance) func(ctx context.Context, sessionKey string) (string, string, error) {
 	return func(ctx context.Context, sessionKey string) (string, string, error) {
-		ctx = providers.WithAgentID(ctx, agent.ID)
+		ctx = spawnllm.WithAgentID(ctx, agent.ID)
 		cm, release := al.getContextManager(agent, sessionKey) //nolint:contextcheck // compaction reporter: ctxengine's callback has no context, so it publishes on its own
 		defer release()
 		err := cm.Compact(ctx)

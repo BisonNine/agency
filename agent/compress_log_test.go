@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // The summarization caller's own lines are today's: a parked model is
@@ -29,7 +29,7 @@ func TestCompressModelCaller_LogLines(t *testing.T) {
 	parked := &scriptedProvider{content: "never"}
 	broken := &scriptedProvider{err: errors.New("boom")}
 	good := &scriptedProvider{content: "ok"}
-	cat := compressCatalog(map[string]providers.LLMProvider{"parked": parked, "broken": broken, "good": good})
+	cat := compressCatalog(map[string]spawnllm.LLMProvider{"parked": parked, "broken": broken, "good": good})
 	parkFor(t, cat, "parked", time.Minute, parked)
 	c := compressCaller(cat, "parked", "broken", "good")
 	c.sessionKey = "agent:alice:main"

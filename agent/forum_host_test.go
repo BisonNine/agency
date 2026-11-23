@@ -17,6 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/ccv3"
@@ -25,7 +28,6 @@ import (
 	"go.bison9.com/agency/forum"
 	"go.bison9.com/agency/internal/testalerts"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 	toolsforum "go.bison9.com/agency/tools/forum"
@@ -87,7 +89,7 @@ type forumRig struct {
 // newForumRig builds the service, then the loop (which builds the forum
 // tools), binds the host and dispatches inbound messages as Run does. stop
 // closes the service first, as the gateway does, then the loop.
-func newForumRig(t *testing.T, cfg *config.Config, model providers.LLMProvider) *forumRig {
+func newForumRig(t *testing.T, cfg *config.Config, model spawnllm.LLMProvider) *forumRig {
 	t.Helper()
 	tools.RegisterProvider(tools.NamespacedProvider(toolsforum.Suite, toolsforum.GlobalProvider))
 	host := NewForumHost()
@@ -150,7 +152,7 @@ type forumModel struct {
 
 func (m *forumModel) GetDefaultModel() string { return "mock-model" }
 
-func (m *forumModel) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (m *forumModel) Chat(ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	user := lastUser(messages)
 	last := messages[len(messages)-1]
 	forumTurn := strings.Contains(user, "[Message from Alice — Alice is waiting for your reply]")
@@ -172,20 +174,20 @@ func (m *forumModel) Chat(ctx context.Context, _ providers.Identity, messages []
 		m.mu.Lock()
 		m.toolSeen = append(m.toolSeen, last.Content)
 		m.mu.Unlock()
-		return &providers.LLMResponse{Content: "Bob's view."}, nil
+		return &spawnllm.LLMResponse{Content: "Bob's view."}, nil
 	case forumTurn && strings.Contains(messages[0].Content, freshPrompt):
-		return &providers.LLMResponse{Content: "The reviewer's view."}, nil
+		return &spawnllm.LLMResponse{Content: "The reviewer's view."}, nil
 	case forumTurn:
 		tool, args := "forum_status", "{}"
 		if m.bobTool != "" {
 			tool, args = m.bobTool, m.bobArgs
 		}
-		return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+		return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 			ID: "tc-1", Type: "function", Name: tool,
-			Function: &providers.FunctionCall{Name: tool, Arguments: args},
+			Function: &spawnllm.FunctionCall{Name: tool, Arguments: args},
 		}}}, nil
 	}
-	return &providers.LLMResponse{Content: "Noted."}, nil
+	return &spawnllm.LLMResponse{Content: "Noted."}, nil
 }
 
 // sawUser reports whether some call's last user message contains s.

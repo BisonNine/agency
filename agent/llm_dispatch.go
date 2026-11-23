@@ -5,8 +5,6 @@ package agent
 
 import (
 	"go.bison9.com/agent/models"
-
-	"go.bison9.com/agency/providers"
 )
 
 // turnModel is a turn's model choice, made once when the turn starts so its
@@ -15,7 +13,7 @@ import (
 // the first one's model_name, and its limits.
 type turnModel struct {
 	chain      *models.Chain
-	candidates []providers.FallbackCandidate
+	candidates []models.Candidate
 	model      string
 	limits     runLimits
 }

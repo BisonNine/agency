@@ -7,36 +7,36 @@ import (
 	"time"
 
 	"go.bison9.com/agent/ctxengine/memory"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/state"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // recoveryTestStore is a minimal in-memory SessionStore for recovery tests.
 type recoveryTestStore struct {
-	history        []providers.Message
+	history        []spawnllm.Message
 	clearCalled    bool
 	pendingCleared string
 }
 
-func (s *recoveryTestStore) GetHistory(_ string) []providers.Message {
-	cp := make([]providers.Message, len(s.history))
+func (s *recoveryTestStore) GetHistory(_ string) []spawnllm.Message {
+	cp := make([]spawnllm.Message, len(s.history))
 	copy(cp, s.history)
 	return cp
 }
 
-func (s *recoveryTestStore) SetHistory(_ string, h []providers.Message) error {
-	cp := make([]providers.Message, len(h))
+func (s *recoveryTestStore) SetHistory(_ string, h []spawnllm.Message) error {
+	cp := make([]spawnllm.Message, len(h))
 	copy(cp, h)
 	s.history = cp
 	return nil
 }
 func (s *recoveryTestStore) AddMessage(_, _, _ string) error { return nil }
-func (s *recoveryTestStore) AddFullMessage(_ string, _ providers.Message) (int64, error) {
+func (s *recoveryTestStore) AddFullMessage(_ string, _ spawnllm.Message) (int64, error) {
 	return 0, nil
 }
 func (s *recoveryTestStore) GetSummary(_ string) string            { return "" }
@@ -84,7 +84,7 @@ func newRecoveryTestLoop(t *testing.T) (*testLoop, *recoveryTestStore) {
 	cm.RegisterChannel("webui", recoveryTestChannel{channels.NewBaseChannel("webui", nil, tl.msgBus, nil)})
 	tl.al.SetChannelManager(cm)
 	store := &recoveryTestStore{
-		history: []providers.Message{
+		history: []spawnllm.Message{
 			{Role: "user", Content: "what is 2+2"},
 			{Role: "assistant", Content: "4"},
 			{Role: "user", Content: "and 3+3?"},
@@ -270,7 +270,7 @@ func TestRecoverSession_UnusedSessionClears(t *testing.T) {
 
 func TestRecoverSession_NoUserMessageClears(t *testing.T) {
 	tl, store := newRecoveryTestLoop(t)
-	store.history = []providers.Message{{Role: "assistant", Content: "hello"}}
+	store.history = []spawnllm.Message{{Role: "assistant", Content: "hello"}}
 	recordSource(t, tl.al, "webui", "chat-7")
 
 	tl.al.recoverSession(context.Background(), "main", testSessionKey, store)
@@ -373,7 +373,7 @@ func TestRecoverSession_GiveUpOnRequiredReplies(t *testing.T) {
 
 	// No user message to replay: a flagged turn still gets its error reply.
 	tl, store := newRecoveryTestLoop(t)
-	store.history = []providers.Message{{Role: "assistant", Content: "hello"}}
+	store.history = []spawnllm.Message{{Role: "assistant", Content: "hello"}}
 	if err := testStateManager(t, tl.al, "main").SetPendingTurn(testSessionKey,
 		state.PendingTurn{Channel: "webui", ChatID: "chat-7", MessageID: "m1", ReplyRequired: true}); err != nil {
 		t.Fatal(err)

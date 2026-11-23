@@ -7,20 +7,22 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 type mockRegistryProvider struct{}
 
 func (m *mockRegistryProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	messages []providers.Message,
-	tools []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	messages []spawnllm.Message,
+	tools []spawnllm.ToolDefinition,
 	model string,
 	options map[string]any,
-) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{Content: "mock", FinishReason: "stop"}, nil
+) (*spawnllm.LLMResponse, error) {
+	return &spawnllm.LLMResponse{Content: "mock", FinishReason: "stop"}, nil
 }
 
 func (m *mockRegistryProvider) GetDefaultModel() string {

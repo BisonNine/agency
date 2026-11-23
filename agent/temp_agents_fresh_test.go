@@ -14,22 +14,23 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/cogmem"
 	cogmemstore "go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/utils"
 )
 
 // recordedCall is what the model was sent on one call.
 type recordedCall struct {
-	messages []providers.Message
+	messages []spawnllm.Message
 	tools    []string
 }
 
@@ -49,7 +50,7 @@ func newGatedRecorder() *recordingProvider {
 	return &recordingProvider{gate: make(chan struct{}), started: make(chan struct{}, 32)}
 }
 
-func (p *recordingProvider) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *recordingProvider) Chat(ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, defs []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	names := make([]string, 0, len(defs))
 	for _, d := range defs {
 		names = append(names, d.Function.Name)
@@ -66,7 +67,7 @@ func (p *recordingProvider) Chat(ctx context.Context, _ providers.Identity, mess
 			return nil, ctx.Err()
 		}
 	}
-	return &providers.LLMResponse{Content: fmt.Sprintf("reply %d", n)}, nil
+	return &spawnllm.LLMResponse{Content: fmt.Sprintf("reply %d", n)}, nil
 }
 
 // count is how many calls the model received.
@@ -413,7 +414,7 @@ func TestFreshAgent_SingleShotStartsBlankWhenHistoryRemains(t *testing.T) {
 	}
 	fresh, _ := al.GetRegistry().Get(id)
 	key := routing.BuildAgentMainSessionKey(id)
-	if _, err := fresh.Sessions.AddFullMessage(key, providers.Message{Role: "user", Content: "left over"}); err != nil {
+	if _, err := fresh.Sessions.AddFullMessage(key, spawnllm.Message{Role: "user", Content: "left over"}); err != nil {
 		t.Fatal(err)
 	}
 	turn(t, al, id, "new message")

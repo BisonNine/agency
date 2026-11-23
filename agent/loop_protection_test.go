@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // TestLoopProtection_BreaksOnRepeatedToolCall verifies the agent loop aborts when
@@ -23,11 +23,11 @@ func TestLoopProtection_BreaksOnRepeatedToolCall(t *testing.T) {
 		agentInstance.Config.Tools = []string{"*"}
 	}
 
-	mkResp := func() *providers.LLMResponse {
-		return &providers.LLMResponse{
-			ToolCalls: []providers.ToolCall{{
+	mkResp := func() *spawnllm.LLMResponse {
+		return &spawnllm.LLMResponse{
+			ToolCalls: []spawnllm.ToolCall{{
 				ID: "tc", Type: "function", Name: "file_write",
-				Function: &providers.FunctionCall{
+				Function: &spawnllm.FunctionCall{
 					Name:      "file_write",
 					Arguments: `{"path":"files/x.txt","content":"same"}`,
 				},
@@ -35,7 +35,7 @@ func TestLoopProtection_BreaksOnRepeatedToolCall(t *testing.T) {
 		}
 	}
 	// Same tool call far more times than the breaker threshold.
-	resps := make([]*providers.LLMResponse, 8)
+	resps := make([]*spawnllm.LLMResponse, 8)
 	errs := make([]error, 8)
 	for i := range resps {
 		resps[i] = mkResp()
@@ -54,7 +54,7 @@ func TestLoopProtection_BreaksOnRepeatedToolCall(t *testing.T) {
 
 	reply, err := al.runLLMIteration(
 		context.Background(), agentInstance,
-		[]providers.Message{{Role: "user", Content: "go"}}, opts, cm, nil,
+		[]spawnllm.Message{{Role: "user", Content: "go"}}, opts, cm, nil,
 	)
 	finalContent, finishReason, iteration := reply.content, reply.finishReason, reply.iterations
 	if err != nil {

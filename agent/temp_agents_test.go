@@ -12,12 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
@@ -316,14 +318,14 @@ func TestReload_RebuildsTempAgents(t *testing.T) {
 
 // modelRecordingProvider records the model of every call.
 type modelRecordingProvider struct {
-	providers.LLMProvider
+	spawnllm.LLMProvider
 	mu     sync.Mutex
 	models []string
 }
 
 func (p *modelRecordingProvider) Chat(
-	ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
-) (*providers.LLMResponse, error) {
+	ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, defs []spawnllm.ToolDefinition, model string, opts map[string]any,
+) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	p.models = append(p.models, model)
 	p.mu.Unlock()
@@ -350,7 +352,7 @@ func TestSubagentSpawn_ModelNarrowsClone(t *testing.T) {
 	var cloneModel string
 	var candidates int
 	provider.LLMProvider = &inspectingProvider{LLMProvider: &mockProvider{}, inspect: func(ctx context.Context) {
-		id := providers.AgentIDFromContext(ctx)
+		id := spawnllm.AgentIDFromContext(ctx)
 		if info, ok := al.GetRegistry().Info(id); ok {
 			cloneModel = info.Spec.CloneModel
 		}
@@ -375,13 +377,13 @@ func TestSubagentSpawn_ModelNarrowsClone(t *testing.T) {
 
 // inspectingProvider calls inspect with each call's context.
 type inspectingProvider struct {
-	providers.LLMProvider
+	spawnllm.LLMProvider
 	inspect func(context.Context)
 }
 
 func (p *inspectingProvider) Chat(
-	ctx context.Context, _ providers.Identity, messages []providers.Message, defs []providers.ToolDefinition, model string, opts map[string]any,
-) (*providers.LLMResponse, error) {
+	ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, defs []spawnllm.ToolDefinition, model string, opts map[string]any,
+) (*spawnllm.LLMResponse, error) {
 	p.inspect(ctx)
 	return p.LLMProvider.Chat(ctx, testIdentity, messages, defs, model, opts)
 }

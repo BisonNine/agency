@@ -13,9 +13,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // The "LLM response" line is one debug line under component agent, after the
@@ -29,13 +30,13 @@ func TestLLMResponseLine_PlaceAndFields(t *testing.T) {
 			t.Cleanup(func() { logger.SetLogMessageContent(false) })
 			cfg := abcConfig(t.TempDir(), "a", "b")
 			al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), &mockProvider{}, nil)
-			p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+			p := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 				if model == "a-wire" {
 					return nil, errors.New(rateLimited)
 				}
-				return &providers.LLMResponse{
+				return &spawnllm.LLMResponse{
 					Content: "hello", Reasoning: "thought", Normal: true,
-					Usage: &providers.UsageInfo{PromptTokens: 120, CompletionTokens: 3},
+					Usage: &spawnllm.UsageInfo{PromptTokens: 120, CompletionTokens: 3},
 				}, nil
 			}}
 			for _, name := range []string{"a", "b"} {
@@ -50,7 +51,7 @@ func TestLLMResponseLine_PlaceAndFields(t *testing.T) {
 
 			buf := &bytes.Buffer{}
 			restore := logger.RedirectForTest(buf)
-			_, err := al.runLLMIteration(context.Background(), main, []providers.Message{{Role: "user", Content: "hi"}}, opts, cm, nil)
+			_, err := al.runLLMIteration(context.Background(), main, []spawnllm.Message{{Role: "user", Content: "hi"}}, opts, cm, nil)
 			restore()
 			if err != nil {
 				t.Fatal(err)
@@ -120,7 +121,7 @@ func TestLLMResponseLine_LogsTheAnswerUnchanged(t *testing.T) {
 	tl.cfg.Agents.Defaults.ShowReasoningAsContent = true
 	agent := tl.al.registry.Default()
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{{Reasoning: "Alice's thought", Normal: true}},
+		responses: []*spawnllm.LLMResponse{{Reasoning: "Alice's thought", Normal: true}},
 		errors:    []error{nil},
 	})
 	opts := processOptions{SessionKey: "s", Channel: "cli", ChatID: "direct", UserMessage: "hi"}
@@ -129,7 +130,7 @@ func TestLLMResponseLine_LogsTheAnswerUnchanged(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
-	reply, err := tl.al.runLLMIteration(context.Background(), agent, []providers.Message{{Role: "user", Content: "hi"}}, opts, cm, nil)
+	reply, err := tl.al.runLLMIteration(context.Background(), agent, []spawnllm.Message{{Role: "user", Content: "hi"}}, opts, cm, nil)
 	restore()
 	if err != nil {
 		t.Fatal(err)

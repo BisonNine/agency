@@ -7,10 +7,11 @@ import (
 	"context"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // mustNewAgentLoop builds an AgentLoop or fails the test.
@@ -18,7 +19,7 @@ func mustNewAgentLoop(
 	t *testing.T,
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
-	provider providers.LLMProvider,
+	provider spawnllm.LLMProvider,
 	clients clientRouting,
 	opts ...LoopOption,
 ) *AgentLoop {
@@ -49,7 +50,7 @@ func mustNewAgentLoop(
 
 // mustNewAgentRegistry builds a registry of bare instances (no tools, no
 // loop) or fails the test.
-func mustNewAgentRegistry(t *testing.T, cfg *config.Config, provider providers.LLMProvider) *AgentRegistry {
+func mustNewAgentRegistry(t *testing.T, cfg *config.Config, provider spawnllm.LLMProvider) *AgentRegistry {
 	t.Helper()
 	registry, err := agentreg.New(t.Context(), cfg, agentreg.Hooks[*AgentInstance]{
 		Build: func(_ context.Context, c *config.Config, spec agentreg.Spec) (*AgentInstance, error) {
@@ -72,7 +73,7 @@ func mustNewAgentInstance(
 	agentCfg *config.AgentConfig,
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
-	provider providers.LLMProvider,
+	provider spawnllm.LLMProvider,
 ) *AgentInstance {
 	t.Helper()
 	instance, err := NewAgentInstance(agentCfg, defaults, cfg)

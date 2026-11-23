@@ -11,11 +11,11 @@ import (
 
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // A session file that holds another session's key (two keys naming one
@@ -38,7 +38,7 @@ func TestSessionKeyCollision_TurnFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	addFullMessage(t, other, otherKey, providers.Message{Role: "user", Content: "private"})
+	addFullMessage(t, other, otherKey, spawnllm.Message{Role: "user", Content: "private"})
 	closeT(t, other)
 
 	dispatch(al, inbound("c1", "id1", "hello"))

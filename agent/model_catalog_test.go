@@ -12,13 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // catalogReloadConfig is a config for Alice on model alpha, in baseDir.
@@ -141,7 +142,7 @@ func TestCatalogDigest(t *testing.T) {
 // deadlineProvider holds the first model until the call's context ends.
 type deadlineProvider struct{ replayProvider }
 
-func (p *deadlineProvider) Chat(ctx context.Context, id providers.Identity, m []providers.Message, tl []providers.ToolDefinition, model string, o map[string]any) (*providers.LLMResponse, error) {
+func (p *deadlineProvider) Chat(ctx context.Context, id accounting.Identity, m []spawnllm.Message, tl []spawnllm.ToolDefinition, model string, o map[string]any) (*spawnllm.LLMResponse, error) {
 	if model == "gpt-4" {
 		p.mu.Lock()
 		p.called = append(p.called, model)

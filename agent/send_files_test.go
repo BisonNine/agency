@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsmsg "go.bison9.com/agency/tools/msg"
 	"go.bison9.com/agency/utils"
@@ -297,7 +299,7 @@ func TestSendFiles_InLoopTurnChat(t *testing.T) {
 			call.Function.Arguments = `{"files":[{"path":"` + notes + `"}]}`
 			call.Arguments = map[string]any{"files": []any{map[string]any{"path": notes}}}
 			provider := &sequenceProvider{
-				responses: []*providers.LLMResponse{{ToolCalls: []providers.ToolCall{call}}, {Content: "done"}},
+				responses: []*spawnllm.LLMResponse{{ToolCalls: []spawnllm.ToolCall{call}}, {Content: "done"}},
 				errors:    []error{nil, nil},
 			}
 			setTestProvider(l.agent, provider)
@@ -355,9 +357,9 @@ func TestSendFiles_TurnRecordsReplyChat(t *testing.T) {
 // probeProvider calls onChat on each request and answers "done".
 type probeProvider struct{ onChat func() }
 
-func (p *probeProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
+func (p *probeProvider) Chat(context.Context, accounting.Identity, []spawnllm.Message, []spawnllm.ToolDefinition, string, map[string]any) (*spawnllm.LLMResponse, error) {
 	p.onChat()
-	return &providers.LLMResponse{Content: "done"}, nil
+	return &spawnllm.LLMResponse{Content: "done"}, nil
 }
 
 func (p *probeProvider) GetDefaultModel() string { return "test" }

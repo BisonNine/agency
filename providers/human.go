@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // HumanRelay reaches the person a human agent represents: it posts request
@@ -62,7 +65,7 @@ func (p *HumanProvider) Timeout() time.Duration { return p.timeout }
 
 // Chat implements LLMProvider. The identity, tools, the model id and the options are
 // ignored: the person sees only the request.
-func (p *HumanProvider) Chat(ctx context.Context, _ Identity, messages []Message, _ []ToolDefinition, _ string, _ map[string]any) (*LLMResponse, error) {
+func (p *HumanProvider) Chat(ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	relay := humanRelayFrom(ctx)
 	if relay == nil {
 		return nil, fmt.Errorf("model %q: %w", p.label, ErrHumanUnreachable)
@@ -72,16 +75,16 @@ func (p *HumanProvider) Chat(ctx context.Context, _ Identity, messages []Message
 		// The person did not answer in time: an empty reply, not a failure.
 		// The turn's own end (cancel, shutdown, turn budget) stays an error.
 		if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
-			return &LLMResponse{FinishReason: "stop"}, nil
+			return &spawnllm.LLMResponse{FinishReason: "stop"}, nil
 		}
 		return nil, err
 	}
-	return &LLMResponse{Content: answer, FinishReason: "stop"}, nil
+	return &spawnllm.LLMResponse{Content: answer, FinishReason: "stop"}, nil
 }
 
 // latestUserMessage is the content of the last user message, or "" when there
 // is none. The system prompt and the history are never shown to the person.
-func latestUserMessage(messages []Message) string {
+func latestUserMessage(messages []spawnllm.Message) string {
 	for _, m := range slices.Backward(messages) {
 		if m.Role == "user" {
 			return m.Content

@@ -10,8 +10,7 @@ import (
 	"testing"
 
 	"github.com/tenebris-tech/alerter"
-
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // storeWriteFailingContextManager is a ContextManager whose store refuses one
@@ -22,14 +21,14 @@ type storeWriteFailingContextManager struct {
 	failUser, failAssistant error
 }
 
-func (m *storeWriteFailingContextManager) AddUserMessage(ctx context.Context, msg providers.Message) (int64, error) {
+func (m *storeWriteFailingContextManager) AddUserMessage(ctx context.Context, msg spawnllm.Message) (int64, error) {
 	if m.failUser != nil {
 		return 0, m.failUser
 	}
 	return m.capturingContextManager.AddUserMessage(ctx, msg)
 }
 
-func (m *storeWriteFailingContextManager) AddAssistantMessage(ctx context.Context, msg providers.Message) (int64, error) {
+func (m *storeWriteFailingContextManager) AddAssistantMessage(ctx context.Context, msg spawnllm.Message) (int64, error) {
 	if m.failAssistant != nil {
 		return 0, m.failAssistant
 	}

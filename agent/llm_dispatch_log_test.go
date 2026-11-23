@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/common"
 
 	"go.bison9.com/agency/config"
@@ -23,38 +25,38 @@ import (
 
 // modelScriptProvider answers each call by the wire model it is sent.
 type modelScriptProvider struct {
-	answer func(ctx context.Context, model string) (*providers.LLMResponse, error)
+	answer func(ctx context.Context, model string) (*spawnllm.LLMResponse, error)
 }
 
-func (p modelScriptProvider) Chat(ctx context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p modelScriptProvider) Chat(ctx context.Context, _ accounting.Identity, _ []spawnllm.Message, _ []spawnllm.ToolDefinition, model string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	return p.answer(ctx, model)
 }
 
 func (modelScriptProvider) GetDefaultModel() string { return "alice-wire" }
 
 var (
-	candOpus  = providers.FallbackCandidate{Provider: "Anthropic", Model: "opus-wire", Name: "Claude Opus"}
-	candBob   = providers.FallbackCandidate{Provider: "Bob's API", Model: "bob-wire", Name: "Bob Model"}
-	candAlice = providers.FallbackCandidate{Provider: "Alice's API", Model: "alice-wire", Name: "Alice Model"}
+	candOpus  = models.Candidate{Provider: "Anthropic", Model: "opus-wire", Name: "Claude Opus"}
+	candBob   = models.Candidate{Provider: "Bob's API", Model: "bob-wire", Name: "Bob Model"}
+	candAlice = models.Candidate{Provider: "Alice's API", Model: "alice-wire", Name: "Alice Model"}
 )
 
 const rateLimited = "status 429: rate limit exceeded"
 
 // answerOK is a successful answer naming the served model.
-func answerOK(model string) *providers.LLMResponse {
-	return &providers.LLMResponse{
+func answerOK(model string) *spawnllm.LLMResponse {
+	return &spawnllm.LLMResponse{
 		Content: "from " + model,
-		Status:  &providers.DispatchStatus{Success: true, Model: model + "-2026"},
+		Status:  &spawnllm.DispatchStatus{Success: true, Model: model + "-2026"},
 	}
 }
 
 // chainCatalog is a catalogue holding the candidates (each on its provider,
 // p answering for all of them), with the parked ones parked by a rate-limit
 // failure, as a turn's chain would have left them.
-func chainCatalog(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) *models.Catalog {
+func chainCatalog(t *testing.T, p spawnllm.LLMProvider, parked []models.Candidate, candidates ...models.Candidate) *models.Catalog {
 	t.Helper()
 	cfg := &config.Config{}
-	clients := map[string]providers.LLMProvider{}
+	clients := map[string]spawnllm.LLMProvider{}
 	for _, c := range append(slices.Clone(candidates), parked...) {
 		if _, ok := clients[c.Name]; ok {
 			continue
@@ -98,7 +100,7 @@ type chainRun struct {
 }
 
 // chainTurn is the chainRun of candidates answered by p, parked parked.
-func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) *chainRun {
+func chainTurn(t *testing.T, p spawnllm.LLMProvider, parked []models.Candidate, candidates ...models.Candidate) *chainRun {
 	t.Helper()
 	cat := chainCatalog(t, p, parked, candidates...)
 	set := cat.Set("alice")
@@ -128,9 +130,9 @@ func (c *chainRun) run(ctx context.Context) (string, error) {
 func (c *chainRun) dispatch(ctx context.Context) (string, error) {
 	c.t.Helper()
 	var walkErr error
-	walk := hook.Plugin{Name: "walk", OnModelError: func(_ context.Context, _ *hook.ModelInfo, err error) (*providers.LLMResponse, error) {
+	walk := hook.Plugin{Name: "walk", OnModelError: func(_ context.Context, _ *hook.ModelInfo, err error) (*spawnllm.LLMResponse, error) {
 		walkErr = err
-		return &providers.LLMResponse{Content: "walk ended"}, nil
+		return &spawnllm.LLMResponse{Content: "walk ended"}, nil
 	}}
 	noRetry := func(s *loop.Spec) {
 		limits := s.TurnLimits
@@ -184,7 +186,7 @@ func assertSequence(t *testing.T, recs []map[string]any, want ...string) {
 // A candidate that fails gets its own finish line and its WARN at once,
 // before the next candidate's line; the one that answers gets its own.
 func TestCallModel_FailedCandidateLoggedAsItFails(t *testing.T) {
-	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+	p := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 		if model == candOpus.Model {
 			return nil, errors.New(anthropic400)
 		}
@@ -217,7 +219,7 @@ func TestCallModel_FailedCandidateLoggedAsItFails(t *testing.T) {
 		"level":    "warn",
 		"provider": "Anthropic",
 		"model":    "opus-wire",
-		"reason":   string(providers.FailoverFormat),
+		"reason":   string(spawnllm.FailoverFormat),
 	})
 	if e := fmt.Sprint(recs[1]["error"]); !strings.Contains(e, "thinking.type: adaptive is required") {
 		t.Errorf("WARN error = %q, want the provider's message", e)
@@ -237,7 +239,7 @@ func TestCallModel_FailedCandidateLoggedAsItFails(t *testing.T) {
 func TestCallModel_CancelledCallLogsRunningCandidate(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
-	p := modelScriptProvider{answer: func(ctx context.Context, model string) (*providers.LLMResponse, error) {
+	p := modelScriptProvider{answer: func(ctx context.Context, model string) (*spawnllm.LLMResponse, error) {
 		if model == candOpus.Model {
 			return nil, errors.New(rateLimited)
 		}
@@ -268,7 +270,7 @@ func TestCallModel_CancelledCallLogsRunningCandidate(t *testing.T) {
 // the chain fell back from get a WARN, not the last; the turn's failure is
 // logged once.
 func TestCallModel_AllCandidatesFail(t *testing.T) {
-	p := modelScriptProvider{answer: func(context.Context, string) (*providers.LLMResponse, error) {
+	p := modelScriptProvider{answer: func(context.Context, string) (*spawnllm.LLMResponse, error) {
 		return nil, errors.New(rateLimited)
 	}}
 	run := chainTurn(t, p, nil, candOpus, candBob)
@@ -282,7 +284,7 @@ func TestCallModel_AllCandidatesFail(t *testing.T) {
 	recs := callRecords(t, buf)
 	assertSequence(t, recs, msgFinish, msgFailed, msgFinish, msgCallError)
 	assertFields(t, recs[0], map[string]any{"our_model": "Claude Opus", "success": false, "error": rateLimited})
-	assertFields(t, recs[1], map[string]any{"model": "opus-wire", "reason": string(providers.FailoverRateLimit)})
+	assertFields(t, recs[1], map[string]any{"model": "opus-wire", "reason": string(spawnllm.FailoverRateLimit)})
 	assertFields(t, recs[2], map[string]any{"our_model": "Bob Model", "success": false, "error": rateLimited})
 	assertFields(t, recs[3], map[string]any{"level": "error"})
 }
@@ -292,33 +294,33 @@ func TestCallModel_AllCandidatesFail(t *testing.T) {
 func TestCallModel_CooldownSkipLoggedOnceWithoutFinish(t *testing.T) {
 	tests := []struct {
 		name    string
-		parked  []providers.FallbackCandidate
+		parked  []models.Candidate
 		failing map[string]bool
 		wantErr bool
 		want    []string
 	}{
 		{
 			name:   "skip then answer",
-			parked: []providers.FallbackCandidate{candOpus},
+			parked: []models.Candidate{candOpus},
 			want:   []string{msgSkipped, msgFinish, "Fallback: succeeded with Bob's API/bob-wire after 2 attempts"},
 		},
 		{
 			name:    "failure then trailing skip",
-			parked:  []providers.FallbackCandidate{candBob},
+			parked:  []models.Candidate{candBob},
 			failing: map[string]bool{candOpus.Model: true},
 			wantErr: true,
 			want:    []string{msgFinish, msgFailed, msgSkipped, msgCallError},
 		},
 		{
 			name:    "all skipped",
-			parked:  []providers.FallbackCandidate{candOpus, candBob},
+			parked:  []models.Candidate{candOpus, candBob},
 			wantErr: true,
 			want:    []string{msgSkipped, msgSkipped, msgCallError},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+			p := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 				if tt.failing[model] {
 					return nil, errors.New(rateLimited)
 				}
@@ -359,10 +361,10 @@ func TestCallModel_CooldownSkipLoggedOnceWithoutFinish(t *testing.T) {
 
 // A chain of one model that answers writes exactly one line.
 func TestCallModel_DirectPathOneFinish(t *testing.T) {
-	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+	p := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 		return answerOK(model), nil
 	}}
-	run := chainTurn(t, p, nil, providers.FallbackCandidate{Provider: "Alice Co", Model: "alice-wire", Name: "Alice Model"})
+	run := chainTurn(t, p, nil, models.Candidate{Provider: "Alice Co", Model: "alice-wire", Name: "Alice Model"})
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
@@ -394,7 +396,7 @@ func TestRequestModel_ContextWindowRetryOneFinishPerCall(t *testing.T) {
 		addMessage(t, agent.Sessions, sessionKey, "assistant", "old assistant reply")
 	}
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{nil, {Content: "recovered"}},
+		responses: []*spawnllm.LLMResponse{nil, {Content: "recovered"}},
 		errors:    []error{errors.New("context_length_exceeded: request too long"), nil},
 	})
 	opts := processOptions{SessionKey: sessionKey, Channel: "cli", ChatID: "direct", UserMessage: "trigger"}
@@ -403,7 +405,7 @@ func TestRequestModel_ContextWindowRetryOneFinishPerCall(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	if got := runIteration(t, al, agent, []providers.Message{{Role: "user", Content: "trigger"}}, opts, cm).content; got != "recovered" {
+	if got := runIteration(t, al, agent, []spawnllm.Message{{Role: "user", Content: "trigger"}}, opts, cm).content; got != "recovered" {
 		t.Fatalf("content = %q, want the retried answer", got)
 	}
 
@@ -424,13 +426,13 @@ func TestRequestModel_ContextWindowRetryOneFinishPerCall(t *testing.T) {
 // and is answered by Alice's model.
 func failSkipAnswer(t *testing.T) *chainRun {
 	t.Helper()
-	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+	p := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 		if model == candOpus.Model {
 			return nil, errors.New(rateLimited)
 		}
 		return answerOK(model), nil
 	}}
-	return chainTurn(t, p, []providers.FallbackCandidate{candBob}, candOpus, candBob, candAlice)
+	return chainTurn(t, p, []models.Candidate{candBob}, candOpus, candBob, candAlice)
 }
 
 // The turn's own notifier still hears of each candidate passed over: the
@@ -438,8 +440,8 @@ func failSkipAnswer(t *testing.T) *chainRun {
 func TestCallModel_ForwardsToTurnNotifier(t *testing.T) {
 	run := failSkipAnswer(t)
 	type notice struct {
-		passed []providers.FallbackAttempt
-		next   providers.FallbackCandidate
+		passed []models.Attempt
+		next   models.Candidate
 	}
 	var notices []notice
 	run.plugins = append(run.plugins, hook.Plugin{Name: "test", OnFallback: func(_ context.Context, ev hook.Fallback) {
@@ -485,7 +487,7 @@ func TestCallModel_FailSkipAnswerOrder(t *testing.T) {
 // have a finish line, and no candidate-failed WARN is written.
 func TestCallModel_SameModelRetryNoWarn(t *testing.T) {
 	calls := 0
-	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+	p := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 		calls++
 		if calls == 1 {
 			return nil, &common.HTTPStatusError{StatusCode: 429, BodyPreview: "slow down", RetryAfter: time.Millisecond}

@@ -7,9 +7,10 @@ import (
 	"regexp"
 	"strings"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 )
 
 // mediaRefPattern matches media store refs (media://<uuid>) wherever they
@@ -43,7 +44,7 @@ func appendMediaRefMarker(content string, refs []string) string {
 
 // collectMediaRefs scans messages for media:// refs in both Media entries and
 // message text (attachment markers), de-duplicated in first-seen order.
-func collectMediaRefs(messages []providers.Message) []string {
+func collectMediaRefs(messages []spawnllm.Message) []string {
 	seen := make(map[string]struct{})
 	var out []string
 	add := func(ref string) {
@@ -95,7 +96,7 @@ func (al *AgentLoop) pinSessionMediaRefs(sessionKey string, refs []string) {
 // later one rebuilt from the session store with media refs: refs compacted or
 // cleared out of the context are unpinned and age out via the normal TTL
 // sweep.
-func (al *AgentLoop) reconcileSessionPins(sessionKey string, messages []providers.Message) {
+func (al *AgentLoop) reconcileSessionPins(sessionKey string, messages []spawnllm.Message) {
 	p := al.refPinner()
 	if p == nil {
 		return

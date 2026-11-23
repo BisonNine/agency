@@ -8,12 +8,13 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 )
 
@@ -38,7 +39,7 @@ type limitsProvider struct {
 	system string
 }
 
-func (p *limitsProvider) Chat(_ context.Context, _ providers.Identity, msgs []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *limitsProvider) Chat(_ context.Context, _ accounting.Identity, msgs []spawnllm.Message, tools []spawnllm.ToolDefinition, model string, opts map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls = append(p.calls, limitsCall{model: model, maxTokens: opts["max_tokens"], thinking: opts["thinking_level"]})
@@ -51,7 +52,7 @@ func (p *limitsProvider) Chat(_ context.Context, _ providers.Identity, msgs []pr
 	if p.fail[model] {
 		return nil, errors.New(rateLimited)
 	}
-	return &providers.LLMResponse{Content: "from " + model}, nil
+	return &spawnllm.LLMResponse{Content: "from " + model}, nil
 }
 
 func (*limitsProvider) GetDefaultModel() string { return "alice-wire" }
@@ -140,7 +141,7 @@ func TestRequestLimits_FollowModelCalled(t *testing.T) {
 			opts := processOptions{SessionKey: sessionKey, Channel: "cli", ChatID: "direct", UserMessage: "hi"}
 			cm, release := al.getContextManager(agent, sessionKey)
 			defer release()
-			runIteration(t, al, agent, []providers.Message{{Role: "user", Content: "hi"}}, opts, cm)
+			runIteration(t, al, agent, []spawnllm.Message{{Role: "user", Content: "hi"}}, opts, cm)
 
 			if len(p.calls) != len(tt.want) {
 				t.Fatalf("calls = %v, want %v", p.calls, tt.want)

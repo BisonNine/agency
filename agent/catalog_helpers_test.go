@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/providers"
@@ -77,7 +79,7 @@ func withTestModels(cfg *config.Config) []string {
 // routeTestModels registers, for each of names, a client that answers with
 // the Provider of the agent the call is for (agentProviderClient), so a test
 // that sets an agent's Provider drives its model calls.
-func routeTestModels(tb testing.TB, al *AgentLoop, fallback providers.LLMProvider, names []string) {
+func routeTestModels(tb testing.TB, al *AgentLoop, fallback spawnllm.LLMProvider, names []string) {
 	tb.Helper()
 	for _, n := range names {
 		if err := al.catalog.RegisterClient(n, &agentProviderClient{t: tb, al: al, fallback: fallback}); err != nil {
@@ -93,13 +95,13 @@ func routeTestModels(tb testing.TB, al *AgentLoop, fallback providers.LLMProvide
 type agentProviderClient struct {
 	t        testing.TB
 	al       *AgentLoop
-	fallback providers.LLMProvider
+	fallback spawnllm.LLMProvider
 }
 
 // errNoTestAgent answers a call made for no agent of the test's loop.
 var errNoTestAgent = errors.New("test: the call is for no agent of the loop")
 
-func (c *agentProviderClient) target(id providers.Identity) providers.LLMProvider {
+func (c *agentProviderClient) target(id accounting.Identity) spawnllm.LLMProvider {
 	r := c.al.GetRegistry()
 	var match *AgentInstance
 	if r != nil {
@@ -125,7 +127,7 @@ func (c *agentProviderClient) target(id providers.Identity) providers.LLMProvide
 	return c.fallback
 }
 
-func (c *agentProviderClient) Chat(ctx context.Context, id providers.Identity, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+func (c *agentProviderClient) Chat(ctx context.Context, id accounting.Identity, messages []spawnllm.Message, tools []spawnllm.ToolDefinition, model string, opts map[string]any) (*spawnllm.LLMResponse, error) {
 	p := c.target(id)
 	if p == nil {
 		return nil, errNoTestAgent
@@ -137,7 +139,7 @@ func (c *agentProviderClient) GetDefaultModel() string { return "" }
 
 // defaultTarget is the default agent's Provider: what the capability checks,
 // which carry no identity, are answered from.
-func (c *agentProviderClient) defaultTarget() providers.LLMProvider {
+func (c *agentProviderClient) defaultTarget() spawnllm.LLMProvider {
 	if r := c.al.GetRegistry(); r != nil {
 		if inst := r.Default(); inst != nil && testProvider(inst) != nil {
 			return testProvider(inst)
@@ -148,19 +150,19 @@ func (c *agentProviderClient) defaultTarget() providers.LLMProvider {
 
 // SupportsThinking is the default agent provider's.
 func (c *agentProviderClient) SupportsThinking() bool {
-	tc, ok := c.defaultTarget().(providers.ThinkingCapable)
+	tc, ok := c.defaultTarget().(spawnllm.ThinkingCapable)
 	return ok && tc.SupportsThinking()
 }
 
 // IsCLI is the default agent provider's.
 func (c *agentProviderClient) IsCLI() bool {
-	p, ok := c.defaultTarget().(providers.CLIProvider)
+	p, ok := c.defaultTarget().(spawnllm.CLIProvider)
 	return ok && p.IsCLI()
 }
 
 // testCatalog builds the catalogue of cfg as the loop does, with client
 // registered for every model named in clients.
-func testCatalog(cfg *config.Config, clients map[string]providers.LLMProvider) *models.Catalog {
+func testCatalog(cfg *config.Config, clients map[string]spawnllm.LLMProvider) *models.Catalog {
 	c := providers.NewCatalogBuilder(nil, nil).Build(cfg)
 	for name, cl := range clients {
 		if err := c.RegisterClient(name, cl); err != nil {
@@ -188,7 +190,7 @@ func catalogTurn(t *testing.T, cfg *config.Config, inst *AgentInstance) error {
 // parkFor parks model name in cat for d (a 429 with that Retry-After, at
 // most 5 minutes), as a turn's chain would, then gives the model client back
 // (its current one when client is nil).
-func parkFor(t *testing.T, cat *models.Catalog, name string, d time.Duration, client providers.LLMProvider) {
+func parkFor(t *testing.T, cat *models.Catalog, name string, d time.Duration, client spawnllm.LLMProvider) {
 	t.Helper()
 	info, ok := cat.Get(name)
 	if !ok {
@@ -220,7 +222,7 @@ func parkFor(t *testing.T, cat *models.Catalog, name string, d time.Duration, cl
 // routeAllModels points every model of the loop's catalogue at the Provider
 // of the agent each call is for: a loop built without a dispatcher, whose
 // tests drive the agents' Provider.
-func routeAllModels(tb testing.TB, al *AgentLoop, fallback providers.LLMProvider) {
+func routeAllModels(tb testing.TB, al *AgentLoop, fallback spawnllm.LLMProvider) {
 	tb.Helper()
 	routeTestModels(tb, al, fallback, al.catalog.Names())
 }
@@ -229,7 +231,7 @@ func routeAllModels(tb testing.TB, al *AgentLoop, fallback providers.LLMProvider
 // the agents' test providers (mustNewAgentLoop with nil routing): a reload
 // that adopts a new catalogue gets new clients, which are routed again; one
 // that keeps the catalogue keeps its clients.
-func reloadForTest(tb testing.TB, al *AgentLoop, ctx context.Context, provider providers.LLMProvider, cfg *config.Config) error {
+func reloadForTest(tb testing.TB, al *AgentLoop, ctx context.Context, provider spawnllm.LLMProvider, cfg *config.Config) error {
 	tb.Helper()
 	before := al.catalogDigest
 	if err := al.ReloadConfig(ctx, cfg); err != nil {
@@ -254,10 +256,10 @@ func (realClients) realClientsOnly() {}
 
 // testProviders are the clients tests attach to agents: the model calls made
 // for an agent go to its (agentProviderClient).
-var testProviders sync.Map // *AgentInstance → providers.LLMProvider
+var testProviders sync.Map // *AgentInstance → spawnllm.LLMProvider
 
 // setTestProvider makes p answer the model calls made for inst.
-func setTestProvider(inst *AgentInstance, p providers.LLMProvider) {
+func setTestProvider(inst *AgentInstance, p spawnllm.LLMProvider) {
 	if p == nil {
 		testProviders.Delete(inst)
 		return
@@ -266,9 +268,9 @@ func setTestProvider(inst *AgentInstance, p providers.LLMProvider) {
 }
 
 // testProvider is the client attached to inst, or nil.
-func testProvider(inst *AgentInstance) providers.LLMProvider {
+func testProvider(inst *AgentInstance) spawnllm.LLMProvider {
 	if v, ok := testProviders.Load(inst); ok {
-		if p, ok := v.(providers.LLMProvider); ok {
+		if p, ok := v.(spawnllm.LLMProvider); ok {
 			return p
 		}
 	}

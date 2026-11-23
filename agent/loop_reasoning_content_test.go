@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // runReasoningOnlyTurn drives one iteration where the model returns empty content
@@ -21,7 +21,7 @@ func runReasoningOnlyTurn(t *testing.T, showAsContent bool) string {
 		t.Fatal("no default agent")
 	}
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{Content: "", ReasoningContent: "SECRET-THINKING", FinishReason: "stop", Normal: true},
 		},
 		errors: []error{nil},
@@ -37,7 +37,7 @@ func runReasoningOnlyTurn(t *testing.T, showAsContent bool) string {
 	cm, release := al.getContextManager(agentInstance, opts.SessionKey)
 	defer release()
 
-	return runIteration(t, al, agentInstance, []providers.Message{{Role: "user", Content: "go"}}, opts, cm).content
+	return runIteration(t, al, agentInstance, []spawnllm.Message{{Role: "user", Content: "go"}}, opts, cm).content
 }
 
 // Default (flag off): reasoning_content must never reach the user-facing reply.

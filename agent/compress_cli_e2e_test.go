@@ -14,9 +14,9 @@ import (
 
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // TestCompress_E2E_ClaudeCLIReceivesFortification locks in the full compression
@@ -82,7 +82,7 @@ EOFMOCK
 		t.Fatalf("read mock CLI stdin: %v", err)
 	}
 	got := string(raw)
-	if !strings.Contains(got, providers.JSONObjectFortification) {
+	if !strings.Contains(got, spawnllm.JSONObjectFortification) {
 		t.Fatalf("claude-cli stdin missing JSONObjectFortification; got:\n%s", got)
 	}
 	if !strings.Contains(got, "msg 0 payload") {

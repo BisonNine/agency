@@ -10,19 +10,21 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/dump"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 )
 
 // refusingProvider is a model that refuses every request.
 type refusingProvider struct{}
 
-func (refusingProvider) Chat(context.Context, providers.Identity, []providers.Message, []providers.ToolDefinition, string, map[string]any) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{Content: "I can't help with that.", FinishReason: "refusal"}, nil
+func (refusingProvider) Chat(context.Context, accounting.Identity, []spawnllm.Message, []spawnllm.ToolDefinition, string, map[string]any) (*spawnllm.LLMResponse, error) {
+	return &spawnllm.LLMResponse{Content: "I can't help with that.", FinishReason: "refusal"}, nil
 }
 
 func (refusingProvider) GetDefaultModel() string { return "test-model" }

@@ -7,8 +7,9 @@ import (
 	"errors"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // reasoningPlaceholder is what the SDK engine writes into an empty
@@ -30,19 +31,19 @@ var (
 // mixedHistory is what a session looks like after switching models: some
 // assistant turns carry real reasoning, some (written by a CLI model, or by the
 // same model with thinking off) carry none.
-func mixedHistory() []providers.Message {
-	return []providers.Message{
+func mixedHistory() []spawnllm.Message {
+	return []spawnllm.Message{
 		{Role: "user", Content: "write chapter 3"},
 		{Role: "assistant", Content: "drafting", ReasoningContent: "real reasoning"},
 		{Role: "user", Content: "go on"},
-		{Role: "assistant", Content: "calling a tool", ToolCalls: []providers.ToolCall{toolCallTo("t1", "echo_tool")}},
+		{Role: "assistant", Content: "calling a tool", ToolCalls: []spawnllm.ToolCall{toolCallTo("t1", "echo_tool")}},
 		{Role: "tool", ToolCallID: "t1", Content: "result"},
 		{Role: "assistant", Content: "written by a CLI model, no reasoning"},
 	}
 }
 
 // reasoningOf is the reasoning_content of the message of msgs with content.
-func reasoningOf(t *testing.T, msgs []providers.Message, content string) string {
+func reasoningOf(t *testing.T, msgs []spawnllm.Message, content string) string {
 	t.Helper()
 	return messageWith(t, msgs, content).ReasoningContent
 }
@@ -127,7 +128,7 @@ func TestBackfill_DoesNotMutateInput(t *testing.T) {
 // TestBackfill_NothingToFill: once a thinking model has been running, every
 // assistant turn already has reasoning and the request carries it as stored.
 func TestBackfill_NothingToFill(t *testing.T) {
-	history := []providers.Message{
+	history := []spawnllm.Message{
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", Content: "there", ReasoningContent: "thought"},
 	}

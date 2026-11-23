@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 func sessionsTestDir(t *testing.T, configPath string) string {
@@ -33,7 +33,7 @@ func sessionsTestDir(t *testing.T, configPath string) string {
 // seedSession writes messages and a summary for sessionKey through the real
 // store, then closes it so the handlers read a quiescent DB the way they do
 // in production (the gateway holds its own handle; the WebUI opens read-only).
-func seedSession(t *testing.T, dir, sessionKey, summary string, msgs ...providers.Message) {
+func seedSession(t *testing.T, dir, sessionKey, summary string, msgs ...spawnllm.Message) {
 	t.Helper()
 
 	store, err := session.NewSQLiteStore(dir)

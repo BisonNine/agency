@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // toolActivitySummary renders a compact, privacy-safe one-line breadcrumb for a
@@ -154,7 +154,7 @@ func code(s string) string {
 
 // toolCallBreadcrumb extracts the (name, args) from a stored ToolCall and renders
 // its activity summary. Returns "" when there is nothing to show.
-func toolCallBreadcrumb(tc providers.ToolCall) string {
+func toolCallBreadcrumb(tc spawnllm.ToolCall) string {
 	name := tc.Name
 	if name == "" && tc.Function != nil {
 		name = tc.Function.Name

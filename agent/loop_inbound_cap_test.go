@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/loop"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/providers"
 )
 
 // An async sub-agent result arrives later as a "system" message and is spliced
@@ -27,7 +27,7 @@ func TestProcessSystemMessage_CapsAsyncResult(t *testing.T) {
 	agent.ContextWindow = 8000 // cap floors at 16 KiB
 	agent.modelLimits = nil    // the agent's own window, whatever model serves
 	sp := &sequenceProvider{
-		responses: []*providers.LLMResponse{{Content: "noted", FinishReason: "stop"}},
+		responses: []*spawnllm.LLMResponse{{Content: "noted", FinishReason: "stop"}},
 		errors:    []error{nil},
 	}
 	setTestProvider(agent, sp)

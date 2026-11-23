@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // discoveryOnRegistry is a registry as an agent with discovery on builds it:
@@ -34,7 +34,7 @@ func discoveryOnRegistry() (*ToolRegistry, metaTool, metaTool) {
 	return r, search, details
 }
 
-func defNames(defs []providers.ToolDefinition) []string {
+func defNames(defs []spawnllm.ToolDefinition) []string {
 	names := make([]string, 0, len(defs))
 	for _, d := range defs {
 		names = append(names, d.Function.Name)
@@ -109,14 +109,14 @@ func TestToolDefs_DiscoveryOff_NoFlags(t *testing.T) {
 	})
 	r.Register(newMockTool("file_read", "Read a file"))
 
-	want := []providers.ToolDefinition{
-		{Type: "function", Function: providers.ToolFunctionDefinition{
+	want := []spawnllm.ToolDefinition{
+		{Type: "function", Function: spawnllm.ToolFunctionDefinition{
 			Name: "file_read", Description: "Read a file", Parameters: newMockTool("", "").Parameters(),
 		}},
-		{Type: "function", Function: providers.ToolFunctionDefinition{
+		{Type: "function", Function: spawnllm.ToolFunctionDefinition{
 			Name: "x_weather", Description: "Weather forecast for a city", Parameters: newMockTool("", "").Parameters(),
 		}},
-		{Type: "function", Function: providers.ToolFunctionDefinition{
+		{Type: "function", Function: spawnllm.ToolFunctionDefinition{
 			Name: "time_now", Description: "Current time", Parameters: newMockTool("", "").Parameters(),
 		}},
 	}

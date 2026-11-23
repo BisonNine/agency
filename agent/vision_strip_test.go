@@ -7,15 +7,17 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // modelRequest is one request a model was sent.
 type modelRequest struct {
 	model    string
-	messages []providers.Message
+	messages []spawnllm.Message
 	tools    int
 }
 
@@ -27,14 +29,14 @@ type requestRecorder struct {
 	fail     map[string]error
 }
 
-func (p *requestRecorder) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, tools []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *requestRecorder) Chat(_ context.Context, _ accounting.Identity, messages []spawnllm.Message, tools []spawnllm.ToolDefinition, model string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.requests = append(p.requests, modelRequest{model: model, messages: slices.Clone(messages), tools: len(tools)})
 	if err := p.fail[model]; err != nil {
 		return nil, err
 	}
-	return &providers.LLMResponse{Content: "ok", FinishReason: "stop", Normal: true}, nil
+	return &spawnllm.LLMResponse{Content: "ok", FinishReason: "stop", Normal: true}, nil
 }
 
 func (*requestRecorder) GetDefaultModel() string { return "test-model" }
@@ -46,7 +48,7 @@ func (*requestRecorder) GetDefaultModel() string { return "test-model" }
 // with an error.
 // It returns the requests the models were sent and the stored history after
 // the turn.
-func storedHistoryTurn(t *testing.T, extra []config.Provider, mcs []config.ModelConfig, history []providers.Message, fail map[string]error) ([]modelRequest, []providers.Message) {
+func storedHistoryTurn(t *testing.T, extra []config.Provider, mcs []config.ModelConfig, history []spawnllm.Message, fail map[string]error) ([]modelRequest, []spawnllm.Message) {
 	t.Helper()
 	cfg := newTestConfig(t)
 	cfg.Providers = append(cfg.Providers, extra...)
@@ -97,17 +99,17 @@ func storedHistoryTurn(t *testing.T, extra []config.Provider, mcs []config.Model
 const imageToolResult = "[Image: image/png]"
 
 // historyWithImage is a session whose tool result carries an image.
-func historyWithImage() []providers.Message {
-	return []providers.Message{
+func historyWithImage() []spawnllm.Message {
+	return []spawnllm.Message{
 		{Role: "user", Content: "check tracking"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{toolCallTo("t1", "echo_tool")}},
+		{Role: "assistant", ToolCalls: []spawnllm.ToolCall{toolCallTo("t1", "echo_tool")}},
 		{Role: "tool", ToolCallID: "t1", Content: imageToolResult, Media: []string{"data:image/png;base64,AAA"}},
 		{Role: "assistant", Content: "here it is"},
 	}
 }
 
 // messageWith is the message of msgs whose content starts with prefix.
-func messageWith(t *testing.T, msgs []providers.Message, prefix string) providers.Message {
+func messageWith(t *testing.T, msgs []spawnllm.Message, prefix string) spawnllm.Message {
 	t.Helper()
 	for _, m := range msgs {
 		if strings.HasPrefix(m.Content, prefix) {
@@ -115,7 +117,7 @@ func messageWith(t *testing.T, msgs []providers.Message, prefix string) provider
 		}
 	}
 	t.Fatalf("no message starts with %q in %+v", prefix, msgs)
-	return providers.Message{}
+	return spawnllm.Message{}
 }
 
 // A vision-capable model must receive the image untouched.
@@ -153,7 +155,7 @@ func TestMessagesForModel_NonVisionStripsImagesWithoutMutating(t *testing.T) {
 // When there are no images, a non-vision model's request carries the
 // history unchanged.
 func TestMessagesForModel_NoImagesLeavesRequestUnchanged(t *testing.T) {
-	history := []providers.Message{
+	history := []spawnllm.Message{
 		{Role: "user", Content: "no images here"},
 		{Role: "assistant", Content: "noted"},
 	}

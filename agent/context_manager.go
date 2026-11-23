@@ -22,13 +22,13 @@ import (
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/dump"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // compressModelCaller is the host's hook.Caller for compaction: an adapter over
@@ -96,7 +96,7 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 	if c.noSessionKey {
 		sessionKey = ""
 	}
-	finish := models.WithFinish(func(cand models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+	finish := models.WithFinish(func(cand models.Candidate, elapsed time.Duration, resp *spawnllm.LLMResponse, err error) {
 		emitLLMFinishEvent(llmFinish{
 			caller:         c.caller,
 			kind:           llmKindCompression,

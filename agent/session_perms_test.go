@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	cogmemstore "go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/cogmemhost"
-	"go.bison9.com/agency/providers"
 )
 
 // A session's archive database and its -wal/-shm side files are 0600 from
@@ -29,7 +29,7 @@ func TestSessionArchive_PrivateFromCreation(t *testing.T) {
 	const sessionKey = "agent:main:main"
 	cm, release := al.getContextManager(agent, sessionKey)
 	defer release()
-	if _, err := cm.AddUserMessage(context.Background(), providers.Message{Role: "user", Content: "hello"}); err != nil {
+	if _, err := cm.AddUserMessage(context.Background(), spawnllm.Message{Role: "user", Content: "hello"}); err != nil {
 		t.Fatalf("AddUserMessage: %v", err)
 	}
 

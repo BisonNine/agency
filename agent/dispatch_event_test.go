@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // readLogRecords decodes one JSON object per line out of buf.
@@ -80,8 +81,8 @@ func TestEmitLLMFinishEvent_SuccessPath_UsesProviderStatus(t *testing.T) {
 	restore := logger.RedirectForTest(buf)
 	defer restore()
 
-	resp := &providers.LLMResponse{
-		Status: &providers.DispatchStatus{
+	resp := &spawnllm.LLMResponse{
+		Status: &spawnllm.DispatchStatus{
 			Success:             true,
 			Model:               "claude-haiku-4-5-20251001",
 			NumTurns:            1,
@@ -169,8 +170,8 @@ func TestEmitLLMFinishEvent_ErrorPathWithoutStatus_SynthesizesFallback(t *testin
 }
 
 func TestEmitLLMFinishEvent_ErrorPathWithPartialStatus_BytesPreserved(t *testing.T) {
-	resp := &providers.LLMResponse{
-		Status: &providers.DispatchStatus{
+	resp := &spawnllm.LLMResponse{
+		Status: &spawnllm.DispatchStatus{
 			Success:    false,
 			Model:      "claude-sonnet-4-5",
 			StopReason: "error",
@@ -196,12 +197,12 @@ func TestEmitLLMFinishEvent_ErrorPathWithPartialStatus_BytesPreserved(t *testing
 func TestLLMFinishFields_Cost(t *testing.T) {
 	tests := []struct {
 		name   string
-		status *providers.DispatchStatus
+		status *spawnllm.DispatchStatus
 		want   any
 	}{
-		{name: "reported", status: &providers.DispatchStatus{Success: true, CostUSD: new(0.0123)}, want: 0.0123},
-		{name: "reported zero", status: &providers.DispatchStatus{Success: true, CostUSD: new(0.0)}, want: 0.0},
-		{name: "not reported", status: &providers.DispatchStatus{Success: true}, want: costUnknown},
+		{name: "reported", status: &spawnllm.DispatchStatus{Success: true, CostUSD: new(0.0123)}, want: 0.0123},
+		{name: "reported zero", status: &spawnllm.DispatchStatus{Success: true, CostUSD: new(0.0)}, want: 0.0},
+		{name: "not reported", status: &spawnllm.DispatchStatus{Success: true}, want: costUnknown},
 		{name: "no status", status: nil, want: costUnknown},
 	}
 	for _, tt := range tests {
@@ -209,7 +210,7 @@ func TestLLMFinishFields_Cost(t *testing.T) {
 			got := llmFinish{
 				caller: llmCaller{agentID: "alice", label: "alice"},
 				kind:   llmKindAgent,
-				resp:   &providers.LLMResponse{Status: tt.status},
+				resp:   &spawnllm.LLMResponse{Status: tt.status},
 			}.fields()
 			if got["cost"] != tt.want {
 				t.Errorf("cost = %v, want %v", got["cost"], tt.want)
@@ -226,7 +227,7 @@ func TestLLMTurnEmitFinish_MainAgent(t *testing.T) {
 	defer restore()
 
 	opts := processOptions{SessionKey: "agent:alice:main", Channel: "telegram", ChatID: "42"}
-	resp := &providers.LLMResponse{Status: &providers.DispatchStatus{Success: true, Model: "claude-sonnet-4-5", InputTokens: 7}}
+	resp := &spawnllm.LLMResponse{Status: &spawnllm.DispatchStatus{Success: true, Model: "claude-sonnet-4-5", InputTokens: 7}}
 	(&AgentLoop{}).emitFinish(withTurnID(context.Background(), "abcd1234"), &AgentInstance{ID: "alice"}, opts, hook.ModelCall{
 		Iteration: 2, Model: hook.ModelRef{Provider: "Claude CLI", Name: "Sonnet", Model: "Sonnet"},
 		Elapsed: 10 * time.Millisecond, Response: resp,
@@ -282,13 +283,13 @@ func TestLLMTurnEmitFinish_Subagent(t *testing.T) {
 // answers the backup's.
 type failoverProvider struct{}
 
-func (failoverProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
+func (failoverProvider) Chat(_ context.Context, _ accounting.Identity, _ []spawnllm.Message, _ []spawnllm.ToolDefinition, model string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	if model == "primary-wire" {
 		return nil, errors.New("status 429: rate limit exceeded")
 	}
-	return &providers.LLMResponse{
+	return &spawnllm.LLMResponse{
 		Content: "from backup",
-		Status:  &providers.DispatchStatus{Success: true, Model: "backup-wire-2026"},
+		Status:  &spawnllm.DispatchStatus{Success: true, Model: "backup-wire-2026"},
 	}, nil
 }
 
@@ -298,8 +299,8 @@ func (failoverProvider) GetDefaultModel() string { return "primary-wire" }
 // candidate that answered: its provider and its model_name, not the primary's.
 func TestRequestModel_FailoverNamesAnsweringModel(t *testing.T) {
 	run := chainTurn(t, failoverProvider{}, nil,
-		providers.FallbackCandidate{Provider: "Primary Co", Model: "primary-wire", Name: "Primary"},
-		providers.FallbackCandidate{Provider: "Backup Co", Model: "backup-wire", Name: "Backup"},
+		models.Candidate{Provider: "Primary Co", Model: "primary-wire", Name: "Primary"},
+		models.Candidate{Provider: "Backup Co", Model: "backup-wire", Name: "Backup"},
 	)
 
 	buf := &bytes.Buffer{}
@@ -343,9 +344,9 @@ func TestRunLLMIteration_EmitsDispatchAndFinishPerCall(t *testing.T) {
 		t.Fatal("no default agent")
 	}
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{{
+		responses: []*spawnllm.LLMResponse{{
 			Content: "hi from Alice",
-			Status: &providers.DispatchStatus{
+			Status: &spawnllm.DispatchStatus{
 				Success:       true,
 				Model:         "gpt-4o-2024-11-20",
 				InputTokens:   3,
@@ -358,7 +359,7 @@ func TestRunLLMIteration_EmitsDispatchAndFinishPerCall(t *testing.T) {
 		errors: []error{nil},
 	})
 
-	messages := []providers.Message{{Role: "user", Content: "hi"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "hi"}}
 	opts := processOptions{
 		SessionKey:   "dispatch-events",
 		Channel:      "cli",
@@ -492,7 +493,7 @@ func TestVisionClient_EmitsFinish(t *testing.T) {
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
 	defer restore()
-	if _, err := client.Complete(context.Background(), []providers.Message{{Role: "user", Content: "describe"}}); err != nil {
+	if _, err := client.Complete(context.Background(), []spawnllm.Message{{Role: "user", Content: "describe"}}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 
@@ -568,14 +569,14 @@ func TestMemoryModelCaller_FinishHasNoSessionKey(t *testing.T) {
 // prompt_tokens is the whole prompt: the provider's usage count when it gave
 // one, otherwise the uncached input plus the cache reads and writes.
 func TestLLMFinishFields_PromptTokens(t *testing.T) {
-	status := &providers.DispatchStatus{Success: true, InputTokens: 10, CacheReadTokens: 200, CacheCreationTokens: 30}
+	status := &spawnllm.DispatchStatus{Success: true, InputTokens: 10, CacheReadTokens: 200, CacheCreationTokens: 30}
 	tests := []struct {
 		name string
-		resp *providers.LLMResponse
+		resp *spawnllm.LLMResponse
 		want int
 	}{
-		{name: "from usage", resp: &providers.LLMResponse{Status: status, Usage: &providers.UsageInfo{PromptTokens: 240}}, want: 240},
-		{name: "summed from status", resp: &providers.LLMResponse{Status: status}, want: 240},
+		{name: "from usage", resp: &spawnllm.LLMResponse{Status: status, Usage: &spawnllm.UsageInfo{PromptTokens: 240}}, want: 240},
+		{name: "summed from status", resp: &spawnllm.LLMResponse{Status: status}, want: 240},
 		{name: "no status", resp: nil, want: 0},
 	}
 	for _, tt := range tests {

@@ -14,9 +14,9 @@ import (
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/ctxengine/memory"
 	"go.bison9.com/agent/ctxengine/session"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/cronmsg"
-	"go.bison9.com/agency/providers"
 )
 
 // TestCronFire_SurvivesAgeCompactionOnArrival reproduces the production loss of
@@ -107,7 +107,7 @@ func TestCronFire_SurvivesAgeCompactionOnArrival(t *testing.T) {
 	}
 
 	newFire := cronmsg.Build(jobFP, now, jobMessage) // 546
-	if _, err := cm.AddUserMessage(ctx, providers.Message{Role: "user", Content: newFire}); err != nil {
+	if _, err := cm.AddUserMessage(ctx, spawnllm.Message{Role: "user", Content: newFire}); err != nil {
 		t.Fatalf("AddUserMessage: %v", err)
 	}
 	// The age trigger alone does not make the turn wait: the add only marks

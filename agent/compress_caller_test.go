@@ -13,6 +13,7 @@ import (
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/openai_compat"
 
 	"go.bison9.com/agency/config"
@@ -33,14 +34,14 @@ type scriptedCall struct {
 	opts  map[string]any
 }
 
-func (p *scriptedProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error) {
+func (p *scriptedProvider) Chat(_ context.Context, _ accounting.Identity, _ []spawnllm.Message, _ []spawnllm.ToolDefinition, model string, opts map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	p.calls = append(p.calls, scriptedCall{model: model, opts: opts})
 	p.mu.Unlock()
 	if p.err != nil {
 		return nil, p.err
 	}
-	return &providers.LLMResponse{Content: p.content, FinishReason: "stop"}, nil
+	return &spawnllm.LLMResponse{Content: p.content, FinishReason: "stop"}, nil
 }
 
 func (p *scriptedProvider) GetDefaultModel() string { return "scripted" }
@@ -53,7 +54,7 @@ func (p *scriptedProvider) callCount() int {
 
 // compressCatalog is a catalogue with one model per client, each on its own
 // provider and named as its wire id, answered by that client.
-func compressCatalog(clients map[string]providers.LLMProvider) *models.Catalog {
+func compressCatalog(clients map[string]spawnllm.LLMProvider) *models.Catalog {
 	cfg := &config.Config{}
 	for name := range clients {
 		cfg.Providers = append(cfg.Providers, config.Provider{Name: "p-" + name, Protocol: "openai-chat", BaseURL: "http://127.0.0.1:0/v1", APIKey: "k"})
@@ -81,7 +82,7 @@ func compressCaller(cat *models.Catalog, names ...string) *compressModelCaller {
 func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 	first := &scriptedProvider{content: "from-first"}
 	second := &scriptedProvider{content: "from-second"}
-	cat := compressCatalog(map[string]providers.LLMProvider{"model-a": first, "model-b": second})
+	cat := compressCatalog(map[string]spawnllm.LLMProvider{"model-a": first, "model-b": second})
 	c := compressCaller(cat, "model-a", "model-b")
 
 	reply, err := c.Complete(context.Background(), hook.CompleteRequest{System: "s", User: "u", JSONObject: true})
@@ -110,7 +111,7 @@ func TestCompressModelCaller_WalksChainAndSkipsExcluded(t *testing.T) {
 func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 	broken := &scriptedProvider{err: errors.New("boom")}
 	good := &scriptedProvider{content: "ok"}
-	cat := compressCatalog(map[string]providers.LLMProvider{"model-a": broken, "model-b": good})
+	cat := compressCatalog(map[string]spawnllm.LLMProvider{"model-a": broken, "model-b": good})
 	c := compressCaller(cat, "model-a", "model-b")
 	reply, err := c.Complete(context.Background(), hook.CompleteRequest{})
 	if err != nil || reply.Model != "model-b" {
@@ -128,7 +129,7 @@ func TestCompressModelCaller_ErrorMovesOnAndNamesLastModel(t *testing.T) {
 // becomes the provider's response-format option, and its absence sends none.
 func TestCompressModelCaller_JSONObjectForwarded(t *testing.T) {
 	p := &scriptedProvider{content: "{}"}
-	cat := compressCatalog(map[string]providers.LLMProvider{"m": p})
+	cat := compressCatalog(map[string]spawnllm.LLMProvider{"m": p})
 	c := compressCaller(cat, "m")
 	if _, err := c.Complete(context.Background(), hook.CompleteRequest{JSONObject: true}); err != nil {
 		t.Fatal(err)
@@ -165,7 +166,7 @@ func parkModel(t *testing.T, cat *models.Catalog, model string) {
 // compaction path — not retried — and the error says so.
 func TestCompressModelCaller_SharedCooldownSkipsModel(t *testing.T) {
 	p := &scriptedProvider{content: "{}"}
-	cat := compressCatalog(map[string]providers.LLMProvider{"abliterated-model": p})
+	cat := compressCatalog(map[string]spawnllm.LLMProvider{"abliterated-model": p})
 	parkModel(t, cat, "abliterated-model")
 	if err := cat.RegisterClient("abliterated-model", p); err != nil {
 		t.Fatal(err)
@@ -186,7 +187,7 @@ func TestCompressModelCaller_SharedCooldownSkipsModel(t *testing.T) {
 // the next call — so an out-of-credits summarizer is not hammered.
 func TestCompressModelCaller_BillingFailurePutsModelInCooldown(t *testing.T) {
 	p := &scriptedProvider{err: errors.New("API request failed:   Status: 402   Body: {\"error\":{\"billing_url\":\"x\"}}")}
-	cat := compressCatalog(map[string]providers.LLMProvider{"abliterated-model": p})
+	cat := compressCatalog(map[string]spawnllm.LLMProvider{"abliterated-model": p})
 	c := compressCaller(cat, "abliterated-model")
 
 	reply, err := c.Complete(context.Background(), hook.CompleteRequest{})

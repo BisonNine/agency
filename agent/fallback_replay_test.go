@@ -13,10 +13,12 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // replayProvider answers each wire model from a script (an error text, or
@@ -32,7 +34,7 @@ type replayProvider struct {
 	toolCallFirst bool
 }
 
-func (p *replayProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *replayProvider) Chat(_ context.Context, _ accounting.Identity, _ []spawnllm.Message, _ []spawnllm.ToolDefinition, model string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	p.called = append(p.called, model)
 	msg := p.errs[model]
@@ -48,12 +50,12 @@ func (p *replayProvider) Chat(_ context.Context, _ providers.Identity, _ []provi
 	first := p.toolCallFirst && len(p.called) == 1
 	p.mu.Unlock()
 	if first {
-		return &providers.LLMResponse{FinishReason: "tool_calls", ToolCalls: []providers.ToolCall{{
+		return &spawnllm.LLMResponse{FinishReason: "tool_calls", ToolCalls: []spawnllm.ToolCall{{
 			ID: "c1", Type: "function", Name: "no_such_tool",
-			Function: &providers.FunctionCall{Name: "no_such_tool", Arguments: "{}"},
+			Function: &spawnllm.FunctionCall{Name: "no_such_tool", Arguments: "{}"},
 		}}}, nil
 	}
-	return &providers.LLMResponse{Content: "from " + model, FinishReason: "stop"}, nil
+	return &spawnllm.LLMResponse{Content: "from " + model, FinishReason: "stop"}, nil
 }
 
 func (p *replayProvider) GetDefaultModel() string { return "" }
@@ -66,7 +68,7 @@ func (p *replayProvider) calls() []string {
 
 // attemptSeq renders attempts as today's fallback tests read them: the wire
 // model and whether it was skipped (cooldown) or failed, with its reason.
-func attemptSeq(attempts []providers.FallbackAttempt) []string {
+func attemptSeq(attempts []models.Attempt) []string {
 	out := make([]string, 0, len(attempts))
 	for _, a := range attempts {
 		if a.Skipped {
@@ -79,9 +81,9 @@ func attemptSeq(attempts []providers.FallbackAttempt) []string {
 }
 
 var (
-	replayGPT    = providers.FallbackCandidate{Provider: "openai", Model: "gpt-4", Name: "GPT"}
-	replayClaude = providers.FallbackCandidate{Provider: "anthropic", Model: "claude", Name: "Claude"}
-	replayLlama  = providers.FallbackCandidate{Provider: "groq", Model: "llama", Name: "Llama"}
+	replayGPT    = models.Candidate{Provider: "openai", Model: "gpt-4", Name: "GPT"}
+	replayClaude = models.Candidate{Provider: "anthropic", Model: "claude", Name: "Claude"}
+	replayLlama  = models.Candidate{Provider: "groq", Model: "llama", Name: "Llama"}
 )
 
 // TestFallbackReplay replays today's fallback cases through the host's
@@ -91,8 +93,8 @@ var (
 func TestFallbackReplay(t *testing.T) {
 	tests := []struct {
 		name       string
-		chain      []providers.FallbackCandidate
-		parked     []providers.FallbackCandidate
+		chain      []models.Candidate
+		parked     []models.Candidate
 		errs       map[string]string
 		answer     string   // wire model that answers; "" when the call fails
 		attempts   []string // passed over (answered) or tried (exhausted)
@@ -104,7 +106,7 @@ func TestFallbackReplay(t *testing.T) {
 	}{
 		{
 			name:     "second candidate answers",
-			chain:    []providers.FallbackCandidate{replayGPT, replayClaude},
+			chain:    []models.Candidate{replayGPT, replayClaude},
 			errs:     map[string]string{"gpt-4": "rate limit exceeded"},
 			answer:   "claude",
 			attempts: []string{"gpt-4:rate_limit"},
@@ -113,7 +115,7 @@ func TestFallbackReplay(t *testing.T) {
 		},
 		{
 			name:      "all fail",
-			chain:     []providers.FallbackCandidate{replayGPT, replayClaude, replayLlama},
+			chain:     []models.Candidate{replayGPT, replayClaude, replayLlama},
 			errs:      map[string]string{"gpt-4": "rate limit exceeded", "claude": "rate limit exceeded", "llama": "rate limit exceeded"},
 			attempts:  []string{"gpt-4:rate_limit", "claude:rate_limit", "llama:rate_limit"},
 			notices:   [][]string{{"gpt-4:rate_limit"}, {"claude:rate_limit"}},
@@ -122,7 +124,7 @@ func TestFallbackReplay(t *testing.T) {
 		},
 		{
 			name:     "format error falls back",
-			chain:    []providers.FallbackCandidate{replayGPT, replayClaude},
+			chain:    []models.Candidate{replayGPT, replayClaude},
 			errs:     map[string]string{"gpt-4": "string should match pattern"},
 			answer:   "claude",
 			attempts: []string{"gpt-4:format"},
@@ -131,8 +133,8 @@ func TestFallbackReplay(t *testing.T) {
 		},
 		{
 			name:     "cooldown skip",
-			chain:    []providers.FallbackCandidate{replayGPT, replayClaude},
-			parked:   []providers.FallbackCandidate{replayGPT},
+			chain:    []models.Candidate{replayGPT, replayClaude},
+			parked:   []models.Candidate{replayGPT},
 			answer:   "claude",
 			attempts: []string{"gpt-4:skipped"},
 			notices:  [][]string{{"gpt-4:skipped"}},
@@ -140,8 +142,8 @@ func TestFallbackReplay(t *testing.T) {
 		},
 		{
 			name:     "consecutive skips coalesce into one notice",
-			chain:    []providers.FallbackCandidate{replayGPT, replayClaude, replayLlama},
-			parked:   []providers.FallbackCandidate{replayGPT, replayClaude},
+			chain:    []models.Candidate{replayGPT, replayClaude, replayLlama},
+			parked:   []models.Candidate{replayGPT, replayClaude},
 			answer:   "llama",
 			attempts: []string{"gpt-4:skipped", "claude:skipped"},
 			notices:  [][]string{{"gpt-4:skipped", "claude:skipped"}},
@@ -149,14 +151,14 @@ func TestFallbackReplay(t *testing.T) {
 		},
 		{
 			name:      "all in cooldown",
-			chain:     []providers.FallbackCandidate{replayGPT, replayClaude},
-			parked:    []providers.FallbackCandidate{replayGPT, replayClaude},
+			chain:     []models.Candidate{replayGPT, replayClaude},
+			parked:    []models.Candidate{replayGPT, replayClaude},
 			attempts:  []string{"gpt-4:skipped", "claude:skipped"},
 			exhausted: true,
 		},
 		{
 			name:       "context limit everywhere",
-			chain:      []providers.FallbackCandidate{replayGPT, replayClaude},
+			chain:      []models.Candidate{replayGPT, replayClaude},
 			errs:       map[string]string{"gpt-4": "status 413: request too large for context window", "claude": "status 413: request too large for context window"},
 			attempts:   []string{"gpt-4:context_limit", "claude:context_limit"},
 			notices:    [][]string{{"gpt-4:context_limit"}},
@@ -166,7 +168,7 @@ func TestFallbackReplay(t *testing.T) {
 		},
 		{
 			name:     "unclassified error ends the chain",
-			chain:    []providers.FallbackCandidate{replayGPT, replayClaude},
+			chain:    []models.Candidate{replayGPT, replayClaude},
 			errs:     map[string]string{"gpt-4": "something odd happened"},
 			calls:    []string{"gpt-4"},
 			otherErr: "fallback: unclassified error from openai/gpt-4: something odd happened",
@@ -189,7 +191,7 @@ func TestFallbackReplay(t *testing.T) {
 					t.Fatalf("callModel = %+v, %v; want %s's answer", resp, err, tt.answer)
 				}
 			case tt.exhausted:
-				ex, ok := errors.AsType[*providers.FallbackExhaustedError](err)
+				ex, ok := errors.AsType[*models.ExhaustedError](err)
 				if !ok {
 					t.Fatalf("err = %v, want an exhausted chain", err)
 				}
@@ -261,7 +263,7 @@ func TestFallbackReplay_StickyTurn(t *testing.T) {
 	}
 }
 
-func candidateNamesOf(cands []providers.FallbackCandidate) []string {
+func candidateNamesOf(cands []models.Candidate) []string {
 	out := make([]string, 0, len(cands))
 	for _, c := range cands {
 		out = append(out, c.Name)

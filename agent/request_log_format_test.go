@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
@@ -33,7 +34,7 @@ func (logTool) Execute(context.Context, map[string]any) *tools.ToolResult {
 // fullRequestLine runs a whole turn of the default agent whose first request
 // is messages, offering it exactly the given tools (none when empty), and
 // returns its "Full LLM request" log line.
-func fullRequestLine(t *testing.T, messages []providers.Message, offered ...logTool) map[string]any {
+func fullRequestLine(t *testing.T, messages []spawnllm.Message, offered ...logTool) map[string]any {
 	t.Helper()
 	logger.SetLogMessageContent(true)
 	t.Cleanup(func() { logger.SetLogMessageContent(false) })
@@ -51,7 +52,7 @@ func fullRequestLine(t *testing.T, messages []providers.Message, offered ...logT
 	for _, tool := range offered {
 		agent.Tools.Register(tool)
 	}
-	setTestProvider(agent, &sequenceProvider{responses: []*providers.LLMResponse{{Content: "ok"}}, errors: []error{nil}})
+	setTestProvider(agent, &sequenceProvider{responses: []*spawnllm.LLMResponse{{Content: "ok"}}, errors: []error{nil}})
 	opts := processOptions{SessionKey: "request-log", Channel: "cli", ChatID: "direct", UserMessage: "go"}
 	cm, release := al.getContextManager(agent, opts.SessionKey)
 	defer release()
@@ -75,10 +76,10 @@ func TestFullLLMRequestLine_Format(t *testing.T) {
 	long := strings.Repeat("é", 250)
 	cut := strings.Repeat("é", 197) + "..."
 	params := "map[x:" + strings.Repeat("p", 250) + "]"
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "system", Content: "be brief"},
-		{Role: "assistant", Content: long, ToolCalls: []providers.ToolCall{
-			{ID: "c1", Type: "function", Name: "long_read", Function: &providers.FunctionCall{Name: "long_read", Arguments: long}},
+		{Role: "assistant", Content: long, ToolCalls: []spawnllm.ToolCall{
+			{ID: "c1", Type: "function", Name: "long_read", Function: &spawnllm.FunctionCall{Name: "long_read", Arguments: long}},
 			{ID: "c2", Type: "function", Name: "noop"},
 		}},
 		{Role: "tool", Content: "done", ToolCallID: "c1"},
@@ -124,7 +125,7 @@ func TestFullLLMRequestLine_Format(t *testing.T) {
 		})
 	}
 	t.Run("no tools", func(t *testing.T) {
-		line := fullRequestLine(t, []providers.Message{{Role: "user", Content: "go"}})
+		line := fullRequestLine(t, []spawnllm.Message{{Role: "user", Content: "go"}})
 		if got := fmt.Sprint(line["tools_json"]); got != "[]" {
 			t.Errorf("tools = %q, want a request with no tools rendered as []", got)
 		}
@@ -144,10 +145,10 @@ func TestFullLLMRequestLine_FollowsTruncationSwitch(t *testing.T) {
 		restore := logger.RedirectForTest(&buf)
 		al := newTestAgentLoop(t).al
 		agent := al.registry.Default()
-		setTestProvider(agent, &sequenceProvider{responses: []*providers.LLMResponse{{Content: "ok"}}, errors: []error{nil}})
+		setTestProvider(agent, &sequenceProvider{responses: []*spawnllm.LLMResponse{{Content: "ok"}}, errors: []error{nil}})
 		opts := processOptions{SessionKey: "request-log", Channel: "cli", ChatID: "direct", UserMessage: "go"}
 		cm, release := al.getContextManager(agent, opts.SessionKey)
-		_, err := al.runLLMIteration(context.Background(), agent, []providers.Message{{Role: "user", Content: long}}, opts, cm, nil)
+		_, err := al.runLLMIteration(context.Background(), agent, []spawnllm.Message{{Role: "user", Content: long}}, opts, cm, nil)
 		release()
 		restore()
 		if err != nil {

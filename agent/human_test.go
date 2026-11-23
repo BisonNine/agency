@@ -13,7 +13,9 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
@@ -23,7 +25,6 @@ import (
 	"go.bison9.com/agency/forum"
 	"go.bison9.com/agency/logger"
 	climcp "go.bison9.com/agency/mcp"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
 )
@@ -35,7 +36,7 @@ type countingProvider struct {
 	calls []string
 }
 
-func (p *countingProvider) Chat(_ context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (p *countingProvider) Chat(_ context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	last := ""
@@ -43,7 +44,7 @@ func (p *countingProvider) Chat(_ context.Context, _ providers.Identity, message
 		last = messages[len(messages)-1].Content
 	}
 	p.calls = append(p.calls, last)
-	return &providers.LLMResponse{Content: "Alice here"}, nil
+	return &spawnllm.LLMResponse{Content: "Alice here"}, nil
 }
 
 func (p *countingProvider) GetDefaultModel() string { return "test-model" }
@@ -576,7 +577,7 @@ func TestHumanAgent_NoModelPathsNoTools(t *testing.T) {
 // panicVision is a vision client that must never be called.
 type panicVision struct{}
 
-func (panicVision) Complete(context.Context, []providers.Message) (visionReply, error) {
+func (panicVision) Complete(context.Context, []spawnllm.Message) (visionReply, error) {
 	panic("a vision model was called for a human agent")
 }
 

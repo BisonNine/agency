@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/ctxengine"
-
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // trackingContextManager is a stub ContextManager that records whether
@@ -21,19 +20,19 @@ type trackingContextManager struct {
 	closed atomic.Bool
 }
 
-func (m *trackingContextManager) AddUserMessage(_ context.Context, _ providers.Message) (int64, error) {
+func (m *trackingContextManager) AddUserMessage(_ context.Context, _ spawnllm.Message) (int64, error) {
 	return 0, nil
 }
 
-func (m *trackingContextManager) AddAssistantMessage(_ context.Context, _ providers.Message) (int64, error) {
+func (m *trackingContextManager) AddAssistantMessage(_ context.Context, _ spawnllm.Message) (int64, error) {
 	return 0, nil
 }
 
-func (m *trackingContextManager) AddToolCallMessage(_ context.Context, _ providers.Message) (int64, error) {
+func (m *trackingContextManager) AddToolCallMessage(_ context.Context, _ spawnllm.Message) (int64, error) {
 	return 0, nil
 }
 
-func (m *trackingContextManager) AddToolResult(_ context.Context, _ providers.Message) (int64, error) {
+func (m *trackingContextManager) AddToolResult(_ context.Context, _ spawnllm.Message) (int64, error) {
 	return 0, nil
 }
 

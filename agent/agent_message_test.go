@@ -12,26 +12,28 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // chatFunc is a model whose answer a test scripts.
-type chatFunc func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error)
+type chatFunc func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error)
 
-func (f chatFunc) Chat(ctx context.Context, _ providers.Identity, messages []providers.Message, _ []providers.ToolDefinition, _ string, _ map[string]any) (*providers.LLMResponse, error) {
+func (f chatFunc) Chat(ctx context.Context, _ accounting.Identity, messages []spawnllm.Message, _ []spawnllm.ToolDefinition, _ string, _ map[string]any) (*spawnllm.LLMResponse, error) {
 	return f(ctx, messages)
 }
 
 func (f chatFunc) GetDefaultModel() string { return "mock-model" }
 
 // lastUser is the content of the last user message sent to the model.
-func lastUser(messages []providers.Message) string {
+func lastUser(messages []spawnllm.Message) string {
 	for _, m := range slices.Backward(messages) {
 		if m.Role == "user" {
 			return m.Content
@@ -60,14 +62,14 @@ func messagingConfig(t *testing.T) *config.Config {
 
 // messagingLoop builds a running loop over cfg whose agents answer with
 // model: inbound messages on the bus are dispatched as Run does.
-func messagingLoop(t *testing.T, cfg *config.Config, model providers.LLMProvider) (*AgentLoop, *bus.MessageBus) {
+func messagingLoop(t *testing.T, cfg *config.Config, model spawnllm.LLMProvider) (*AgentLoop, *bus.MessageBus) {
 	t.Helper()
 	return messagingLoopWith(t, cfg, model, nil)
 }
 
 // messagingLoopWith is messagingLoop with a provider dispatcher (a human
 // agent's turn dispatches its person's model through it).
-func messagingLoopWith(t *testing.T, cfg *config.Config, model providers.LLMProvider, clients clientRouting) (*AgentLoop, *bus.MessageBus) {
+func messagingLoopWith(t *testing.T, cfg *config.Config, model spawnllm.LLMProvider, clients clientRouting) (*AgentLoop, *bus.MessageBus) {
 	t.Helper()
 	tools.RegisterProvider(tools.NamespacedProvider("agent", toolsagents.GlobalProvider))
 	msgBus := bus.NewMessageBus()
@@ -129,20 +131,20 @@ func toolThenText() chatFunc {
 
 // callThenText calls tool with args once, then replies with its result.
 func callThenText(tool, args string) chatFunc {
-	return func(_ context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
+	return func(_ context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
 		last := messages[len(messages)-1]
 		if last.Role == "tool" {
-			return &providers.LLMResponse{Content: "done: " + last.Content}, nil
+			return &spawnllm.LLMResponse{Content: "done: " + last.Content}, nil
 		}
-		return &providers.LLMResponse{ToolCalls: []providers.ToolCall{{
+		return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
 			ID: "tc-1", Type: "function", Name: tool,
-			Function: &providers.FunctionCall{Name: tool, Arguments: args},
+			Function: &spawnllm.FunctionCall{Name: tool, Arguments: args},
 		}}}, nil
 	}
 }
 
 // setModel gives agent id its own model.
-func setModel(t *testing.T, al *AgentLoop, id string, model providers.LLMProvider) {
+func setModel(t *testing.T, al *AgentLoop, id string, model spawnllm.LLMProvider) {
 	t.Helper()
 	a, ok := al.GetRegistry().Get(id)
 	if !ok {
@@ -159,18 +161,18 @@ func TestAsk_ReturnsReplyAndOutcome(t *testing.T) {
 
 	for _, tc := range []struct {
 		name        string
-		resp        *providers.LLMResponse
+		resp        *spawnllm.LLMResponse
 		err         error
 		wantOutcome string
 		wantText    string
 	}{
-		{name: "ok", resp: &providers.LLMResponse{Content: "pong"}, wantOutcome: bus.OutcomeOK, wantText: "pong"},
-		{name: "empty", resp: &providers.LLMResponse{FinishReason: "stop", Normal: true}, wantOutcome: bus.OutcomeEmpty},
+		{name: "ok", resp: &spawnllm.LLMResponse{Content: "pong"}, wantOutcome: bus.OutcomeOK, wantText: "pong"},
+		{name: "empty", resp: &spawnllm.LLMResponse{FinishReason: "stop", Normal: true}, wantOutcome: bus.OutcomeEmpty},
 		{name: "error", err: errors.New("boom"), wantOutcome: bus.OutcomeError, wantText: "boom"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var seen string
-			model := chatFunc(func(_ context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
+			model := chatFunc(func(_ context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
 				seen = lastUser(messages)
 				if tc.err != nil {
 					return nil, tc.err
@@ -263,12 +265,12 @@ func TestAsk_BackgroundResultReachesMainConversation(t *testing.T) {
 	var al *AgentLoop
 	results := make(chan string, 1)
 	pending := make(chan bool, 1)
-	model := chatFunc(func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
+	model := chatFunc(func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
 		if u := lastUser(messages); strings.Contains(u, "[System: async:async_tool]") {
 			_, rec := testStateManager(t, al, "bob").GetPendingTurn("agent:bob:main")
 			pending <- rec
 			results <- u
-			return &providers.LLMResponse{Content: "noted"}, nil
+			return &spawnllm.LLMResponse{Content: "noted"}, nil
 		}
 		return callThenText("async_tool", "{}")(ctx, messages)
 	})
@@ -329,15 +331,15 @@ func TestAsk_SlotLentWhileWaiting(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	ask := callThenText("agent_message", `{"agent":"bob","message":"hi","wait_seconds":10}`)
-	setModel(t, al, "alice", chatFunc(func(ctx context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
+	setModel(t, al, "alice", chatFunc(func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
 		if messages[len(messages)-1].Role != "tool" {
 			started <- struct{}{}
 			<-release
 		}
 		return ask(ctx, messages)
 	}))
-	setModel(t, al, "bob", chatFunc(func(_ context.Context, messages []providers.Message) (*providers.LLMResponse, error) {
-		return &providers.LLMResponse{Content: "bob: " + lastUser(messages)[:4]}, nil
+	setModel(t, al, "bob", chatFunc(func(_ context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
+		return &spawnllm.LLMResponse{Content: "bob: " + lastUser(messages)[:4]}, nil
 	}))
 
 	msgBus.PublishInbound(context.Background(), inbound("c1", "m1", "ask bob")) //nolint:errcheck // test
@@ -430,8 +432,8 @@ func TestAsk_WithOneTurnSlot(t *testing.T) {
 	cfg.Agents.Defaults.MaxConcurrentTurns = 1
 	al, msgBus := messagingLoop(t, cfg, &recordingProvider{})
 	setModel(t, al, "alice", callThenText("agent_message", `{"agent":"bob","message":"hi","wait_seconds":5}`))
-	setModel(t, al, "bob", chatFunc(func(context.Context, []providers.Message) (*providers.LLMResponse, error) {
-		return &providers.LLMResponse{Content: "bob says hi"}, nil
+	setModel(t, al, "bob", chatFunc(func(context.Context, []spawnllm.Message) (*spawnllm.LLMResponse, error) {
+		return &spawnllm.LLMResponse{Content: "bob says hi"}, nil
 	}))
 
 	dispatch(al, inbound("c1", "m1", "ask bob"))

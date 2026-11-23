@@ -14,9 +14,10 @@ import (
 
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // retryClass is what a turn does after a failed model call.
@@ -71,11 +72,11 @@ func TestDispatchError_RetryPerClass(t *testing.T) {
 		{"invalidparameter", errors.New("InvalidParameter: Total tokens of image and text exceed max message tokens"), retryAfterCompaction},
 
 		// Fallback chain exhausted with every candidate at its context limit.
-		{"fallback all context limit", &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-			{Provider: "p", Model: "m", Err: errors.New("boom"), Reason: providers.FailoverContextLimit},
+		{"fallback all context limit", &models.ExhaustedError{Attempts: []models.Attempt{
+			{Provider: "p", Model: "m", Err: errors.New("boom"), Reason: spawnllm.FailoverContextLimit},
 		}}, retryAfterCompaction},
-		{"fallback mixed reasons", &providers.FallbackExhaustedError{Attempts: []providers.FallbackAttempt{
-			{Provider: "p", Model: "m", Err: errors.New("boom"), Reason: providers.FailoverAuth},
+		{"fallback mixed reasons", &models.ExhaustedError{Attempts: []models.Attempt{
+			{Provider: "p", Model: "m", Err: errors.New("boom"), Reason: spawnllm.FailoverAuth},
 		}}, noRetry},
 
 		// Neither: the turn fails with the error.
@@ -88,7 +89,7 @@ func TestDispatchError_RetryPerClass(t *testing.T) {
 			logs := &safeBufLoop{}
 			t.Cleanup(logger.RedirectForTest(logs))
 			var calls atomic.Int32
-			failingOnce := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+			failingOnce := modelScriptProvider{answer: func(_ context.Context, model string) (*spawnllm.LLMResponse, error) {
 				if calls.Add(1) == 1 {
 					return nil, tt.err
 				}

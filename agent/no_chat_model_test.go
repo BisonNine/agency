@@ -12,11 +12,11 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // noModelReply is what a person gets for a turn of an agent with no model.
@@ -174,7 +174,7 @@ func TestSummarization_CooldownUnderOwnKey(t *testing.T) {
 	if _, err := c.Complete(context.Background(), ctxRequest()); err != nil {
 		t.Fatalf("Complete: %v (a should have answered)", err)
 	}
-	if len(rec.alerts) != 1 || rec.alerts[0].EventID != providers.ModelKey("p", "b-wire") {
+	if len(rec.alerts) != 1 || rec.alerts[0].EventID != spawnllm.ModelKey("p", "b-wire") {
 		t.Fatalf("alerts = %+v, want one keyed by b's provider and model id", rec.alerts)
 	}
 	rt := newCooldownRuntime(al)

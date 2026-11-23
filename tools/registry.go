@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/utils"
 )
 
@@ -208,7 +208,7 @@ func (r *ToolRegistry) ExecuteUnattended(ctx context.Context, name string, args 
 // withCallAgent puts the agent the host's turn runs for (spawnllm's key) on
 // ctx under toolkit's key, which the toolspec bridge reads.
 func withCallAgent(ctx context.Context) context.Context {
-	return toolkit.WithAgentID(ctx, providers.AgentIDFromContext(ctx))
+	return toolkit.WithAgentID(ctx, spawnllm.AgentIDFromContext(ctx))
 }
 
 // allowGate is the host's per-call grant check, run by the catalogue on the
@@ -288,11 +288,11 @@ func (r *ToolRegistry) GetDefinitions() []map[string]any {
 // provider type).
 type ToolDefs struct {
 	// Send is the list given to the provider.
-	Send []providers.ToolDefinition
+	Send []spawnllm.ToolDefinition
 	// InContext is what reaches the model's context, and so what the tool
 	// schemas cost: the tools that are not deferred, then the deferred ones
 	// revealed has seen, in order of first reveal.
-	InContext []providers.ToolDefinition
+	InContext []spawnllm.ToolDefinition
 }
 
 // ToolDefs returns the tool list for one model call, from one snapshot of the
@@ -322,12 +322,12 @@ func (r *ToolRegistry) ToolDefs(revealed *discovery.Session) ToolDefs {
 }
 
 // providerDefs copies discovery's definitions into the provider type.
-func providerDefs(in []discovery.Def) []providers.ToolDefinition {
-	out := make([]providers.ToolDefinition, 0, len(in))
+func providerDefs(in []discovery.Def) []spawnllm.ToolDefinition {
+	out := make([]spawnllm.ToolDefinition, 0, len(in))
 	for _, d := range in {
-		out = append(out, providers.ToolDefinition{
+		out = append(out, spawnllm.ToolDefinition{
 			Type: "function",
-			Function: providers.ToolFunctionDefinition{
+			Function: spawnllm.ToolFunctionDefinition{
 				Name:        d.Name,
 				Description: d.Description,
 				Parameters:  d.Parameters,

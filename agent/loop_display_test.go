@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -58,15 +59,15 @@ func TestRunLLMIteration_ToolForUser_PublishedOnInboundUserMessage(t *testing.T)
 	}
 
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{
 				Content: "",
-				ToolCalls: []providers.ToolCall{
+				ToolCalls: []spawnllm.ToolCall{
 					{
 						ID:   "tc-1",
 						Type: "function",
 						Name: "display_tool",
-						Function: &providers.FunctionCall{
+						Function: &spawnllm.FunctionCall{
 							Name:      "display_tool",
 							Arguments: `{}`,
 						},
@@ -95,7 +96,7 @@ func TestRunLLMIteration_ToolForUser_PublishedOnInboundUserMessage(t *testing.T)
 		}
 	}()
 
-	messages := []providers.Message{{Role: "user", Content: "trigger display tool"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "trigger display tool"}}
 	opts := processOptions{
 		SessionKey:   "tool-foruser-inbound",
 		Channel:      "slack",
@@ -157,15 +158,15 @@ func TestRunLLMIteration_ToolForUser_SuppressedWhenStreamingOff(t *testing.T) {
 	}
 
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{
 				Content: "let me check that for you", // inter-tool narration
-				ToolCalls: []providers.ToolCall{
+				ToolCalls: []spawnllm.ToolCall{
 					{
 						ID:       "tc-1",
 						Type:     "function",
 						Name:     "display_tool",
-						Function: &providers.FunctionCall{Name: "display_tool", Arguments: `{}`},
+						Function: &spawnllm.FunctionCall{Name: "display_tool", Arguments: `{}`},
 					},
 				},
 			},
@@ -189,7 +190,7 @@ func TestRunLLMIteration_ToolForUser_SuppressedWhenStreamingOff(t *testing.T) {
 		}
 	}()
 
-	messages := []providers.Message{{Role: "user", Content: "trigger display tool"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "trigger display tool"}}
 	opts := processOptions{
 		SessionKey:   "tool-foruser-off",
 		Channel:      "slack",

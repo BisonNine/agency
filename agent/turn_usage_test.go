@@ -6,13 +6,14 @@ package agent
 import (
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/global"
-	"go.bison9.com/agency/providers"
 )
 
 func TestAddTurnUsage_NilTargetOrResponse(t *testing.T) {
 	// Must not panic when the caller did not ask for usage or the call failed.
-	addTurnUsage(nil, &providers.LLMResponse{}, "anthropic", "m")
+	addTurnUsage(nil, &spawnllm.LLMResponse{}, "anthropic", "m")
 	var u global.TurnUsage
 	addTurnUsage(&u, nil, "anthropic", "m")
 	if u != (global.TurnUsage{}) {
@@ -22,14 +23,14 @@ func TestAddTurnUsage_NilTargetOrResponse(t *testing.T) {
 
 func TestAddTurnUsage_AccumulatesAcrossIterations(t *testing.T) {
 	var u global.TurnUsage
-	addTurnUsage(&u, &providers.LLMResponse{Status: &providers.DispatchStatus{
+	addTurnUsage(&u, &spawnllm.LLMResponse{Status: &spawnllm.DispatchStatus{
 		Model: "claude-a", InputTokens: 100, OutputTokens: 10, CacheReadTokens: 5, CacheCreationTokens: 2, CostUSD: new(0.01),
 	}}, "anthropic", "requested")
-	addTurnUsage(&u, &providers.LLMResponse{Status: &providers.DispatchStatus{
+	addTurnUsage(&u, &spawnllm.LLMResponse{Status: &spawnllm.DispatchStatus{
 		Model: "claude-a", InputTokens: 200, OutputTokens: 20, CacheReadTokens: 1, CacheCreationTokens: 0, CostUSD: new(0.02),
 	}}, "anthropic", "requested")
 	// A call whose provider returned no cost adds its tokens and nothing to the cost.
-	addTurnUsage(&u, &providers.LLMResponse{Status: &providers.DispatchStatus{
+	addTurnUsage(&u, &spawnllm.LLMResponse{Status: &spawnllm.DispatchStatus{
 		Model: "claude-a", InputTokens: 50, OutputTokens: 5,
 	}}, "anthropic", "requested")
 
@@ -47,12 +48,12 @@ func TestAddTurnUsage_AccumulatesAcrossIterations(t *testing.T) {
 func TestAddTurnUsage_ServedModelWinsOverRequested(t *testing.T) {
 	var u global.TurnUsage
 	// A provider that reports no status still records the requested model.
-	addTurnUsage(&u, &providers.LLMResponse{}, "openai", "gpt-req")
+	addTurnUsage(&u, &spawnllm.LLMResponse{}, "openai", "gpt-req")
 	if u.Model != "gpt-req" || u.Provider != "openai" {
 		t.Fatalf("without status: model/provider = %q/%q, want gpt-req/openai", u.Model, u.Provider)
 	}
 	// A later call that reports the served model overrides it (failover case).
-	addTurnUsage(&u, &providers.LLMResponse{Status: &providers.DispatchStatus{Model: "gpt-served"}}, "openai", "gpt-req")
+	addTurnUsage(&u, &spawnllm.LLMResponse{Status: &spawnllm.DispatchStatus{Model: "gpt-served"}}, "openai", "gpt-req")
 	if u.Model != "gpt-served" {
 		t.Fatalf("served model must win, got %q", u.Model)
 	}

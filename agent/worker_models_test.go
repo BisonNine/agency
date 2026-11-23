@@ -10,11 +10,13 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
@@ -41,7 +43,7 @@ func workerTestConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-func workerCandidateNames(cands []providers.FallbackCandidate) []string {
+func workerCandidateNames(cands []models.Candidate) []string {
 	names := make([]string, 0, len(cands))
 	for _, c := range cands {
 		names = append(names, candidateName(c))
@@ -99,7 +101,7 @@ func newWorkerLoop(t *testing.T, cfg *config.Config) (*AgentLoop, *workerRun) {
 	rec := &workerRun{provider: &modelRecordingProvider{LLMProvider: &mockProvider{}}}
 	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), rec.provider, nil)
 	rec.provider.LLMProvider = &inspectingProvider{LLMProvider: &mockProvider{}, inspect: func(ctx context.Context) {
-		if info, ok := al.GetRegistry().Info(providers.AgentIDFromContext(ctx)); ok && info.Spec.IsClone() {
+		if info, ok := al.GetRegistry().Info(spawnllm.AgentIDFromContext(ctx)); ok && info.Spec.IsClone() {
 			rec.mu.Lock()
 			rec.cloneModels, rec.cloneModel = slices.Clone(info.Spec.Config.Models), info.Spec.CloneModel
 			rec.mu.Unlock()

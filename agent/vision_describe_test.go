@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -26,7 +27,7 @@ type stubVisionClient struct {
 	calls    int
 }
 
-func (s *stubVisionClient) Complete(_ context.Context, msgs []providers.Message) (visionReply, error) {
+func (s *stubVisionClient) Complete(_ context.Context, msgs []spawnllm.Message) (visionReply, error) {
 	s.calls++
 	for _, m := range msgs {
 		if len(m.Media) > 0 {
@@ -91,7 +92,7 @@ func TestDescribeInboundMedia_NonVisionPrimaryFoldsDescription(t *testing.T) {
 	stub := &stubVisionClient{reply: "a cat on a mat"}
 	agent := &AgentInstance{ID: "a1", Model: "deepseek", VisionClients: []visionClient{stub}}
 
-	userMsg := providers.Message{Role: "user", Content: "what is this", Media: []string{"data:image/png;base64,AAA"}}
+	userMsg := spawnllm.Message{Role: "user", Content: "what is this", Media: []string{"data:image/png;base64,AAA"}}
 	al.describeInboundMedia(context.Background(), agent, &userMsg)
 
 	if userMsg.Media != nil {
@@ -113,7 +114,7 @@ func TestDescribeInboundMedia_VisionPrimaryUntouched(t *testing.T) {
 	stub := &stubVisionClient{reply: "should not be called"}
 	agent := &AgentInstance{ID: "a1", Model: "gpt5", VisionClients: []visionClient{stub}}
 
-	userMsg := providers.Message{Role: "user", Content: "hi", Media: []string{"data:image/png;base64,AAA"}}
+	userMsg := spawnllm.Message{Role: "user", Content: "hi", Media: []string{"data:image/png;base64,AAA"}}
 	al.describeInboundMedia(context.Background(), agent, &userMsg)
 
 	if len(userMsg.Media) != 1 {
@@ -132,7 +133,7 @@ func TestDescribeInboundMedia_NoVisionConfiguredUntouched(t *testing.T) {
 	}}
 	agent := &AgentInstance{ID: "a1", Model: "deepseek"} // no VisionClients
 
-	userMsg := providers.Message{Role: "user", Content: "hi", Media: []string{"data:image/png;base64,AAA"}}
+	userMsg := spawnllm.Message{Role: "user", Content: "hi", Media: []string{"data:image/png;base64,AAA"}}
 	al.describeInboundMedia(context.Background(), agent, &userMsg)
 
 	if len(userMsg.Media) != 1 || userMsg.Content != "hi" {
@@ -175,10 +176,10 @@ func TestFlowA_InjectsDescriptionForNonVisionModel(t *testing.T) {
 	agent.VisionClients = []visionClient{stub}
 
 	// Iteration 1: call the image tool. Iteration 2: plain final answer.
-	resps := []*providers.LLMResponse{
-		{ToolCalls: []providers.ToolCall{{
+	resps := []*spawnllm.LLMResponse{
+		{ToolCalls: []spawnllm.ToolCall{{
 			ID: "t1", Type: "function", Name: "grab_image",
-			Function: &providers.FunctionCall{Name: "grab_image", Arguments: "{}"},
+			Function: &spawnllm.FunctionCall{Name: "grab_image", Arguments: "{}"},
 		}}},
 		{Content: "There are two cats."},
 	}
@@ -194,7 +195,7 @@ func TestFlowA_InjectsDescriptionForNonVisionModel(t *testing.T) {
 	cm, release := al.getContextManager(agent, opts.SessionKey)
 	defer release()
 
-	runIteration(t, al, agent, []providers.Message{{Role: "user", Content: "how many cats?"}}, opts, cm)
+	runIteration(t, al, agent, []spawnllm.Message{{Role: "user", Content: "how many cats?"}}, opts, cm)
 
 	// The vision side-model must have received the tool's image.
 	if len(stub.gotMedia) != 1 {

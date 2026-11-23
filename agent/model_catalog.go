@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/commands"
 	"go.bison9.com/agency/config"
@@ -388,7 +389,7 @@ func (al *AgentLoop) clearCooldown(provider, model string) bool {
 	if len(names) > 0 {
 		cleared = al.catalog.ResetHealth(names...) > 0
 	}
-	al.catalogs.Alerts().Rearm(providers.ModelKey(provider, model))
+	al.catalogs.Alerts().Rearm(spawnllm.ModelKey(provider, model))
 	return cleared
 }
 
@@ -413,14 +414,14 @@ func (al *AgentLoop) parkedFor(name string) time.Duration {
 // error as the client returned it, before the chain classified it.
 type finishRecorder struct {
 	called bool
-	resp   *providers.LLMResponse
+	resp   *spawnllm.LLMResponse
 	err    error
 }
 
 // option is the chain option that records each call, after which emit (when
 // set) is called with it.
-func (r *finishRecorder) option(emit func(c models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error)) models.CallOption {
-	return models.WithFinish(func(c models.Candidate, elapsed time.Duration, resp *providers.LLMResponse, err error) {
+func (r *finishRecorder) option(emit func(c models.Candidate, elapsed time.Duration, resp *spawnllm.LLMResponse, err error)) models.CallOption {
+	return models.WithFinish(func(c models.Candidate, elapsed time.Duration, resp *spawnllm.LLMResponse, err error) {
 		r.called, r.resp, r.err = true, resp, err
 		if emit != nil {
 			emit(c, elapsed, resp, err)
@@ -431,17 +432,17 @@ func (r *finishRecorder) option(emit func(c models.Candidate, elapsed time.Durat
 // setCandidates are the models of agent id's set for purpose p (its own
 // list, not one a fallback rule leads to), in priority order, with their
 // providers and wire models.
-func (al *AgentLoop) setCandidates(id string, p models.Purpose) []providers.FallbackCandidate {
+func (al *AgentLoop) setCandidates(id string, p models.Purpose) []models.Candidate {
 	return setCandidatesIn(al.catalog, id, p)
 }
 
 // setCandidatesIn is setCandidates in catalogue c.
-func setCandidatesIn(c *models.Catalog, id string, p models.Purpose) []providers.FallbackCandidate {
+func setCandidatesIn(c *models.Catalog, id string, p models.Purpose) []models.Candidate {
 	list := c.Set(id).List(p)
-	out := make([]providers.FallbackCandidate, 0, len(list))
+	out := make([]models.Candidate, 0, len(list))
 	for _, e := range list {
 		if info, ok := c.Get(e.Name); ok {
-			out = append(out, providers.FallbackCandidate{
+			out = append(out, models.Candidate{
 				Name: e.Name, Provider: info.Provider.Name, Protocol: info.Provider.Protocol, Model: info.Model.Model,
 			})
 		}
@@ -450,14 +451,14 @@ func setCandidatesIn(c *models.Catalog, id string, p models.Purpose) []providers
 }
 
 // chatCandidates are agent a's chat models (setCandidates).
-func (al *AgentLoop) chatCandidates(a *AgentInstance) []providers.FallbackCandidate {
+func (al *AgentLoop) chatCandidates(a *AgentInstance) []models.Candidate {
 	return al.setCandidates(a.ID, models.Chat)
 }
 
 // workerCandidates are the models agent a's workers (sub-agents and Maestro
 // dispatches) run on: its worker models when it has any configured (none
 // when none of them is usable), else its chat models.
-func (al *AgentLoop) workerCandidates(a *AgentInstance) []providers.FallbackCandidate {
+func (al *AgentLoop) workerCandidates(a *AgentInstance) []models.Candidate {
 	if a.Subagents != nil && len(a.Subagents.Models) > 0 {
 		return al.setCandidates(a.ID, models.Worker)
 	}

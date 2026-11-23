@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	cogmemstore "go.bison9.com/agent/cogmem/store"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // With security.permissions.agents set, the agent's workspace and seeded
@@ -34,7 +34,7 @@ func TestAgentsAreaModes(t *testing.T) {
 	const sessionKey = "agent:main:main"
 	cm, mem, release := al.getSessionContext(agent, sessionKey)
 	defer release()
-	if _, err := cm.AddUserMessage(context.Background(), providers.Message{Role: "user", Content: "hello"}); err != nil {
+	if _, err := cm.AddUserMessage(context.Background(), spawnllm.Message{Role: "user", Content: "hello"}); err != nil {
 		t.Fatalf("AddUserMessage: %v", err)
 	}
 	if mem == nil || mem.Store() == nil {

@@ -12,15 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/commands"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/media"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
 )
@@ -70,7 +71,7 @@ type iteration struct {
 }
 
 // runIteration runs one runLLMIteration for the test and fails it on error.
-func runIteration(tb testing.TB, al *AgentLoop, agent *AgentInstance, messages []providers.Message, opts processOptions, cm ctxengine.ContextManager) iteration {
+func runIteration(tb testing.TB, al *AgentLoop, agent *AgentInstance, messages []spawnllm.Message, opts processOptions, cm ctxengine.ContextManager) iteration {
 	tb.Helper()
 	r, err := al.runLLMIteration(context.Background(), agent, messages, opts, cm, nil)
 	if err != nil {
@@ -267,15 +268,15 @@ type simpleMockProvider struct {
 }
 
 func (m *simpleMockProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	messages []providers.Message,
-	tools []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	messages []spawnllm.Message,
+	tools []spawnllm.ToolDefinition,
 	model string,
 	opts map[string]any,
-) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{
+) (*spawnllm.LLMResponse, error) {
+	return &spawnllm.LLMResponse{
 		Content:   m.response,
-		ToolCalls: []providers.ToolCall{},
+		ToolCalls: []spawnllm.ToolCall{},
 	}, nil
 }
 
@@ -289,16 +290,16 @@ type countingMockProvider struct {
 }
 
 func (m *countingMockProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	messages []providers.Message,
-	tools []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	messages []spawnllm.Message,
+	tools []spawnllm.ToolDefinition,
 	model string,
 	opts map[string]any,
-) (*providers.LLMResponse, error) {
+) (*spawnllm.LLMResponse, error) {
 	m.calls++
-	return &providers.LLMResponse{
+	return &spawnllm.LLMResponse{
 		Content:   m.response,
-		ToolCalls: []providers.ToolCall{},
+		ToolCalls: []spawnllm.ToolCall{},
 	}, nil
 }
 
@@ -604,19 +605,19 @@ type failFirstMockProvider struct {
 }
 
 func (m *failFirstMockProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	messages []providers.Message,
-	tools []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	messages []spawnllm.Message,
+	tools []spawnllm.ToolDefinition,
 	model string,
 	opts map[string]any,
-) (*providers.LLMResponse, error) {
+) (*spawnllm.LLMResponse, error) {
 	m.currentCall++
 	if m.currentCall <= m.failures {
 		return nil, m.failError
 	}
-	return &providers.LLMResponse{
+	return &spawnllm.LLMResponse{
 		Content:   m.successResp,
-		ToolCalls: []providers.ToolCall{},
+		ToolCalls: []spawnllm.ToolCall{},
 	}, nil
 }
 
@@ -643,7 +644,7 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Inject some history to simulate a full context
 	sessionKey := "test-session-context"
 	// Create dummy history
-	history := []providers.Message{
+	history := []spawnllm.Message{
 		{Role: "system", Content: "System prompt"},
 		{Role: "user", Content: "Old message 1"},
 		{Role: "assistant", Content: "Old response 1"},
@@ -913,7 +914,7 @@ func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "describe this", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -939,7 +940,7 @@ func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
 	}
 	ref := mustStore(t, store, bigPath, media.MediaMeta{})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "hi", Media: []string{ref}},
 	}
 	// Use a tiny limit (1KB) so the file is oversized
@@ -960,7 +961,7 @@ func TestResolveMediaRefs_UnknownTypeInjectsPath(t *testing.T) {
 	}
 	ref := mustStore(t, store, txtPath, media.MediaMeta{})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "hi", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -975,7 +976,7 @@ func TestResolveMediaRefs_UnknownTypeInjectsPath(t *testing.T) {
 }
 
 func TestResolveMediaRefs_PassesThroughNonMediaRefs(t *testing.T) {
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "hi", Media: []string{"https://example.com/img.png"}},
 	}
 	result := resolveMediaRefs(messages, nil, config.DefaultMaxMediaSize)
@@ -1000,7 +1001,7 @@ func TestResolveMediaRefs_DoesNotMutateOriginal(t *testing.T) {
 	}
 	ref := mustStore(t, store, pngPath, media.MediaMeta{})
 
-	original := []providers.Message{
+	original := []spawnllm.Message{
 		{Role: "user", Content: "hi", Media: []string{ref}},
 	}
 	originalRef := original[0].Media[0]
@@ -1024,7 +1025,7 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 	}
 	ref := mustStore(t, store, jpegPath, media.MediaMeta{ContentType: "image/jpeg"})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "hi", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -1048,7 +1049,7 @@ func TestResolveMediaRefs_PDFInjectsFilePath(t *testing.T) {
 	}
 	ref := mustStore(t, store, pdfPath, media.MediaMeta{ContentType: "application/pdf"})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "report.pdf [file]", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -1072,7 +1073,7 @@ func TestResolveMediaRefs_AudioInjectsAudioPath(t *testing.T) {
 	}
 	ref := mustStore(t, store, oggPath, media.MediaMeta{ContentType: "audio/ogg"})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "voice.ogg [audio]", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -1096,7 +1097,7 @@ func TestResolveMediaRefs_VideoInjectsVideoPath(t *testing.T) {
 	}
 	ref := mustStore(t, store, mp4Path, media.MediaMeta{ContentType: "video/mp4"})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "clip.mp4 [video]", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -1120,7 +1121,7 @@ func TestResolveMediaRefs_NoGenericTagAppendsPath(t *testing.T) {
 	}
 	ref := mustStore(t, store, csvPath, media.MediaMeta{ContentType: "text/csv"})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "here is my data", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -1142,7 +1143,7 @@ func TestResolveMediaRefs_EmptyContentGetsPathTag(t *testing.T) {
 	docxMIME := "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	ref := mustStore(t, store, docPath, media.MediaMeta{ContentType: docxMIME})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "", Media: []string{ref}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -1175,7 +1176,7 @@ func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
 	}
 	fileRef := mustStore(t, store, pdfPath, media.MediaMeta{ContentType: "application/pdf"})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "check these [file]", Media: []string{imgRef, fileRef}},
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
@@ -1212,7 +1213,7 @@ func TestForceCompression_WithSystemPrompt(t *testing.T) {
 	// sys + user3 = 2 messages, down from 6.
 	pad := strings.Repeat("x", 640)
 	sessionKey := "test-compress-sys"
-	history := []providers.Message{
+	history := []spawnllm.Message{
 		{Role: "system", Content: "You are helpful."},
 		{Role: "user", Content: "user msg 1 " + pad},
 		{Role: "assistant", Content: "assistant msg 1 " + pad},
@@ -1261,7 +1262,7 @@ func TestForceCompression_NoSystemPrompt(t *testing.T) {
 	// Same window/padding as the system-prompt test; force a drop.
 	pad := strings.Repeat("x", 640)
 	sessionKey := "test-compress-nosys"
-	history := []providers.Message{
+	history := []spawnllm.Message{
 		{Role: "user", Content: "user msg 1 " + pad},
 		{Role: "assistant", Content: "assistant msg 1 " + pad},
 		{Role: "user", Content: "user msg 2 " + pad},
@@ -1298,12 +1299,12 @@ type errorProvider struct {
 }
 
 func (e *errorProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	messages []providers.Message,
-	toolDefs []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	messages []spawnllm.Message,
+	toolDefs []spawnllm.ToolDefinition,
 	model string,
 	opts map[string]any,
-) (*providers.LLMResponse, error) {
+) (*spawnllm.LLMResponse, error) {
 	return nil, e.err
 }
 
@@ -1324,7 +1325,7 @@ func TestRunLLMIteration_ContextCancelDuringBackoff(t *testing.T) {
 	}
 	setTestProvider(agent, &errorProvider{err: errors.New("deadline exceeded")})
 
-	messages := []providers.Message{
+	messages := []spawnllm.Message{
 		{Role: "user", Content: "trigger backoff"},
 	}
 	opts := processOptions{
@@ -1364,25 +1365,25 @@ func TestRunLLMIteration_ContextCancelDuringBackoff(t *testing.T) {
 // sequenceProvider returns a predetermined sequence of responses and errors.
 // After the sequence is exhausted it returns a generic "done" response.
 type sequenceProvider struct {
-	responses    []*providers.LLMResponse
+	responses    []*spawnllm.LLMResponse
 	errors       []error
 	idx          int
-	lastMessages []providers.Message // messages seen on the most recent Chat call
+	lastMessages []spawnllm.Message // messages seen on the most recent Chat call
 	mu           sync.Mutex
 }
 
 func (p *sequenceProvider) Chat(
-	ctx context.Context, _ providers.Identity,
-	messages []providers.Message,
-	toolDefs []providers.ToolDefinition,
+	ctx context.Context, _ accounting.Identity,
+	messages []spawnllm.Message,
+	toolDefs []spawnllm.ToolDefinition,
 	model string,
 	opts map[string]any,
-) (*providers.LLMResponse, error) {
+) (*spawnllm.LLMResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lastMessages = messages
 	if p.idx >= len(p.responses) {
-		return &providers.LLMResponse{Content: "done"}, nil
+		return &spawnllm.LLMResponse{Content: "done"}, nil
 	}
 	r, e := p.responses[p.idx], p.errors[p.idx]
 	p.idx++
@@ -1426,8 +1427,8 @@ func TestRunAgentLoop_EmptyResponse_FirstIteration(t *testing.T) {
 
 	// Provider returns empty content with an abnormal (non-normal) finish — Normal: false (zero value).
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{
-			{Content: "", FinishReason: "stop", Normal: false, ToolCalls: []providers.ToolCall{}},
+		responses: []*spawnllm.LLMResponse{
+			{Content: "", FinishReason: "stop", Normal: false, ToolCalls: []spawnllm.ToolCall{}},
 		},
 		errors: []error{nil},
 	})
@@ -1469,22 +1470,22 @@ func TestRunAgentLoop_EmptyResponse_AfterToolCalls(t *testing.T) {
 
 	// First call: return a tool call. Second call: return empty content.
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{
 				Content: "",
-				ToolCalls: []providers.ToolCall{
+				ToolCalls: []spawnllm.ToolCall{
 					{
 						ID:   "tc-1",
 						Type: "function",
 						Name: "echo_tool",
-						Function: &providers.FunctionCall{
+						Function: &spawnllm.FunctionCall{
 							Name:      "echo_tool",
 							Arguments: `{"text":"hi"}`,
 						},
 					},
 				},
 			},
-			{Content: "", ToolCalls: []providers.ToolCall{}},
+			{Content: "", ToolCalls: []spawnllm.ToolCall{}},
 		},
 		errors: []error{nil, nil},
 	})
@@ -1522,27 +1523,27 @@ func TestRunLLMIteration_ToolCalls_ThenFinalResponse(t *testing.T) {
 
 	const finalText = "all done"
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{
 				Content: "",
-				ToolCalls: []providers.ToolCall{
+				ToolCalls: []spawnllm.ToolCall{
 					{
 						ID:   "tc-1",
 						Type: "function",
 						Name: "echo_tool",
-						Function: &providers.FunctionCall{
+						Function: &spawnllm.FunctionCall{
 							Name:      "echo_tool",
 							Arguments: `{"text":"test"}`,
 						},
 					},
 				},
 			},
-			{Content: finalText, ToolCalls: []providers.ToolCall{}},
+			{Content: finalText, ToolCalls: []spawnllm.ToolCall{}},
 		},
 		errors: []error{nil, nil},
 	})
 
-	messages := []providers.Message{{Role: "user", Content: "run echo_tool"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "run echo_tool"}}
 	opts := processOptions{
 		SessionKey:   "tool-then-text",
 		Channel:      "cli",
@@ -1580,17 +1581,17 @@ func TestRunLLMIteration_MaxIterations(t *testing.T) {
 	// Always return a tool call — never a text response. Vary the arguments each
 	// iteration so the distinct-call loop hits the iteration cap (this test's
 	// subject), not the identical-tool-call breaker (tested separately).
-	responses := make([]*providers.LLMResponse, maxIter+2)
+	responses := make([]*spawnllm.LLMResponse, maxIter+2)
 	errors := make([]error, maxIter+2)
 	for i := range responses {
-		responses[i] = &providers.LLMResponse{
+		responses[i] = &spawnllm.LLMResponse{
 			Content: "",
-			ToolCalls: []providers.ToolCall{
+			ToolCalls: []spawnllm.ToolCall{
 				{
 					ID:   fmt.Sprintf("tc-%d", i),
 					Type: "function",
 					Name: "echo_tool",
-					Function: &providers.FunctionCall{
+					Function: &spawnllm.FunctionCall{
 						Name:      "echo_tool",
 						Arguments: fmt.Sprintf(`{"text":"loop-%d"}`, i),
 					},
@@ -1601,7 +1602,7 @@ func TestRunLLMIteration_MaxIterations(t *testing.T) {
 	}
 	setTestProvider(agent, &sequenceProvider{responses: responses, errors: errors})
 
-	messages := []providers.Message{{Role: "user", Content: "loop forever"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "loop forever"}}
 	opts := processOptions{
 		SessionKey:   "max-iter",
 		Channel:      "cli",
@@ -1644,8 +1645,8 @@ func fourModelLoop(t *testing.T) (*AgentLoop, *AgentInstance) {
 }
 
 // fourCandidates returns a deterministic 4-element candidate list for reorder tests.
-func fourCandidates() []providers.FallbackCandidate {
-	return []providers.FallbackCandidate{
+func fourCandidates() []models.Candidate {
+	return []models.Candidate{
 		{Provider: "p0", Model: "m0", Name: "a0"},
 		{Provider: "p1", Model: "m1", Name: "a1"},
 		{Provider: "p2", Model: "m2", Name: "a2"},
@@ -1910,9 +1911,9 @@ func TestRunLLMIteration_ContextWindowError_Retry(t *testing.T) {
 
 	const successContent = "recovered after context error"
 	setTestProvider(agent, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			nil,
-			{Content: successContent, ToolCalls: []providers.ToolCall{}},
+			{Content: successContent, ToolCalls: []spawnllm.ToolCall{}},
 		},
 		errors: []error{
 			errors.New("context_length_exceeded: request too long"),
@@ -1920,7 +1921,7 @@ func TestRunLLMIteration_ContextWindowError_Retry(t *testing.T) {
 		},
 	})
 
-	messages := []providers.Message{{Role: "user", Content: "trigger"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "trigger"}}
 	opts := processOptions{
 		SessionKey:   sessionKey,
 		Channel:      "cli",

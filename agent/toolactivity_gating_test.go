@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/bus"
-	"go.bison9.com/agency/providers"
 )
 
 // A tool call posts a "🔧 …" breadcrumb only when /tools is on for the session.
@@ -27,10 +28,10 @@ func TestToolActivity_BreadcrumbGating(t *testing.T) {
 			agentInstance.Config.Tools = []string{"*"}
 		}
 		setTestProvider(agentInstance, &sequenceProvider{
-			responses: []*providers.LLMResponse{
-				{Content: "", ToolCalls: []providers.ToolCall{{
+			responses: []*spawnllm.LLMResponse{
+				{Content: "", ToolCalls: []spawnllm.ToolCall{{
 					ID: "tc-1", Type: "function", Name: "display_tool",
-					Function: &providers.FunctionCall{Name: "display_tool", Arguments: `{}`},
+					Function: &spawnllm.FunctionCall{Name: "display_tool", Arguments: `{}`},
 				}}},
 				{Content: "done"},
 			},

@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // TestCompactionNotice_WhoIsTold: only a turn answering a person in a chat
@@ -98,7 +98,7 @@ func TestCompactionNotice_BeforeReply(t *testing.T) {
 			msgBus := bus.NewMessageBus()
 			cfg := newTestConfig(t)
 			cfg.Agents.List[0].Name = "Alice"
-			al := mustNewAgentLoop(t, cfg, msgBus, &fixedProvider{resp: &providers.LLMResponse{Content: "hello"}}, nil)
+			al := mustNewAgentLoop(t, cfg, msgBus, &fixedProvider{resp: &spawnllm.LLMResponse{Content: "hello"}}, nil)
 			agent, sessionKey := inboundSessionKey(t, al, tc.msg)
 			cm := newDueContextManager(nil)
 			close(cm.release)
@@ -137,7 +137,7 @@ func TestCompactionNotice_RealEngine(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.Agents.List[0].Name = "Alice"
 	cfg.Agents.Defaults.ContextWindow = 4000
-	al := mustNewAgentLoop(t, cfg, msgBus, &fixedProvider{resp: &providers.LLMResponse{Content: "hello"}}, nil)
+	al := mustNewAgentLoop(t, cfg, msgBus, &fixedProvider{resp: &spawnllm.LLMResponse{Content: "hello"}}, nil)
 	msg := inbound("c1", "id1", "hi")
 	agent, sessionKey := inboundSessionKey(t, al, msg)
 	// History past the compaction threshold, so adding the message compacts.

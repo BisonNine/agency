@@ -8,8 +8,9 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 )
 
@@ -77,15 +78,15 @@ func runWriteFileToolCallOnce(t *testing.T, secret string) string {
 		t.Fatalf("marshal args: %v", err)
 	}
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{
 				Content: "",
-				ToolCalls: []providers.ToolCall{
+				ToolCalls: []spawnllm.ToolCall{
 					{
 						ID:   "tc-1",
 						Type: "function",
 						Name: "file_write",
-						Function: &providers.FunctionCall{
+						Function: &spawnllm.FunctionCall{
 							Name:      "file_write",
 							Arguments: string(argsJSON),
 						},
@@ -97,7 +98,7 @@ func runWriteFileToolCallOnce(t *testing.T, secret string) string {
 		errors: []error{nil, nil},
 	})
 
-	messages := []providers.Message{{Role: "user", Content: "go"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "go"}}
 	opts := processOptions{
 		SessionKey:   "redact-loop",
 		Channel:      "cli",

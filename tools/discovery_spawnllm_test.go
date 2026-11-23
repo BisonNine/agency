@@ -15,10 +15,9 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/discovery"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/common"
 	"go.bison9.com/agent/spawnllm/openai_compat"
-
-	"go.bison9.com/agency/providers"
 )
 
 // spawnllmRegistry is a discovery-on registry with core tools, the two
@@ -37,12 +36,12 @@ func spawnllmRegistry() (*ToolRegistry, metaTool) {
 var spawnllmCoreTools = []string{"file_read", "get_tool_details", "search_tools", "time_now"}
 
 // history is a conversation whose last message is a tool result carrying refs.
-func history(refs []string) []providers.Message {
-	return []providers.Message{
+func history(refs []string) []spawnllm.Message {
+	return []spawnllm.Message{
 		{Role: "user", Content: "read the X record for Alice"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{
+		{Role: "assistant", ToolCalls: []spawnllm.ToolCall{{
 			ID: "c1", Type: "function", Name: "search_tools",
-			Function: &providers.FunctionCall{Name: "search_tools", Arguments: `{"query":"x read"}`},
+			Function: &spawnllm.FunctionCall{Name: "search_tools", Arguments: `{"query":"x read"}`},
 		}}},
 		{Role: "tool", ToolCallID: "c1", Content: "search result", ToolReferences: refs},
 	}
@@ -72,7 +71,7 @@ func TestSpawnllmRequestTools_ClawEhDefinitions(t *testing.T) {
 
 	tests := []struct {
 		name string
-		msgs []providers.Message
+		msgs []spawnllm.Message
 		want []string
 	}{
 		{"referenced", history(refs), append(slices.Clone(spawnllmCoreTools), "mcp_x_read")},
@@ -131,7 +130,7 @@ func TestSpawnllmOpenAICompat_ClawEhDefinitions(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		msgs     []providers.Message
+		msgs     []spawnllm.Message
 		want     []string
 		toolText string
 	}{
@@ -184,7 +183,7 @@ func TestSpawnllmOpenAICompat_ClawEhDefinitions(t *testing.T) {
 func TestToolDefsInContext_MatchesSpawnllmRequestTools(t *testing.T) {
 	r, search := spawnllmRegistry()
 	refs := searchReferences(t, search)
-	for name, msgs := range map[string][]providers.Message{
+	for name, msgs := range map[string][]spawnllm.Message{
 		"referenced":     history(refs),
 		"no references":  history(nil),
 		"two references": append(history([]string{"mcp_bob_fetch", "mcp_x_read"}), history([]string{"mcp_x_write", "mcp_bob_fetch"})...),

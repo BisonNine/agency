@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/models"
+	"go.bison9.com/agent/spawnllm"
 	"go.bison9.com/agent/spawnllm/common"
-
-	"go.bison9.com/agency/providers"
 )
 
 func TestRenderBillingError_Nil(t *testing.T) {
@@ -18,8 +18,8 @@ func TestRenderBillingError_Nil(t *testing.T) {
 }
 
 func TestRenderBillingError_NonBilling(t *testing.T) {
-	err := &providers.FailoverError{
-		Reason:   providers.FailoverRateLimit,
+	err := &spawnllm.FailoverError{
+		Reason:   spawnllm.FailoverRateLimit,
 		Provider: "openai",
 		Model:    "gpt-4",
 	}
@@ -31,8 +31,8 @@ func TestRenderBillingError_NonBilling(t *testing.T) {
 func TestRenderBillingError_SingleAttempt_WithURL(t *testing.T) {
 	body := `{"error":{"code":"credits_exhausted","message":"out","billing_url":"https://openrouter.ai/credits"}}`
 	wrapped := &common.HTTPStatusError{StatusCode: 402, BodyPreview: body}
-	err := &providers.FailoverError{
-		Reason:   providers.FailoverBilling,
+	err := &spawnllm.FailoverError{
+		Reason:   spawnllm.FailoverBilling,
 		Provider: "openrouter",
 		Model:    "auto",
 		Wrapped:  wrapped,
@@ -52,8 +52,8 @@ func TestRenderBillingError_SingleAttempt_NoURL(t *testing.T) {
 		StatusCode:  429,
 		BodyPreview: `{"error":{"code":"insufficient_quota"}}`,
 	}
-	err := &providers.FailoverError{
-		Reason:   providers.FailoverBilling,
+	err := &spawnllm.FailoverError{
+		Reason:   spawnllm.FailoverBilling,
 		Provider: "openai",
 		Model:    "gpt-4",
 		Wrapped:  wrapped,
@@ -72,23 +72,23 @@ func TestRenderBillingError_FallbackExhausted_MultipleBilling(t *testing.T) {
 	a1Body := `{"billing_url":"https://openrouter.ai/credits"}`
 	a2Body := `{"error":{"billing_url":"https://platform.openai.com/billing"}}`
 
-	exhausted := &providers.FallbackExhaustedError{
-		Attempts: []providers.FallbackAttempt{
+	exhausted := &models.ExhaustedError{
+		Attempts: []models.Attempt{
 			{
 				Provider: "openrouter",
 				Model:    "auto",
-				Reason:   providers.FailoverBilling,
-				Err: &providers.FailoverError{
-					Reason:  providers.FailoverBilling,
+				Reason:   spawnllm.FailoverBilling,
+				Err: &spawnllm.FailoverError{
+					Reason:  spawnllm.FailoverBilling,
 					Wrapped: &common.HTTPStatusError{StatusCode: 402, BodyPreview: a1Body},
 				},
 			},
 			{
 				Provider: "openai",
 				Model:    "gpt-4",
-				Reason:   providers.FailoverBilling,
-				Err: &providers.FailoverError{
-					Reason:  providers.FailoverBilling,
+				Reason:   spawnllm.FailoverBilling,
+				Err: &spawnllm.FailoverError{
+					Reason:  spawnllm.FailoverBilling,
 					Wrapped: &common.HTTPStatusError{StatusCode: 429, BodyPreview: a2Body},
 				},
 			},
@@ -107,9 +107,9 @@ func TestRenderBillingError_FallbackExhausted_MultipleBilling(t *testing.T) {
 
 func TestRenderBillingError_FallbackExhausted_NoBillingAttempts(t *testing.T) {
 	// Only rate-limit attempts — must fall through (returns "").
-	exhausted := &providers.FallbackExhaustedError{
-		Attempts: []providers.FallbackAttempt{
-			{Provider: "a", Model: "m", Reason: providers.FailoverRateLimit},
+	exhausted := &models.ExhaustedError{
+		Attempts: []models.Attempt{
+			{Provider: "a", Model: "m", Reason: spawnllm.FailoverRateLimit},
 		},
 	}
 	if got := renderBillingError(exhausted); got != "" {
@@ -193,8 +193,8 @@ func TestRenderBillingError_LabelUsesFailureRecordProvider(t *testing.T) {
 			StatusCode:  402,
 			BodyPreview: `{"error":{"code":"credits_exhausted"}}`,
 		}
-		err := &providers.FailoverError{
-			Reason:   providers.FailoverBilling,
+		err := &spawnllm.FailoverError{
+			Reason:   spawnllm.FailoverBilling,
 			Provider: sentinelProvider,
 			Model:    "auto",
 			Wrapped:  wrapped,
@@ -211,23 +211,23 @@ func TestRenderBillingError_LabelUsesFailureRecordProvider(t *testing.T) {
 	{
 		attemptProviderA := sentinelProvider + "-A"
 		attemptProviderB := sentinelProvider + "-B"
-		exhausted := &providers.FallbackExhaustedError{
-			Attempts: []providers.FallbackAttempt{
+		exhausted := &models.ExhaustedError{
+			Attempts: []models.Attempt{
 				{
 					Provider: attemptProviderA,
 					Model:    "model-a",
-					Reason:   providers.FailoverBilling,
-					Err: &providers.FailoverError{
-						Reason:  providers.FailoverBilling,
+					Reason:   spawnllm.FailoverBilling,
+					Err: &spawnllm.FailoverError{
+						Reason:  spawnllm.FailoverBilling,
 						Wrapped: &common.HTTPStatusError{StatusCode: 402, BodyPreview: "{}"},
 					},
 				},
 				{
 					Provider: attemptProviderB,
 					Model:    "model-b",
-					Reason:   providers.FailoverBilling,
-					Err: &providers.FailoverError{
-						Reason:  providers.FailoverBilling,
+					Reason:   spawnllm.FailoverBilling,
+					Err: &spawnllm.FailoverError{
+						Reason:  spawnllm.FailoverBilling,
 						Wrapped: &common.HTTPStatusError{StatusCode: 402, BodyPreview: "{}"},
 					},
 				},
@@ -323,8 +323,8 @@ func TestSniffBillingURL_MessageWithoutURL(t *testing.T) {
 
 // End-to-end: the incident's error now renders with an actionable link.
 func TestRenderBillingError_OpenRouterEndToEnd(t *testing.T) {
-	err := &providers.FailoverError{
-		Reason:   providers.FailoverBilling,
+	err := &spawnllm.FailoverError{
+		Reason:   spawnllm.FailoverBilling,
 		Provider: "OpenRouter Chat DS",
 		Model:    "deepseek/deepseek-v4-flash",
 		Wrapped:  &common.HTTPStatusError{StatusCode: 402, BodyPreview: realOpenRouter402Body},

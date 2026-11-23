@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/spawnllm"
+
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/providers"
 )
 
 // runReasoningIterationOnce drives one runLLMIteration with a direct-answer
@@ -26,13 +27,13 @@ func runReasoningIterationOnce(t *testing.T, reasoning string) string {
 		t.Fatal("no default agent")
 	}
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{Content: "the answer", Reasoning: reasoning},
 		},
 		errors: []error{nil},
 	})
 
-	messages := []providers.Message{{Role: "user", Content: "go"}}
+	messages := []spawnllm.Message{{Role: "user", Content: "go"}}
 	opts := processOptions{
 		SessionKey:   "reasoning-loop",
 		Channel:      "cli",

@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"go.bison9.com/agency/providers"
+	"go.bison9.com/agent/spawnllm"
 )
 
 // driveEmptyResponse runs one turn with the given provider responses and returns
 // the final content and the degenerate flag from runLLMIteration.
-func driveEmptyResponse(t *testing.T, responses []*providers.LLMResponse) (string, bool) {
+func driveEmptyResponse(t *testing.T, responses []*spawnllm.LLMResponse) (string, bool) {
 	t.Helper()
 	al := newTestAgentLoop(t).al
 
@@ -31,13 +31,13 @@ func driveEmptyResponse(t *testing.T, responses []*providers.LLMResponse) (strin
 	cm, release := al.getContextManager(agentInstance, opts.SessionKey)
 	defer release()
 
-	it := runIteration(t, al, agentInstance, []providers.Message{{Role: "user", Content: "go"}}, opts, cm)
+	it := runIteration(t, al, agentInstance, []spawnllm.Message{{Role: "user", Content: "go"}}, opts, cm)
 	return it.content, it.degenerate
 }
 
 // A poke after an empty-but-reasoning turn recovers a real reply on retry.
 func TestEmptyResponse_PokeRecovers(t *testing.T) {
-	got, degenerate := driveEmptyResponse(t, []*providers.LLMResponse{
+	got, degenerate := driveEmptyResponse(t, []*spawnllm.LLMResponse{
 		{Content: "", ReasoningContent: "thinking...", FinishReason: "stop", Normal: true},
 		{Content: "here is the answer", FinishReason: "stop", Normal: true},
 	})
@@ -57,11 +57,11 @@ const maxEmptyRetries = 2
 // When the model keeps returning empty-with-reasoning past the retry cap, the
 // turn is flagged degenerate (so the caller sends a fallback) with empty content.
 func TestEmptyResponse_DegenerateAfterRetries(t *testing.T) {
-	empty := func() *providers.LLMResponse {
-		return &providers.LLMResponse{Content: "", ReasoningContent: "thinking...", FinishReason: "stop", Normal: true}
+	empty := func() *spawnllm.LLMResponse {
+		return &spawnllm.LLMResponse{Content: "", ReasoningContent: "thinking...", FinishReason: "stop", Normal: true}
 	}
 	// initial + maxEmptyRetries pokes all empty → degenerate.
-	got, degenerate := driveEmptyResponse(t, []*providers.LLMResponse{empty(), empty(), empty()})
+	got, degenerate := driveEmptyResponse(t, []*spawnllm.LLMResponse{empty(), empty(), empty()})
 	if got != "" {
 		t.Fatalf("expected empty final content, got %q", got)
 	}
@@ -80,7 +80,7 @@ func TestNoResponseSentinel_SilentNoPoke(t *testing.T) {
 		t.Fatal("no default agent")
 	}
 	provider := &sequenceProvider{
-		responses: []*providers.LLMResponse{
+		responses: []*spawnllm.LLMResponse{
 			{Content: "!none", Reasoning: "this message is for someone else", FinishReason: "stop", Normal: true},
 		},
 		errors: []error{nil},
@@ -105,10 +105,10 @@ func TestNoResponseSentinel_SilentNoPoke(t *testing.T) {
 // than `reasoning_content` (OpenAI) — the empty-response handling must treat
 // either as "the model thought but didn't reply" and poke/flag accordingly.
 func TestEmptyResponse_ReasoningFieldAlsoTriggers(t *testing.T) {
-	empty := func() *providers.LLMResponse {
-		return &providers.LLMResponse{Content: "", Reasoning: "thinking...", FinishReason: "stop", Normal: true}
+	empty := func() *spawnllm.LLMResponse {
+		return &spawnllm.LLMResponse{Content: "", Reasoning: "thinking...", FinishReason: "stop", Normal: true}
 	}
-	got, degenerate := driveEmptyResponse(t, []*providers.LLMResponse{empty(), empty(), empty()})
+	got, degenerate := driveEmptyResponse(t, []*spawnllm.LLMResponse{empty(), empty(), empty()})
 	if got != "" {
 		t.Fatalf("expected empty final content, got %q", got)
 	}
@@ -128,7 +128,7 @@ func driveEmptyViaLoop(t *testing.T, isGroup bool) string {
 		t.Fatal("no default agent")
 	}
 	setTestProvider(agentInstance, &sequenceProvider{
-		responses: []*providers.LLMResponse{{Content: "", FinishReason: "stop", Normal: true}},
+		responses: []*spawnllm.LLMResponse{{Content: "", FinishReason: "stop", Normal: true}},
 		errors:    []error{nil},
 	})
 
@@ -165,7 +165,7 @@ func TestEmptyResponse_GroupStaysSilent(t *testing.T) {
 // Genuinely empty (no content AND no reasoning) is not degenerate and is not
 // poked — it stays silent (e.g. a message @-directed at another agent).
 func TestEmptyResponse_NoReasoningStaysSilent(t *testing.T) {
-	got, degenerate := driveEmptyResponse(t, []*providers.LLMResponse{
+	got, degenerate := driveEmptyResponse(t, []*spawnllm.LLMResponse{
 		{Content: "", ReasoningContent: "", FinishReason: "stop", Normal: true},
 	})
 	if got != "" {
