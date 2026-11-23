@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
@@ -17,6 +18,7 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
+	toolsagents "go.bison9.com/agency/tools/agents"
 	toolsshell "go.bison9.com/agency/tools/shell"
 )
 
@@ -118,14 +120,14 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 		t.Fatalf("first reply = %+v", out)
 	}
 	awaitSignal(t, workerStarted, "the sub-agent to start")
-	taskID := al.tasks.Running("alice")[0].ID
+	taskID := toolsagents.RunningTasks(al.tasks, "alice")[0].ID
 	send("m2", "hold on")
 	awaitSignal(t, replyStarted, "the reply to start")
 	send("m3", "/cancel all")
 	if out := nextOutbound(t, msgBus); out.OriginalMessageID != "m3" || out.Content != "Alice: stopped, and cancelled 1 background task." {
 		t.Fatalf("/cancel all reply = %+v", out)
 	}
-	if running := al.tasks.Running("alice"); len(running) != 0 {
+	if running := toolsagents.RunningTasks(al.tasks, "alice"); len(running) != 0 {
 		t.Fatalf("tasks still running: %+v", running)
 	}
 	al.activeRequests.Wait()
@@ -141,4 +143,125 @@ func TestCancelAll_StopsTheReplyAndTheTasks(t *testing.T) {
 		!strings.Contains(string(b), `"incomplete": true`) || !strings.Contains(string(b), `"status": "cancelled"`) {
 		t.Fatalf("results = %s (%v)", b, err)
 	}
+}
+
+// /cancel stops the running reply and leaves the task that reply started
+// running: the turn is interrupted, never cancelled with its tasks.
+func TestCancel_LeavesTheTurnsOwnTaskRunning(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	workerStarted := make(chan context.Context, 4)
+	replyWaiting := make(chan struct{}, 4)
+	model := chatFunc(func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
+		switch user := lastUser(messages); {
+		case user == "the work":
+			workerStarted <- ctx
+			<-ctx.Done()
+			return nil, ctx.Err()
+		case messages[len(messages)-1].Role == "tool":
+			// The reply goes on after starting the task, until stopped.
+			replyWaiting <- struct{}{}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		default:
+			return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
+				ID: "tc-1", Type: "function", Name: "agent_spawn",
+				Function: &spawnllm.FunctionCall{Name: "agent_spawn", Arguments: `{"task":"the work","name":"job"}`},
+			}}}, nil
+		}
+	})
+	al, msgBus := messagingLoop(t, messagingConfig(t), model)
+	send := func(id, text string) {
+		t.Helper()
+		publishIn(t, msgBus, bus.InboundMessage{Channel: "test", ChatID: "c1", SenderID: "u1", MessageID: id, Content: text})
+	}
+	send("m1", "start it")
+	var workerCtx context.Context
+	select {
+	case workerCtx = <-workerStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the sub-agent did not start")
+	}
+	awaitSignal(t, replyWaiting, "the reply to go on")
+
+	send("m2", "/cancel")
+	if out := nextOutbound(t, msgBus); out.OriginalMessageID != "m2" ||
+		out.Content != "Alice: stopped. 1 background task is still running — /cancel all stops it too." {
+		t.Fatalf("/cancel reply = %+v", out)
+	}
+	if running := toolsagents.RunningTasks(al.tasks, "alice"); len(running) != 1 {
+		t.Fatalf("running tasks = %+v, want the one the reply started", running)
+	}
+	if workerCtx.Err() != nil {
+		t.Fatalf("the task was stopped with the reply: %v", context.Cause(workerCtx))
+	}
+
+	send("m3", "/cancel all")
+	if out := nextOutbound(t, msgBus); out.OriginalMessageID != "m3" || out.Content != "Alice: cancelled 1 background task." {
+		t.Fatalf("/cancel all reply = %+v", out)
+	}
+	al.activeRequests.Wait()
+}
+
+// A config reload leaves a running task running, and the reloaded agent
+// lists it and cancels it.
+func TestReload_TaskSurvivesAndIsCancellable(t *testing.T) {
+	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	workerStarted := make(chan context.Context, 4)
+	model := chatFunc(func(ctx context.Context, messages []spawnllm.Message) (*spawnllm.LLMResponse, error) {
+		switch user := lastUser(messages); {
+		case user == "the work":
+			workerStarted <- ctx
+			<-ctx.Done()
+			return nil, ctx.Err()
+		case messages[len(messages)-1].Role == "tool":
+			return &spawnllm.LLMResponse{Content: "started"}, nil
+		default:
+			return &spawnllm.LLMResponse{ToolCalls: []spawnllm.ToolCall{{
+				ID: "tc-1", Type: "function", Name: "agent_spawn",
+				Function: &spawnllm.FunctionCall{Name: "agent_spawn", Arguments: `{"task":"the work","name":"job"}`},
+			}}}, nil
+		}
+	})
+	cfg := messagingConfig(t)
+	al, msgBus := messagingLoop(t, cfg, model)
+	send := func(id, text string) {
+		t.Helper()
+		publishIn(t, msgBus, bus.InboundMessage{Channel: "test", ChatID: "c1", SenderID: "u1", MessageID: id, Content: text})
+	}
+	send("m1", "start it")
+	if out := nextOutbound(t, msgBus); out.Content != "started" {
+		t.Fatalf("first reply = %+v", out)
+	}
+	var workerCtx context.Context
+	select {
+	case workerCtx = <-workerStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the sub-agent did not start")
+	}
+	before, _ := al.GetRegistry().Get("alice")
+
+	next := *cfg
+	if err := reloadForTest(t, al, context.Background(), model, &next); err != nil {
+		t.Fatalf("ReloadConfig: %v", err)
+	}
+	after, _ := al.GetRegistry().Get("alice")
+	if after == before {
+		t.Fatal("the reload kept Alice's instance")
+	}
+	setTestProvider(after, model)
+	if workerCtx.Err() != nil {
+		t.Fatalf("the reload stopped the task: %v", context.Cause(workerCtx))
+	}
+	if running := toolsagents.RunningTasks(al.tasks, "alice"); len(running) != 1 {
+		t.Fatalf("running tasks after the reload = %+v, want the task", running)
+	}
+
+	send("m2", "/cancel all")
+	if out := nextOutbound(t, msgBus); out.OriginalMessageID != "m2" || out.Content != "Alice: cancelled 1 background task." {
+		t.Fatalf("/cancel all reply = %+v", out)
+	}
+	if workerCtx.Err() == nil {
+		t.Fatal("the task still runs after /cancel all")
+	}
+	al.activeRequests.Wait()
 }

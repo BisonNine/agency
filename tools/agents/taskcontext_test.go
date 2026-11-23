@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
@@ -44,10 +45,10 @@ func (w *blockingWorker) run(ctx context.Context, _, _, _, _ string, _ []string)
 	}
 }
 
-func newBlockingManager(t *testing.T, w *blockingWorker) (*SubagentManager, *TaskRegistry, string) {
+func newBlockingManager(t *testing.T, w *blockingWorker) (*SubagentManager, *loop.Tasks, string) {
 	t.Helper()
 	ws := t.TempDir()
-	reg := NewTaskRegistry()
+	reg := loop.NewTasks(nil, hook.DefaultCancelGrace)
 	mgr := NewSubagentManager(SubagentManagerConfig{
 		Workspace: ws, Live: NewLiveSet(), Tasks: reg, CallerAgentID: "alice", RunFull: w.run,
 	})
@@ -76,10 +77,10 @@ func TestRun_WaitTaskDetachesWhenTheTurnStopsWaiting(t *testing.T) {
 		done <- res
 	}()
 	taskCtx := <-w.started
-	if TaskID(taskCtx) == "" {
+	if hook.TaskID(taskCtx) == "" {
 		t.Fatal("the worker's context carries no task id")
 	}
-	if running := reg.Running("alice"); len(running) != 1 || running[0].Mode != hook.TaskWait {
+	if running := RunningTasks(reg, "alice"); len(running) != 1 || running[0].Mode != hook.TaskWait {
 		t.Fatalf("registry = %+v, want one wait task", running)
 	}
 	stopTurn(errInterrupted)
@@ -90,7 +91,7 @@ func TestRun_WaitTaskDetachesWhenTheTurnStopsWaiting(t *testing.T) {
 	if taskCtx.Err() != nil {
 		t.Fatal("the worker's context was cancelled with the turn's")
 	}
-	id := TaskID(taskCtx)
+	id := hook.TaskID(taskCtx)
 	rec, err := readStatus(tasksDirFor(ws), id)
 	if err != nil || rec.Mode != "callback" || rec.Status != StatusRunning {
 		t.Fatalf("record = %+v (%v), want a running callback task", rec, err)
@@ -98,7 +99,7 @@ func TestRun_WaitTaskDetachesWhenTheTurnStopsWaiting(t *testing.T) {
 	if ids := listRunUUIDs(tasksDirFor(ws)); len(ids) != 1 {
 		t.Fatalf("run markers = %v, want the detached task's", ids)
 	}
-	if running := reg.Running("alice"); len(running) != 1 || running[0].Mode != hook.TaskCallback {
+	if running := RunningTasks(reg, "alice"); len(running) != 1 || running[0].Mode != hook.TaskCallback {
 		t.Fatalf("registry = %+v, want one callback task", running)
 	}
 
@@ -118,7 +119,7 @@ func TestRun_WaitTaskDetachesWhenTheTurnStopsWaiting(t *testing.T) {
 		t.Fatalf("run markers left: %v", ids)
 	}
 	// The task left the registry before its result was delivered.
-	if n := len(reg.Running("alice")); n != 0 {
+	if n := len(RunningTasks(reg, "alice")); n != 0 {
 		t.Fatalf("%d tasks still registered", n)
 	}
 }
@@ -147,7 +148,7 @@ func TestRun_WaitTaskCancelledOnShutdown(t *testing.T) {
 	if !errors.Is(context.Cause(taskCtx), hook.ErrShutdown) {
 		t.Fatalf("task cause = %v, want shutdown", context.Cause(taskCtx))
 	}
-	rec, err := readStatus(tasksDirFor(ws), TaskID(taskCtx))
+	rec, err := readStatus(tasksDirFor(ws), hook.TaskID(taskCtx))
 	if err != nil || rec.Status != StatusCancelled {
 		t.Fatalf("record = %+v (%v), want cancelled", rec, err)
 	}
@@ -155,7 +156,7 @@ func TestRun_WaitTaskCancelledOnShutdown(t *testing.T) {
 		t.Fatalf("run markers = %v, want none", ids)
 	}
 	<-w.released
-	if n := len(reg.Running("alice")); n != 0 {
+	if n := len(RunningTasks(reg, "alice")); n != 0 {
 		t.Fatalf("%d tasks still registered", n)
 	}
 }
@@ -164,7 +165,7 @@ func TestRun_WaitTaskCancelledOnShutdown(t *testing.T) {
 func TestRunTask_WaitDetaches(t *testing.T) {
 	release := make(chan struct{})
 	runner := &gatedTaskRunner{release: release, started: make(chan struct{}, 1)}
-	reg := NewTaskRegistry()
+	reg := loop.NewTasks(nil, hook.DefaultCancelGrace)
 	mgr := NewSubagentManager(SubagentManagerConfig{
 		Workspace: t.TempDir(), Live: NewLiveSet(), Tasks: reg, CallerAgentID: "alice", TaskRunner: runner,
 	})
@@ -180,7 +181,7 @@ func TestRunTask_WaitDetaches(t *testing.T) {
 	if res := <-done; !strings.Contains(res.ForLLM, "Stopped waiting") {
 		t.Fatalf("result = %+v, want the detached notice", res)
 	}
-	if running := reg.Running("alice"); len(running) != 1 || running[0].Kind != TaskKindText {
+	if running := RunningTasks(reg, "alice"); len(running) != 1 || running[0].Kind != TaskKindText {
 		t.Fatalf("registry = %+v", running)
 	}
 	close(release)
@@ -209,25 +210,6 @@ func (g *gatedTaskRunner) Run(ctx context.Context, _, _ string, _ TaskModelReque
 		return &TaskModelResult{Model: "fast", Text: "summary"}, nil
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
-	}
-}
-
-// The registry lists an owner's running tasks (a clone's are its
-// source's) and nobody else's.
-func TestTaskRegistry_RunningByOwner(t *testing.T) {
-	reg := NewTaskRegistry()
-	_, a := reg.start(context.Background(), hook.TaskInfo{ID: "t1", Owner: "alice"}, 0, nil, nil)
-	_, b := reg.start(context.Background(), hook.TaskInfo{ID: "t2", Owner: "bob"}, 0, nil, nil)
-	if got := reg.Running("Alice"); len(got) != 1 || got[0].ID != "t1" {
-		t.Fatalf("Running(alice) = %+v", got)
-	}
-	if reg.Owns("alice", "t2") || !reg.Owns("bob", "t2") {
-		t.Fatal("ownership is by owner")
-	}
-	a.finished(hook.TaskDone)
-	b.finished(hook.TaskDone)
-	if n := len(reg.Running("alice")) + len(reg.Running("bob")); n != 0 {
-		t.Fatalf("%d tasks left", n)
 	}
 }
 
@@ -269,7 +251,7 @@ func TestSpawnTool_WaitInAmbiguousChatIsCancelledNotDetached(t *testing.T) {
 		t.Fatal("a background result was sent")
 	default:
 	}
-	if rec, err := readStatus(tasksDirFor(ws), TaskID(taskCtx)); err != nil || rec.Status != StatusCancelled {
+	if rec, err := readStatus(tasksDirFor(ws), hook.TaskID(taskCtx)); err != nil || rec.Status != StatusCancelled {
 		t.Fatalf("record = %+v (%v)", rec, err)
 	}
 }

@@ -51,6 +51,7 @@ func startMCPServer(cfg *config.Config, agentLoop *agent.AgentLoop, msgBus *bus.
 		// A sub-agent clone on a CLI provider calls its tools back through the
 		// host under its own id; clones are created after the host starts.
 		mcpserver.WithAgentLookup(tempAgentTools(agentLoop)),
+		mcpserver.WithTaskRegistrar(agentLoop.TaskRegistrar),
 		mcpserver.WithAgentWorkspaces(agentWorkspaces),
 		mcpserver.WithListen(cfg.MCPHost.Listen),
 		mcpserver.WithEndpointPath(cfg.MCPHost.EndpointPath),

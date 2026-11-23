@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/toolkit"
 
@@ -22,7 +24,7 @@ type SubagentManager struct {
 	workspace    string
 	ownerAgentID string
 	live         *LiveSet
-	tasks        *TaskRegistry
+	tasks        *loop.Tasks
 	// shuttingDown reports that the process is stopping (never nil).
 	shuttingDown func() bool
 	// hooks are test seams; zero in production.
@@ -59,7 +61,7 @@ type SubagentManagerConfig struct {
 	Live *LiveSet
 	// Tasks is the process's task registry (every running sub-agent and
 	// task-model job, by id and owner); nil gives the manager one of its own.
-	Tasks *TaskRegistry
+	Tasks *loop.Tasks
 	// SelfResolver returns the calling agent's worker model candidates for
 	// self-spawns, at the time of each spawn.
 	SelfResolver func() []models.Candidate
@@ -124,7 +126,7 @@ func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
 	}
 	tasks := cfg.Tasks
 	if tasks == nil {
-		tasks = NewTaskRegistry()
+		tasks = loop.NewTasks(nil, hook.DefaultCancelGrace)
 	}
 	live := cfg.Live
 	if live == nil {
@@ -272,7 +274,7 @@ type spawnOrigin struct {
 
 // originOf is the spawn origin of a call on ctx.
 func originOf(ctx context.Context) spawnOrigin {
-	return spawnOrigin{depth: SpawnDepth(ctx), askChain: tools.AskChain(ctx), parent: TaskID(ctx)}
+	return spawnOrigin{depth: SpawnDepth(ctx), askChain: tools.AskChain(ctx), parent: hook.TaskID(ctx)}
 }
 
 // spawnCallback is SpawnCallback for a task started from origin.

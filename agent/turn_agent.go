@@ -76,6 +76,8 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 				return tools.AllowGate(call.Name)(ctx, info)
 			}
 		}
+		// One task registry for the process, across reloads and clones.
+		s.Tasks = al.tasks
 		s.Temperature = inst.Temperature
 		s.RepeatHint = fileEditRepeatHint
 		s.Clock = registryClock{al: al}

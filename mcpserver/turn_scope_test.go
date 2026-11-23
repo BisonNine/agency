@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/tools"
-	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
 // scopeTool records the ask chain and task it ran with.
@@ -29,7 +29,7 @@ func (s *scopeTool) Description() string        { return "records turn scope" }
 func (s *scopeTool) Parameters() map[string]any { return map[string]any{} }
 func (s *scopeTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	s.chain = tools.AskChain(ctx)
-	s.task = toolsagents.TaskID(ctx)
+	s.task = hook.TaskID(ctx)
 	return &toolkit.Result{ForLLM: "ok", ForUser: "for the chat"}
 }
 

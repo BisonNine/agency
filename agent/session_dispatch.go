@@ -171,12 +171,13 @@ func (h *runHandle) running() bool {
 	}
 }
 
-// cancel stops the turn's run with cause. An interrupted turn on a CLI model
+// cancel stops the turn's run with cause, leaving the tasks it started
+// running (Interrupt, never Cancel). An interrupted turn on a CLI model
 // (running says one was stopped, read before the caller started stopping
 // it) gets a new MCP session token, so nothing the killed CLI started can
 // still call tools with it.
 func (h *runHandle) cancel(cause error, running bool) {
-	h.run.Cancel(cause)
+	h.run.Interrupt(cause)
 	if running && h.al.isCLIModel(h.turn.modelName()) {
 		h.reissueToken()
 	}

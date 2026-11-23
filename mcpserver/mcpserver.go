@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/tenebris-tech/alerter"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/mcphost"
 
 	"go.bison9.com/agency/app"
@@ -101,6 +102,9 @@ type MCPServer struct {
 	msgBus        *bus.MessageBus      // outbound publish target for tool ForUser payloads (optional)
 	toolActivity  ToolActivityNotifier // "/tools on" breadcrumb renderer for MCP-routed calls (optional)
 	toolOutput    func() bool          // whether a tool's own output goes to the chat (optional; nil = never)
+	// taskRegistrar is the process's task registry as an agent sees it,
+	// put on each call of a session token (optional).
+	taskRegistrar func(agentID string) hook.TaskRegistrar
 
 	httpServer *http.Server
 	tracker    *firstCallTracker
@@ -142,6 +146,13 @@ func WithAgentRegistries(registries map[string]*tools.ToolRegistry) Option {
 // time, whose session token the agent loop issues), for tools/call dispatch.
 func WithAgentLookup(fn func(agentID string) (*tools.ToolRegistry, bool)) Option {
 	return func(m *MCPServer) { m.agentLookup = fn }
+}
+
+// WithTaskRegistrar sets the process's task registry as the agent agentID
+// sees it (a clone sees its source's tasks), which a session token's tool
+// calls carry, as a turn's in-process calls do.
+func WithTaskRegistrar(fn func(agentID string) hook.TaskRegistrar) Option {
+	return func(m *MCPServer) { m.taskRegistrar = fn }
 }
 
 // WithAgentWorkspaces supplies the agentID → workspace map. Used only

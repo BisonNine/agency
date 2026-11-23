@@ -181,7 +181,7 @@ func (al *AgentLoop) scopeSessionToken(ctx context.Context, agent *AgentInstance
 	if sti == nil {
 		return ctx, func() {}
 	}
-	sti.SetTurnScope(opts.SessionKey, tools.AskChain(ctx), toolsagents.TaskID(ctx))
+	sti.SetTurnScope(opts.SessionKey, tools.AskChain(ctx), hook.TaskID(ctx))
 	// The turn's MCP output (msg_send, msg_send_file, ForUser, breadcrumbs,
 	// background results) goes to the chat this turn replies to, recorded
 	// per turn, never to the chat the session last heard from.

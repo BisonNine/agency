@@ -1778,8 +1778,7 @@ next session must know.
     host's engine copy and its tests are deleted (the SDK's `loop` tests
     of the same names cover them); host tests drive real SDK turns.
     `AgentInstance.Close` closes the agent in the background, never
-    waiting for or stopping its turns. The task registrar is not
-    adopted: the host's registry (`tools/agents`) is unchanged.
+    waiting for or stopping its turns.
     - Review follow-ups (SDK 11c1715): runs start `WithoutEvents`, so a
       turn's handle holds no events; the tool-result cap is the SDK's
       `loop.CapToolResult` (the host's copy is deleted); the SDK now
@@ -1789,7 +1788,7 @@ next session must know.
       the `/cancel` token reissue contains its panic; a closed instance
       builds no agent.
     - Open: the real-device streaming-order check (needs the
-      maintainer); `tools.ToolRegistry.ToolDefs` has only test callers.
+      maintainer).
 - [x] Phase 5d: example host (SDK `examples/chat`)
 - [x] Phase 6: `mcphost` (SDK 181800b … 520fbb6; host 41fcf63, 141e52e).
       Both MCP endpoints are `mcphost.Endpoint`s mounted by `mcpserver`;
@@ -1826,3 +1825,8 @@ next session must know.
       branches are left). The defects it exposed are fixed and listed in
       the changelog under 0.6.6.
       Open, for the maintainer: nothing.
+- [x] Registries (SDK b190147): the host uses the SDK's tool-list builder
+      (`loop.ToolDefs`; the host's copy is deleted), its gate seam and its
+      task registry (one `loop.Tasks` for the process as `Spec.Tasks`;
+      `tools/agents/registry.go` is deleted, the records stay host-side).
+      `/cancel` is `Run.Interrupt`.

@@ -4,6 +4,8 @@
 package agent
 
 import (
+	"go.bison9.com/agent/hook"
+
 	toolsagents "go.bison9.com/agency/tools/agents"
 	toolsshell "go.bison9.com/agency/tools/shell"
 )
@@ -12,7 +14,7 @@ import (
 // source's) has running in the background: its sub-agent and task-model
 // tasks and its shell jobs.
 func (al *AgentLoop) backgroundRunning(owner string) int {
-	return len(al.tasks.Running(owner)) + toolsshell.Host.Running(owner)
+	return len(toolsagents.RunningTasks(al.tasks, owner)) + toolsshell.Host.Running(owner)
 }
 
 // cancelBackground cancels everything agent runs in the background (/cancel
@@ -25,7 +27,17 @@ func (al *AgentLoop) cancelBackground(agent *AgentInstance) int {
 	if mgr := al.spawnManagerOf(owner); mgr != nil {
 		return n + mgr.CancelAllWith(errCancelledByUser).Cancelled
 	}
-	return n + len(al.tasks.CancelAll(owner, errCancelledByUser))
+	return n + len(toolsagents.TasksOf(al.tasks, owner).CancelAll(errCancelledByUser).Cancelled)
+}
+
+// TaskRegistrar is the process's task registry as the agent agentID sees
+// it: a clone's tasks are its source's.
+func (al *AgentLoop) TaskRegistrar(agentID string) hook.TaskRegistrar {
+	owner := agentID
+	if a, ok := al.GetRegistry().Get(agentID); ok {
+		owner = a.toolIdentity()
+	}
+	return toolsagents.TasksOf(al.tasks, owner)
 }
 
 // spawnManagerOf is the sub-agent manager of the config agent id, which

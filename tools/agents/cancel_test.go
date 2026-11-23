@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
@@ -39,7 +40,7 @@ func readResults(dir, id string) (*TaskResults, error) {
 // context ends, reporting what it saw then.
 type cancelFixture struct {
 	mgr     *SubagentManager
-	reg     *TaskRegistry
+	reg     *loop.Tasks
 	live    *LiveSet
 	ws      string
 	started chan context.Context
@@ -54,7 +55,7 @@ type cancelFixture struct {
 func newCancelFixture(t *testing.T) *cancelFixture {
 	t.Helper()
 	f := &cancelFixture{
-		reg: NewTaskRegistry(), live: NewLiveSet(), ws: t.TempDir(),
+		reg: loop.NewTasks(nil, hook.DefaultCancelGrace), live: NewLiveSet(), ws: t.TempDir(),
 		started: make(chan context.Context, 8), atCancel: make(chan bool, 8), released: make(chan struct{}, 8),
 	}
 	f.mgr = NewSubagentManager(SubagentManagerConfig{
@@ -62,7 +63,7 @@ func newCancelFixture(t *testing.T) *cancelFixture {
 		RunFull: func(ctx context.Context, _, _, _, _ string, _ []string) (*global.SyncResult, func(), error) {
 			f.started <- ctx
 			<-ctx.Done()
-			id := TaskID(ctx)
+			id := hook.TaskID(ctx)
 			rec, err := readStatus(tasksDirFor(f.ws), id)
 			f.atCancel <- err == nil && rec.Status == StatusCancelled && !slices.Contains(listRunUUIDs(tasksDirFor(f.ws)), id) && !f.live.Has(id)
 			return &global.SyncResult{Content: f.partial}, func() { f.released <- struct{}{} }, context.Cause(ctx)
@@ -141,7 +142,7 @@ func TestCancelTask_Cascades(t *testing.T) {
 	if pctx.Err() == nil || cctx.Err() == nil || octx.Err() != nil {
 		t.Fatal("cancel reached the wrong tasks")
 	}
-	if running := f.reg.Running("alice"); len(running) != 1 || running[0].ID != other {
+	if running := RunningTasks(f.reg, "alice"); len(running) != 1 || running[0].ID != other {
 		t.Fatalf("running = %+v, want the unrelated task", running)
 	}
 }
@@ -154,7 +155,7 @@ func TestCancelTask_NotRelaunchedAfterRestart(t *testing.T) {
 	<-f.atCancel
 
 	// A restart: a fresh live set and registry over the same workspace.
-	live, reg := NewLiveSet(), NewTaskRegistry()
+	live, reg := NewLiveSet(), loop.NewTasks(nil, hook.DefaultCancelGrace)
 	restarted := NewSubagentManager(SubagentManagerConfig{
 		Workspace: f.ws, Live: live, Tasks: reg, CallerAgentID: "alice",
 		RunFull: func(context.Context, string, string, string, string, []string) (*global.SyncResult, func(), error) {
@@ -163,7 +164,7 @@ func TestCancelTask_NotRelaunchedAfterRestart(t *testing.T) {
 	})
 	restarted.SuperviseOnce(time.Now().Unix()+3600, nil)
 	// A relaunch registers the task before its worker starts.
-	if live.Has(id) || len(reg.Running("alice")) != 0 {
+	if live.Has(id) || len(RunningTasks(reg, "alice")) != 0 {
 		t.Fatal("the cancelled task was relaunched")
 	}
 }
@@ -240,10 +241,10 @@ func TestCancelAllTasks(t *testing.T) {
 	if got := <-waited; !got.IsError || !strings.Contains(got.ForLLM, "cancelled") {
 		t.Fatalf("the waiting turn got %+v", got)
 	}
-	if len(f.reg.Running("alice")) != 0 || len(f.reg.Running("bob")) != 1 {
-		t.Fatalf("alice %+v, bob %+v", f.reg.Running("alice"), f.reg.Running("bob"))
+	if len(RunningTasks(f.reg, "alice")) != 0 || len(RunningTasks(f.reg, "bob")) != 1 {
+		t.Fatalf("alice %+v, bob %+v", RunningTasks(f.reg, "alice"), RunningTasks(f.reg, "bob"))
 	}
-	f.reg.CancelAll("bob", errCancelledByAgent)
+	TasksOf(f.reg, "bob").CancelAll(errCancelledByAgent)
 }
 
 // The tool: one task by uuid or all, never both nor neither; the result is
@@ -363,7 +364,7 @@ func TestCancel_SupervisorDoesNotRelaunchACancelledTask(t *testing.T) {
 				t.Fatal("the cancelled task was relaunched")
 			default:
 			}
-			if f.live.Has(id) || len(f.reg.Running("alice")) != 0 {
+			if f.live.Has(id) || len(RunningTasks(f.reg, "alice")) != 0 {
 				t.Fatal("the cancelled task is running again")
 			}
 			if rec, err := readStatus(tasksDirFor(f.ws), id); err != nil || rec.Status != StatusCancelled {
@@ -401,7 +402,7 @@ func TestCancelTask_RelaunchedMeanwhileIsCancelled(t *testing.T) {
 func TestCancelTask_LeftBehindCascades(t *testing.T) {
 	f := newCancelFixture(t)
 	leftRecord(t, f.ws, "left")
-	child, cctx := f.spawn(t, WithTaskID(context.Background(), "left"), nil)
+	child, cctx := f.spawn(t, hook.WithScope(context.Background(), hook.Scope{Task: "left"}), nil)
 	res := f.mgr.CancelTask("left")
 	if res.Cancelled != 2 || res.Tasks[0].UUID != child || res.Tasks[1].UUID != "left" {
 		t.Fatalf("result = %+v, want the child then the task", res)
@@ -469,7 +470,7 @@ func TestRun_WaitTaskCancelledWhileShuttingDown(t *testing.T) {
 	if ids := listRunUUIDs(tasksDirFor(ws)); len(ids) != 0 {
 		t.Fatalf("run markers = %v, want none", ids)
 	}
-	if rec, err := readStatus(tasksDirFor(ws), TaskID(taskCtx)); err != nil || rec.Status != StatusCancelled {
+	if rec, err := readStatus(tasksDirFor(ws), hook.TaskID(taskCtx)); err != nil || rec.Status != StatusCancelled {
 		t.Fatalf("record = %+v (%v)", rec, err)
 	}
 }
@@ -555,42 +556,6 @@ func TestSupervise_ChildOfCancelledParentIsNotRelaunched(t *testing.T) {
 	}
 }
 
-// A task started under a task of a cascade after the cascade took its
-// snapshot, before that task itself was stopped, is cancelled too.
-func TestTaskRegistry_NothingEscapesACascade(t *testing.T) {
-	reg := NewTaskRegistry()
-	reg.grace = time.Nanosecond // these tasks have no worker to wait for
-	var late *Task
-	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "r", Owner: "alice"}, 0, nil, nil)
-	_, _ = reg.start(context.Background(), hook.TaskInfo{ID: "c", Owner: "alice", Parent: "r"}, 0, nil, func(error) bool {
-		// While the child is being cancelled, the root starts another.
-		_, late = reg.start(context.Background(), hook.TaskInfo{ID: "late", Owner: "alice", Parent: "r"}, 0, nil, nil)
-		return true
-	})
-	reg.Cancel("alice", "r", errCancelledByAgent)
-	if late == nil || late.Info().State != hook.TaskCancelled {
-		t.Fatal("a task started during the cascade escaped it")
-	}
-	if n := len(reg.Running("alice")); n != 0 {
-		t.Fatalf("%d tasks still running", n)
-	}
-}
-
-// A cancel losing to the task's own end leaves the end event to it.
-func TestTaskRegistry_EndEventSurvivesALostCancel(t *testing.T) {
-	reg := NewTaskRegistry()
-	var last hook.TaskInfo
-	reg.Observe(func(info hook.TaskInfo) { last = info })
-	_, task := reg.start(context.Background(), hook.TaskInfo{ID: "t", Owner: "alice"}, 0, nil, func(error) bool { return false })
-	if _, stopped := task.stop(errCancelledByAgent); stopped {
-		t.Fatal("an ended task reported as cancelled")
-	}
-	task.finished(hook.TaskDone)
-	if last.State != hook.TaskDone {
-		t.Fatalf("last event = %+v, want done", last)
-	}
-}
-
 // Once agent_cancel returns, the task's record and results file are final:
 // the worker's partial output is already in, and nothing is written later.
 // A worker that outlives the cancel's wait is sealed and writes nothing.
@@ -606,10 +571,11 @@ func TestCancelTask_RecordFinalWhenCancelReturns(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newCancelFixture(t)
 			if tc.stuck {
-				f.reg.grace = time.Millisecond // the wait gives up
+				f.reg = loop.NewTasks(nil, time.Millisecond) // the wait gives up
 			} else {
-				f.reg.grace = time.Minute // never reached: the worker returns
+				f.reg = loop.NewTasks(nil, time.Minute) // never reached: the worker returns
 			}
+			f.mgr.tasks = f.reg
 			release := make(chan struct{})
 			exited := make(chan struct{})
 			f.mgr.runFull = func(ctx context.Context, _, _, _, _ string, _ []string) (*global.SyncResult, func(), error) {

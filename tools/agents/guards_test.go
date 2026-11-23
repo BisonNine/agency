@@ -10,7 +10,7 @@ import (
 	"go.bison9.com/agency/global"
 )
 
-// A nil set, registry, spawner or manager answers safely: nothing running,
+// A nil set, spawner or manager answers safely: nothing running,
 // nothing cancelled, and the spawn tools say spawn is unavailable.
 func TestNilReceivers(t *testing.T) {
 	var live *LiveSet
@@ -18,11 +18,6 @@ func TestNilReceivers(t *testing.T) {
 	live.Remove("u")
 	if live.Has("u") {
 		t.Error("a nil set holds nothing")
-	}
-
-	var reg *TaskRegistry
-	if reg.CancelChildren("x", nil) != nil || reg.Running("alice") != nil || reg.Owns("alice", "x") || reg.CancelAll("alice", nil) != nil {
-		t.Error("a nil registry has no tasks")
 	}
 
 	var sp *Spawner
@@ -61,13 +56,6 @@ func TestBlankTaskRefused(t *testing.T) {
 	}
 	if _, err := sm.spawnCallback(ctx, spawnOrigin{}, "\n", "n", "", "", "", "", "", nil, nil); err == nil || err.Error() != "task is required" {
 		t.Errorf("spawnCallback: %v", err)
-	}
-}
-
-func TestWithTaskID_Empty(t *testing.T) {
-	ctx := context.Background()
-	if WithTaskID(ctx, "") != ctx {
-		t.Error("an empty id leaves the context as it is")
 	}
 }
 

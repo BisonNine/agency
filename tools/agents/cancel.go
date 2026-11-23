@@ -5,6 +5,7 @@ package agents
 
 import (
 	"errors"
+	"slices"
 
 	"go.bison9.com/agent/hook"
 
@@ -31,7 +32,7 @@ func (sm *SubagentManager) CancelTask(id string) *global.TaskCancelResult {
 	// A task relaunched between the two looks is caught by the next round;
 	// each relaunch is bounded by the restart cap.
 	for {
-		if infos := sm.tasks.Cancel(sm.ownerAgentID, id, errCancelledByAgent); len(infos) > 0 {
+		if infos := sm.cancelRunning(id, errCancelledByAgent); len(infos) > 0 {
 			sm.addCancelled(res, infos)
 			return res
 		}
@@ -67,7 +68,7 @@ func (sm *SubagentManager) CancelAllTasks() *global.TaskCancelResult {
 // with (/cancel all gives its own).
 func (sm *SubagentManager) CancelAllWith(cause error) *global.TaskCancelResult {
 	res := &global.TaskCancelResult{}
-	sm.addCancelled(res, sm.tasks.CancelAll(sm.ownerAgentID, cause))
+	sm.addCancelled(res, TasksOf(sm.tasks, sm.ownerAgentID).CancelAll(cause).Cancelled)
 	for _, rec := range listStatusRecords(sm.tasksDir()) {
 		if rec.Status != StatusRunning || !config.SameAgentID(rec.OwnerAgentID, sm.ownerAgentID) {
 			continue
@@ -79,10 +80,30 @@ func (sm *SubagentManager) CancelAllWith(cause error) *global.TaskCancelResult {
 			res.Tasks = append(res.Tasks, global.TaskBrief{UUID: rec.UUID, Name: rec.Name, Status: StatusCancelled})
 		} else {
 			// Relaunched meanwhile: it is in the registry now.
-			sm.addCancelled(res, sm.tasks.Cancel(sm.ownerAgentID, rec.UUID, cause))
+			sm.addCancelled(res, sm.cancelRunning(rec.UUID, cause))
 		}
 	}
 	return res
+}
+
+// runs reports whether id is a running task of the owner.
+func (sm *SubagentManager) runs(id string) bool {
+	return slices.ContainsFunc(TasksOf(sm.tasks, sm.ownerAgentID).Tasks(), func(t hook.TaskInfo) bool { return t.ID == id })
+}
+
+// cancelRunning cancels the owner's running task id and, first, the tasks
+// it started (with theirs), with cause, and returns the tasks it cancelled;
+// none when id is not a running task of the owner (the tasks of one that
+// has ended are left alone).
+func (sm *SubagentManager) cancelRunning(id string, cause error) []hook.TaskInfo {
+	if !sm.runs(id) {
+		return nil
+	}
+	res, err := TasksOf(sm.tasks, sm.ownerAgentID).CancelTask(id, cause)
+	if err != nil {
+		return nil // hook.ErrUnknownTask: it ended meanwhile and is no longer kept
+	}
+	return res.Cancelled
 }
 
 // addCancelled records the registry's cancelled tasks in res.
@@ -107,7 +128,7 @@ func (sm *SubagentManager) cancelRecord(rec *TaskRecord, cause error) ([]hook.Ta
 	children := sm.tasks.CancelChildren(rec.UUID, cause)
 	sm.live.settle.Lock()
 	defer sm.live.settle.Unlock()
-	if sm.live.Has(rec.UUID) || sm.tasks.Owns(sm.ownerAgentID, rec.UUID) {
+	if sm.live.Has(rec.UUID) || sm.runs(rec.UUID) {
 		return children, false
 	}
 	// Read again now that nothing runs it: a worker that has just ended

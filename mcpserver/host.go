@@ -278,9 +278,15 @@ func (h *endpointHost) callContext(ctx context.Context, c mcphost.Caller) contex
 	// dispatch) arrive here, not through the loop, and would otherwise start at
 	// depth 0 whatever the turn's depth.
 	ctx = toolsagents.WithSpawnDepth(ctx, rec.depth)
-	// Likewise the turn's ask chain and the task it runs in (SetTurnScope).
+	// Likewise the turn's ask chain and the task it runs in (SetTurnScope),
+	// with the agent's view of the task registry.
 	ctx = tools.WithAskChain(ctx, rec.askChain)
-	ctx = toolsagents.WithTaskID(ctx, rec.taskID)
+	scope, _ := hook.ScopeOf(ctx)
+	scope.Task, scope.Depth = rec.taskID, rec.depth
+	ctx = hook.WithScope(ctx, scope)
+	if h.m.taskRegistrar != nil {
+		ctx = hook.WithTaskRegistrar(ctx, h.m.taskRegistrar(rec.agentID))
+	}
 
 	// Everything the call sends to "the current chat" (msg_send,
 	// msg_send_file, ForUser, breadcrumbs, background results, a

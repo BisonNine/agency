@@ -15,6 +15,7 @@ import (
 	"go.bison9.com/agent/clock"
 	"go.bison9.com/agent/cogmem/consolidate"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/toolkit"
 
@@ -183,8 +184,9 @@ type AgentLoop struct {
 	taskLive  *toolsagents.LiveSet
 	superStop chan struct{}
 	// tasks is the process's task registry: every running sub-agent and
-	// task-model job on a context of its own, by id and owner.
-	tasks *toolsagents.TaskRegistry
+	// task-model job on a context of its own, by id and owner. Every agent
+	// instance and clone shares it (Spec.Tasks), so tasks outlive a reload.
+	tasks *loop.Tasks
 
 	// sweepWG tracks the temporary-agent sweeper, stopped by evictStop.
 	sweepWG sync.WaitGroup
@@ -303,7 +305,7 @@ type SessionTokenIssuer interface {
 	// it. No-op when the sessionKey is unknown.
 	SetDepth(sessionKey string, depth int)
 	// SetTurnScope records the ask chain of the turn starting on sessionKey
-	// (see tools.AskChain) and the task it runs in (toolsagents.TaskID), so
+	// (see tools.AskChain) and the task it runs in (hook.TaskID), so
 	// MCP tool calls made with the session's token carry them. No-op when
 	// the sessionKey is unknown.
 	SetTurnScope(sessionKey string, askChain []string, taskID string)
@@ -400,7 +402,6 @@ func NewAgentLoop(
 		exposeReasoningCache:  make(map[string]bool),
 		showToolActivityCache: make(map[string]bool),
 		taskLive:              toolsagents.NewLiveSet(),
-		tasks:                 toolsagents.NewTaskRegistry(),
 		superStop:             make(chan struct{}),
 	}
 	if n := cfg.Agents.Defaults.MaxConcurrentTurns; n > 0 {
@@ -408,6 +409,7 @@ func NewAgentLoop(
 	}
 	// The catalogue runs on the loop's clock, so a test that puts a fake on
 	// the loop moves cooldowns too.
+	al.tasks = loop.NewTasks(registryClock{al}, hook.DefaultCancelGrace)
 	al.catalogs = providers.NewCatalogBuilder(modelAlerts, registryClock{al})
 	al.catalogs.SetSelectionStore(sessionSelections{al})
 	al.catalog = al.catalogs.Build(cfg)
@@ -534,6 +536,9 @@ func (al *AgentLoop) dispatchInbound(ctx context.Context, msg bus.InboundMessage
 // pending, so it is replayed on the next start.
 func (al *AgentLoop) Stop() {
 	al.stopping.Store(true)
+	// No task starts from now on; the running ones end without being
+	// cancelled, so their records relaunch them after the restart.
+	al.tasks.Shutdown(errShuttingDown)
 	al.running.Store(false)
 	al.runMu.Lock()
 	stopRun := al.stopRun

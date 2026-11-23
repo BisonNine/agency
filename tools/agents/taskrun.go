@@ -13,13 +13,15 @@ import (
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
-// taskRun is one task of the manager while it runs: its record, its entry in
-// the registry and how its result is delivered.
+// taskRun is one task of the manager while it runs: its record, its handle
+// in the process's task registry and how its result is delivered.
 type taskRun struct {
-	rec  *TaskRecord
-	task *Task
+	rec *TaskRecord
+	// h is the task's handle; nil when the registry refused to start it.
+	h hook.TaskHandle
 
 	mu sync.Mutex
 	// cb receives the result of a callback task (and of a wait task its turn
@@ -35,6 +37,9 @@ type taskRun struct {
 	// settleHeld: the task is being started by a caller holding the
 	// settle lock (launchTask).
 	settleHeld bool
+	// detachTo receives the result once the turn waiting for the task
+	// stopped waiting (await, detach).
+	detachTo toolkit.AsyncCallback
 }
 
 // cancelledTaskError is the error a cancelled task's record carries.
@@ -72,16 +77,53 @@ func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, c
 	if wait {
 		tr.result, tr.waiting = make(chan *toolkit.Result, 1), true
 	}
-	info := hook.TaskInfo{
-		ID: rec.UUID, Owner: sm.ownerAgentID, Parent: rec.Parent,
-		Kind: taskKind(rec), Label: rec.Name, Mode: taskMode(rec.Mode),
-	}
-	ctx, task := sm.tasks.start(parent, info, rec.SpawnDepth, askChain, func(cause error) bool { return sm.cancelRun(tr, cause) })
+	ctx, h, err := TasksOf(sm.tasks, sm.ownerAgentID).StartTask(parent, hook.TaskStart{
+		Info: hook.TaskInfo{
+			ID: rec.UUID, Parent: rec.Parent,
+			Kind: taskKind(rec), Label: rec.Name, Mode: taskMode(rec.Mode),
+		},
+		Depth:    rec.SpawnDepth,
+		OnCancel: func(cause error) bool { return sm.cancelRun(tr, cause) },
+		OnDetach: func() bool { return sm.detach(tr) },
+	})
 	tr.mu.Lock()
-	tr.task, tr.settleHeld = task, false
+	tr.h, tr.settleHeld = h, false
 	tr.mu.Unlock()
+	if err != nil {
+		sm.startFailed(parent, tr, err)
+		return tr
+	}
+	// The task's context carries nothing of the turn's but its scope; the
+	// host's own values go on it here.
+	ctx = WithSpawnDepth(ctx, rec.SpawnDepth)
+	if len(askChain) > 0 {
+		ctx = tools.WithAskChain(ctx, askChain)
+	}
 	go sm.runRecord(ctx, tr, resumed)
 	return tr
+}
+
+// startFailed settles a task the registry refused to start. While the
+// process shuts down, a waited task is cancelled (its turn is replayed and
+// starts it again) and a background one keeps its record and marker, so a
+// restart relaunches it. Any other refusal (a duplicate id) is the task's
+// error, delivered on ctx (the starter's, without its cancellation).
+func (sm *SubagentManager) startFailed(ctx context.Context, tr *taskRun, err error) {
+	logger.WarnCF("subagent", "Task not started", map[string]any{
+		"uuid": tr.rec.UUID, "name": tr.rec.Name, "owner": sm.ownerAgentID, "kind": taskKind(tr.rec), "error": err.Error(),
+	})
+	if isShutdown(err) {
+		if tr.waiting {
+			sm.cancelRun(tr, err)
+		}
+		return
+	}
+	rec, ctx := tr.rec, context.WithoutCancel(ctx)
+	if rec.Kind != "" {
+		sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordTaskResults(rec, nil, err) }, "", nil)
+		return
+	}
+	sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordResults(rec, "", 0, err) }, "", nil)
 }
 
 // runRecord executes a task to completion on its own context and records
@@ -90,10 +132,10 @@ func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, c
 func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed bool) {
 	rec := tr.rec
 	tr.mu.Lock()
-	task := tr.task
+	h := tr.h
 	tr.mu.Unlock()
 	// Last: the worker is gone and has written all it writes.
-	defer task.markExited()
+	defer h.Exited()
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("panic: %v", r)
@@ -109,8 +151,6 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 	if tr.ended {
 		// Cancelled before it started: its record is final, nothing runs.
 		tr.mu.Unlock()
-		task.markExited()
-		sm.tasks.notify(task.Info())
 		return
 	}
 	rec.StartedAt = nowRFC()
@@ -120,7 +160,7 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 	tr.mu.Unlock()
 
 	if rec.Kind != "" {
-		res, err := sm.runTaskModel(ctx, rec, string(tr.task.Info().Mode))
+		res, err := sm.runTaskModel(ctx, rec, string(h.Info().Mode))
 		sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordTaskResults(rec, res, err) }, "", nil)
 		return
 	}
@@ -144,13 +184,13 @@ func (sm *SubagentManager) runRecord(ctx context.Context, tr *taskRun, resumed b
 			partial = fr.Content
 		}
 		logger.WarnCF("subagent", "subagent.run.failed", map[string]any{
-			"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": tr.task.Info().Mode, "error": err.Error(),
+			"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": h.Info().Mode, "error": err.Error(),
 		})
 		sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordResults(rec, "", 0, err) }, partial, release)
 		return
 	}
 	logger.InfoCF("subagent", "subagent.run.finished", map[string]any{
-		"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": tr.task.Info().Mode,
+		"uuid": rec.UUID, "name": rec.Name, "agent": target, "mode": h.Info().Mode,
 		"iterations": fr.Iterations, "content_len": len(fr.Content),
 	})
 	sm.complete(ctx, tr, func() *toolkit.Result { return sm.recordResults(rec, fr.Content, fr.Iterations, nil) }, fr.Content, release)
@@ -170,15 +210,19 @@ func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record fun
 		cancelled := tr.cancelled
 		tr.mu.Unlock()
 		// The partial output, unless the cancel stopped waiting for it:
-		// the record it wrote is then final.
-		if cancelled && partial != "" && !tr.task.Sealed() {
+		// the record it wrote is then final. The observers hear once more
+		// that the worker has unwound when it reports it exited.
+		if cancelled && partial != "" && !tr.h.Sealed() {
 			sm.persistResults(sm.tasksDir(), cancelledResults(tr.rec, partial))
 		}
 		release()
-		tr.task.finished(hook.TaskCancelled)
-		// The cancel told the observers already; they hear once more that
-		// the worker has unwound.
-		sm.tasks.notify(tr.task.Info())
+		return
+	}
+	if isShutdown(context.Cause(ctx)) {
+		// The process is shutting down (Tasks.Shutdown): the task is not
+		// over, its record stays as it is and a restart relaunches it.
+		tr.mu.Unlock()
+		release()
 		return
 	}
 	tr.ended = true
@@ -190,11 +234,9 @@ func (sm *SubagentManager) complete(ctx context.Context, tr *taskRun, record fun
 	tr.waiting = false
 	status := tr.rec.Status
 	tr.mu.Unlock()
-	state := hook.TaskDone
-	if status != StatusDone {
-		state = hook.TaskError
+	if tr.h != nil {
+		tr.h.Finish(result)
 	}
-	tr.task.finished(state)
 
 	// A waiting turn gets its result once the clone is gone; a callback is
 	// delivered first, then the clone is released.
@@ -273,17 +315,18 @@ func (sm *SubagentManager) cancelRun(tr *taskRun, cause error) bool {
 	return true
 }
 
-// detach turns a wait task whose turn stopped waiting into a callback task:
-// it goes on, its record says callback and gets a run marker (so a restart
-// relaunches it), and its result goes to cb. It returns false when the task
-// had already ended; its result is then in tr.result.
-func (sm *SubagentManager) detach(tr *taskRun, cb toolkit.AsyncCallback) bool {
+// detach is the record half of detaching a wait task whose turn stopped
+// waiting (the task's OnDetach): it goes on as a callback task, its record
+// says callback and gets a run marker (so a restart relaunches it), and its
+// result goes to tr.detachTo. It returns false when the task had already
+// ended; its result is then in tr.result.
+func (sm *SubagentManager) detach(tr *taskRun) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if tr.ended || !tr.waiting {
 		return false
 	}
-	tr.waiting, tr.cb = false, cb
+	tr.waiting, tr.cb = false, tr.detachTo
 	rec := tr.rec
 	rec.Mode = "callback"
 	rec.RetryAfter = nowEpoch() + retryDelaySecs()
@@ -293,7 +336,6 @@ func (sm *SubagentManager) detach(tr *taskRun, cb toolkit.AsyncCallback) bool {
 	if err := markRun(dir, rec.UUID); err != nil {
 		logger.WarnCF("subagent", "failed to write task marker", map[string]any{"uuid": rec.UUID, "error": err.Error()})
 	}
-	tr.task.setMode(hook.TaskCallback)
 	logger.InfoCF("subagent", "Task detached: its turn stopped waiting", map[string]any{
 		"uuid": rec.UUID, "name": rec.Name, "owner": sm.ownerAgentID, "kind": taskKind(rec),
 	})
@@ -306,6 +348,10 @@ func (sm *SubagentManager) detach(tr *taskRun, cb toolkit.AsyncCallback) bool {
 // replayed on restart and starts it again), and when there is no onDetach
 // (no chat for a later result).
 func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach toolkit.AsyncCallback) *toolkit.Result {
+	if tr.h == nil {
+		// Never started: startFailed has delivered its result.
+		return <-tr.result
+	}
 	select {
 	case res := <-tr.result:
 		return res
@@ -316,17 +362,20 @@ func (sm *SubagentManager) await(ctx context.Context, tr *taskRun, onDetach tool
 		cause = hook.ErrShutdown
 	}
 	if isShutdown(cause) {
-		tr.task.stopAndWait(cause)
+		tr.h.Cancel(cause)
 		return <-tr.result
 	}
 	if onDetach == nil {
 		// Nowhere to deliver a later result (no chat to answer in, as for a
 		// callback spawn, which is refused there): the task is cancelled
 		// rather than left to report to no one.
-		tr.task.stopAndWait(errNoRoute)
+		tr.h.Cancel(errNoRoute)
 		return <-tr.result
 	}
-	if !sm.detach(tr, onDetach) {
+	tr.mu.Lock()
+	tr.detachTo = onDetach
+	tr.mu.Unlock()
+	if !tr.h.Detach(cause) {
 		return <-tr.result
 	}
 	return &toolkit.Result{ForLLM: fmt.Sprintf(detachedText, tr.rec.Name, tr.rec.UUID, tr.rec.UUID)}
