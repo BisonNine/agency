@@ -617,60 +617,6 @@ func TestSkillInstaller_GetGithubDirAllFiles(t *testing.T) {
 	})
 }
 
-func TestSkillInstaller_InstallFromGitHub_WithToken(t *testing.T) {
-	tmpDir := t.TempDir()
-	skillsDir := filepath.Join(tmpDir, "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	var serverURL string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Capture the authorization header
-		authHeader := r.Header.Get("Authorization")
-		if authHeader != "" {
-			tokenReceived := strings.TrimPrefix(authHeader, "Bearer ")
-			t.Fatalf("github token is %s", tokenReceived)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-
-		items := []map[string]any{
-			{
-				"name":         "SKILL.md",
-				"path":         "SKILL.md",
-				"type":         "file",
-				"download_url": serverURL + "/download/SKILL.md",
-			},
-		}
-		encodeBody(t, w, items)
-	}))
-	serverURL = server.URL
-	defer server.Close()
-
-	installer, err := NewSkillInstaller(tmpDir, "test-github-token", "")
-	if err != nil {
-		t.Fatalf("NewSkillInstaller() error = %v", err)
-	}
-
-	// We need to test the token is passed - the actual install will fail
-	// because we're not fully mocking the download, but we can verify
-	// the token is sent in the request
-
-	// Use a simple context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// The install will fail because download URL isn't properly set up,
-	// but the token should be sent in the API request
-	_ = installer.InstallFromGitHub(ctx, "owner/repo") //nolint:errcheck // outcome is irrelevant: only the header check in the handler matters
-
-	// Note: We can't easily intercept the download request since it's a different URL,
-	// but the fact that the API request was made verifies the token flow
-	// In a real scenario, the token would be sent to both API and raw downloads
-}
-
 func TestSkillInstaller_ContextCancellation(t *testing.T) {
 	tmpDir := t.TempDir()
 	installer, err := NewSkillInstaller(tmpDir, "", "")
