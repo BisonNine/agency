@@ -58,6 +58,9 @@ func openStore() (*device.Store, *config.Config, error) {
 	return store, cfg, nil
 }
 
+// lanIPv4s lists the LAN addresses the QR advertises; replaced in tests.
+var lanIPv4s = device.LANIPv4s
+
 func newPairCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "pair",
@@ -78,7 +81,7 @@ func pair() error {
 	if devicePort == 0 {
 		devicePort = device.DefaultDevicePort
 	}
-	payload, err := device.BuildSetupPayload(dev.ExternalURL, cfg.Gateway.ExternalURL, device.LANIPv4s(), devicePort, dev.Token, dev.TLS)
+	payload, err := device.BuildSetupPayload(dev.ExternalURL, cfg.Gateway.ExternalURL, lanIPv4s(), devicePort, dev.Token, dev.TLS)
 	if err != nil {
 		return fmt.Errorf("build setup payload: %w", err)
 	}
