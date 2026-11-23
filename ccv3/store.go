@@ -99,13 +99,18 @@ func Open(dir string, opts ...Option) (*Store, error) {
 	if ok {
 		return s, nil
 	}
-	if _, err := os.Stat(abs); errors.Is(err, fs.ErrNotExist) {
-		if err := os.MkdirAll(abs, dirPerm); err != nil {
-			return nil, fmt.Errorf("open card store %s: %w", abs, err)
+	switch info, err := os.Stat(abs); {
+	case errors.Is(err, fs.ErrNotExist):
+		if mkErr := os.MkdirAll(abs, dirPerm); mkErr != nil {
+			return nil, fmt.Errorf("open card store %s: %w", abs, mkErr)
 		}
-		if err := os.Chmod(abs, dirPerm); err != nil {
-			return nil, fmt.Errorf("open card store %s: %w", abs, err)
+		if chErr := os.Chmod(abs, dirPerm); chErr != nil {
+			return nil, fmt.Errorf("open card store %s: %w", abs, chErr)
 		}
+	case err != nil:
+		return nil, fmt.Errorf("open card store %s: %w", abs, err)
+	case !info.IsDir():
+		return nil, fmt.Errorf("open card store %s: not a directory", abs)
 	}
 	stores[abs] = s
 	return s, nil
