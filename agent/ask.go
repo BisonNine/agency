@@ -281,7 +281,10 @@ func (al *AgentLoop) ask(ctx context.Context, from sender, agentID, message stri
 	}
 
 	id := "ask-" + uuid.NewString()
-	replies := al.asks.open(id, from.name, al.clk().Now().Add(wait), stopTurn)
+	// One deadline for the ask: a person's window is cut to it, and the
+	// asker stops waiting at it, however long the publish below takes.
+	deadline := al.clk().Now().Add(wait)
+	replies := al.asks.open(id, from.name, deadline, stopTurn)
 	if err = al.publishAsk(ctx, id, from, target, message, chain, depth); err != nil {
 		al.asks.close(id)
 		return tools.AgentReply{}, fmt.Errorf("queue the message: %w", err)
@@ -293,7 +296,7 @@ func (al *AgentLoop) ask(ctx context.Context, from sender, agentID, message stri
 		defer slot.reclaim(ctx)
 	}
 
-	reply, answered, err := al.awaitAskReply(ctx, id, replies, wait)
+	reply, answered, err := al.awaitAskReply(ctx, id, replies, deadline)
 	if err != nil {
 		return tools.AgentReply{}, err
 	}
@@ -380,11 +383,11 @@ func (al *AgentLoop) publishAsk(ctx context.Context, id string, from sender, tar
 	return al.bus.PublishInbound(pubCtx, msg)
 }
 
-// awaitAskReply waits up to wait for ask id's reply. It reports answered
+// awaitAskReply waits until deadline for ask id's reply. It reports answered
 // false when the wait ran out (ctx's deadline included); a ctx cancelled for
 // any other reason is an error. Whenever it stops waiting, a reply that
 // arrived meanwhile still wins.
-func (al *AgentLoop) awaitAskReply(ctx context.Context, id string, replies <-chan tools.AgentReply, wait time.Duration) (tools.AgentReply, bool, error) {
+func (al *AgentLoop) awaitAskReply(ctx context.Context, id string, replies <-chan tools.AgentReply, deadline time.Time) (tools.AgentReply, bool, error) {
 	giveUp := func() (tools.AgentReply, bool) {
 		al.asks.close(id)
 		select {
@@ -394,7 +397,7 @@ func (al *AgentLoop) awaitAskReply(ctx context.Context, id string, replies <-cha
 			return tools.AgentReply{}, false
 		}
 	}
-	timer := al.clk().NewTimer(wait)
+	timer := al.clk().NewTimer(al.clk().Until(deadline))
 	defer timer.Stop()
 	select {
 	case reply := <-replies:

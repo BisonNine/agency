@@ -198,6 +198,9 @@
   list instead of the one configured. Such installs now run on the
   configured model, and the logs show the model's name rather than its
   model id.
+- **An ask no longer waits past its `wait_seconds`.** When the message took
+  a moment to queue, the asking agent waited that much longer, even after a
+  person it asked had already been told the request timed out.
 
 ## [0.6.5]
 
