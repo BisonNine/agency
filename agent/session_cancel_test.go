@@ -27,7 +27,7 @@ type probeRun struct {
 func (r *probeRun) Events() iter.Seq2[hook.Event, error] {
 	return func(func(hook.Event, error) bool) {}
 }
-func (r *probeRun) Interrupt()            { r.Cancel(hook.ErrInterrupted) }
+func (r *probeRun) Interrupt(cause error) { r.Cancel(cause) }
 func (r *probeRun) Cancel(cause error)    { r.onCancel(cause) }
 func (r *probeRun) Done() <-chan struct{} { return r.done }
 func (r *probeRun) Wait() hook.TurnResult { <-r.done; return hook.TurnResult{} }
