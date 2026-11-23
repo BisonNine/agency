@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/loop"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/providers"
 )
@@ -56,10 +58,10 @@ func TestProcessSystemMessage_CapsAsyncResult(t *testing.T) {
 	if !strings.Contains(got, "[output truncated: kept ") {
 		t.Fatal("oversized async result reached the LLM uncapped")
 	}
-	if want := toolResultCap(agent.ContextWindow); len(got) > want+512 {
+	if want := loop.ToolResultCap(agent.ContextWindow); len(got) > want+512 {
 		t.Fatalf("capped message is %d chars, cap is %d", len(got), want)
 	}
-	if strings.Count(got, "r") < toolResultCapFloor/2 {
+	if strings.Count(got, "r") < loop.ToolResultCap(0)/2 {
 		t.Fatal("cap dropped the head of the result rather than the tail")
 	}
 }

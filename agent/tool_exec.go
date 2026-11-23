@@ -6,6 +6,8 @@ package agent
 import (
 	"context"
 
+	"go.bison9.com/agent/loop"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/logger"
@@ -56,7 +58,7 @@ func (al *AgentLoop) asyncToolCallback(ctx context.Context, agent *AgentInstance
 		if content == "" {
 			return
 		}
-		content = capToolResult(content, result.IsError, al.sessionLimits(agent, opts.SessionKey).contextWindow)
+		content = loop.CapToolResult(content, result.IsError, al.sessionLimits(agent, opts.SessionKey).contextWindow)
 
 		logger.InfoCF("agent", "Async tool completed, publishing result",
 			map[string]any{

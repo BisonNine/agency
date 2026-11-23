@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agent/loop"
+
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/constants"
@@ -107,7 +109,7 @@ func subagentResult(content string) string {
 // contextWindow tokens. It is a tool result that arrives late: capped as the
 // synchronous path does, or an oversized one fails the turn it lands in.
 func capAsyncResult(agent *AgentInstance, msg bus.InboundMessage, contextWindow int) string {
-	result := capToolResult(msg.Content, false, contextWindow)
+	result := loop.CapToolResult(msg.Content, false, contextWindow)
 	if len(result) != len(msg.Content) {
 		logger.WarnCF("agent", "Async task result truncated for context", map[string]any{
 			"agent_id":     agent.ID,

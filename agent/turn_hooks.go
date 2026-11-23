@@ -549,7 +549,9 @@ func (al *AgentLoop) runTurnOnAgent(
 		return nil, hook.TurnResult{}, err
 	}
 	ctx, t := al.withHostTurn(ctx, agent, opts, tm, cm, mem)
-	runOpts := []hook.RunOption{hook.AtDepth(toolsagents.SpawnDepth(ctx))}
+	// The host reads only the run's result (Wait); its consumers see every
+	// event as it happens.
+	runOpts := []hook.RunOption{hook.AtDepth(toolsagents.SpawnDepth(ctx)), hook.WithoutEvents()}
 	if alreadyStored {
 		runOpts = append(runOpts, hook.AlreadyStored())
 	}

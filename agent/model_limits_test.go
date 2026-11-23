@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
@@ -219,8 +220,8 @@ func TestAsyncResultCap_UsesActiveModelWindow(t *testing.T) {
 			if truncated != tt.wantTruncated {
 				t.Fatalf("truncated = %v, want %v (message %d chars)", truncated, tt.wantTruncated, len(p.system))
 			}
-			if truncated && len(p.system) > toolResultCap(32000)+512 {
-				t.Fatalf("message is %d chars, Bob Model's cap is %d", len(p.system), toolResultCap(32000))
+			if truncated && len(p.system) > loop.ToolResultCap(32000)+512 {
+				t.Fatalf("message is %d chars, Bob Model's cap is %d", len(p.system), loop.ToolResultCap(32000))
 			}
 		})
 	}
