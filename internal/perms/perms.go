@@ -312,19 +312,11 @@ func Enforce(dataDir string, policy Policy, log Logger) error {
 
 // setMode applies one finding, safely (chmodSafe), and logs it.
 func setMode(f Finding, log Logger) {
-	target, info := f.real, f.info
+	target := f.real
 	if target == "" {
 		target = f.Path
 	}
-	if info == nil {
-		fi, err := os.Lstat(target)
-		if err != nil {
-			log.warn("could not set file permissions", map[string]any{"path": f.Path, "error": err.Error()})
-			return
-		}
-		info = fi
-	}
-	if err := chmodSafe(target, f.Want, info); err != nil {
+	if err := chmodSafe(target, f.Want, f.info); err != nil {
 		log.warn("could not set file permissions", map[string]any{
 			"path": f.Path, "mode": fmt.Sprintf("%04o", f.Mode), "want": fmt.Sprintf("%04o", f.Want), "error": err.Error(),
 		})
