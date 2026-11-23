@@ -5,21 +5,70 @@ package agent
 
 import (
 	"context"
+	"sync"
 	"testing"
 
+	sdkagent "go.bison9.com/agent"
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
+	"go.bison9.com/agent/ctxengine/session"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
 )
 
-// hostTurn is the engine turn the host builds for agent on opts, over
-// messages, with tm as the turn's model choice (none when nil): the turn
-// runLLMIteration runs, its callbacks registered. al defaults to a loop on an
-// empty configuration.
-func hostTurn(tb testing.TB, al *AgentLoop, agent *AgentInstance, opts processOptions, tm *turnModel, messages ...providers.Message) *engineTurn {
+// probedAgent gives agent an SDK agent of its own whose first plugin
+// records, for each turn, how its model loop ended (before AfterTurn decides
+// the reply), so a test can read it. It replaces the instance's agent.
+func (al *AgentLoop) probedAgent(agent *AgentInstance, extra []hook.Plugin, specOpt func(*loop.Spec)) (func(*hostTurn) modelReply, error) {
+	var mu sync.Mutex
+	ends := map[*hostTurn]modelReply{}
+	probe := hook.Plugin{Name: "probe", AfterTurn: func(ctx context.Context, _ *hook.Turn, r *hook.TurnResult) {
+		if t := hostTurnOf(ctx); t != nil && r.Err == nil && !r.Skipped {
+			mu.Lock()
+			ends[t] = modelReplyOf(*r, t.st)
+			mu.Unlock()
+		}
+	}}
+	ended := func(t *hostTurn) modelReply {
+		mu.Lock()
+		defer mu.Unlock()
+		return ends[t]
+	}
+	a, err := sdkagent.New(agent.ID, al.turnAgentSpec(agent), func(s *loop.Spec) {
+		s.Plugins = append(append([]hook.Plugin{probe}, s.Plugins...), extra...)
+		if specOpt != nil {
+			specOpt(s)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	agent.turnAgentMu.Lock()
+	agent.turnAgent = a
+	agent.turnAgentMu.Unlock()
+	return ended, nil
+}
+
+// testTurn is a whole turn of agent on opts on its SDK agent, with tm as the
+// turn's model choice (none when nil) and cm its session context (a new
+// in-memory one when nil). It answers opts.UserMessage ("hi" when empty), or
+// with messages the first request is messages, as given (already stored).
+// al defaults to a loop on an empty configuration. It returns how the model
+// loop ended and the turn's reply and error as the host sees them.
+func testTurn(tb testing.TB, al *AgentLoop, agent *AgentInstance, opts processOptions, tm *turnModel, cm ctxengine.ContextManager, messages ...providers.Message) (modelReply, string, error) {
+	tb.Helper()
+	end, _, reply, err := runTestTurn(tb, context.Background(), al, agent, opts, tm, cm, nil, nil, messages...)
+	return end, reply, err
+}
+
+// runTestTurn is testTurn on ctx, with extra plugins after the agent's own
+// and specOpt (when set) changing the agent's settings, also returning the
+// turn's result.
+func runTestTurn(tb testing.TB, ctx context.Context, al *AgentLoop, agent *AgentInstance, opts processOptions, tm *turnModel, cm ctxengine.ContextManager, extra []hook.Plugin, specOpt func(*loop.Spec), messages ...providers.Message) (modelReply, hook.TurnResult, string, error) {
 	tb.Helper()
 	if al == nil {
 		al = &AgentLoop{cfg: &config.Config{}}
@@ -27,20 +76,42 @@ func hostTurn(tb testing.TB, al *AgentLoop, agent *AgentInstance, opts processOp
 	if tm == nil {
 		tm = &turnModel{}
 	}
+	if opts.SessionKey == "" {
+		opts.SessionKey = "agent:" + agent.ID + ":main"
+	}
+	if opts.UserMessage == "" {
+		opts.UserMessage = "hi"
+	}
+	if agent.Sessions == nil {
+		agent.Sessions = session.NewMemory()
+	}
+	if cm == nil {
+		cm = ctxengine.New(opts.SessionKey, agent.Sessions, ctxengine.WithLogger(logger.SDK()),
+			ctxengine.WithCompactionStartFunc(loop.CompactionStart))
+	}
+	alreadyStored := false
+	if len(messages) > 0 {
+		cm = &firstAssembly{ContextManager: cm, first: messages}
+		alreadyStored = true
+	}
+	ended, err := al.probedAgent(agent, extra, specOpt)
+	if err != nil {
+		tb.Fatal(err)
+	}
 	opts.turnModel = tm
-	turn, _ := al.newHostEngineTurn(context.Background(), agent, messages, opts, nil, nil)
-	return turn
+	ctx = providers.WithAgentID(ctx, agent.ID)
+	ht, res, err := al.runTurnOnAgent(ctx, agent, opts, tm, cm, nil, alreadyStored)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	reply, err := al.turnOutcome(ht, res)
+	return ended(ht), res, reply, err
 }
 
-// newTestDispatch is the dispatch of turn's next request, with no tools.
-func newTestDispatch(turn *engineTurn) *llmDispatch {
-	return turn.newDispatch(context.Background(), nil, 0)
-}
-
-// runLLMIteration runs a whole engine turn of agent on opts whose first
-// request is messages, as given (the message already stored), and returns
-// how its model loop ended: the model loop over messages, with this turn's
-// callbacks and consumers, as tests of the loop drive it.
+// runLLMIteration runs a whole turn of agent on opts whose first request is
+// messages, as given (the message already stored), and returns how its model
+// loop ended: the model loop over messages, with the turn's callbacks and
+// consumers, as tests of the loop drive it.
 func (al *AgentLoop) runLLMIteration(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -51,22 +122,23 @@ func (al *AgentLoop) runLLMIteration(
 ) (modelReply, error) {
 	ctx = providers.WithAgentID(ctx, agent.ID)
 	opts.IsRetry = true
-	turn, ctx := al.newHostEngineTurn(ctx, agent, nil, opts, &firstAssembly{ContextManager: cm, first: messages}, mem)
-	turn.spec.options.AlreadyStored = true
-	res, err := turn.run(ctx)
-	if _, herr := al.turnOutcome(turn, err); herr != nil {
-		return modelReply{iterations: res.iterations}, herr
+	tm := opts.turnModel
+	if tm == nil {
+		tm = al.selectTurnModel(agent, opts.SessionKey)
 	}
-	return modelReply{
-		content:      res.content,
-		normal:       res.normal,
-		degenerate:   res.degenerate,
-		finishReason: res.finishReason,
-		iterations:   res.iterations,
-		images:       res.images,
-		imageReplies: res.replyLines,
-		lastImages:   res.lastImages,
-	}, nil
+	opts.turnModel = tm
+	ended, err := al.probedAgent(agent, nil, nil)
+	if err != nil {
+		return modelReply{}, err
+	}
+	ht, res, err := al.runTurnOnAgent(ctx, agent, opts, tm, &firstAssembly{ContextManager: cm, first: messages}, mem, true)
+	if err != nil {
+		return modelReply{}, err
+	}
+	if _, herr := al.turnOutcome(ht, res); herr != nil {
+		return modelReply{iterations: res.Iterations}, herr
+	}
+	return ended(ht), nil
 }
 
 // firstAssembly is a context manager whose first assembly is first, as
@@ -85,19 +157,80 @@ func (f *firstAssembly) Assemble(ctx context.Context, req ctxengine.AssembleRequ
 	return f.ContextManager.Assemble(ctx, req)
 }
 
-// newTurnHooks registers the callbacks and event consumers of one turn of
-// agent on opts, whose model is model, for tests that drive them with events.
-func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) *turnHooks {
-	h, _ := al.buildTurnHooks(ctx, agent, opts, model)
+// testHooks are an agent's turn plugins (turnPlugins) serving one turn,
+// for tests that drive them with events: each call gets the turn's context.
+type testHooks struct {
+	ctx context.Context
+	ps  []hook.Plugin
+	// onTextDelta are the plugins' OnTextDelta callbacks.
+	onTextDelta []hook.OnTextDeltaFunc
+}
+
+// emit gives ev to every OnEvent consumer, in order, on the turn's context.
+func (h *testHooks) emit(_ context.Context, ev hook.Event) {
+	for _, p := range h.ps {
+		if p.OnEvent != nil {
+			observe(func() { p.OnEvent(h.ctx, ev) })
+		}
+	}
+}
+
+// observe runs fn, skipping its panic, as the agent runs a consumer.
+func observe(fn func()) {
+	defer func() { _ = recover() }()
+	fn()
+}
+
+// callBeforeLoop runs the BeforeLoop callbacks, in order, on the turn's
+// context.
+func (h *testHooks) callBeforeLoop(_ context.Context, loop *hook.Loop) error {
+	for _, p := range h.ps {
+		if p.BeforeLoop != nil {
+			if err := p.BeforeLoop(h.ctx, loop); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// callAfterModel runs the AfterModel callbacks, in order, on the turn's
+// context.
+func (h *testHooks) callAfterModel(_ context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) *hook.PanicError {
+	for _, p := range h.ps {
+		if p.AfterModel != nil {
+			observe(func() { p.AfterModel(h.ctx, call, resp) })
+		}
+	}
+	return nil
+}
+
+// newTurnHooks are the plugins of agent serving one turn on opts, whose
+// model is model, for tests that drive them with events.
+func (al *AgentLoop) newTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) *testHooks {
+	h, _ := al.turnHooksFor(ctx, agent, &opts, model, nil)
 	return h
 }
 
-// buildTurnHooks is newTurnHooks with the consumers' state, with the model
-// loop started at once (the BeforeLoop callbacks run).
-func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*turnHooks, *turnState) {
+// buildTurnHooks is newTurnHooks with the turn's state, with the model loop
+// started at once (the BeforeLoop callbacks run).
+func (al *AgentLoop) buildTurnHooks(ctx context.Context, agent *AgentInstance, opts processOptions, model string) (*testHooks, *turnState) {
 	h, st := al.turnHooksFor(ctx, agent, &opts, model, nil)
 	if err := h.callBeforeLoop(ctx, &hook.Loop{TextDeltas: len(h.onTextDelta) > 0}); err != nil {
 		panic(err)
 	}
 	return h, st
+}
+
+// turnHooksFor are agent's plugins serving a turn on *opts whose model is
+// model and session context cm, with the turn's state.
+func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opts *processOptions, model string, cm ctxengine.ContextManager) (*testHooks, *turnState) {
+	tctx, t := al.withHostTurn(ctx, agent, *opts, &turnModel{model: model}, cm, nil)
+	h := &testHooks{ctx: tctx, ps: al.turnPlugins(agent)}
+	for _, p := range h.ps {
+		if p.OnTextDelta != nil {
+			h.onTextDelta = append(h.onTextDelta, p.OnTextDelta)
+		}
+	}
+	return h, t.st
 }

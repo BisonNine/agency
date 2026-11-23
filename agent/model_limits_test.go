@@ -226,28 +226,6 @@ func TestAsyncResultCap_UsesActiveModelWindow(t *testing.T) {
 	}
 }
 
-// Context-window retries halve each model's own max_tokens, never below the
-// floor, without changing the options the candidates share.
-func TestRequestOptions_HalvedMaxTokensPerModel(t *testing.T) {
-	agent := &AgentInstance{MaxTokens: 1000, ThinkingLevel: ThinkingOff, modelLimits: map[string]runLimits{
-		"Alice Model": {maxTokens: 32768, thinkingLevel: ThinkingOff},
-		"Bob Model":   {maxTokens: 600, thinkingLevel: ThinkingOff},
-	}}
-	turn := hostTurn(t, nil, agent, processOptions{}, nil)
-	d := &llmDispatch{llmOpts: map[string]any{"prompt_cache_key": "main"}, maxTokensHalvings: 2}
-	// The model's facts as the host gives them: its own limits, or the
-	// agent's for a model it has none recorded for ("Other Model").
-	al := &AgentLoop{cfg: &config.Config{}}
-	for model, want := range map[string]int{"Alice Model": 8192, "Bob Model": 300, "Other Model": 500} {
-		if got := turn.requestOptions(d, false, &mockProvider{}, al.modelFacts(agent, model))["max_tokens"]; got != want {
-			t.Errorf("%s: max_tokens = %v, want %d", model, got, want)
-		}
-	}
-	if _, ok := d.llmOpts["max_tokens"]; ok {
-		t.Error("the shared options were changed")
-	}
-}
-
 // contextWindowOf is the context window of the session's manager, derived
 // from its token estimate and the share of the window it fills.
 func contextWindowOf(t *testing.T, al *AgentLoop, agent *AgentInstance, sessionKey string) int {

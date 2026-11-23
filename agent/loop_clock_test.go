@@ -5,26 +5,40 @@ package agent
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"go.bison9.com/agent/clock"
+	"go.bison9.com/agent/hook"
 
 	"go.bison9.com/agency/agentreg"
 	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/providers"
 )
 
 // The backoff before retrying a timed-out dispatch is waited out on the
-// loop's clock: it ends only once that clock has passed it, and at once when
-// the turn's context ends.
+// loop's clock: the turn ends only once that clock has passed it. (That the
+// wait also ends at once when the turn's context ends is the SDK's,
+// loop.TestEngine_TimeoutRetryOnTheClock.)
 func TestWaitToRetry_OnTheClock(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
+	var calls atomic.Int32
+	timingOut := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+		if calls.Add(1) == 1 {
+			return nil, fmt.Errorf("%w: timed out", context.DeadlineExceeded)
+		}
+		return answerOK(model), nil
+	}}
+	run := chainTurn(t, timingOut, nil, candAlice)
 	fc := clock.NewFake(time.Now())
-	turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
-	turn.spec.clock = fc
+	run.al.clock = fc
 	done := make(chan error, 1)
-	go func() { done <- turn.waitToRetry(context.Background(), errors.New("timed out"), 0) }()
+	go func() {
+		_, err := run.run(context.Background())
+		done <- err
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := fc.BlockUntil(ctx, 1); err != nil {
@@ -35,18 +49,15 @@ func TestWaitToRetry_OnTheClock(t *testing.T) {
 		t.Fatalf("returned before the clock moved: %v", err)
 	default:
 	}
-	fc.Advance(2 * timeoutRetryBackoff) // past the jittered first step
+	fc.Advance(2 * hook.DefaultRetryBackoff) // past the jittered first step
 	if err := <-done; err != nil {
-		t.Fatalf("waitToRetry = %v, want nil", err)
+		t.Fatalf("turn = %v, want nil", err)
 	}
 	if fc.Waiters() != 0 {
 		t.Fatalf("waiters = %d after the wait", fc.Waiters())
 	}
-
-	ended, stop := context.WithCancel(context.Background())
-	stop()
-	if err := turn.waitToRetry(ended, errors.New("timed out"), 0); !errors.Is(err, context.Canceled) {
-		t.Fatalf("with an ended context = %v, want context.Canceled", err)
+	if calls.Load() != 2 {
+		t.Fatalf("calls = %d, want the retry after the backoff", calls.Load())
 	}
 }
 

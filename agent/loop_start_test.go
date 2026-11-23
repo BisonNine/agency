@@ -283,15 +283,14 @@ func TestLoopStart_PanicEndsTheTurn(t *testing.T) {
 			if tc.inHost {
 				cm.arm = func() { store.armed.Store(true) }
 			}
-			turn, ctx := al.newHostEngineTurn(context.Background(), agent, nil, opts, cm, nil)
 			var finished []hook.TurnFinished
-			turn.hooks.add(hook.Plugin{Name: "tap", OnEvent: func(_ context.Context, ev hook.Event) {
+			plugins := []hook.Plugin{{Name: "tap", OnEvent: func(_ context.Context, ev hook.Event) {
 				if f, ok := ev.(hook.TurnFinished); ok {
 					finished = append(finished, f)
 				}
-			}})
+			}}}
 			if !tc.inHost {
-				turn.hooks.add(hook.Plugin{Name: "later", BeforeLoop: func(context.Context, *hook.Loop) error {
+				plugins = append(plugins, hook.Plugin{Name: "later", BeforeLoop: func(context.Context, *hook.Loop) error {
 					// The heartbeat runs: it edits the placeholder.
 					for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 						if _, edits := ch.recorded(); len(edits) > 0 {
@@ -312,8 +311,8 @@ func TestLoopStart_PanicEndsTheTurn(t *testing.T) {
 					}
 					userErr = messagePanicked(bus.InboundMessage{Channel: opts.Channel, ChatID: opts.ChatID}, r)
 				}()
-				_, err := turn.run(ctx)
-				_, oerr := al.turnOutcome(turn, err)
+				tm := al.selectTurnModel(agent, opts.SessionKey)
+				_, _, _, oerr := runTestTurn(t, context.Background(), al, agent, opts, tm, cm, plugins, nil)
 				t.Fatalf("turnOutcome returned %v instead of panicking", oerr)
 			}()
 			if userErr == nil || userErr.Error() != "internal error while processing the message: "+tc.want {

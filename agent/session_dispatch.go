@@ -57,8 +57,8 @@ type sessionState struct {
 	busy       bool                    // an owner goroutine is draining pending
 	pending    []bus.InboundMessage    // arrived while busy, in arrival order
 	turnCancel context.CancelCauseFunc // cancels the running turn; nil when idle
-	// handles holds the running turn's engine handle once its engine turn
-	// has started; nil when idle.
+	// handles holds the running turn's run once it has started; nil when
+	// idle.
 	handles *turnHandles
 	// cancelledRunning and skipCount record what /cancel did, for its reply.
 	cancelledRunning bool
@@ -141,37 +141,65 @@ func (ss *sessionState) cancel(ctx context.Context, cause error) []bus.InboundMe
 	}
 	// The turn's context ends first, with the cause, so the cause is set
 	// whenever the turn's outcome is decided (and a turn still waiting for
-	// its slot, or past its engine turn, ends too). Then the engine turn is
-	// stopped through its handle and its OnInterrupt observers run, on this
-	// goroutine, outside the session's lock.
+	// its slot, or past its run, ends too). Then its run is stopped
+	// through its handle, on this goroutine, outside the session's lock.
 	running := h != nil && h.running()
 	stopTurn(cause)
 	if h != nil {
-		h.cancelWith(ctx, cause, running)
+		h.cancel(cause, running)
 	}
 	return dropped
 }
 
-// turnHandles records the engine handle of a queued turn: the first engine
-// turn started on its context (the turn's own; a nested one never claims
-// it).
+// runHandle is a queued turn's run on its agent's SDK agent, recorded when
+// the run started.
+type runHandle struct {
+	al    *AgentLoop
+	agent *AgentInstance
+	run   hook.Run
+	turn  *hostTurn
+}
+
+// running reports whether the turn has not finished yet.
+func (h *runHandle) running() bool {
+	select {
+	case <-h.run.Done():
+		return false
+	default:
+		return true
+	}
+}
+
+// cancel stops the turn's run with cause. An interrupted turn on a CLI model
+// (running says one was stopped, read before the caller started stopping
+// it) gets a new MCP session token, so nothing the killed CLI started can
+// still call tools with it.
+func (h *runHandle) cancel(cause error, running bool) {
+	h.run.Cancel(cause)
+	if running && h.al.isCLIModel(h.turn.modelName()) {
+		h.al.reissueSessionToken(h.agent, h.turn.o.SessionKey)
+	}
+}
+
+// turnHandles records the run of a queued turn: the first run started on
+// its context (the turn's own; a nested one never claims it).
 type turnHandles struct {
 	mu      sync.Mutex
-	h       *turnHandle
+	h       *runHandle
 	claimed bool
 }
 
 type turnHandlesKey struct{}
 
-// withTurnHandles returns ctx on which the first engine turn records its
-// handle in hs.
+// withTurnHandles returns ctx on which the first run records its handle in
+// hs.
 func withTurnHandles(ctx context.Context, hs *turnHandles) context.Context {
 	return context.WithValue(ctx, turnHandlesKey{}, hs)
 }
 
-// claimTurnHandle is the onHandle of the first engine turn on ctx; nil for
+// claimTurnHandle is how the first run on ctx records its handle; nil for
 // any other.
-func claimTurnHandle(ctx context.Context) func(*turnHandle) {
+func claimTurnHandle(ctx context.Context) func(*runHandle) {
 	hs, ok := ctx.Value(turnHandlesKey{}).(*turnHandles)
 	if !ok || hs == nil {
 		return nil
@@ -182,15 +210,15 @@ func claimTurnHandle(ctx context.Context) func(*turnHandle) {
 		return nil
 	}
 	hs.claimed = true
-	return func(h *turnHandle) {
+	return func(h *runHandle) {
 		hs.mu.Lock()
 		hs.h = h
 		hs.mu.Unlock()
 	}
 }
 
-// current is the recorded handle; nil before the engine turn started.
-func (hs *turnHandles) current() *turnHandle {
+// current is the recorded handle; nil before the run started.
+func (hs *turnHandles) current() *runHandle {
 	if hs == nil {
 		return nil
 	}

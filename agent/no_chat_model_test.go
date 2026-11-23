@@ -81,8 +81,7 @@ func TestNoChatModel_NoCandidates(t *testing.T) {
 	if name, provider, _, _ := al.activeModelInfo(cfg, bob, &processOptions{SessionKey: "s"}); name != "none" || provider != "" {
 		t.Fatalf("model info = %q (%q), want none", name, provider)
 	}
-	turn := hostTurn(t, al, bob, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
-	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); !errors.Is(err, errNoModelConfigured) {
+	if _, _, err := testTurn(t, al, bob, processOptions{SessionKey: "s"}, tm, nil); !errors.Is(err, errNoModelConfigured) {
 		t.Fatalf("err = %v, want errNoModelConfigured", err)
 	}
 	if got := p.calls(); len(got) != 0 {

@@ -4,7 +4,6 @@
 package agent
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +11,6 @@ import (
 	"testing"
 
 	"go.bison9.com/agency/config"
-	"go.bison9.com/agency/providers"
 )
 
 // TestNewDispatch_TemperatureInRequest checks the temperature an HTTP model
@@ -65,11 +63,7 @@ func TestNewDispatch_TemperatureInRequest(t *testing.T) {
 			agentCfg := &config.AgentConfig{ID: "alice", Temperature: tt.agentTemp}
 			inst := mustNewAgentInstance(t, agentCfg, &cfg.Agents.Defaults, cfg, &mockProvider{})
 
-			turn := catalogTurn(t, cfg, inst)
-			d := newTestDispatch(turn)
-
-			turn.messages = []providers.Message{{Role: "user", Content: "hi"}}
-			if _, err := turn.callModel(context.Background(), d); err != nil {
+			if err := catalogTurn(t, cfg, inst); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			got, present := body["temperature"]
@@ -138,11 +132,7 @@ func TestNewDispatch_AnthropicRequest(t *testing.T) {
 			agentCfg := &config.AgentConfig{ID: "alice", Temperature: tt.agentTemp}
 			inst := mustNewAgentInstance(t, agentCfg, &cfg.Agents.Defaults, cfg, &mockProvider{})
 
-			turn := catalogTurn(t, cfg, inst)
-			d := newTestDispatch(turn)
-
-			turn.messages = []providers.Message{{Role: "user", Content: "hi"}}
-			if _, err := turn.callModel(context.Background(), d); err != nil {
+			if err := catalogTurn(t, cfg, inst); err != nil {
 				t.Fatalf("Chat: %v", err)
 			}
 			if got, present := body["temperature"]; present {

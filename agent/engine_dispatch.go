@@ -326,10 +326,6 @@ func (e *engineTurn) modelCallDone(ctx context.Context, d *llmDispatch, model ho
 	})
 }
 
-// errNoModelConfigured ends a turn whose agent has no model to call. Its
-// text is the one a configuration without models has always answered with.
-var errNoModelConfigured = errors.New("no model configured — enable a model and add your API key in the configuration")
-
 // callModel makes one call for the dispatch through the turn's pinned chain:
 // each model in turn, skipping parked ones, until one answers. Every provider
 // call it makes is reported as a ModelCallStarted and a ModelCall, and each
@@ -339,7 +335,7 @@ func (e *engineTurn) callModel(ctx context.Context, d *llmDispatch) (*spawnllm.L
 	hasTools := len(d.defs) > 0
 	if e.spec.chain == nil || len(e.spec.candidates) == 0 {
 		d.sent = e.messages
-		return nil, errNoModelConfigured
+		return nil, errEngineNoModel
 	}
 	defer e.callAbandoned(ctx, d)
 	fbResult, err := e.spec.chain.Chat(ctx, e.spec.scope.Identity(), models.Request{Tools: d.defs},
@@ -633,3 +629,7 @@ func classifyLLMError(err error, provider, model string) (isTimeout, isContext b
 	}
 	return false, false
 }
+
+// errEngineNoModel ends a turn whose agent has no model to call. Its text is
+// the one a configuration without models has always answered with.
+var errEngineNoModel = errors.New("no model configured — enable a model and add your API key in the configuration")

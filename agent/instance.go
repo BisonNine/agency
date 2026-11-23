@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	sdkagent "go.bison9.com/agent"
 	"go.bison9.com/agent/cogmem"
@@ -114,7 +115,8 @@ type AgentInstance struct {
 	// turnAgent is the instance's SDK agent (newTurnAgent), built with the
 	// instance and closed with it; nil for an instance built without the
 	// agent builder.
-	turnAgent sdkagent.Agent
+	turnAgent   sdkagent.Agent
+	turnAgentMu sync.Mutex
 }
 
 // Label names the agent in logs and audit rows: its id, or "alice (clone
@@ -602,17 +604,25 @@ func resolveAgentModels(agentCfg *config.AgentConfig, defaults *config.AgentDefa
 
 // Close releases resources held by the agent's session store.
 func (a *AgentInstance) Close() error {
-	var err error
-	if a.turnAgent != nil {
-		// No turn runs on it, so it closes at once.
-		err = a.turnAgent.Close(context.Background())
+	a.turnAgentMu.Lock()
+	turnAgent := a.turnAgent
+	a.turnAgentMu.Unlock()
+	if turnAgent != nil {
+		// It refuses new turns at once and finishes closing once the turns
+		// still running on it have ended: closing the instance never waits
+		// for them or stops them. It holds nothing the host gave it, so its
+		// close has nothing to report.
+		go func() {
+			if err := turnAgent.Close(context.Background()); err != nil {
+				logger.WarnCF("agent", "Agent not closed",
+					map[string]any{"agent_id": a.ID, "error": err.Error()})
+			}
+		}()
 	}
 	if a.Sessions != nil {
-		if serr := a.Sessions.Close(); err == nil {
-			err = serr
-		}
+		return a.Sessions.Close()
 	}
-	return err
+	return nil
 }
 
 // initSessionStore opens the per-session SQLite store under dir, creating

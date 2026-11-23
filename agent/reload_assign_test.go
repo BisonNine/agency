@@ -136,8 +136,7 @@ func TestReloadAdopt_BusyTemporaryAgentModelsRemoved(t *testing.T) {
 	if got := al.activeModelName(now, "s"); got != "" {
 		t.Fatalf("active model = %q, want none", got)
 	}
-	turn := hostTurn(t, al, now, processOptions{}, tm, providers.Message{Role: "user", Content: "hi"})
-	if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); !errors.Is(err, errNoModelConfigured) {
+	if _, _, err := testTurn(t, al, now, processOptions{SessionKey: "s"}, tm, nil); !errors.Is(err, errNoModelConfigured) {
 		t.Fatalf("err = %v, want errNoModelConfigured", err)
 	}
 	if got := p.calls(); len(got) != 0 {

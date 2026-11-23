@@ -159,13 +159,13 @@ func TestCallModel_TurnDeadlineStopsTheChain(t *testing.T) {
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
 	p := &deadlineProvider{}
-	turn, d := chainTurn(t, p, nil, replayGPT, replayClaude)
+	run := chainTurn(t, p, nil, replayGPT, replayClaude)
 	var notices int
-	turn.hooks.add(hook.Plugin{Name: "test", OnFallback: func(context.Context, hook.Fallback) { notices++ }})
+	run.plugins = append(run.plugins, hook.Plugin{Name: "test", OnFallback: func(context.Context, hook.Fallback) { notices++ }})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := turn.requestModel(ctx, d)
+	_, err := run.run(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want the deadline", err)
 	}

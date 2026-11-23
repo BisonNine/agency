@@ -142,31 +142,10 @@ func (al *AgentLoop) runAgentLoop(
 	return al.runModelTurn(ctx, agent, opts, cm, mem)
 }
 
-// runHumanEngineTurn runs a human agent's turn through the turn engine: the
-// person answers it (BeforeTurn), nothing is stored.
+// runHumanEngineTurn runs a human agent's turn on its SDK agent: the person
+// answers it (BeforeTurn), nothing is stored and no model is called.
 func (al *AgentLoop) runHumanEngineTurn(ctx context.Context, agent *AgentInstance, opts processOptions) (string, error) {
-	hooks := &turnHooks{log: logger.SDK()}
-	hooks.add(hook.Plugin{Name: "person", BeforeTurn: func(ctx context.Context, _ *hook.Turn) (*hook.TurnResult, error) {
-		reply, err := al.runHumanTurn(ctx, agent, opts)
-		if err != nil {
-			return nil, err
-		}
-		return &hook.TurnResult{Outcome: hook.OutcomeOK, Reply: reply}, nil
-	}})
-	ctx = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), hooks, al.clk())
-	scope, _ := hook.ScopeOf(ctx)
-	turn := newEngineTurn(engineSpec{
-		agentID: agent.ID,
-		scope:   scope,
-		message: turnMessage(opts),
-		options: hook.RunOptions{AlreadyStored: opts.IsRetry, Depth: scope.Depth},
-		clock:   al.clk(),
-		log:     logger.SDK(),
-		env:     &llmTurnEnv{al: al, agent: agent, opts: &opts},
-		hooks:   hooks,
-	}, nil)
-	_, err := turn.run(ctx)
-	return al.turnOutcome(turn, err)
+	return al.runOnAgent(ctx, agent, opts, nil, nil, nil, opts.IsRetry)
 }
 
 // beginAgentTurn marks agent in a turn: a temporary agent is never deleted
@@ -261,6 +240,9 @@ func (al *AgentLoop) prepareSession(ctx context.Context, agent *AgentInstance, c
 		opts.UserMessage = al.prependWhispers(agent, opts.UserMessage)
 		turn.Message.Text = opts.UserMessage
 	}
+	// Memory recalls for the message with its whispers, before its media are
+	// described and their references appended.
+	turn.RecallText = opts.UserMessage
 	if len(opts.Media) > 0 && !turn.Options.AlreadyStored {
 		userMsg := providers.Message{Role: "user", Content: turn.Message.Text}
 		al.attachInboundMedia(ctx, agent, *opts, &userMsg)

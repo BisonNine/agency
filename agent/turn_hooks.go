@@ -13,15 +13,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"go.bison9.com/agent/cogmem"
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/spawnllm"
-	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
@@ -30,7 +29,6 @@ import (
 	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
-	"go.bison9.com/agency/utils"
 )
 
 // This file is the host side of the turn engine (engine_*.go): today's turn
@@ -88,24 +86,84 @@ type turnReply struct {
 
 // compactionNoticePlugin tells the turn's person of a compaction it waits on
 // and of a request that overflowed the context window.
-func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
+func (al *AgentLoop) compactionNoticePlugin() hook.Plugin {
 	return hook.Plugin{Name: "compaction-notice", OnCompaction: func(ctx context.Context, ev hook.Compaction) {
+		t := hostTurnOf(ctx)
+		if t == nil {
+			return
+		}
 		switch ev.Phase {
 		case hook.CompactionStarted:
 			al.compactionStarted(ctx, ctxengine.CompactionStart{
 				SessionKey: ev.Scope.Session, Reason: ctxengine.CompactionReason(ev.Reason), Blocking: ev.Blocking,
 			})
 		case hook.CompactionOverflow:
-			al.publishOverflowNotice(ctx, opts)
+			al.publishOverflowNotice(ctx, t.o)
 		case hook.CompactionEvicted:
 			// Collected by the evictions consumer for one notice at the end.
 		}
 	}}
 }
 
-// turnHooksFor registers the callbacks and event consumers of a turn of
-// agent on *opts (which BeforeTurn may change), whose model is model. What
-// depends on order is each in one consumer, in sequence:
+// hostTurn is one turn of an instance as the host runs it on the SDK agent:
+// what the turn's callbacks and consumers read. It rides on the context
+// given to Run (withHostTurn), so the plugins, built once per agent, find
+// the turn they serve on the context they are called with.
+type hostTurn struct {
+	// ctx is the context the turn was run on, before the agent's scope: the
+	// reasoning is published on it, as it always was, not on the loop's.
+	ctx context.Context
+	// opts are the turn's options as BeforeTurn leaves them; o as the run
+	// was given them (what BeforeTurn does not change).
+	opts *processOptions
+	o    processOptions
+	// model is the turn's model choice; cm and mem its session context.
+	model  *turnModel
+	cm     ctxengine.ContextManager
+	mem    *cogmem.Session
+	st     *turnState
+	images *turnImages
+}
+
+type hostTurnKey struct{}
+
+// withHostTurn returns ctx carrying a turn of agent on opts, whose model
+// choice is tm and session context cm and mem, for the SDK agent's
+// callbacks.
+func (al *AgentLoop) withHostTurn(ctx context.Context, agent *AgentInstance, opts processOptions, tm *turnModel, cm ctxengine.ContextManager, mem *cogmem.Session) (context.Context, *hostTurn) {
+	t := &hostTurn{ctx: ctx, o: opts, model: tm, cm: cm, mem: mem, st: &turnState{}}
+	t.opts = &opts
+	model := ""
+	if tm != nil {
+		model = tm.model
+	}
+	t.images = &turnImages{al: al, agent: agent, opts: opts, model: model}
+	return context.WithValue(ctx, hostTurnKey{}, t), t
+}
+
+// hostTurnOf is the turn on ctx; nil for a run the host did not start.
+func hostTurnOf(ctx context.Context) *hostTurn {
+	t, _ := ctx.Value(hostTurnKey{}).(*hostTurn)
+	return t
+}
+
+// modelName is the turn's model, by model_name; "" without one.
+func (t *hostTurn) modelName() string {
+	if t.model == nil {
+		return ""
+	}
+	return t.model.model
+}
+
+// noModel reports whether the turn's agent had no model to call.
+func (t *hostTurn) noModel() bool {
+	return t.model == nil || t.model.chain == nil || len(t.model.candidates) == 0
+}
+
+// turnPlugins are the callbacks and event consumers of agent's turns, built
+// once for its SDK agent; each serves the turn on the context it is called
+// with (hostTurnOf). A human agent has one: the person answers (BeforeTurn).
+// What depends on order is each in one consumer, in sequence:
 //
 //   - each provider call: the "LLM finish" line, then the turn's usage,
 //     then the dumps, then the reasoning (modelCall);
@@ -127,27 +185,49 @@ func (al *AgentLoop) compactionNoticePlugin(opts processOptions) hook.Plugin {
 // startModelLoop), which switches on the consumers registered last. No tool
 // callback is registered: tool calls and results are not changed, and
 // redaction stays on logged and rendered error text.
-func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opts *processOptions, model string, cm ctxengine.ContextManager) (*turnHooks, *turnState) {
-	h := &turnHooks{log: logger.SDK()}
-	st := &turnState{}
-	o := *opts // what BeforeTurn does not change
+func (al *AgentLoop) turnPlugins(agent *AgentInstance) []hook.Plugin {
+	if agent.HumanModel != "" {
+		return []hook.Plugin{{Name: "person", BeforeTurn: func(ctx context.Context, _ *hook.Turn) (*hook.TurnResult, error) {
+			t := hostTurnOf(ctx)
+			if t == nil {
+				return nil, nil
+			}
+			reply, err := al.runHumanTurn(ctx, agent, *t.opts)
+			if err != nil {
+				return nil, err
+			}
+			return &hook.TurnResult{Outcome: hook.OutcomeOK, Reply: reply}, nil
+		}}}
+	}
+	var ps []hook.Plugin
+	add := func(p hook.Plugin) { ps = append(ps, p) }
 
-	h.add(al.turnPlugin(agent, opts, cm))
-	h.add(hook.Plugin{Name: "model-call", OnEvent: func(evCtx context.Context, ev hook.Event) {
+	add(hook.Plugin{Name: "session", BeforeTurn: func(ctx context.Context, turn *hook.Turn) (*hook.TurnResult, error) {
+		t := hostTurnOf(ctx)
+		if t == nil {
+			return nil, nil
+		}
+		return nil, al.prepareSession(ctx, agent, t.cm, t.opts, turn)
+	}})
+	add(hook.Plugin{Name: "model-call", OnEvent: func(evCtx context.Context, ev hook.Event) {
+		t := hostTurnOf(evCtx)
+		if t == nil {
+			return
+		}
 		switch c := ev.(type) {
 		case hook.ModelCall:
 			// The reasoning is published on its own goroutine, which may
 			// outlive the model loop: it gets the turn's context, as it always
 			// has, not the loop's.
-			al.modelCall(evCtx, ctx, agent, o, model, c)
+			al.modelCall(evCtx, t.ctx, agent, t.o, t.modelName(), c)
 		case hook.ModelAnswer:
-			st.replyLines = append(st.replyLines, c.ReplyLines...)
-			st.lastImages = len(c.Response.Images)
+			t.st.replyLines = append(t.st.replyLines, c.ReplyLines...)
+			t.st.lastImages = len(c.Response.Images)
 		}
 	}})
 	// Model calls in flight are counted, so a replaced client closes only
 	// after them (WaitTurns).
-	h.add(hook.Plugin{Name: "in-flight", OnEvent: func(_ context.Context, ev hook.Event) {
+	add(hook.Plugin{Name: "in-flight", OnEvent: func(_ context.Context, ev hook.Event) {
 		switch ev.(type) {
 		case hook.ModelCallStarted:
 			al.activeRequests.Add(1)
@@ -155,34 +235,39 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 			al.activeRequests.Done()
 		}
 	}})
-	h.add(al.compactionNoticePlugin(o))
-	// An interrupted turn on a CLI model: its MCP session token is replaced,
-	// so nothing the killed CLI started can still call tools with it.
-	h.add(hook.Plugin{Name: "session-token", OnInterrupt: func(_ context.Context, ev hook.Interrupted) {
-		if ev.Running && al.isCLIModel(model) {
-			al.reissueSessionToken(agent, o.SessionKey)
-		}
-	}})
+	add(al.compactionNoticePlugin())
 
 	// First among AfterModel: the answer is logged as the model gave it.
-	h.add(hook.Plugin{Name: "response-log", AfterModel: al.logModelResponse(agent, opts)})
-	images := &turnImages{al: al, agent: agent, opts: o, model: model}
-	h.add(hook.Plugin{Name: "images", AfterModel: images.afterModel})
-	h.add(hook.Plugin{Name: "reasoning-as-content", AfterModel: al.reasoningAsContent})
+	add(hook.Plugin{Name: "response-log", AfterModel: al.logModelResponse(agent)})
+	add(hook.Plugin{Name: "images", AfterModel: func(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) {
+		if t := hostTurnOf(ctx); t != nil {
+			t.images.afterModel(ctx, call, resp)
+		}
+	}})
+	add(hook.Plugin{Name: "reasoning-as-content", AfterModel: al.reasoningAsContent})
 	// The only BeforeModel, and it must stay the first: a rebuilt request
 	// (Rebuilt) is reported to the BeforeModel callbacks of one attempt
 	// only, so one answering before it would leave the refs unresolved.
-	h.add(hook.Plugin{Name: "request-media", BeforeModel: al.requestMediaPlugin()})
+	add(hook.Plugin{Name: "request-media", BeforeModel: al.requestMediaPlugin()})
 
-	h.add(hook.Plugin{Name: "tool-record", OnEvent: func(ctx context.Context, ev hook.Event) {
+	add(hook.Plugin{Name: "tool-record", OnEvent: func(ctx context.Context, ev hook.Event) {
+		t := hostTurnOf(ctx)
+		if t == nil {
+			return
+		}
 		if f, ok := ev.(hook.ToolCallFinished); ok {
-			recordToolCall(ctx, agent, o, f)
+			recordToolCall(ctx, agent, t.o, f)
 		}
 	}})
-	h.add(hook.Plugin{Name: "batch", OnEvent: func(ctx context.Context, ev hook.Event) {
+	add(hook.Plugin{Name: "batch", OnEvent: func(ctx context.Context, ev hook.Event) {
+		t := hostTurnOf(ctx)
+		if t == nil {
+			return
+		}
+		st := t.st
 		switch e := ev.(type) {
 		case hook.ToolBatchStarted:
-			al.publishNarration(ctx, o, e.Content)
+			al.publishNarration(ctx, t.o, e.Content)
 		case hook.ToolBatchFinished:
 			st.completedTools.Add(int64(e.Calls))
 			st.streamActivity = al.GetConfig().Agents.Defaults.StreamToolActivity
@@ -191,20 +276,31 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 			// stream_tool_activity; otherwise the user gets just the final
 			// answer.
 			if st.streamActivity && !e.Result.Silent && e.Result.ForUser != "" {
-				al.publishToolForUser(ctx, o, e.Call.Name, e.Result)
+				al.publishToolForUser(ctx, t.o, e.Call.Name, e.Result)
 			}
 			if len(e.Result.Media) > 0 {
-				al.publishToolMedia(ctx, o, e.Call.Name, e.Result)
+				al.publishToolMedia(ctx, t.o, e.Call.Name, e.Result)
 			}
 		}
 	}})
-	h.add(hook.Plugin{Name: "vision-describe", DescribeImages: func(ctx context.Context, images hook.UnseenImages) (string, bool) {
-		return al.describeToolImages(ctx, agent, *opts, model, images)
+	add(hook.Plugin{Name: "vision-describe", DescribeImages: func(ctx context.Context, images hook.UnseenImages) (string, bool) {
+		t := hostTurnOf(ctx)
+		if t == nil {
+			return "", false
+		}
+		return al.describeToolImages(ctx, agent, *t.opts, t.modelName(), images)
 	}})
-	h.add(hook.Plugin{Name: "reply", AfterTurn: func(_ context.Context, _ *hook.Turn, r *hook.TurnResult) {
-		al.decideModelReply(agent, *opts, st, r)
+	add(hook.Plugin{Name: "reply", AfterTurn: func(ctx context.Context, _ *hook.Turn, r *hook.TurnResult) {
+		if t := hostTurnOf(ctx); t != nil {
+			al.decideModelReply(agent, *t.opts, t.st, r)
+		}
 	}})
-	h.add(hook.Plugin{Name: "turn", OnEvent: func(evCtx context.Context, ev hook.Event) {
+	add(hook.Plugin{Name: "turn", OnEvent: func(evCtx context.Context, ev hook.Event) {
+		t := hostTurnOf(evCtx)
+		if t == nil {
+			return
+		}
+		st, o := t.st, t.o
 		switch e := ev.(type) {
 		case hook.Compaction:
 			if e.Phase == hook.CompactionEvicted {
@@ -215,13 +311,14 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 				st.mu.Unlock()
 			}
 		case hook.TurnFinished:
-			al.endTurn(ctx, agent, o, st)
+			al.endTurn(t.ctx, agent, o, st)
 			if st.stopTyping {
 				al.stopTyping(o.Channel, o.ChatID)
 			}
-			if errors.Is(e.Err, errNoModelConfigured) {
+			if errors.Is(e.Err, hook.ErrNoModelAvailable) && t.noModel() {
 				// A turn with no model makes no provider call, but has always
 				// written its "LLM finish" line.
+				model := t.modelName()
 				al.emitFinish(evCtx, agent, o, hook.ModelCall{Iteration: e.Iterations, Model: hook.ModelRef{Name: model, Model: model}, Err: errNoModelConfigured})
 			}
 			if st.pendingSource && (e.Err == nil || !errors.Is(e.Cause, hook.ErrShutdown)) {
@@ -229,32 +326,38 @@ func (al *AgentLoop) turnHooksFor(ctx context.Context, agent *AgentInstance, opt
 			}
 			al.reportStoreRefusal(agent, o.SessionKey, e.Err)
 			al.reportSessionSave(agent, o.SessionKey, e.TurnResult)
-			al.sendModelReply(ctx, agent, o, st, e.TurnResult)
+			al.sendModelReply(t.ctx, agent, o, st, e.TurnResult)
 		}
 	}})
 
 	// When the model loop starts, the per-chat settings are read and the
 	// consumers below switched on; each does nothing until then.
-	h.add(hook.Plugin{Name: "loop-start", BeforeLoop: func(loopCtx context.Context, loop *hook.Loop) error {
-		al.startModelLoop(loopCtx, agent, o, st, loop)
+	add(hook.Plugin{Name: "loop-start", BeforeLoop: func(loopCtx context.Context, loop *hook.Loop) error {
+		if t := hostTurnOf(loopCtx); t != nil {
+			al.startModelLoop(loopCtx, agent, t.o, t.st, loop)
+		}
 		return nil
 	}})
-	h.add(hook.Plugin{Name: "stream", OnTextDelta: func(_ context.Context, ev hook.TextDelta) {
-		if st.stream != nil {
-			st.stream.Add(ev.Text)
+	add(hook.Plugin{Name: "stream", OnTextDelta: func(ctx context.Context, ev hook.TextDelta) {
+		if t := hostTurnOf(ctx); t != nil && t.st.stream != nil {
+			t.st.stream.Add(ev.Text)
 		}
 	}})
-	h.add(hook.Plugin{Name: "fallback-notice", OnFallback: func(_ context.Context, ev hook.Fallback) {
-		if st.notifyFallback != nil {
-			st.notifyFallback(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
+	add(hook.Plugin{Name: "fallback-notice", OnFallback: func(ctx context.Context, ev hook.Fallback) {
+		if t := hostTurnOf(ctx); t != nil && t.st.notifyFallback != nil {
+			t.st.notifyFallback(fallbackAttempts(ev.Passed), fallbackCandidate(ev.Next))
 		}
 	}})
-	h.add(hook.Plugin{Name: "breadcrumbs", OnEvent: func(ctx context.Context, ev hook.Event) {
-		if s, ok := ev.(hook.ToolCallStarted); ok && st.breadcrumbs {
-			al.publishBreadcrumb(ctx, o, hookToolCall(s.Call))
+	add(hook.Plugin{Name: "breadcrumbs", OnEvent: func(ctx context.Context, ev hook.Event) {
+		t := hostTurnOf(ctx)
+		if t == nil {
+			return
+		}
+		if s, ok := ev.(hook.ToolCallStarted); ok && t.st.breadcrumbs {
+			al.publishBreadcrumb(ctx, t.o, hookToolCall(s.Call))
 		}
 	}})
-	return h, st
+	return ps
 }
 
 // startModelLoop sets up a turn's model loop when it starts (BeforeLoop),
@@ -326,13 +429,18 @@ func (al *AgentLoop) requestMediaPlugin() hook.BeforeModelFunc {
 // logModelResponse logs a dispatch's answer (AfterModel, registered before
 // every other one, so it sees the answer unchanged): the "LLM response" line,
 // with the reasoning only when content may be logged. It changes nothing.
-// opts are the turn's options as BeforeTurn leaves them.
-func (al *AgentLoop) logModelResponse(agent *AgentInstance, opts *processOptions) hook.AfterModelFunc {
+// It reads the turn's options as BeforeTurn leaves them.
+func (al *AgentLoop) logModelResponse(agent *AgentInstance) hook.AfterModelFunc {
 	return func(ctx context.Context, call *hook.ModelInfo, resp *hook.ModelResponse) {
 		log := logger.SDK()
 		if !log.Enabled(ctx, slog.LevelDebug) {
 			return
 		}
+		t := hostTurnOf(ctx)
+		if t == nil {
+			return
+		}
+		opts := t.opts
 		r := resp.Response
 		args := []any{
 			"component", "agent",
@@ -398,12 +506,12 @@ func (al *AgentLoop) turnScope(ctx context.Context, agent *AgentInstance, sessio
 	}
 }
 
-// runModelTurn runs one turn of agent on opts through the turn engine, its
-// whole span: the message stored, the model loop, the reply decided, stored
-// and, when opts asks, sent. It returns the reply (empty when nothing is to
-// be said) or the error the turn ended with. A step-changing callback's
-// panic ends the turn as a panic in the turn always has: it reaches the
-// caller once the turn has finished.
+// runModelTurn runs one turn of agent on opts on its SDK agent, its whole
+// span: the message stored, the model loop, the reply decided, stored and,
+// when opts asks, sent. It returns the reply (empty when nothing is to be
+// said) or the error the turn ended with. A step-changing callback's panic,
+// and the engine's own, end the turn as a panic in the turn always has: it
+// reaches the caller, on its goroutine, once the turn has finished.
 func (al *AgentLoop) runModelTurn(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -411,25 +519,103 @@ func (al *AgentLoop) runModelTurn(
 	cm ctxengine.ContextManager,
 	mem *cogmem.Session,
 ) (string, error) {
-	turn, ctx := al.newHostEngineTurn(ctx, agent, nil, opts, cm, mem)
-	_, err := turn.run(ctx)
-	return al.turnOutcome(turn, err)
+	tm := opts.turnModel
+	if tm == nil {
+		tm = al.selectTurnModel(agent, opts.SessionKey)
+	}
+	// A retried message is already in history, unless a single-shot turn
+	// starts blank and stores it again.
+	return al.runOnAgent(ctx, agent, opts, tm, cm, mem, opts.IsRetry && !agent.Spec.SingleShot())
 }
 
-// turnOutcome is what a finished engine turn returns to the host: its reply,
-// or its error in the host's words.
-func (al *AgentLoop) turnOutcome(turn *engineTurn, err error) (string, error) {
+// runOnAgent runs a turn of agent on opts on its SDK agent and waits for it:
+// tm is its model choice, cm and mem its session context (nil for a human
+// agent's turn), alreadyStored whether its message is in the session. The
+// turn's run is recorded for /cancel (claimTurnHandle) before it can end.
+func (al *AgentLoop) runOnAgent(
+	ctx context.Context,
+	agent *AgentInstance,
+	opts processOptions,
+	tm *turnModel,
+	cm ctxengine.ContextManager,
+	mem *cogmem.Session,
+	alreadyStored bool,
+) (string, error) {
+	t, res, err := al.runTurnOnAgent(ctx, agent, opts, tm, cm, mem, alreadyStored)
+	if err != nil {
+		return "", err
+	}
+	return al.turnOutcome(t, res)
+}
+
+// runTurnOnAgent is runOnAgent up to the turn's result: the turn and how it
+// ended, or the error of an agent that could not be built.
+func (al *AgentLoop) runTurnOnAgent(
+	ctx context.Context,
+	agent *AgentInstance,
+	opts processOptions,
+	tm *turnModel,
+	cm ctxengine.ContextManager,
+	mem *cogmem.Session,
+	alreadyStored bool,
+) (*hostTurn, hook.TurnResult, error) {
+	a, err := al.turnAgentOf(agent)
+	if err != nil {
+		return nil, hook.TurnResult{}, err
+	}
+	ctx, t := al.withHostTurn(ctx, agent, opts, tm, cm, mem)
+	runOpts := []hook.RunOption{hook.AtDepth(toolsagents.SpawnDepth(ctx))}
+	if alreadyStored {
+		runOpts = append(runOpts, hook.AlreadyStored())
+	}
+	if id := turnIDFrom(ctx); id != "" {
+		runOpts = append(runOpts, hook.WithTurnID(id))
+	} else {
+		// A run with no turn id of its own (one started over MCP) has none.
+		runOpts = append(runOpts, hook.WithoutTurnID())
+	}
+	record := claimTurnHandle(ctx)
+	run := a.Run(ctx, opts.SessionKey, turnMessage(opts), runOpts...)
+	if record != nil {
+		record(&runHandle{al: al, agent: agent, run: run, turn: t})
+	}
+	return t, run.Wait(), nil
+}
+
+// turnOutcome is what a finished turn returns to the host: its reply, or
+// its error in the host's words.
+func (al *AgentLoop) turnOutcome(t *hostTurn, res hook.TurnResult) (string, error) {
+	err := res.Err
 	if perr, ok := errors.AsType[*hook.PanicError](err); ok {
 		panic(&callbackPanicError{perr: perr})
+	}
+	if eperr, ok := errors.AsType[*loop.EnginePanicError](err); ok {
+		panic(&enginePanicError{perr: eperr})
 	}
 	if se, ok := errors.AsType[*hook.SessionStoreError](err); ok {
 		return "", storeRefusalError(se.What, se.Err)
 	}
+	if errors.Is(err, hook.ErrNoModelAvailable) && t.noModel() {
+		return "", noModelConfiguredError{err: err}
+	}
 	if err != nil {
 		return "", err
 	}
-	return turn.handle.result.Reply, nil
+	return res.Reply, nil
 }
+
+// errNoModelConfigured is the error of a turn whose agent has no model to
+// call (an empty chain), in the words a configuration without models has
+// always been answered with; a turn's error matches it (errors.Is).
+var errNoModelConfigured = errors.New("no model configured — enable a model and add your API key in the configuration")
+
+// noModelConfiguredError is the engine's no-model error as the host returns
+// it: the same text, matching errNoModelConfigured.
+type noModelConfiguredError struct{ err error }
+
+func (e noModelConfiguredError) Error() string        { return e.err.Error() }
+func (e noModelConfiguredError) Unwrap() error        { return e.err }
+func (e noModelConfiguredError) Is(target error) bool { return target == errNoModelConfigured }
 
 // callbackPanicError is a step-changing callback's panic going on to the turn's
 // caller: it reads as the panic's value, as the panic always has, and keeps
@@ -439,76 +625,25 @@ type callbackPanicError struct{ perr *hook.PanicError }
 func (p *callbackPanicError) Error() string { return fmt.Sprintf("%v", p.perr.Value) }
 func (p *callbackPanicError) Unwrap() error { return p.perr }
 
+// enginePanicError is a panic in the turn engine itself (or in the host code
+// it calls) going on to the turn's caller: it reads as the panic's value and
+// keeps the stack of the code that panicked.
+type enginePanicError struct{ perr *loop.EnginePanicError }
+
+func (p *enginePanicError) Error() string { return fmt.Sprintf("%v", p.perr.Value) }
+func (p *enginePanicError) Unwrap() error { return p.perr }
+
 // panicReport is a recovered panic's value and stack as the turn's panic
-// line logs them: a callback's panic with the callback's own stack.
+// line logs them: a callback's or the engine's panic with the stack of the
+// code that panicked.
 func panicReport(r any) (value, stack string) {
-	if p, ok := r.(*callbackPanicError); ok {
+	switch p := r.(type) {
+	case *callbackPanicError:
+		return fmt.Sprintf("%v", p.perr.Value), string(p.perr.Stack)
+	case *enginePanicError:
 		return fmt.Sprintf("%v", p.perr.Value), string(p.perr.Stack)
 	}
 	return fmt.Sprintf("%v", r), string(debug.Stack())
-}
-
-// newHostEngineTurn is the engine turn of agent on opts, with the turn's
-// model choice (made now when opts has none) and its callbacks, over
-// messages until the first request is assembled. The returned context
-// carries the turn's scope and hooks.
-func (al *AgentLoop) newHostEngineTurn(
-	ctx context.Context,
-	agent *AgentInstance,
-	messages []providers.Message,
-	opts processOptions,
-	cm ctxengine.ContextManager,
-	mem *cogmem.Session,
-) (*engineTurn, context.Context) {
-	tm := opts.turnModel
-	if tm == nil {
-		tm = al.selectTurnModel(agent, opts.SessionKey)
-	}
-	o := &opts
-	hooks, _ := al.turnHooksFor(ctx, agent, o, tm.model, cm)
-	ctx = beginTurnContext(ctx, al.turnScope(ctx, agent, opts.SessionKey), hooks, al.clk())
-	scope, _ := hook.ScopeOf(ctx)
-	spec := engineSpec{
-		agentID: agent.ID,
-		scope:   scope,
-		message: turnMessage(opts),
-		options: hook.RunOptions{
-			// A retried message is already in history, unless a single-shot
-			// turn starts blank and stores it again.
-			AlreadyStored: opts.IsRetry && !agent.Spec.SingleShot(),
-			Depth:         scope.Depth,
-		},
-
-		maxIterations: agent.MaxIterations,
-		toolTimeout:   func() time.Duration { return al.GetConfig().Agents.Defaults.GetToolTimeout() },
-		retries:       llmMaxRetries,
-		retryBackoff:  timeoutRetryBackoff,
-		temperature:   agent.Temperature,
-		repeatHint:    fileEditRepeatHint,
-
-		clock:      al.clk(),
-		log:        logger.SDK(),
-		logContent: logger.GetLogMessageContent,
-		redact:     redactSecrets,
-		truncate:   utils.Truncate,
-
-		chain:          tm.chain,
-		candidates:     tm.candidates,
-		model:          tm.model,
-		modelMaxTokens: tm.limits.maxTokens,
-		contextWindow:  tm.limits.contextWindow,
-		noTools:        tm.limits.noTools,
-
-		cm:    cm,
-		mem:   mem,
-		env:   &llmTurnEnv{al: al, agent: agent, opts: o, mem: mem},
-		hooks: hooks,
-	}
-	if agent.Sessions != nil {
-		spec.store = agent.Sessions
-	}
-	spec.onHandle = claimTurnHandle(ctx)
-	return newEngineTurn(spec, messages), ctx
 }
 
 // turnMessage is the message a turn on opts answers, as the run is given
@@ -533,51 +668,6 @@ func fileEditRepeatHint(toolNames []string) string {
 		return "For file_edit specifically: the file may have changed since you last read it, or your old_text does not match exactly (e.g. whitespace/indentation) — re-read it with file_read_lines and correct the old_text."
 	}
 	return ""
-}
-
-// llmTurnEnv is the host's services as the engine reaches them for a turn
-// of agent on opts.
-type llmTurnEnv struct {
-	al    *AgentLoop
-	agent *AgentInstance
-	// opts are the turn's options, as BeforeTurn left them.
-	opts *processOptions
-	mem  *cogmem.Session
-}
-
-func (e *llmTurnEnv) toolDefs() []spawnllm.ToolDefinition {
-	return e.agent.Tools.ToolDefs(nil).Send
-}
-
-// executeTool runs a call with the agent's allow checker on its context (so
-// execution enforces the tool allowlist again, defense in depth), and with
-// the turn's reply chat, so files a tool sends go where the reply goes. An
-// AsyncExecutor tool's late result is routed by asyncToolCallback.
-func (e *llmTurnEnv) executeTool(ctx context.Context, name string, args map[string]any) *toolkit.Result {
-	asyncCallback := e.al.asyncToolCallback(ctx, e.agent, *e.opts, name)
-	execCtx := tools.WithToolAllowChecker(ctx, e.agent.Config)
-	execCtx = tools.WithReplyChat(execCtx, tools.ReplyChat{Channel: e.opts.Channel, ChatID: e.opts.ChatID})
-	return e.agent.Tools.ExecuteWithContext(execCtx, name, args, e.opts.Channel, e.opts.ChatID, asyncCallback)
-}
-
-func (e *llmTurnEnv) assembleRequest(ctx context.Context, defs []spawnllm.ToolDefinition, history []spawnllm.Message) ctxengine.AssembleRequest {
-	return e.al.assembleRequestWithDefs(ctx, e.agent, e.mem, *e.opts, defs, history)
-}
-
-func (e *llmTurnEnv) firstRequest(ctx context.Context) ctxengine.AssembleRequest {
-	return e.al.assembleRequest(ctx, e.agent, e.mem, *e.opts)
-}
-
-func (e *llmTurnEnv) compressionManager() (ctxengine.ContextManager, func()) {
-	return e.al.getContextManager(e.agent, e.opts.SessionKey)
-}
-
-// sessionSummary is "" for an agent without a session store.
-func (e *llmTurnEnv) sessionSummary() string {
-	if e.agent.Sessions == nil {
-		return ""
-	}
-	return e.agent.Sessions.GetSummary(e.opts.SessionKey)
 }
 
 // modelFacts is model (a model_name) as a request of agent sees it: its

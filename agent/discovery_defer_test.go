@@ -170,29 +170,6 @@ func TestDiscovery_TurnSendsSameToolsAndRunsFoundTool(t *testing.T) {
 	}
 }
 
-// toolResultMessage copies a result's tool references onto the tool message,
-// and leaves them empty when the result has none.
-func TestToolResultMessage_ToolReferences(t *testing.T) {
-	al := newTestAgentLoop(t).al
-	turn := hostTurn(t, al, al.registry.Default(), processOptions{}, nil)
-	tc := providers.ToolCall{ID: "tc-1", Name: "search_tools"}
-
-	res := tools.SilentResult("Found 2 tool(s)")
-	res.ToolReferences = []string{"mcp_alice_read", "mcp_bob_fetch"}
-	msg := turn.toolResultMessage(toolCallResult{tc: tc, result: res})
-	if !slices.Equal(msg.ToolReferences, res.ToolReferences) {
-		t.Errorf("ToolReferences = %v, want %v", msg.ToolReferences, res.ToolReferences)
-	}
-	if msg.Role != "tool" || msg.ToolCallID != "tc-1" || msg.Content != "Found 2 tool(s)" {
-		t.Errorf("message = %+v", msg)
-	}
-
-	plain := turn.toolResultMessage(toolCallResult{tc: tc, result: tools.SilentResult("ok")})
-	if plain.ToolReferences != nil {
-		t.Errorf("ToolReferences = %v, want none", plain.ToolReferences)
-	}
-}
-
 // The session store keeps a tool message's references across a close and
 // reopen.
 func TestSessionStore_KeepsToolReferences(t *testing.T) {

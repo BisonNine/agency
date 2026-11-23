@@ -6,12 +6,14 @@ package agent
 import (
 	"context"
 	"errors"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/logger"
@@ -165,10 +167,7 @@ func TestLoopStart_ReadPerChatSettingsAtLoopStart(t *testing.T) {
 func TestTurnOutcome_CallbackPanicReachesTheCaller(t *testing.T) {
 	buf := &safeBufLoop{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	perr := protect("AfterModel", "images", bobsPanickingCallback)
-	if perr == nil {
-		t.Fatal("the callback did not panic")
-	}
+	perr := panicOf(bobsPanickingCallback)
 	var err error
 	func() {
 		defer func() {
@@ -178,7 +177,7 @@ func TestTurnOutcome_CallbackPanicReachesTheCaller(t *testing.T) {
 			}
 			err = messagePanicked(bus.InboundMessage{Channel: "telegram", ChatID: "alice"}, r)
 		}()
-		_, rerr := (&AgentLoop{}).turnOutcome(&engineTurn{}, perr)
+		_, rerr := (&AgentLoop{}).turnOutcome(&hostTurn{}, hook.TurnResult{Err: perr})
 		t.Fatalf("turnOutcome returned %v instead of panicking", rerr)
 	}()
 	if err == nil || err.Error() != "internal error while processing the message: Bob's bug" {
@@ -192,3 +191,54 @@ func TestTurnOutcome_CallbackPanicReachesTheCaller(t *testing.T) {
 
 // bobsPanickingCallback is a callback with a bug.
 func bobsPanickingCallback() { panic("Bob's bug") }
+
+// panicOf is fn's panic as the agent reports a callback's: its value and
+// the stack of fn.
+func panicOf(fn func()) (perr *hook.PanicError) {
+	defer func() {
+		if r := recover(); r != nil {
+			perr = &hook.PanicError{Value: r, Stack: debug.Stack()}
+		}
+	}()
+	fn()
+	return nil
+}
+
+// A panic in the turn engine itself (here the host's prompt code, which the
+// engine calls) reaches the caller as it always has, after the turn ended:
+// the panic line carries the stack of the code that panicked, not the
+// caller's, and the sender's error text is today's.
+func TestTurnOutcome_EnginePanicReachesTheCaller(t *testing.T) {
+	buf := &safeBufLoop{}
+	t.Cleanup(logger.RedirectForTest(buf))
+	var eperr *loop.EnginePanicError
+	func() {
+		defer func() {
+			r := recover()
+			eperr = &loop.EnginePanicError{Value: r, Stack: debug.Stack()}
+		}()
+		bobsPanickingCallback()
+	}()
+	var err error
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("turnOutcome did not panic")
+			}
+			err = messagePanicked(bus.InboundMessage{Channel: "telegram", ChatID: "alice"}, r)
+		}()
+		_, rerr := (&AgentLoop{}).turnOutcome(&hostTurn{}, hook.TurnResult{Err: eperr})
+		t.Fatalf("turnOutcome returned %v instead of panicking", rerr)
+	}()
+	if err == nil || err.Error() != "internal error while processing the message: Bob's bug" {
+		t.Fatalf("error = %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "panic while processing message") || !strings.Contains(out, "bobsPanickingCallback") {
+		t.Fatalf("log does not carry the panicking code's stack: %s", out)
+	}
+	if strings.Contains(out, "TestTurnOutcome_EnginePanicReachesTheCaller.func2") {
+		t.Fatalf("log carries the caller's stack, not the panicking code's: %s", out)
+	}
+}

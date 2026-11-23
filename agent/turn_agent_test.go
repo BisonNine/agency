@@ -41,6 +41,11 @@ func TestTurnAgentIsBuiltWithTheInstance(t *testing.T) {
 	if err := closing.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+	// The instance's close does not wait; the agent's own does, until the
+	// close the instance started has finished.
+	if err := built.Close(context.Background()); err != nil {
+		t.Fatalf("agent Close: %v", err)
+	}
 	res := built.Run(context.Background(), "s", hook.UserText("hello")).Wait()
 	if !errors.Is(res.Err, loop.ErrClosed) {
 		t.Errorf("a run on a closed instance's SDK agent ended with %v, want %v", res.Err, loop.ErrClosed)
@@ -60,7 +65,8 @@ func TestTurnAgentRunsATurnWithTheHostsSettings(t *testing.T) {
 	opts := &processOptions{SessionKey: "agent:main:alice", Channel: "cli", ChatID: "direct", UserMessage: "hello"}
 	cm, mem, release := tl.al.getSessionContext(inst, opts.SessionKey)
 	defer release()
-	ctx := withTurnRun(context.Background(), opts, cm, mem)
+	tm := tl.al.selectTurnModel(inst, opts.SessionKey)
+	ctx, _ := tl.al.withHostTurn(context.Background(), inst, *opts, tm, cm, mem)
 	res := inst.turnAgent.Run(ctx, opts.SessionKey, hook.UserText(opts.UserMessage)).Wait()
 	if res.Err != nil {
 		t.Fatalf("turn failed: %v", res.Err)

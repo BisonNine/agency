@@ -19,6 +19,7 @@ import (
 	"go.bison9.com/agent/ctxengine"
 	"go.bison9.com/agent/fsmode"
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 
 	"go.bison9.com/agency/bus"
@@ -480,7 +481,7 @@ func (al *AgentLoop) buildSessionEntry(bk sessionBuildKey, done chan struct{}, a
 		ctxengine.WithFailureDump(failureDump),
 		ctxengine.WithCompactionReporter(reporter),
 		// A person whose reply waits on a compaction is told so.
-		ctxengine.WithCompactionStartFunc(engineCompactionStart),
+		ctxengine.WithCompactionStartFunc(loop.CompactionStart),
 		// The engine stops automatic compaction for a session after repeated
 		// summarization failures; the context then grows until the safety-net
 		// pass, so an operator should know.

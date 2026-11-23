@@ -27,6 +27,9 @@ type replayProvider struct {
 	called []string
 	// onCall, when set, runs before each answer.
 	onCall func(model string)
+	// toolCallFirst: the first answer calls a tool, so the turn dispatches
+	// again.
+	toolCallFirst bool
 }
 
 func (p *replayProvider) Chat(_ context.Context, _ providers.Identity, _ []providers.Message, _ []providers.ToolDefinition, model string, _ map[string]any) (*providers.LLMResponse, error) {
@@ -40,6 +43,15 @@ func (p *replayProvider) Chat(_ context.Context, _ providers.Identity, _ []provi
 	}
 	if msg != "" {
 		return nil, errors.New(msg)
+	}
+	p.mu.Lock()
+	first := p.toolCallFirst && len(p.called) == 1
+	p.mu.Unlock()
+	if first {
+		return &providers.LLMResponse{FinishReason: "tool_calls", ToolCalls: []providers.ToolCall{{
+			ID: "c1", Type: "function", Name: "no_such_tool",
+			Function: &providers.FunctionCall{Name: "no_such_tool", Arguments: "{}"},
+		}}}, nil
 	}
 	return &providers.LLMResponse{Content: "from " + model, FinishReason: "stop"}, nil
 }
@@ -164,16 +176,16 @@ func TestFallbackReplay(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Cleanup(logger.RedirectForTest(&bytes.Buffer{}))
 			p := &replayProvider{errs: tt.errs}
-			turn, d := chainTurn(t, p, tt.parked, tt.chain...)
+			run := chainTurn(t, p, tt.parked, tt.chain...)
 			var notices [][]string
-			turn.hooks.add(hook.Plugin{Name: "test", OnFallback: func(_ context.Context, ev hook.Fallback) {
+			run.plugins = append(run.plugins, hook.Plugin{Name: "test", OnFallback: func(_ context.Context, ev hook.Fallback) {
 				notices = append(notices, attemptSeq(fallbackAttempts(ev.Passed)))
 			}})
-			resp, err := turn.callModel(context.Background(), d)
+			resp, err := run.dispatch(context.Background())
 
 			switch {
 			case tt.answer != "":
-				if err != nil || resp.Content != "from "+tt.answer {
+				if err != nil || resp != "from "+tt.answer {
 					t.Fatalf("callModel = %+v, %v; want %s's answer", resp, err, tt.answer)
 				}
 			case tt.exhausted:
@@ -207,8 +219,7 @@ func TestFallbackReplay_ContextCanceled(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&bytes.Buffer{}))
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &replayProvider{errs: map[string]string{"gpt-4": "context canceled"}, onCall: func(string) { cancel() }}
-	turn, d := chainTurn(t, p, nil, replayGPT, replayClaude)
-	_, err := turn.callModel(ctx, d)
+	_, err := chainTurn(t, p, nil, replayGPT, replayClaude).dispatch(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -222,7 +233,7 @@ func TestFallbackReplay_ContextCanceled(t *testing.T) {
 // next turn starts on the new choice.
 func TestFallbackReplay_StickyTurn(t *testing.T) {
 	al, agent := fourModelLoop(t)
-	p := &replayProvider{}
+	p := &replayProvider{toolCallFirst: true}
 	for _, name := range al.catalog.Names() {
 		if err := al.catalog.RegisterClient(name, p); err != nil {
 			t.Fatal(err)
@@ -234,11 +245,9 @@ func TestFallbackReplay_StickyTurn(t *testing.T) {
 	if err := al.setActiveModelIndex(agent, session, 2); err != nil {
 		t.Fatal(err)
 	}
-	turn := hostTurn(t, al, agent, processOptions{}, first, providers.Message{Role: "user", Content: "hi"})
-	for range 2 {
-		if _, err := turn.callModel(context.Background(), newTestDispatch(turn)); err != nil {
-			t.Fatal(err)
-		}
+	// One turn of two dispatches: a tool call, then the answer.
+	if _, _, err := testTurn(t, al, agent, processOptions{SessionKey: session}, first, nil); err != nil {
+		t.Fatal(err)
 	}
 	next := al.selectTurnModel(agent, session)
 	if got := p.calls(); !slices.Equal(got, []string{"m0", "m0"}) {

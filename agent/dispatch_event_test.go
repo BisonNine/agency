@@ -297,7 +297,7 @@ func (failoverProvider) GetDefaultModel() string { return "primary-wire" }
 // After a failover each call has its line, and the answering one names the
 // candidate that answered: its provider and its model_name, not the primary's.
 func TestRequestModel_FailoverNamesAnsweringModel(t *testing.T) {
-	turn, d := chainTurn(t, failoverProvider{}, nil,
+	run := chainTurn(t, failoverProvider{}, nil,
 		providers.FallbackCandidate{Provider: "Primary Co", Model: "primary-wire", Name: "Primary"},
 		providers.FallbackCandidate{Provider: "Backup Co", Model: "backup-wire", Name: "Backup"},
 	)
@@ -305,12 +305,12 @@ func TestRequestModel_FailoverNamesAnsweringModel(t *testing.T) {
 	buf := &bytes.Buffer{}
 	restore := logger.RedirectForTest(buf)
 	defer restore()
-	resp, err := turn.requestModel(context.Background(), d)
+	resp, err := run.run(context.Background())
 	if err != nil {
 		t.Fatalf("requestModel: %v", err)
 	}
-	if resp.Content != "from backup" {
-		t.Fatalf("content = %q, want the backup's answer", resp.Content)
+	if resp != "from backup" {
+		t.Fatalf("content = %q, want the backup's answer", resp)
 	}
 
 	records := finishRecords(t, buf)

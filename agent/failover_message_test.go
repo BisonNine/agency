@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -80,13 +82,24 @@ func TestLogPassedLogsProviderMessage(t *testing.T) {
 	restore := logger.RedirectForTest(&buf)
 	defer restore()
 
-	turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
-	turn.logPassed([]providers.FallbackAttempt{
-		{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverFormat, Err: fable400()},
-	})
+	run := chainTurn(t, failFirst(fable400()), nil, candOpus, candBob)
+	if _, err := run.run(context.Background()); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
 	if !strings.Contains(buf.String(), "thinking.type: adaptive is required for this model.") {
 		t.Fatalf("log does not carry the provider's message:\n%s", buf.String())
 	}
+}
+
+// failFirst answers for every model but the chain's first (opus-wire), which
+// fails with err.
+func failFirst(err error) modelScriptProvider {
+	return modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+		if model == candOpus.Model {
+			return nil, err
+		}
+		return answerOK(model), nil
+	}}
 }
 
 // secretBodies are provider error bodies whose message carries a credential;
@@ -137,19 +150,12 @@ func TestProviderMessageRedactsSecrets(t *testing.T) {
 			var buf bytes.Buffer
 			restore := logger.RedirectForTest(&buf)
 			defer restore()
-			turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
-			turn.logPassed([]providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-opus-5-5", Reason: providers.FailoverAuth, Err: fe},
-			})
+			run := chainTurn(t, failFirst(fe), nil, candOpus, candBob)
+			if _, err := run.run(context.Background()); err != nil {
+				t.Fatalf("turn: %v", err)
+			}
 			if strings.Contains(buf.String(), secret) || !strings.Contains(buf.String(), secretRedaction) {
 				t.Fatalf("failure log carries the secret or no redaction:\n%s", buf.String())
-			}
-			buf.Reset()
-			turn.logPassed([]providers.FallbackAttempt{
-				{Provider: "Anthropic", Model: "claude-fable-5-1", Reason: providers.FailoverAuth, Skipped: true, Err: fe},
-			})
-			if strings.Contains(buf.String(), secret) || !strings.Contains(buf.String(), secretRedaction) {
-				t.Fatalf("skip log carries the secret or no redaction:\n%s", buf.String())
 			}
 		})
 	}
@@ -227,9 +233,11 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		var buf bytes.Buffer
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
-		turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, &turnModel{model: "gpt-4o"})
-		if err := turn.dispatchFailed(context.Background(), providerErrorWithKey()); err == nil {
-			t.Fatal("dispatchFailed returned nil")
+		failing := modelScriptProvider{answer: func(context.Context, string) (*providers.LLMResponse, error) {
+			return nil, providerErrorWithKey()
+		}}
+		if _, err := chainTurn(t, failing, nil, candAlice).run(context.Background()); err == nil {
+			t.Fatal("the turn did not fail")
 		}
 		assertRedacted(t, &buf)
 	})
@@ -238,17 +246,31 @@ func TestProviderErrorLogsRedactSecrets(t *testing.T) {
 		var buf bytes.Buffer
 		restore := logger.RedirectForTest(&buf)
 		defer restore()
+		var calls atomic.Int32
+		timingOut := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
+			if calls.Add(1) == 1 {
+				// A timeout whose text carries the key (no status that would
+				// classify it otherwise).
+				return nil, fmt.Errorf("%w: Incorrect API key provided: %s", context.DeadlineExceeded, leakedKey)
+			}
+			return answerOK(model), nil
+		}}
+		run := chainTurn(t, timingOut, nil, candAlice)
 		clk := clock.NewFake(time.Unix(0, 0))
+		run.al.clock = clk
 		done := make(chan error, 1)
-		turn := hostTurn(t, nil, &AgentInstance{ID: "alice"}, processOptions{}, nil)
-		turn.spec.clock = clk
-		go func() { done <- turn.waitToRetry(context.Background(), providerErrorWithKey(), 0) }()
-		if err := clk.BlockUntil(context.Background(), 1); err != nil {
-			t.Fatal(err)
+		go func() {
+			_, err := run.run(context.Background())
+			done <- err
+		}()
+		waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := clk.BlockUntil(waitCtx, 1); err != nil {
+			t.Fatalf("the retry never waited: %v", err)
 		}
 		clk.Advance(time.Hour)
 		if err := <-done; err != nil {
-			t.Fatalf("waitToRetry: %v", err)
+			t.Fatalf("turn: %v", err)
 		}
 		assertRedacted(t, &buf)
 	})

@@ -356,7 +356,7 @@ func TestEngine_ModelStepEvents(t *testing.T) {
 // ModelCallStarted or ModelCall.
 func TestEngine_NoModelNoModelCall(t *testing.T) {
 	f := newEngineFixture(t, nil, newFake())
-	if _, _, err := f.run(t); !errors.Is(err, errNoModelConfigured) {
+	if _, _, err := f.run(t); !errors.Is(err, errEngineNoModel) {
 		t.Fatalf("err = %v", err)
 	}
 	for _, ev := range f.rec.all() {

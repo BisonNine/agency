@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/models/modelstest"
 	"go.bison9.com/agent/spawnllm/common"
@@ -85,9 +86,19 @@ func chainCatalog(t *testing.T, p providers.LLMProvider, parked []providers.Fall
 	return cat
 }
 
-// chainTurn is a turn for alice whose chain holds candidates, in order,
-// answered by p, with the parked ones in cooldown.
-func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) (*engineTurn, *llmDispatch) {
+// chainRun is a turn of alice whose chain holds candidates, in order,
+// answered by p, with the parked ones in cooldown; run runs it whole.
+type chainRun struct {
+	t     *testing.T
+	al    *AgentLoop
+	agent *AgentInstance
+	tm    *turnModel
+	// plugins are added after the turn's own.
+	plugins []hook.Plugin
+}
+
+// chainTurn is the chainRun of candidates answered by p, parked parked.
+func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.FallbackCandidate, candidates ...providers.FallbackCandidate) *chainRun {
 	t.Helper()
 	cat := chainCatalog(t, p, parked, candidates...)
 	set := cat.Set("alice")
@@ -98,11 +109,40 @@ func chainTurn(t *testing.T, p providers.LLMProvider, parked []providers.Fallbac
 	}
 	chain := set.Begin(models.Chat)
 	al := &AgentLoop{cfg: &config.Config{}, catalog: cat}
-	turn := hostTurn(t, al, &AgentInstance{ID: "alice"}, processOptions{},
-		&turnModel{chain: chain, candidates: chain.Candidates(), model: candidates[0].Name},
-		providers.Message{Role: "user", Content: "hi"})
-	d := &llmDispatch{provider: candidates[0].Provider}
-	return turn, d
+	return &chainRun{t: t, al: al, agent: &AgentInstance{ID: "alice", MaxIterations: 1},
+		tm: &turnModel{chain: chain, candidates: chain.Candidates(), model: candidates[0].Name}}
+}
+
+// run runs the turn ("hi") on ctx and returns its reply and error.
+func (c *chainRun) run(ctx context.Context) (string, error) {
+	c.t.Helper()
+	_, _, reply, err := runTestTurn(c.t, ctx, c.al, c.agent, processOptions{}, c.tm, nil, c.plugins, nil)
+	return reply, err
+}
+
+// dispatch runs the turn with no retry and returns what its one dispatch's
+// walk of the chain returned: the answer's content, or the error the walk
+// ended with (the turn's own when ctx ended first).
+func (c *chainRun) dispatch(ctx context.Context) (string, error) {
+	c.t.Helper()
+	var walkErr error
+	walk := hook.Plugin{Name: "walk", OnModelError: func(_ context.Context, _ *hook.ModelInfo, err error) (*providers.LLMResponse, error) {
+		walkErr = err
+		return &providers.LLMResponse{Content: "walk ended"}, nil
+	}}
+	noRetry := func(s *loop.Spec) {
+		limits := s.TurnLimits
+		s.TurnLimits = func(ctx context.Context, sc hook.Scope) hook.Limits {
+			l := limits(ctx, sc)
+			l.Retries = -1 // none
+			return l
+		}
+	}
+	_, _, reply, err := runTestTurn(c.t, ctx, c.al, c.agent, processOptions{}, c.tm, nil, append(slices.Clone(c.plugins), walk), noRetry)
+	if walkErr != nil {
+		return "", walkErr
+	}
+	return reply, err
 }
 
 // Log messages the per-call contract is about.
@@ -148,16 +188,16 @@ func TestCallModel_FailedCandidateLoggedAsItFails(t *testing.T) {
 		}
 		return answerOK(model), nil
 	}}
-	turn, d := chainTurn(t, p, nil, candOpus, candBob)
+	run := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	resp, err := turn.requestModel(context.Background(), d)
+	resp, err := run.run(context.Background())
 	if err != nil {
 		t.Fatalf("requestModel: %v", err)
 	}
-	if resp.Content != "from bob-wire" {
-		t.Fatalf("content = %q, want Bob's answer", resp.Content)
+	if resp != "from bob-wire" {
+		t.Fatalf("content = %q, want Bob's answer", resp)
 	}
 
 	recs := callRecords(t, buf)
@@ -202,11 +242,11 @@ func TestCallModel_CancelledCallLogsRunningCandidate(t *testing.T) {
 		cancel(errShuttingDown)
 		return nil, ctx.Err()
 	}}
-	turn, d := chainTurn(t, p, nil, candOpus, candBob)
+	run := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	if _, err := turn.requestModel(ctx, d); !errors.Is(err, errShuttingDown) {
+	if _, err := run.run(ctx); !errors.Is(err, errShuttingDown) {
 		t.Fatalf("requestModel error = %v, want the shutdown interruption", err)
 	}
 
@@ -229,11 +269,11 @@ func TestCallModel_AllCandidatesFail(t *testing.T) {
 	p := modelScriptProvider{answer: func(context.Context, string) (*providers.LLMResponse, error) {
 		return nil, errors.New(rateLimited)
 	}}
-	turn, d := chainTurn(t, p, nil, candOpus, candBob)
+	run := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	if _, err := turn.requestModel(context.Background(), d); err == nil {
+	if _, err := run.run(context.Background()); err == nil {
 		t.Fatal("requestModel succeeded, want an error")
 	}
 
@@ -282,11 +322,11 @@ func TestCallModel_CooldownSkipLoggedOnceWithoutFinish(t *testing.T) {
 				}
 				return answerOK(model), nil
 			}}
-			turn, d := chainTurn(t, p, tt.parked, candOpus, candBob)
+			run := chainTurn(t, p, tt.parked, candOpus, candBob)
 
 			buf := &bytes.Buffer{}
 			t.Cleanup(logger.RedirectForTest(buf))
-			_, err := turn.requestModel(context.Background(), d)
+			_, err := run.run(context.Background())
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("requestModel error = %v, want error %v", err, tt.wantErr)
 			}
@@ -320,11 +360,11 @@ func TestCallModel_DirectPathOneFinish(t *testing.T) {
 	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
 		return answerOK(model), nil
 	}}
-	turn, d := chainTurn(t, p, nil, providers.FallbackCandidate{Provider: "Alice Co", Model: "alice-wire", Name: "Alice Model"})
+	run := chainTurn(t, p, nil, providers.FallbackCandidate{Provider: "Alice Co", Model: "alice-wire", Name: "Alice Model"})
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	if _, err := turn.requestModel(context.Background(), d); err != nil {
+	if _, err := run.run(context.Background()); err != nil {
 		t.Fatalf("requestModel: %v", err)
 	}
 
@@ -380,7 +420,7 @@ func TestRequestModel_ContextWindowRetryOneFinishPerCall(t *testing.T) {
 
 // failSkipAnswer is a turn whose chain fails Opus, skips Bob (in cooldown)
 // and is answered by Alice's model.
-func failSkipAnswer(t *testing.T) (*engineTurn, *llmDispatch) {
+func failSkipAnswer(t *testing.T) *chainRun {
 	t.Helper()
 	p := modelScriptProvider{answer: func(_ context.Context, model string) (*providers.LLMResponse, error) {
 		if model == candOpus.Model {
@@ -394,17 +434,17 @@ func failSkipAnswer(t *testing.T) (*engineTurn, *llmDispatch) {
 // The turn's own notifier still hears of each candidate passed over: the
 // failure and the skip, each with the candidate tried next.
 func TestCallModel_ForwardsToTurnNotifier(t *testing.T) {
-	turn, d := failSkipAnswer(t)
+	run := failSkipAnswer(t)
 	type notice struct {
 		passed []providers.FallbackAttempt
 		next   providers.FallbackCandidate
 	}
 	var notices []notice
-	turn.hooks.add(hook.Plugin{Name: "test", OnFallback: func(_ context.Context, ev hook.Fallback) {
+	run.plugins = append(run.plugins, hook.Plugin{Name: "test", OnFallback: func(_ context.Context, ev hook.Fallback) {
 		notices = append(notices, notice{passed: fallbackAttempts(ev.Passed), next: fallbackCandidate(ev.Next)})
 	}})
 	t.Cleanup(logger.RedirectForTest(&bytes.Buffer{}))
-	if _, err := turn.requestModel(context.Background(), d); err != nil {
+	if _, err := run.run(context.Background()); err != nil {
 		t.Fatalf("requestModel: %v", err)
 	}
 
@@ -423,10 +463,10 @@ func TestCallModel_ForwardsToTurnNotifier(t *testing.T) {
 // Fail, skip, answer: finish lines for the two calls only, one WARN for the
 // failure and one skip line, in the order they happened.
 func TestCallModel_FailSkipAnswerOrder(t *testing.T) {
-	turn, d := failSkipAnswer(t)
+	run := failSkipAnswer(t)
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	if _, err := turn.requestModel(context.Background(), d); err != nil {
+	if _, err := run.run(context.Background()); err != nil {
 		t.Fatalf("requestModel: %v", err)
 	}
 
@@ -450,11 +490,11 @@ func TestCallModel_SameModelRetryNoWarn(t *testing.T) {
 		}
 		return answerOK(model), nil
 	}}
-	turn, d := chainTurn(t, p, nil, candOpus, candBob)
+	run := chainTurn(t, p, nil, candOpus, candBob)
 
 	buf := &bytes.Buffer{}
 	t.Cleanup(logger.RedirectForTest(buf))
-	if _, err := turn.requestModel(context.Background(), d); err != nil {
+	if _, err := run.run(context.Background()); err != nil {
 		t.Fatalf("requestModel: %v", err)
 	}
 
