@@ -38,7 +38,7 @@ func TestRefreshCatalogue_FollowsRegistryChanges(t *testing.T) {
 	// A tool appears, one disappears, and one is re-registered with a new
 	// description (the way an unchanged upstream MCP tool is refreshed).
 	reg.Register(&mockTool{name: "list_dir", params: map[string]any{}, result: toolkit.NewResult("a")})
-	reg.RemoveByPrefix("write_file")
+	reg.ReplaceByPrefix("write_file", nil)
 	reg.Register(&mockTool{name: "read_file", desc: "v2", params: map[string]any{}, result: toolkit.NewResult("a")})
 
 	srv.RefreshCatalogue()
@@ -114,7 +114,7 @@ func TestRefreshCatalogue_LogsRegisteredAndRemoved(t *testing.T) {
 		t.Fatalf("lines at start = %+v, want %+v", got, want)
 	}
 
-	reg.RemoveByPrefix("write_file")
+	reg.ReplaceByPrefix("write_file", nil)
 	srv.RefreshCatalogue()
 	removed := line{Level: "debug", Caller: "mcpserver", Message: "removed tools", Tools: []string{"write_file"}}
 	if got := lines(); !reflect.DeepEqual(got, []line{removed, removed}) {

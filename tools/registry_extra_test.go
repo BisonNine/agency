@@ -26,37 +26,6 @@ func (t *mockTool) Execute(ctx context.Context, args map[string]any) *toolkit.Re
 	return toolkit.NewResult("tool executed: " + t.name)
 }
 
-func TestToolRegistry_GetDefinitions_Empty(t *testing.T) {
-	r := NewToolRegistry()
-	defs := r.GetDefinitions()
-	if len(defs) != 0 {
-		t.Errorf("GetDefinitions() len = %d, want 0", len(defs))
-	}
-}
-
-func TestToolRegistry_GetDefinitions_WithTools(t *testing.T) {
-	r := NewToolRegistry()
-	r.Register(&mockTool{name: "tool_a"})
-	r.Register(&mockTool{name: "tool_b"})
-
-	defs := r.GetDefinitions()
-	if len(defs) != 2 {
-		t.Errorf("GetDefinitions() len = %d, want 2", len(defs))
-	}
-}
-
-func TestToolRegistry_GetSummaries_WithHidden(t *testing.T) {
-	r := NewToolRegistry()
-	r.Register(&mockTool{name: "alpha"})
-	r.Register(&mockTool{name: "beta"})
-	registerHidden(r, &mockTool{name: "hidden"}) // not core, should not appear
-
-	summaries := r.GetSummaries()
-	if len(summaries) != 2 {
-		t.Errorf("GetSummaries() len = %d, want 2 (hidden tool not shown)", len(summaries))
-	}
-}
-
 func TestToolRegistry_ToolDefs_WithTools(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(&mockTool{name: "tool_x"})

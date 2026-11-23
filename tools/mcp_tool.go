@@ -106,7 +106,7 @@ const MCPToolPrefix = "mcp_"
 
 // MCPServerPrefix returns the registry-name prefix shared by every tool from the
 // named MCP server ("mcp_<server>_", sanitized like Name), so a server's tools
-// can be removed from a registry as a set (ToolRegistry.RemoveByPrefix).
+// can be replaced in a registry as a set (ToolRegistry.ReplaceByPrefix).
 func MCPServerPrefix(serverName string) string {
 	return MCPToolPrefix + sanitizeIdentifierComponent(serverName) + "_"
 }

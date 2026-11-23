@@ -130,19 +130,6 @@ func (r *ToolRegistry) RegisterDiscoveryTools(ctx context.Context, maxResults in
 	}
 }
 
-// RemoveByPrefix removes every registered tool, visible or hidden, whose name
-// starts with prefix, and returns how many were removed. The version moves
-// when anything was removed so cached definitions and search indexes rebuild.
-// Used to drop an upstream MCP server's tools ("mcp_<server>_") as a set before
-// re-registering its current list, so a renamed or removed tool disappears.
-func (r *ToolRegistry) RemoveByPrefix(prefix string) int {
-	removed := r.ReplaceByPrefix(prefix, nil)
-	if removed > 0 {
-		logger.DebugCF("tools", "Removed tools by prefix", map[string]any{"prefix": prefix, "count": removed})
-	}
-	return removed
-}
-
 // ReplaceByPrefix swaps every registered tool whose name starts with prefix for
 // entries, in one step: a concurrent reader (a turn listing its tools, a tool
 // call) sees the old set or the new one, never neither. An entry whose name
@@ -280,17 +267,6 @@ func (r *ToolRegistry) ExecuteWithContext(
 	return r.cat.ExecuteGated(ctx, name, args, asyncCallback, AllowGate(name))
 }
 
-// GetDefinitions returns the schemas of the core tools (those not hidden by
-// discovery), sorted by name.
-func (r *ToolRegistry) GetDefinitions() []map[string]any {
-	listed := r.cat.Listed()
-	definitions := make([]map[string]any, 0, len(listed))
-	for _, info := range listed {
-		definitions = append(definitions, toolkit.ToolToSchema(info.Tool))
-	}
-	return definitions
-}
-
 // ToolDefs is the tool list for one model call (discovery.Defs in the
 // provider type).
 type ToolDefs struct {
@@ -354,15 +330,4 @@ func (r *ToolRegistry) List() []string {
 // Count returns the number of registered tools.
 func (r *ToolRegistry) Count() int {
 	return len(r.cat.Names())
-}
-
-// GetSummaries returns human-readable summaries of the core tools (those not
-// hidden by discovery). Returns a slice of "name - description" strings.
-func (r *ToolRegistry) GetSummaries() []string {
-	listed := r.cat.Listed()
-	summaries := make([]string, 0, len(listed))
-	for _, info := range listed {
-		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", info.Tool.Name(), info.Tool.Description()))
-	}
-	return summaries
 }

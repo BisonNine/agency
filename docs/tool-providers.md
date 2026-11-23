@@ -306,11 +306,10 @@ packages import only `tools`.
 | `Register` | `Put(Entry{Tool})` |
 | `RegisterEntries` | `Put(entry)` as given (a hidden one from `discovery.HideEntries`), with `Meta` marking a `SuiteExempt` one |
 | `RegisterSuite` | the same `Put`, with `Meta` marking the tool suite-exempt |
-| `RemoveByPrefix`, `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (entries as given, `SuiteExempt` in `Meta`), returning the removed count |
+| `ReplaceByPrefix` | `ReplaceEntries(prefix, …)` (entries as given, `SuiteExempt` in `Meta`), returning the removed count |
 | `Get`, `List`, `Count`, `Version`, `Snapshot`, `Subscribe` | `Get(n).Tool`, `Names()`, `len(Names())`, `Version`, `Snapshot`, `Subscribe` |
 | `Catalog` | the catalogue itself, which a turn's SDK agent runs (`Spec.Tools`) |
 | `ExecuteUnattended` | `ExecuteUnattendedGated` with no chat and the same gate as `ExecuteWithContext` |
-| `GetDefinitions`, `GetSummaries` | `Listed()` |
 | `ToolDefs(revealed)` | `discovery.ToolDefs(Snapshot(), revealed, true)`, copied into `spawnllm.ToolDefinition` |
 | `RegisterDiscoveryTools(ctx, …)` | `discovery.NewIndex(catalogue, LogQueries(true)).MetaTools()`, each tool `Put` suite-exempt unless denied |
 

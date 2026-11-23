@@ -99,8 +99,8 @@ func TestWrapper_ReplaceByPrefixMapsEntries(t *testing.T) {
 		t.Error("want only mcp_a_suite suite-exempt")
 	}
 
-	if n := r.RemoveByPrefix("mcp_a_"); n != 3 {
-		t.Errorf("RemoveByPrefix = %d, want 3", n)
+	if n := r.ReplaceByPrefix("mcp_a_", nil); n != 3 {
+		t.Errorf("ReplaceByPrefix = %d, want 3", n)
 	}
 	if got := r.List(); !slices.Equal(got, []string{"other"}) {
 		t.Errorf("List after removal = %v", got)
@@ -126,12 +126,6 @@ func TestWrapper_ReadMethods(t *testing.T) {
 	}
 	if _, ok := r.Get("srv_find"); ok {
 		t.Error("Get must match the internal name only")
-	}
-	if defs := r.GetDefinitions(); len(defs) != 1 {
-		t.Errorf("GetDefinitions = %d, want the 1 listed tool", len(defs))
-	}
-	if sums := r.GetSummaries(); len(sums) != 1 || sums[0] != "- `b_core` - core" {
-		t.Errorf("GetSummaries = %v", sums)
 	}
 
 	defs := r.ToolDefs(nil).Send
@@ -237,7 +231,7 @@ func TestWrapper_AddRemoveMidTurn(t *testing.T) {
 	if len(offered) != 2 {
 		t.Fatalf("offered %d tools, want 2", len(offered))
 	}
-	r.RemoveByPrefix("gone")
+	r.ReplaceByPrefix("gone", nil)
 	r.Register(newMockTool("added", "added mid-turn"))
 
 	res := r.ExecuteWithContext(context.Background(), "gone", nil, "", "", nil)
@@ -269,7 +263,7 @@ func TestWrapper_ConcurrentChangeAndCall(t *testing.T) {
 				name := fmt.Sprintf("dyn_%d_%d", i, j)
 				registerHidden(r, newMockTool(name, "dynamic"))
 				r.ReplaceByPrefix(fmt.Sprintf("dyn_%d_", i), []ToolEntry{suiteEntry(hiddenEntry(newMockTool(name, "again"), "", false))})
-				r.RemoveByPrefix(name)
+				r.ReplaceByPrefix(name, nil)
 			}
 		}(i)
 		go func(i int) {
