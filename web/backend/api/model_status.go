@@ -18,11 +18,7 @@ import (
 
 const modelProbeTimeout = 800 * time.Millisecond
 
-var (
-	probeTCPServiceFunc            = probeTCPService
-	probeOllamaModelFunc           = probeOllamaModel
-	probeOpenAICompatibleModelFunc = probeOpenAICompatibleModel
-)
+var probeOpenAICompatibleModelFunc = probeOpenAICompatibleModel
 
 func hasModelConfiguration(prov *modelspec.Provider, m modelspec.Model) bool {
 	if modelspec.IsCLIProtocol(prov.Protocol) || config.IsHumanProtocol(prov.Protocol) {
@@ -109,44 +105,6 @@ func hasLocalAPIBase(raw string) bool {
 	}
 }
 
-func probeTCPService(raw string) bool {
-	hostPort, err := hostPortFromAPIBase(raw)
-	if err != nil {
-		return false
-	}
-
-	conn, err := net.DialTimeout("tcp", hostPort, modelProbeTimeout)
-	if err != nil {
-		return false
-	}
-	utils.CloseQuietly(conn)
-	return true
-}
-
-func probeOllamaModel(apiBase, modelID string) bool {
-	root, err := apiRootFromAPIBase(apiBase)
-	if err != nil {
-		return false
-	}
-
-	var resp struct {
-		Models []struct {
-			Name  string `json:"name"`
-			Model string `json:"model"`
-		} `json:"models"`
-	}
-	if err := getJSON(root+"/api/tags", &resp); err != nil {
-		return false
-	}
-
-	for _, model := range resp.Models {
-		if ollamaModelMatches(model.Name, modelID) || ollamaModelMatches(model.Model, modelID) {
-			return true
-		}
-	}
-	return false
-}
-
 func probeOpenAICompatibleModel(apiBase, modelID string) bool {
 	if strings.TrimSpace(apiBase) == "" {
 		return false
@@ -189,31 +147,6 @@ func getJSON(rawURL string, out any) error {
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func apiRootFromAPIBase(raw string) (string, error) {
-	u, err := parseAPIBase(raw)
-	if err != nil {
-		return "", err
-	}
-	return (&url.URL{Scheme: u.Scheme, Host: u.Host}).String(), nil
-}
-
-func hostPortFromAPIBase(raw string) (string, error) {
-	u, err := parseAPIBase(raw)
-	if err != nil {
-		return "", err
-	}
-
-	if port := u.Port(); port != "" {
-		return u.Host, nil
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		return net.JoinHostPort(u.Hostname(), "443"), nil
-	default:
-		return net.JoinHostPort(u.Hostname(), "80"), nil
-	}
-}
-
 func parseAPIBase(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -233,18 +166,4 @@ func parseAPIBase(raw string) (*url.URL, error) {
 		u.Scheme = "http"
 	}
 	return u, nil
-}
-
-func ollamaModelMatches(candidate, want string) bool {
-	candidate = strings.TrimSpace(candidate)
-	want = strings.TrimSpace(want)
-	if candidate == "" || want == "" {
-		return false
-	}
-	if strings.EqualFold(candidate, want) {
-		return true
-	}
-
-	base, _, _ := strings.Cut(candidate, ":")
-	return strings.EqualFold(base, want)
 }
