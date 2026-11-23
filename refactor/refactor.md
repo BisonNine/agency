@@ -1768,6 +1768,15 @@ next session must know.
       in-memory manager per session until `ForgetSession`, which is not
       on `agent.Agent`. Needed: a nil `Session.Context` for a turn that
       `BeforeTurn` answers, or a capability interface for `ForgetSession`.
+    - Host work once these are in, no SDK change: the callbacks of
+      `turnHooksFor` as plugins built once per agent, reading the turn's
+      state from the run's context (`withTurnRun`); `/cancel` through the
+      `Run` handle in place of `claimTurnHandle`; `Spec.AsyncResult`;
+      `ctxengine.WithCompactionStartFunc(loop.CompactionStart)` on the
+      cached managers; a bounded context for `AgentInstance.Close`; then
+      the engine files and their tests deleted. `max_tool_iterations` at
+      or below zero runs no iteration on the host engine and the default
+      on `loop` (`Limits.WithDefaults`): confirm config refuses it.
 - [ ] Phase 5d: example host
 - [ ] Phase 6: `mcphost`
   - SDK half done (SDK 181800b): endpoint, session-token store,

@@ -5,10 +5,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"go.bison9.com/agent/hook"
+	"go.bison9.com/agent/loop"
 )
 
 // TestTurnAgentIsBuiltWithTheInstance checks that every instance the
@@ -40,8 +42,8 @@ func TestTurnAgentIsBuiltWithTheInstance(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 	res := built.Run(context.Background(), "s", hook.UserText("hello")).Wait()
-	if res.Err == nil {
-		t.Error("a run on a closed instance's SDK agent did not fail")
+	if !errors.Is(res.Err, loop.ErrClosed) {
+		t.Errorf("a run on a closed instance's SDK agent ended with %v, want %v", res.Err, loop.ErrClosed)
 	}
 }
 
@@ -56,7 +58,9 @@ func TestTurnAgentRunsATurnWithTheHostsSettings(t *testing.T) {
 		t.Fatal("agent main not built")
 	}
 	opts := &processOptions{SessionKey: "agent:main:alice", Channel: "cli", ChatID: "direct", UserMessage: "hello"}
-	ctx := withTurnOpts(context.Background(), opts)
+	cm, mem, release := tl.al.getSessionContext(inst, opts.SessionKey)
+	defer release()
+	ctx := withTurnRun(context.Background(), opts, cm, mem)
 	res := inst.turnAgent.Run(ctx, opts.SessionKey, hook.UserText(opts.UserMessage)).Wait()
 	if res.Err != nil {
 		t.Fatalf("turn failed: %v", res.Err)
@@ -71,5 +75,31 @@ func TestTurnAgentRunsATurnWithTheHostsSettings(t *testing.T) {
 	}
 	if got := strings.Join(stored, "|"); got != "user:hello|assistant:Mock response" {
 		t.Errorf("stored = %q", got)
+	}
+}
+
+// TestTurnAgentWithoutSessionContextFails checks that a run given no
+// session context ends with an error instead of building one of its own,
+// and that a human agent's SDK agent is built with no model at all.
+func TestTurnAgentWithoutSessionContextFails(t *testing.T) {
+	tl := newTestAgentLoop(t)
+	inst, ok := tl.al.GetRegistry().Get("main")
+	if !ok {
+		t.Fatal("agent main not built")
+	}
+	res := inst.turnAgent.Run(context.Background(), "agent:main:alice", hook.UserText("hello")).Wait()
+	if !errors.Is(res.Err, errNoTurnSession) {
+		t.Errorf("run without a session context ended with %v, want %v", res.Err, errNoTurnSession)
+	}
+	if h := inst.Sessions.GetHistory("agent:main:alice"); len(h) != 0 {
+		t.Errorf("a run without a session context stored %d messages", len(h))
+	}
+
+	human, err := tl.al.newTurnAgent(&AgentInstance{ID: "bob", HumanModel: "bob-human"})
+	if err != nil {
+		t.Fatalf("human agent's SDK agent not built: %v", err)
+	}
+	if err := human.Close(context.Background()); err != nil {
+		t.Errorf("Close: %v", err)
 	}
 }

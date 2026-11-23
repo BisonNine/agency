@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	sdkagent "go.bison9.com/agent"
@@ -25,6 +26,10 @@ import (
 // they still run on the host's own engine (engine_*.go) until the SDK closes
 // the gaps listed in refactor/refactor.md section 12. The agent is built
 // with the instance and closed with it.
+
+// Spec.AsyncResult is not set: it would get the tool's callback context
+// where the host needs the call's (refactor.md section 12, 5c), so the
+// registry's async tools would run without the host's callback.
 
 // newTurnAgent builds inst's SDK agent. It starts nothing.
 func (al *AgentLoop) newTurnAgent(inst *AgentInstance) (sdkagent.Agent, error) {
@@ -79,13 +84,20 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 			return
 		}
 		s.Session = func(ctx context.Context, scope hook.Scope) (loop.Session, error) {
+			// The host holds the turn's reference on its cached session
+			// context (getSessionContext) from before the run until after it,
+			// and gives it to the run on its context; the agent releases
+			// nothing.
+			tr, ok := ctx.Value(turnRunKey{}).(*turnRun)
+			if !ok || tr == nil || tr.cm == nil {
+				return loop.Session{}, errNoTurnSession
+			}
 			opts := turnOptsOf(ctx, scope)
-			cm, mem, release := al.getSessionContext(inst, scope.Session) //nolint:contextcheck // compaction reporter: ctxengine's callback has no context
-			sess := loop.Session{Context: cm, Release: release, Assemble: func(_ context.Context, req *ctxengine.AssembleRequest) {
+			sess := loop.Session{Context: tr.cm, Assemble: func(_ context.Context, req *ctxengine.AssembleRequest) {
 				req.Channel, req.ChatID = opts.Channel, opts.ChatID
 			}}
-			if mem != nil {
-				sess.Memory = cogmem.AsMemorySession(mem)
+			if tr.mem != nil {
+				sess.Memory = cogmem.AsMemorySession(tr.mem)
 			}
 			return sess, nil
 		}
@@ -102,20 +114,30 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 	}
 }
 
-// turnOptsKey carries a turn's options (as BeforeTurn leaves them) on the
-// context given to the SDK agent's Run.
-type turnOptsKey struct{}
+// turnRun is what the host gives a run of the SDK agent on its context:
+// the turn's options (as BeforeTurn leaves them) and its session context.
+type turnRun struct {
+	opts *processOptions
+	cm   ctxengine.ContextManager
+	mem  *cogmem.Session
+}
 
-// withTurnOpts returns ctx carrying opts for the SDK agent's callbacks.
-func withTurnOpts(ctx context.Context, opts *processOptions) context.Context {
-	return context.WithValue(ctx, turnOptsKey{}, opts)
+type turnRunKey struct{}
+
+// errNoTurnSession ends a run given no session context (withTurnRun).
+var errNoTurnSession = errors.New("no session context for the turn")
+
+// withTurnRun returns ctx carrying a turn's options and session context
+// for the SDK agent's callbacks.
+func withTurnRun(ctx context.Context, opts *processOptions, cm ctxengine.ContextManager, mem *cogmem.Session) context.Context {
+	return context.WithValue(ctx, turnRunKey{}, &turnRun{opts: opts, cm: cm, mem: mem})
 }
 
 // turnOptsOf is the turn's options on ctx; for a run given none, the
 // options of a turn on the scope's session with no chat.
 func turnOptsOf(ctx context.Context, scope hook.Scope) processOptions {
-	if opts, ok := ctx.Value(turnOptsKey{}).(*processOptions); ok && opts != nil {
-		return *opts
+	if tr, ok := ctx.Value(turnRunKey{}).(*turnRun); ok && tr != nil && tr.opts != nil {
+		return *tr.opts
 	}
 	return processOptions{SessionKey: scope.Session}
 }
@@ -123,8 +145,8 @@ func turnOptsOf(ctx context.Context, scope hook.Scope) processOptions {
 // turnModelOf is the turn's model choice: the one the host made for the
 // turn on ctx, else a new one.
 func (al *AgentLoop) turnModelOf(ctx context.Context, inst *AgentInstance, sessionKey string) *turnModel {
-	if opts, ok := ctx.Value(turnOptsKey{}).(*processOptions); ok && opts != nil && opts.turnModel != nil {
-		return opts.turnModel
+	if tr, ok := ctx.Value(turnRunKey{}).(*turnRun); ok && tr != nil && tr.opts != nil && tr.opts.turnModel != nil {
+		return tr.opts.turnModel
 	}
 	return al.selectTurnModel(inst, sessionKey)
 }
