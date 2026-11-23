@@ -42,15 +42,14 @@ func (s *forumStore) cleanupPath(name string) string {
 // MarkedRuns returns the runs that have the cleanup marker name, in
 // ascending order, whether or not their directories still exist.
 func (s *forumStore) MarkedRuns(name string) ([]int, error) {
-	pattern := filepath.Join(s.base, dirCleanup, s.id+".*."+name)
-	matches, err := filepath.Glob(pattern)
+	matches, err := s.markerNames()
 	if err != nil {
 		return nil, fmt.Errorf("list cleanup markers of forum %s: %w", s.id, err)
 	}
 	var runs []int
 	for _, m := range matches {
-		mid := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(m), s.id+"."), "."+name)
-		if !runDirPattern.MatchString(mid) {
+		mid, ok := strings.CutSuffix(strings.TrimPrefix(m, s.id+"."), "."+name)
+		if !ok || !runDirPattern.MatchString(mid) {
 			continue
 		}
 		n, err := strconv.Atoi(mid)
@@ -60,6 +59,27 @@ func (s *forumStore) MarkedRuns(name string) ([]int, error) {
 	}
 	sort.Ints(runs)
 	return runs, nil
+}
+
+// markerNames returns the names in <base>/.cleanup/ that start with
+// "<id>.", the forum's markers. The directory is read, not globbed, so a base
+// path holding glob metacharacters still matches. A missing directory has
+// none.
+func (s *forumStore) markerNames() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.base, dirCleanup))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), s.id+".") {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
 }
 
 // listStaged returns the forum IDs whose roots are staged for removal
@@ -107,12 +127,12 @@ func (s *forumStore) removeStagedAndMarkers() error {
 	if err := os.RemoveAll(filepath.Join(cleanup, s.id)); err != nil {
 		return fmt.Errorf("remove staged forum %s: %w", s.id, err)
 	}
-	markers, err := filepath.Glob(filepath.Join(cleanup, s.id+".*"))
+	markers, err := s.markerNames()
 	if err != nil {
 		return fmt.Errorf("remove markers of forum %s: %w", s.id, err)
 	}
 	for _, m := range markers {
-		if err := os.Remove(m); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(filepath.Join(cleanup, m)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove markers of forum %s: %w", s.id, err)
 		}
 	}
