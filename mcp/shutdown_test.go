@@ -36,6 +36,9 @@ func TestProbeOnce_NoReconnectAfterBeginShutdown(t *testing.T) {
 	}
 	conn, _ := mgr.GetServer("svc")
 	conn.cfg.URL = good.URL
+	// Drop the live streams too (the notification stream would keep Close
+	// waiting), as a server that died would.
+	bad.CloseClientConnections()
 	bad.Close()
 
 	mgr.BeginShutdown()

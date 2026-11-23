@@ -468,6 +468,9 @@ func TestCallTool_ReconnectsOnConnectionError(t *testing.T) {
 		t.Fatal("svc should be connected")
 	}
 	conn.cfg.URL = good.URL
+	// Drop the live streams too (the notification stream would keep Close
+	// waiting), as a server that died would.
+	bad.CloseClientConnections()
 	bad.Close()
 
 	result, err := mgr.CallTool(ctx, "svc", "ping", nil)
@@ -547,6 +550,9 @@ func TestProbeOnce_ReconnectsUnresponsiveServer(t *testing.T) {
 	}
 	conn, _ := mgr.GetServer("svc")
 	conn.cfg.URL = good.URL
+	// Drop the live streams too (the notification stream would keep Close
+	// waiting), as a server that died would.
+	bad.CloseClientConnections()
 	bad.Close()
 
 	mgr.probeOnce("svc")
