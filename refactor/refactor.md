@@ -1731,7 +1731,7 @@ next session must know.
     an agent runs on the defaults. The SDK session-store fixes are
     picked up (message loss on stop or restart; the key guard).
   - Browser suite: 178/178 on the dev instance at 3dd42d6.
-- [ ] Phase 5c: engine moved, root package, conformance suite
+- [x] Phase 5c: engine moved, root package, conformance suite
   - Host adoption against SDK 2e190af (branch `phase5c2`): SDK bumped;
     every instance builds its SDK agent (`agent/turn_agent.go`, held as
     `agent.Agent`, closed by `AgentInstance.Close`); the host's engine
@@ -1782,11 +1782,17 @@ next session must know.
     `AgentInstance.Close` closes the agent in the background, never
     waiting for or stopping its turns. The task registrar is not
     adopted: the host's registry (`tools/agents`) is unchanged.
-    - Left for the SDK: unit tests of `messagesForModel`, the reasoning
-      backfill and the request-log formatting (their no-copy and
-      unknown-model cases, which a whole turn cannot reach, are no
-      longer pinned anywhere).
-- [ ] Phase 5d: example host
+    - Review follow-ups (SDK 11c1715): runs start `WithoutEvents`, so a
+      turn's handle holds no events; the tool-result cap is the SDK's
+      `loop.CapToolResult` (the host's copy is deleted); the SDK now
+      pins `messagesForModel`, the reasoning backfill, the request-log
+      format, tool references, per-model max-tokens halving and the
+      skipped-candidate line. Dead request-assembly helpers removed;
+      the `/cancel` token reissue contains its panic; a closed instance
+      builds no agent.
+    - Open: the real-device streaming-order check (needs the
+      maintainer); `tools.ToolRegistry.ToolDefs` has only test callers.
+- [x] Phase 5d: example host (SDK `examples/chat`)
 - [x] Phase 6: `mcphost` (SDK 181800b … 520fbb6; host 41fcf63, 141e52e).
       Both MCP endpoints are `mcphost.Endpoint`s mounted by `mcpserver`;
       session tokens are in `mcphost.Store`; the prompt layer is
