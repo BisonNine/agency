@@ -64,6 +64,7 @@ func TestSvcLaunchOfLockedForum(t *testing.T) {
 
 func TestSvcLaunchFileFailures(t *testing.T) {
 	newForum := func(t *testing.T) (*svcEnv, string) {
+		t.Helper()
 		e := svcSetup(t)
 		id, err := e.svc.NewForum(t.Context(), e.scope)
 		if err != nil {

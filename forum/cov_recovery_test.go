@@ -69,7 +69,9 @@ func TestSvcRecoverIncompleteForums(t *testing.T) {
 	covWriteFile(t, filepath.Join(stale, "f"), "x")
 	covChmod(t, stale, 0o500)
 
-	_ = e.svc.Recover(t.Context(), []Scope{e.scope})
+	if err := e.svc.Recover(t.Context(), []Scope{e.scope}); err == nil {
+		t.Error("Recover: want the stuck staged copy's error")
+	}
 	if _, err := os.Stat(filepath.Join(e.scope.BaseDirectory, locked)); err != nil {
 		t.Errorf("a forum being created was removed: %v", err)
 	}

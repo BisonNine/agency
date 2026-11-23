@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-
 	"go.bison9.com/agent/toolspec"
 )
 
@@ -22,18 +21,17 @@ import (
 // tests' helpers in the same package.
 
 func TestJSONTypeName(t *testing.T) {
-	var p **int
 	cases := []struct {
 		t    reflect.Type
 		want string
 	}{
-		{reflect.TypeOf(p), "an integer"},
-		{reflect.TypeOf(1.5), "a number"},
-		{reflect.TypeOf(float32(1)), "a number"},
-		{reflect.TypeOf(map[string]int{}), "an object"},
-		{reflect.TypeOf([2]int{}), "an array"},
-		{reflect.TypeOf(true), "a boolean"},
-		{reflect.TypeOf(complex(1, 2)), "complex128"},
+		{reflect.TypeFor[**int](), "an integer"},
+		{reflect.TypeFor[float64](), "a number"},
+		{reflect.TypeFor[float32](), "a number"},
+		{reflect.TypeFor[map[string]int](), "an object"},
+		{reflect.TypeFor[[2]int](), "an array"},
+		{reflect.TypeFor[bool](), "a boolean"},
+		{reflect.TypeFor[complex128](), "complex128"},
 	}
 	for _, c := range cases {
 		if got := jsonTypeName(c.t); got != c.want {
@@ -54,10 +52,10 @@ func TestStructFieldsSkipsUnexportedAndDashed(t *testing.T) {
 		Named    int `json:"named,omitempty"`
 		Untagged string
 		Skipped  bool `json:"-"`
-		hidden   int  //nolint:unused // the case under test
+		hidden   int
 	}
 	_ = sample{}.hidden
-	got := structFields(reflect.TypeOf(sample{}))
+	got := structFields(reflect.TypeFor[sample]())
 	keys := slices.Sorted(func(yield func(string) bool) {
 		for k := range got {
 			if !yield(k) {

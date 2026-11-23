@@ -114,8 +114,8 @@ func TestWriteAttemptRequestFailures(t *testing.T) {
 	if err := s.WriteAttemptRequest(req()); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("stuck orphan: %v, want ErrPermission", err)
 	}
-	entries, _ := os.ReadDir(turnDir)
-	if len(entries) != 1 || entries[0].Name() != "1" {
+	entries, err := os.ReadDir(turnDir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "1" {
 		t.Errorf("turn folder holds %v after the failure", entries)
 	}
 }

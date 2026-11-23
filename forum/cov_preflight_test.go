@@ -39,7 +39,7 @@ func TestReadRegularFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer d.Close()
+	defer covClose(t, d)
 	_, err = readRegular(d)
 	covWantErr(t, "directory", err, "is not a regular file")
 
@@ -49,7 +49,7 @@ func TestReadRegularFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer covClose(t, w)
 	_, err = readRegular(w)
 	covWantErr(t, "write-only file", err, "cannot be read")
 
@@ -57,7 +57,7 @@ func TestReadRegularFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = closed.Close()
+	covClose(t, closed)
 	_, err = readRegular(closed)
 	covWantErr(t, "closed file", err, "cannot be read")
 }

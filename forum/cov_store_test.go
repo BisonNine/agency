@@ -7,6 +7,7 @@ package forum
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -29,7 +30,11 @@ func covChmod(t *testing.T, path string, mode os.FileMode) {
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatalf("chmod %s: %v", path, err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(path, 0o700) })
+	t.Cleanup(func() {
+		if err := os.Chmod(path, 0o700); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("restore mode of %s: %v", path, err)
+		}
+	})
 }
 
 // covWantErr fails unless err is non-nil and contains every substring.
@@ -42,6 +47,14 @@ func covWantErr(t *testing.T, what string, err error, subs ...string) {
 		if !strings.Contains(err.Error(), s) {
 			t.Fatalf("%s: error %q lacks %q", what, err, s)
 		}
+	}
+}
+
+// covClose closes c, failing the test on error.
+func covClose(t *testing.T, c io.Closer) {
+	t.Helper()
+	if err := c.Close(); err != nil {
+		t.Errorf("close: %v", err)
 	}
 }
 
@@ -75,7 +88,7 @@ func TestCreateStoreRefusals(t *testing.T) {
 
 	base := t.TempDir()
 	id := uuid.NewString()
-	if _, err := createStore(base, id); err != nil {
+	if _, err = createStore(base, id); err != nil {
 		t.Fatalf("createStore: %v", err)
 	}
 	_, err = createStore(base, id)
@@ -142,7 +155,7 @@ func TestRunsErrors(t *testing.T) {
 	if err != nil || len(runs) != 1 || runs[0] != 1 {
 		t.Errorf("Runs = %v, %v; want [1]", runs, err)
 	}
-	if err := os.RemoveAll(filepath.Join(s.dir, dirRuns)); err != nil {
+	if err = os.RemoveAll(filepath.Join(s.dir, dirRuns)); err != nil {
 		t.Fatal(err)
 	}
 	_, err = f.Runs()
@@ -161,7 +174,7 @@ func TestCreateRunErrors(t *testing.T) {
 		t.Errorf("run exists: %v is not ErrExist", err)
 	}
 
-	if err := os.RemoveAll(filepath.Join(s.dir, dirRuns)); err != nil {
+	if err = os.RemoveAll(filepath.Join(s.dir, dirRuns)); err != nil {
 		t.Fatal(err)
 	}
 	covWriteFile(t, filepath.Join(s.dir, dirRuns), "not a directory")
@@ -181,7 +194,7 @@ func TestCreateRunRunsSymlink(t *testing.T) {
 	}
 	_, err := f.CreateRun(2)
 	covWantErr(t, "runs/ a symlink", err, "runs is a symbolic link")
-	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+	if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) != 0 {
 		t.Errorf("CreateRun wrote through the link: %v", entries)
 	}
 }
@@ -228,7 +241,7 @@ func TestSyncDirMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer covClose(t, r)
 	covWantErr(t, "syncDirAt", syncDirAt(r, "missing"), "sync missing")
 }
 
@@ -263,7 +276,7 @@ func covRoot(t *testing.T) (*os.Root, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = r.Close() })
+	t.Cleanup(func() { covClose(t, r) })
 	return r, dir
 }
 
@@ -327,17 +340,20 @@ func TestWriteFileAtFailures(t *testing.T) {
 	if !errors.Is(err, fs.ErrExist) {
 		t.Errorf("exclusive over an existing file: err = %v, want ErrExist", err)
 	}
-	if data, _ := os.ReadFile(filepath.Join(dir, "taken")); string(data) != "old" {
-		t.Errorf("the existing file was changed to %q", data)
+	if data, readErr := os.ReadFile(filepath.Join(dir, "taken")); readErr != nil || string(data) != "old" {
+		t.Errorf("the existing file was changed to %q (%v)", data, readErr)
 	}
 
-	if err := os.MkdirAll(filepath.Join(dir, "busy", "inner"), 0o700); err != nil {
+	if err = os.MkdirAll(filepath.Join(dir, "busy", "inner"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	covWantErr(t, "rename over a directory", writeFileAt(r, "busy", []byte("x"), false, defaultPerms), "write busy")
 
 	// No temporary file is left behind by any failure.
-	entries, _ := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), forumfs.TempPrefix) {
 			t.Errorf("temporary file left: %s", e.Name())
@@ -547,7 +563,7 @@ func TestRemoveOfAlreadyStagedForum(t *testing.T) {
 	if err := newForumHandle(s.base, s.id).Remove(); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if _, ok, _ := s.Cleanup(cleanupAgents); ok {
+	if _, ok, err := s.Cleanup(cleanupAgents); err != nil || ok {
 		t.Error("the marker survived Remove")
 	}
 }
