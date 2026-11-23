@@ -412,6 +412,9 @@ func DisableFileLogging() {
 		errorFile = nil
 	}
 	errorLogger = zerolog.Logger{}
+	// No file is active any more: GetLogFilePath reports none and RollLogFile
+	// has nothing to archive or reopen.
+	logFilePath, errorLogPath = "", ""
 }
 
 func getCallerInfo() (string, int, string) {
