@@ -140,7 +140,7 @@ expect() {
     local what="$1" text="$2"
     shift 2
     for needle in "$@"; do
-        if ! echo "$text" | grep -qF -- "$needle"; then
+        if ! grep -qF -- "$needle" <<<"$text"; then
             fail "$what: no \"$needle\" in: $text"
             return 1
         fi
@@ -288,10 +288,10 @@ PNGS=0
 named_outputs "image (chat)" "$OUT"
 for p in $PATHS; do
     check_output "$p" "image (chat)"
-    case "$p" in *.png) if head -c 8 "$WS/$p" | od -An -tx1 | tr -s ' ' | grep -q '89 50 4e 47'; then PNGS=$((PNGS + 1)); fi ;; esac
+    case "$p" in *.png) if grep -q '89 50 4e 47' <<<"$(head -c 8 "$WS/$p" | od -An -tx1 | tr -s ' ')"; then PNGS=$((PNGS + 1)); fi ;; esac
 done
 if [ "$PNGS" = 1 ]; then pass "image (chat): one PNG saved"; else fail "image (chat): $PNGS PNGs saved"; fi
-if echo "$OUT" | grep -q 'base64'; then fail "image (chat): the result carries image data"; else pass "image (chat): the result carries only paths"; fi
+if grep -q 'base64' <<<"$OUT"; then fail "image (chat): the result carries image data"; else pass "image (chat): the result carries only paths"; fi
 
 OUT="$(mcp "$ALICE" agent_spawn '{"kind":"image","model":"imgapi","task":"A dog.","mode":"wait","name":"i2"}')"
 expect "image: images API generation" "$OUT" "kind image): ok." "Model: imgapi" ".png"
@@ -361,15 +361,15 @@ OUT="$(mcp "$BOB" agent_spawn '{"kind":"image","task":"A cat.","mode":"wait","na
 expect "grant: Bob's image call is refused" "$OUT" "Bob is not allowed to use task models for images."
 OUT="$(mcp "$BOB" agent_spawn '{"kind":"text","model":"txt","task":"Hi.","mode":"wait","name":"b2"}')"
 expect "grant: Bob's text call runs" "$OUT" "kind text): ok." "TEXT-REPLY"
-if find "$HOME_DIR/agents/bob/files/generated" -name 'text-*.md' 2>/dev/null | grep -q .; then pass "grant: Bob's output is in Bob's workspace"; else fail "grant: no output in Bob's workspace"; fi
+if grep -q . <<<"$(find "$HOME_DIR/agents/bob/files/generated" -name 'text-*.md' 2>/dev/null)"; then pass "grant: Bob's output is in Bob's workspace"; else fail "grant: no output in Bob's workspace"; fi
 
 # ---- 7. Audit rows. ----
 audit_ready() { [ "$(audit_rows "agent='alice'" | wc -l)" -ge 8 ]; }
 wait_for 10 audit_ready
 ROWS="$(audit_rows "agent='alice'")"
-if echo "$ROWS" | grep -q '^alice|text|error|.*"model":"txt-down"'; then pass "audit: the failed model's attempt is an error row"; else fail "audit: no error row for txt-down: $ROWS"; fi
+if grep -q '^alice|text|error|.*"model":"txt-down"' <<<"$ROWS"; then pass "audit: the failed model's attempt is an error row"; else fail "audit: no error row for txt-down: $ROWS"; fi
 for kind in text image tts stt; do
-    if echo "$ROWS" | grep -q "^alice|$kind|ok|files/generated/$TODAY/"; then pass "audit: a $kind call is an ok row naming its file"; else fail "audit: no ok $kind row: $ROWS"; fi
+    if grep -q "^alice|$kind|ok|files/generated/$TODAY/" <<<"$ROWS"; then pass "audit: a $kind call is an ok row naming its file"; else fail "audit: no ok $kind row: $ROWS"; fi
 done
 if [ "$(audit_rows "agent='bob' AND tool='image'" | wc -l | tr -d ' ')" = 0 ]; then pass "audit: the refused call made no row"; else fail "audit: a row for Bob's refused call"; fi
 
