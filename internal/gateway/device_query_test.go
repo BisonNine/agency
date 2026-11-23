@@ -81,3 +81,50 @@ func TestDeviceQuerierHistoryUnknownAgent(t *testing.T) {
 		}
 	}
 }
+
+// TestDeviceQuerierHistoryFilters: only user and assistant turns with text
+// are returned; the default agent is the registry's.
+func TestDeviceQuerierHistoryFilters(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			BaseDir:  t.TempDir(),
+			Defaults: config.AgentDefaults{Models: []string{"test-model"}, MaxTokens: 4096, MaxToolIterations: 10},
+			List:     []config.AgentConfig{{ID: "alice", Name: "Alice", Default: true}},
+		},
+	}
+	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("NewAgentLoop: %v", err)
+	}
+	t.Cleanup(func() { al.Close(t.Context()) })
+	q := deviceAgentQuerier{al: al}
+	if q.DefaultAgentID() != "alice" {
+		t.Errorf("DefaultAgentID = %q", q.DefaultAgentID())
+	}
+	inst, ok := al.GetRegistry().GetConfigured("alice")
+	if !ok {
+		t.Fatal("alice not registered")
+	}
+	const key = "agent:alice:main"
+	for _, m := range [][2]string{{"user", "hello"}, {"system", "rules"}, {"assistant", "  "}, {"assistant", "hi there"}} {
+		if err := inst.Sessions.AddMessage(key, m[0], m[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := q.History(key)
+	if len(got) != 2 || got[0].Content != "hello" || got[1].Content != "hi there" {
+		t.Fatalf("history = %+v", got)
+	}
+	if q.History("not-an-agent-key") != nil {
+		t.Error("history for a key that names no agent")
+	}
+}
+
+// TestDeviceInjectionsWithoutSupport: a channel without the hooks, no
+// certificate and an unusable credentials file are all tolerated.
+func TestDeviceInjectionsWithoutSupport(t *testing.T) {
+	injectDeviceTLS(nil, nil)
+	if got := adminUsername(filepath.Join(t.TempDir(), "missing.json"), config.DefaultFileMode); got != "" {
+		t.Errorf("adminUsername without a file = %q", got)
+	}
+}

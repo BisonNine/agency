@@ -18,44 +18,58 @@ import (
 // without a restart. Returns a stop function.
 func startBackupScheduler(getConfig func() *config.Config, configPath string, a alerter.Alerter) func() {
 	ctx, cancel := context.WithCancel(context.Background())
+	nb := &nightlyBackup{getConfig: getConfig, configPath: configPath, alerter: a}
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
-		lastRunDay := "" // YYYYMMDD of the last successful run; guards once-per-day
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				cfg := getConfig()
-				if cfg == nil || !cfg.Backup.IsEnabled() {
-					continue
-				}
-				hour, minute := cfg.Backup.BackupAt()
-				if now.Hour() != hour || now.Minute() != minute {
-					continue
-				}
-				day := now.Format("20060102")
-				if day == lastRunDay {
-					continue
-				}
-				lastRunDay = day
-				res, err := backup.RunForConfig(cfg, configPath, now, backup.Options{Alerter: a}) //nolint:contextcheck,nolintlint // same code path as `claw backup`, which has no context; the quick_check inside runs on its own busy_timeout-bounded connection
-				if err != nil {
-					logger.ErrorCF("backup", "nightly backup failed", map[string]any{"error": err.Error()})
-					a.Send(alerter.Alert{
-						Title:       "Nightly backup failed",
-						Description: "the backup archive was not written; nothing retries before tomorrow",
-						Details:     err.Error(),
-						EventID:     "backup",
-					})
-					continue
-				}
-				logger.InfoCF("backup", "nightly backup complete", map[string]any{
-					"archive": res.Archive, "bytes": res.Bytes, "files": res.Files, "skipped": len(res.Skipped),
-				})
+				nb.tick(now)
 			}
 		}
 	}()
 	return cancel
+}
+
+// nightlyBackup is the backup scheduler's state between ticks.
+type nightlyBackup struct {
+	getConfig  func() *config.Config
+	configPath string
+	alerter    alerter.Alerter
+	lastRunDay string // YYYYMMDD of the last run; guards once-per-day
+}
+
+// tick runs the backup when it is enabled and now is the configured HH:MM,
+// once per day.
+func (n *nightlyBackup) tick(now time.Time) {
+	cfg := n.getConfig()
+	if cfg == nil || !cfg.Backup.IsEnabled() {
+		return
+	}
+	hour, minute := cfg.Backup.BackupAt()
+	if now.Hour() != hour || now.Minute() != minute {
+		return
+	}
+	day := now.Format("20060102")
+	if day == n.lastRunDay {
+		return
+	}
+	n.lastRunDay = day
+	res, err := backup.RunForConfig(cfg, n.configPath, now, backup.Options{Alerter: n.alerter}) //nolint:contextcheck,nolintlint // same code path as `claw backup`, which has no context; the quick_check inside runs on its own busy_timeout-bounded connection
+	if err != nil {
+		logger.ErrorCF("backup", "nightly backup failed", map[string]any{"error": err.Error()})
+		n.alerter.Send(alerter.Alert{
+			Title:       "Nightly backup failed",
+			Description: "the backup archive was not written; nothing retries before tomorrow",
+			Details:     err.Error(),
+			EventID:     "backup",
+		})
+		return
+	}
+	logger.InfoCF("backup", "nightly backup complete", map[string]any{
+		"archive": res.Archive, "bytes": res.Bytes, "files": res.Files, "skipped": len(res.Skipped),
+	})
 }
