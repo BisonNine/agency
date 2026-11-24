@@ -1,0 +1,2 @@
+NAME    TYPE  STATUS   COMMAND/URL
+agency  http  enabled  http://127.0.0.1:59999/internal

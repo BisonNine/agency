@@ -175,9 +175,11 @@ func registerCodex(ctx context.Context, r *Registrar, bin, url string, existing 
 var urlPattern = regexp.MustCompile(`https?://[^\s"'<>(),\[\]]+`)
 
 // readAntigravity reads `agy mcp list`, which has no machine-readable form.
-// "No MCP servers configured." is none; a listing that never names Key does
-// not have it; the entry's own line (Key as its first word) and the lines
-// indented under it must hold exactly one URL. Anything else is unreadable.
+// It prints "No MCP servers configured." or a table whose header row is
+// NAME, TYPE, STATUS, COMMAND/URL (columns separated by runs of spaces): the
+// entry is the row whose first column is exactly Key, and its address is
+// what stands under COMMAND/URL (a URL, or a stdio server's command). Any
+// other output is read by readAntigravityLines.
 func readAntigravity(ctx context.Context, r *Registrar, bin string) (entry, error) {
 	out, err := runChecked(ctx, r, bin, "mcp", "list")
 	if err != nil {
@@ -191,6 +193,43 @@ func readAntigravity(ctx context.Context, r *Registrar, bin string) (entry, erro
 		return entry{}, nil
 	}
 	lines := strings.Split(text, "\n")
+	header := strings.Fields(lines[0])
+	if len(header) >= 2 && header[0] == "NAME" && header[len(header)-1] == "COMMAND/URL" {
+		return readAntigravityTable(lines)
+	}
+	return readAntigravityLines(lines)
+}
+
+// readAntigravityTable reads the table `agy mcp list` prints.
+func readAntigravityTable(lines []string) (entry, error) {
+	col := strings.Index(lines[0], "COMMAND/URL")
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] != Key {
+			continue
+		}
+		if len(line) <= col || strings.TrimSpace(line[:col]) == "" {
+			return entry{}, errUnreadable
+		}
+		// A row wider than the header before the last column moves it right:
+		// fall back to the last field.
+		addr := strings.TrimSpace(line[col:])
+		if line[col-1] != ' ' {
+			addr = fields[len(fields)-1]
+		}
+		if addr == "" {
+			return entry{}, errUnreadable
+		}
+		return entry{found: true, address: addr}, nil
+	}
+	return entry{}, nil
+}
+
+// readAntigravityLines reads a listing that is not the known table: one that
+// never names Key does not have it; otherwise the entry's own line (Key as
+// its first word) and the lines indented under it must hold exactly one URL.
+// Anything else is unreadable.
+func readAntigravityLines(lines []string) (entry, error) {
 	start := -1
 	mentions := 0
 	for i, line := range lines {
@@ -298,19 +337,28 @@ func (r *Registrar) openCodeFile() string {
 	return filepath.Join(base, "opencode", "opencode.json")
 }
 
-// readOpenCode reads mcp.servers.agency from OpenCode's global file.
+// readOpenCode reads mcp.servers.agency from OpenCode's global file, the
+// form `opencode mcp add` writes, else mcp.agency, the older form OpenCode
+// still accepts in hand-written configs.
 // `opencode mcp list` is not used: it starts OpenCode's background service.
 func readOpenCode(_ context.Context, r *Registrar, _ string) (entry, error) {
 	var doc struct {
-		MCP struct {
-			Servers map[string]json.RawMessage `json:"servers"`
-		} `json:"mcp"`
+		MCP map[string]json.RawMessage `json:"mcp"`
 	}
 	ok, err := readJSONFile(r.openCodeFile(), &doc)
 	if err != nil || !ok {
 		return entry{}, err
 	}
-	return serverEntry(doc.MCP.Servers[Key])
+	if raw := doc.MCP["servers"]; len(raw) > 0 && string(raw) != "null" {
+		var servers map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &servers); err != nil {
+			return entry{}, errUnreadable
+		}
+		if e, ok := servers[Key]; ok {
+			return serverEntry(e)
+		}
+	}
+	return serverEntry(doc.MCP[Key])
 }
 
 // openCodeAdded is the line `opencode mcp add` prints naming the file it wrote.

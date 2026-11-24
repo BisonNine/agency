@@ -68,11 +68,13 @@ case "$name $1 $2" in
 "codex mcp add") [ "$3 $4" = "agency --url" ] || exit 2; echo "$5" > "$state" ;;
 "agy mcp list")
 	if [ -f "$state" ]; then
-		printf 'Configured MCP servers:\n  files (stdio)\n    command: files-mcp\n  agency (http)\n    url: %s\n' "$(cat "$state")"
+		printf 'NAME    TYPE   STATUS   COMMAND/URL\nagency  http   enabled  %s\nfiles   stdio  enabled  files-mcp --root /srv\n' "$(cat "$state")"
 	else
 		echo "No MCP servers configured."
 	fi ;;
-"agy mcp add") [ "$3 $4 $5" = "--type http agency" ] || { echo "flags must come before <name>" >&2; exit 2; }; echo "$6" > "$state" ;;
+"agy mcp add")
+	[ "$3 $4 $5" = "--type http agency" ] || { echo "flags must come before <name>" >&2; exit 2; }
+	echo "$6" > "$state"; echo 'Added MCP server "agency" (http)' ;;
 "opencode mcp add")
 	[ "$3 $4" = "agency --url" ] && [ "$6" = "--global" ] || exit 2
 	cfg="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
@@ -879,6 +881,78 @@ func TestRegister_RemoveFails(t *testing.T) {
 				if strings.Contains(call, " add ") {
 					t.Errorf("added after a failed remove: %v", calls)
 				}
+			}
+		})
+	}
+}
+
+// fixture is a file captured from a real CLI (testdata/).
+func fixture(t *testing.T, name string) string {
+	t.Helper()
+	return readFile(t, filepath.Join("testdata", name))
+}
+
+// The output of a real `agy mcp list`, and tables in its shape.
+func TestReadAntigravity_RealTable(t *testing.T) {
+	const fixtureURL = "http://127.0.0.1:59999/internal"
+	const header = "NAME    TYPE   STATUS    COMMAND/URL\n"
+	cases := []struct {
+		name, out string
+		want      entry
+		err       bool
+	}{
+		{"captured: one server", fixture(t, "agy-list-one.txt"), entry{true, fixtureURL}, false},
+		{"captured: none", fixture(t, "agy-list-none.txt"), entry{}, false},
+		{"other servers only", header + "files   stdio  enabled   files-mcp --root /srv\nweb     http   enabled   http://x/mcp\n", entry{}, false},
+		{"name containing agency", header + "agency2 http   enabled   http://x/mcp\nmy-agency http enabled http://y/mcp\n", entry{}, false},
+		{"among others", header + "agency2 http   enabled   http://x/mcp\nagency  http   enabled   " + fixtureURL + "\n", entry{true, fixtureURL}, false},
+		{"disabled", header + "agency  http   disabled  " + fixtureURL + "\n", entry{true, fixtureURL}, false},
+		{"stdio", header + "agency  stdio  enabled   agency-mcp --port 1\n", entry{true, "agency-mcp --port 1"}, false},
+		{"row cut short", header + "agency  http\n", entry{}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e, err := readWith(t, readAntigravity, c.out)
+			if (err != nil) != c.err || e != c.want {
+				t.Errorf("got %+v %v, want %+v err=%v", e, err, c.want, c.err)
+			}
+		})
+	}
+	// A stdio entry is somebody else's server.
+	g := newRig(t, "")
+	writeFile(t, filepath.Join(g.bin, "agy"), "#!/bin/sh\nprintf '"+strings.ReplaceAll(header, "\n", "\\n")+"agency  stdio  enabled   agency-mcp\\n'\n")
+	if err := os.Chmod(filepath.Join(g.bin, "agy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if st := check(t, g.registrar(), "antigravity-cli", ours); st.State != OtherAddress || st.Address != "agency-mcp" {
+		t.Errorf("stdio: %+v", st)
+	}
+}
+
+// The file a real `opencode mcp add --global` writes, and the older form.
+func TestReadOpenCode_Forms(t *testing.T) {
+	const fixtureURL = "http://127.0.0.1:59999/internal"
+	g := newRig(t, "")
+	r := g.registrar()
+	cases := []struct {
+		name, file string
+		url        string
+		want       State
+		addr       string
+	}{
+		{"captured add", fixture(t, "opencode-added.json"), fixtureURL, Registered, ""},
+		{"captured add, other instance", fixture(t, "opencode-added.json"), ours, OtherAddress, fixtureURL},
+		{"older form", `{"mcp":{"agency":{"type":"remote","url":"` + fixtureURL + `","enabled":true}}}`, fixtureURL, Registered, ""},
+		{"older form, other address", `{"mcp":{"agency":{"type":"remote","url":"` + other + `","enabled":true}}}`, ours, OtherAddress, other},
+		{"servers without agency, older form with it", `{"mcp":{"servers":{"files":{"url":"http://x"}},"agency":{"url":"` + ours + `"}}}`, ours, Registered, ""},
+		{"neither", `{"mcp":{"servers":{"files":{"url":"http://x"}},"files2":{"url":"http://y"}}}`, ours, NotRegistered, ""},
+		{"servers not an object", `{"mcp":{"servers":[1]}}`, ours, NotChecked, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			writeFile(t, g.openCodeFile(), c.file)
+			if st := check(t, r, "opencode-cli", c.url); st.State != c.want || st.Address != c.addr {
+				t.Errorf("%+v", st)
 			}
 		})
 	}
