@@ -187,6 +187,9 @@
   `com.pivotllm.claweh` automatically, keeping its binary, data and settings.
   `claw uninstall` removes either. After `claw upgrade` from 0.6.5 or earlier,
   run `claw install` once to move it.
+- **The install script is now `agency.sh`.** Its variables are
+  `AGENCY_VERSION` and `AGENCY_INSTALL_DIR`. The old `claweh.sh` and the
+  `CLAWEH_*` variables still work.
 - **BREAKING: the `propose_domains` and `auto_promote` memory settings are
   removed.** They never had any effect; an existing config file that has them
   still loads, and the next save drops them.

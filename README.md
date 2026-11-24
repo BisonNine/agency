@@ -115,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-i
 
 Or download an archive from [GitHub Releases](https://github.com/BisonNine/agency/releases) (Linux and macOS, amd64 and arm64) and run `./claw install` (`sudo ./claw install` for a service that starts at boot). Then open **http://localhost:18790** and sign in.
 
-Other options (a bare binary with `claweh.sh`, an unattended install, a headless or remote host) are in the manual: [Installing Agency](manual/getting-started/install.md), then [Quick start](manual/getting-started/quickstart.md).
+Other options (a bare binary with `agency.sh`, an unattended install, a headless or remote host) are in the manual: [Installing Agency](manual/getting-started/install.md), then [Quick start](manual/getting-started/quickstart.md).
 
 ## File layout
 
