@@ -201,7 +201,7 @@ func TestShell_BackgroundResultReentry(t *testing.T) {
 	al, msgBus := messagingLoop(t, shellConfig(t), model)
 
 	for _, a := range shellCases {
-		al.taskPointerCallback("telegram", "chat-"+a.id, a.id, 0)(context.Background(), &toolkit.Result{ForLLM: "task finished"})
+		al.taskPointerCallback("telegram", "chat-"+a.id, a.id, 0, "")(context.Background(), &toolkit.Result{ForLLM: "task finished"})
 		out := nextOutboundTo(t, msgBus, "chat-"+a.id)
 		checkShell(t, a.id+" re-entry", out.Content, a.allowed)
 		model.checkOffered(t, a.id+" re-entry", a.allowed)

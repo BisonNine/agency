@@ -6,6 +6,7 @@ package tools
 import (
 	"context"
 	"slices"
+	"sync"
 )
 
 // Turn-scope values a turn hands to everything it starts: the tools it calls,
@@ -37,4 +38,85 @@ func WithAskChainAgent(ctx context.Context, agentID string) context.Context {
 		return ctx
 	}
 	return WithAskChain(ctx, append(slices.Clone(chain), agentID))
+}
+
+type billingKey struct{}
+
+// InheritedBilling is the billing code of work that runs outside the session
+// that owns a code: a sub-agent, a clone, a scheduled job's run, an asked
+// turn, a Maestro worker, a forum participant, a turn replayed after a
+// restart. The work may change it (the billing tool): the change applies to
+// its own model calls from the next one and to whatever it starts afterwards,
+// never to the session or work that started it, which holds a code of its
+// own. Each run gets its own value (WithBilling); everything of one run (its
+// turn, the tool calls it makes, over MCP too) shares it.
+type InheritedBilling struct {
+	mu   sync.Mutex
+	code string
+	// onSet are called, in order and outside the lock, with each code Set
+	// stores, so the run's own record (its task record, its pending turn)
+	// keeps it across a restart.
+	onSet []func(code string)
+}
+
+// Code returns the code.
+func (b *InheritedBilling) Code() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.code
+}
+
+// Set changes the code and tells the run's records (OnSet). The caller has
+// checked code.
+func (b *InheritedBilling) Set(code string) {
+	b.mu.Lock()
+	b.code = code
+	fns := slices.Clone(b.onSet)
+	b.mu.Unlock()
+	for _, fn := range fns {
+		fn(code)
+	}
+}
+
+// OnSet adds fn to what Set calls with a new code.
+func (b *InheritedBilling) OnSet(fn func(code string)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.onSet = append(b.onSet, fn)
+}
+
+// WithBilling returns ctx carrying a new inherited billing code for the work
+// that runs on it, so nothing the work changes reaches the code ctx carried
+// before. An empty code returns ctx without any inherited code.
+func WithBilling(ctx context.Context, code string) context.Context {
+	if code == "" {
+		return context.WithValue(ctx, billingKey{}, (*InheritedBilling)(nil))
+	}
+	return context.WithValue(ctx, billingKey{}, &InheritedBilling{code: code})
+}
+
+// WithInheritedBilling returns ctx carrying b itself: the same run's code,
+// for a context of that run built anew (an MCP tool call of its turn). A nil
+// b removes the inherited code.
+func WithInheritedBilling(ctx context.Context, b *InheritedBilling) context.Context {
+	return context.WithValue(ctx, billingKey{}, b)
+}
+
+// InheritedBillingOf returns the inherited billing code on ctx, or nil when
+// the work on ctx bills to its session's code.
+func InheritedBillingOf(ctx context.Context) *InheritedBilling {
+	if b, ok := ctx.Value(billingKey{}).(*InheritedBilling); ok {
+		return b
+	}
+	return nil
+}
+
+// Billing returns the inherited billing code on ctx; ok is false when there
+// is none.
+func Billing(ctx context.Context) (code string, ok bool) {
+	b := InheritedBillingOf(ctx)
+	if b == nil {
+		return "", false
+	}
+	return b.Code(), true
 }

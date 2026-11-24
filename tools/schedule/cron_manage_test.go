@@ -90,7 +90,7 @@ func TestFormatSchedule_Kinds(t *testing.T) {
 		}
 	}
 	tool := newTestCronTool(t)
-	job, err := tool.cronService.AddJob("ran", cron.CronSchedule{Kind: "every", EveryMS: &ms}, "ran", "agent", "", "", "")
+	job, err := tool.cronService.AddJob("ran", cron.CronSchedule{Kind: "every", EveryMS: &ms}, "ran", "agent", "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

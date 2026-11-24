@@ -338,10 +338,13 @@ func (h *taskModelHost) Run(ctx context.Context, agentID, workspace string, req 
 		return res, err
 	}
 	cfg := h.al.GetConfig()
+	// The task's code is on its context (TaskRecord.Billing).
+	billing := h.al.billingFor(ctx, nil, "")
 	id := h.id
 	if id.Agent == "" {
-		id = h.al.identityOf(agentID)
+		id = h.al.identityOf(agentID, billing)
 	}
+	id.Project = billing
 	cat := h.al.catalog
 	var chain *models.Chain
 	if req.Model != "" {

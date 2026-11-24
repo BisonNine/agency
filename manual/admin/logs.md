@@ -11,6 +11,7 @@ All in `<CLAW_HOME>/logs/` (by default `~/.claw/logs/`; on a system install `/op
 | `claw.log` | The main log: everything at or above the configured level. |
 | `error.log` | Warnings and errors only, to scan for problems quickly. |
 | `alerts.log` | Every [alert](./alerts.md). |
+| `accounting.log` | One line per model call, with its agent, [billing code](./billing.md), tokens and cost. Not rotated. |
 | `YYYYMMDD-claw.log`, `YYYYMMDD-error.log` | Earlier days. |
 | `dumps/` | Diagnostic dumps, when turned on. |
 

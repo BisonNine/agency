@@ -31,6 +31,7 @@ import (
 	"go.bison9.com/agency/msgtoken"
 	"go.bison9.com/agency/providers"
 	"go.bison9.com/agency/state"
+	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 	"go.bison9.com/agency/voice"
 )
@@ -152,6 +153,10 @@ type AgentLoop struct {
 	// (write-through to CompactionState). Same key scheme.
 	showToolActivityMu    sync.Mutex
 	showToolActivityCache map[string]bool
+
+	// sessionBilling caches each session's billing code (write-through to
+	// CompactionState.Project). Same key scheme; a value is a string.
+	sessionBilling sync.Map
 
 	// sessionTokenIssuer issues and revokes per-session MCP tokens. Wired in
 	// once via SetSessionTokenIssuer with the process-lifetime store every MCP
@@ -305,10 +310,11 @@ type SessionTokenIssuer interface {
 	// it. No-op when the sessionKey is unknown.
 	SetDepth(sessionKey string, depth int)
 	// SetTurnScope records the ask chain of the turn starting on sessionKey
-	// (see tools.AskChain) and the task it runs in (hook.TaskID), so
-	// MCP tool calls made with the session's token carry them. No-op when
-	// the sessionKey is unknown.
-	SetTurnScope(sessionKey string, askChain []string, taskID string)
+	// (see tools.AskChain), the task it runs in (hook.TaskID) and its
+	// inherited billing code (tools.InheritedBillingOf, nil for none), so MCP
+	// tool calls made with the session's token carry them. No-op when the
+	// sessionKey is unknown.
+	SetTurnScope(sessionKey string, askChain []string, taskID string, billing *tools.InheritedBilling)
 	// BeginTurn records a turn of sessionKey whose final reply goes to chatID
 	// on channel until the returned end is called, so MCP tool calls made
 	// with the session's token (CLI providers) send their output for "the

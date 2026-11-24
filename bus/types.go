@@ -96,6 +96,11 @@ const (
 	// result, a notice), the channel of the chat its turn answers; ChatID is
 	// that chat's ID.
 	MetaOriginChannel = "origin_channel"
+	// MetaBilling is the billing code the turn inherits from the work that
+	// sent the message (an asking agent, a scheduled job, a turn whose
+	// background result this is, a replayed turn): its model calls are
+	// billed to it instead of the session's own code.
+	MetaBilling = "billing"
 )
 
 // SetSpawnDepth records depth under MetaSpawnDepth in meta (allocated when
@@ -108,6 +113,19 @@ func SetSpawnDepth(meta map[string]string, depth int) map[string]string {
 		meta = map[string]string{}
 	}
 	meta[MetaSpawnDepth] = strconv.Itoa(depth)
+	return meta
+}
+
+// SetBilling records code under MetaBilling in meta (allocated when nil)
+// and returns it. An empty code adds nothing.
+func SetBilling(meta map[string]string, code string) map[string]string {
+	if code == "" {
+		return meta
+	}
+	if meta == nil {
+		meta = map[string]string{}
+	}
+	meta[MetaBilling] = code
 	return meta
 }
 

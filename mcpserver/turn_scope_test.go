@@ -18,10 +18,13 @@ import (
 	"go.bison9.com/agency/tools"
 )
 
-// scopeTool records the ask chain and task it ran with.
+// scopeTool records the ask chain, task and inherited billing code it ran
+// with; set, when given, is the code it changes the run's to.
 type scopeTool struct {
-	chain []string
-	task  string
+	chain   []string
+	task    string
+	billing string
+	set     string
 }
 
 func (s *scopeTool) Name() string               { return "probe" }
@@ -30,12 +33,20 @@ func (s *scopeTool) Parameters() map[string]any { return map[string]any{} }
 func (s *scopeTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	s.chain = tools.AskChain(ctx)
 	s.task = hook.TaskID(ctx)
+	s.billing, _ = tools.Billing(ctx)
+	if b := tools.InheritedBillingOf(ctx); b != nil && s.set != "" {
+		b.Set(s.set)
+	}
 	return &toolkit.Result{ForLLM: "ok", ForUser: "for the chat"}
 }
 
 func dispatchScope(t *testing.T, st *SessionTokenStore, tok string, msgBus *bus.MessageBus) *scopeTool {
 	t.Helper()
-	tool := &scopeTool{}
+	return dispatchScopeTool(t, st, tok, msgBus, &scopeTool{})
+}
+
+func dispatchScopeTool(t *testing.T, st *SessionTokenStore, tok string, msgBus *bus.MessageBus, tool *scopeTool) *scopeTool {
+	t.Helper()
 	regs := map[string]*tools.ToolRegistry{"alice": newRegistryWith(tool)}
 	if out, isErr := dispatchToolCall(context.Background(), "probe",
 		map[string]any{"session_token": tok}, st, resolverFor(regs), nil, nil, msgBus, nil); isErr {
@@ -52,14 +63,14 @@ func TestDispatch_CarriesTurnScope(t *testing.T) {
 	st := newSessionTokenStore()
 	st.Issue("alice", "agent:alice:main", "/ws")
 
-	st.SetTurnScope("agent:alice:main", []string{"bob", "alice"}, "task-1")
+	st.SetTurnScope("agent:alice:main", []string{"bob", "alice"}, "task-1", nil)
 	tok := st.Issue("alice", "agent:alice:main", "/ws") // rotation keeps the scope
 	got := dispatchScope(t, st, tok, nil)
 	if !slices.Equal(got.chain, []string{"bob", "alice"}) || got.task != "task-1" {
 		t.Fatalf("scope = %v in %q, want [bob alice] in task-1", got.chain, got.task)
 	}
 
-	st.SetTurnScope("agent:alice:main", []string{"alice"}, "")
+	st.SetTurnScope("agent:alice:main", []string{"alice"}, "", nil)
 	got = dispatchScope(t, st, tok, nil)
 	if !slices.Equal(got.chain, []string{"alice"}) || got.task != "" {
 		t.Fatalf("scope after a later turn = %v in %q, want [alice] in no task", got.chain, got.task)
@@ -88,5 +99,26 @@ func TestDispatch_AskSourceNeverReachesAChat(t *testing.T) {
 	defer cancel()
 	if out, ok := msgBus.SubscribeOutbound(ctx); ok {
 		t.Fatalf("an asked turn's ForUser was published: %+v", out)
+	}
+}
+
+// A CLI agent's tool calls are billed to the inherited code of the turn
+// holding the token, and change that turn's own code; a turn billed to its
+// session's code carries none.
+func TestDispatch_CarriesTurnBilling(t *testing.T) {
+	st := newSessionTokenStore()
+	tok := st.Issue("alice", "agent:alice:main", "/ws")
+	run := tools.InheritedBillingOf(tools.WithBilling(context.Background(), "acme"))
+	st.SetTurnScope("agent:alice:main", nil, "", run)
+	got := dispatchScopeTool(t, st, tok, nil, &scopeTool{set: "acme-2"})
+	if got.billing != "acme" {
+		t.Fatalf("call billed %q, want acme", got.billing)
+	}
+	if run.Code() != "acme-2" {
+		t.Errorf("the turn's code = %q, want acme-2", run.Code())
+	}
+	st.SetTurnScope("agent:alice:main", nil, "", nil)
+	if got := dispatchScope(t, st, tok, nil); got.billing != "" {
+		t.Errorf("session-billed turn's call carries %q", got.billing)
 	}
 }

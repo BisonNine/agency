@@ -45,7 +45,7 @@ func (nopHost) Call(context.Context, string, string, map[string]any) (string, er
 
 func (nopHost) Schema(string, string) (map[string]any, error) { return nil, nil }
 
-func (nopHost) Complete(context.Context, string, string, string) (string, string, error) {
+func (nopHost) Complete(context.Context, string, string, string, string) (string, string, error) {
 	return "", "", classifierpkg.ErrNoModel
 }
 func (nopHost) Debugf(string, ...any) {}
@@ -71,9 +71,17 @@ func TestToolHostScope(t *testing.T) {
 	ws := t.TempDir()
 	alice := &toolHost{cfg: scopeConfig(), agentID: "alice", workspace: ws}
 	got, err := alice.Scope(&toolspec.ToolCall{})
-	want := classifierpkg.Scope{AgentID: "alice", BaseDirectory: filepath.Join(ws, classifierfs.BaseDirName)}
+	want := classifierpkg.Scope{AgentID: "alice", BaseDirectory: filepath.Join(ws, classifierfs.BaseDirName), Billing: "default"}
 	if err != nil || got != want {
 		t.Fatalf("Scope = %+v, %v; want %+v", got, err, want)
+	}
+	// The billing code is the calling work's.
+	billed := &toolHost{
+		cfg: scopeConfig(), agentID: "alice", workspace: ws,
+		billing: func(context.Context) string { return "acme" },
+	}
+	if got, err := billed.Scope(&toolspec.ToolCall{Ctx: context.Background()}); err != nil || got.Billing != "acme" {
+		t.Errorf("Scope with a billing code = %+v, %v; want acme", got, err)
 	}
 	clone := &toolHost{cfg: scopeConfig(), agentID: "alice", workspace: ws, clone: "1a2b3c4d"}
 	if got, err := clone.Scope(&toolspec.ToolCall{}); err != nil || got.AgentID != "alice" || got.Clone != "1a2b3c4d" {

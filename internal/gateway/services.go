@@ -24,6 +24,7 @@ import (
 	"go.bison9.com/agency/folderwatch"
 	"go.bison9.com/agency/forum"
 	"go.bison9.com/agency/health"
+	"go.bison9.com/agency/internal"
 	"go.bison9.com/agency/internal/admin"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/internal/perms"
@@ -633,6 +634,10 @@ func shutdownGateway(
 	agentLoop.Close(drainCtx)
 	drainCancel()
 	phases.done("agent loop closed")
+	// No turn can make a model call any more: the queued records are
+	// written and the accounting log closed.
+	closeAccounting()
+	phases.done("accounting log closed")
 	if services.Knowledge != nil {
 		closeKnowledge(services.Knowledge)
 		phases.done("knowledge bases closed")
@@ -686,6 +691,7 @@ func handleConfigReload(
 	stopAndCleanupServices(services, al, serviceShutdownTimeout, nil, true) //nolint:contextcheck // the old services stop on a fresh bounded context so their shutdown completes even if the run context ends mid-reload; shutdownGateway shares the helper with no context
 
 	warnNoDefaultModel(ctx, newCfg, "No model configured after reload, running in unconfigured state")
+	loadPricing(internal.GetClawHome())
 
 	// Use the atomic reload method on AgentLoop to safely swap the config.
 	// This handles locking internally to prevent races with in-flight LLM calls
@@ -914,6 +920,8 @@ func setupCronTool(
 		cronTool.SetHomeAgent(func(agentID string) string {
 			return agentLoop.GetRegistry().HomeID(agentID)
 		})
+		// A job is billed to the code in force where it was created.
+		cronTool.SetBilling(agentLoop.CallerBilling)
 	}
 
 	// Set onJob handler

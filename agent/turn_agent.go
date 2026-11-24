@@ -16,6 +16,7 @@ import (
 	"go.bison9.com/agent/modelspec"
 	"go.bison9.com/agent/toolkit"
 
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
@@ -64,6 +65,13 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 	return func(s *loop.Spec) {
 		s.Name = inst.DisplayName()
 		s.Identity = inst.Identity()
+		// Each turn is billed to billingFor's code, asked again before every
+		// model call, so a change (the billing tool) applies from the next
+		// one; the agent's own code is the default, named.
+		s.Identity.Project = global.DefaultBilling
+		s.TurnProject = func(ctx context.Context, scope hook.Scope) string {
+			return al.billingFor(ctx, inst, scope.Session)
+		}
 		if inst.Sessions != nil {
 			s.Sessions = inst.Sessions
 		}

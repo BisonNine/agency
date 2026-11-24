@@ -56,6 +56,8 @@ func registerToolProviders() {
 
 To add an internal module you (a) add its import and (b) add one
 `RegisterProvider(NamespacedProvider("<ns>", pkg.GlobalProvider))` line here.
+A one-tool module published under its own name (`ccv3`, `billing`) uses
+`BareNamespacedProvider`.
 
 ---
 
@@ -282,6 +284,20 @@ network/LLM tools.
   `Dispatcher`, session closures, etc.). A pure module that needs none of that
   imports only `toolspec`.
 - **Session-scoped tools** set `SessionScoped: true` and read `call.Session`.
+- **Billing codes.** Every model call is recorded under a billing code
+  (`accounting.Identity.Project`). A module that starts work billed apart
+  from its call, or keeps a code with something it creates, reads the calling
+  work's code with `cd.BillingOf(call.Ctx)` (`ToolDeps.Billing`, the agent
+  loop's resolver: the code the work inherited, else its session's, else
+  `global.DefaultBilling`). A function kept beyond one registration, such as
+  Maestro's runner, which a clone shares with its source, takes
+  `cd.CallerBilling`, which resolves the caller from the call's own scope.
+  Work started for another run carries its code on the context with
+  `tools.WithBilling(ctx, code)`, a code of its own that the run may change
+  (`tools.InheritedBillingOf(ctx).Set`) without touching the code it came
+  from. The `billing` tool (`tools/billing`, the bare-named suite
+  `config.BillingSuite`, which every configured agent has; `deny_tools`
+  removes it) reads and sets it through `ToolDeps.SetBilling`.
 - **Async tools** set `Async: true`, return `Result{Async: true}` immediately,
   and deliver the late result via `call.Notify(...)` — but check `call.Notify != nil`
   first and degrade gracefully when the host has no async path.

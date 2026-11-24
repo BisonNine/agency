@@ -2,6 +2,20 @@
   "alice": [
     {
       "type": "function",
+      "name": "billing",
+      "description": "Show or set the billing code your model calls are recorded under. Without code, it returns the current billing code. With code, it sets it: the new code applies from your next model call and stays until changed, also for work you start afterwards (sub-agents, scheduled jobs, agents you ask). Work that was started for you (a sub-agent, a scheduled job) changes only its own code.",
+      "parameters": {
+        "properties": {
+          "code": {
+            "description": "The new billing code: 1 to 64 letters, digits, '-', '_' or '.'. Leave it out to see the current code.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
       "name": "cogmem_consolidate",
       "description": "Ask the background process to review the recent conversation and update memory now. Returns immediately; the work runs in the background.",
       "parameters": {
@@ -690,6 +704,10 @@
             "description": "Optional target agent ID to delegate the task to",
             "type": "string"
           },
+          "billing": {
+            "description": "Optional billing code for the task's model calls and everything it starts: 1 to 64 letters, digits, '-', '_' or '.'. Omit to use your own billing code.",
+            "type": "string"
+          },
           "character_card": {
             "description": "Optional character card id from the library: the subagent runs as that character instead of with the agent's own card. The card must exist.",
             "type": "string"
@@ -768,6 +786,20 @@
         "required": [
           "uuid"
         ],
+        "type": "object"
+      }
+    },
+    {
+      "type": "function",
+      "name": "billing",
+      "description": "Show or set the billing code your model calls are recorded under. Without code, it returns the current billing code. With code, it sets it: the new code applies from your next model call and stays until changed, also for work you start afterwards (sub-agents, scheduled jobs, agents you ask). Work that was started for you (a sub-agent, a scheduled job) changes only its own code.",
+      "parameters": {
+        "properties": {
+          "code": {
+            "description": "The new billing code: 1 to 64 letters, digits, '-', '_' or '.'. Leave it out to see the current code.",
+            "type": "string"
+          }
+        },
         "type": "object"
       }
     },
@@ -2738,6 +2770,20 @@
     }
   ],
   "carol": [
+    {
+      "type": "function",
+      "name": "billing",
+      "description": "Show or set the billing code your model calls are recorded under. Without code, it returns the current billing code. With code, it sets it: the new code applies from your next model call and stays until changed, also for work you start afterwards (sub-agents, scheduled jobs, agents you ask). Work that was started for you (a sub-agent, a scheduled job) changes only its own code.",
+      "parameters": {
+        "properties": {
+          "code": {
+            "description": "The new billing code: 1 to 64 letters, digits, '-', '_' or '.'. Leave it out to see the current code.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
     {
       "type": "function",
       "name": "cogmem_consolidate",

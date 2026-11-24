@@ -23,7 +23,7 @@ func TestClassifierHost_BeforeBind(t *testing.T) {
 	if _, err := h.Call(ctx, "alice", "inbox_list", nil); !errors.Is(err, errLoopNotReady) {
 		t.Errorf("Call = %v", err)
 	}
-	if _, _, err := h.Complete(ctx, "alice", "s", "u"); !errors.Is(err, errLoopNotReady) {
+	if _, _, err := h.Complete(ctx, "alice", "", "s", "u"); !errors.Is(err, errLoopNotReady) {
 		t.Errorf("Complete = %v", err)
 	}
 	if err := h.Summary(ctx, "alice", "text"); !errors.Is(err, errLoopNotReady) {
@@ -60,19 +60,19 @@ func TestClassifierHost_CompleteUnusableModel(t *testing.T) {
 
 	cfg := classifierHostConfig(t, ts.URL)
 	_, host, _ := newClassifierHostLoop(t, cfg)
-	if _, _, err := host.Complete(ctx, "carol", "s", "u"); !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), "agent carol is not configured") {
+	if _, _, err := host.Complete(ctx, "carol", "", "s", "u"); !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), "agent carol is not configured") {
 		t.Errorf("Complete for an unknown agent = %v", err)
 	}
 
 	cfg.Agents.List[0].Models = []string{"alpha", "gamma"}
 	cfg.Agents.List[0].Classifiers.Model = "gamma"
-	if _, _, err := host.Complete(ctx, "alice", "s", "u"); !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), "model gamma is not configured or not enabled") {
+	if _, _, err := host.Complete(ctx, "alice", "", "s", "u"); !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), "model gamma is not configured or not enabled") {
 		t.Errorf("Complete on an unconfigured model = %v", err)
 	}
 
 	cfg.Agents.List[0].Classifiers.Model = "alpha"
 	cfg.Models[0].Provider = "gone"
-	if _, _, err := host.Complete(ctx, "alice", "s", "u"); !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), "model alpha has no usable provider") {
+	if _, _, err := host.Complete(ctx, "alice", "", "s", "u"); !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), "model alpha has no usable provider") {
 		t.Errorf("Complete without a provider = %v", err)
 	}
 	if n := srv.count(); n != 0 {
@@ -90,10 +90,10 @@ func TestClassifierHost_CancelledCallNoCooldown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, model, err := host.Complete(ctx, "alice", "s", "u"); err == nil || model != "alpha" {
+	if _, model, err := host.Complete(ctx, "alice", "", "s", "u"); err == nil || model != "alpha" {
 		t.Fatalf("cancelled Complete = %q, %v", model, err)
 	}
-	reply, _, err := host.Complete(context.Background(), "alice", "s", "u")
+	reply, _, err := host.Complete(context.Background(), "alice", "", "s", "u")
 	if err != nil || reply != "urgent" {
 		t.Fatalf("Complete after a cancelled call = %q, %v; a shutdown put the model in cooldown", reply, err)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/tools"
 )
 
 // recordingSTI is a SessionTokenIssuer that records the turns the loop
@@ -44,7 +45,7 @@ func (r *recordingSTI) SetDepth(sessionKey string, depth int) {
 	r.depths = append(r.depths, depthCall{sessionKey: sessionKey, depth: depth})
 }
 
-func (r *recordingSTI) SetTurnScope(string, []string, string) {}
+func (r *recordingSTI) SetTurnScope(string, []string, string, *tools.InheritedBilling) {}
 
 // BeginTurn records the turn's reply chat (calls) and keeps it while it runs
 // (activeTurns).

@@ -17,7 +17,7 @@ import (
 // from the Go types by reflection (field names, types, closed objects) plus
 // fieldDocs (descriptions); enums and minimums are the values ValidateStatic
 // checks. A test fails when fieldDocs and the types disagree. The fields
-// Agency writes (owner, created_at, updated_at) are left out.
+// Agency writes (owner, created_at, updated_at, billing) are left out.
 //
 // It keeps to the subset of JSON Schema every function-calling provider
 // accepts: no $ref/$defs, no oneOf/anyOf, no pattern or format, and enums on
@@ -35,6 +35,7 @@ var hostFields = map[string]bool{
 	"Definition.owner":      true,
 	"Definition.created_at": true,
 	"Definition.updated_at": true,
+	"Definition.billing":    true,
 }
 
 var fieldDocs = map[string]fieldDoc{

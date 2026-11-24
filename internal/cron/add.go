@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.bison9.com/agency/cron"
+	"go.bison9.com/agency/global"
 )
 
 func newAddCommand(storePath func() string) *cobra.Command {
@@ -40,7 +41,8 @@ func newAddCommand(storePath func() string) *cobra.Command {
 			cs := cron.NewCronService(storePath(), nil)
 			// A scheduled job always delivers its message inbound to channel/to,
 			// where the bound agent handles it (single behavior; "mode" retired).
-			job, err := cs.AddJob(name, schedule, message, "agent", channel, to, peerKind)
+			// The operator's job is billed to the default code, named.
+			job, err := cs.AddJob(name, schedule, message, "agent", channel, to, peerKind, global.DefaultBilling)
 			if err != nil {
 				return fmt.Errorf("error adding job: %w", err)
 			}

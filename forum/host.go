@@ -191,6 +191,10 @@ type Origin struct {
 	Channel string `json:"channel,omitempty"`
 	ChatID  string `json:"chat_id,omitempty"`
 	Session string `json:"session,omitempty"`
+	// Billing is the billing code of the work that launched the run; the
+	// host bills its participants' turns to it. Empty in a run launched
+	// before billing codes.
+	Billing string `json:"billing,omitempty"`
 }
 
 // Chat is the chat a run was launched from, as the launching tool call

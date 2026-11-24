@@ -112,6 +112,11 @@ type CronJob struct {
 	UpdatedAtMS    int64        `json:"updatedAtMs"`
 	DeleteAfterRun bool         `json:"deleteAfterRun"`
 	Fingerprint    string       `json:"fingerprint,omitempty"`
+	// Billing is the billing code each run is billed to: the code in force
+	// where the job was created. Outside Payload, so it is not part of the
+	// fingerprint. Empty for a job created before billing codes, which runs
+	// under the default code.
+	Billing string `json:"billing,omitempty"`
 }
 
 // cronFingerprint computes a stable, content-addressed identifier over a job's
@@ -590,7 +595,7 @@ func (cs *CronService) saveStoreUnsafe() error {
 func (cs *CronService) AddJob(
 	name string,
 	schedule CronSchedule,
-	message, mode, channel, to, peerKind string,
+	message, mode, channel, to, peerKind, billing string,
 ) (*CronJob, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -629,6 +634,7 @@ func (cs *CronService) AddJob(
 		CreatedAtMS:    now,
 		UpdatedAtMS:    now,
 		DeleteAfterRun: deleteAfterRun,
+		Billing:        billing,
 	}
 	job.Fingerprint = cronFingerprint(job.Schedule, job.Payload)
 

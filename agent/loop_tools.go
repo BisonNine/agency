@@ -131,6 +131,13 @@ func (al *AgentLoop) registerAgentTools(
 		SessionInfoFn:   al.sessionInfoFn(currentAgent),
 		ClearFn:         al.clearFn(currentAgent),
 		MessageTool:     messageTool,
+		Billing: func(ctx context.Context) string {
+			return al.billingFor(ctx, currentAgent, "")
+		},
+		SetBilling: func(ctx context.Context, sessionKey, code string) error {
+			return al.setBilling(ctx, currentAgent, sessionKey, code)
+		},
+		CallerBilling: al.CallerBilling,
 	}
 
 	// Progressive discovery is a single global switch (default off). When on,
@@ -222,6 +229,9 @@ func (al *AgentLoop) newSpawner(
 		RunFull:           al.runSubagentTask,
 		Alerter:           al.Alerter(),
 		TaskRunner:        &taskModelHost{al: al, clone: cloneMarker(currentAgent), id: currentAgent.Identity()},
+		Billing: func(ctx context.Context) string {
+			return al.billingFor(ctx, currentAgent, "")
+		},
 	})
 	currentAgent.spawnMgr = spawnMgr
 	spawner := toolsagents.NewSpawner(spawnMgr)
@@ -314,8 +324,9 @@ func (al *AgentLoop) registerProviderTools(currentAgent *AgentInstance, cfg *con
 				// execution-time check in tools.ToolRegistry.ExecuteWithContext.
 				logger.DebugCF("agent", "Skipping suite tool registration: denied by agent deny_tools",
 					map[string]any{"agent_id": deps.AgentID, "tool": t.Name(), "suite": suite})
-			case suite == suiteCogmem:
-				currentAgent.Tools.RegisterSuite(t) // cogmem: always-on, never hidden
+			case suite == suiteCogmem, suite == config.BillingSuite:
+				// cogmem and billing: always-on, never hidden.
+				currentAgent.Tools.RegisterSuite(t)
 			case discovery:
 				// fusion/maestro behind discovery unless a namespace pinned via
 				// always_shown_namespaces keeps it listed; HideEntries carries
@@ -540,7 +551,7 @@ func (al *AgentLoop) runTaskSupervision() {
 	now := time.Now().Unix()
 	for _, m := range managers {
 		m.SuperviseOnce(now, func(rec *toolsagents.TaskRecord) toolkit.AsyncCallback {
-			return al.taskPointerCallback(rec.Channel, rec.ChatID, rec.OwnerAgentID, rec.SpawnDepth)
+			return al.taskPointerCallback(rec.Channel, rec.ChatID, rec.OwnerAgentID, rec.SpawnDepth, rec.ReplyBilling)
 		})
 	}
 }
@@ -549,8 +560,10 @@ func (al *AgentLoop) runTaskSupervision() {
 // publishes the compact completion pointer to the task's origin channel (the
 // agent reads the referenced result file). Mirrors the inline async-tool callback
 // used for the initial in-turn spawn. spawnDepth is the spawning turn's depth,
-// carried on the re-injected message so the re-entered turn is not lower.
-func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, spawnDepth int) toolkit.AsyncCallback {
+// carried on the re-injected message so the re-entered turn is not lower;
+// replyBilling, the spawning turn's inherited billing code ("" when it billed
+// to its session's), is the re-entered turn's.
+func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, spawnDepth int, replyBilling string) toolkit.AsyncCallback {
 	return func(cbCtx context.Context, result *toolkit.Result) {
 		if result == nil {
 			return
@@ -591,6 +604,7 @@ func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, s
 			msg.SessionKey = routing.BuildAgentMainSessionKey(ownerAgentID)
 		}
 		msg.Metadata = bus.SetSpawnDepth(msg.Metadata, spawnDepth)
+		msg.Metadata = bus.SetBilling(msg.Metadata, replyBilling)
 		if err := al.bus.PublishInbound(pubCtx, msg); err != nil {
 			logger.WarnCF("agent", "Failed to publish async task result to agent", map[string]any{
 				"channel": channel,

@@ -45,6 +45,9 @@ func (al *AgentLoop) publishBreadcrumb(ctx context.Context, opts processOptions,
 func (al *AgentLoop) asyncToolCallback(ctx context.Context, agent *AgentInstance, opts processOptions, toolName string) toolkit.AsyncCallback {
 	resultAgentID, resultSessionKey := asyncResultTarget(agent)
 	turnDepth := toolsagents.SpawnDepth(ctx)
+	// The re-entered turn keeps this turn's code when it was inherited; one
+	// billed to its session's code needs nothing.
+	turnBilling := inheritedBilling(ctx)
 	return func(cbCtx context.Context, result *toolkit.Result) {
 		// An asked turn has no chat: its user-facing output is dropped.
 		if !result.Silent && result.ForUser != "" && opts.Channel != constants.AgentMessageChannel {
@@ -77,9 +80,9 @@ func (al *AgentLoop) asyncToolCallback(ctx context.Context, agent *AgentInstance
 			Content:    content,
 			SessionKey: resultSessionKey,
 			// The re-entered turn runs at this turn's depth, never lower.
-			Metadata: bus.SetSpawnDepth(map[string]string{
+			Metadata: bus.SetBilling(bus.SetSpawnDepth(map[string]string{
 				metadataKeyPreresolvedAgentID: resultAgentID, bus.MetaOriginChannel: opts.Channel,
-			}, turnDepth),
+			}, turnDepth), turnBilling),
 		}); err != nil {
 			logger.WarnCF("agent", "Failed to deliver async tool result to agent",
 				map[string]any{"error": err.Error(), "tool": toolName, "session": opts.SessionKey})

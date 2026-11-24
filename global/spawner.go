@@ -59,6 +59,10 @@ type SpawnRequest struct {
 	Files  []string // workspace paths, read with the agent's file permission
 	Voice  string
 	Format string
+	// Billing is the billing code the task, and the work it starts, is
+	// billed to instead of the spawning work's; "" ⇒ the spawning work's.
+	// It must pass accounting.CheckProject.
+	Billing string
 	// OnResult receives the compact completion pointer for SpawnCallback; for
 	// SpawnAndWait only when the spawning turn stops waiting before the worker
 	// finishes (it goes on in the background). The host supplies it; a nil OnResult is fine — the worker

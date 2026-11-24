@@ -3,6 +3,7 @@ package gateway
 import (
 	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/tools/agents"
+	toolsbilling "go.bison9.com/agency/tools/billing"
 	ccv3tools "go.bison9.com/agency/tools/ccv3"
 	toolsclassifier "go.bison9.com/agency/tools/classifier"
 	cogmem "go.bison9.com/agency/tools/cogmem"
@@ -44,6 +45,7 @@ func registerToolProviders() {
 	// keep their tool names globally unique.
 	tools.RegisterProvider(tools.BareNamespacedProvider("fusion", fusion.GlobalProvider))
 	tools.RegisterProvider(tools.BareNamespacedProvider(ccv3tools.Suite, ccv3tools.GlobalProvider))
+	tools.RegisterProvider(tools.BareNamespacedProvider(toolsbilling.Suite, toolsbilling.GlobalProvider))
 	// schedule stays catalogue-only: the cron tool is a runtime tool registered
 	// directly via agentLoop.RegisterTool (renamed to cron_schedule).
 	tools.RegisterProvider(schedule.Provider)

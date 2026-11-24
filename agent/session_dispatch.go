@@ -277,7 +277,10 @@ func queuedChat(m bus.InboundMessage) string {
 // channel:chat, up to the next command in that chat. Messages from other chats
 // stay queued (an agent's session may serve several chats, whose messages are
 // never merged), and a command always runs as a turn of its own, as does a
-// message that requires its own reply (bus.MetaReplyRequired). With
+// message that requires its own reply (bus.MetaReplyRequired). A message
+// carrying another billing code (bus.MetaBilling) than the first ends the
+// batch, so a turn is never billed to a code one of its messages did not
+// carry. With
 // eachAlone (the session's agent is single-shot) every message is a turn of
 // its own.
 func takeBatch(pending *[]bus.InboundMessage, eachAlone bool) (bus.InboundMessage, bool) {
@@ -292,7 +295,7 @@ func takeBatch(pending *[]bus.InboundMessage, eachAlone bool) (bus.InboundMessag
 	stop := eachAlone || runsAlone(first)
 	for _, m := range queue[1:] {
 		if !stop && queuedChat(m) == chat {
-			if !runsAlone(m) {
+			if !runsAlone(m) && inboundMetadata(m, bus.MetaBilling) == inboundMetadata(first, bus.MetaBilling) {
 				batch = append(batch, m)
 				continue
 			}

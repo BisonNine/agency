@@ -43,8 +43,16 @@ func TestToolHostScope(t *testing.T) {
 	alice := &toolHost{cfg: scopeConfig(), agentID: "alice", workspace: ws}
 
 	got, err := alice.Scope(callAt(2))
-	if err != nil || got != (forumpkg.Scope{AgentID: "alice", BaseDirectory: filepath.Join(ws, forumfs.BaseDirName)}) {
+	if err != nil || got != (forumpkg.Scope{AgentID: "alice", BaseDirectory: filepath.Join(ws, forumfs.BaseDirName), Billing: "default"}) {
 		t.Fatalf("Scope below the maximum depth = %+v, %v", got, err)
+	}
+	// The billing code is the calling work's, which a launch records.
+	billed := &toolHost{
+		cfg: scopeConfig(), agentID: "alice", workspace: ws,
+		billing: func(context.Context) string { return "acme" },
+	}
+	if got, err := billed.Scope(callAt(0)); err != nil || got.Billing != "acme" {
+		t.Errorf("Scope with a billing code = %+v, %v; want acme", got, err)
 	}
 	if _, err := alice.Scope(callAt(3)); !errors.Is(err, forumpkg.ErrForumDepth) {
 		t.Errorf("Scope at the maximum depth = %v, want ErrForumDepth", err)

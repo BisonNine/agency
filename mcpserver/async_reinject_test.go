@@ -96,3 +96,27 @@ func assertNoReinject(t *testing.T, dest tools.ReplyChat) {
 		// expected: nothing published
 	}
 }
+
+// A completion re-enters with the inherited billing code of the call's turn,
+// and with none for a turn billed to its session's code.
+func TestPublishMCPAsyncToLLM_CarriesInheritedBilling(t *testing.T) {
+	rec := sessionRecord{agentID: "alice", sessionKey: "agent:alice:main"}
+	dest := tools.ReplyChat{Channel: "slack", ChatID: "C9"}
+	for _, tc := range []struct {
+		ctx  context.Context
+		want string
+	}{
+		{tools.WithBilling(context.Background(), "acme"), "acme"},
+		{context.Background(), ""},
+	} {
+		msgBus := bus.NewMessageBus()
+		publishMCPAsyncToLLM(tc.ctx, msgBus, rec, dest, "agent_spawn", &toolkit.Result{ForLLM: "done"}, 0)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		m, ok := msgBus.ConsumeInbound(ctx)
+		cancel()
+		if !ok || m.Metadata[bus.MetaBilling] != tc.want {
+			t.Errorf("re-injected billing = %q (%v), want %q", m.Metadata[bus.MetaBilling], ok, tc.want)
+		}
+		msgBus.Close()
+	}
+}

@@ -48,15 +48,15 @@ func (r *identityRecorder) seen() []accounting.Identity {
 
 // TestAgentInstance_Identity: a config agent is billed to itself under its
 // display name, a clone to its source under its own label, and a fresh
-// temporary agent to its own id under the name it was given. The project is
-// always the explicit default.
+// temporary agent to its own id under the name it was given. Identity names
+// no billing code: every caller sets the one its call is billed to.
 func TestAgentInstance_Identity(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
 
 	reg := newTestAgentLoop(t).al.GetRegistry()
 	main, _ := reg.Get("main")
-	if got, want := main.Identity(), (accounting.Identity{Agent: "main", Name: "Main", Project: "default"}); got != want {
+	if got, want := main.Identity(), (accounting.Identity{Agent: "main", Name: "Main"}); got != want {
 		t.Errorf("config agent identity = %+v, want %+v", got, want)
 	}
 
@@ -65,7 +65,7 @@ func TestAgentInstance_Identity(t *testing.T) {
 		t.Fatalf("CreateClone: %v", err)
 	}
 	clone, _ := reg.Get(cloneID)
-	want := accounting.Identity{Agent: "main", Name: "main (clone " + agentreg.ShortID(cloneID) + ")", Project: "default"}
+	want := accounting.Identity{Agent: "main", Name: "main (clone " + agentreg.ShortID(cloneID) + ")"}
 	if got := clone.Identity(); got != want {
 		t.Errorf("clone identity = %+v, want %+v", got, want)
 	}
@@ -75,13 +75,14 @@ func TestAgentInstance_Identity(t *testing.T) {
 		t.Fatalf("CreateFresh: %v", err)
 	}
 	fresh, _ := reg.Get(freshID)
-	if got, want := fresh.Identity(), (accounting.Identity{Agent: freshID, Name: "Bob", Project: "default"}); got != want {
+	if got, want := fresh.Identity(), (accounting.Identity{Agent: freshID, Name: "Bob"}); got != want {
 		t.Errorf("fresh agent identity = %+v, want %+v", got, want)
 	}
 }
 
 // TestIdentityOf: a running agent is billed by its Identity, an id the
-// registry does not hold by the id itself, and an empty id to no agent.
+// registry does not hold by the id itself, and an empty id to no agent, each
+// under the billing code given.
 func TestIdentityOf(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
@@ -100,14 +101,14 @@ func TestIdentityOf(t *testing.T) {
 		id   string
 		want accounting.Identity
 	}{
-		{"config agent", "Main", main.Identity()},
-		{"clone", cloneID, clone.Identity()},
-		{"unknown", "Alice", accounting.Identity{Agent: "alice", Name: "Alice", Project: "default"}},
-		{"empty", " ", global.NoOwnerIdentity},
+		{"config agent", "Main", billed(main.Identity(), "acme")},
+		{"clone", cloneID, billed(clone.Identity(), "acme")},
+		{"unknown", "Alice", accounting.Identity{Agent: "alice", Name: "Alice", Project: "acme"}},
+		{"empty", " ", global.NoOwnerIdentity("acme")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := al.identityOf(tt.id); got != tt.want {
+			if got := al.identityOf(tt.id, "acme"); got != tt.want {
 				t.Errorf("identityOf(%q) = %+v, want %+v", tt.id, got, tt.want)
 			}
 		})
@@ -115,7 +116,8 @@ func TestIdentityOf(t *testing.T) {
 }
 
 // TestTurn_BillsTheAgent: every model call of a turn carries the turn's agent
-// identity; a clone's turn is billed to its source.
+// identity under the default billing code, named; a clone's turn is billed to
+// its source.
 func TestTurn_BillsTheAgent(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
@@ -148,8 +150,8 @@ func TestTurn_BillsTheAgent(t *testing.T) {
 		rec  *identityRecorder
 		want accounting.Identity
 	}{
-		{"agent", rec, main.Identity()},
-		{"clone", cloneRec, clone.Identity()},
+		{"agent", rec, billed(main.Identity(), global.DefaultBilling)},
+		{"clone", cloneRec, billed(clone.Identity(), global.DefaultBilling)},
 	} {
 		ids := tc.rec.seen()
 		if len(ids) == 0 {
@@ -168,7 +170,7 @@ func TestTurn_BillsTheAgent(t *testing.T) {
 
 // TestCompressModelCaller_BillsTheAgent: summaries (and memory
 // consolidation, which walks the same chain) are billed to the agent whose
-// conversation they summarize.
+// conversation they summarize, under the code given.
 func TestCompressModelCaller_BillsTheAgent(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
@@ -182,13 +184,20 @@ func TestCompressModelCaller_BillsTheAgent(t *testing.T) {
 
 	rec := &identityRecorder{}
 	cat := compressCatalog(map[string]spawnllm.LLMProvider{"m": rec})
-	c := withID(compressCaller(cat, "m"), main.Identity())
+	want := billed(main.Identity(), "acme")
+	c := withID(compressCaller(cat, "m"), want)
 	if _, _, _, err := c.complete(context.Background(), "sys", "user", false, nil); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
-	if ids := rec.seen(); len(ids) != 1 || ids[0] != main.Identity() {
-		t.Fatalf("summary calls billed to %+v, want [%+v]", ids, main.Identity())
+	if ids := rec.seen(); len(ids) != 1 || ids[0] != want {
+		t.Fatalf("summary calls billed to %+v, want [%+v]", ids, want)
 	}
+}
+
+// billed is id billed to code.
+func billed(id accounting.Identity, code string) accounting.Identity {
+	id.Project = code
+	return id
 }
 
 // accountingRecords captures the accounting records written while it is

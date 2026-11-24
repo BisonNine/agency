@@ -84,6 +84,16 @@ type TaskRecord struct {
 	// task); empty for a task a turn started. Cancelling the parent
 	// cancels it too.
 	Parent string `json:"parent,omitempty"`
+	// Billing is the billing code the task's model calls, and the work it
+	// starts, are billed to: the spawn's billing argument, else the spawning
+	// work's code; changed by the task's own billing tool call, so a
+	// relaunch keeps it. Empty in a record written before billing codes,
+	// which runs under the default code.
+	Billing string `json:"billing,omitempty"`
+	// ReplyBilling is the inherited billing code of the turn that started
+	// the task, carried by the task's background result into the turn it
+	// re-enters; empty when that turn billed to its session's own code.
+	ReplyBilling string `json:"reply_billing,omitempty"`
 }
 
 // TaskResults is the worker's output payload, persisted to <uuid>-results.json.

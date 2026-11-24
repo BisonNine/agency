@@ -101,6 +101,10 @@ func spawnToolSchema() map[string]any {
 				"type":        "string",
 				"description": "With kind tts: the audio format in the API's terms (mp3, wav, …). Omit for the model's default.",
 			},
+			"billing": map[string]any{
+				"type":        "string",
+				"description": "Optional billing code for the task's model calls and everything it starts: 1 to 64 letters, digits, '-', '_' or '.'. Omit to use your own billing code.",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -191,6 +195,12 @@ func (globalAgentProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 					return &toolspec.Result{IsError: true, ForLLM: badFiles}, nil
 				}
 
+				if v, given := call.Args["billing"]; given && v != nil {
+					if _, isString := v.(string); !isString {
+						return &toolspec.Result{IsError: true, ForLLM: invalidBillingText}, nil
+					}
+				}
+
 				mode, onResult := resolveSpawnMode(modeStr, call)
 				// A background result returns to the chat of the spawning
 				// turn; a call that can't be tied to one turn has none.
@@ -215,6 +225,7 @@ func (globalAgentProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 					Files:         files,
 					Voice:         strArg(call.Args, "voice"),
 					Format:        strArg(call.Args, "format"),
+					Billing:       strArg(call.Args, "billing"),
 					Channel:       call.Channel,
 					ChatID:        call.ChatID,
 					OnResult:      onResult,

@@ -84,6 +84,6 @@ func (gwClassifierHost) Call(context.Context, string, string, map[string]any) (s
 	return "", errors.New("unused")
 }
 
-func (gwClassifierHost) Complete(context.Context, string, string, string) (string, string, error) {
+func (gwClassifierHost) Complete(context.Context, string, string, string, string) (string, string, error) {
 	return "", "", errors.New("unused")
 }

@@ -136,7 +136,7 @@ func TestExecuteJobByID_AtJobOutcomes(t *testing.T) {
 
 	// An "at" job kept after its run is disabled.
 	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) { return "", nil })
-	job, err := cs.AddJob("once", CronSchedule{Kind: "at", AtMS: &future}, "m", "", "", "", "")
+	job, err := cs.AddJob("once", CronSchedule{Kind: "at", AtMS: &future}, "m", "", "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestExecuteJobByID_AtJobOutcomes(t *testing.T) {
 	cs2 := newTestServiceWithHandler(t, func(*CronJob) (string, error) { return "", nil })
 	rec := &alertRecorder{}
 	cs2.SetAlerter(rec)
-	job2, err := cs2.AddJob("once", CronSchedule{Kind: "at", AtMS: &future}, "m", "", "", "", "")
+	job2, err := cs2.AddJob("once", CronSchedule{Kind: "at", AtMS: &future}, "m", "", "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestExecuteJobByID_AtJobOutcomes(t *testing.T) {
 // has no next run.
 func TestExecuteJobByID_NoNextRun(t *testing.T) {
 	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) { return "", nil })
-	job, err := cs.AddJob("x", CronSchedule{Kind: "cron"}, "m", "agent", "cli", "direct", "channel")
+	job, err := cs.AddJob("x", CronSchedule{Kind: "cron"}, "m", "agent", "cli", "direct", "channel", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestExecuteJobByID_NoNextRun(t *testing.T) {
 func TestAddJob_SaveFailure(t *testing.T) {
 	cs := newTestService(t)
 	breakStore(t, cs)
-	if _, err := cs.AddJob("x", CronSchedule{Kind: "every", EveryMS: new(int64(1000))}, "m", "", "", "", ""); err == nil {
+	if _, err := cs.AddJob("x", CronSchedule{Kind: "every", EveryMS: new(int64(1000))}, "m", "", "", "", "", ""); err == nil {
 		t.Error("AddJob with an unwritable store: want error")
 	}
 }

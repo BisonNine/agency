@@ -9,6 +9,7 @@
 package classifier
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 	classifierpkg "go.bison9.com/agency/classifier"
 	"go.bison9.com/agency/classifier/classifierfs"
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
@@ -85,6 +87,7 @@ func (globalClassifierProvider) RegisterTools(deps toolspec.Deps) []toolspec.Too
 		workspace: host.Workspace,
 		purpose:   host.TempPurpose,
 		clone:     host.CloneMarker,
+		billing:   host.BillingOf,
 	})
 }
 
@@ -98,6 +101,8 @@ type toolHost struct {
 	workspace string
 	purpose   string
 	clone     string
+	// billing is the billing code of the work making a call.
+	billing func(context.Context) string
 }
 
 var _ classifierpkg.ToolHost = (*toolHost)(nil)
@@ -105,7 +110,7 @@ var _ classifierpkg.ToolHost = (*toolHost)(nil)
 // Scope refuses a call by a forum participant and by an agent without the
 // `classifiers` switch; otherwise it is the agent and its
 // <workspace>/classifiers.
-func (h *toolHost) Scope(*toolspec.ToolCall) (classifierpkg.Scope, error) {
+func (h *toolHost) Scope(call *toolspec.ToolCall) (classifierpkg.Scope, error) {
 	if h.purpose == tools.TempPurposeForum {
 		return classifierpkg.Scope{}, fmt.Errorf("agent %s is a forum participant and has no classifiers", h.agentID)
 	}
@@ -116,5 +121,9 @@ func (h *toolHost) Scope(*toolspec.ToolCall) (classifierpkg.Scope, error) {
 	if err != nil {
 		return classifierpkg.Scope{}, fmt.Errorf("classifier directory of agent %s: %w", h.agentID, err)
 	}
-	return classifierpkg.Scope{AgentID: h.agentID, BaseDirectory: base, Clone: h.clone}, nil
+	scope := classifierpkg.Scope{AgentID: h.agentID, BaseDirectory: base, Clone: h.clone, Billing: global.DefaultBilling}
+	if h.billing != nil && call != nil && call.Ctx != nil {
+		scope.Billing = h.billing(call.Ctx)
+	}
+	return scope, nil
 }

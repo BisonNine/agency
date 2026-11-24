@@ -7,6 +7,7 @@ An agent has only the tools and skills you grant it; this page shows how to gran
 - An agent with no tools list, or an empty one, has **no tools**. The card shows **Internal tools: No tools**, highlighted.
 - An agent with no skills list, or an empty one, has **no skills**. The card shows "No skills".
 - New agents start with neither.
+- The one exception is the `billing` tool, which every agent has: it reads and sets the [billing code](../admin/billing.md) the agent's model calls are recorded under. **Denied tools** removes it.
 
 An agent with no tools at all (no internal tools, no MCP or Fusion access, no tool suite) is told in its instructions that it has no tools, and asks the person to enable them in the web interface when a request needs one. [Check Up](../admin/checkup.md) lists every enabled agent with an empty tools list as **No tools (Alice)**.
 

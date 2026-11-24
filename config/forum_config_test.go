@@ -31,3 +31,15 @@ func TestConfig_AgentSuiteEnabledForum(t *testing.T) {
 		t.Errorf("an agent with forum off is saved as %s, want no forum key", out)
 	}
 }
+
+// Every configured agent has the billing suite; an unknown agent has none.
+func TestConfig_AgentSuiteEnabledBilling(t *testing.T) {
+	c := &Config{}
+	c.Agents.List = []AgentConfig{{ID: "alice"}}
+	if !c.AgentSuiteEnabled("Alice", BillingSuite) {
+		t.Error("alice has no billing tool")
+	}
+	if c.AgentSuiteEnabled("bob", BillingSuite) {
+		t.Error("an unknown agent has the billing tool")
+	}
+}

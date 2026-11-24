@@ -84,6 +84,27 @@
   exist is marked on the Agents page and in Check Up. Each agent's own
   knowledge bases are in the backup, also while the switch is off; shared
   ones are not.
+- **Billing codes.** Every model call is now billed to a billing code. Each
+  conversation has one, `default` until set, and keeps it until it is
+  changed, also after a restart. Agents set it with the new `billing` tool:
+  without arguments it shows the code, with `code` it sets it from the next
+  model call. A code has 1 to 64 letters, digits, `-`, `_` or `.`. Every
+  agent has the tool; add `billing` to an agent's `deny_tools` to remove it.
+  Work an agent starts is billed to the code in force when it starts:
+  sub-agents, scheduled jobs, agents it asks, forum participants, Maestro
+  tasks and classifiers. Such work can change its own code without changing
+  the code of the conversation that started it. Memory consolidation is
+  billed to `memory`.
+- **`billing` argument on `agent_spawn` and on Maestro's `task_run` and
+  `task_dispatch`.** The sub-agent, task-model call or Maestro task, and
+  everything it starts, is billed to this code instead of the agent's.
+- **Accounting log.** Each model call is written as one JSON line to
+  `<CLAW_HOME>/logs/accounting.log`: the agent, the billing code (`project`),
+  the model, the tokens and the cost. When a provider reports no cost, it is
+  estimated from `<CLAW_HOME>/pricing.json` if that file exists; it is read
+  at start and at every configuration reload, and a file that cannot be read
+  keeps the previous table. The accounting log is not in the backup, like
+  the other logs.
 
 ### Changed
 

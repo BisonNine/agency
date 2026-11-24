@@ -12,6 +12,7 @@ import (
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/toolkit"
 
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
@@ -99,8 +100,34 @@ func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, c
 	if len(askChain) > 0 {
 		ctx = tools.WithAskChain(ctx, askChain)
 	}
+	ctx = sm.withTaskBilling(ctx, tr)
 	go sm.runRecord(ctx, tr, resumed)
 	return tr
+}
+
+// withTaskBilling puts the task's billing code on its context, as the code
+// its work inherits (a record written before billing codes runs under the
+// default). A change the task makes (its billing tool) is written to its
+// record, so a relaunch after a restart keeps it.
+func (sm *SubagentManager) withTaskBilling(ctx context.Context, tr *taskRun) context.Context {
+	tr.mu.Lock()
+	code := tr.rec.Billing
+	tr.mu.Unlock()
+	if code == "" {
+		code = global.DefaultBilling
+	}
+	ctx = tools.WithBilling(ctx, code)
+	tools.InheritedBillingOf(ctx).OnSet(func(code string) {
+		tr.mu.Lock()
+		defer tr.mu.Unlock()
+		tr.rec.Billing = code
+		// A waited task's record is written when it ends or is detached;
+		// an ended one's is final.
+		if !tr.waiting && !tr.ended {
+			sm.persistStatus(sm.tasksDir(), tr.rec)
+		}
+	})
+	return ctx
 }
 
 // startFailed settles a task the registry refused to start. While the

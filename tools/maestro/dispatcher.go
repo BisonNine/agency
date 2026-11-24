@@ -22,6 +22,7 @@ import (
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 // hostProviderModel is the model label recorded when the sub-agent run did not
@@ -76,6 +77,14 @@ func (d *dispatcher) Dispatch(ctx context.Context, req *mllm.DispatchRequest) (*
 	if d == nil || d.run == nil {
 		return nil, mllm.Permanent(fmt.Errorf("%w: host dispatcher not available", global.ErrSpawnUnavailable))
 	}
+	// The worker is billed to the task's code, as a code of its own: a
+	// change it makes (its billing tool) stays with it. Without one it keeps
+	// the code on ctx, copied.
+	code := req.Billing
+	if code == "" {
+		code, _ = tools.Billing(ctx)
+	}
+	ctx = tools.WithBilling(ctx, code)
 	parent := ctx
 	if d.timeout > 0 {
 		var cancel context.CancelFunc

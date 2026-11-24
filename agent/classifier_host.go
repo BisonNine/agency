@@ -28,6 +28,7 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/fileutil"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -272,8 +273,9 @@ func (h *ClassifierHost) Call(ctx context.Context, agentID, tool string, args ma
 // health like any other call; it is made once (no same-model retry). A CLI model runs isolated:
 // in an empty folder of its own, removed afterwards, and never with the
 // provider's bypass flags. Its cost counts toward the daily spend alert like
-// any other model call.
-func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user string) (string, string, error) {
+// any other model call. It is billed to billing, the classifier's code; a
+// classifier without one (created before billing codes) to the default.
+func (h *ClassifierHost) Complete(ctx context.Context, agentID, billing, system, user string) (string, string, error) {
 	al, cfg, err := h.bound()
 	if err != nil {
 		return "", "", err
@@ -316,7 +318,12 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, system, user str
 	// The chain records a failure against the model's health, and an answer
 	// clears it, as for any other call.
 	var last finishRecorder
-	_, chatErr := chain.Chat(ctx, a.Identity(), models.Request{Messages: []spawnllm.Message{
+	if billing == "" {
+		billing = global.DefaultBilling
+	}
+	id := a.Identity()
+	id.Project = billing
+	_, chatErr := chain.Chat(ctx, id, models.Request{Messages: []spawnllm.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	}}, models.WithClassify(noSameModelRetry), last.option(func(c models.Candidate, elapsed time.Duration, resp *spawnllm.LLMResponse, err error) {

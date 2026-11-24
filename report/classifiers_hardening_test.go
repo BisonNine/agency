@@ -47,7 +47,7 @@ type reportModel struct{}
 
 var errModelUnavailable = errors.New(strings.Repeat("the model is unavailable ", 12))
 
-func (reportModel) Complete(_ context.Context, _, _, user string) (string, string, error) {
+func (reportModel) Complete(_ context.Context, _, _, _, user string) (string, string, error) {
 	if strings.Contains(user, "fail-item") {
 		return "", "m", fmt.Errorf("%w: %w", errModelUnavailable, classifier.ErrNoModel)
 	}

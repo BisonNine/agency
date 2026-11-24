@@ -47,6 +47,9 @@ import (
 type Scope struct {
 	AgentID       string
 	BaseDirectory string
+	// Billing is the billing code of the work making the call; a run it
+	// launches records it in its Origin.
+	Billing string
 }
 
 // LaunchOptions is what validating and launching need besides the caller's

@@ -8,6 +8,7 @@ import (
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 )
 
 // ToolDescriptor holds static metadata for a single tool — no deps required.
@@ -103,6 +104,32 @@ type ToolDeps struct {
 
 	// Shared pre-built tool instances
 	MessageTool toolkit.Tool // shared msg_send instance; may be nil
+
+	// Billing returns the billing code of the work calling on ctx: the code
+	// it inherited, else its session's, else the default. SetBilling changes
+	// it (the billing tool): an inherited code for that work alone, else the
+	// code of the session sessionKey; a code accounting.CheckProject refuses
+	// is an error wrapping accounting.ErrInvalidProject. Both are nil outside
+	// the agent loop; use BillingOf.
+	Billing    func(ctx context.Context) string
+	SetBilling func(ctx context.Context, sessionKey, code string) error
+	// CallerBilling is Billing resolved from the call's own scope (its agent
+	// and session) rather than this agent's, for a function kept beyond this
+	// registration (Maestro's runner, which a clone shares with its source).
+	// Nil outside the agent loop.
+	CallerBilling func(ctx context.Context) string
+}
+
+// BillingOf is d.Billing(ctx), or, without one, the inherited code on ctx,
+// else the default.
+func (d ToolDeps) BillingOf(ctx context.Context) string {
+	if d.Billing != nil {
+		return d.Billing(ctx)
+	}
+	if code, ok := Billing(ctx); ok {
+		return code
+	}
+	return global.DefaultBilling
 }
 
 // EffectiveStateDir is StateDir, or Workspace when StateDir is unset.

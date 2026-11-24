@@ -136,3 +136,17 @@ func TestInboundMessageReplyRequired(t *testing.T) {
 		t.Error("reply_required=true: ReplyRequired = true, want only \"1\"")
 	}
 }
+
+func TestSetBilling(t *testing.T) {
+	if got := SetBilling(nil, ""); got != nil {
+		t.Errorf("empty code allocated %v", got)
+	}
+	got := SetBilling(nil, "acme")
+	if got[MetaBilling] != "acme" {
+		t.Errorf("SetBilling(nil) = %v", got)
+	}
+	m := map[string]string{"a": "b"}
+	if got := SetBilling(m, "acme"); got[MetaBilling] != "acme" || got["a"] != "b" {
+		t.Errorf("SetBilling(m) = %v", got)
+	}
+}

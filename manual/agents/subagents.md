@@ -34,8 +34,11 @@ The `agent_spawn` tool takes:
 | `agent_id` | Another agent to copy instead of itself; needs `allow_agents`. |
 | `model` | One of the copied agent's sub-agent models to run instead of the first one. |
 | `character_card` | A [character card](./character-cards.md) the sub-agent runs as, instead of the copied agent's own. The card must exist. |
+| `billing` | The [billing code](../admin/billing.md) for the sub-agent's work and everything it starts, instead of the agent's own: 1 to 64 letters, digits, `-`, `_` or `.`. |
 
 In `callback` mode the result is written to the agent's `tasks/` folder and the agent is told where; `agent_status` and `agent_list` show progress. A task's status is `running`, `done`, `error` or `cancelled`.
+
+A sub-agent's model calls are billed to the agent's current [billing code](../admin/billing.md), or to the one `billing` names. The sub-agent may change its own code with its `billing` tool; the agent's code stays as it is, and a task restarted after a restart keeps the code it had.
 
 ## Stopping sub-agents
 

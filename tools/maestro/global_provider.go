@@ -4,6 +4,7 @@
 package maestro
 
 import (
+	"context"
 	"path/filepath"
 	"reflect"
 
@@ -152,6 +153,11 @@ func (globalMaestroProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDe
 			Runner:        run,
 			Dispatcher:    swap,
 			ImportAllowed: allowImport,
+			// The billing code of the work calling task_run or
+			// task_dispatch, asked while the call is handled. Maestro sets
+			// it on the runner, which a clone shares with its source, so it
+			// resolves the caller from the call's own context.
+			Billing: callerBilling(cd),
 		},
 	})
 
@@ -161,6 +167,15 @@ func (globalMaestroProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDe
 	logger.InfoCF("maestro", "maestro tools enabled for agent",
 		map[string]any{"agent": deps.AgentID, "tools": len(defs), "base": base, "timeout": disp.timeout.String()})
 	return defs
+}
+
+// callerBilling is the billing resolver Maestro is given: the agent loop's,
+// resolved from the call's own scope, else (outside the loop) this agent's.
+func callerBilling(cd tools.ToolDeps) func(context.Context) string {
+	if cd.CallerBilling != nil {
+		return cd.CallerBilling
+	}
+	return cd.BillingOf
 }
 
 // isNilRunner reports whether sr is nil, including a typed nil pointer stored

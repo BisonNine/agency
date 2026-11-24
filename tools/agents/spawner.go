@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/toolkit"
 	"go.bison9.com/agent/toolspec"
 
@@ -78,6 +79,15 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*toolspec
 			limit, SpawnDepth(ctx))}, nil
 	}
 
+	// A billing code the spawn names is the task's, and its tasks', instead
+	// of the spawning work's.
+	if req.Billing != "" {
+		if err := accounting.CheckProject(req.Billing); err != nil {
+			return &toolspec.Result{IsError: true, ForLLM: invalidBillingText, Err: err}, nil //nolint:nilerr // an invalid code is the model's error, answered as a tool result
+		}
+		ctx = withSpawnBilling(ctx, req.Billing)
+	}
+
 	// A kind makes it a task-model call: no agent, no tools, no depth level.
 	if strings.TrimSpace(req.Kind) != "" {
 		return s.spawnTask(ctx, req)
@@ -131,7 +141,7 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*toolspec
 		if name == "" {
 			return &toolspec.Result{IsError: true, ForLLM: "name is required for callback mode (a short identifier for the task)"}, nil
 		}
-		id, err := s.mgr.spawnCallback(ctx, originOf(ctx), req.Task, name, req.TargetAgentID, channel, chatID, req.Model, strings.TrimSpace(req.CharacterCard), req.Media, onResultCallback(req.OnResult))
+		id, err := s.mgr.spawnCallback(ctx, s.mgr.originOf(ctx), req.Task, name, req.TargetAgentID, channel, chatID, req.Model, strings.TrimSpace(req.CharacterCard), req.Media, onResultCallback(req.OnResult))
 		if err != nil {
 			return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("failed to spawn subagent: %v", err)}, nil
 		}
@@ -141,6 +151,9 @@ func (s *Spawner) Spawn(ctx context.Context, req global.SpawnRequest) (*toolspec
 		return toolkit.ResultToSpec(toolkit.AsyncResult(msg)), nil
 	}
 }
+
+// invalidBillingText refuses a spawn whose billing code is not one.
+const invalidBillingText = "Invalid billing code: use 1 to 64 letters, digits, '-', '_' or '.'."
 
 // onResultCallback adapts a spawn request's OnResult to the manager's
 // callback; nil when there is none.

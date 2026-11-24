@@ -22,6 +22,9 @@ type Scope struct {
 	// Clone is the short id of the clone of AgentID whose tool call this
 	// is, "" otherwise. It is recorded in the audit rows the call writes.
 	Clone string
+	// Billing is the billing code of the work making the call: a classifier
+	// it creates is billed to it (Definition.Billing).
+	Billing string
 }
 
 // ToolRunner runs the tools a classifier names as the owning agent.
@@ -81,10 +84,13 @@ func ClassifierID(ctx context.Context) string {
 
 // ModelCaller asks agentID's classifier model one question, with no tools.
 type ModelCaller interface {
-	// Complete sends one request and returns the reply and the model name.
-	// It returns an error wrapping ErrNoModel when the agent has no usable
-	// classifier model, and a *CooldownError when the model is in cooldown.
-	Complete(ctx context.Context, agentID, system, user string) (reply, model string, err error)
+	// Complete sends one request, billed to billing (the classifier's
+	// Definition.Billing; "" for one written before billing codes, which the
+	// host bills to its default code), and returns the reply and the model
+	// name. It returns an error wrapping ErrNoModel when the agent has no
+	// usable classifier model, and a *CooldownError when the model is in
+	// cooldown.
+	Complete(ctx context.Context, agentID, billing, system, user string) (reply, model string, err error)
 }
 
 // NamedText is one Markdown file of an instructions folder: its file name

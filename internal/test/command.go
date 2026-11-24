@@ -181,7 +181,7 @@ func testModel(cfg *config.Config, cat *models.Catalog, mc modelspec.Model, time
 	}
 
 	start := time.Now()
-	resp, err := provider.Chat(ctx, global.NoOwnerIdentity, messages, nil, modelID, nil)
+	resp, err := provider.Chat(ctx, global.NoOwnerIdentity(global.DefaultBilling), messages, nil, modelID, nil)
 	r.elapsed = time.Since(start)
 
 	if err != nil {

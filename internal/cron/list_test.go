@@ -45,12 +45,12 @@ func TestCronListShowsAgent(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "jobs.json")
 	cs := cron.NewCronService(storePath, nil)
 
-	owned, err := cs.AddJob("Owned", cron.CronSchedule{Kind: "cron", Expr: "0 9 * * *"}, "m", "agent", "slack", "C1", "channel")
+	owned, err := cs.AddJob("Owned", cron.CronSchedule{Kind: "cron", Expr: "0 9 * * *"}, "m", "agent", "slack", "C1", "channel", "")
 	require.NoError(t, err)
 	owned.AgentID = "alice"
 	require.NoError(t, cs.UpdateJob(owned))
 
-	unowned, err := cs.AddJob("Legacy", cron.CronSchedule{Kind: "cron", Expr: "0 10 * * *"}, "m", "agent", "slack", "C2", "channel")
+	unowned, err := cs.AddJob("Legacy", cron.CronSchedule{Kind: "cron", Expr: "0 10 * * *"}, "m", "agent", "slack", "C2", "channel", "")
 	require.NoError(t, err)
 	// Touch via UpdateJob so it persists without an AgentID.
 	require.NoError(t, cs.UpdateJob(unowned))

@@ -109,7 +109,8 @@ func (c *agentProviderClient) target(id accounting.Identity) spawnllm.LLMProvide
 		// The agent whose identity it is (a clone has its own label), then
 		// the agent it is billed to.
 		for _, agentID := range r.All() {
-			if inst, ok := r.Get(agentID); ok && inst.Identity() == id {
+			// Identity names no billing code; the call's carries one.
+			if inst, ok := r.Get(agentID); ok && inst.Identity() == (accounting.Identity{Agent: id.Agent, Name: id.Name}) {
 				match = inst
 				break
 			}

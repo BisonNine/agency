@@ -235,10 +235,13 @@ func logInboundMessage(ctx context.Context, msg bus.InboundMessage) {
 	)
 }
 
-// prepareInbound transcribes the message's audio and applies the sub-agent
-// depth and ask chain it carries to ctx.
+// prepareInbound transcribes the message's audio and applies the billing
+// code, sub-agent depth and ask chain it carries to ctx.
 func (al *AgentLoop) prepareInbound(ctx context.Context, msg bus.InboundMessage) (context.Context, bus.InboundMessage) {
 	var hadAudio bool
+	// The code the message carries is in force before anything is billed
+	// for it (its transcription).
+	ctx = withInboundBilling(ctx, msg)
 	// A request to a person is relayed as written: no transcription model
 	// sees a human agent's conversation.
 	if target := al.inboundTarget(msg); target == nil || target.HumanModel == "" {

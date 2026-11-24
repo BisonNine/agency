@@ -285,7 +285,7 @@ func TestClassifierHost_NoSameModelRetry(t *testing.T) {
 	t.Cleanup(srv.Close)
 	_, host, _ := newClassifierHostLoop(t, classifierHostConfig(t, srv.URL))
 	start := time.Now()
-	if _, _, err := host.Complete(context.Background(), "alice", "s", "u"); err == nil {
+	if _, _, err := host.Complete(context.Background(), "alice", "", "s", "u"); err == nil {
 		t.Fatal("Complete succeeded on a 429")
 	}
 	if n := calls.Load(); n != 1 {

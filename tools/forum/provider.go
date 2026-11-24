@@ -9,6 +9,7 @@
 package forum
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -21,6 +22,7 @@ import (
 	"go.bison9.com/agency/config"
 	forumpkg "go.bison9.com/agency/forum"
 	"go.bison9.com/agency/forum/forumfs"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
@@ -86,6 +88,7 @@ func (globalForumProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 		agentID:   deps.AgentID,
 		workspace: host.Workspace,
 		purpose:   host.TempPurpose,
+		billing:   host.BillingOf,
 	})
 }
 
@@ -97,6 +100,8 @@ type toolHost struct {
 	agentID   string
 	workspace string
 	purpose   string
+	// billing is the billing code of the work making a call.
+	billing func(context.Context) string
 }
 
 var _ forumpkg.ToolHost = (*toolHost)(nil)
@@ -122,7 +127,11 @@ func (h *toolHost) Scope(call *toolspec.ToolCall) (forumpkg.Scope, error) {
 	if err != nil {
 		return forumpkg.Scope{}, fmt.Errorf("forum directory of agent %s: %w", h.agentID, err)
 	}
-	return forumpkg.Scope{AgentID: h.agentID, BaseDirectory: base}, nil
+	scope := forumpkg.Scope{AgentID: h.agentID, BaseDirectory: base, Billing: global.DefaultBilling}
+	if h.billing != nil && call != nil && call.Ctx != nil {
+		scope.Billing = h.billing(call.Ctx)
+	}
+	return scope, nil
 }
 
 // ResolveFile resolves ref the way the agent's file tools would read it:

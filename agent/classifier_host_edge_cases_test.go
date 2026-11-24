@@ -33,7 +33,7 @@ func TestClassifierHost_LoopWithoutState(t *testing.T) {
 	ctx := context.Background()
 	h := NewClassifierHost()
 	h.Bind(&AgentLoop{})
-	if _, _, err := h.Complete(ctx, "alice", "s", "u"); !errors.Is(err, errLoopNotReady) {
+	if _, _, err := h.Complete(ctx, "alice", "", "s", "u"); !errors.Is(err, errLoopNotReady) {
 		t.Errorf("Complete with no configuration = %v", err)
 	}
 	if err := h.RunFailed(ctx, "alice", "x"); !errors.Is(err, errLoopNotReady) {
@@ -87,7 +87,7 @@ func TestClassifierHost_CLIFolderError(t *testing.T) {
 	if err := os.WriteFile(root, []byte("in the way"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := host.Complete(context.Background(), "alice", "s", "u"); err == nil || !strings.HasPrefix(err.Error(), "folder for an isolated CLI call: ") {
+	if _, _, err := host.Complete(context.Background(), "alice", "", "s", "u"); err == nil || !strings.HasPrefix(err.Error(), "folder for an isolated CLI call: ") {
 		t.Errorf("Complete with the temporary root a file = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(logDir, "args")); !os.IsNotExist(err) {
@@ -126,7 +126,7 @@ func TestClassifierHost_FailedCallCost(t *testing.T) {
 	al, host, _ := newClassifierHostLoop(t, cfg)
 	rec := &alertRecorder{}
 	al.SetAlerter(rec)
-	if _, _, err := host.Complete(context.Background(), "alice", "s", "u"); err == nil {
+	if _, _, err := host.Complete(context.Background(), "alice", "", "s", "u"); err == nil {
 		t.Fatal("Complete on a failing model succeeded")
 	}
 	rec.mu.Lock()

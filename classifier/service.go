@@ -414,6 +414,7 @@ func (s *Service) Create(ctx context.Context, scope Scope, raw []byte) (string, 
 	}
 	now := s.host.clock().Now().UTC().Truncate(time.Second)
 	def.Owner, def.CreatedAt, def.UpdatedAt = NormalizeID(scope.AgentID), now, now
+	def.Billing = scope.Billing
 	data, err := marshalDefinition(def)
 	if err != nil {
 		return "", err
@@ -470,11 +471,14 @@ func (s *Service) Update(ctx context.Context, scope Scope, id string, patch []by
 	}
 	var old struct {
 		CreatedAt time.Time `json:"created_at"`
+		Billing   string    `json:"billing"`
 	}
 	if json.Unmarshal(fi.raw, &old) != nil {
-		old.CreatedAt = time.Time{} // unreadable: the update does not invent one
+		// Unreadable: the update does not invent a creation time or a code.
+		old.CreatedAt, old.Billing = time.Time{}, ""
 	}
 	def.Owner, def.CreatedAt, def.UpdatedAt = NormalizeID(scope.AgentID), old.CreatedAt, s.host.clock().Now().UTC().Truncate(time.Second)
+	def.Billing = old.Billing
 	data, err := marshalDefinition(def)
 	if err != nil {
 		return err

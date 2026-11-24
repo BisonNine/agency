@@ -54,8 +54,9 @@ type compressModelCaller struct {
 	caller     llmCaller
 	sessionKey string
 	// id is who the calls are billed to: the agent whose conversation or
-	// memory is being summarized.
-	id accounting.Identity
+	// memory is being summarized; billing names the code of a call.
+	id      accounting.Identity
+	billing func(ctx context.Context) string
 	// noSessionKey leaves session_key off the finish line, for a caller whose
 	// sessionKey names no conversation (memory consolidation).
 	noSessionKey bool
@@ -131,7 +132,9 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 			}
 		}
 	})
-	reply, err := chain.Caller(c.id, finish, notify).Complete(ctx, models.CompleteRequest{
+	id := c.id
+	id.Project = c.billing(ctx)
+	reply, err := chain.Caller(id, finish, notify).Complete(ctx, models.CompleteRequest{
 		System: system, User: user, JSONObject: jsonObject, Exclude: exclude,
 	})
 	if err != nil {
@@ -246,7 +249,10 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 		// A person's conversation is never given to a model: no
 		// summarization chain at all, so compaction and consolidation find
 		// no model (and the person is never asked to summarize).
-		return &compressModelCaller{caller: callerOf(agent), sessionKey: sessionKey, id: agent.Identity()}, ""
+		return &compressModelCaller{
+			caller: callerOf(agent), sessionKey: sessionKey, id: agent.Identity(),
+			billing: al.summaryBilling(agent, sessionKey),
+		}, ""
 	}
 	var agentModels, globalModels []string
 	if agent.Config != nil {
@@ -294,11 +300,18 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 		caller:     callerOf(agent),
 		sessionKey: sessionKey,
 		id:         agent.Identity(),
+		billing:    al.summaryBilling(agent, sessionKey),
 	}
 	if agent.Spec.Fresh {
 		c.workspace = agent.Workspace
 	}
 	return c, effective
+}
+
+// summaryBilling is the billing code of a summary of the session's
+// conversation: billingFor the call's context and the session.
+func (al *AgentLoop) summaryBilling(agent *AgentInstance, sessionKey string) func(context.Context) string {
+	return func(ctx context.Context) string { return al.billingFor(ctx, agent, sessionKey) }
 }
 
 // getContextManager returns the ContextManager for the given agent+session

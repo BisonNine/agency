@@ -107,7 +107,7 @@ func (sm *SubagentManager) RunTask(ctx context.Context, label, channel, chatID s
 	if strings.TrimSpace(label) == "" {
 		label = "(unnamed)"
 	}
-	origin := originOf(ctx)
+	origin := sm.originOf(ctx)
 	rec := sm.newTaskRecord(label, "wait", channel, chatID, req, origin)
 	return sm.await(ctx, sm.launch(ctx, rec, nil, false, true, origin.askChain), onDetach)
 }
@@ -155,6 +155,8 @@ func (sm *SubagentManager) newTaskRecord(name, mode, channel, chatID string, req
 		ResultsPath:  relResultsPath(id),
 		SpawnDepth:   origin.depth,
 		Parent:       origin.parent,
+		Billing:      origin.billing,
+		ReplyBilling: origin.replyBilling,
 	}
 }
 
@@ -293,7 +295,7 @@ func (s *Spawner) spawnTask(ctx context.Context, req global.SpawnRequest) (*tool
 	if name == "" {
 		return refuse("name is required for callback mode (a short identifier for the task)")
 	}
-	id, err := s.mgr.spawnTaskCallback(ctx, originOf(ctx), name, channel, chatID, treq, onResultCallback(req.OnResult))
+	id, err := s.mgr.spawnTaskCallback(ctx, s.mgr.originOf(ctx), name, channel, chatID, treq, onResultCallback(req.OnResult))
 	if err != nil {
 		return &toolspec.Result{IsError: true, ForLLM: fmt.Sprintf("failed to start the task: %v", err)}, nil
 	}

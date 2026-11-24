@@ -434,6 +434,7 @@ func (t *toolSuite) launchOptions(call *toolspec.ToolCall, scope Scope) LaunchOp
 	return LaunchOptions{
 		Origin: Origin{
 			AgentID: scope.AgentID, Channel: call.Channel, ChatID: call.ChatID, Session: call.Session,
+			Billing: scope.Billing,
 		},
 		ResolveFile: func(ref string) (string, error) {
 			return t.host.ResolveFile(scope.AgentID, ref)

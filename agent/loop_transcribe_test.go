@@ -20,6 +20,7 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/channels"
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/media"
 	"go.bison9.com/agency/voice"
@@ -366,7 +367,63 @@ func TestPrepareInbound_VoicePassesNameAndType(t *testing.T) {
 		t.Fatalf("transcriber got %+v", got)
 	}
 	main, _ := al.GetRegistry().Get("main")
-	if len(ids) != 1 || ids[0] != main.Identity() {
-		t.Fatalf("transcription billed to %+v, want [%+v]", ids, main.Identity())
+	if want := billed(main.Identity(), global.DefaultBilling); len(ids) != 1 || ids[0] != want {
+		t.Fatalf("transcription billed to %+v, want [%+v]", ids, want)
+	}
+}
+
+// A voice note is billed to the code its message carries, else to the code
+// of the session it is routed to, else to the default; one no agent takes
+// has no owner.
+func TestPrepareInbound_VoiceBillingCode(t *testing.T) {
+	restore := logger.RedirectForTest(&safeBufLoop{})
+	defer restore()
+	al, _, _ := freshLoop(t)
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	var got []voice.AudioFile
+	var ids []accounting.Identity
+	al.SetTranscriber(recordingTranscriber{got: &got, ids: &ids})
+	src := filepath.Join(t.TempDir(), "note")
+	if err := os.WriteFile(src, []byte("OggS"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	main, _ := al.GetRegistry().Get("main")
+	voiceTo := func(msg bus.InboundMessage) accounting.Identity {
+		t.Helper()
+		ref, err := store.Store(src, media.MediaMeta{Filename: "note.ogg", ContentType: "audio/ogg", Source: "telegram"}, "s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		msg.Media = []string{ref}
+		ids = nil
+		al.prepareInbound(context.Background(), msg)
+		if len(ids) != 1 {
+			t.Fatalf("%d transcriptions, want 1", len(ids))
+		}
+		return ids[0]
+	}
+
+	carried := toAgent("main", "m1", "[voice]")
+	carried.Metadata[bus.MetaBilling] = "acme"
+	if id := voiceTo(carried); id != billed(main.Identity(), "acme") {
+		t.Errorf("message carrying acme billed to %+v", id)
+	}
+	if err := al.setSessionBilling(main, "agent:main:main", "garden"); err != nil {
+		t.Fatal(err)
+	}
+	if id := voiceTo(toAgent("main", "m2", "[voice]")); id != billed(main.Identity(), "garden") {
+		t.Errorf("message to a session billed to garden billed to %+v", id)
+	}
+	if id := voiceTo(carried); id != billed(main.Identity(), "acme") {
+		t.Errorf("the carried code lost to the session's: %+v", id)
+	}
+	system := bus.InboundMessage{Channel: "system", ChatID: "c", Content: "[voice]", Metadata: map[string]string{}}
+	if id := voiceTo(system); id != global.NoOwnerIdentity(global.DefaultBilling) {
+		t.Errorf("message for no agent billed to %+v", id)
+	}
+	system.Metadata[bus.MetaBilling] = "acme"
+	if id := voiceTo(system); id != global.NoOwnerIdentity("acme") {
+		t.Errorf("message for no agent carrying acme billed to %+v", id)
 	}
 }

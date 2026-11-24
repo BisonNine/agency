@@ -18,6 +18,7 @@ import (
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/utils"
 	"go.bison9.com/agency/voice"
 )
@@ -60,12 +61,14 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	// dropped from Media so it isn't also materialized as a raw file the model
 	// can't use (it becomes a "[voice: ...]" transcript, or the untranscribed
 	// note, in the content).
-	// The transcription is billed to the agent the message is for. A message
-	// with no resolvable agent (a system message, a route that failed) has no
-	// owner.
-	id := global.NoOwnerIdentity
+	// The transcription is billed to the agent the message is for, under the
+	// code the message carries, else the code of the session it is routed
+	// to. A message with no resolvable agent (a system message, a route that
+	// failed) has no owner and is billed to the code it carries, else the
+	// default.
+	id := global.NoOwnerIdentity(al.billingFor(ctx, nil, ""))
 	if target != nil {
-		id = target.Identity()
+		id = al.identityFor(ctx, target, routing.ResolveAgentSessionKey(target.ID, msg.SessionKey))
 	}
 	var transcriptions []voiceTranscript
 	kept := make([]string, 0, len(msg.Media))

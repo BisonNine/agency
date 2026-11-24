@@ -15,6 +15,7 @@ This part of the manual covers running an Agency install safely: signing in, rea
 | [Alerts](./alerts.md) | What alerts are for, how to receive them, and the list of alerts. |
 | [Backup and restore](./backup.md) | The nightly backup, `claw backup` and `claw restore`. |
 | [Logs](./logs.md) | Where the logs are, log levels, the **Logs** page, and the startup permission checks. |
+| [Billing codes](./billing.md) | What each model call is billed to, the accounting log and the pricing table. |
 
 ## Where things are in the WebUI
 

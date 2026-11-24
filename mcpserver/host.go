@@ -278,9 +278,11 @@ func (h *endpointHost) callContext(ctx context.Context, c mcphost.Caller) contex
 	// dispatch) arrive here, not through the loop, and would otherwise start at
 	// depth 0 whatever the turn's depth.
 	ctx = toolsagents.WithSpawnDepth(ctx, rec.depth)
-	// Likewise the turn's ask chain and the task it runs in (SetTurnScope),
-	// with the agent's view of the task registry.
+	// Likewise the turn's ask chain, the task it runs in and its inherited
+	// billing code (SetTurnScope), with the agent's view of the task
+	// registry.
 	ctx = tools.WithAskChain(ctx, rec.askChain)
+	ctx = tools.WithInheritedBilling(ctx, rec.billing)
 	scope, _ := hook.ScopeOf(ctx)
 	scope.Task, scope.Depth = rec.taskID, rec.depth
 	ctx = hook.WithScope(ctx, scope)
@@ -454,6 +456,13 @@ func (h *endpointHost) asyncResult(ctx context.Context, c mcphost.Caller, _ hook
 	publishMCPAsyncToLLM(ctx, h.m.msgBus, v.rec, dest, info.Name, r, v.rec.depth)
 }
 
+// inheritedCode is the inherited billing code of the call on ctx, "" when
+// its turn bills to its session's code.
+func inheritedCode(ctx context.Context) string {
+	code, _ := tools.Billing(ctx)
+	return code
+}
+
 // internalName is the internal name of the tool the call on ctx was
 // published for (mcphost.TargetOf), or name when there is none.
 func internalName(ctx context.Context, name string) string {
@@ -585,9 +594,10 @@ func publishMCPAsyncToLLM(ctx context.Context, msgBus *bus.MessageBus, rec sessi
 		ChatID:     chatID,
 		Content:    content,
 		SessionKey: targetSession,
-		Metadata: bus.SetSpawnDepth(map[string]string{
+		// The re-entered turn keeps the call's turn's inherited code.
+		Metadata: bus.SetBilling(bus.SetSpawnDepth(map[string]string{
 			"preresolved_agent_id": targetAgent, bus.MetaOriginChannel: channel,
-		}, spawnDepth),
+		}, spawnDepth), inheritedCode(ctx)),
 	}); err != nil {
 		logger.WarnCF("mcpserver", "mcp.async.reinject_failed",
 			map[string]any{"tool": toolName, "agent": rec.agentID, "error": err.Error()})

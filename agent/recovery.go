@@ -11,6 +11,7 @@ import (
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/state"
+	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
@@ -136,6 +137,7 @@ func (al *AgentLoop) recoverSession(ctx context.Context, agentID, sessionKey str
 		msg.Metadata[bus.MetaReplyRequired] = "1"
 	}
 	msg.Metadata = bus.SetSpawnDepth(msg.Metadata, src.SpawnDepth)
+	msg.Metadata = bus.SetBilling(msg.Metadata, src.Billing)
 	if err := al.bus.PublishInbound(ctx, msg); err != nil {
 		fields["error"] = err.Error()
 		logger.WarnCF("agent", "Failed to queue recovery message", fields)
@@ -202,14 +204,38 @@ func (al *AgentLoop) recordPendingTurnSource(ctx context.Context, agent *AgentIn
 	if !ok {
 		return
 	}
-	if err := sm.SetPendingTurn(opts.SessionKey, state.PendingTurn{
+	pt := state.PendingTurn{
 		Channel:       opts.Channel,
 		ChatID:        opts.ChatID,
 		MessageID:     opts.MessageID,
 		ReplyRequired: opts.ReplyRequired,
 		SpawnDepth:    toolsagents.SpawnDepth(ctx),
-	}); err != nil {
+	}
+	billing := tools.InheritedBillingOf(ctx)
+	if billing != nil {
+		pt.Billing = billing.Code()
+	}
+	if err := sm.SetPendingTurn(opts.SessionKey, pt); err != nil {
 		logger.WarnCF("agent", "Failed to record pending turn source",
+			map[string]any{"error": err.Error(), "session": opts.SessionKey})
+		return
+	}
+	if billing != nil {
+		// A code the turn changes (its billing tool) is replayed with it.
+		billing.OnSet(func(code string) { al.updatePendingTurnBilling(sm, opts, code) })
+	}
+}
+
+// updatePendingTurnBilling records code as the billing code of the pending
+// turn of opts, while it is the one recorded for the session.
+func (al *AgentLoop) updatePendingTurnBilling(sm *state.Manager, opts processOptions, code string) {
+	pt, ok := sm.GetPendingTurn(opts.SessionKey)
+	if !ok || pt.Channel != opts.Channel || pt.ChatID != opts.ChatID || pt.MessageID != opts.MessageID {
+		return
+	}
+	pt.Billing = code
+	if err := sm.SetPendingTurn(opts.SessionKey, pt); err != nil {
+		logger.WarnCF("agent", "Failed to record pending turn billing code",
 			map[string]any{"error": err.Error(), "session": opts.SessionKey})
 	}
 }

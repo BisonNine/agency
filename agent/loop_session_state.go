@@ -35,7 +35,7 @@ func activeModelCacheKey(agentID, sessionKey string) string {
 
 // forgetSessionCaches drops the per-session state the loop holds in memory
 // for a session (its model selection and what serves it, reasoning, tool
-// activity, session_clear rate limit), for a temporary agent that is being
+// activity, billing code, session_clear rate limit), for a temporary agent that is being
 // deleted.
 func (al *AgentLoop) forgetSessionCaches(agent *AgentInstance, sessionKey string) {
 	key := activeModelCacheKey(agent.ID, sessionKey)
@@ -48,6 +48,7 @@ func (al *AgentLoop) forgetSessionCaches(agent *AgentInstance, sessionKey string
 	al.showToolActivityMu.Lock()
 	delete(al.showToolActivityCache, key)
 	al.showToolActivityMu.Unlock()
+	al.sessionBilling.Delete(key)
 	al.lastSelfClear.Delete(sessionKey)
 }
 

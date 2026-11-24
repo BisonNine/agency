@@ -127,7 +127,7 @@ func TestSharesCommon(t *testing.T) {
 func TestAgentIdentity(t *testing.T) {
 	a := &AgentConfig{ID: "Alice", Name: "Alice A."}
 	got := a.Identity()
-	want := global.Identity{Agent: NormalizeAgentID("Alice"), Name: "Alice A.", Project: global.Project}
+	want := global.Identity{Agent: NormalizeAgentID("Alice"), Name: "Alice A."}
 	if got != want {
 		t.Errorf("Identity = %+v, want %+v", got, want)
 	}

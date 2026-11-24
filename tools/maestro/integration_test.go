@@ -36,6 +36,10 @@ type scriptedRunner struct {
 	started chan struct{}
 	hold    chan struct{}
 	ctxErrs []error
+	// billings is each dispatch's billing code; change, when set, is the
+	// code the worker changes its own to, as its billing tool would.
+	billings []string
+	change   string
 }
 
 func (r *scriptedRunner) RunSync(ctx context.Context, task, model string) (*global.SyncResult, error) {
@@ -50,7 +54,13 @@ func (r *scriptedRunner) RunSync(ctx context.Context, task, model string) (*glob
 	r.prompts = append(r.prompts, task)
 	r.models = append(r.models, model)
 	r.depths = append(r.depths, toolsagents.SpawnDepth(ctx))
+	code, _ := tools.Billing(ctx)
+	r.billings = append(r.billings, code)
+	change := r.change
 	r.mu.Unlock()
+	if b := tools.InheritedBillingOf(ctx); b != nil && change != "" {
+		b.Set(change)
+	}
 	if model != "" && !strings.EqualFold(model, "Pro") {
 		return nil, fmt.Errorf("%w: model %q is not available for this agent", global.ErrModelNotAvailable, model)
 	}

@@ -38,6 +38,7 @@ import (
 	"go.bison9.com/agency/forum"
 	"go.bison9.com/agency/internal/gateway"
 	"go.bison9.com/agency/tools"
+	toolsbilling "go.bison9.com/agency/tools/billing"
 	toolsccv3 "go.bison9.com/agency/tools/ccv3"
 	toolsclassifier "go.bison9.com/agency/tools/classifier"
 	toolsforum "go.bison9.com/agency/tools/forum"
@@ -176,6 +177,21 @@ func render(t *testing.T, cfg *config.Config) string {
 		}
 		sort.Strings(cardTools)
 		w("  ccv3 tool: %s\n", list(cardTools))
+
+		// The billing tool: every configured agent has it unless denied.
+		var billingTools []string
+		if cfg.AgentSuiteEnabled(a.ID, config.BillingSuite) {
+			for _, d := range toolsbilling.GlobalProvider.RegisterTools(toolspec.Deps{
+				Cfg: cfg, AgentID: a.ID, Host: tools.ToolDeps{Cfg: cfg, AgentID: a.ID},
+			}) {
+				name := d.Name
+				if a.IsToolDenied(name) {
+					name += " (denied)"
+				}
+				billingTools = append(billingTools, name)
+			}
+		}
+		w("  billing tool: %s\n", list(billingTools))
 
 		classifierDefs := toolsclassifier.GlobalProvider.RegisterTools(toolspec.Deps{
 			Cfg: cfg, AgentID: a.ID, Host: tools.ToolDeps{Cfg: cfg, AgentID: a.ID, Workspace: t.TempDir()},
@@ -364,6 +380,6 @@ func (nopClassifierHost) Call(context.Context, string, string, map[string]any) (
 	return "", errors.New("unused")
 }
 
-func (nopClassifierHost) Complete(context.Context, string, string, string) (string, string, error) {
+func (nopClassifierHost) Complete(context.Context, string, string, string, string) (string, string, error) {
 	return "", "", errors.New("unused")
 }

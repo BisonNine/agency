@@ -92,7 +92,7 @@ func (s *Service) classify(ctx context.Context, scope Scope, def *Definition, in
 	delim := newDelimiter()
 	system, user := buildPrompt(def, in, d.data, "", delim)
 	d.system = system
-	reply, model, err := s.host.Model.Complete(ctx, scope.AgentID, system, user)
+	reply, model, err := s.host.Model.Complete(ctx, scope.AgentID, def.Billing, system, user)
 	if err != nil {
 		return d.modelFailed(model, err)
 	}
@@ -101,7 +101,7 @@ func (s *Service) classify(ctx context.Context, scope Scope, def *Definition, in
 	if !ok {
 		first := reply
 		system, user = buildPrompt(def, in, d.data, reply, newDelimiter())
-		reply, model, err = s.host.Model.Complete(ctx, scope.AgentID, system, user)
+		reply, model, err = s.host.Model.Complete(ctx, scope.AgentID, def.Billing, system, user)
 		if err != nil {
 			return d.modelFailed(model, err)
 		}

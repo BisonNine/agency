@@ -81,7 +81,7 @@ func requireSetAside(t *testing.T, cs *CronService, rec *alertRecorder, path, wa
 	if st := cs.Status(); st["enabled"] != true || st["jobs"] != 0 {
 		t.Errorf("status = %v, want running with no jobs", st)
 	}
-	if _, err := cs.AddJob("after", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel"); err != nil {
+	if _, err := cs.AddJob("after", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel", ""); err != nil {
 		t.Fatalf("AddJob after set-aside: %v", err)
 	}
 	if jobs := NewCronService(path, nil).ListJobs(true); len(jobs) != 1 || jobs[0].Name != "after" {
@@ -219,7 +219,7 @@ func TestStart_SetAsideImpossible(t *testing.T) {
 	if st := cs.Status(); st["enabled"] != true || st["jobs"] != 0 {
 		t.Errorf("status = %v, want running with no jobs", st)
 	}
-	_, err := cs.AddJob("x", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel")
+	_, err := cs.AddJob("x", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel", "")
 	if err == nil || !strings.Contains(err.Error(), "could not be read") {
 		t.Errorf("AddJob = %v, want the damaged-store error", err)
 	}
@@ -245,7 +245,7 @@ func TestStart_SetAsideImpossible(t *testing.T) {
 		t.Fatal(err)
 	}
 	cs.checkJobs()
-	if _, err := cs.AddJob("y", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel"); err != nil {
+	if _, err := cs.AddJob("y", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel", ""); err != nil {
 		t.Errorf("AddJob after repair = %v", err)
 	}
 }
@@ -256,7 +256,7 @@ func TestStart_SetAsideImpossible(t *testing.T) {
 func TestNewCronService_DamagedStoreNotOverwritten(t *testing.T) {
 	content := []byte("{not json")
 	cs, rec, path := damagedService(t, content, 0o600)
-	if _, err := cs.AddJob("x", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel"); err == nil {
+	if _, err := cs.AddJob("x", CronSchedule{Kind: "every", EveryMS: new(int64(60_000))}, "hi", "agent", "cli", "direct", "channel", ""); err == nil {
 		t.Error("AddJob on a damaged store succeeded")
 	}
 	if got := mustRead(t, path); !bytes.Equal(got, content) {

@@ -383,6 +383,12 @@ func IsShellTool(name string) bool {
 // ImpliedTools), and deny_tools can remove it.
 const ShellCtrlTool = "shell_ctrl"
 
+// BillingSuite is the one-tool suite of the billing tool, with which an
+// agent reads and sets the billing code its work is recorded under. Every
+// configured agent has it (AgentSuiteEnabled), with no switch; deny_tools
+// can remove it.
+const BillingSuite = "billing"
+
 // AgentSpawnTool is the published name of the sub-agent tool.
 const AgentSpawnTool = "agent_spawn"
 
@@ -664,9 +670,10 @@ func (a *AgentConfig) DisplayName() string {
 }
 
 // Identity is who the agent's model and API calls are billed to: its
-// normalized id, its display name and the project.
+// normalized id and its display name. It names no billing code: the caller
+// sets the one the call is billed to.
 func (a *AgentConfig) Identity() global.Identity {
-	return global.Identity{Agent: NormalizeAgentID(a.ID), Name: a.DisplayName(), Project: global.Project}
+	return global.Identity{Agent: NormalizeAgentID(a.ID), Name: a.DisplayName()}
 }
 
 // AgentHasFusion reports whether the agent has the Fusion tool suite enabled.
@@ -702,6 +709,9 @@ func (c *Config) AgentSuiteEnabled(agentID, suite string) bool {
 				return a.CognitiveMemoryEnabled()
 			case KnowledgeSuite:
 				return a.KnowledgeEnabled()
+			case BillingSuite:
+				// Every agent has it; deny_tools can still remove it.
+				return true
 			default:
 				return false
 			}

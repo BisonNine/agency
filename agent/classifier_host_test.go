@@ -225,7 +225,7 @@ func TestClassifierHost_Complete(t *testing.T) {
 
 	cfg := classifierHostConfig(t, ts.URL)
 	al, host, _ := newClassifierHostLoop(t, cfg)
-	reply, model, err := host.Complete(ctx, "alice", "Sort it.", "<item>hi</item>")
+	reply, model, err := host.Complete(ctx, "alice", "", "Sort it.", "<item>hi</item>")
 	if err != nil || reply != "urgent\nfrom a client" || model != "alpha" {
 		t.Fatalf("Complete = %q, %q, %v", reply, model, err)
 	}
@@ -255,11 +255,11 @@ func TestClassifierHost_Complete(t *testing.T) {
 	srv.mu.Lock()
 	srv.status = http.StatusTooManyRequests
 	srv.mu.Unlock()
-	if _, _, err = host.Complete(ctx, "alice", "s", "u"); err == nil {
+	if _, _, err = host.Complete(ctx, "alice", "", "s", "u"); err == nil {
 		t.Fatal("Complete on a 429 succeeded")
 	}
 	sent := srv.count()
-	_, _, err = host.Complete(ctx, "alice", "s", "u")
+	_, _, err = host.Complete(ctx, "alice", "", "s", "u")
 	var cd *classifier.CooldownError
 	if !errors.As(err, &cd) || cd.Model != "alpha" || cd.Remaining <= 0 {
 		t.Fatalf("Complete in cooldown = %v, want a CooldownError for alpha", err)
@@ -275,7 +275,7 @@ func TestClassifierHost_Complete(t *testing.T) {
 	srv.mu.Lock()
 	srv.status = 0
 	srv.mu.Unlock()
-	if _, model, err := host.Complete(ctx, "alice", "s", "u"); err != nil || model != "alpha" {
+	if _, model, err := host.Complete(ctx, "alice", "", "s", "u"); err != nil || model != "alpha" {
 		t.Fatalf("Complete with the switch off = %q, %v", model, err)
 	}
 	cfg.Agents.List[0].Classifiers.Enabled = true
@@ -296,7 +296,7 @@ func TestClassifierHost_Complete(t *testing.T) {
 			cfg.Agents.List[0].Classifiers.Enabled = !tc.off
 			_, host, _ := newClassifierHostLoop(t, cfg)
 			before := srv.count()
-			_, _, err := host.Complete(t.Context(), "alice", "s", "u")
+			_, _, err := host.Complete(t.Context(), "alice", "", "s", "u")
 			if !errors.Is(err, classifier.ErrNoModel) || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Complete = %v, want ErrNoModel with %q", err, tc.want)
 			}
@@ -591,13 +591,13 @@ func TestClassifierHost_CountsTowardDailySpend(t *testing.T) {
 		defer rec.mu.Unlock()
 		return len(rec.alerts)
 	}
-	if _, _, err := host.Complete(context.Background(), "alice", "s", "u"); err != nil {
+	if _, _, err := host.Complete(context.Background(), "alice", "", "s", "u"); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	if n := alerts(); n != 0 {
 		t.Fatalf("alerts after $0.75 = %d, want 0", n)
 	}
-	if _, _, err := host.Complete(context.Background(), "alice", "s", "u"); err != nil {
+	if _, _, err := host.Complete(context.Background(), "alice", "", "s", "u"); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	if n := alerts(); n != 1 {

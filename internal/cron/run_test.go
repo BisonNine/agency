@@ -113,13 +113,13 @@ func TestCronListOutput(t *testing.T) {
 
 	cs := cron.NewCronService(store, nil)
 	every := int64(60000)
-	_, err = cs.AddJob("Every", cron.CronSchedule{Kind: "every", EveryMS: &every}, strings.Repeat("x", 81), "agent", "slack", "C1", "direct")
+	_, err = cs.AddJob("Every", cron.CronSchedule{Kind: "every", EveryMS: &every}, strings.Repeat("x", 81), "agent", "slack", "C1", "direct", "")
 	require.NoError(t, err)
-	cmdJob, err := cs.AddJob("Listen", cron.CronSchedule{Kind: cron.KindListen}, "", "agent", "slack", "C2", "channel")
+	cmdJob, err := cs.AddJob("Listen", cron.CronSchedule{Kind: cron.KindListen}, "", "agent", "slack", "C2", "channel", "")
 	require.NoError(t, err)
 	cmdJob.Payload.Command = "watch.sh"
 	require.NoError(t, cs.UpdateJob(cmdJob))
-	once, err := cs.AddJob("Once", cron.CronSchedule{Kind: "at"}, "short", "agent", "telegram", "T1", "channel")
+	once, err := cs.AddJob("Once", cron.CronSchedule{Kind: "at"}, "short", "agent", "telegram", "T1", "channel", "")
 	require.NoError(t, err)
 	_, err = cs.EnableJob(once.ID, false)
 	require.NoError(t, err)

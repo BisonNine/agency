@@ -112,6 +112,7 @@ export default defineConfig({
           { text: "Alerts", link: "/admin/alerts" },
           { text: "Backup and restore", link: "/admin/backup" },
           { text: "Logs", link: "/admin/logs" },
+          { text: "Billing codes", link: "/admin/billing" },
         ],
       },
       {

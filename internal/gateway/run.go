@@ -59,6 +59,9 @@ func gatewayCmd(debug bool) error {
 	// below opens the files it holds.
 	layout.Prepare(cfg)
 	applyLoggingConfig(cfg, logPath, debug)
+	// Every model call is recorded from here on; shutdownGateway closes the
+	// record once the agent loop has stopped.
+	startAccounting(cfg, baseDir)
 	warnNoDefaultModel(context.Background(), cfg, "No model configured, starting in unconfigured state")
 
 	registerToolProviders()

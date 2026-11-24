@@ -47,6 +47,11 @@ type sessionRecord struct {
 	// worker), recorded with the ask chain: a task a call with this token
 	// starts is that task's own, cancelled with it.
 	taskID string
+	// billing is the inherited billing code of the session's current turn
+	// (SetTurnScope), the turn's own value: a call with this token is billed
+	// to it, and a billing tool call with it changes it for that turn. nil
+	// when the turn bills to its session's code.
+	billing *tools.InheritedBilling
 	// service marks a per-agent service token (RegisterService,
 	// SyncServiceTokens): it belongs to no turn, so a call with it has no
 	// reply chat whatever turns its session runs.
@@ -348,15 +353,17 @@ func (s *SessionTokenStore) SetDepth(sessionKey string, depth int) {
 	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.depth = depth })
 }
 
-// SetTurnScope records the ask chain of the turn now running on sessionKey
-// and the task it runs in on its conversation token, so MCP tool calls made
-// with it (a CLI provider's) carry them as in-process tool calls do: an
-// agent waiting in the exchange cannot be asked, and a task the call starts
-// is cancelled with the task it was started in. Called by the agent loop at
-// the start of every turn. No-op if the session has no token.
-func (s *SessionTokenStore) SetTurnScope(sessionKey string, askChain []string, taskID string) {
+// SetTurnScope records the ask chain of the turn now running on sessionKey,
+// the task it runs in and its inherited billing code on its conversation
+// token, so MCP tool calls made with it (a CLI provider's) carry them as
+// in-process tool calls do: an agent waiting in the exchange cannot be
+// asked, a task the call starts is cancelled with the task it was started
+// in, and the call is billed to the turn's code (nil: the session's).
+// Called by the agent loop at the start of every turn. No-op if the session
+// has no token.
+func (s *SessionTokenStore) SetTurnScope(sessionKey string, askChain []string, taskID string, billing *tools.InheritedBilling) {
 	chain := slices.Clone(askChain)
-	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.askChain, rec.taskID = chain, taskID })
+	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.askChain, rec.taskID, rec.billing = chain, taskID, billing })
 }
 
 // updateRecord applies update to the conversation token record of

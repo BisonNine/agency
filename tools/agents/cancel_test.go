@@ -74,7 +74,7 @@ func newCancelFixture(t *testing.T) *cancelFixture {
 
 func (f *cancelFixture) spawn(t *testing.T, ctx context.Context, cb toolkit.AsyncCallback) (string, context.Context) {
 	t.Helper()
-	id, err := f.mgr.spawnCallback(ctx, originOf(ctx), "work", "job", "", "cli", "direct", "", "", nil, cb)
+	id, err := f.mgr.spawnCallback(ctx, f.mgr.originOf(ctx), "work", "job", "", "cli", "direct", "", "", nil, cb)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +420,7 @@ func TestCancelTask_ChildStartedLateIsCancelled(t *testing.T) {
 	<-f.atCancel
 	events := make(chan hook.TaskInfo, 8)
 	f.reg.Observe(func(info hook.TaskInfo) { events <- info })
-	id, err := f.mgr.spawnCallback(pctx, originOf(pctx), "work", "job", "", "cli", "direct", "", "", nil, nil)
+	id, err := f.mgr.spawnCallback(pctx, f.mgr.originOf(pctx), "work", "job", "", "cli", "direct", "", "", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

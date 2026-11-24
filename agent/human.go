@@ -436,7 +436,7 @@ func (al *AgentLoop) runHumanTurn(ctx context.Context, agent *AgentInstance, opt
 	relay := func(ctx context.Context, request string, timeout time.Duration) (string, error) {
 		return al.askHuman(ctx, agent.ID, channel, chatID, request, timeout, ask)
 	}
-	resp, err := hp.Chat(providers.WithHumanRelay(ctx, relay), agent.Identity(),
+	resp, err := hp.Chat(providers.WithHumanRelay(ctx, relay), al.identityFor(ctx, agent, opts.SessionKey),
 		[]spawnllm.Message{{Role: "user", Content: opts.UserMessage}}, nil, agent.HumanModel, nil)
 	if errors.Is(err, errHumanCancelled) {
 		return "", humanCancelledError{label: agent.DisplayName()}

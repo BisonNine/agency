@@ -140,12 +140,14 @@ func (a *AgentInstance) DisplayName() string {
 	return (&config.AgentConfig{ID: a.ID, Name: a.Name}).DisplayName()
 }
 
-// Identity is who the agent's model and API calls are billed to. A clone is
-// billed to the agent it was cloned from, under its own label, so its spend
-// rolls up to the agent that caused it; every other agent to itself.
+// Identity is who the agent's model and API calls are billed to, without a
+// billing code: every caller names one (AgentLoop.identityFor, or a code of
+// its own). A clone is billed to the agent it was cloned from, under its own
+// label, so its spend rolls up to the agent that caused it; every other agent
+// to itself.
 func (a *AgentInstance) Identity() accounting.Identity {
 	if a.Spec.IsClone() {
-		return accounting.Identity{Agent: config.NormalizeAgentID(a.Spec.SourceID), Name: a.Label(), Project: global.Project}
+		return accounting.Identity{Agent: config.NormalizeAgentID(a.Spec.SourceID), Name: a.Label()}
 	}
 	return (&config.AgentConfig{ID: a.ID, Name: a.Name}).Identity()
 }
@@ -313,11 +315,12 @@ func newAgentInstance(
 	}
 	// An agent left with no tools at all is told so. Its registry is read at
 	// every turn: tools are registered after this, and MCP tools may arrive
-	// later. A fresh temporary agent keeps its creator's prompt exactly, and a
-	// human agent never builds one.
+	// later. The billing tool, which every agent has, does not count: it does
+	// no work. A fresh temporary agent keeps its creator's prompt exactly, and
+	// a human agent never builds one.
 	if !inst.toolless() {
 		registry := inst.Tools
-		contextBuilder.WithToolsGranted(func() bool { return registry.Count() > 0 })
+		contextBuilder.WithToolsGranted(func() bool { return workToolCount(registry) > 0 })
 		contextBuilder.WithKnowledgeTools(func() bool { return hasKnowledgeTool(registry) })
 	}
 	return inst, nil
@@ -786,17 +789,29 @@ func compressionOptions(c *config.CompressionConfig) []ctxengine.Option {
 	return opts
 }
 
-// identityOf is who a call made on behalf of agentID is billed to: the
-// running agent's Identity, or, for an id the registry does not hold, the id
-// itself. An empty id has no owner.
-func (al *AgentLoop) identityOf(agentID string) accounting.Identity {
+// identityOf is who a call made on behalf of agentID is billed to, under
+// billing: the running agent's Identity, or, for an id the registry does not
+// hold, the id itself. An empty id has no owner.
+func (al *AgentLoop) identityOf(agentID, billing string) accounting.Identity {
 	if strings.TrimSpace(agentID) == "" {
-		return global.NoOwnerIdentity
+		return global.NoOwnerIdentity(billing)
 	}
+	id := (&config.AgentConfig{ID: agentID}).Identity()
 	if r := al.GetRegistry(); r != nil {
 		if inst, ok := r.Get(agentID); ok && inst != nil {
-			return inst.Identity()
+			id = inst.Identity()
 		}
 	}
-	return (&config.AgentConfig{ID: agentID}).Identity()
+	id.Project = billing
+	return id
+}
+
+// workToolCount is the number of the registry's tools other than the billing
+// tool.
+func workToolCount(registry *tools.ToolRegistry) int {
+	n := registry.Count()
+	if _, ok := registry.Get(config.BillingSuite); ok {
+		n--
+	}
+	return n
 }

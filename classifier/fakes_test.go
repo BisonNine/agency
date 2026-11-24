@@ -106,11 +106,13 @@ type fakeModel struct {
 	calls       []string // the user messages
 	systems     []string // the system prompts
 	classifiers []string // ClassifierID of each call's context
+	billings    []string // the billing code of each call
 }
 
-func (m *fakeModel) Complete(ctx context.Context, _, system, user string) (string, string, error) {
+func (m *fakeModel) Complete(ctx context.Context, _, billing, system, user string) (string, string, error) {
 	m.mu.Lock()
 	m.calls = append(m.calls, user)
+	m.billings = append(m.billings, billing)
 	m.classifiers = append(m.classifiers, ClassifierID(ctx))
 	m.systems = append(m.systems, system)
 	reply := m.reply

@@ -24,6 +24,11 @@ type Definition struct {
 	ActivityHours int               `json:"activity_hours,omitempty"` // 0 = DefaultActivityHours
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
+	// Billing is the billing code the classifier's model calls are billed
+	// to: the code of the work that created it, written by Agency like Owner
+	// and kept by every update. Empty for a classifier created before
+	// billing codes, which the host bills to its default code.
+	Billing string `json:"billing,omitempty"`
 }
 
 // Trigger says when a classifier runs: every EverySeconds seconds, on its

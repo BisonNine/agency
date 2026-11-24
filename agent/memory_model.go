@@ -8,6 +8,8 @@ import (
 
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
+
+	"go.bison9.com/agency/global"
 )
 
 // chainCompleter is the plain-typed chain walk the host's summarization
@@ -45,5 +47,8 @@ func (al *AgentLoop) NewMemoryModelCaller(agent *AgentInstance) hook.Caller {
 	caller, effective := al.newCompressModelCaller(agent, "cogmem", models.Memory)
 	// "cogmem" labels the chain's own log lines; it is not a session key.
 	caller.noSessionKey = true
+	// Consolidation reads several sessions' messages, so it is billed to a
+	// code of its own, never to one of theirs.
+	caller.billing = func(context.Context) string { return global.MemoryBilling }
 	return &memoryModelCaller{complete: caller.complete, modelName: effective}
 }

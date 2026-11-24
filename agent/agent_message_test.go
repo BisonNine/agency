@@ -450,7 +450,7 @@ type scopeSTI struct {
 	scopes  map[string][]string
 }
 
-func (s *scopeSTI) SetTurnScope(sessionKey string, chain []string, _ string) {
+func (s *scopeSTI) SetTurnScope(sessionKey string, chain []string, _ string, _ *tools.InheritedBilling) {
 	s.scopeMu.Lock()
 	defer s.scopeMu.Unlock()
 	if s.scopes == nil {

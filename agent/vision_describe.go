@@ -45,8 +45,10 @@ type providerVisionClient struct {
 	// belongs to and the model's provider name.
 	caller      llmCaller
 	ourProvider string
-	// id is who the calls are billed to: the agent the chain belongs to.
-	id accounting.Identity
+	// id is who the calls are billed to: the agent the chain belongs to;
+	// billing names the code of a call (the turn's).
+	id      accounting.Identity
+	billing func(ctx context.Context) string
 }
 
 // Model returns the model name, used to label log lines.
@@ -69,7 +71,9 @@ func (c *providerVisionClient) Complete(ctx context.Context, messages []spawnllm
 	// No response-format option: a describe call wants free-form prose, not a
 	// JSON object.
 	start := time.Now()
-	resp, err := provider.Chat(ctx, c.id, messages, nil, c.model, nil)
+	id := c.id
+	id.Project = c.billing(ctx)
+	resp, err := provider.Chat(ctx, id, messages, nil, c.model, nil)
 	emitLLMFinishEvent(llmFinish{
 		caller:         c.caller,
 		kind:           llmKindVision,
@@ -116,6 +120,7 @@ func (al *AgentLoop) buildVisionLLMClient(cfg *config.Config, agent *AgentInstan
 		caller:      callerOf(agent),
 		ourProvider: compressProviderName(cfg, alias),
 		id:          agent.Identity(),
+		billing:     func(ctx context.Context) string { return al.billingFor(ctx, agent, "") },
 	}
 	if agent.Spec.Fresh {
 		c.workspace = agent.Workspace

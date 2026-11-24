@@ -75,7 +75,10 @@ func compressCaller(cat *models.Catalog, names ...string) *compressModelCaller {
 	if _, err := set.Replace(models.Summarize, list...); err != nil {
 		panic(err)
 	}
-	return &compressModelCaller{set: set, purpose: models.Summarize, id: testIdentity, caller: llmCaller{agentID: "alice"}}
+	return &compressModelCaller{
+		set: set, purpose: models.Summarize, id: testIdentity, caller: llmCaller{agentID: "alice"},
+		billing: func(context.Context) string { return testIdentity.Project },
+	}
 }
 
 // TestCompressModelCaller_WalksChainAndSkipsExcluded: the first model not in
@@ -264,8 +267,9 @@ func TestSessionToken_IssuedAndReissuedOnEntry(t *testing.T) {
 	}
 }
 
-// withID bills c's calls to id.
+// withID bills c's calls to id, its billing code included.
 func withID(c *compressModelCaller, id accounting.Identity) *compressModelCaller {
 	c.id = id
+	c.billing = func(context.Context) string { return id.Project }
 	return c
 }

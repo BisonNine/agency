@@ -19,6 +19,7 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
 	"go.bison9.com/agency/utils"
 )
 
@@ -119,6 +120,10 @@ func (al *AgentLoop) buildCommandsRuntime(
 		},
 		Uptime: func() time.Duration { return time.Since(al.startedAt) },
 		AskAgent: func(ctx context.Context, target, text string) string {
+			// The ask is billed to the code of the session it was typed in.
+			if agent != nil && opts != nil {
+				ctx = tools.WithBilling(ctx, al.billingFor(ctx, agent, opts.SessionKey))
+			}
 			return al.commandAsk(ctx, msg, target, text)
 		},
 		WhisperAgent: func(ctx context.Context, target, text string) string {
