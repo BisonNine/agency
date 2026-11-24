@@ -1864,6 +1864,10 @@
       "description": "Create and immediately execute a single task asynchronously. Returns immediately with task UUID and status 'running'. Optionally fires a callback when complete.",
       "parameters": {
         "properties": {
+          "billing": {
+            "description": "Optional billing code the host records this task's model calls under: 1 to 64 letters, digits, '-', '_' or '.'. Without it, the host's current code is used.",
+            "type": "string"
+          },
           "instructions_file": {
             "description": "Instructions file path",
             "type": "string"
@@ -2078,6 +2082,10 @@
       "description": "Run eligible tasks for a project. Tasks in 'waiting' or 'retry' status are executed. Returns immediately with count of tasks queued.",
       "parameters": {
         "properties": {
+          "billing": {
+            "description": "Optional billing code the host records these tasks' model calls under: 1 to 64 letters, digits, '-', '_' or '.'. Without it, a task keeps the code it already has, else takes the host's current code.",
+            "type": "string"
+          },
           "parallel": {
             "description": "Override taskset parallel setting: 'true' or 'false' (optional, defaults to taskset setting)",
             "type": "string"
