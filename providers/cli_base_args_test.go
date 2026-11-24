@@ -21,6 +21,7 @@ func TestCLIAgents_BaseArgsMatchTheInvocation(t *testing.T) {
 		"codex-cli":       spawnllm.CodexCliBaseArgs(),
 		"antigravity-cli": spawnllm.AntigravityCliBaseArgs(),
 		"cursor-cli":      spawnllm.CursorCliBaseArgs(),
+		"opencode-cli":    spawnllm.OpenCodeCliBaseArgs(),
 	}
 	if len(modelspec.CLIAgents) != len(built) {
 		t.Fatalf("catalogue has %d CLIs, spawnllm builds %d", len(modelspec.CLIAgents), len(built))
