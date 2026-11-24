@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -619,4 +620,50 @@ func TestClassifierHost_CallBilling(t *testing.T) {
 			t.Errorf("classifier billed %q: tool call billed %q, want %q", tc.code, seen, tc.want)
 		}
 	}
+}
+
+// A deleted session's billing code is forgotten with it, whichever path
+// deletes it (retention, erase, a single-shot discard): a new conversation
+// under the same key starts at the default.
+func TestSessionBilling_ForgottenWithTheSession(t *testing.T) {
+	t.Run("retention", func(t *testing.T) {
+		tl, main := billingLoop(t)
+		tl.cfg.Session.RetentionDays = 30
+		const key = "agent:main:telegram:direct:1"
+		seedRetentionArchive(t, filepath.Join(main.Workspace, "sessions"), key, time.Now().Add(-31*24*time.Hour), false)
+		tl.al.sessionBilling.Store(activeModelCacheKey(main.ID, key), "garden")
+		if rep := tl.al.runRetentionPass(time.Now()); len(rep.deleted) != 1 {
+			t.Fatalf("deleted %v", rep.deleted)
+		}
+		if got := tl.al.billingFor(context.Background(), main, key); got != global.DefaultBilling {
+			t.Errorf("after retention = %q, want the default", got)
+		}
+	})
+	t.Run("erase", func(t *testing.T) {
+		tl, main := billingLoop(t)
+		const key = "agent:main:telegram:direct:2"
+		if err := tl.al.setSessionBilling(main, key, "garden"); err != nil {
+			t.Fatal(err)
+		}
+		if err := tl.al.ReleaseSession(key); err != nil {
+			t.Fatal(err)
+		}
+		if err := memory.DeleteSession(main.SessionsDir(), key); err != nil {
+			t.Fatal(err)
+		}
+		if got := tl.al.billingFor(context.Background(), main, key); got != global.DefaultBilling {
+			t.Errorf("after erase = %q, want the default", got)
+		}
+	})
+	t.Run("single-shot discard", func(t *testing.T) {
+		tl, main := billingLoop(t)
+		const key = "agent:main:telegram:direct:3"
+		if err := tl.al.setSessionBilling(main, key, "garden"); err != nil {
+			t.Fatal(err)
+		}
+		tl.al.discardConversation(context.Background(), main, key)
+		if got := tl.al.billingFor(context.Background(), main, key); got != global.DefaultBilling {
+			t.Errorf("after a discard = %q, want the default", got)
+		}
+	})
 }

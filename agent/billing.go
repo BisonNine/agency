@@ -117,6 +117,13 @@ func (al *AgentLoop) sessionBillingCode(agent *AgentInstance, sessionKey string)
 	return code
 }
 
+// forgetSessionBilling drops the cached billing code of agentID's session,
+// whose state row is being deleted: a later conversation under the key
+// starts with no code.
+func (al *AgentLoop) forgetSessionBilling(agentID, sessionKey string) {
+	al.sessionBilling.Delete(activeModelCacheKey(agentID, sessionKey))
+}
+
 // setSessionBilling stores code as the session's billing code. The caller
 // has checked it.
 func (al *AgentLoop) setSessionBilling(agent *AgentInstance, sessionKey, code string) error {

@@ -48,7 +48,7 @@ func (al *AgentLoop) forgetSessionCaches(agent *AgentInstance, sessionKey string
 	al.showToolActivityMu.Lock()
 	delete(al.showToolActivityCache, key)
 	al.showToolActivityMu.Unlock()
-	al.sessionBilling.Delete(key)
+	al.forgetSessionBilling(agent.ID, sessionKey)
 	al.lastSelfClear.Delete(sessionKey)
 }
 

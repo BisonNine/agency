@@ -375,6 +375,7 @@ func (al *AgentLoop) discardConversation(ctx context.Context, agent *AgentInstan
 		al.evictEntry(ctx, key, entry, evictReasonSingleShot)
 	}
 	forgetSessionState(agent.Sessions, sessionKey)
+	al.forgetSessionBilling(agent.ID, sessionKey)
 	al.releaseSessionPins(sessionKey)
 	if err := memory.DeleteSession(agent.SessionsDir(), sessionKey); err != nil {
 		logger.WarnCF("agent", "Failed to delete a single-shot conversation", map[string]any{

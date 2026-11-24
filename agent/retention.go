@@ -85,6 +85,9 @@ func (al *AgentLoop) runRetentionPass(now time.Time) retentionReport {
 		if days > 0 {
 			isOpen := func(key string) bool { return al.sessionOpen(ag.ID, key) }
 			r := pruneSessions(ag.SessionsDir(), ag.Sessions, now, days, isOpen)
+			for _, key := range r.deleted {
+				al.forgetSessionBilling(ag.ID, key)
+			}
 			rep.deleted = append(rep.deleted, r.deleted...)
 			rep.skippedOpen += r.skippedOpen
 			rep.errors = append(rep.errors, r.errors...)
@@ -217,6 +220,7 @@ func (al *AgentLoop) ReleaseSession(sessionKey string) error {
 			return fmt.Errorf("session %s has a turn in flight", sessionKey)
 		}
 		forgetSessionState(ag.Sessions, sessionKey)
+		al.forgetSessionBilling(ag.ID, sessionKey)
 	}
 	return nil
 }
