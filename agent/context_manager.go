@@ -309,7 +309,10 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 }
 
 // summaryBilling is the billing code of a summary of the session's
-// conversation: billingFor the call's context and the session.
+// conversation: billingFor the call's context and the session. A summary a
+// turn waits on runs on the turn's context and is billed to the turn's
+// code; the compaction deferred until after the reply runs on the loop's
+// and is billed to the session's own (runDeferredCompaction).
 func (al *AgentLoop) summaryBilling(agent *AgentInstance, sessionKey string) func(context.Context) string {
 	return func(ctx context.Context) string { return al.billingFor(ctx, agent, sessionKey) }
 }

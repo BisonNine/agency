@@ -9,9 +9,11 @@ Every model call Agency makes is recorded with the agent it was for and a **bill
 - A code has 1 to 64 letters, digits, `-`, `_` or `.`. Case matters: `Acme` and `acme` are two codes.
 - Work an agent starts takes the code in force when it starts: [sub-agents](../agents/subagents.md), [scheduled jobs](../agents/scheduling.md), agents it asks, [forum](../forums/index.md) participants, [Maestro](../maestro.md) tasks and [classifiers](../agents/classifiers.md). A sub-agent or Maestro task can be given its own code instead.
 - Work started this way can change its own code with the `billing` tool. That never changes the code of the conversation that started it.
+- A Maestro task's worker can change its own code only for that run: a retry, review or revision of the task uses the task's code again.
+- Summarising a long conversation is billed to the conversation's code when it runs after a reply, and to the running work's code when that work waits on it.
 - Memory consolidation is billed to the code `memory`. Scheduled jobs added with `claw cron add` use `default`.
 
-Every agent has the `billing` tool. To take it away from one agent, add `billing` to its **Denied tools**; its work is then billed to `default`.
+Every agent has the `billing` tool. To take it away from one agent, add `billing` to its **Denied tools**; the agent can then no longer change its code, and its work stays billed to the codes it already has.
 
 ## The accounting log
 

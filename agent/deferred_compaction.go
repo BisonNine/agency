@@ -133,7 +133,12 @@ func (al *AgentLoop) runDeferredCompaction(parent context.Context, agent *AgentI
 	}
 
 	// The summarization chain's request timeouts bound the pass; the turn
-	// budget is only a backstop against a hung call.
+	// budget is only a backstop against a hung call. The pass runs on the
+	// loop's context, not the turn's, so it is billed to the session's own
+	// code even after a turn that inherited another (a scheduled job, an
+	// ask): it summarises the session's history, which is the session's
+	// work. A summary a turn waits on is made on the turn's context and
+	// billed to the turn's code.
 	ctx, cancel := al.clk().WithTimeout(spawnllm.WithAgentID(parent, agent.ID), al.GetConfig().Agents.Defaults.GetTurnTimeout())
 	defer cancel()
 	ran, err := entry.cm.CompactIfDue(ctx)
