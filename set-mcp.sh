@@ -36,7 +36,7 @@ echo ""
 if have agy; then
     echo "== Antigravity =="
     agy mcp remove agency 2>/dev/null || true
-    agy mcp add agency "$AGENCY_MCP_URL" --type http
+    agy mcp add --type http agency "$AGENCY_MCP_URL"
     agy mcp list
     echo ""
 else

@@ -53,7 +53,7 @@ func TestSetMCP_RegistersAgency(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"agy mcp add agency " + url + " --type http",
+		"agy mcp add --type http agency " + url,
 		"codex mcp add agency --url " + url,
 		"claude mcp add --transport http agency --scope user " + url,
 		"opencode mcp add agency --url " + url + " --global",

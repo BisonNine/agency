@@ -52,6 +52,7 @@ Releases before 0.6.6 were named `claw`. An install under that name is not moved
    - Linux user service: `systemctl --user disable --now claw`, then delete `~/.config/systemd/user/claw.service` and run `systemctl --user daemon-reload`.
    - macOS: `sudo launchctl bootout system/com.pivotllm.claweh` and delete `/Library/LaunchDaemons/com.pivotllm.claweh.plist`, or for a user agent `launchctl bootout gui/$(id -u)/com.pivotllm.claweh` and delete `~/Library/LaunchAgents/com.pivotllm.claweh.plist`.
 2. Move the data directory to the new name: `sudo mv /opt/claw /opt/agency`, or `mv ~/.claw ~/.agency`.
+   Then open `config.json` in it and search for the old folder name. Where a path starts with the old data directory (usually only `agents.base_dir`), delete that part so the path is relative, for example `"base_dir": "agents"`.
 3. Install the new program (`sudo apt install agency`, or the install script) and run `sudo agency install`, or `agency install` for a user service. The old `claw` and `claw-auth` programs can then be deleted.
 4. Run `./set-mcp.sh` again. CLI agents now see the tools as `mcp__agency__…` (`agency_…` in OpenCode). Remove the old `claw` entry from each CLI (for example `claude mcp remove claw`), and change any CLI allow-list that names `mcp__claw__`.
 5. Replace every `CLAW_*` environment variable with its `AGENCY_*` name, in your shell profile and in any environment file.

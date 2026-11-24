@@ -241,6 +241,7 @@
 
 ### Fixed
 
+- **`set-mcp.sh` registers Antigravity again.** It passed the server type after the name, which the CLI rejects.
 - **The device channel's WebSocket library is updated past GO-2026-6278**
   (weak random numbers for the frame mask key).
 - **Cancelling in an ACP client now stops the agent's run.** The reply used to

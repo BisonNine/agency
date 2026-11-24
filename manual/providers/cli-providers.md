@@ -94,7 +94,7 @@ claude mcp add --transport http agency --scope user http://127.0.0.1:5911/intern
 codex mcp add agency --url http://127.0.0.1:5911/internal
 
 # Antigravity
-agy mcp add agency http://127.0.0.1:5911/internal --type http
+agy mcp add --type http agency http://127.0.0.1:5911/internal
 ```
 
 Cursor has no such command. Add this to `~/.cursor/mcp.json` of the service user, under `"mcpServers"`:

@@ -46,7 +46,7 @@ Without this the CLI still answers, but has none of Agency's tools.
 - **Claude Code:**
   `claude mcp add --transport http agency --scope user http://127.0.0.1:5911/internal`
 - **Codex CLI:** `codex mcp add agency --url http://127.0.0.1:5911/internal`
-- **Antigravity:** `agy mcp add agency http://127.0.0.1:5911/internal --type http`
+- **Antigravity:** `agy mcp add --type http agency http://127.0.0.1:5911/internal`
 - **OpenCode:** `opencode mcp add agency --url http://127.0.0.1:5911/internal --global`,
   then add `"codemode": false` to the `agency` entry in
   `~/.config/opencode/opencode.json` (see
