@@ -26,8 +26,8 @@ require (
 	github.com/tenebris-tech/alerter v0.1.7
 	github.com/tenebris-tech/mlogger v0.0.5
 	github.com/tenebris-tech/secmsg v0.1.2
-	go.bison9.com/agent v0.0.0-20261124030954-22e0c9de1795
-	go.bison9.com/maestro v0.5.12-0.20261124021250-e58ea3905bb2
+	go.bison9.com/agent v0.2.0
+	go.bison9.com/maestro v0.5.12
 	go.bison9.com/mcpfusion v0.4.13
 	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
@@ -36,7 +36,7 @@ require (
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mautrix v0.33.0
-	modernc.org/sqlite v1.62.0
+	modernc.org/sqlite v1.63.0
 )
 
 require (
@@ -86,7 +86,7 @@ require (
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	modernc.org/libc v1.82.2 // indirect
+	modernc.org/libc v1.82.13 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.13.0 // indirect
 )
