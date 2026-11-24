@@ -18,6 +18,15 @@ type turnModel struct {
 	limits     runLimits
 }
 
+// protocol is the protocol of the turn's first model, the one it runs on
+// unless it falls back; "" when the turn has no model.
+func (tm *turnModel) protocol() string {
+	if tm == nil || len(tm.candidates) == 0 {
+		return ""
+	}
+	return tm.candidates[0].Protocol
+}
+
 // selectTurnModel makes the model choice for a turn of agent on sessionKey:
 // the agent's chat models pinned for the turn, the session's /model choice
 // first and the rest in their order, so a

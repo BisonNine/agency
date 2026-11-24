@@ -1,6 +1,6 @@
 # CLI providers
 
-This page shows how to run agents on a coding CLI installed on the same machine: Claude Code, Codex, Antigravity or Cursor.
+This page shows how to run agents on a coding CLI installed on the same machine: Claude Code, Codex, Antigravity, Cursor or OpenCode.
 
 Instead of calling an API, Agency starts the CLI program for each model call, hands it the conversation, and reads back its answer. The CLI signs in with its own account (often a subscription), runs its own tool loop, and reaches Agency's tools through Agency's MCP server.
 
@@ -10,16 +10,17 @@ Instead of calling an API, Agency starts the CLI program for each model call, ha
 | Codex CLI | `codex-cli` | `codex` | `--dangerously-bypass-approvals-and-sandbox` |
 | Antigravity CLI | `antigravity-cli` | `agy` | `--dangerously-skip-permissions` |
 | Cursor CLI | `cursor-cli` | `cursor-agent` | `--yolo` |
+| OpenCode CLI | `opencode-cli` | `opencode` | `--auto` |
 
 Antigravity replaces the Gemini CLI, which Google deprecated. A configuration that still names the protocol `gemini-cli` keeps working and runs `agy`.
 
 ## Install and sign in
 
 1. Install the CLI on the Agency machine, following the vendor's instructions.
-2. Sign in once, **as the user the Agency service runs as**. The CLI keeps its login in that user's home directory, and Agency starts it as that user. A login made under your own account does not help a service running as another user.
+2. Sign in once, **as the user the Agency service runs as** (for OpenCode, `opencode auth login`). The CLI keeps its login in that user's home directory, and Agency starts it as that user. A login made under your own account does not help a service running as another user.
 3. Check that the service can find the program. Agency looks for it on the `PATH` the service runs with, which `claw install` records when it installs the service. If you install a CLI later, or its location changes (for example after a Node.js or nvm upgrade), run `claw install` again, or set the program's full path in **Command** on the CLI's provider.
 
-A CLI can also authenticate with an API key from the service's environment. Agency passes the CLIs every variable starting with `ANTHROPIC_`, `OPENAI_`, `GOOGLE_`, `GEMINI_`, `CLAUDE_`, `CODEX_`, `CURSOR_`, `AGY_` or `ANTIGRAVITY_`, on top of the basic variables such as `PATH` and `HOME`. Other variables of the service are not passed.
+A CLI can also authenticate with an API key from the service's environment. Agency passes the CLIs every variable starting with `ANTHROPIC_`, `OPENAI_`, `GOOGLE_`, `GEMINI_`, `CLAUDE_`, `CODEX_`, `CURSOR_`, `AGY_`, `ANTIGRAVITY_` or `OPENCODE_`, on top of the basic variables such as `PATH` and `HOME`. Other variables of the service are not passed.
 
 ## Switch a CLI on
 
@@ -36,7 +37,7 @@ Then give the model to an agent on the **Agents** page, or click **Set as defaul
 
 The **Model ID** decides which model the CLI uses:
 
-- The protocol name (`claude-cli`, `codex-cli`, `antigravity-cli`, `cursor-cli`) lets the CLI use its own default model. This is what the switch creates.
+- The protocol name (`claude-cli`, `codex-cli`, `antigravity-cli`, `cursor-cli`, `opencode-cli`) lets the CLI use its own default model. This is what the switch creates.
 - Anything else is passed to the CLI as its model (`--model`, or `-m` for Codex). The catalogue has **Claude CLI Opus** (`Opus`) and **Claude CLI Fable** (`Fable`).
 
 To add another, click **Add Model** on the Models page, pick the CLI's provider, and enter the CLI's own name for the model.
@@ -53,9 +54,11 @@ Alice: The Claude CLI declined to use tools (file_write). Tick *Allow CLI to byp
 
 The reply starts with the agent's name, so it is clear whose CLI refused in a chat shared by several agents. Agency does not try the agent's next model in this case.
 
-To keep bypass off and still let the CLI use Agency's tools, allow those tools in the CLI's own permission settings for the service user. Agency's tools reach the CLI under the MCP server name `claw` (tool names start with `mcp__claw__`). See the CLI's documentation for how to allow them.
+To keep bypass off and still let the CLI use Agency's tools, allow those tools in the CLI's own permission settings for the service user. Agency's tools reach the CLI under the MCP server name `claw` (tool names start with `mcp__claw__`, or `claw_` in OpenCode). See the CLI's documentation for how to allow them.
 
 **On:** Agency passes the flag from the table above on every call. The CLI can then run commands and change files anywhere the service user can, without asking, outside Agency's own workspace and shell controls. Turn it on only for a CLI running as a user whose access you are comfortable giving to the agent.
+
+For OpenCode, unticking the box only removes `--auto`; OpenCode's own configuration decides what its built-in tools may do.
 
 Either way, the [Check Up](../admin/checkup.md) page has one row per CLI provider saying which state it is in.
 
@@ -99,6 +102,22 @@ Cursor has no such command. Add this to `~/.cursor/mcp.json` of the service user
 ```json
 "claw": { "url": "http://127.0.0.1:5911/internal" }
 ```
+
+OpenCode:
+
+```bash
+opencode mcp add claw --url http://127.0.0.1:5911/internal --global
+```
+
+The command has no option for Code Mode, so turn it off by hand: add `"codemode": false` to the `claw` entry in the service user's `~/.config/opencode/opencode.json`. With Code Mode on, the model must write a script to call a tool, and weaker models fail. The entry then reads:
+
+```json
+{"mcp":{"servers":{"claw":{"type":"remote","url":"http://127.0.0.1:5911/internal","codemode":false}}}}
+```
+
+If OpenCode has no web search provider set up, also add `"permission":{"websearch":"deny"}` to that file: otherwise a run that tries its built-in web search fails.
+
+`./set-mcp.sh` in the Agency source folder runs these commands for every CLI that is installed, and turns off Code Mode for OpenCode.
 
 If you change **Listen Address**, use the new port in these commands. [MCP](../mcp.md) covers the server in full. Without this step the CLI still answers, but it has none of Agency's tools.
 

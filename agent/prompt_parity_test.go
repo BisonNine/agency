@@ -141,7 +141,7 @@ func parityAssemble(t *testing.T, cb *ContextBuilder, store session.SessionStore
 	}()
 	asm, err := cm.Assemble(context.Background(), ctxengine.AssembleRequest{
 		ToolDefinitionTokens: 10,
-		Layers:               append(cb.PromptLayers("webui", "chat-1"), sessionTokenLayer(token)),
+		Layers:               append(cb.PromptLayers("webui", "chat-1"), sessionTokenLayer(token, "")),
 		Injections:           parityInjections(),
 		Channel:              "webui",
 		ChatID:               "chat-1",

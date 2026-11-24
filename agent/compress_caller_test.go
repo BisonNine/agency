@@ -211,14 +211,14 @@ func TestCompressModelCaller_BillingFailurePutsModelInCooldown(t *testing.T) {
 // TestSessionTokenLayer pins the token section's placement and text, and that
 // an empty token yields an empty (skipped) layer.
 func TestSessionTokenLayer(t *testing.T) {
-	l := sessionTokenLayer("SST-abc")
+	l := sessionTokenLayer("SST-abc", "")
 	if l.Name != "session_token" || !l.AfterSummary {
 		t.Fatalf("layer = %+v; want session_token after the summary", l)
 	}
 	if !strings.HasPrefix(l.Text, "# Session Token\n\n") || !strings.HasSuffix(l.Text, "session_token: SST-abc") {
 		t.Fatalf("token layer text = %q", l.Text)
 	}
-	if empty := sessionTokenLayer(""); empty.Text != "" || !empty.AfterSummary {
+	if empty := sessionTokenLayer("", ""); empty.Text != "" || !empty.AfterSummary {
 		t.Fatalf("empty token should give an empty after-summary layer: %+v", empty)
 	}
 }
@@ -250,14 +250,14 @@ func TestSessionToken_IssuedAndReissuedOnEntry(t *testing.T) {
 	defer release()
 
 	opts := processOptions{SessionKey: key, Channel: "cli", ChatID: "direct"}
-	layers := al.promptLayers(agent, opts)
+	layers := al.promptLayers(agent, opts, "")
 	last := layers[len(layers)-1]
 	if last.Name != "session_token" || !strings.HasSuffix(last.Text, "session_token: SST-x") {
 		t.Fatalf("first dispatch token layer = %+v", last)
 	}
 
 	al.reissueSessionToken(agent, key)
-	layers = al.promptLayers(agent, opts)
+	layers = al.promptLayers(agent, opts, "")
 	last = layers[len(layers)-1]
 	if !strings.HasSuffix(last.Text, "session_token: SST-xx") {
 		t.Fatalf("reissued token not rendered: %+v", last)

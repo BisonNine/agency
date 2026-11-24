@@ -14,6 +14,7 @@ export const PROTOCOL_OPTIONS = [
   "codex-cli",
   "antigravity-cli",
   "cursor-cli",
+  "opencode-cli",
   "human",
   // Speech only (Task models): Google's Gemini API and ElevenLabs. Base URL
   // optional (the vendor's), API key required.
@@ -37,6 +38,7 @@ const CLI_PROTOCOLS: ReadonlySet<string> = new Set([
   "antigravity-cli",
   "gemini-cli",
   "cursor-cli",
+  "opencode-cli",
 ])
 
 // isCliProtocol reports whether a protocol is subprocess-based — these use a

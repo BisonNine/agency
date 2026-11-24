@@ -8,7 +8,7 @@ Agency runs [agents](../agents/index.md). An agent is an assistant with its own 
 
 You reach an agent through [channels](../channels/index.md): the built-in WebUI chat, Telegram, Slack, Discord, Signal, Matrix, and paired devices such as the Rabbit R1 or a voice app.
 
-Each agent uses one or more **models**. A model is reached through a [provider](../providers/index.md): an API such as OpenAI, Anthropic or OpenRouter, or a coding CLI installed on the same machine (Claude Code, Codex, Antigravity, Cursor).
+Each agent uses one or more **models**. A model is reached through a [provider](../providers/index.md): an API such as OpenAI, Anthropic or OpenRouter, or a coding CLI installed on the same machine (Claude Code, Codex, Antigravity, Cursor, OpenCode).
 
 Everything runs in one program, `claw`. It serves the agents, the WebUI and its API from the same process.
 

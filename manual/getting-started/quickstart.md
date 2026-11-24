@@ -17,7 +17,7 @@ On a fresh install the setup wizard opens by itself. It has six steps:
 
 1. **Welcome** — what the wizard will set up.
 2. **Network** — whether other machines may reach the WebUI ([Network access](../admin/network.md)). Leave **Enable network access** off unless you need it. You can change it later on the **Network** page.
-3. **Provider** — choose a provider, paste its API key, and click **Test key** (see [Providers and models](../providers/index.md)). CLIs installed on this machine (Claude Code, Codex, Antigravity, Cursor) are listed too and need no key.
+3. **Provider** — choose a provider, paste its API key, and click **Test key** (see [Providers and models](../providers/index.md)). CLIs installed on this machine (Claude Code, Codex, Antigravity, Cursor, OpenCode) are listed too and need no key.
 4. **Model** — choose the model to use by default.
 5. **Agent** — give your first agent a name.
 6. **Review** — check the summary and click **Finish setup**.

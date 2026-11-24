@@ -230,7 +230,7 @@ func (t *ToolsConfig) MCPClientEffectivelyEnabled() bool {
 
 // MCPHostConfig defines configuration for the MCP server claw exposes
 // (claw acting as an MCP server), used by CLI providers (claude-cli,
-// codex-cli, antigravity-cli, cursor-cli) so they can call claw's host-side tools natively
+// codex-cli, antigravity-cli, cursor-cli, opencode-cli) so they can call claw's host-side tools natively
 // instead of emitting tool-call JSON in their prose. The allowlist is
 // global — applied once for all CLI clients, not per-LLM.
 type MCPHostConfig struct {

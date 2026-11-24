@@ -6,7 +6,7 @@ Agency speaks the Model Context Protocol (MCP) in both directions: it serves its
 
 ### Why it exists
 
-Agents on a [CLI provider](providers/cli-providers.md) (Claude Code, Codex CLI, Antigravity, Cursor CLI)
+Agents on a [CLI provider](providers/cli-providers.md) (Claude Code, Codex CLI, Antigravity, Cursor CLI, OpenCode CLI)
 run the vendor's CLI as a separate program. That program cannot call
 Agency's tools directly, so it calls them over MCP from Agency's **MCP
 host**. Agents on an HTTP provider (Anthropic, OpenAI and similar APIs)
@@ -40,13 +40,17 @@ Each CLI you use as a provider must know where Agency's MCP host is.
 Without this the CLI still answers, but has none of Agency's tools.
 
 - **All at once:** run `./set-mcp.sh` from the Agency source folder. It
-  registers Agency in Antigravity, Codex CLI and Claude Code, whichever are
-  installed. If you changed the port, run
+  registers Agency in Antigravity, Codex CLI, Claude Code and OpenCode,
+  whichever are installed, and turns off Code Mode for OpenCode. If you changed the port, run
   `CLAW_MCP_URL=http://127.0.0.1:<port>/internal ./set-mcp.sh`.
 - **Claude Code:**
   `claude mcp add --transport http claw --scope user http://127.0.0.1:5911/internal`
 - **Codex CLI:** `codex mcp add claw --url http://127.0.0.1:5911/internal`
 - **Antigravity:** `agy mcp add claw http://127.0.0.1:5911/internal --type http`
+- **OpenCode:** `opencode mcp add claw --url http://127.0.0.1:5911/internal --global`,
+  then add `"codemode": false` to the `claw` entry in
+  `~/.config/opencode/opencode.json` (see
+  [CLI providers](providers/cli-providers.md#tools-agency-s-mcp-server)).
 - **Cursor CLI:** add `"claw": {"url": "http://127.0.0.1:5911/internal"}`
   under `mcpServers` in `~/.cursor/mcp.json`.
 

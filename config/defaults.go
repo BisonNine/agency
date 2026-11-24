@@ -152,6 +152,7 @@ func DefaultConfig() *Config {
 			{Name: "Codex CLI", Protocol: "codex-cli"},
 			{Name: "Antigravity CLI", Protocol: "antigravity-cli"},
 			{Name: "Cursor CLI", Protocol: "cursor-cli"},
+			{Name: "OpenCode CLI", Protocol: "opencode-cli"},
 
 			{Name: "OpenAI", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1"},
 			{Name: "Anthropic", Protocol: "anthropic", BaseURL: "https://api.anthropic.com/v1"},
@@ -196,6 +197,7 @@ func DefaultConfig() *Config {
 			// with either, agy reads the prompt from argv and ignores stdin.
 			{ModelName: "Antigravity CLI", Model: "antigravity-cli", Provider: "Antigravity CLI", RequestTimeout: 3600, Enabled: false},
 			{ModelName: "Cursor CLI", Model: "cursor-cli", Provider: "Cursor CLI", RequestTimeout: 3600, Enabled: false},
+			{ModelName: "OpenCode CLI", Model: "opencode-cli", Provider: "OpenCode CLI", RequestTimeout: 3600, Enabled: false},
 
 			// HTTP providers.
 			{ModelName: "OpenAI GPT 5.5", Model: "gpt-5.5", Provider: "OpenAI", DropParams: []string{"temperature"}, Enabled: false},

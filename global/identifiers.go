@@ -47,6 +47,11 @@ const (
 	// tools mcp__<key>__<tool>. Changing it would rename every host tool.
 	HostMCPToolPrefix = "mcp__claw__"
 
+	// HostMCPOpenCodeToolPrefix is the prefix OpenCode shows this host's MCP
+	// tools under: it names a server's tools <key>_<tool> (with the server's
+	// Code Mode off), so the server registered as "claw" gives claw_<tool>.
+	HostMCPOpenCodeToolPrefix = "claw_"
+
 	// HostMCPRealm is the realm of the WWW-Authenticate challenge the host's
 	// bearer MCP endpoint answers a refused request with.
 	HostMCPRealm = "claw-mcp"

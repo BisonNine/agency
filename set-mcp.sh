@@ -1,9 +1,9 @@
 #!/bin/sh
 #
 # set-mcp.sh — register (or refresh) the Agency MCP server in whichever local AI
-# CLIs are installed: Antigravity (agy), Codex CLI (codex), and Claude Code
-# (claude). Run it after installing/updating any of those CLIs, or after changing
-# the Agency MCP port. CLIs that are not on your PATH are skipped.
+# CLIs are installed: Antigravity (agy), Codex CLI (codex), Claude Code (claude)
+# and OpenCode (opencode). Run it after installing/updating any of those CLIs, or
+# after changing the Agency MCP port. CLIs that are not on your PATH are skipped.
 #
 # Cursor is deliberately not handled here: it has no `mcp add` subcommand and is
 # configured by editing ~/.cursor/mcp.json, so this script reports what to add
@@ -63,6 +63,36 @@ if have claude; then
     echo ""
 else
     echo "== Claude Code: 'claude' not on PATH — skipping =="
+    echo ""
+fi
+
+if have opencode; then
+    echo "== OpenCode =="
+    # `opencode mcp add` replaces the whole entry and has no flag for Code Mode,
+    # so it is turned off again in the file the command wrote: with it on, the
+    # model must write a script to call a tool, and weaker models fail.
+    if out=$(opencode mcp add claw --url "$CLAW_MCP_URL" --global); then
+        echo "$out"
+        cfg=$(printf '%s\n' "$out" | sed -n 's/^MCP server "claw" added to //p')
+        if [ -n "$cfg" ] && have python3 && python3 - "$cfg" 2>/dev/null <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    config = json.load(f)
+config["mcp"]["servers"]["claw"]["codemode"] = False
+with open(path, "w") as f:
+    json.dump(config, f, indent=2)
+    f.write("\n")
+PY
+        then
+            echo "Code Mode off for claw in $cfg"
+        else
+            echo "Turn Code Mode off by hand: add \"codemode\": false to mcp.servers.claw in the global opencode.json"
+        fi
+    fi
+    echo ""
+else
+    echo "== OpenCode: 'opencode' not on PATH — skipping =="
     echo ""
 fi
 

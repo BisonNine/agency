@@ -621,10 +621,11 @@ func (al *AgentLoop) evictionNotifyUser(agent *AgentInstance) bool {
 
 // promptLayers is the system prompt for one dispatch: the agent's static and
 // dynamic prompt for this channel/chat, then the session token behind the
-// summary. A test that injects a bare instance without a ContextBuilder gets
+// summary, naming the tools as a model on protocol (the turn's model's) sees
+// them. A test that injects a bare instance without a ContextBuilder gets
 // only the token layer. A fresh temporary agent has no tools, so no token:
 // its prompt is exactly its creator's.
-func (al *AgentLoop) promptLayers(agent *AgentInstance, opts processOptions) []ctxengine.Layer {
+func (al *AgentLoop) promptLayers(agent *AgentInstance, opts processOptions, protocol string) []ctxengine.Layer {
 	var layers []ctxengine.Layer
 	if agent.ContextBuilder != nil {
 		layers = agent.ContextBuilder.PromptLayers(opts.Channel, opts.ChatID)
@@ -632,7 +633,7 @@ func (al *AgentLoop) promptLayers(agent *AgentInstance, opts processOptions) []c
 	if agent.Spec.Fresh {
 		return layers
 	}
-	return append(layers, sessionTokenLayer(al.sessionToken(agent, opts.SessionKey)))
+	return append(layers, sessionTokenLayer(al.sessionToken(agent, opts.SessionKey), protocol))
 }
 
 // estimateTokens estimates the number of tokens in a message list.

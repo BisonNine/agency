@@ -24,7 +24,7 @@ This page explains the terms used in Agency and this manual.
 
 **Check Up** — The WebUI page that lists the security-relevant settings of the install and marks those that need attention. See [Check Up and the full report](../admin/checkup.md).
 
-**CLI provider** — A provider that runs a coding CLI installed on the same machine (Claude Code, Codex, Antigravity, Cursor) instead of calling an API. See [CLI providers](../providers/cli-providers.md).
+**CLI provider** — A provider that runs a coding CLI installed on the same machine (Claude Code, Codex, Antigravity, Cursor, OpenCode) instead of calling an API. See [CLI providers](../providers/cli-providers.md).
 
 **Clone** — A temporary copy of an agent that works on one task, for example a sub-agent. It shares the agent's workspace and tools and has its own conversation. See [Sub-agents](../agents/subagents.md).
 

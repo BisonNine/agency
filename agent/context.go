@@ -853,18 +853,28 @@ func (cb *ContextBuilder) PromptLayers(channel, chatID string) []ctxengine.Layer
 }
 
 // sessionTokenLayer renders the per-session MCP token (mcphost.TokenPrompt
-// under the host's tool prefix) as the after-summary
-// layer of the system prompt so the LLM can call mcp__claw__* tools. It sits
-// after the static and dynamic prompt and the summary so it is always present
-// regardless of caching. An empty token yields an empty layer, which the
-// engine skips.
-func sessionTokenLayer(token string) ctxengine.Layer {
+// under the prefix the turn's model sees the host's tools under, see
+// hostToolPrefix) as the after-summary layer of the system prompt so the LLM
+// can call the host's tools. It sits after the static and dynamic prompt and
+// the summary so it is always present regardless of caching. An empty token
+// yields an empty layer, which the engine skips.
+func sessionTokenLayer(token, protocol string) ctxengine.Layer {
 	l := ctxengine.Layer{Name: "session_token", AfterSummary: true}
 	if token == "" {
 		return l
 	}
-	l.Text = mcphost.TokenPrompt(global.HostMCPToolPrefix, token)
+	l.Text = mcphost.TokenPrompt(hostToolPrefix(protocol), token)
 	return l
+}
+
+// hostToolPrefix is the prefix a model on protocol calls the host's MCP tools
+// under: OpenCode's own naming for the OpenCode CLI, the Claude-style
+// mcp__claw__ for every other protocol.
+func hostToolPrefix(protocol string) string {
+	if protocol == "opencode-cli" {
+		return global.HostMCPOpenCodeToolPrefix
+	}
+	return global.HostMCPToolPrefix
 }
 
 func (cb *ContextBuilder) AddToolResult(

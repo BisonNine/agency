@@ -6,7 +6,7 @@ An agent never talks to a vendor directly. It names one or more **models**, and 
 
 Both lists live in the WebUI under **Models** in the sidebar:
 
-- **Providers** lists the local CLI agents (Claude CLI, Codex CLI, Antigravity CLI, Cursor CLI), each with an on/off switch, and the API providers, each marked **Configured** once it has a key.
+- **Providers** lists the local CLI agents (Claude CLI, Codex CLI, Antigravity CLI, Cursor CLI, OpenCode CLI), each with an on/off switch, and the API providers, each marked **Configured** once it has a key.
 - **Models** lists every model, grouped by provider, with a switch to enable or disable each one.
 
 ## Pages in this section
@@ -18,7 +18,7 @@ Both lists live in the WebUI under **Models** in the sidebar:
 | [OpenRouter](./openrouter.md) | You use OpenRouter, which reaches many vendors through one key. |
 | [Amazon Bedrock](./bedrock.md) | You use models hosted on Amazon Bedrock. |
 | [Local models](./local-models.md) | You run models yourself with Ollama, vLLM or another OpenAI-compatible server. |
-| [CLI providers](./cli-providers.md) | You want an agent to run on Claude Code, Codex, Antigravity or Cursor installed on the same machine. |
+| [CLI providers](./cli-providers.md) | You want an agent to run on Claude Code, Codex, Antigravity, Cursor or OpenCode installed on the same machine. |
 
 ## The short version
 

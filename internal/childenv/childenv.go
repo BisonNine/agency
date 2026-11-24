@@ -53,12 +53,13 @@ var (
 		"PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
 	}
 
-	// cliPrefixes are the variables a CLI provider (claude, codex, agy, cursor)
+	// cliPrefixes are the variables a CLI provider (claude, codex, agy, cursor,
+	// opencode)
 	// reads for its own login state and API keys. They are added by CLI only,
 	// so shell_exec commands and MCP servers never see the operator's keys.
 	cliPrefixes = []string{
 		"ANTHROPIC_", "OPENAI_", "GOOGLE_", "GEMINI_", "CLAUDE_", "CODEX_", "CURSOR_",
-		"AGY_", "ANTIGRAVITY_",
+		"AGY_", "ANTIGRAVITY_", "OPENCODE_",
 	}
 )
 

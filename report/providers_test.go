@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.bison9.com/agent/modelspec"
+
 	"go.bison9.com/agency/app"
 )
 
@@ -100,6 +102,46 @@ func TestCollectProviders_CLILaunchLine(t *testing.T) {
 	}
 	if codex[4] != "off" {
 		t.Errorf("codex bypass column = %q, want off", codex[4])
+	}
+}
+
+// OpenCode's launch line: no --model for its sentinel id, --auto only with
+// the bypass on, --standalone always, and a named model after the extra args.
+func TestCollectProviders_OpenCodeLaunchLine(t *testing.T) {
+	cfg, env := fixtureConfig(t)
+	cfg.Providers = append(cfg.Providers, modelspec.Provider{Name: "OpenCode CLI", Protocol: "opencode-cli"})
+	cfg.Models = append(cfg.Models,
+		modelspec.Model{ModelName: "OpenCode CLI", Model: "opencode-cli", Provider: "OpenCode CLI", Enabled: true},
+		modelspec.Model{
+			ModelName: "OpenCode Named", Model: "provider-x/model-y", Provider: "OpenCode CLI", Enabled: true,
+			ExtraArgs: []string{"--thinking"},
+		},
+	)
+	launch := func() map[string]string {
+		got := map[string]string{}
+		for _, sub := range collectProviders(t.Context(), cfg, env).Subsections {
+			if sub.Title != "CLI providers" {
+				continue
+			}
+			for _, r := range sub.Tables[0].Rows {
+				got[r[0]] = r[1]
+			}
+		}
+		return got
+	}
+
+	got := launch()
+	if want := "opencode run --format json --standalone"; got["OpenCode CLI (OpenCode CLI)"] != want {
+		t.Errorf("sentinel launch = %q\nwant %q", got["OpenCode CLI (OpenCode CLI)"], want)
+	}
+	if want := "opencode run --format json --standalone --thinking --model provider-x/model-y"; got["OpenCode Named (OpenCode CLI)"] != want {
+		t.Errorf("named launch = %q\nwant %q", got["OpenCode Named (OpenCode CLI)"], want)
+	}
+
+	cfg.Providers[len(cfg.Providers)-1].BypassRestrictions = true
+	got = launch()
+	if want := "opencode run --format json --auto --standalone"; got["OpenCode CLI (OpenCode CLI)"] != want {
+		t.Errorf("bypass launch = %q\nwant %q", got["OpenCode CLI (OpenCode CLI)"], want)
 	}
 }
 

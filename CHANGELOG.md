@@ -111,6 +111,13 @@
   search in one knowledge base. They are inserted into the task's worker,
   review and revision prompts. A record that cannot be loaded fails the task
   without a retry.
+- **OpenCode CLI provider (`opencode-cli`).** Agents can run on OpenCode
+  installed on the same machine, like Claude Code, Codex, Antigravity and
+  Cursor. It has its row and switch under **Local CLI agents** on the
+  Providers page. **Allow CLI to bypass restrictions** adds `--auto`. It gets
+  the variables starting with `OPENCODE_`. Its prompt names Agency's tools
+  `claw_<tool>`, as OpenCode does. `set-mcp.sh` registers Agency in OpenCode
+  and turns off Code Mode there.
 
 ### Changed
 

@@ -741,7 +741,7 @@
         "external_tools": "External MCP tool visibility",
         "client": "External MCP Servers"
       },
-      "enable_desc": "Controls whether {{shortName}} runs an MCP server so CLI-based providers (claude-cli, codex-cli, antigravity-cli, cursor-cli) can call {{shortName}}'s host-side tools natively.",
+      "enable_desc": "Controls whether {{shortName}} runs an MCP server so CLI-based providers (claude-cli, codex-cli, antigravity-cli, cursor-cli, opencode-cli) can call {{shortName}}'s host-side tools natively.",
       "enabled": "Enabled",
       "enabled_hint": "When true, the MCP server always starts at daemon launch.",
       "auto_enable": "Auto-enable",
@@ -1021,7 +1021,7 @@
       "keyLabel": "API key",
       "keyPlaceholder": "Paste your API key",
       "testButton": "Test key",
-      "cliHint": "Local CLI agents (Claude Code, Codex, Antigravity, Cursor) appear below and can be selected when their command is installed — no API key needed.",
+      "cliHint": "Local CLI agents (Claude Code, Codex, Antigravity, Cursor, OpenCode) appear below and can be selected when their command is installed — no API key needed.",
       "cliDetectedHeading": "Detected CLI agents",
       "cliPickHint": "Installed CLIs are selectable in the dropdown above — no API key needed.",
       "cliInstalled": "installed",

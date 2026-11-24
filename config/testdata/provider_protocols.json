@@ -12,7 +12,8 @@
     "gemini-cli",
     "human",
     "openai-chat",
-    "openai-responses"
+    "openai-responses",
+    "opencode-cli"
   ],
   "default_protocol": "openai-chat"
 }

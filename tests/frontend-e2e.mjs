@@ -2447,7 +2447,7 @@ if (useGroup("I", "Models and providers")) {
     const switches = await page.locator("[data-testid^=cli-switch-]").count()
 
     assert(problems.length === 0, `console errors: ${problems[0]}`)
-    assert(clis.length >= 4, `only ${clis.length} CLIs in the catalogue`)
+    assert(clis.length >= 5, `only ${clis.length} CLIs in the catalogue`)
     // A CLI the host lacks is still listed, greyed: hiding it would look like
     // Agency does not support it.
     assert(rows === clis.length, `${rows} rows for ${clis.length} supported CLIs`)

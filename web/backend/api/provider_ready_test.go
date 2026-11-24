@@ -97,7 +97,7 @@ func TestResolvedCLICommand_NamesTheBinaryABlankCommandWillRun(t *testing.T) {
 // otherwise adding that provider and leaving the path blank silently reports it
 // as unusable.
 func TestDefaultCLIBinary_CoversEveryAcceptedCLIProtocol(t *testing.T) {
-	for _, protocol := range []string{"claude-cli", "codex-cli", "antigravity-cli", "cursor-cli", "gemini-cli"} {
+	for _, protocol := range []string{"claude-cli", "codex-cli", "antigravity-cli", "cursor-cli", "opencode-cli", "gemini-cli"} {
 		if !modelspec.IsCLIProtocol(protocol) {
 			t.Fatalf("%s is no longer an accepted CLI protocol; update this test", protocol)
 		}

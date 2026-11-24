@@ -39,7 +39,7 @@ export interface CLIInfo {
   trailing_args?: string[]
 }
 
-// listCLIs reports every supported CLI agent (claude/codex/agy/cursor): whether
+// listCLIs reports every supported CLI agent (claude/codex/agy/cursor/opencode): whether
 // its binary is installed, and how it is currently configured. Rows come back
 // for CLIs that are not installed too — the Providers page greys those out, and
 // the setup wizard offers only the installed ones.

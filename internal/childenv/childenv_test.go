@@ -87,6 +87,7 @@ func TestCLI_AddsCLIAuthOnly(t *testing.T) {
 	t.Setenv("CURSOR_API_KEY", "k4")
 	t.Setenv("AGY_HOME", "/home/alice/.agy")
 	t.Setenv("ANTIGRAVITY_HOME", "/home/alice/.antigravity")
+	t.Setenv("OPENCODE_CONFIG", "/home/alice/.config/opencode/opencode.json")
 	t.Setenv("GITHUB_TOKEN", "secret")
 
 	env := CLI()
@@ -94,6 +95,7 @@ func TestCLI_AddsCLIAuthOnly(t *testing.T) {
 	for _, k := range []string{
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "CURSOR_API_KEY", "AGY_HOME", "ANTIGRAVITY_HOME",
+		"OPENCODE_CONFIG",
 	} {
 		if _, ok := lookup(env, k); !ok {
 			t.Errorf("CLI() dropped %s", k)

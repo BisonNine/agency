@@ -17,6 +17,10 @@
       "protocol": "cursor-cli"
     },
     {
+      "name": "OpenCode CLI",
+      "protocol": "opencode-cli"
+    },
+    {
       "name": "OpenAI",
       "protocol": "openai-chat",
       "base_url": "https://api.openai.com/v1"
@@ -178,6 +182,13 @@
       "model_name": "Cursor CLI",
       "model": "cursor-cli",
       "provider": "Cursor CLI",
+      "request_timeout": 3600,
+      "enabled": false
+    },
+    {
+      "model_name": "OpenCode CLI",
+      "model": "opencode-cli",
+      "provider": "OpenCode CLI",
       "request_timeout": 3600,
       "enabled": false
     },

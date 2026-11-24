@@ -21,6 +21,7 @@ var cliModelSentinels = map[string][]string{
 	"codex-cli":       {"codex-cli"},
 	"antigravity-cli": {"antigravity-cli", "agy", "antigravity"},
 	"cursor-cli":      {"cursor-cli", "cursor-agent", "cursor"},
+	"opencode-cli":    {"opencode-cli"},
 }
 
 // cliLaunch is the command line a CLI model runs as, built the way

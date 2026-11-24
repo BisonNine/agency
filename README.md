@@ -30,7 +30,7 @@ Run several named agents side by side. Each has its own workspace, models, tools
 
 ### API and CLI models
 
-Use cloud APIs (Anthropic, OpenAI, Google, x.ai and others), [OpenRouter](manual/providers/openrouter.md), [Amazon Bedrock](manual/providers/bedrock.md) or [local models](manual/providers/local-models.md) through their APIs, or run [CLI agents](manual/providers/cli-providers.md) such as Claude Code, Codex, Antigravity and Cursor as an agent's model. Each agent has an ordered list of models. When one fails or runs into rate limits, Agency falls back to the next and keeps the failed one in cooldown. See [Providers, models and fallback](manual/providers/concepts.md).
+Use cloud APIs (Anthropic, OpenAI, Google, x.ai and others), [OpenRouter](manual/providers/openrouter.md), [Amazon Bedrock](manual/providers/bedrock.md) or [local models](manual/providers/local-models.md) through their APIs, or run [CLI agents](manual/providers/cli-providers.md) such as Claude Code, Codex, Antigravity, Cursor and OpenCode as an agent's model. Each agent has an ordered list of models. When one fails or runs into rate limits, Agency falls back to the next and keeps the failed one in cooldown. See [Providers, models and fallback](manual/providers/concepts.md).
 
 ### Coding harness tools
 
