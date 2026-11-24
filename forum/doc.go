@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -10,7 +10,7 @@
 //
 // The package imports no agent-loop code. Everything it needs from the host
 // arrives through the small interfaces in host.go (Messenger, Agents,
-// Notifier, Logger); ClawEh wires them in and mounts the tools from
+// Notifier, Logger); Agency wires them in and mounts the tools from
 // tools.go under the "forum" namespace.
 //
 // The files, by part (DESIGN.md §2):

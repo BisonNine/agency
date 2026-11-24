@@ -1,8 +1,8 @@
 # Devices
 
-Pair a Rabbit R1 or a voice app with ClawEh so it can talk to your agents.
+Pair a Rabbit R1 or a voice app with Agency so it can talk to your agents.
 
-Devices connect to the **device listener**, a separate port of ClawEh (18791
+Devices connect to the **device listener**, a separate port of Agency (18791
 by default) used only by devices. Every device needs two things: the shared
 secret (from a QR code or a typed passphrase), and your approval of its
 pairing on the **Devices** page.
@@ -27,7 +27,7 @@ it yet.
    - **Auto-approve pairings**: skips your approval. It is allowed only while
      the listener is on localhost.
 
-A listener on the network always needs a secret and your approval: ClawEh
+A listener on the network always needs a secret and your approval: Agency
 refuses a configuration with **Auto-approve pairings** on, or with no secret,
 while **Scope** is **Network**. **Generate pairing QR** (below) creates the
 secret for you.
@@ -143,7 +143,7 @@ By default devices connect over plain WebSocket (`ws://`). To encrypt:
    `wss://`. The device must accept the certificate; with the self-signed
    one, check that it does.
 
-If a reverse proxy in front of ClawEh already provides `wss://`, you can leave
+If a reverse proxy in front of Agency already provides `wss://`, you can leave
 **Protocol** at **ws** and set **External address** to the proxy's address.
 
 ## Remove a device
@@ -157,7 +157,7 @@ again, pair it again.
 ## When a device is offline
 
 A message for a paired device that is not connected (for example a scheduled
-reminder) is not delivered. ClawEh records that the device **is offline**,
+reminder) is not delivered. Agency records that the device **is offline**,
 logs a warning and does not retry or raise an alert; an agent that sent the
 message is told "Not sent: device:… is offline." See
 [When a message cannot be delivered](./index.md#when-a-message-cannot-be-delivered).

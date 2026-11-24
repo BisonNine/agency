@@ -1,6 +1,6 @@
 # WebUI test plan
 
-Regression coverage for the ClawEh web interface. Every step below has an ID, a
+Regression coverage for the Agency web interface. Every step below has an ID, a
 process, and an expected result, so it can be followed by hand — and every one is
 also automated in `tests/frontend-e2e.mjs`, which prints the same IDs. There are
 183 checks in all; the runner prints the same tally at the end.
@@ -41,7 +41,7 @@ restart the dev instance after changing listener settings by hand.
 
 | Requirement | Notes |
 |---|---|
-| A running ClawEh | `make build && cp build/claw ~/bin/claw && sudo systemctl restart claw-dev` |
+| A running Agency | `make build && cp build/claw ~/bin/claw && sudo systemctl restart claw-dev` |
 | An admin account | The WebUI and `/api/*` are behind a login. Create the account on the dev instance with `claw admin`, then `export CLAW_E2E_USER=… CLAW_E2E_PASSWORD=…`. The runner signs in first and stops with that instruction if it cannot |
 | At least one agent, model and provider | The plan asserts against live data; an empty install fails A3 |
 | Playwright + Chromium | Found in the npx cache under the home directory; override with `PLAYWRIGHT_MODULE` / `CHROME_PATH` |
@@ -210,11 +210,11 @@ a field but is refused before anything is sent. Nothing in this group clicks
 | R6 | Click *Self-signed (default)*, then *External certificate* | Under Self-signed: no path inputs, a **Regenerate certificate** button. Under External: **Certificate file** and **Private key file** inputs and a **Save certificate** button, no Regenerate |
 | R7 | Under External, enter `/nonexistent/e2e-probe/fullchain.pem` and `/nonexistent/e2e-probe/privkey.pem`, **Save certificate** | An inline error with the server's reason (`POST /api/tls/validate` answered 400). `GET /api/config` → `gateway` is byte-for-byte what it was before: nothing was saved |
 | R8 | With a self-signed certificate and HTTPS on, click **Regenerate certificate** (skip with a note otherwise) | The fingerprint shown changes, and `GET /api/tls` reports the new one |
-| R9 | Read the **Addresses** card | Lists `urls.localhost`, every `urls.http[]` and every `urls.https[]` from `GET /api/tls` — exactly what to open. Each plain-HTTP network address, and nothing else, carries a warning triangle whose hover text is *Plain-text HTTP exposed to network.*, except behind a proxy (`behind_proxy` in `GET /api/tls`), where none is marked. No Docker bridge address (`172.17–31.x.0.1`) is listed. With HTTPS off it says ClawEh is reachable from this host only |
+| R9 | Read the **Addresses** card | Lists `urls.localhost`, every `urls.http[]` and every `urls.https[]` from `GET /api/tls` — exactly what to open. Each plain-HTTP network address, and nothing else, carries a warning triangle whose hover text is *Plain-text HTTP exposed to network.*, except behind a proxy (`behind_proxy` in `GET /api/tls`), where none is marked. No Docker bridge address (`172.17–31.x.0.1`) is listed. With HTTPS off it says Agency is reachable from this host only |
 | R10 | Note `gateway.tls_port`; set **HTTPS port** to the next free number and wait for *Saved ✓*; then set it back and wait for the save | After the first save a banner reading exactly **Restart required to apply changes.** appears with a **Restart now** button beside it (do **not** click it) and `gateway.tls_port` holds the probe value; after the second save the config holds the original again. The banner is expected to stay: the running listener still differs until a restart. The step expects no banner before it starts |
 | R11 | Compare **Allowed network CIDRs** with `gateway.allowed_cidrs` | One entry per line, in order (empty for loopback only) |
 | R12 | Compare the **Device listener** section with `channels.device` | The **Protocol** radio (*ws (unencrypted)* / *wss (HTTPS)*) is the first control of the section and shows `tls` (*wss* exactly when `true`); the scope radio matches `host` (loopback ↔ *Localhost only*), the port field shows `port` (18791 by default), the **External address** field shows `external_url` without its scheme |
-| R13 | Read the **MCP host** section | The listen address equals `mcp_host.listen` (`127.0.0.1:5911` by default) and is rendered as text, not an input: ClawEh refuses any non-loopback address, so there is nothing to edit here |
+| R13 | Read the **MCP host** section | The listen address equals `mcp_host.listen` (`127.0.0.1:5911` by default) and is rendered as text, not an input: Agency refuses any non-loopback address, so there is nothing to edit here |
 | R14 | Compare the **Protocol** radio with `channels.device.tls` | Two options; *wss (HTTPS)* is selected exactly when `tls` is `true`, *ws (unencrypted)* otherwise, a missing key reading as ws. Its hint is the one sentence *Devices connect to one port, plain or with the WebUI certificate.* |
 | R15 | Compare **External address** with `channels.device.external_url`, then type `wss://e2e-probe.invalid:18791` and wait for the save delay | The field shows the stored value as `host[:port]`: no `https://`, `http://`, `wss://` or `ws://` and no trailing slash (blank when unset). The typed URL is refused under the field with *Enter a host name or IP address, with an optional :port.* and `channels.device.external_url` is unchanged: nothing was sent. Leaving the page discards the typed value |
 | R16 | Compare **Never locked out** with `gateway.lockout_exempt` | One entry per line, in order (empty when unset) |
@@ -238,9 +238,9 @@ a field but is refused before anything is sent. Nothing in this group clicks
 | I3 | `/models` → **Add Model**, then Escape | The sheet opens and closes with no console error |
 | I4 | Load `/providers` and count the **Configured** / **Not configured** labels | Every card in the API grid carries one. "Configured" is the backend's answer, not a guess from the config: an API key for an HTTP provider, and for a CLI a binary that actually resolves — so a stale path reads *Not configured* and a blank one that resolves reads *Configured* |
 | I5 | `/providers` → **Add Provider** → open the wire-protocol picker | No `*-cli` protocol is offered. A CLI is added by its switch in the **Local CLI agents** section; building one by hand here would produce a provider the section does not show and the grid filters out |
-| I6 | Load `/providers` and count the rows in **Local CLI agents** | One row and one switch per supported CLI from `GET /api/system/clis`, whether or not the binary is installed. A CLI the host lacks is greyed out and says so — hiding it would look like ClawEh does not support it. Every **configured** row shows its model count (`1 of 1 model on`, `3 of 3 models on`), including CLIs with a single model: printing it for some and not others reads as a fault |
+| I6 | Load `/providers` and count the rows in **Local CLI agents** | One row and one switch per supported CLI from `GET /api/system/clis`, whether or not the binary is installed. A CLI the host lacks is greyed out and says so — hiding it would look like Agency does not support it. Every **configured** row shows its model count (`1 of 1 model on`, `3 of 3 models on`), including CLIs with a single model: printing it for some and not others reads as a fault |
 | I7 | Compare the provider cards against `GET /api/providers` | The grid holds only the non-CLI providers. CLI providers appear in the section above and nowhere else: one CLI is one thing to the person using it, and showing it twice under two controls is what made it confusing |
-| I8 | Load `/providers` and read a CLI row | **Args:** lists the whole command line in invocation order — the provider's own flags (`-p --output-format json`), the permission flags (`--dangerously-skip-permissions`, `--yolo`), whatever the models add, then the stdin marker. Not just the configured part: someone asking what ClawEh runs on their machine is owed all of it, and some of it auto-approves tool use |
+| I8 | Load `/providers` and read a CLI row | **Args:** lists the whole command line in invocation order — the provider's own flags (`-p --output-format json`), the permission flags (`--dangerously-skip-permissions`, `--yolo`), whatever the models add, then the stdin marker. Not just the configured part: someone asking what Agency runs on their machine is owed all of it, and some of it auto-approves tool use |
 | I9 | `/providers` → edit a configured CLI from its row (skip with a note when none is configured) | The sheet offers the Command field and **no** advanced section. Proxy, `strict_compat`, `require_reasoning_content`, `no_parallel_tool_calls` and `response_format_json` are HTTP wire knobs the CLI factory never reads; shown here they were controls that did nothing, and an off switch reads as a feature available but disabled — which is how `response_format_json` came to look like the reason a CLI was not returning JSON. It always does: `--output-format json` is in the argv, not the config |
 | I10 | With a CLI provider configured (`GET /api/system/clis` has a `configured` row; skip with a note otherwise), load `/providers` and `/models` | Both render with the CLI row present, no console errors and no error boundary. A CLI row carries argument lists the server encodes as `null` when empty (`required_args`, `bypass_args`, `extra_args`); spreading one used to throw *Spread syntax requires …iterable* straight into the boundary |
 | I11 | With a CLI provider configured (skip with a note otherwise), load `/providers` and find the **Allow CLI to bypass restrictions** checkbox on every configured CLI row | The checkbox is present for each configured CLI and its state equals that provider's `bypass_restrictions` from `GET /api/system/clis` — off unless the operator ticked it. It is the only control that lets a CLI run with its permission-bypass flag, so it must never be missing or show the wrong state |
@@ -330,10 +330,10 @@ The login page, the refusals, the session, and sign-out. P1, P2, P5, P6 and P7
 run in browser contexts of their own so the suite's session is untouched; P2
 records one failed login, which the limiter forgets on the next success (P5).
 
-Sessions live in memory on the server, so a restart of ClawEh forgets them all.
+Sessions live in memory on the server, so a restart of Agency forgets them all.
 P6 and P7 stand in for that by deleting the session cookie in the browser
 context: the page must return to the login page, not show an error, and the
-chat socket must stop reconnecting. The banner shown while ClawEh itself
+chat socket must stop reconnecting. The banner shown while Agency itself
 is down (*Connection lost. Reconnecting…*) cannot be exercised against the live
 dev instance without stopping it; it is covered by unit tests only
 (`connection-banner.test.tsx`, `auth-redirect.test.ts` and
@@ -347,7 +347,7 @@ dev instance without stopping it; it is covered by unit tests only
 | P4 | `curl -b jar $BASE/api/auth/status` | `{"configured":true,"authenticated":true,"username":"<admin>"}` — the username is the one that signed in |
 | P5 | Sign in in a second browser, open `/agents`, click **Sign out** in the sidebar footer | The browser lands on `/login` with the form showing. From that browser `GET /api/auth/status` is `authenticated: false` and `GET /api/config` is `401`: the session ended on the server, not just in the browser |
 | P6 | Sign in in a second browser, open `/agents`, delete the session cookie (DevTools → Application → Cookies, or `context.clearCookies()`), then open the **Models** group in the sidebar and click **Models** | The browser lands on `/login?next=%2Fmodels` with the login form showing; no error state (`data-testid=route-error`) is rendered and the only console entry is the browser's own note about the refused (401) request. Signing in returns to `/models` |
-| P7 | Sign in in a second browser, open `/` (chat), wait for the socket to open, delete the session cookie as in P6, then close the socket (from the console: the page's WebSocket, or restart ClawEh) | The page goes to `/login` within a few seconds and stays there: at most one further `/webui/ws` attempt after the redirect, no retry storm, no console errors |
+| P7 | Sign in in a second browser, open `/` (chat), wait for the socket to open, delete the session cookie as in P6, then close the socket (from the console: the page's WebSocket, or restart Agency) | The page goes to `/login` within a few seconds and stays there: at most one further `/webui/ws` attempt after the redirect, no retry storm, no console errors |
 
 ## Q. Audit page
 

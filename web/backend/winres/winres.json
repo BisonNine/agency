@@ -8,10 +8,10 @@
     "#1": {
       "0409": {
         "identity": {
-          "name": "ClawEh",
+          "name": "Agency",
           "version": "0.0.0.0"
         },
-        "description": "ClawEh - Personal AI Assistant",
+        "description": "Agency - Personal AI Assistant",
         "minimum-os": "win7",
         "execution-level": "asInvoker",
         "dpi-awareness": "system",

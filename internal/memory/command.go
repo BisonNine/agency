@@ -1,4 +1,4 @@
-// ClawEh - Cognitive Memory CLI
+// Agency - Cognitive Memory CLI
 // License: MIT
 
 // Package memory provides the `claw memory` maintenance subcommands.

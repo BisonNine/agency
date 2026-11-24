@@ -6,15 +6,15 @@ This section takes you from nothing to a working assistant you can chat with.
 
 | Page | What it covers |
 |---|---|
-| [Overview](./overview.md) | What ClawEh does, the main ideas, and what it needs to run. |
-| [Installing ClawEh](./install.md) | The three ways to install, the admin account, and installing on a headless host. |
+| [Overview](./overview.md) | What Agency does, the main ideas, and what it needs to run. |
+| [Installing Agency](./install.md) | The three ways to install, the admin account, and installing on a headless host. |
 | [Quick start](./quickstart.md) | Signing in, the setup wizard, giving your agent tools, and your first chat. |
 | [A tour of the WebUI](./webui-tour.md) | Every page in the sidebar, what it is for, and where the manual covers it. |
 | [Upgrading](./upgrading.md) | `claw upgrade`, what to check after an upgrade, and the changes in 0.6.0 that need action. |
 
 ## The short version
 
-1. Install ClawEh as a service with the one-line installer. See [Installing ClawEh](./install.md).
+1. Install Agency as a service with the one-line installer. See [Installing Agency](./install.md).
 2. Create the admin account when the installer asks for it.
 3. Open the WebUI, sign in, and complete the setup wizard.
 4. On the **Agents** page, give your agent the tools it needs. See [Quick start](./quickstart.md).

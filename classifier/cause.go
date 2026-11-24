@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -23,12 +23,12 @@ const (
 	causeTool                         // a tool or the model failed when called (credentials, an outage)
 	causeToolMissing                  // a tool the definition names is missing or refused
 	causeNoModel                      // no usable classifier model: the operator's Task models page
-	causeOperator                     // ClawEh's own state: only the operator can fix it
+	causeOperator                     // Agency's own state: only the operator can fix it
 	causeInvalidFile                  // the definition file is not valid, so it is not run
 )
 
 // cause is what a failure is down to: its kind, the role and what it names
-// (the tool, or "model <name>"), a summary in ClawEh's own words, and the
+// (the tool, or "model <name>"), a summary in Agency's own words, and the
 // detail: text a tool, a provider or an item gave (an error message, an
 // excerpt of a result). The detail is untrusted: it reaches the agent only
 // inside Host.WrapUntrusted, never as part of a notice's own sentences.
@@ -64,7 +64,7 @@ func roleRank(role string) int {
 	return 4
 }
 
-// explained is an error with a summary in ClawEh's own words and a detail
+// explained is an error with a summary in Agency's own words and a detail
 // that came from outside (a tool's message, an excerpt).
 type explained interface {
 	summary() string
@@ -216,7 +216,7 @@ func causeOf(err error) cause {
 	return c
 }
 
-// stateError is a failure of ClawEh's own state: only the operator can fix
+// stateError is a failure of Agency's own state: only the operator can fix
 // it (it matches ErrStateUnavailable, so its cause is causeOperator).
 type stateError string
 

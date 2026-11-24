@@ -2,7 +2,7 @@
 
 Fusion turns a REST API described in a JSON file into tools your agents can call, with each agent signing in to the service on its own.
 
-ClawEh includes the MCPFusion engine. You describe a service (its address,
+Agency includes the MCPFusion engine. You describe a service (its address,
 how it signs in, and its endpoints) in a file; every endpoint becomes a tool.
 Weather services, Microsoft 365, Google Workspace, Trello and similar APIs
 are typical.
@@ -21,7 +21,7 @@ Services are defined by files, not in the WebUI.
 3. Put the secrets the definition refers to (written as `${NAME}` in the
    file, such as a client ID or an API key) in `<CLAW_HOME>/fusion/env`, one
    `NAME=value` per line. Keep that file readable by the service user only.
-4. Restart ClawEh. Changes in the `fusion/` folder are read only at start.
+4. Restart Agency. Changes in the `fusion/` folder are read only at start.
 
 The service's name is its key in the file's `services` object, such as
 `microsoft365` or `wxca`. Its tools are named after it:
@@ -32,11 +32,11 @@ Data.
 
 ## How a service signs in
 
-The definition says how ClawEh authenticates to the service:
+The definition says how Agency authenticates to the service:
 
 | Type in the file | Who signs in | How |
 |---|---|---|
-| `bearer`, `api_key`, `basic` | Nobody | ClawEh uses the key or password from `fusion/env`. The same credential serves every agent. |
+| `bearer`, `api_key`, `basic` | Nobody | Agency uses the key or password from `fusion/env`. The same credential serves every agent. |
 | `oauth2_device` | Each agent's user | A code shown in the chat, entered on the provider's sign-in page. |
 | `oauth2_external` | Each agent's user | The `claw-auth` helper on a computer with a web browser. Used for Google. |
 | `user_credentials` | Each agent's user | The `claw-auth` helper asks for the values (such as a personal API key). |
@@ -107,14 +107,14 @@ The agent handles sign-in in the chat. You act on what it relays.
    and sign in when the browser opens (or type the values it asks for).
 3. Ask the agent to try again.
 
-The computer running `claw-auth` must reach ClawEh's web address: the
+The computer running `claw-auth` must reach Agency's web address: the
 **Hostname / external URL** on the **Network** page when set, otherwise the
-HTTPS address ClawEh derives (for example `https://<host name>:18443`). A
-computer other than the ClawEh machine must also be in **Allowed networks**
+HTTPS address Agency derives (for example `https://<host name>:18443`). A
+computer other than the Agency machine must also be in **Allowed networks**
 on the same page (see [Network access](admin/network.md)). The sign-in itself does not need the WebUI login.
 
 `claw-auth` is included in every release download, next to `claw`. If you
-build ClawEh from source, `make build` builds it too (or `make claw-auth` on
+build Agency from source, `make build` builds it too (or `make claw-auth` on
 its own); the binary is written to `build/claw-auth`.
 
 To sign in again to a service that uses `claw-auth`, for example with a
@@ -127,7 +127,7 @@ That discards the old sign-in and gives you a new command.
   set per agent and service, and refreshed automatically.
 - The nightly [backup](admin/backup.md) includes them.
 - If the token store cannot be opened, every Fusion tool is disabled and
-  the **Fusion token store unavailable** [alert](admin/alerts.md) is raised; restart ClawEh once
+  the **Fusion token store unavailable** [alert](admin/alerts.md) is raised; restart Agency once
   the file is readable.
 - Sign-ins are kept under the agent's ID. An agent whose ID changes must
   sign in again.
@@ -143,8 +143,8 @@ That discards the old sign-in and gives you a new command.
   unless `fusion/env` contains `MCP_FUSION_ALLOW_DESTRUCTIVE=true`. The
   agent can tell you the capability exists.
 - A clone or [sub-agent](agents/subagents.md) of Alice uses Alice's sign-ins.
-- Agents on a CLI provider reach the same tools through ClawEh's MCP host
-  (see [ClawEh as an MCP server](mcp.md)).
+- Agents on a CLI provider reach the same tools through Agency's MCP host
+  (see [Agency as an MCP server](mcp.md)).
 
 When progressive tool discovery is on (the **MCP** → **Config** page),
 Fusion tools are hidden from the model until it searches for them.

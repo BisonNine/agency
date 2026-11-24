@@ -8,14 +8,14 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// CLI agents — the local binaries ClawEh can drive as providers. The catalogue
+// CLI agents — the local binaries Agency can drive as providers. The catalogue
 // is modelspec's (modelspec.CLIAgents): the WebUI builds its CLI section from
 // it, the provider factory takes the required arguments from it, and the
 // seeded config is generated to match.
 //
 // The permission-bypass flag is the one an operator decides on: it lets the
 // CLI run commands and edit files anywhere the service user can, outside
-// ClawEh's own controls. It is passed only when the provider's
+// Agency's own controls. It is passed only when the provider's
 // bypass_restrictions ("Allow CLI to bypass restrictions" in the WebUI) is on.
 
 // CLIArgs returns the arguments to run a CLI model with (modelspec.CLIArgs):

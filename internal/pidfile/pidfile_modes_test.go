@@ -1,4 +1,4 @@
-// ClawEh - gateway PID file
+// Agency - gateway PID file
 // License: MIT
 
 package pidfile

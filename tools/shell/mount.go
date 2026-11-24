@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package shell mounts the SDK's shell tools (go.bison9.com/agent/toolbox/shell)

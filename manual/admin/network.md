@@ -1,6 +1,6 @@
 # Network access
 
-By default ClawEh can be reached only from the machine it runs on; this page shows how to open it to your network, and to devices, deliberately.
+By default Agency can be reached only from the machine it runs on; this page shows how to open it to your network, and to devices, deliberately.
 
 ## Two things decide access
 
@@ -11,7 +11,7 @@ Another machine reaches the WebUI only when both are true:
 
 Every request still needs the [admin sign-in](./login.md).
 
-From a machine that is not allowed, ClawEh answers "Forbidden" (403), or the port looks closed.
+From a machine that is not allowed, Agency answers "Forbidden" (403), or the port looks closed.
 
 ## Allow your network
 
@@ -25,7 +25,7 @@ Prefer the narrowest network that works. Use `*` rather than `0.0.0.0/0` for "an
 
 ### From the server
 
-`claw network` changes the same setting without the WebUI, which helps when the allowlist is what keeps you out. It is safe to run while ClawEh is running; the change applies within about 15 seconds.
+`claw network` changes the same setting without the WebUI, which helps when the allowlist is what keeps you out. It is safe to run while Agency is running; the change applies within about 15 seconds.
 
 ```
 claw network --show             # what is allowed now
@@ -49,7 +49,7 @@ On the **Network** page the same settings are **HTTP** → **Scope**, **HTTPS** 
 
 ## The Addresses card
 
-At the top of the **Network** page, **Addresses** lists where ClawEh can be opened right now: **On this host**, **On the network (HTTPS)**, and **On the network (plain HTTP)** when HTTP is on the network. `claw status` prints the same.
+At the top of the **Network** page, **Addresses** lists where Agency can be opened right now: **On this host**, **On the network (HTTPS)**, and **On the network (plain HTTP)** when HTTP is on the network. `claw status` prints the same.
 
 ## Never locked out
 
@@ -59,7 +59,7 @@ At the top of the **Network** page, **Addresses** lists where ClawEh can be open
 
 For complete NGINX, Caddy, Cloudflare Tunnel and Tailscale setups, see [Remote access](./remote-access.md).
 
-When a proxy such as nginx sits in front of ClawEh, every request seems to come from the proxy. To have ClawEh see the real client:
+When a proxy such as nginx sits in front of Agency, every request seems to come from the proxy. To have Agency see the real client:
 
 1. Have the proxy send the client address in the `X-Real-IP` header. For nginx: `proxy_set_header X-Real-IP $remote_addr;`
 2. On the **Network** page, under **Allowed networks**, add the proxy's address to **Trusted proxies**, for example `127.0.0.1` for a proxy on the same host.
@@ -69,7 +69,7 @@ The real client address is then what the allowed networks, the lockouts, the log
 
 When requests seem to come through a proxy on this machine that is not trusted, a note under **Trusted proxies** (and a row on [Check Up](./checkup.md)) says so. Behind a proxy, the page does not flag plain HTTP on the network, because the proxy does the encryption.
 
-For a proxy on the same host you can keep HTTP on localhost and set HTTPS **Listen on** to **Localhost only** or **Off**. Set **Hostname / external URL** to the public address so ClawEh answers to that name.
+For a proxy on the same host you can keep HTTP on localhost and set HTTPS **Listen on** to **Localhost only** or **Off**. Set **Hostname / external URL** to the public address so Agency answers to that name.
 
 ## The device listener
 
@@ -86,7 +86,7 @@ External devices (Rabbit R1, voice apps) connect to a separate listener with its
 
 Pair and manage devices on the **Devices** page (see [Devices](../channels/devices.md)).
 
-ClawEh refuses a configuration that puts the device listener on the network with **Auto-approve pairings** on, or without a device token set.
+Agency refuses a configuration that puts the device listener on the network with **Auto-approve pairings** on, or without a device token set.
 
 A client address that fails device sign-in 5 times in 10 minutes is locked out for one minute, doubling with each further lockout up to an hour. The first lockout of an address raises the "Device authentication locked out" [alert](./alerts.md).
 
@@ -94,7 +94,7 @@ The device listener and the WebUI are independent: opening one to the network do
 
 ## If you are locked out
 
-Run these on the server, as the user ClawEh runs as (on a system install, `sudo -u <service user> CLAW_HOME=/opt/claw claw …`).
+Run these on the server, as the user Agency runs as (on a system install, `sudo -u <service user> CLAW_HOME=/opt/claw claw …`).
 
 | What you see | Fix |
 |---|---|

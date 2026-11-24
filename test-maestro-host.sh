@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-maestro-host.sh — run Maestro's MCP regression suite against a live
-# ClawEh gateway (Maestro embedded, host mode).
+# Agency gateway (Maestro embedded, host mode).
 #
 # It builds claw and a deterministic stub model server, starts a gateway in a
 # temporary CLAW_HOME with one Maestro-enabled agent, issues a service token,

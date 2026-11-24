@@ -343,7 +343,7 @@ release-sign: release-checksums
 	@test -f "$(MINISIGN_KEY)" || { echo "ERROR: minisign secret key $(MINISIGN_KEY) not found (generate once with: minisign -G; or set MINISIGN_KEY=/path/to/key)"; exit 1; }
 	@command -v $(MINISIGN) >/dev/null 2>&1 || { echo "ERROR: $(MINISIGN) not found (brew install minisign / apt install minisign)"; exit 1; }
 	@rm -f $(BUILD_DIR)/checksums.txt.minisig
-	@$(MINISIGN) -S -s $(MINISIGN_KEY) -m $(BUILD_DIR)/checksums.txt -t "ClawEh v$(VERSION) $(GIT_COMMIT)"
+	@$(MINISIGN) -S -s $(MINISIGN_KEY) -m $(BUILD_DIR)/checksums.txt -t "Agency v$(VERSION) $(GIT_COMMIT)"
 	@echo "Signed: $(BUILD_DIR)/checksums.txt.minisig"
 
 ## sbom: Write a CycloneDX SBOM of the claw binary's Go modules to build/sbom.json (cyclonedx-gomod, pinned; installed into bin/ when missing).
@@ -524,7 +524,7 @@ run: build
 
 ## help: Show this help message
 help:
-	@echo "ClawEh Makefile"
+	@echo "Agency Makefile"
 	@echo ""
 	@echo "Usage:"
 	@echo "  make [target]"

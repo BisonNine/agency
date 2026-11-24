@@ -58,7 +58,7 @@ The tool must be one the agent is granted, checked again on every run: if you re
 
 ## Listen jobs: wait for events
 
-A listen job keeps calling a tool that waits for an event (a long-poll tool) and messages the agent each time an event arrives. It has no schedule: it runs for as long as the job is enabled, and starts again when ClawEh starts. Ask the agent for one when a tool it has waits for events.
+A listen job keeps calling a tool that waits for an event (a long-poll tool) and messages the agent each time an event arrives. It has no schedule: it runs for as long as the job is enabled, and starts again when Agency starts. Ask the agent for one when a tool it has waits for events.
 
 ## Scheduling for other agents
 

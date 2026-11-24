@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package capabilities pins what a production-shaped configuration lets each

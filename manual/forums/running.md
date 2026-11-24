@@ -81,7 +81,7 @@ agent's notice gives the reason when it did not complete.
 
 ## Restarts
 
-Forums survive a restart of ClawEh:
+Forums survive a restart of Agency:
 
 - An interrupted run resumes where it stopped. A turn that was in progress
   is sent again; an existing agent such as Bob may see that message twice.

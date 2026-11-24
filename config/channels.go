@@ -156,8 +156,8 @@ func (b TelegramBotConfig) ChannelName() string {
 // SecMsgConfig defines one secure-messaging daemon speaking the secmsg JSON-RPC
 // protocol (e.g. sigd for Signal). A single daemon can host several accounts, so
 // each daemon entry lists the accounts to bind; every account becomes its own
-// ClawEh channel (own name, allowlist, and agent binding). The daemon is
-// service-agnostic: ClawEh learns the concrete service from the handshake.
+// Agency channel (own name, allowlist, and agent binding). The daemon is
+// service-agnostic: Agency learns the concrete service from the handshake.
 type SecMsgConfig struct {
 	// Name identifies the daemon connection and is the default prefix for each
 	// account's channel name. Recommended: the service, e.g. "signal". Empty
@@ -175,7 +175,7 @@ type SecMsgConfig struct {
 	// account, overridable per explicit account entry.
 	GroupTrigger GroupTriggerConfig `json:"group_trigger,omitempty"`
 	// Accounts optionally pins specific accounts to bind with per-account overrides.
-	// Empty means ClawEh discovers the daemon's linked accounts and binds one
+	// Empty means Agency discovers the daemon's linked accounts and binds one
 	// channel per account, each inheriting the daemon-level defaults above.
 	Accounts []SecMsgAccountConfig `json:"accounts,omitempty"`
 }
@@ -193,12 +193,12 @@ func (s SecMsgConfig) WithDefaults(a SecMsgAccountConfig) SecMsgAccountConfig {
 	return a
 }
 
-// SecMsgAccountConfig binds one account on a daemon to a ClawEh channel.
+// SecMsgAccountConfig binds one account on a daemon to an Agency channel.
 type SecMsgAccountConfig struct {
 	// Account is the daemon account id (e.g. "droid1"). Empty auto-selects the
 	// daemon's sole linked account (only valid when the daemon has exactly one).
 	Account string `json:"account,omitempty"`
-	// Name overrides the ClawEh channel name for this account. Empty derives it
+	// Name overrides the Agency channel name for this account. Empty derives it
 	// as "<daemon-name>-<account>".
 	Name         string              `json:"name,omitempty"`
 	AllowFrom    FlexibleStringSlice `json:"allow_from,omitempty"`

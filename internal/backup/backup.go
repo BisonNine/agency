@@ -1,7 +1,7 @@
-// ClawEh
+// Agency
 // License: MIT
 
-// Package backup writes a dated tarball of everything ClawEh needs to come back
+// Package backup writes a dated tarball of everything Agency needs to come back
 // on a new host — config.json, the cron jobs file, internal/ (tokens and the device
 // pairing database), credentials.json, tls/ and cards/ (the character-card
 // library) when present, each agent's forums, Maestro data, classifiers and

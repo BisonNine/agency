@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package toollist pins the tool list each agent offers its model, with

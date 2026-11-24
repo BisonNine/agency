@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -68,7 +68,7 @@ func TestDefinitionSchemas(t *testing.T) {
 	props := obj(s["properties"])
 	for _, host := range []string{"owner", "created_at", "updated_at"} {
 		if _, ok := props[host]; ok {
-			t.Errorf("schema publishes %s, which ClawEh writes", host)
+			t.Errorf("schema publishes %s, which Agency writes", host)
 		}
 	}
 	if s["additionalProperties"] != false {

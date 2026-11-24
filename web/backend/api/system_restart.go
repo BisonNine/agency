@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package api
@@ -50,7 +50,7 @@ func (h *Handler) registerSystemRestartRoutes(mux *http.ServeMux) {
 // handleSystemRestart restarts the gateway when a service manager will bring
 // it back: 202 and a clean shutdown with a non-zero exit. Without a service
 // manager nothing happens and the answer is 409, so the operator restarts
-// ClawEh by hand instead of being left with a dead process.
+// Agency by hand instead of being left with a dead process.
 //
 //	POST /api/system/restart
 func (h *Handler) handleSystemRestart(w http.ResponseWriter, r *http.Request) {

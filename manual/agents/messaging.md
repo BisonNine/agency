@@ -47,7 +47,7 @@ The agent calls `agent_message` with `wait_seconds` above 0.
 - Alice waits at most `wait_seconds`, or Bob's model **Request Timeout**, whichever is shorter. If Bob has not answered by then, Alice is told "Bob did not reply within N seconds." Bob's turn carries on, but its late reply is dropped.
 - Bob's reply goes only to Alice, as the result of her tool call. Nothing from his turn is posted to any chat.
 - Other outcomes Alice may see: "Bob's turn failed: …", "Bob's turn was cancelled before it replied." and "Bob gave no reply."
-- Restarting ClawEh abandons asks in progress.
+- Restarting Agency abandons asks in progress.
 
 ### Limits on asks
 
@@ -65,7 +65,7 @@ The note is added to the start of the next message Bob receives, whatever its so
 [Private whisper from Alice — no reply expected. To answer privately, use agent_message with wait_seconds 0.] <text>
 ```
 
-The second sentence appears only when Bob could do it: he has `agent_message` and Alice is in his `allow_agents`. Each whisper is delivered once. Whispers not yet delivered are lost when ClawEh restarts.
+The second sentence appears only when Bob could do it: he has `agent_message` and Alice is in his `allow_agents`. Each whisper is delivered once. Whispers not yet delivered are lost when Agency restarts.
 
 ## /ask and /whisper from a chat
 

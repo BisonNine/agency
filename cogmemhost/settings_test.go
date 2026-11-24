@@ -1,4 +1,4 @@
-// ClawEh - Cognitive Memory
+// Agency - Cognitive Memory
 // License: MIT
 
 package cogmemhost
@@ -9,7 +9,7 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// The retention defaults live in ClawEh's config (0 = the documented default,
+// The retention defaults live in Agency's config (0 = the documented default,
 // -1 = forever); cogmem must receive them resolved.
 func TestSettings_ResolvesRetention(t *testing.T) {
 	var mem config.MemoryConfig

@@ -2,7 +2,7 @@
 
 This page shows how to use models hosted on Amazon Bedrock through its OpenAI-compatible endpoints.
 
-ClawEh reaches Bedrock the same way it reaches other cloud APIs: over HTTPS with an API key sent as a bearer token. It does not sign requests with AWS access keys or an IAM role, so you need an **Amazon Bedrock API key**, and the models you want must be available to your account in the region you use.
+Agency reaches Bedrock the same way it reaches other cloud APIs: over HTTPS with an API key sent as a bearer token. It does not sign requests with AWS access keys or an IAM role, so you need an **Amazon Bedrock API key**, and the models you want must be available to your account in the region you use.
 
 ## The two Bedrock providers
 

@@ -1,22 +1,22 @@
 #!/bin/sh
 #
-# set-mcp.sh — register (or refresh) the ClawEh MCP server in whichever local AI
+# set-mcp.sh — register (or refresh) the Agency MCP server in whichever local AI
 # CLIs are installed: Antigravity (agy), Codex CLI (codex), and Claude Code
 # (claude). Run it after installing/updating any of those CLIs, or after changing
-# the ClawEh MCP port. CLIs that are not on your PATH are skipped.
+# the Agency MCP port. CLIs that are not on your PATH are skipped.
 #
 # Cursor is deliberately not handled here: it has no `mcp add` subcommand and is
 # configured by editing ~/.cursor/mcp.json, so this script reports what to add
 # rather than rewriting a file it does not own.
 #
-# ENDPOINT — ClawEh exposes two MCP endpoints (see docs/mcp.md):
+# ENDPOINT — Agency exposes two MCP endpoints (see docs/mcp.md):
 #     /mcp       standard bearer auth (Authorization: Bearer <token>)
-#     /internal  session_token parameter — ClawEh's multi-assistant routing
+#     /internal  session_token parameter — Agency's multi-assistant routing
 #   A local CLI that authenticates as MULTIPLE agents must use /internal: it
 #   supplies a per-agent session_token on each call, so one CLI install can act
 #   as several agents. That is what this script configures.
 #
-# PORT — the URL below must match the MCP host `listen` port in your ClawEh config
+# PORT — the URL below must match the MCP host `listen` port in your Agency config
 #   (tools → mcp_host → listen, e.g. 127.0.0.1:5911). If you change that port,
 #   update CLAW_MCP_URL here, or export it before running:
 #       CLAW_MCP_URL=http://127.0.0.1:6000/internal ./set-mcp.sh
@@ -27,7 +27,7 @@ set -u
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-echo "ClawEh MCP endpoint: $CLAW_MCP_URL"
+echo "Agency MCP endpoint: $CLAW_MCP_URL"
 echo ""
 
 # Each CLI is refreshed one at a time (remove, then add, then list) and only when

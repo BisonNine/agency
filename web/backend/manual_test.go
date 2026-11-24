@@ -53,7 +53,7 @@ func TestManual_ServesIndex(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /manual/ = %d, want 200 (is the manual built? run: make manual)", rec.Code)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, "ClawEh Manual") {
+	if body := rec.Body.String(); !strings.Contains(body, "Agency Manual") {
 		t.Fatalf("GET /manual/ did not return the manual index:\n%.300s", body)
 	}
 	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {

@@ -19,9 +19,9 @@ import (
 const roomNameTimeout = 5 * time.Second
 
 // encryptedRooms is the process-wide record of the Matrix rooms seen to be
-// end-to-end encrypted, which ClawEh cannot read. It outlives the channel,
+// end-to-end encrypted, which Agency cannot read. It outlives the channel,
 // which a save of its settings rebuilds, so each room is logged once per
-// process and Check Up lists it until ClawEh restarts.
+// process and Check Up lists it until Agency restarts.
 var encryptedRooms = encryptedRecord{names: map[id.RoomID]string{}}
 
 // encryptedRecord maps each encrypted room to its name ("" when unknown).
@@ -60,7 +60,7 @@ func (r *encryptedRecord) labels() []string {
 	return out
 }
 
-// EncryptedRooms names the Matrix rooms seen since ClawEh started to be
+// EncryptedRooms names the Matrix rooms seen since Agency started to be
 // end-to-end encrypted, sorted: `"Name" (!room:server)`, or the room id when
 // its name is unknown. Empty when there were none.
 func EncryptedRooms() []string {
@@ -77,7 +77,7 @@ func roomLabel(roomID id.RoomID, name string) string {
 
 // handleEncryptedEvent notes the room of an encrypted message
 // (m.room.encrypted) or of the state that turns encryption on
-// (m.room.encryption). ClawEh cannot read such a room and never answers in it.
+// (m.room.encryption). Agency cannot read such a room and never answers in it.
 func (c *MatrixChannel) handleEncryptedEvent(ctx context.Context, evt *event.Event) {
 	if evt == nil || evt.RoomID == "" {
 		return

@@ -2,7 +2,7 @@
 
 This page takes a fresh install to a first chat: sign in, run the setup wizard, grant your agent its tools, and send a message.
 
-It assumes ClawEh is installed and running. If not, see [Installing ClawEh](./install.md).
+It assumes Agency is installed and running. If not, see [Installing Agency](./install.md).
 
 ## 1. Sign in
 

@@ -1,6 +1,6 @@
 //go:build !windows
 
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.

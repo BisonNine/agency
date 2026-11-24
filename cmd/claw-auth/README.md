@@ -1,8 +1,8 @@
 # claw-auth
 
-A generic authentication helper for ClawEh that supports multiple providers through a modular architecture.
+A generic authentication helper for Agency that supports multiple providers through a modular architecture.
 
-This is intended for services that do not allow or limit device authentication flows. It implements a desktop oauth2 flow and passes the tokens to ClawEh.
+This is intended for services that do not allow or limit device authentication flows. It implements a desktop oauth2 flow and passes the tokens to Agency.
 
 ## Features
 
@@ -20,7 +20,7 @@ This is intended for services that do not allow or limit device authentication f
 ## Installation
 
 ```bash
-# From the ClawEh project root
+# From the Agency project root
 make claw-auth
 ```
 

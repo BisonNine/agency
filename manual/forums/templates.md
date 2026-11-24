@@ -1,6 +1,6 @@
 # Forum templates
 
-ClawEh has two built-in forums, `council` and `writing`, that an agent can start from instead of designing a forum itself.
+Agency has two built-in forums, `council` and `writing`, that an agent can start from instead of designing a forum itself.
 
 A template is a complete forum setup with a few blanks. The agent puts a
 template into a new forum, fills the blanks (the question or topic, and the

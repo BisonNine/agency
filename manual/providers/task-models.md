@@ -1,6 +1,6 @@
 # Task models
 
-Pick the models ClawEh uses for single calls, one ordered list for each use.
+Pick the models Agency uses for single calls, one ordered list for each use.
 
 A task model is never in a conversation and never has tools: each use is one
 call with one input and one output. Open **Task models** in the **Models**
@@ -60,7 +60,7 @@ unless you add it to that agent's models.
 ### Which address is called
 
 The provider decides where the audio goes. For an `openai-chat` or
-`openai-responses` provider, ClawEh uses only its **Base URL** and **API
+`openai-responses` provider, Agency uses only its **Base URL** and **API
 Key**:
 
 | List | Request |
@@ -107,7 +107,7 @@ Key**; the **Base URL** may be left blank for the vendor's own. Then add the
 model (for example a Gemini TTS model, or ElevenLabs' `scribe_v1` or a voice
 model) on the Models page and add it to **Text to speech** or
 **Transcription** here. A model on one of these providers can't chat: an
-agent can't use it as its own model. Gemini returns raw audio, which ClawEh
+agent can't use it as its own model. Gemini returns raw audio, which Agency
 saves as a WAV file.
 
 ## Suggested models on OpenRouter
@@ -147,7 +147,7 @@ fallback when one vendor is down.
 Use an OpenRouter provider with the `openai-chat` protocol for image models,
 not `openai-responses`:
 
-- **Chat (image output)** is a chat call; ClawEh reads the images from the
+- **Chat (image output)** is a chat call; Agency reads the images from the
   reply's `images` list, which is how OpenRouter returns them on the chat
   protocol. An `openai-responses` provider looks for OpenAI's own image
   results instead and finds none. Use it for models that answer with images
@@ -184,7 +184,7 @@ tried.
 
 A model sees images only when its **Vision (tool-result images)** setting is
 not **Off** (see [Providers, models and fallback](./concepts.md#vision-models)).
-When an agent's model is set to **Off** and it receives an image, ClawEh sends
+When an agent's model is set to **Off** and it receives an image, Agency sends
 the image to the models in **Describe images**, in order, and gives the agent
 the text description. While the list is empty, images are dropped for such
 models.

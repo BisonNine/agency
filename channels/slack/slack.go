@@ -784,19 +784,19 @@ type slashResponse struct {
 	at  time.Time
 }
 
-// builtinCommands is ClawEh's command registry, used to tell a Slack slash
-// command that is a ClawEh command ("/model") from a launcher ("/claw").
+// builtinCommands is Agency's command registry, used to tell a Slack slash
+// command that is an Agency command ("/model") from a launcher ("/claw").
 var builtinCommands = commands.NewRegistry(commands.BuiltinDefinitions())
 
-// isBuiltinCommand reports whether name ("model", "/model") is a ClawEh
+// isBuiltinCommand reports whether name ("model", "/model") is an Agency
 // command or one of its aliases.
 func isBuiltinCommand(name string) bool {
 	_, ok := builtinCommands.Lookup(strings.TrimLeft(name, "/!"))
 	return ok
 }
 
-// slashCommandText turns a Slack slash command into the text ClawEh handles.
-// A command named after a ClawEh command runs it with its text as arguments:
+// slashCommandText turns a Slack slash command into the text Agency handles.
+// A command named after an Agency command runs it with its text as arguments:
 // "/model 0" is "/model 0". Any other name ("/claw") is a launcher: its first
 // word is the command ("/claw model 0" is "/model 0", with or without a "/"
 // or "!" typed before it), a bare launcher is "/help", and text that does not

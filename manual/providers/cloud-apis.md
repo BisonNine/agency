@@ -1,6 +1,6 @@
 # Cloud APIs
 
-This page shows how to connect ClawEh to a vendor's API with an API key, and which provider settings matter for each vendor.
+This page shows how to connect Agency to a vendor's API with an API key, and which provider settings matter for each vendor.
 
 ## Add a key and enable a model
 
@@ -18,7 +18,7 @@ If the catalogue has no model you want, add one:
 2. Fill in **Model Alias** (your name for it), **Model Identifier** (the vendor's exact model id) and **Provider**.
 3. Click **Add Model**. Turn on **Default Model** first if it should become the default.
 
-To keep a key out of `config.json`, write a reference in the `api_key` field instead of the key: `env:OPENAI_API_KEY` reads an environment variable of the service, and `file:/etc/claw/openai.key` reads a file that only its owner can read. ClawEh will not start, and the WebUI refuses the save, if the reference cannot be resolved. See [Keeping secrets out of the file](../reference/configuration.md#keeping-secrets-out-of-the-file).
+To keep a key out of `config.json`, write a reference in the `api_key` field instead of the key: `env:OPENAI_API_KEY` reads an environment variable of the service, and `file:/etc/claw/openai.key` reads a file that only its owner can read. Agency will not start, and the WebUI refuses the save, if the reference cannot be resolved. See [Keeping secrets out of the file](../reference/configuration.md#keeping-secrets-out-of-the-file).
 
 ## Vendors in the catalogue
 
@@ -51,7 +51,7 @@ For a vendor marked "none", add the model yourself with the vendor's model id. T
 
 The HTTP protocols require a base URL. The `anthropic` protocol does not use **HTTP Proxy**, **Reasoning Effort**, **Extra Request Body** or **Drop Request Fields**.
 
-On `openai-chat` providers other than OpenRouter, ClawEh removes one leading `litellm/`, `moonshot/`, `nvidia/`, `groq/`, `ollama/`, `deepseek/`, `google/`, `openrouter/` or `mistral/` from the model id before sending it. Other prefixes, such as the `openai/` in `openai/gpt-oss-120b` on Groq, are sent as written.
+On `openai-chat` providers other than OpenRouter, Agency removes one leading `litellm/`, `moonshot/`, `nvidia/`, `groq/`, `ollama/`, `deepseek/`, `google/`, `openrouter/` or `mistral/` from the model id before sending it. Other prefixes, such as the `openai/` in `openai/gpt-oss-120b` on Groq, are sent as written.
 
 ## Provider settings
 
@@ -59,10 +59,10 @@ These are on the provider's edit form and apply to every model on it.
 
 | Setting | Config key | Turn it on when |
 |---|---|---|
-| Strict Compatibility | `strict_compat` | The endpoint rejects fields outside the basic OpenAI schema, such as `reasoning_content`. ClawEh strips them from the conversation it sends. `openai-chat` only. |
-| Require Reasoning Content | `require_reasoning_content` | The endpoint rejects a conversation whose earlier replies have no reasoning, as DeepSeek V4 does in thinking mode when tools are sent. ClawEh fills in a placeholder where reasoning is missing and leaves real reasoning alone. This is the opposite of Strict Compatibility; never turn on both. |
-| Disable Parallel Tool Calls | `no_parallel_tool_calls` | The model misbehaves when it calls several tools at once. ClawEh sends `parallel_tool_calls: false` with each request that offers tools. |
-| JSON Response Format | `response_format_json` | Lets ClawEh ask an `openai-responses` endpoint for JSON output when it summarizes. `openai-chat` providers are asked anyway. |
+| Strict Compatibility | `strict_compat` | The endpoint rejects fields outside the basic OpenAI schema, such as `reasoning_content`. Agency strips them from the conversation it sends. `openai-chat` only. |
+| Require Reasoning Content | `require_reasoning_content` | The endpoint rejects a conversation whose earlier replies have no reasoning, as DeepSeek V4 does in thinking mode when tools are sent. Agency fills in a placeholder where reasoning is missing and leaves real reasoning alone. This is the opposite of Strict Compatibility; never turn on both. |
+| Disable Parallel Tool Calls | `no_parallel_tool_calls` | The model misbehaves when it calls several tools at once. Agency sends `parallel_tool_calls: false` with each request that offers tools. |
+| JSON Response Format | `response_format_json` | Lets Agency ask an `openai-responses` endpoint for JSON output when it summarizes. `openai-chat` providers are asked anyway. |
 | HTTP Proxy | `proxy` | Requests to this provider must go through a proxy, for example `http://127.0.0.1:7890`. |
 
 Require Reasoning Content matters most when an agent switches models: after a turn on a model that records no reasoning (any CLI model, for example), DeepSeek would otherwise reject every following turn.
@@ -71,19 +71,19 @@ Require Reasoning Content matters most when an agent switches models: after a tu
 
 ### Temperature
 
-ClawEh sends an HTTP model the agent's `temperature`, else **Default temperature** on the System page (`agents.defaults.temperature`). When neither is set it sends no temperature, and the model uses its own default. Anthropic models never receive one: the newest Claude models do not use temperature. Some other reasoning models reject any temperature too. For those, list `temperature` in the model's **Drop Request Fields**, as the catalogue does for OpenAI GPT 5.5.
+Agency sends an HTTP model the agent's `temperature`, else **Default temperature** on the System page (`agents.defaults.temperature`). When neither is set it sends no temperature, and the model uses its own default. Anthropic models never receive one: the newest Claude models do not use temperature. Some other reasoning models reject any temperature too. For those, list `temperature` in the model's **Drop Request Fields**, as the catalogue does for OpenAI GPT 5.5.
 
 ### Reasoning effort
 
 **Reasoning Effort** (`reasoning_effort`) asks models that support it how hard to think: `none`, `low`, `medium` or `high`. Leave it unset to send nothing. `none` is sent as written, to turn reasoning off on models that reason by default.
 
 - On `openai-chat` it is sent as the `reasoning_effort` field. xAI's Grok models take it; the catalogue's four Grok entries differ only in this setting.
-- On `openai-responses` it is sent as `reasoning.effort`. With `low`, `medium` or `high`, ClawEh leaves out the temperature.
+- On `openai-responses` it is sent as `reasoning.effort`. With `low`, `medium` or `high`, Agency leaves out the temperature.
 - Other values are refused when the configuration is saved or loaded.
 
 ### Extra Request Body and Drop Request Fields
 
-**Extra Request Body** (`extra_body`) is a JSON object merged into every request, for vendor options ClawEh does not offer as settings. For example, on xAI:
+**Extra Request Body** (`extra_body`) is a JSON object merged into every request, for vendor options Agency does not offer as settings. For example, on xAI:
 
 ```json
 {
@@ -91,7 +91,7 @@ ClawEh sends an HTTP model the agent's `temperature`, else **Default temperature
 }
 ```
 
-ClawEh refuses keys it sets itself: `model`, `messages`, `stream`, `tools`, `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `temperature`, `max_tokens`, `max_completion_tokens`, `top_p` and `n`. Use the matching setting for those.
+Agency refuses keys it sets itself: `model`, `messages`, `stream`, `tools`, `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `temperature`, `max_tokens`, `max_completion_tokens`, `top_p` and `n`. Use the matching setting for those.
 
 **Drop Request Fields** (`drop_params`) lists top-level request fields to remove before sending, comma-separated in the WebUI, for example `temperature`. It is applied after everything else, so it always wins. It is a plain filter: dropping `messages` or `model` breaks every request.
 

@@ -17,7 +17,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// ExistingInstall holds details of a previously installed ClawEh service or binary.
+// ExistingInstall holds details of a previously installed Agency service or binary.
 type ExistingInstall struct {
 	BinaryPath  string
 	ServiceType string // "systemd-system", "systemd-user", "launchd-daemon", "launchd-agent"
@@ -140,7 +140,7 @@ func (h *host) leftoverOptClawFiles(binDir string) []string {
 	return out
 }
 
-// DetectExistingInstall searches for an existing ClawEh installation on the system.
+// DetectExistingInstall searches for an existing Agency installation on the system.
 // It inspects systemd unit files, launchd plists, running process paths, and PATH.
 func DetectExistingInstall(homeDir string) *ExistingInstall {
 	return realHost().detectInstall(homeDir)

@@ -185,7 +185,7 @@ func TestVerifySignedArchive(t *testing.T) {
 	sum := sha256.Sum256(content)
 	checksums := []byte(hex.EncodeToString(sum[:]) + "  claw-linux-amd64.tar.gz\n" +
 		strings.Repeat("0", 64) + "  claw-darwin-arm64.tar.gz\n")
-	sig := s.sign(checksums, "ClawEh v0.6.0")
+	sig := s.sign(checksums, "Agency v0.6.0")
 
 	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, sig, "claw-linux-amd64.tar.gz", archive); err != nil {
 		t.Fatalf("valid release rejected: %v", err)

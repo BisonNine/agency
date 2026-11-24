@@ -2,25 +2,25 @@
 
 Connect Signal, or another secure messenger, so people can talk to your agents there.
 
-ClawEh does not talk to Signal directly. It connects to a separate
+Agency does not talk to Signal directly. It connects to a separate
 **secure-messaging daemon**, a program that holds the messenger account and
 speaks the SecMsg protocol, such as `sigd` for Signal. The daemon is not part
-of ClawEh; install and run it by its own instructions first.
+of Agency; install and run it by its own instructions first.
 
 ## What you need from the daemon
 
 - **Its address**: the host and port it listens on, for example
-  `127.0.0.1:9801`. ClawEh connects over plain TCP, without encryption or a
-  password, so run the daemon on the same machine as ClawEh and keep it
+  `127.0.0.1:9801`. Agency connects over plain TCP, without encryption or a
+  password, so run the daemon on the same machine as Agency and keep it
   listening on `127.0.0.1`.
 - **An account**: a messenger account linked to the daemon. One daemon can
   hold several accounts (several phone numbers). If it has none yet, you link
   one from the WebUI (see [Link an account](#link-an-account)).
 - **Read access to its files**: the daemon saves attachments people send on
-  disk and ClawEh reads them from there, so ClawEh's user must be able to read
+  disk and Agency reads them from there, so Agency's user must be able to read
   the daemon's attachment folder.
 
-ClawEh learns which service the daemon speaks (for example `signal`) when it
+Agency learns which service the daemon speaks (for example `signal`) when it
 connects.
 
 ## Channel names
@@ -30,7 +30,7 @@ Each account on a daemon becomes its own channel, named
 on the daemon named `signal`. Each account can be bound to a different agent.
 A daemon without a name is called `secmsg`.
 
-## Connect ClawEh
+## Connect Agency
 
 1. In the WebUI sidebar, open **Channels → SecMsg** and click **Add Daemon**.
 2. In the name field, enter a short name, for example `signal`. It starts
@@ -40,7 +40,7 @@ A daemon without a name is called `secmsg`.
 5. In **Allow From**, enter who may write to any account on this daemon,
    separated by commas (see [Who may write](#who-may-write)).
 6. Click **Save**.
-7. Click **Edit** on the daemon's card. Under **Accounts**, ClawEh lists the
+7. Click **Edit** on the daemon's card. Under **Accounts**, Agency lists the
    accounts the daemon already has, each with the channel name it uses, for
    example `alice → signal-alice`. The card's title shows how many accounts
    the daemon has, or "daemon unreachable".
@@ -53,7 +53,7 @@ After the first save, changes save as you type; click **Done** to close the
 card. The switch on the card turns the daemon on or off, and the trash button
 removes it.
 
-ClawEh asks the daemon for its accounts when it starts and whenever the
+Agency asks the daemon for its accounts when it starts and whenever the
 configuration is saved. An account linked later is picked up at the next save
 or restart.
 
@@ -72,19 +72,19 @@ To link the daemon to the messenger app on your phone:
    screen (in Signal: **Settings → Linked devices → Link new device**) and
    scan it.
 3. The page shows **Linked** when it is done. The phone lists the new device
-   as "ClawEh".
+   as "Agency".
 
 If linking fails or the code is no longer accepted, click **Link device** (or
 **Regenerate QR**) again and scan the new code.
 
 ## Pinned accounts
 
-Without pinned accounts, ClawEh binds every account the daemon has, each with
+Without pinned accounts, Agency binds every account the daemon has, each with
 the daemon's **Allow From** and **Mention Only**. Pin an account to give it
 its own settings:
 
 - **Account**: the account on the daemon. Left blank, the daemon's only
-  account is used; with several accounts, ClawEh does not connect until you
+  account is used; with several accounts, Agency does not connect until you
   fill it in.
 - **Channel Name**: a different channel name, instead of
   `<daemon name>-<account>`.
@@ -119,7 +119,7 @@ groups: in a group, only listed people get an answer.
 
 ## Groups
 
-The protocol does not tell ClawEh whether the account was mentioned, so group
+The protocol does not tell Agency whether the account was mentioned, so group
 messages are handled by these rules:
 
 - By default, the account answers every group message from a listed sender.
@@ -208,12 +208,12 @@ Commands such as `/status` work here. Start them with `/` or `!`. See
 
 - **SecMsg has no linked accounts**: the daemon answered but holds no linked
   account, so no channel was started. Link one as above.
-- **SecMsg account discovery failed**: ClawEh could not reach the daemon when
+- **SecMsg account discovery failed**: Agency could not reach the daemon when
   it started or the configuration was saved. Accounts already running keep
   running; no new account is started. Start the daemon, then save any setting
-  or restart ClawEh; it does not retry on its own.
+  or restart Agency; it does not retry on its own.
 - **SecMsg down: signal-alice**: the account's channel has had no working
-  connection to the daemon for ten minutes. ClawEh keeps reconnecting and
+  connection to the daemon for ten minutes. Agency keeps reconnecting and
   raises **SecMsg up: signal-alice** when it is back.
 - **Channel send failed**: a reply was not sent, because the daemon refused
   it or the account was not connected to the daemon at that moment. A reply

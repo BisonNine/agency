@@ -8,17 +8,17 @@ Most settings have a place in the WebUI, and that is the safer way to change the
 
 `config.json` is in the data directory: `~/.claw/config.json`, or `$CLAW_HOME/config.json` when `CLAW_HOME` is set.
 
-ClawEh writes a complete file on first start, with every section present and the known providers and models listed. That file is the reference for what can be set.
+Agency writes a complete file on first start, with every section present and the known providers and models listed. That file is the reference for what can be set.
 
-The file holds API keys and tokens. ClawEh refuses to start if its mode allows more than `security.permissions.root.file_mode` (`0600` by default). The fix is `chmod 600 config.json`, or the mode the message names.
+The file holds API keys and tokens. Agency refuses to start if its mode allows more than `security.permissions.root.file_mode` (`0600` by default). The fix is `chmod 600 config.json`, or the mode the message names.
 
 ## How changes are applied
 
 - **From the WebUI.** Every page saves to `config.json`. A save that breaks a rule is refused, and the page lists every problem at once.
-- **By hand.** Edit the file, or use **Raw config** on the **System** page. ClawEh checks the file for changes every 5 seconds (`config_reload_interval_seconds`) and reloads it.
-- **Invalid edits.** If the file on disk no longer loads, ClawEh keeps running on the previous configuration and raises the [alert](../admin/alerts.md) "Config file invalid". The next restart would fail on that file, so fix it right away.
+- **By hand.** Edit the file, or use **Raw config** on the **System** page. Agency checks the file for changes every 5 seconds (`config_reload_interval_seconds`) and reloads it.
+- **Invalid edits.** If the file on disk no longer loads, Agency keeps running on the previous configuration and raises the [alert](../admin/alerts.md) "Config file invalid". The next restart would fail on that file, so fix it right away.
 - **Restart needed.** Listener settings (ports, where HTTP and HTTPS listen, the certificate files) take effect only after a restart. The **Network** page offers **Restart now**.
-- **Unknown keys.** A key ClawEh does not know is ignored, with the warning `unknown config key: <key>` in the log.
+- **Unknown keys.** A key Agency does not know is ignored, with the warning `unknown config key: <key>` in the log.
 
 ## Keeping secrets out of the file
 
@@ -32,10 +32,10 @@ Any credential field (an `api_key`, a `token`, a `…_secret` or `…password` f
 "token": "file:/etc/claw/telegram.token"
 ```
 
-- `env:NAME` reads the environment variable when ClawEh starts.
+- `env:NAME` reads the environment variable when Agency starts.
 - `file:/path` reads the file. The path must be absolute and the file readable only by its owner.
 
-The reference is written back unchanged when the configuration is saved. A reference that cannot be resolved stops ClawEh from starting, with a message naming the key.
+The reference is written back unchanged when the configuration is saved. A reference that cannot be resolved stops Agency from starting, with a message naming the key.
 
 ## Top-level sections
 
@@ -50,19 +50,19 @@ The reference is written back unchanged when the configuration is saved. A refer
 | `models` | The models agents can use: a name, the provider, the provider's model id, and limits such as `request_timeout` and `context_window`. | **Models** page. See [Providers and models](../providers/index.md). |
 | `summarization` | The models used for memory consolidation and conversation summaries, tried before an agent's own models. | **System** page, **Agent defaults**. See [Memory models](../providers/concepts.md#memory-models). |
 | `gateway` | The WebUI listeners: HTTP host and port, HTTPS port and `tls` mode and certificate, `external_url`, `allowed_cidrs`, `lockout_exempt` and `trusted_proxies`. | **Network** page, or `claw network`. See [Network access](../admin/network.md) and [HTTPS and certificates](../admin/https.md). |
-| `tools` | Install-wide tool settings: web search providers, limits for shell commands, scheduled jobs, skills registries, the MCP servers ClawEh connects to (`tools.mcp.servers`). Which tools each agent gets is set on the agent. | **MCP** › **Servers** for MCP servers, **MCP** › **Config** for tool discovery, `config.json` for the rest. See [Tools and skills](../agents/tools-and-skills.md) and [MCP](../mcp.md). |
+| `tools` | Install-wide tool settings: web search providers, limits for shell commands, scheduled jobs, skills registries, the MCP servers Agency connects to (`tools.mcp.servers`). Which tools each agent gets is set on the agent. | **MCP** › **Servers** for MCP servers, **MCP** › **Config** for tool discovery, `config.json` for the rest. See [Tools and skills](../agents/tools-and-skills.md) and [MCP](../mcp.md). |
 | `devices` | Hardware device events, such as USB plug and unplug. Not the paired devices. | **System** page, **Devices**. |
 | `task_models` | Models for single calls, one ordered list per use (`text`, `image`, `tts`, `stt`, `vision`, `classify`). | **Task models** page. |
 | `logging` | Log level, log files, retention, and whether message content is logged. | **System** page, **Runtime** (retention); `config.json`. See [Logs](../admin/logs.md). |
 | `security` | `message_prefix`: text put in front of messages that arrive through an agent's external message endpoint. `permissions`: the exact modes of the folders and files in the data directory, one pair per area (see [File permissions](../admin/logs.md#file-permissions)). | `config.json` only. |
-| `mcp_host` | ClawEh's own MCP server, which the CLI providers use to call ClawEh's tools. It must listen on a loopback address. | **MCP** › **Config**. See [MCP](../mcp.md). |
+| `mcp_host` | Agency's own MCP server, which the CLI providers use to call Agency's tools. It must listen on a loopback address. | **MCP** › **Config**. See [MCP](../mcp.md). |
 | `cooldown` | How long a failing model is paused ([Cooldowns](../providers/concepts.md#cooldowns)), in minutes, per kind of failure: `billing_auth_minutes` (default 30), `rate_limit_minutes` (10), `client_error_minutes` (10), `server_error_minutes` (10), `bad_request_minutes` (0). | `config.json` only. |
 | `backup` | The nightly backup: `enabled` (default on), `at` (default `03:00`), `retain_days` (default 30) and `dest` (default `backup/` in the data directory). | **System** page, **Backup**. See [Backup and restore](../admin/backup.md). |
 | `forum` | `forum.limits`: the install-wide maximums for forums. | **System** page, **Forums**. See [Forums](../forums/index.md). |
 | `classifiers` | `processed_days` and `limits`: how long classifiers remember handled items, and the install-wide maximums for a classifier definition. Each agent's switch and model are `agents.list[].classifiers`. | `config.json` only; the switch and model on the **Agents** page. See [Classifiers](../agents/classifiers.md#limits). |
 | `operator` | `operator.name`: your name, which the assistant is told for your web chat messages and for devices with no **User** of their own. Empty uses the admin login name. | **System** page, **Operator** (**Your name**). |
-| `default_config` | Marks a configuration that has never been saved. The setup wizard uses it. Leave it alone. | Set by ClawEh. |
-| `config_reload_interval_seconds` | How often ClawEh checks `config.json` for changes (default 5). | `config.json` only. |
+| `default_config` | Marks a configuration that has never been saved. The setup wizard uses it. Leave it alone. | Set by Agency. |
+| `config_reload_interval_seconds` | How often Agency checks `config.json` for changes (default 5). | `config.json` only. |
 
 ## Environment variables
 

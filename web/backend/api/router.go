@@ -305,7 +305,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	h.registerSkillRoutes(mux)
 	h.registerCardRoutes(mux)
 
-	// Running ClawEh build version (shown in the WebUI sidebar footer)
+	// Running Agency build version (shown in the WebUI sidebar footer)
 	h.registerVersionRoutes(mux)
 
 	// Configuration report (PDF)

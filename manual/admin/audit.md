@@ -9,7 +9,7 @@ The audit log records every tool an agent runs, every configuration save, every 
 | **Tool call** | An agent runs a tool, including starting a sub-agent. | The agent, and the person who sent the message. |
 | **Config write** | A setting is saved from the WebUI (any settings page or the raw config editor). | The WebUI username and client address. |
 | **Auth** | A sign-in, sign-out, lockout, or attempt refused during a lockout. | The username and client address. |
-| **Restart** | ClawEh is restarted from the WebUI. | The WebUI username and client address. |
+| **Restart** | Agency is restarted from the WebUI. | The WebUI username and client address. |
 | **Classifier change** | A [classifier](../agents/classifiers.md) is created, changed or deleted through the classifier tools. | The agent. |
 | **Classification** | A classifier handles an item: its category, the action and its outcome. | The agent that owns the classifier. |
 | **Shell start**, **Shell input**, **Shell stop** (`shell_ctrl_start`, `shell_ctrl_input`, `shell_ctrl_stop`) | An agent starts a [shell command or job](../agents/shell.md), sends a job input (its length, never its content), or stops one. | The agent, marked as a clone when one did it. |
@@ -44,4 +44,4 @@ The audit log is included in the [nightly backup](./backup.md).
 
 Recording never slows an agent down. If events arrive faster than they can be written, the extra ones are dropped and counted. The **Audit** page then says "N events were dropped because the audit write queue was full; the trail has gaps."
 
-If the audit log cannot be opened at start, ClawEh runs without one and logs a warning. [Check Up](./checkup.md) marks the **Audit log** row when its file is missing.
+If the audit log cannot be opened at start, Agency runs without one and logs a warning. [Check Up](./checkup.md) marks the **Audit log** row when its file is missing.

@@ -1,16 +1,16 @@
-# Installing ClawEh
+# Installing Agency
 
-This page installs ClawEh as a background service and creates the admin account you sign in with.
+This page installs Agency as a background service and creates the admin account you sign in with.
 
-There are four ways to install. All of them finish with `claw install`, which registers the service, creates the admin account and starts ClawEh.
+There are four ways to install. All of them finish with `claw install`, which registers the service, creates the admin account and starts Agency.
 
 ## Before you start
 
 - A Linux or macOS machine on amd64 or arm64 (Linux 386 is also available).
 - A terminal on that machine.
 - Decide who runs the service:
-  - **As your user** (no `sudo`): ClawEh starts when you log in. The data directory is `~/.claw`.
-  - **As a system service** (with `sudo`): ClawEh starts at boot without anyone logging in. It still runs as your user, never as root.
+  - **As your user** (no `sudo`): Agency starts when you log in. The data directory is `~/.claw`.
+  - **As a system service** (with `sudo`): Agency starts at boot without anyone logging in. It still runs as your user, never as root.
 
 ## Option 1: the one-line installer
 
@@ -113,7 +113,7 @@ Re-run `claw install` with the same privilege as the first time: `sudo` for a sy
 
 ## Opening the WebUI
 
-By default ClawEh listens on:
+By default Agency listens on:
 
 - `http://127.0.0.1:18790/` — plain HTTP, this machine only;
 - `https://<this machine>:18443/` — HTTPS on every interface, with a self-signed certificate. Your browser warns about it once.
@@ -142,7 +142,7 @@ You can change network access later on the **Network** page or with `claw networ
 
 ## Running without a service
 
-You can also run `claw` in a terminal. It starts ClawEh in the foreground until you press Ctrl+C. Create the admin account first with `claw admin`.
+You can also run `claw` in a terminal. It starts Agency in the foreground until you press Ctrl+C. Create the admin account first with `claw admin`.
 
 ## Removing the service
 

@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -159,7 +159,7 @@ type Auditor interface {
 	Record(ev AuditEvent)
 }
 
-// Logger is the subset of the host's logger the package uses. ClawEh's
+// Logger is the subset of the host's logger the package uses. Agency's
 // *logger.Logger satisfies it directly.
 type Logger interface {
 	Debugf(format string, v ...any)
@@ -180,7 +180,7 @@ type systemClock struct{}
 func (systemClock) Now() time.Time                         { return time.Now() }
 func (systemClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
-// Host bundles what the service needs from ClawEh. Tools, Model and Logger
+// Host bundles what the service needs from Agency. Tools, Model and Logger
 // are required; the others may be nil.
 type Host struct {
 	// ProductName is the host's name as the guide calls it in running prose
@@ -213,7 +213,7 @@ type Host struct {
 	// a failure notice and the results of the tools that show item data
 	// (classifier_activity, classifier_status, classifier_list,
 	// classifier_test, classifier_rerun) and a source's error in a refusal.
-	// ClawEh's is untrusted.Wrap. nil: the text is passed as it is (tests).
+	// Agency's is untrusted.Wrap. nil: the text is passed as it is (tests).
 	WrapUntrusted func(string) string
 }
 

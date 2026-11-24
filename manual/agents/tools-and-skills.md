@@ -69,7 +69,7 @@ The `shell_exec` box under **Internal tools** lets the agent run commands on thi
 
 - Ticking it, or **Coding tools**, is the only way to grant `shell_exec`: **Default tools**, `"*"` and `file_*`-style entries never include it.
 - It applies everywhere the agent acts: every chat, its sub-agents and clones, questions from other agents, forum turns and its MCP tokens.
-- Shell commands run with the full access of the account ClawEh runs as. They are **not** confined to the agent's folder or its allowed folders, even when file tools are, and **Restrict to workspace** does not apply to them. The deny patterns still block dangerous commands.
+- Shell commands run with the full access of the account Agency runs as. They are **not** confined to the agent's folder or its allowed folders, even when file tools are, and **Restrict to workspace** does not apply to them. The deny patterns still block dangerous commands.
 - `working_dir` may be any existing folder; the default is where the agent's previous command ended, else its workspace.
 - `shell_ctrl` comes with `shell_exec`: it manages the commands the agent runs in the background. Add it to **Denied tools** to withhold it. See [Shell commands and jobs](./shell.md).
 - `agent_cancel` comes with `agent_spawn`: the agent cancels its own sub-agents with it. Add it to **Denied tools** to withhold it. See [Sub-agents](./subagents.md#stopping-sub-agents).

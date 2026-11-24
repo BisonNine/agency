@@ -1,7 +1,7 @@
-// Package secmsg implements a ClawEh channel backed by a secure-messaging
+// Package secmsg implements an Agency channel backed by a secure-messaging
 // daemon speaking the secmsg JSON-RPC protocol (e.g. sigd for Signal). The
 // daemon is service-agnostic: it advertises the concrete service, capabilities,
-// and account addressing in its handshake, and ClawEh learns those at connect
+// and account addressing in its handshake, and Agency learns those at connect
 // time. Each enabled SecMsgConfig entry becomes one channel bound to one
 // account on one daemon; several daemons/accounts run as separate entries.
 package secmsg

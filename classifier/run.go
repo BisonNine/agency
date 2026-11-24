@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -723,7 +723,7 @@ func (s *Service) trackFailure(ctx context.Context, scope Scope, def *Definition
 // reportFailure delivers the notice of a failed run to the owning agent,
 // whatever report.summary says, so it can fix the classifier; the second
 // one in a row also says that further errors are muted and how to report
-// them again. The notice's sentences are ClawEh's own (failureText, the
+// them again. The notice's sentences are Agency's own (failureText, the
 // advice, the mute); what a tool, a provider or an item said (the cause's
 // detail) follows only inside Host.WrapUntrusted, as data.
 func (s *Service) reportFailure(ctx context.Context, scope Scope, def *Definition, rec RunRecord, failure failureReport) {
@@ -802,7 +802,7 @@ func summaryText(def *Definition, rec RunRecord) string {
 	return b.String()
 }
 
-// failureText is the one-sentence report of a failed run in ClawEh's own
+// failureText is the one-sentence report of a failed run in Agency's own
 // words, naming the classifier and the cause's summary: "Classifier inbox:
 // the run failed (source mail_list: the tool failed).", or for a definition
 // file that is not valid "Classifier inbox is not run (<why>)." It never

@@ -1,4 +1,4 @@
-// ClawEh - Session store CLI
+// Agency - Session store CLI
 // License: MIT
 
 // Package sessions provides the `claw sessions` maintenance subcommands.

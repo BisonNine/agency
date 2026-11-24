@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -8,7 +8,7 @@ package classifier
 import "time"
 
 // Definition is one classifier, stored as <base>/<id>.json. Owner and the
-// dates are written by ClawEh: values a caller gives for them are replaced.
+// dates are written by Agency: values a caller gives for them are replaced.
 type Definition struct {
 	ID            string            `json:"id"`
 	Owner         string            `json:"owner"`

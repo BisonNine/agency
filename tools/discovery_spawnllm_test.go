@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package tools
@@ -63,7 +63,7 @@ func searchReferences(t *testing.T, search metaTool) []string {
 }
 
 // For a provider without native deferred tools, spawnllm's request builder
-// turns ClawEh's flagged list into the core tools plus the referenced hidden
+// turns Agency's flagged list into the core tools plus the referenced hidden
 // tool, with no other hidden tool; without references, only the core tools.
 func TestSpawnllmRequestTools_ClawEhDefinitions(t *testing.T) {
 	r, search := spawnllmRegistry()

@@ -1,4 +1,4 @@
-// ClawEh - sub-agent recursion depth
+// Agency - sub-agent recursion depth
 // License: MIT
 
 package agents

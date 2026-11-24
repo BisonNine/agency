@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package fusion
@@ -51,7 +51,7 @@ func (globalFusionProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDef
 	}
 
 	// The tenant keys per-agent OAuth token storage; normalize it the same way
-	// the rest of ClawEh does so tokens survive across restarts consistently.
+	// the rest of Agency does so tokens survive across restarts consistently.
 	// ToolSpecDefinitions returns []toolspec.ToolDefinition, which is identical to
 	// []toolspec.ToolDefinition (both toolspec v0.2.0) — no conversion needed.
 	tenant := routing.NormalizeAgentID(deps.AgentID)

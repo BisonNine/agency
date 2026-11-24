@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -7,7 +7,7 @@
 // packages that must recognise them without importing the classifier package
 // (config, the backup, the file tools, Check Up). It imports nothing, so
 // config can use it and the classifier package keeps importing no other
-// ClawEh package but its allowed leaves.
+// Agency package but its allowed leaves.
 package classifierfs
 
 const (

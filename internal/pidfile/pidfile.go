@@ -1,9 +1,9 @@
-// ClawEh - process PID file
+// Agency - process PID file
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
-// Package pidfile records the running ClawEh process id in its data
+// Package pidfile records the running Agency process id in its data
 // directory, so a separate `claw` invocation can find the instance it belongs
 // to and report on it.
 //
@@ -66,7 +66,7 @@ func Remove(dataDir string) {
 }
 
 // Read returns the pid recorded for a data directory and whether that process
-// is a LIVE ClawEh process.
+// is a LIVE Agency process.
 //
 // Both checks matter. A kill -9 leaves the file behind, and pids are recycled,
 // so a file alone proves nothing: the process must still exist AND still run
@@ -87,7 +87,7 @@ func Read(dataDir string) (pid int, running bool) {
 	return pid, isClaw(pid)
 }
 
-// isClaw reports whether pid is alive and is a ClawEh process.
+// isClaw reports whether pid is alive and is an Agency process.
 //
 // Signal 0 tests for existence without delivering anything; it succeeds only
 // for a process this user may signal. isOurExecutable then rejects a recycled
@@ -157,7 +157,7 @@ func commName(name string) string {
 //
 // VmRSS is the same figure ps reports as RSS; they are not different metrics.
 // Deliberately NOT VmSize, which for a Go process includes over a gigabyte of
-// reserved address space and would suggest ClawEh is enormous when it is not.
+// reserved address space and would suggest Agency is enormous when it is not.
 func RSSBytes(pid int) (int64, bool) {
 	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "status"))
 	if err != nil {

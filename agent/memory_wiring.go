@@ -1,4 +1,4 @@
-// ClawEh - Cognitive Memory
+// Agency - Cognitive Memory
 // License: MIT
 
 package agent
@@ -57,7 +57,7 @@ func (al *AgentLoop) wireCognitiveMemory(agent *AgentInstance, sessionKey string
 // backfillInbox runs once per store: messages archived before the store kept
 // its own inbox, and not yet consolidated, are copied in so the upgrade loses
 // nothing to memory. Later opens find the flag set and skip it. Host-side by
-// design: only ClawEh knows about the session archive.
+// design: only Agency knows about the session archive.
 func backfillInbox(ctx context.Context, st *store.Store, agentID, stateDir, sessionKey string, perMessageChars int) {
 	done, err := st.InboxBackfilled(ctx)
 	if err != nil || done {

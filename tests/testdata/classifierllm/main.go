@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // classifierllm is a deterministic OpenAI-compatible chat server for the
@@ -31,7 +31,7 @@
 // It is also an external MCP server (streamable HTTP at /mcp) with a
 // mailbox: "list" returns {"items":[{"id":"x1"}]} and "read" the message
 // with that id, whose body says INVOICE; "pages" lists five messages p1..p5
-// two at a time from its "skip" argument on. ClawEh marks such results as
+// two at a time from its "skip" argument on. Agency marks such results as
 // untrusted content for the model; a classifier must read them as JSON.
 //
 // With -admin-credentials <CLAW_HOME> it instead writes the WebUI admin

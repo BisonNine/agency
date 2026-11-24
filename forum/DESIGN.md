@@ -12,7 +12,7 @@ The package imports the standard library, `github.com/google/uuid`,
 `go.bison9.com/agent/toolspec` (the tool contract, stdlib-only) and
 `github.com/santhosh-tekuri/jsonschema/v6` (Draft 2020-12 JSON Schema; it
 was already in `go.sum` as an indirect dependency and is now direct at the
-same version). It imports nothing else from ClawEh: no agent loop, no
+same version). It imports nothing else from Agency: no agent loop, no
 config, no logger, no bus. Everything the host provides arrives through
 the interfaces in `host.go`.
 
@@ -41,7 +41,7 @@ supplies no validator.
   router, decoding or validation directly.
 - Tests live beside their part with a prefix (`st`, `rp`, `ctl`, `svc`,
   …) and use a `t.TempDir()` base directory. Parts (c), (d) and (e) are
-  tested against fakes of the `host.go` interfaces; none needs ClawEh
+  tested against fakes of the `host.go` interfaces; none needs Agency
   running. The service tests also run the real controller.
 
 ## 3. Data flow
@@ -265,7 +265,7 @@ leaves only a temporary entry (`TempPrefix`) the next `Lock` sweeps.
     mark the service closed, so `Close` never waits while one is added and
     a `Recover` running into a `Close` starts nothing.
 
-## 6. Host wiring (ClawEh, outside this package)
+## 6. Host wiring (Agency, outside this package)
 
 The `tools/forum` provider builds the `ToolHost` from `tools.ToolDeps` and
 mounts `forum.Tools(svc, toolHost)` under the `forum` namespace, gated by
@@ -297,7 +297,7 @@ contract beyond the interface signatures:
   dropped after the notice, on supersede and on delete); it is never read
   from the forum directory, so the host may deliver to it. It is the zero
   `Chat` for a run whose launch this process did not see (a restart).
-  ClawEh posts the agent's answer to it, falling back to the launcher's
+  Agency posts the agent's answer to it, falling back to the launcher's
   default binding when it is unknown or the answer finds it offline or not
   found (`fallback_channel`/`fallback_chat_id` on the system message,
   `systemReplyFallback`). The notice text adds the end reason when it says
@@ -306,7 +306,7 @@ contract beyond the interface signatures:
   `forum_status` gives) that came from turns resent after a restart.
 - An Ask that returns without the reply (the wait elapsed, ctx ended:
   the call timeout, the run deadline, a cancel) should stop the
-  participant's turn. ClawEh's `ForumHost.Ask` uses `askStoppingTurn`: the
+  participant's turn. Agency's `ForumHost.Ask` uses `askStoppingTurn`: the
   asked turn's context is cancelled once the asker stops waiting, so the
   model call is aborted. `Agents.Delete` of a participant still in that
   turn deletes it when the turn ends (`agentreg.DeleteWhenIdle`) and

@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package faulttest holds end-to-end fault-injection tests: the real agent

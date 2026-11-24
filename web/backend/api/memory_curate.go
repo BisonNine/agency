@@ -1,4 +1,4 @@
-// ClawEh - WebUI API
+// Agency - WebUI API
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.

@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package servicetoken owns the on-disk state for long-lived, per-agent MCP

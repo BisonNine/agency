@@ -1,6 +1,6 @@
 // Package voice transcribes incoming voice messages with the models in
 // the Transcription list on the Task models page. The HTTP calls are spawnllm's
-// speech package; ClawEh keeps the policy: which models, in which order, the
+// speech package; Agency keeps the policy: which models, in which order, the
 // per-attempt deadline, the fallback and the operator alerts.
 package voice
 

@@ -1,10 +1,10 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package timetool provides the current date and time to the LLM on demand.
 //
 // The system prompt carries only a DATE, deliberately: it sits in the cached
-// prefix, and every HTTP provider ClawEh dispatches to caches by
+// prefix, and every HTTP provider Agency dispatches to caches by
 // longest-common-prefix, so a value that changes every minute would invalidate
 // the cache for the entire conversation history behind it. A date changes once
 // a day; the time is available here instead, for the turns that actually need it.

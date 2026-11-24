@@ -196,13 +196,13 @@ Maestro (`go.bison9.com/maestro`) and MCPFusion (`go.bison9.com/mcpfusion`) are 
 
 Policy (model selection, fallback, cooldown, configuration) remains in Agency.
 
-## Why ClawEh exists
+## Why Agency exists
 
-ClawEh began as a fork of [PicoClaw](https://github.com/sipeed/picoclaw), whose small, easy-to-deploy Go foundation inspired the project and provided a starting point.
+Agency began as a fork of [PicoClaw](https://github.com/sipeed/picoclaw), whose small, easy-to-deploy Go foundation inspired the project and provided a starting point.
 
 It has since evolved into a separate project with different priorities: a smaller, focused codebase that puts core stability, reliability, security, and maintainability first. Over time, the implementation was progressively rewritten, and the original PicoClaw code has now been completely replaced.
 
-ClawEh remains grateful to PicoClaw for the original idea and inspiration.
+Agency remains grateful to PicoClaw for the original idea and inspiration.
 
 ## Terms of Use and Compliance
 Agency supports a wide range of LLM providers. It is your responsibility to ensure that your use of any provider, API, service, or model is consistent with the applicable terms of service, acceptable use policies, contracts, and legal requirements. This includes use-case restrictions, data handling obligations, and any prohibition on accessing non-public or undocumented APIs. We welcome feedback from any LLM providers on this topic.

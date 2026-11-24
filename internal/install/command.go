@@ -39,7 +39,7 @@ func TargetBinaryPath(binDir string) string {
 	return filepath.Join(binDir, global.InstalledBinaryName)
 }
 
-// TargetUser holds the account details under which ClawEh will execute.
+// TargetUser holds the account details under which Agency will execute.
 type TargetUser struct {
 	Username  string
 	UID       string
@@ -122,7 +122,7 @@ func NewUninstallCommand() *cobra.Command {
 // geteuid is os.Geteuid; replaced in tests.
 var geteuid = os.Geteuid
 
-// resolveTargetUser identifies the user account that will own and execute ClawEh.
+// resolveTargetUser identifies the user account that will own and execute Agency.
 // When running with sudo/root, it reads $SUDO_USER or explicitUser to guarantee
 // that the service never runs as root.
 func resolveTargetUser(explicitUser string) (*TargetUser, error) {

@@ -1,4 +1,4 @@
-// ClawEh - allowlisted environment for child processes
+// Agency - allowlisted environment for child processes
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.

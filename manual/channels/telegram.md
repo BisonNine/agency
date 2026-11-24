@@ -2,7 +2,7 @@
 
 Connect one or more Telegram bots so people can talk to your agents in Telegram.
 
-ClawEh fetches messages from Telegram itself, so you do not need a public
+Agency fetches messages from Telegram itself, so you do not need a public
 address or a webhook.
 
 ## Create a bot with BotFather
@@ -13,7 +13,7 @@ address or a webhook.
 3. BotFather replies with the **bot token** (it looks like
    `123456:ABC-DEF...`). Keep it secret: anyone with the token controls the bot.
 
-## Add the bot to ClawEh
+## Add the bot to Agency
 
 1. In the WebUI sidebar, open **Channels → Telegram**.
 2. Click **Add Bot**.
@@ -48,7 +48,7 @@ off, and the trash button removes it.
 - **Placeholder Message**: posts a short message (for example "Thinking...")
   that is replaced by the reply.
 - **Combine Split Messages**: Telegram splits a long paste into several
-  messages. With this on (the default), ClawEh waits briefly
+  messages. With this on (the default), Agency waits briefly
   (**Combine Window (ms)**, 1000 by default) and hands them to the agent as
   one message. Commands such as `/cancel` are never delayed.
 
@@ -90,7 +90,7 @@ groups: in a group, only listed people get an answer.
 
 A new Telegram bot has **Group Privacy** turned on. Telegram then delivers only
 commands, messages that @mention the bot, and replies to the bot's own
-messages; ordinary group messages never reach ClawEh and do not appear in its
+messages; ordinary group messages never reach Agency and do not appear in its
 log. To let the bot see every message:
 
 1. In [@BotFather](https://t.me/BotFather), send `/mybots`.
@@ -135,7 +135,7 @@ group's chat ID (see [Routing and bindings](./routing.md#bind-one-chat-to-an-age
 
 If a person blocks the bot, deletes their account, or never started a chat
 with it, or the bot is removed from a group, Telegram refuses the message.
-ClawEh records that the chat **can't be reached**, logs a warning and moves
+Agency records that the chat **can't be reached**, logs a warning and moves
 on. It does not retry and does not raise an alert. The same happens when a
 group is upgraded to a supergroup: Telegram gives it a new chat ID, so update
 any binding or default chat that used the old one.
@@ -149,10 +149,10 @@ What does raise an [alert](../admin/alerts.md):
   or is wrong). Create a new token with BotFather (`/revoke`) and paste it into
   **Bot Token**.
 - **Telegram down: telegram-alice**: the named bot has had no working
-  connection to Telegram for ten minutes. ClawEh keeps retrying and raises
+  connection to Telegram for ten minutes. Agency keeps retrying and raises
   **Telegram up: telegram-alice** when the connection is back.
 
-Bot tokens never appear in ClawEh's logs or alerts.
+Bot tokens never appear in Agency's logs or alerts.
 
 ## Commands
 

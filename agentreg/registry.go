@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package agentreg is the agent registry: every agent the loop can run a turn

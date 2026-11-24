@@ -1,8 +1,8 @@
 # Providers and models
 
-This section explains how ClawEh reaches the language models your agents use, and how to set each kind up.
+This section explains how Agency reaches the language models your agents use, and how to set each kind up.
 
-An agent never talks to a vendor directly. It names one or more **models**, and each model is reached through a **provider**: a named endpoint with a protocol, an address and, for cloud services, an API key. ClawEh ships with a catalogue of providers and models, all switched off, so most setups come down to adding a key and turning a model on.
+An agent never talks to a vendor directly. It names one or more **models**, and each model is reached through a **provider**: a named endpoint with a protocol, an address and, for cloud services, an API key. Agency ships with a catalogue of providers and models, all switched off, so most setups come down to adding a key and turning a model on.
 
 Both lists live in the WebUI under **Models** in the sidebar:
 

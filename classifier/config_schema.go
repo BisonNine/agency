@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -17,7 +17,7 @@ import (
 // from the Go types by reflection (field names, types, closed objects) plus
 // fieldDocs (descriptions); enums and minimums are the values ValidateStatic
 // checks. A test fails when fieldDocs and the types disagree. The fields
-// ClawEh writes (owner, created_at, updated_at) are left out.
+// Agency writes (owner, created_at, updated_at) are left out.
 //
 // It keeps to the subset of JSON Schema every function-calling provider
 // accepts: no $ref/$defs, no oneOf/anyOf, no pattern or format, and enums on
@@ -30,7 +30,7 @@ type fieldDoc struct {
 	min  int // integer minimum; 0 means none
 }
 
-// hostFields are the fields ClawEh writes; the schemas leave them out.
+// hostFields are the fields Agency writes; the schemas leave them out.
 var hostFields = map[string]bool{
 	"Definition.owner":      true,
 	"Definition.created_at": true,

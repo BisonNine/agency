@@ -7,7 +7,7 @@ file it usually cannot listen to. With one, the agent gets the words.
 
 ## Where voice comes from
 
-| Source | What ClawEh receives |
+| Source | What Agency receives |
 |---|---|
 | [Telegram](./telegram.md) | Voice notes and audio files. |
 | [Discord](./discord.md) | Audio files attached to a message. |
@@ -49,7 +49,7 @@ restart. Send the agent a voice message to check.
 
 A model whose provider can't serve speech (see
 [Task models](../providers/task-models.md#which-address-is-called)), or lacks
-the **Base URL** or **API Key** it needs, is skipped, and ClawEh raises the **Speech backend
+the **Base URL** or **API Key** it needs, is skipped, and Agency raises the **Speech backend
 not usable** [alert](../admin/alerts.md). The provider's proxy setting is not
 used for transcription.
 
@@ -70,7 +70,7 @@ gets `[voice: ]` with no text, and the failure is in the
 
 ## Show the transcript to the sender
 
-ClawEh can send the transcript back to the chat first, so the person sees what
+Agency can send the transcript back to the chat first, so the person sees what
 was understood: "Transcript: …", or "No voice detected in the audio" when
 nothing came out. It is off by default. Turn on **Echo transcription** on the
 [Task models](../providers/task-models.md) page (`task_models.echo_transcription`,
@@ -80,8 +80,8 @@ service).
 ## Costs and keys
 
 - The audio is sent to the service you choose, which charges for it (usually
-  by length) under its own pricing. ClawEh does not count or limit it.
-- When the service refuses the key or the account (no credit), ClawEh raises
+  by length) under its own pricing. Agency does not count or limit it.
+- When the service refuses the key or the account (no credit), Agency raises
   the **Voice transcription rejected** [alert](../admin/alerts.md), and voice
   messages are not transcribed until it is fixed.
 - The key is the provider's, stored in `config.json` under `providers`. The

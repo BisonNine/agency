@@ -67,7 +67,7 @@ type InboundAttachment struct {
 }
 
 // InboundFunc submits a device utterance into the agent layer. The channel sets
-// this to bridge into ClawEh's message bus; it is called per chat.send.
+// this to bridge into Agency's message bus; it is called per chat.send.
 type InboundFunc func(deviceID, chatID, content, idempotencyKey, agentID string, attachments []InboundAttachment)
 
 // Server speaks the OpenClaw Gateway WebSocket protocol to external devices.

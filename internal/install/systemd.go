@@ -17,7 +17,7 @@ const (
 
 // buildSystemUnit renders the systemd system unit for running at machine boot.
 // It explicitly sets User, Group, WorkingDirectory, TimeoutStopSec=60, PATH, and
-// CLAW_HOME so that ClawEh executes strictly as the target user, and hardens the
+// CLAW_HOME so that Agency executes strictly as the target user, and hardens the
 // service with NoNewPrivileges= and PrivateTmp=.
 func buildSystemUnit(username, group, execPath, homeDir, binDir, clawHome string) string {
 	var b strings.Builder
@@ -42,7 +42,7 @@ func buildSystemUnit(username, group, execPath, homeDir, binDir, clawHome string
 	b.WriteString("TimeoutStopSec=60\n")
 	// Hardening: the process (and anything it spawns) can never gain privileges
 	// via setuid/setgid/capabilities, and it gets a /tmp of its own. Nothing
-	// ClawEh runs shares a /tmp path with processes outside the unit: media
+	// Agency runs shares a /tmp path with processes outside the unit: media
 	// staging, CLI history and child processes (CLI providers, MCP servers)
 	// all stay inside it.
 	b.WriteString("NoNewPrivileges=yes\n")

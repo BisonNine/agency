@@ -1,7 +1,7 @@
-// ClawEh
+// Agency
 // License: MIT
 
-// Package report builds the configuration report describing what a ClawEh
+// Package report builds the configuration report describing what an Agency
 // instance is able to do — its listeners, credentials, agents and their folder
 // access, external services and scheduled activity — from the loaded config
 // and a few facts about the running process, and renders it as PDF or plain
@@ -33,14 +33,14 @@ type Environment struct {
 	// there was none.
 	ForwardedPeer string
 	ForwardedSeen time.Time
-	// EncryptedMatrixRooms names the Matrix rooms seen since ClawEh started to
+	// EncryptedMatrixRooms names the Matrix rooms seen since Agency started to
 	// be end-to-end encrypted, which it can't read; empty when there were none.
 	EncryptedMatrixRooms []string
 }
 
 // Report is the collected report: identity, then one Section per area.
 type Report struct {
-	Product     string // "ClawEh"
+	Product     string // "Agency"
 	TagLine     string
 	Version     string
 	GeneratedAt time.Time

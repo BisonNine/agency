@@ -87,7 +87,7 @@ func printProcess(dataDir string) {
 	if rss, ok := pidfile.RSSBytes(pid); ok {
 		// Resident set size: the physical RAM the process occupies. Not VmSize,
 		// which for a Go process counts over a gigabyte of reserved address
-		// space and would make ClawEh look enormous when it is not.
+		// space and would make Agency look enormous when it is not.
 		line += fmt.Sprintf(", %s RAM", humanBytes(rss))
 	}
 	fmt.Println(line)

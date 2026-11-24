@@ -1,6 +1,6 @@
 # Glossary
 
-This page explains the terms used in ClawEh and this manual.
+This page explains the terms used in Agency and this manual.
 
 **Admin account** — The one account that may sign in to the WebUI. Created by `claw install` or `claw admin`, stored in `credentials.json`. See [Signing in](../admin/login.md).
 
@@ -34,9 +34,9 @@ This page explains the terms used in ClawEh and this manual.
 
 **Conversation** — The message history of an agent. Each agent has exactly one, shared by every channel that reaches it.
 
-**Cooldown** — A pause ClawEh puts on a model after it fails, so the agent uses its next model instead. Its length depends on the kind of failure. See [Cooldowns](../providers/concepts.md#cooldowns).
+**Cooldown** — A pause Agency puts on a model after it fails, so the agent uses its next model instead. Its length depends on the kind of failure. See [Cooldowns](../providers/concepts.md#cooldowns).
 
-**Data directory** — The folder where ClawEh keeps everything: `~/.claw`, or the folder named by `CLAW_HOME`.
+**Data directory** — The folder where Agency keeps everything: `~/.claw`, or the folder named by `CLAW_HOME`.
 
 **Default agent** — The agent that answers messages no binding sends elsewhere. Chosen as **Default agent** on the **System** page; without a choice, the first agent is used. See [The default agent](../channels/routing.md#the-default-agent).
 
@@ -46,19 +46,19 @@ This page explains the terms used in ClawEh and this manual.
 
 **Default tools** — The button on the Agents page that writes the standard tool set into an agent's tool list. See [Tools and skills](../agents/tools-and-skills.md#grant-tools).
 
-**Device listener** — ClawEh's listener for paired hardware and voice clients, such as the Rabbit R1 and the Claw to Talk app. Port 18791 by default. See [Devices](../channels/devices.md).
+**Device listener** — Agency's listener for paired hardware and voice clients, such as the Rabbit R1 and the Claw to Talk app. Port 18791 by default. See [Devices](../channels/devices.md).
 
 **Fallback** — Trying the next model in an agent's list when one fails. See [Providers, models and fallback](../providers/concepts.md).
 
 **Forum** — A structured discussion among several agents that one agent launches and the others take part in. Allowed per agent with **Allow forum**. See [Forums](../forums/index.md).
 
-**Fusion** — ClawEh's built-in connector for REST-API services such as Microsoft 365. Granted per agent and per service. See [MCPFusion](../mcpfusion.md).
+**Fusion** — Agency's built-in connector for REST-API services such as Microsoft 365. Granted per agent and per service. See [MCPFusion](../mcpfusion.md).
 
 **Human agent** — An agent that stands for a person. Other agents can ask it questions; the person answers in their chat. See [Human agents](../agents/human-agents.md).
 
 **Maestro** — A tool suite for planning and running multi-step work as projects, playbooks and task lists, with tasks handed to sub-agents. Switched per agent. See [Maestro](../maestro.md).
 
-**MCP** — Model Context Protocol, a standard way to offer tools to a model. ClawEh connects to MCP servers to give agents their tools, and runs its own MCP server so CLI providers can call ClawEh's tools. See [MCP](../mcp.md).
+**MCP** — Model Context Protocol, a standard way to offer tools to a model. Agency connects to MCP servers to give agents their tools, and runs its own MCP server so CLI providers can call Agency's tools. See [MCP](../mcp.md).
 
 **Model** — A named language model reached through a provider. An agent tries its models in order. See [Providers and models](../providers/index.md).
 
@@ -74,12 +74,12 @@ This page explains the terms used in ClawEh and this manual.
 
 **Sub-agent** — A clone an agent starts to do a task separately and report back. Nesting is limited by **Max sub-agent depth** on the **System** page (default 3). See [Sub-agents](../agents/subagents.md).
 
-**Task model** — A model ClawEh uses for one call with no conversation and no tools: writing text, making images, speech, transcription, describing images or classifying. Each use has its own ordered list on the **Task models** page. See [Task models](../providers/task-models.md).
+**Task model** — A model Agency uses for one call with no conversation and no tools: writing text, making images, speech, transcription, describing images or classifying. Each use has its own ordered list on the **Task models** page. See [Task models](../providers/task-models.md).
 
-**Temporary agent** — An agent created while ClawEh runs, such as a clone or a forum participant. It is not in `config.json` and is removed when its work is done or after a day idle. See [Temporary agents](../agents/subagents.md#temporary-agents).
+**Temporary agent** — An agent created while Agency runs, such as a clone or a forum participant. It is not in `config.json` and is removed when its work is done or after a day idle. See [Temporary agents](../agents/subagents.md#temporary-agents).
 
 **Tools** — The actions an agent can take, such as reading files or searching the web. An agent has only the tools its configuration lists. See [Tools and skills](../agents/tools-and-skills.md).
 
-**WebUI** — The web interface for chatting with agents and configuring ClawEh. Served on port 18790 (HTTP) and 18443 (HTTPS) by default. See [HTTPS and certificates](../admin/https.md).
+**WebUI** — The web interface for chatting with agents and configuring Agency. Served on port 18790 (HTTP) and 18443 (HTTPS) by default. See [HTTPS and certificates](../admin/https.md).
 
 **Workspace** — An agent's folder, `agents/<id>/` in the data directory. It holds the agent's prompt files, its `files/` working area, its skills and its data. See [Files and allowed folders](../agents/allowed-folders.md).

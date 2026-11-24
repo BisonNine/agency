@@ -2,7 +2,7 @@
 
 A classifier sorts the items one of an agent's tools can list, such as email messages, files or tickets. On every run it lists the items, skips the ones it has already handled, reads each new one, asks a model which category it belongs to, and runs the action set for that category.
 
-Each item costs one model call. **The model that classifies never has tools**: it is shown the item and the categories and can only answer with a category. Listing, reading and acting are done by ClawEh, with the agent's own tools.
+Each item costs one model call. **The model that classifies never has tools**: it is shown the item and the categories and can only answer with a category. Listing, reading and acting are done by Agency, with the agent's own tools.
 
 ## Turn it on
 
@@ -45,9 +45,9 @@ The agent's guide tells it to:
 
 Each classifier is one file, `classifiers/<id>.json` in the agent's workspace, beside `classifiers/state.db`, which records what has been handled. The agent's file tools can read the folder but not write it, so every change goes through the classifier tools and their checks.
 
-You can edit a definition file by hand. ClawEh reads it again when it changes and checks it the same way. A file that fails the checks is not run, is logged once, is reported to the agent like a [failed run](#failed-runs), and is marked on Check Up; it is never deleted.
+You can edit a definition file by hand. Agency reads it again when it changes and checks it the same way. A file that fails the checks is not run, is logged once, is reported to the agent like a [failed run](#failed-runs), and is marked on Check Up; it is never deleted.
 
-When `classifiers/state.db` can't be opened, none of the agent's classifiers runs. ClawEh logs an error, raises an [alert](../admin/alerts.md), tells the agent and your chat ("Classifiers can't run: their state could not be opened."), once a day while it lasts (a restart can repeat it once), and marks it on Check Up, with the error the service last met.
+When `classifiers/state.db` can't be opened, none of the agent's classifiers runs. Agency logs an error, raises an [alert](../admin/alerts.md), tells the agent and your chat ("Classifiers can't run: their state could not be opened."), once a day while it lasts (a restart can repeat it once), and marks it on Check Up, with the error the service last met.
 
 ## The definition
 
@@ -111,7 +111,7 @@ When `classifiers/state.db` can't be opened, none of the agent's classifiers run
 | `report.errors` | `true` (default): failed runs are reported to the agent and your chat. `false`: they are only logged. |
 | `activity_hours` | How long the activity log is kept. |
 
-ClawEh writes `owner`, `created_at` and `updated_at`.
+Agency writes `owner`, `created_at` and `updated_at`.
 
 ### Arguments are checked against the tool
 
@@ -219,8 +219,8 @@ A placeholder must be the whole value: `"{{item.id}}"`, never `"id={{item.id}}"`
 - A run takes items whose action is still pending first, then new items in the source's order, then failed ones, so items that keep failing never hold up new ones.
 - After `limits.max_attempts` attempts (5 by default) a failing item is left alone. `classifier_status` counts these as `gave_up`. An attempt counts only in a run where at least one other item was handled without failing, so an outage of a tool or the model uses up no attempts. Any change the agent makes with `classifier_update` tries them again.
 - An item all of whose `fetch.fields` are missing from the fetch result (for example, the fetch tool answered with text, not JSON) fails; it is never classified or acted on blind. Empty fields count as there.
-- Results that ClawEh marks as external content for the model (tools of external MCP servers, the web tools) are read as the JSON they carry.
-- Stopping ClawEh in the middle of a run is not a failure: what it interrupted is taken again at the next start.
+- Results that Agency marks as external content for the model (tools of external MCP servers, the web tools) are read as the JSON they carry.
+- Stopping Agency in the middle of a run is not a failure: what it interrupted is taken again at the next start.
 - Changing the rules (in the definition or its Markdown files), categories or actions does not reprocess items already handled. `classifier_rerun` classifies one item again on purpose.
 - Handled items are remembered for 30 days (`classifiers.processed_days`), so an item that comes back is not classified again.
 - One run at a time per classifier.
@@ -234,7 +234,7 @@ Every failed run is written to the [activity log](#activity-log) and logged as a
 - Your chat gets one line, unless `report.summary` is `never`: "Alice: Classifier inbox: the run failed (source mail_list: the tool failed)." The tool's own message is not in it; the agent and the activity log have it.
 - The agent gets the same sentence in its conversation, then what the tool, provider or item said, marked as external data so the agent does not take it as instructions, and advice that fits the cause: fix the definition and check it with `classifier_test`; check the tool or model itself (credentials or an outage) before changing the classifier; tell you when a tool it names is gone, or when only you can fix it (the Task models page, the classifier's state). Its answer goes to its default chat (when it has none, the answer stays in the conversation).
 - The first and second failed runs in a row are reported. The second adds, in your chat, "Further errors won't be reported for 24 hours." and tells the agent how to report them again (`classifier_update` with `{"report": {"errors": true}}`). Later failures are only logged until those 24 hours are over; the next failure after that is reported again.
-- Any change the agent makes to the classifier with `classifier_update` reports errors again at once. A run that succeeds starts the count again; it does not end the 24 hours. A run that was stopped (you turned the classifier off, ClawEh stopped) changes nothing. The count and the 24 hours survive a restart.
+- Any change the agent makes to the classifier with `classifier_update` reports errors again at once. A run that succeeds starts the count again; it does not end the 24 hours. A run that was stopped (you turned the classifier off, Agency stopped) changes nothing. The count and the 24 hours survive a restart.
 - With `report.errors` set to `false`, failed runs are only logged.
 - Failed items (a fetch, the model or an action failing on one item) are not failed runs: they are in the usual summary, until `stop_after_failures` of them in a row fail the run.
 - A model in cooldown is not a failure to fix: the run stops, its items wait, and only the usual summary is posted.

@@ -1,6 +1,6 @@
 //go:build !windows
 
-// ClawEh - Cognitive Memory
+// Agency - Cognitive Memory
 // License: MIT
 
 package cogmem

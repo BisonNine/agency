@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package mcpserver
@@ -15,7 +15,7 @@ import (
 )
 
 // callTool sends a tools/call through the server's internal endpoint (the one
-// ClawEh's CLI providers use, session_token in the arguments) and returns the
+// Agency's CLI providers use, session_token in the arguments) and returns the
 // text of the result and whether it is an error.
 func callTool(t *testing.T, srv *MCPServer, tool, token string) (string, bool) {
 	t.Helper()

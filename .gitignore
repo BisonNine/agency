@@ -20,7 +20,7 @@ private/
 internal/onboard/workspace/
 test.out
 
-# ClawEh data directory
+# Agency data directory
 .claw/
 config.json
 sessions/

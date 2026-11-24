@@ -1,10 +1,10 @@
 # Overview
 
-ClawEh is a self-hosted program that runs one or more personal AI assistants on a computer you control.
+Agency is a self-hosted program that runs one or more personal AI assistants on a computer you control.
 
 ## What it does
 
-ClawEh runs [agents](../agents/index.md). An agent is an assistant with its own name, models, tools, files and memory.
+Agency runs [agents](../agents/index.md). An agent is an assistant with its own name, models, tools, files and memory.
 
 You reach an agent through [channels](../channels/index.md): the built-in WebUI chat, Telegram, Slack, Discord, Signal, Matrix, and paired devices such as the Rabbit R1 or a voice app.
 
@@ -17,8 +17,8 @@ Everything runs in one program, `claw`. It serves the agents, the WebUI and its 
 - **One conversation per agent.** Everything that reaches an agent joins its one conversation, whatever the channel. If you want a separate conversation, create a separate agent.
 - **Nothing is granted by default.** A new agent has no tools and no skills. You grant them on the **Agents** page ([Tools and skills](../agents/tools-and-skills.md)). Shell commands (`shell_exec`) are off by default and granted only by ticking that tool.
 - **Memory that persists.** Each agent can keep a cognitive memory that is updated in the background from its conversation and recalled when relevant ([Conversation and memory](../agents/memory.md)).
-- **Fallback between models.** An agent lists its models in order. When one fails, ClawEh tries the next and pauses the failing one for a while ([Providers, models and fallback](../providers/concepts.md)).
-- **One configuration file.** All settings live in `config.json` in the data directory. The WebUI edits the same file, and ClawEh reloads it when it changes ([Configuration file](../reference/configuration.md)).
+- **Fallback between models.** An agent lists its models in order. When one fails, Agency tries the next and pauses the failing one for a while ([Providers, models and fallback](../providers/concepts.md)).
+- **One configuration file.** All settings live in `config.json` in the data directory. The WebUI edits the same file, and Agency reloads it when it changes ([Configuration file](../reference/configuration.md)).
 - **Login required.** The WebUI and its API require the admin account, also on the same machine ([Signing in](../admin/login.md)).
 
 The [Glossary](../reference/glossary.md) explains these and other terms.
@@ -31,7 +31,7 @@ The [Glossary](../reference/glossary.md) explains these and other terms.
 
 ## Where its files are
 
-ClawEh keeps everything in one data directory: `~/.claw`, unless the `CLAW_HOME` environment variable names another. The main files are:
+Agency keeps everything in one data directory: `~/.claw`, unless the `CLAW_HOME` environment variable names another. The main files are:
 
 | Path | What it is |
 |---|---|
@@ -44,4 +44,4 @@ ClawEh keeps everything in one data directory: `~/.claw`, unless the `CLAW_HOME`
 
 ## Next step
 
-[Install ClawEh](./install.md).
+[Install Agency](./install.md).

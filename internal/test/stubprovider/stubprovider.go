@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package stubprovider is an in-process OpenAI-compatible chat-completions

@@ -1,8 +1,8 @@
 # Device Protocol
 
-ClawEh's **device listener** speaks the OpenClaw Gateway WebSocket protocol so external
+Agency's **device listener** speaks the OpenClaw Gateway WebSocket protocol so external
 hardware/voice clients (e.g. the Rabbit R1, the "Claw to Talk" Android app) can pair and
-converse with an agent. This documents the wire protocol as ClawEh implements it, plus the
+converse with an agent. This documents the wire protocol as Agency implements it, plus the
 client-compatibility findings that shaped it.
 
 Implementation: `channels/device/` (`server.go` owns the protocol; `gateway.go` the
@@ -200,7 +200,7 @@ as the OpenClaw Gateway does it (`server-methods/chat.ts`):
 ## Reply events
 
 A real OpenClaw Gateway emits **two** event families per turn, and clients consume them
-differently. ClawEh emits both (`emitChatReply` in `server.go`).
+differently. Agency emits both (`emitChatReply` in `server.go`).
 
 ### Emission order matters (R1 speech)
 
@@ -220,7 +220,7 @@ order) makes the R1 both **speak and display**. `emitChatReply` therefore sends
 ### Partial streaming
 
 When the target channel is **streaming-capable** (implements `StreamCapable` — currently the
-device listener), ClawEh streams partial assistant text **as the model generates it** instead of
+device listener), Agency streams partial assistant text **as the model generates it** instead of
 sending the whole reply at once. The agent loop coalesces provider token deltas into
 sentence/length chunks (`stream_coalescer.go`) and the device emits them incrementally
 (`Server.StreamDelta`): a `chat` `state:"delta"` event (running `message` + the new `deltaText`)
@@ -272,7 +272,7 @@ its speech pipeline) and **complete the turn** on `stream:"lifecycle"` with `dat
     "usage":{"input":0,"output":0,"totalTokens":0},"stopReason":"stop" },"seq":<frame> }
 ```
 
-- `state` is `delta` | `final` | `aborted` | `error`. For a streaming-capable channel ClawEh
+- `state` is `delta` | `final` | `aborted` | `error`. For a streaming-capable channel Agency
   emits `delta` events as the reply generates (see *Partial streaming*), then the `final`; a
   non-streamed turn is just the single `final`.
 - `payload.seq` is **per-run** (OpenClaw's `nextChatSeq`): a run's events start at 1. The
@@ -286,7 +286,7 @@ its speech pipeline) and **complete the turn** on `stream:"lifecycle"` with `dat
 ### Several runs on one connection, and `/cancel`
 
 The socket is not blocked while a reply is pending, so a client may send another `chat.send`
-during a run. ClawEh keeps every run of a connection open by its `runId` until its reply: a
+during a run. Agency keeps every run of a connection open by its `runId` until its reply: a
 reply goes to the run it answers (its `runId`); a reply that names no run goes to the
 latest open run.
 

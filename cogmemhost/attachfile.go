@@ -1,4 +1,4 @@
-// ClawEh - Cognitive Memory
+// Agency - Cognitive Memory
 // License: MIT
 
 // attachfile.go resolves the markdown files that cognitive memories point

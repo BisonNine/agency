@@ -1,7 +1,7 @@
 # Release description for a private release management system.
 # It is not needed to build this product.
 
-name:   ClawEh
+name:   Agency
 module: go.bison9.com/agency
 github: PivotLLM/ClawEh
 

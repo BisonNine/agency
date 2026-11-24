@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package devicegw implements the `claw devices` CLI: provision + print a pairing

@@ -40,7 +40,7 @@ was said before, here or on any other channel.
 
 ## Setup
 
-ClawEh turns the WebUI chat on by itself at startup, with a channel token and
+Agency turns the WebUI chat on by itself at startup, with a channel token and
 **Allow From** set to `*`, so there is nothing to configure. The settings are
 under **Channels → Web**.
 
@@ -55,5 +55,5 @@ other programs that connect to the chat socket directly.
   goes), because it has no fixed address. The **Default Channel** section on
   the **Agents** page marks it "can't be a default channel".
 - A message sent to the WebUI chat while no browser has it open is not
-  delivered; ClawEh records the chat as offline. See
+  delivered; Agency records the chat as offline. See
   [When a message cannot be delivered](./index.md#when-a-message-cannot-be-delivered).

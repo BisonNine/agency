@@ -2,7 +2,7 @@
 
 An agent's file tools work inside its own folder, plus any outside folders you allow for it and the shared common folder.
 
-These rules apply to the file tools (`file_read_lines`, `file_write`, `file_list` and the rest), which the agent has only if you [grant them](./tools-and-skills.md). They also decide which files the agent can send with `msg_send_file`, attach to its memory, use as a forum source or hand to a task model. Shell commands are not confined by them: an agent allowed shell commands can reach anything the ClawEh service account can.
+These rules apply to the file tools (`file_read_lines`, `file_write`, `file_list` and the rest), which the agent has only if you [grant them](./tools-and-skills.md). They also decide which files the agent can send with `msg_send_file`, attach to its memory, use as a forum source or hand to a task model. Shell commands are not confined by them: an agent allowed shell commands can reach anything the Agency service account can.
 
 ## The folders in a workspace
 
@@ -44,7 +44,7 @@ An allowed folder gives one agent's file tools a folder elsewhere on the machine
 
 The trash icon removes a folder. A path that is not absolute is refused, for example "Alice's allowed folder "src" must be an absolute path.", and so is a note longer than 100 characters ("Alice's note for "/opt/audio/in" is longer than 100 characters."). A saved folder the file tools cannot use is marked on its row: "Ignored: not an absolute path" (left by an older configuration), "Ignored: path contains a line break" (a hand edit; such a path is refused on save) or "Ignored: folder not found"; Check Up lists it too.
 
-ClawEh does not decide write access. The agent may read and write wherever the account ClawEh runs as may; in a folder that account cannot write, a write fails with "permission denied: \<path\> is read-only for this app". To give an agent a read-only folder, make it read-only for that account.
+Agency does not decide write access. The agent may read and write wherever the account Agency runs as may; in a folder that account cannot write, a write fails with "permission denied: \<path\> is read-only for this app". To give an agent a read-only folder, make it read-only for that account.
 
 The agent's prompt lists each allowed folder by its path, marked "(read-only)" when the account cannot write it and followed by its note, for example `/opt/audio/in (read-only): inbound audio notes`. The same list names the workspace folders the file tools reach, by absolute path. With **Maestro** on, the folders are also in Maestro's reference library (see [Maestro](../maestro.md#what-maestro-can-read)).
 
@@ -64,9 +64,9 @@ In `config.json`:
 
 ### New-file notices
 
-With **Notify on new files** ticked, ClawEh checks the folder every 10 seconds. When a new file appears, the agent gets a message naming the agent, the folder and the file, such as "New file in Alice's allowed folder /srv/src: /srv/src/sub/x.md", in its default channel, as if it had been sent there, and handles it like any other message. Files that are only changed do not count. The agent needs a **Default Channel** for this; without one the notice is skipped and logged.
+With **Notify on new files** ticked, Agency checks the folder every 10 seconds. When a new file appears, the agent gets a message naming the agent, the folder and the file, such as "New file in Alice's allowed folder /srv/src: /srv/src/sub/x.md", in its default channel, as if it had been sent there, and handles it like any other message. Files that are only changed do not count. The agent needs a **Default Channel** for this; without one the notice is skipped and logged.
 
-ClawEh keeps the list of files each agent has seen in that agent's own folder (`state/folderwatch/` in its workspace), so a read-only folder gets notices too, and two agents watching the same folder are each told. The first check of a folder only records what is already there, and so does the first check after a folder is added again or its notices are turned back on. Versions before 0.6.4 kept this list in a `.claw` file in the folder; it is no longer used and can be deleted.
+Agency keeps the list of files each agent has seen in that agent's own folder (`state/folderwatch/` in its workspace), so a read-only folder gets notices too, and two agents watching the same folder are each told. The first check of a folder only records what is already there, and so does the first check after a folder is added again or its notices are turned back on. Versions before 0.6.4 kept this list in a `.claw` file in the folder; it is no longer used and can be deleted.
 
 ### Folders set as mounts before 0.6.4
 

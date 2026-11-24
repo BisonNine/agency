@@ -1,6 +1,6 @@
 # Upgrading
 
-This page explains how to upgrade ClawEh and what to check after upgrading to 0.6.0 and 0.6.4.
+This page explains how to upgrade Agency and what to check after upgrading to 0.6.0 and 0.6.4.
 
 ## Upgrade on Debian or Ubuntu (`apt`)
 
@@ -63,9 +63,9 @@ The WebUI and its API now require the admin account, also from the same machine.
 
 ### HTTPS is on
 
-ClawEh also serves HTTPS on port 18443, on every interface, with a self-signed certificate. Other machines are still refused until their network is allowed. To keep the old footprint, set **Listen on** under **HTTPS** to **Localhost only** or **Off** on the **Network** page. See [HTTPS and certificates](../admin/https.md).
+Agency also serves HTTPS on port 18443, on every interface, with a self-signed certificate. Other machines are still refused until their network is allowed. To keep the old footprint, set **Listen on** under **HTTPS** to **Localhost only** or **Off** on the **Network** page. See [HTTPS and certificates](../admin/https.md).
 
-ClawEh now answers only to its own host names. If you reach it by another name, such as a reverse proxy name, set **Hostname / external URL** on the **Network** page.
+Agency now answers only to its own host names. If you reach it by another name, such as a reverse proxy name, set **Hostname / external URL** on the **Network** page.
 
 ### Agents have only the tools and skills they list
 
@@ -102,7 +102,7 @@ Session modes are removed. Every message to an agent joins its one conversation.
 
 ### The data directory layout changed
 
-ClawEh's own files moved into `internal/`, shared skills into `skills/`, and the common folder into `common/`. There is no automatic migration. The old `agents/default` folder is no longer used; move anything you want to keep by hand.
+Agency's own files moved into `internal/`, shared skills into `skills/`, and the common folder into `common/`. There is no automatic migration. The old `agents/default` folder is no longer used; move anything you want to keep by hand.
 
 ### The device listener needs a secret
 
@@ -112,7 +112,7 @@ An enabled device listener on a network address now needs a token and approval o
 
 ### Mounts are now allowed folders
 
-An agent's mounts become [allowed folders](../agents/allowed-folders.md) at load, with the same path and notify setting. The agent now uses the folder's real path, such as `/srv/src/notes.md`, instead of `notes/...`; tell it so in its instructions if they name the old path. Write access now follows file permissions: where a mount was read-only, make the folder read-only for the account ClawEh runs as.
+An agent's mounts become [allowed folders](../agents/allowed-folders.md) at load, with the same path and notify setting. The agent now uses the folder's real path, such as `/srv/src/notes.md`, instead of `notes/...`; tell it so in its instructions if they name the old path. Write access now follows file permissions: where a mount was read-only, make the folder read-only for the account Agency runs as.
 
 ### Agents granted every tool get file_glob
 
@@ -144,7 +144,7 @@ which provider and model ID to use.
 
 ### Shell commands are not limited by path
 
-`shell_exec` no longer refuses a command for the paths in it or for its working folder. It runs with the full access of the account ClawEh runs as; the deny patterns still apply. Check that each agent with `shell_exec` ticked should have it.
+`shell_exec` no longer refuses a command for the paths in it or for its working folder. It runs with the full access of the account Agency runs as; the deny patterns still apply. Check that each agent with `shell_exec` ticked should have it.
 
 ## After any upgrade
 

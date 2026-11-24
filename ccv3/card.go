@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -8,7 +8,7 @@
 // the import of V2 and V3 cards (JSON or PNG) and the on-disk store.
 //
 // It imports only the standard library and internal/mergepatch, so every
-// part of ClawEh (the tool, the API, the forum host, the agent builder) can
+// part of Agency (the tool, the API, the forum host, the agent builder) can
 // use it without an import cycle.
 //
 // A card's data is kept as raw JSON (Card.Data), never round-tripped through

@@ -48,7 +48,7 @@ func TestLive_SendToMissingChat(t *testing.T) {
 		t.Run(chatID, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			err := ch.Send(ctx, bus.OutboundMessage{Channel: "telegram", ChatID: chatID, Content: "ClawEh delivery test"})
+			err := ch.Send(ctx, bus.OutboundMessage{Channel: "telegram", ChatID: chatID, Content: "Agency delivery test"})
 			if err == nil {
 				t.Fatal("a send to a chat that cannot exist succeeded")
 			}

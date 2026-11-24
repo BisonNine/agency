@@ -10,6 +10,6 @@ This section is for looking things up: the configuration file, the commands, com
 | [Command line](./cli.md) | Every `claw` command and its main options. |
 | [Chat commands](./chat-commands.md) | Every command a person can type in a chat, such as `/status`, `/model` and `/cancel`. |
 | [Troubleshooting](./troubleshooting.md) | A service that does not start, an unreachable WebUI, unavailable models, agents without tools, channels that do not deliver, and Check Up rows. |
-| [Glossary](./glossary.md) | The terms used in ClawEh and this manual. |
+| [Glossary](./glossary.md) | The terms used in Agency and this manual. |
 
 For installing and first steps, see [Getting started](../getting-started/index.md).

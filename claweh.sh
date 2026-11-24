@@ -1,5 +1,5 @@
 #!/bin/sh
-# ClawEh installer — downloads the prebuilt `claw` binary (and license) for your
+# Agency installer — downloads the prebuilt `claw` binary (and license) for your
 # platform from GitHub Releases and installs it.
 #
 #   curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claweh.sh | sh
@@ -141,7 +141,7 @@ case ":$PATH:" in
 esac
 
 # Always advise where the license and third-party notices are.
-printf '\nClawEh is MIT-licensed and bundles third-party open-source components.\n'
+printf '\nAgency is MIT-licensed and bundles third-party open-source components.\n'
 if [ -n "$license_dest" ]; then
 	printf 'License and third-party notices: %s\n' "$license_dest"
 else

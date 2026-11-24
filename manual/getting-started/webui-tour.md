@@ -62,7 +62,7 @@ See [Providers, models and fallback](../providers/concepts.md).
 
 ### Task models
 
-The models ClawEh uses for single calls without tools, in six ordered lists: **Generate text**, **Generate images**, **Text to speech**, **Transcription**, **Describe images** and **Classification**. Each list tries its models from the top down; a model can be in several lists. The **Settings** card holds **Text in results (characters)** and **Echo transcription**.
+The models Agency uses for single calls without tools, in six ordered lists: **Generate text**, **Generate images**, **Text to speech**, **Transcription**, **Describe images** and **Classification**. Each list tries its models from the top down; a model can be in several lists. The **Settings** card holds **Text in results (characters)** and **Echo transcription**.
 
 See [Task models](../providers/task-models.md).
 
@@ -96,14 +96,14 @@ See [Configuration file](../reference/configuration.md), [Backup and restore](..
 
 Two pages:
 
-- **Config**: ClawEh's own MCP server, which CLI providers and other MCP clients use to call ClawEh's tools.
-- **Servers**: the external MCP servers ClawEh connects to. **Add server** adds one; **Apply now** saves and reconnects the servers at once.
+- **Config**: Agency's own MCP server, which CLI providers and other MCP clients use to call Agency's tools.
+- **Servers**: the external MCP servers Agency connects to. **Add server** adds one; **Apply now** saves and reconnects the servers at once.
 
 See [MCP](../mcp.md).
 
 ### Logs
 
-The latest lines of the ClawEh log. The **Log** selector switches to **Alerts**, **Show** sets how many lines, and **Refresh** fetches new ones.
+The latest lines of the Agency log. The **Log** selector switches to **Alerts**, **Show** sets how many lines, and **Refresh** fetches new ones.
 
 See [Logs](../admin/logs.md) and [Alerts](../admin/alerts.md).
 
@@ -121,7 +121,7 @@ See [Check Up](../admin/checkup.md).
 
 ## Status
 
-At the bottom of the sidebar. Shows that ClawEh is running and how: uptime, memory use, the number of assistants, channels, models and providers, the version and build, and whether the MCP host and CLI providers are in use. It refreshes every few seconds.
+At the bottom of the sidebar. Shows that Agency is running and how: uptime, memory use, the number of assistants, channels, models and providers, the version and build, and whether the MCP host and CLI providers are in use. It refreshes every few seconds.
 
 ## Manual
 

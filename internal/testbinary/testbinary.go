@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package testbinary sets the name app.BinaryName reports, for tests that

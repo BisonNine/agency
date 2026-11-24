@@ -1,11 +1,11 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
 // Package mergepatch applies RFC 7386 JSON merge patches while keeping the
 // target document's member order and untouched bytes. It imports only the
-// standard library, so packages that must stay free of ClawEh imports (the
+// standard library, so packages that must stay free of Agency imports (the
 // forum, the character-card library) can share it.
 package mergepatch
 

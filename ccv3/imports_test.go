@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -14,8 +14,8 @@ import (
 	"testing"
 )
 
-// The ccv3 package imports no ClawEh package but the stdlib-only
-// internal/mergepatch, so every part of ClawEh can use it.
+// The ccv3 package imports no Agency package but the stdlib-only
+// internal/mergepatch, so every part of Agency can use it.
 func TestCCv3ImportsNoClawEhPackage(t *testing.T) {
 	const module = "go.bison9.com/agency/"
 	allowed := map[string]bool{module + "internal/mergepatch": true}

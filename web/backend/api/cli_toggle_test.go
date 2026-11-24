@@ -238,7 +238,7 @@ func TestListCLIs_ReportsConfiguredState(t *testing.T) {
 			}
 		default:
 			// Unconfigured CLIs are still listed — greyed out in the UI. A CLI
-			// ClawEh supports but has not been set up is a different thing from
+			// Agency supports but has not been set up is a different thing from
 			// one it does not support, and hiding it looks like the latter.
 			if c.Enabled || c.Configured || c.Models != 0 {
 				t.Errorf("%s row = %+v, want unconfigured but present", c.Protocol, c)
@@ -324,7 +324,7 @@ func listCLI(t *testing.T, h *Handler, protocol string) cliInfo {
 }
 
 // Enabling a CLI must not turn the bypass on: those are two decisions, and the
-// second is the one with consequences outside ClawEh. The setting round-trips
+// second is the one with consequences outside Agency. The setting round-trips
 // through PUT, the saved config, and the listing.
 func TestSetCLI_BypassRestrictionsRoundTrip(t *testing.T) {
 	cfg := config.DefaultConfig()

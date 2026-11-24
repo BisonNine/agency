@@ -429,7 +429,7 @@ export function NetworkPage() {
                 </div>
               )}
 
-              {/* Where to open ClawEh, from the running listeners. */}
+              {/* Where to open Agency, from the running listeners. */}
               <ConfigSectionCard
                 title={t("pages.network.urls.title")}
                 description={t("pages.network.urls.desc")}

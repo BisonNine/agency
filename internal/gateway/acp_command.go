@@ -32,7 +32,7 @@ import (
 // claw over its localhost WebSocket (the device listener on 127.0.0.1:<port>).
 // It is intended to be spawned by an ACP client (e.g. rabbit-agent for the Rabbit
 // R1). The bridge holds no agent loop of its own — the one running claw does
-// the work, so there is exactly one ClawEh instance.
+// the work, so there is exactly one Agency instance.
 func NewACPCommand() *cobra.Command {
 	var debug bool
 	var url string

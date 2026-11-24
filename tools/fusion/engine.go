@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package fusion
@@ -47,9 +47,9 @@ func sharedEngine(c *config.Config) *mcpfusion.Fusion {
 			return
 		}
 
-		// Fusion events flow into the main ClawEh log (component "fusion") via an
+		// Fusion events flow into the main Agency log (component "fusion") via an
 		// adapter, rather than a separate fusion.log file, so all logging is
-		// unified under ClawEh's format, levels, and rotation.
+		// unified under Agency's format, levels, and rotation.
 		//
 		// Option order matters: WithLogger first, because WithDataStore and
 		// WithConfigDir use f.logger during construction.

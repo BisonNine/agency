@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package fusion
@@ -31,7 +31,7 @@ func TestFieldsToMap(t *testing.T) {
 }
 
 // The embedded engine emits Fatal for ordinary request failures, so Fatal-level
-// calls MUST log without terminating the ClawEh process. If any of these exited
+// calls MUST log without terminating the Agency process. If any of these exited
 // or panicked, the test binary would never reach the end of the function.
 func TestFusionLogAdapter_FatalNeverExits(t *testing.T) {
 	a := newFusionLogAdapter()

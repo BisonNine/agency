@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package config
@@ -12,7 +12,7 @@ import (
 	"go.bison9.com/agent/modelspec"
 )
 
-// TaskModelsConfig is the Task models page: the models ClawEh and its agents
+// TaskModelsConfig is the Task models page: the models Agency and its agents
 // use for single calls (one input, one output, never a conversation, never
 // tools), in one ordered list per use. A list's order is that use's fallback
 // order; a model may be in several lists, at most once in each.

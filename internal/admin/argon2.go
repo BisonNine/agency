@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package admin owns the operator credentials file (<CLAW_HOME>/credentials.json)

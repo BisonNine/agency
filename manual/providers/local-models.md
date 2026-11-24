@@ -2,7 +2,7 @@
 
 This page shows how to use models you run yourself, with Ollama, vLLM or any other server that speaks the OpenAI Chat Completions API.
 
-ClawEh talks to a local server like any other `openai-chat` endpoint. No API key is needed when the server does not ask for one.
+Agency talks to a local server like any other `openai-chat` endpoint. No API key is needed when the server does not ask for one.
 
 ## The catalogue entries
 
@@ -26,9 +26,9 @@ ClawEh talks to a local server like any other `openai-chat` endpoint. No API key
 3. Edit the **Local Model** entry and replace `custom-model` with the model name the server serves (as listed at `<base URL>/models`).
 4. Set **Context Window (tokens)** and switch the model on.
 
-## How ClawEh checks a local model
+## How Agency checks a local model
 
-A model whose provider's base URL is on this machine (`localhost`, `127.0.0.1`, `::1` or `0.0.0.0`) needs no key. Instead, each time the Models page loads, ClawEh asks the server for `<base URL>/models` and shows the model as **Configured** only when the server answers within a second and lists the **Model Identifier** (letter case ignored). If the server is stopped or the id is spelled differently, the model shows **Not configured** and is not offered in the model pickers on the Agents and System pages.
+A model whose provider's base URL is on this machine (`localhost`, `127.0.0.1`, `::1` or `0.0.0.0`) needs no key. Instead, each time the Models page loads, Agency asks the server for `<base URL>/models` and shows the model as **Configured** only when the server answers within a second and lists the **Model Identifier** (letter case ignored). If the server is stopped or the id is spelled differently, the model shows **Not configured** and is not offered in the model pickers on the Agents and System pages.
 
 A server on another machine, for example `http://192.168.1.20:11434/v1`, is treated like a cloud API: the model shows as **Configured** only when the provider has an API key. If the server needs none, enter any placeholder value under **API Key**.
 

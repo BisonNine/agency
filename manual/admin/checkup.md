@@ -2,7 +2,7 @@
 
 The **Check Up** page lists the settings that most often need attention, and its **Full report** button downloads a PDF of everything the install can do.
 
-Both are built from the configuration ClawEh has loaded. Neither ever shows a password, key or token: credentials appear only as set or not set.
+Both are built from the configuration Agency has loaded. Neither ever shows a password, key or token: credentials appear only as set or not set.
 
 ## Read the Check Up page
 
@@ -27,16 +27,16 @@ One row each for **WebUI/API HTTP**, **WebUI/API HTTPS**, **Device HTTP**, **Dev
 
 A self-signed certificate is stated, never marked.
 
-Behind a proxy, plain HTTP on these listeners is not marked, because the proxy does the encryption. A **Proxy** row names it: each **Trusted proxies** entry, and each https or wss external address that ClawEh's own HTTPS does not serve.
+Behind a proxy, plain HTTP on these listeners is not marked, because the proxy does the encryption. A **Proxy** row names it: each **Trusted proxies** entry, and each https or wss external address that Agency's own HTTPS does not serve.
 
 ### Other rows
 
 | Item | Marked when | What to do |
 |---|---|---|
-| **Reverse proxy** | Requests seem to arrive through a proxy on this machine that is not in **Trusted proxies**, so the allowed networks and the lockout don't apply. It shows once a request from localhost carried forwarding headers since ClawEh started. | Click the item to open **Trusted proxies** on the **Network** page and add the proxy's address, usually `127.0.0.1`. See [Remote access](./remote-access.md#what-to-set-in-claweh). |
-| **Encrypted Matrix rooms** | The Matrix channel has seen encrypted rooms since ClawEh started; it can't read them. | Use a room with encryption off. Click the item to open [Matrix encryption](../channels/matrix.md#encryption). |
+| **Reverse proxy** | Requests seem to arrive through a proxy on this machine that is not in **Trusted proxies**, so the allowed networks and the lockout don't apply. It shows once a request from localhost carried forwarding headers since Agency started. | Click the item to open **Trusted proxies** on the **Network** page and add the proxy's address, usually `127.0.0.1`. See [Remote access](./remote-access.md#what-to-set-in-agency). |
+| **Encrypted Matrix rooms** | The Matrix channel has seen encrypted rooms since Agency started; it can't read them. | Use a room with encryption off. Click the item to open [Matrix encryption](../channels/matrix.md#encryption). |
 | **TLS certificate expiry** | Your own certificate expires within 14 days, or has expired. | Renew the certificate files. See [HTTPS and certificates](./https.md#renewals). |
-| **Data directory permissions** | Folders or files under the data directory are more open than their configured modes (`security.permissions`). Unmarked, it lists every area's modes. | Restart ClawEh, which sets them, or `chmod` each to the mode the row names. See [File permissions](./logs.md#file-permissions). |
+| **Data directory permissions** | Folders or files under the data directory are more open than their configured modes (`security.permissions`). Unmarked, it lists every area's modes. | Restart Agency, which sets them, or `chmod` each to the mode the row names. See [File permissions](./logs.md#file-permissions). |
 | **Access for other users** | A mode in `security.permissions` gives other users of the machine access. The row names each setting and its mode. | Set the last digit of each named mode to `0`, unless you mean it. See [File permissions](./logs.md#file-permissions). |
 | **WebUI chat token** | The WebUI channel is on without a token. | Set a token for the WebUI channel (`channels.webui.token`). It is for non-browser clients only. |
 | **Device auto-approve** | New devices are paired without approval. | Turn off **Auto-approve pairings** on the **Network** page. See [Devices](../channels/devices.md). |
@@ -50,11 +50,11 @@ Behind a proxy, plain HTTP on these listeners is not marked, because the proxy d
 | **Person's chat (name)** | A person's chat is on a channel that is not set up. | Set up that channel, or bind the person to a channel that is. See [Human agents](../agents/human-agents.md). |
 | **Channels accepting any sender** | A messaging channel allows anyone (`*`) to message it. | Limit its allowed senders (**Allow From**) on that channel's page. See [Channels](../channels/index.md). |
 | **Message content in logs** | Message text or full prompts are written to the logs. | Turn off the logging options named in the row unless you need them. See [Logs](./logs.md#logging-options). |
-| **Audit log** | The audit log file is missing. | Restart ClawEh; it creates the file at start. See [Audit log](./audit.md). |
+| **Audit log** | The audit log file is missing. | Restart Agency; it creates the file at start. See [Audit log](./audit.md). |
 
 These rows are information only:
 
-- **Proxy**: the proxies ClawEh is reached through (see [Listeners](#listeners)).
+- **Proxy**: the proxies Agency is reached through (see [Listeners](#listeners)).
 - **Install-wide shell setting**: an old install-wide shell setting is in the config and has no effect. Shell commands are allowed per agent.
 - **File confinement vs shell (agent)**: the agent's file tools are confined, but it can run shell commands, which are not.
 - **Allow CLI to bypass restrictions (provider)** and **CLI bypass not allowed (provider)**: whether each CLI provider may skip its own permission prompts. See [CLI providers](../providers/cli-providers.md#allow-cli-to-bypass-restrictions).
@@ -75,7 +75,7 @@ The PDF has these sections, in order:
 |---|---|
 | Identity | Product, version, build, host. |
 | Security assessment | The same table as the Check Up page. A `*` in the first column means action is recommended. |
-| Summary | The user ClawEh runs as, and what it can reach: files, shell, outbound and inbound network, messaging, devices, external programs, skills. |
+| Summary | The user Agency runs as, and what it can reach: files, shell, outbound and inbound network, messaging, devices, external programs, skills. |
 | Network | Every listener, where it listens, and its allowed networks. |
 | Providers and models | API and CLI providers, enabled models, and which model does what. |
 | Credentials and tokens | Each credential as set or not set. |

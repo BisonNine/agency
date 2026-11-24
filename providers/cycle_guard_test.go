@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package providers_test
@@ -12,7 +12,7 @@ import (
 // TestSDKImportsNoClawEh enforces the architectural invariant that the agent
 // SDK (go.bison9.com/agent: toolspec, toolkit, spawnllm, ctxengine, cogmem,
 // accounting, fsmode, modelspec) never imports a host: no package of it may depend on
-// ClawEh. If this fails, a ClawEh import crept into the SDK and the module
+// Agency. If this fails, an Agency import crept into the SDK and the module
 // dependency graph is at risk of a cycle.
 func TestSDKImportsNoClawEh(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", "go.bison9.com/agent/...").CombinedOutput()

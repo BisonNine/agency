@@ -2,15 +2,15 @@
 
 This page lists every `claw` command and its main options.
 
-Run the commands on the machine ClawEh is installed on, as the user it runs as. On a system install that is, for example, `sudo -u <service user> CLAW_HOME=/opt/claw claw status`.
+Run the commands on the machine Agency is installed on, as the user it runs as. On a system install that is, for example, `sudo -u <service user> CLAW_HOME=/opt/claw claw status`.
 
 `claw <command> --help` shows the full help for any command.
 
-## Starting ClawEh
+## Starting Agency
 
 | Command | What it does |
 |---|---|
-| `claw` | Starts ClawEh in the foreground: the agents, the channels and the WebUI. This is what the service runs. |
+| `claw` | Starts Agency in the foreground: the agents, the channels and the WebUI. This is what the service runs. |
 | `claw gateway` | The same as `claw`. Alias: `claw g`. |
 
 Options:
@@ -22,7 +22,7 @@ Options:
 
 | Command | What it does |
 |---|---|
-| `claw install` | Copies the binary, registers the background service, creates the admin account if there is none, and starts ClawEh. Run with `sudo` for a system service. |
+| `claw install` | Copies the binary, registers the background service, creates the admin account if there is none, and starts Agency. Run with `sudo` for a system service. |
 | `claw uninstall` | Stops and removes the service. The binary and the data directory are kept. |
 | `claw upgrade` | Downloads the latest release, verifies its signature, replaces the binary and restarts the service. Alias: `claw update`. |
 | `claw version` | Shows the version. Alias: `claw v`. |
@@ -45,13 +45,13 @@ Options:
 - `--force` — reinstall even if that version is already running.
 - `-y`, `--yes` — skip the confirmation question.
 
-See [Installing ClawEh](../getting-started/install.md) and [Upgrading](../getting-started/upgrading.md).
+See [Installing Agency](../getting-started/install.md) and [Upgrading](../getting-started/upgrading.md).
 
 ## Status and access
 
 | Command | What it does |
 |---|---|
-| `claw status` | Shows whether ClawEh is running, the WebUI addresses, the certificate, the admin account, and the providers. Alias: `claw s`. |
+| `claw status` | Shows whether Agency is running, the WebUI addresses, the certificate, the admin account, and the providers. Alias: `claw s`. |
 | `claw admin [username]` | Creates or replaces the WebUI admin account. Asks for the password twice. Also clears every login lockout. |
 | `claw network [cidrs]` | Shows or sets who may reach the WebUI. |
 | `claw tls` | Shows the HTTPS certificate: source, names, expiry and fingerprint. |
@@ -132,7 +132,7 @@ An installed skill is available to an agent only when the agent's skill list inc
 | `claw devices approve <request-id>` | Approves a pending pairing. |
 | `claw devices reject <request-id>` | Rejects a pending pairing. |
 | `claw devices remove <device-id>` | Removes a paired device and revokes its tokens. |
-| `claw acp` | Started by the Rabbit R1's agent, not by you. It bridges the R1 to the running ClawEh. `--no-auto-pair` requires a manual approval; `--url` sets the device listener address. |
+| `claw acp` | Started by the Rabbit R1's agent, not by you. It bridges the R1 to the running Agency. `--no-auto-pair` requires a manual approval; `--url` sets the device listener address. |
 
 ## Service tokens
 
@@ -145,14 +145,14 @@ A service token lets an external MCP client use an agent's tools.
 | `claw token revoke <agent>` | Removes the agent's token. |
 | `claw token list` | Lists the agents that have a token. Tokens are not shown. |
 
-A running ClawEh picks up changes within a few seconds.
+A running Agency picks up changes within a few seconds.
 
 ## Backup and restore
 
 | Command | What it does |
 |---|---|
-| `claw backup` | Writes a `claw-backup-<timestamp>.tar.gz` archive. Safe while ClawEh runs. `--dest <dir>` writes it elsewhere. |
-| `claw restore <archive>` | Restores an archive. ClawEh must be stopped. Files it replaces are kept in `restore-backup-<timestamp>/`. `--yes` skips the confirmation. |
+| `claw backup` | Writes a `claw-backup-<timestamp>.tar.gz` archive. Safe while Agency runs. `--dest <dir>` writes it elsewhere. |
+| `claw restore <archive>` | Restores an archive. Agency must be stopped. Files it replaces are kept in `restore-backup-<timestamp>/`. `--yes` skips the confirmation. |
 
 See [Backup and restore](../admin/backup.md).
 
@@ -160,9 +160,9 @@ See [Backup and restore](../admin/backup.md).
 
 | Command | What it does |
 |---|---|
-| `claw memory purge` | Reports what in every agent's memory is no longer active: archived domains and retired or superseded memories. Add `--confirm` to delete it. Stop ClawEh first. |
-| `claw sessions erase --channel <name> --chat <id>` | Deletes the old per-sender conversations of one sender. `--all` also deletes the agents' shared main conversation. ClawEh must be stopped. |
-| `claw sessions migrate` | Converts conversation files from older releases. Run once, with ClawEh stopped. |
+| `claw memory purge` | Reports what in every agent's memory is no longer active: archived domains and retired or superseded memories. Add `--confirm` to delete it. Stop Agency first. |
+| `claw sessions erase --channel <name> --chat <id>` | Deletes the old per-sender conversations of one sender. `--all` also deletes the agents' shared main conversation. Agency must be stopped. |
+| `claw sessions migrate` | Converts conversation files from older releases. Run once, with Agency stopped. |
 
 ## Shell completion
 

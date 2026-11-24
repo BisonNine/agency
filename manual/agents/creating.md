@@ -15,7 +15,7 @@ The new agent appears in the list on the left and is selected. Every change you 
 
 ## Agent ids
 
-The id is how ClawEh, bindings, other agents and scheduled jobs refer to the agent. It cannot be changed on the Agents page once the agent exists.
+The id is how Agency, bindings, other agents and scheduled jobs refer to the agent. It cannot be changed on the Agents page once the agent exists.
 
 - 1 to 64 characters: letters, digits, `-` and `_`.
 - It must start with a letter or a digit.
@@ -68,7 +68,7 @@ The workspace holds the agent's instructions, its files, its conversation and it
 
 ### Instruction files
 
-ClawEh creates these files in a new workspace. Edit them in a text editor to shape the agent; your edits are never overwritten.
+Agency creates these files in a new workspace. Edit them in a text editor to shape the agent; your edits are never overwritten.
 
 | File | What it is for |
 |---|---|

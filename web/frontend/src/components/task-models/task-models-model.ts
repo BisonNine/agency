@@ -30,7 +30,7 @@ export const LIST_DESCRIPTIONS: Record<TaskUse, string> = {
   classify: "Picks a category for each item a classifier handles.",
 }
 
-/** What an empty list means, where ClawEh itself relies on it. */
+/** What an empty list means, where Agency itself relies on it. */
 export const EMPTY_NOTES: Record<TaskUse, string> = {
   text: "No models.",
   image: "No models.",

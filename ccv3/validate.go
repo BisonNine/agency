@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -38,7 +38,7 @@ type field struct {
 	required bool
 }
 
-// dataFields are the members of a card's data object (CCv3, ClawEh table
+// dataFields are the members of a card's data object (CCv3, Agency table
 // 2.2), in the order issues are reported.
 var dataFields = []field{
 	{"name", kindString, true},
@@ -101,7 +101,7 @@ var assetFields = []string{"type", "uri", "name", "ext"}
 // The arrays the spec requires, written as [] when a card leaves them out.
 var defaultArrays = []string{"alternate_greetings", "group_only_greetings", "tags"}
 
-// The two dates ClawEh sets.
+// The two dates Agency sets.
 const (
 	creationDate     = "creation_date"
 	modificationDate = "modification_date"

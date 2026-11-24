@@ -22,7 +22,7 @@ func userLaunchdPath(homeDir string) string {
 }
 
 // buildLaunchdPlist renders the launchd XML plist for macOS.
-// If isSystem is true, UserName and GroupName are included to ensure ClawEh drops
+// If isSystem is true, UserName and GroupName are included to ensure Agency drops
 // root privileges and runs as the target user.
 func buildLaunchdPlist(label, username, groupname, execPath, homeDir, binDir, clawHome string, isSystem bool) string {
 	var b strings.Builder

@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package acl is the per-agent authorization extension point evaluated on

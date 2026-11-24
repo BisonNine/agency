@@ -1,6 +1,6 @@
 # Backup and restore
 
-ClawEh writes one backup archive every night, and `claw restore` puts an install back from one.
+Agency writes one backup archive every night, and `claw restore` puts an install back from one.
 
 The nightly backup is on by default. Each run writes one file, `claw-backup-YYYYMMDD-HHMMSS.tar.gz`, readable only by the service user. It contains every secret the install has, so keep copies somewhere private.
 
@@ -54,7 +54,7 @@ Each archive is complete on its own.
 | `credentials.json` | The admin account. |
 | `tls/` | The HTTPS certificate and key. |
 | `cards/` | The [character cards](../agents/character-cards.md). |
-| `internal/` | ClawEh's own state: tokens, paired devices, Google/Microsoft sign-ins, the [audit log](./audit.md). |
+| `internal/` | Agency's own state: tokens, paired devices, Google/Microsoft sign-ins, the [audit log](./audit.md). |
 | `agents/<agent>/sessions/` | Conversations. |
 | `agents/<agent>/cogmem/` | Memory. |
 | `agents/<agent>/forums/` | Each [forum](../forums/results.md#where-the-files-are)'s setup and every run's files. |
@@ -63,7 +63,7 @@ Each archive is complete on its own.
 | `agents/<agent>/okf/` | Each agent's own [knowledge bases](../agents/knowledge-bases.md), also while **Allow knowledge bases** is off. Shared knowledge bases are not included: back them up where they live. |
 | Any other database under the data directory | |
 
-Databases are copied safely while ClawEh keeps running. Each one is checked first; a damaged database is left out, the rest is still written, and the "Database failed integrity check" [alert](./alerts.md) names it.
+Databases are copied safely while Agency keeps running. Each one is checked first; a damaged database is left out, the rest is still written, and the "Database failed integrity check" [alert](./alerts.md) names it.
 
 A forum that is running during the backup is copied file by file. After a restore it carries on like a run interrupted by a restart.
 
@@ -85,7 +85,7 @@ Back such a folder up yourself, or move the agent back into the agents folder.
 
 ## Restore
 
-1. Stop ClawEh, for example `sudo systemctl stop claw`. `claw restore` refuses to run while ClawEh is running.
+1. Stop Agency, for example `sudo systemctl stop claw`. `claw restore` refuses to run while Agency is running.
 2. Run:
 
    ```
@@ -95,13 +95,13 @@ Back such a folder up yourself, or move the agent back into the agents folder.
 3. It lists every file it will write, marking the ones it will replace, and asks you to confirm. (`--yes` skips the question.)
 4. Every database in the archive is checked before anything changes. If one fails, the restore stops and nothing is changed.
 5. Replaced files are moved to `<CLAW_HOME>/restore-backup-<timestamp>/`. Delete that folder once you are happy with the result.
-6. Start ClawEh.
+6. Start Agency.
 
 ### Restore on a new machine
 
-1. Install ClawEh.
+1. Install Agency.
 2. Copy the archive to the new machine.
-3. Run `claw restore` as above, with ClawEh stopped.
+3. Run `claw restore` as above, with Agency stopped.
 
 The archive's paths are relative to the data directory, so the new one can be anywhere.
 

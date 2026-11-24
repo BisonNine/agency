@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -222,7 +222,7 @@ type Notifier interface {
 	ForumFinished(ctx context.Context, origin Origin, chat Chat, result *Result) error
 }
 
-// Logger is the subset of the host's logger the package uses. ClawEh's
+// Logger is the subset of the host's logger the package uses. Agency's
 // *logger.Logger satisfies it directly.
 type Logger interface {
 	Debugf(format string, v ...any)

@@ -11,7 +11,7 @@ and replies on its **default channel**. No conversation needs to be open first.
 - The agent needs a **Default Channel** (see
   [Default channel](../agents/creating.md#default-channel)). The reply goes
   there. Without one, every post is refused.
-- The app must be able to reach ClawEh. From the same machine this works as
+- The app must be able to reach Agency. From the same machine this works as
   is; from another machine, its network must be allowed (see
   [Network access](../admin/network.md) and [Remote access](../admin/remote-access.md)).
 - An agent that represents a person ([human agent](../agents/human-agents.md))
@@ -91,7 +91,7 @@ Click **Revoke** on the token's row. It stops working at once, with no restart.
 
 Tokens are stored readable (so the WebUI can show them for copying) in
 `internal/message-api-tokens.json` in the data directory, readable only by the
-user ClawEh runs as, and are included in [backups](../admin/backup.md).
+user Agency runs as, and are included in [backups](../admin/backup.md).
 
 ## Rotating tokens (older)
 

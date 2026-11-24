@@ -1,6 +1,6 @@
 # Providers, models and fallback
 
-This page explains how ClawEh picks a model for each request and what happens when a model fails.
+This page explains how Agency picks a model for each request and what happens when a model fails.
 
 ## Providers and models
 
@@ -21,7 +21,7 @@ A **model** is one way of calling one model through one provider:
 | Model Alias / Model Name | `model_name` | The name you and your agents use, for example `Claude Sonnet 5.5`. Agents, the default model list and the memory and vision chains all refer to models by this name. |
 | Model Identifier / Model ID | `model` | The id the endpoint expects, exactly as the vendor writes it, for example `gpt-5.5`. No protocol prefix. |
 | Provider | `provider` | The provider's name. |
-| (switch on the card) | `enabled` | Off means ClawEh ignores the model everywhere. |
+| (switch on the card) | `enabled` | Off means Agency ignores the model everywhere. |
 
 Because the alias and the id are separate, you can have several models on the same vendor model with different settings. The built-in catalogue does this for Grok: `Grok 4.7`, `Grok 4.7 High`, `Grok 4.7 Medium` and `Grok 4.7 None` all call `grok-4.7` with a different reasoning effort.
 
@@ -40,7 +40,7 @@ The model pickers on the **Agents** and **System** pages offer only configured m
 Each agent has an ordered list of models. On the **Agents** page (see [Creating and editing agents](../agents/creating.md)) it is shown as **Models (tried in order)**; in `config.json` it is `agents.list[].models`. An agent with no list of its own uses the default list, `agents.defaults.models`, which is **Default models** on the **System** page.
 
 - The first model in the list is the one normally used.
-- The others are the **fallback chain**: when a model fails in a way another model could fix, ClawEh tries the next one in the same turn.
+- The others are the **fallback chain**: when a model fails in a way another model could fix, Agency tries the next one in the same turn.
 - **Set as default** on a model card on the Models page puts that model first in the default list.
 - A model in the list that is not in the model list or is disabled is skipped. When none is left, the agent has no model: its turns fail with "no model configured", and **Check Up** marks it. It never runs on the default model instead.
 
@@ -48,11 +48,11 @@ In a chat, `/model` lists the agent's models and `/model <n>` switches the conve
 
 From a shell, `claw model` shows the default model and the enabled models; `claw model <model_name>` makes that model the default.
 
-### When ClawEh moves to the next model
+### When Agency moves to the next model
 
-ClawEh moves on for failures another model might not have: rate limits, an exhausted balance or rejected key, a timeout, a server error, an overloaded service, a model the endpoint no longer serves, or a request the endpoint rejected as malformed. For an error it cannot classify, ClawEh stops and reports it instead of trying the rest.
+Agency moves on for failures another model might not have: rate limits, an exhausted balance or rejected key, a timeout, a server error, an overloaded service, a model the endpoint no longer serves, or a request the endpoint rejected as malformed. For an error it cannot classify, Agency stops and reports it instead of trying the rest.
 
-If a server answers with a short `Retry-After` (3 seconds or less), ClawEh waits and retries the same model once before moving on.
+If a server answers with a short `Retry-After` (3 seconds or less), Agency waits and retries the same model once before moving on.
 
 While it falls back, the person in the chat sees a short notice, for example:
 
@@ -65,13 +65,13 @@ If every model fails, the reply starts with `All models failed` and lists each m
 
 ### Several entries with one name
 
-In `config.json` you may give two enabled models the same `model_name`, for example the same vendor model through two providers. ClawEh then spreads requests across them in turn. The WebUI does not create such duplicates; it refuses an alias that already exists.
+In `config.json` you may give two enabled models the same `model_name`, for example the same vendor model through two providers. Agency then spreads requests across them in turn. The WebUI does not create such duplicates; it refuses an alias that already exists.
 
 ## Cooldowns
 
-A model that keeps failing is taken out of rotation for a while, so each turn does not wait on it again. This is a **cooldown**. While a model is cooling down, ClawEh skips it and goes straight to the next model in the chain.
+A model that keeps failing is taken out of rotation for a while, so each turn does not wait on it again. This is a **cooldown**. While a model is cooling down, Agency skips it and goes straight to the next model in the chain.
 
-Cooldowns are tracked per provider and model id. Two aliases on the same provider and model id, such as `Grok 4.7` and `Grok 4.7 High`, share one cooldown. Different models on the same provider do not affect each other. Cooldowns are kept in memory and cleared when ClawEh restarts.
+Cooldowns are tracked per provider and model id. Two aliases on the same provider and model id, such as `Grok 4.7` and `Grok 4.7 High`, share one cooldown. Different models on the same provider do not affect each other. Cooldowns are kept in memory and cleared when Agency restarts.
 
 How long a model is parked depends on the HTTP status of the failure:
 
@@ -106,13 +106,13 @@ In each key, 0 means the default and a negative number turns cooldown off for th
 | Context window, in tokens | **Context Window (tokens)** on the model (`context_window`); otherwise `agents.defaults.context_window` | 128000 |
 | Maximum reply length, in tokens | **Max Output Tokens** on the model (`max_tokens`); otherwise **Max tokens** on the System page (`agents.defaults.max_tokens`) | 32768 |
 
-The context window tells ClawEh how much conversation fits in one request. ClawEh compacts the conversation (summarizes older messages) when it fills a share of this window, so set it to the model's real size: too large and requests start failing as "context too large"; too small and the agent forgets sooner than it needs to.
+The context window tells Agency how much conversation fits in one request. Agency compacts the conversation (summarizes older messages) when it fills a share of this window, so set it to the model's real size: too large and requests start failing as "context too large"; too small and the agent forgets sooner than it needs to.
 
-Some endpoints call the output limit `max_completion_tokens`. ClawEh sends that name automatically for model ids containing `gpt-5`, `o1` or `glm`; for others, set **Max Tokens Field** on the model.
+Some endpoints call the output limit `max_completion_tokens`. Agency sends that name automatically for model ids containing `gpt-5`, `o1` or `glm`; for others, set **Max Tokens Field** on the model.
 
 ## Request timeout
 
-The request timeout is how long ClawEh waits for one model call.
+The request timeout is how long Agency waits for one model call.
 
 1. **Request Timeout (s)** on the model (`request_timeout`), if set.
 2. Otherwise **Request timeout (s)** on the System page (`agents.defaults.request_timeout`), 300 seconds by default.
@@ -128,7 +128,7 @@ Besides the agent's own models, the memory chain is set on the **System** page a
 
 ### Memory models
 
-**Memory models** (`summarization.models`) summarize older conversation when the context fills, and consolidate the agent's long-term memory (see [Conversation and memory](../agents/memory.md)). For each agent, ClawEh tries:
+**Memory models** (`summarization.models`) summarize older conversation when the context fills, and consolidate the agent's long-term memory (see [Conversation and memory](../agents/memory.md)). For each agent, Agency tries:
 
 1. the agent's own **Memory models (optional)** on the Agents page (`agents.list[].summarization_models`),
 2. then the global **Memory models**,
@@ -145,7 +145,7 @@ A model can see images only when its **Vision (tool-result images)** setting (`v
 - **User message** (`user_message`): images are added as a follow-up message. Works on chat-completion models.
 - **Tool response** (`tool_response`): images are attached to the tool result itself. The OpenAI Responses API (`openai-responses`) and xAI accept this; plain OpenAI chat does not, so use **User message** there.
 
-When an agent's model is set to **Off** and it receives an image, ClawEh sends the image to the models in **Describe images** on the [Task models](./task-models.md) page, in order, for a text description and gives the agent that description. While that list is empty, images are dropped for such models.
+When an agent's model is set to **Off** and it receives an image, Agency sends the image to the models in **Describe images** on the [Task models](./task-models.md) page, in order, for a text description and gives the agent that description. While that list is empty, images are dropped for such models.
 
 ## Other model settings
 
@@ -158,7 +158,7 @@ When an agent's model is set to **Off** and it receives an image, ClawEh sends t
 | Drop Request Fields | `drop_params` | See [Cloud APIs](./cloud-apis.md#extra-request-body-and-drop-request-fields). |
 | Workspace Path | `workspace` | CLI models only. See [CLI providers](./cli-providers.md#where-the-cli-runs). |
 
-The model form also shows **Thinking Level** (`thinking_level`), which turns on Anthropic's extended thinking. It applies to models on the `anthropic` and `anthropic-messages` protocols; on any other model ClawEh ignores it and logs a warning.
+The model form also shows **Thinking Level** (`thinking_level`), which turns on Anthropic's extended thinking. It applies to models on the `anthropic` and `anthropic-messages` protocols; on any other model Agency ignores it and logs a warning.
 
 Every level other than `off` turns on adaptive thinking: Claude decides how much to think, and the level is the effort it puts in.
 

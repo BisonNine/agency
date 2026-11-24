@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 // configuration. This page shows the part a reviewer reads first — who is
 // running what, and the security assessment table — and offers the PDF below.
 
-/** One line: "ClawEh 0.6.0+abc [2026…] · build 2026-09-07T02:00:00Z · linux/amd64 on host". */
+/** One line: "Agency 0.6.0+abc [2026…] · build 2026-09-07T02:00:00Z · linux/amd64 on host". */
 function identityLine(
   id: ReportAssessment["identity"],
   buildLabel: string,

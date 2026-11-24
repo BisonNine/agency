@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ClawEh WebUI regression suite.
+// Agency WebUI regression suite.
 //
 // Executes docs/webui-test-plan.md. Every check here maps to a numbered step
 // in that document; keep the two in step.
@@ -2449,7 +2449,7 @@ if (useGroup("I", "Models and providers")) {
     assert(problems.length === 0, `console errors: ${problems[0]}`)
     assert(clis.length >= 4, `only ${clis.length} CLIs in the catalogue`)
     // A CLI the host lacks is still listed, greyed: hiding it would look like
-    // ClawEh does not support it.
+    // Agency does not support it.
     assert(rows === clis.length, `${rows} rows for ${clis.length} supported CLIs`)
     assert(switches === clis.length, `${switches} switches for ${rows} rows`)
     // Every configured row carries its model count, not only one governing

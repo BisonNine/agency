@@ -1,9 +1,9 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package maestro adapts the embedded Maestro task-orchestration provider into
-// ClawEh: it builds Maestro's per-agent config, routes Maestro's logs to a
-// per-agent log file, and dispatches every Maestro task as a ClawEh sub-agent so
+// Agency: it builds Maestro's per-agent config, routes Maestro's logs to a
+// per-agent log file, and dispatches every Maestro task as an Agency sub-agent so
 // the host owns model selection + fallback. A sub-agent whose every tool call
 // failed is reported to Maestro as a failed dispatch, not a result. The Maestro
 // runner is kept per agent across config reloads while a run is in progress,
@@ -30,7 +30,7 @@ import (
 const hostProviderModel = global.MaestroHostModel
 
 // dispatcher implements maestro/llm.Dispatcher by running each Maestro task as a
-// ClawEh sub-agent (a copy of the agent with full tools, MCP, fresh context). The
+// Agency sub-agent (a copy of the agent with full tools, MCP, fresh context). The
 // host chooses the model + fallback — Maestro's tools only describe the work.
 // A task's llm_model_id, when set, is passed through as a host model alias.
 type dispatcher struct {
@@ -160,7 +160,7 @@ func (d *dispatcher) Dispatch(ctx context.Context, req *mllm.DispatchRequest) (*
 // The metadata methods return host stubs. This is deliberate: the host owns
 // model selection and availability, so Maestro's per-LLM machinery is inert
 // here — GetLLM carries no RecoveryConfig (Maestro never enters its rate-limit
-// recovery mode; ClawEh's fallback chain and cooldowns handle that), and
+// recovery mode; Agency's fallback chain and cooldowns handle that), and
 // TestLLM always passes (no pre-flight probe; an unavailable model fails over
 // or fails the task, which the runner then retries within its limits).
 func (d *dispatcher) GetLLM(llmID string) *mconfig.LLM {

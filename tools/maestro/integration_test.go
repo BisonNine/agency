@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package maestro
@@ -61,7 +61,7 @@ func (r *scriptedRunner) RunSync(ctx context.Context, task, model string) (*glob
 	}, nil
 }
 
-// maestroHarness builds the real Maestro suite through ClawEh's namespaced
+// maestroHarness builds the real Maestro suite through Agency's namespaced
 // wrapper — the exact path the agent loop and MCP host use — for one agent
 // with an allowed folder and a scripted sub-agent runner.
 type maestroHarness struct {
@@ -215,7 +215,7 @@ func (h *maestroHarness) waitTerminal(project, path string) map[string]any {
 // TestIntegration_TaskRunThroughClawEhWrappers drives the representative
 // sequence through the namespaced wrappers: orientation, project, file, task
 // set, task, run, result with usage, report; plus a wiring sample of other
-// domains. It asserts the seam between ClawEh and Maestro, not Maestro itself.
+// domains. It asserts the seam between Agency and Maestro, not Maestro itself.
 func TestIntegration_TaskRunThroughClawEhWrappers(t *testing.T) {
 	h := newMaestroHarness(t)
 

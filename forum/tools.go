@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -24,11 +24,11 @@ import (
 // The tool definitions. Names are bare; the host's
 // aggregator mounts them under the "forum" namespace (forum_models,
 // forum_launch, ...) and gates the whole suite on the calling agent's
-// `forum` permission. The wiring into ClawEh (a tools/forum provider that
+// `forum` permission. The wiring into Agency (a tools/forum provider that
 // builds the ToolHost from tools.ToolDeps) is done separately: it calls
 // Tools(svc, host) with the process's one *Service and its ToolHost.
 
-// ToolHost is what the tool layer needs from ClawEh for one call.
+// ToolHost is what the tool layer needs from Agency for one call.
 type ToolHost interface {
 	// Scope returns the calling agent's scope: its ID and
 	// <workspace>/forums as an absolute path. It fails for an agent

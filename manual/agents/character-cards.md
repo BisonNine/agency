@@ -1,6 +1,6 @@
 # Character cards
 
-A character card gives an agent a character to play: a name, a description, a personality, the situation it is in and examples of how it speaks. ClawEh keeps cards in one library and renders a card into the agent's instructions the same way every time, so the same card gives the same character on every agent that uses it.
+A character card gives an agent a character to play: a name, a description, a personality, the situation it is in and examples of how it speaks. Agency keeps cards in one library and renders a card into the agent's instructions the same way every time, so the same card gives the same character on every agent that uses it.
 
 Cards use the Character Card V3 format shared by SillyTavern, RisuAI and other tools, so a card made elsewhere can be imported and a card made here can be exported.
 

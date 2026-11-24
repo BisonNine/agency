@@ -2,7 +2,7 @@
 
 Connect a Slack app so people can talk to your agents in direct messages and Slack channels.
 
-ClawEh uses Slack's Socket Mode, so you do not need a public address. You need
+Agency uses Slack's Socket Mode, so you do not need a public address. You need
 two tokens from Slack: a **Bot Token** (starts with `xoxb-`) and an **App
 Token** (starts with `xapp-`).
 
@@ -40,14 +40,14 @@ Token** (starts with `xapp-`).
    Without this, people see "Sending messages to this app has been turned
    off".
 6. **Slash Commands**: click **Create New Command**, enter `/claw` as the
-   command, give it a short description (for example `Run a ClawEh command`)
+   command, give it a short description (for example `Run an Agency command`)
    and click **Save**. No Request URL is needed in Socket Mode. Then
    reinstall the app to the workspace (Slack asks for the `commands` scope).
 
 If you add a scope later, reinstall the app to the workspace and paste the new
 Bot Token.
 
-## Connect ClawEh
+## Connect Agency
 
 1. In the WebUI sidebar, open **Channels → Slack**.
 2. Turn on **Enable channel**.
@@ -118,11 +118,11 @@ or `"placeholder": { "enabled": true, "text": "Working on it..." }`.
 
 ## Commands in Slack
 
-ClawEh commands such as `/model` can be run these ways:
+Agency commands such as `/model` can be run these ways:
 
 - **`/claw model`**: the `/claw` slash command runs the command after it;
   `/claw` alone shows the help. It needs step 6 above.
-- **`/model 0`**: a Slack slash command with the same name as a ClawEh
+- **`/model 0`**: a Slack slash command with the same name as an Agency
   command runs that command. Add it the way step 6 adds `/claw`, once for each
   command you want (for example `/model` or `/cancel`).
 - **` /model`** with a leading space: Slack only treats a message as a slash
@@ -134,7 +134,7 @@ channel, only you see the answer to a slash command; invite the app to
 answer there.
 
 A slash command under any other name, such as `/claw`, treats its first word as
-the command. If that word is not a ClawEh command, the text goes to the agent as
+the command. If that word is not an Agency command, the text goes to the agent as
 an ordinary message.
 
 ## When something goes wrong
@@ -142,12 +142,12 @@ an ordinary message.
 - **No answer at all**: check that the app was invited to the channel, that
   the sender's member ID is in **Allow From**, and that Socket Mode is on.
 - **A message to an archived channel, or to a channel the app is not in**:
-  ClawEh records that the chat **can't be reached** and logs a warning; there
+  Agency records that the chat **can't be reached** and logs a warning; there
   is no alert and no retry.
 - **Channel credentials rejected** ([alert](../admin/alerts.md)): Slack refused the token. Create a
   new token in the app settings and paste it in. An App Token must start with
   `xapp-`; if it starts with `xoxb-`, the two tokens are swapped.
-- **Slack down** (alert): no working connection for ten minutes. ClawEh keeps
+- **Slack down** (alert): no working connection for ten minutes. Agency keeps
   reconnecting and raises **Slack up** when it is back.
 - **Shared files cannot be read**, and the log mentions the Slack login page:
   the Bot Token lacks `files:read`. Add the scope, reinstall the app and paste

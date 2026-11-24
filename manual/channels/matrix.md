@@ -2,7 +2,7 @@
 
 Connect a Matrix account so people can talk to your agents in Matrix rooms and direct chats.
 
-ClawEh logs in to your homeserver as an ordinary Matrix user and fetches
+Agency logs in to your homeserver as an ordinary Matrix user and fetches
 messages itself, so you do not need a public address. You need:
 
 - a Matrix account for the agent, for example `@alice:example.org`;
@@ -17,21 +17,21 @@ End-to-end encrypted rooms are not supported. See
    would for a person. Use a separate account, not your own: the agent answers
    as this account.
 2. Get an access token for it. The simplest way is to log in once with the
-   homeserver's login API, which creates a session just for ClawEh:
+   homeserver's login API, which creates a session just for Agency:
 
    ```sh
    curl -s -X POST https://example.org/_matrix/client/v3/login \
      -H 'Content-Type: application/json' \
-     -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"alice"},"password":"…","initial_device_display_name":"ClawEh"}'
+     -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"alice"},"password":"…","initial_device_display_name":"Agency"}'
    ```
 
    The answer contains `access_token`. Keep it secret: anyone with the token
    can read and write as the account.
 
 You can also copy the token of a session in a Matrix app, but logging that
-session out later revokes the token, and ClawEh stops receiving messages.
+session out later revokes the token, and Agency stops receiving messages.
 
-## Connect ClawEh
+## Connect Agency
 
 1. In the WebUI sidebar, open **Channels → Matrix**.
 2. Turn on **Enable channel**.
@@ -52,7 +52,7 @@ session out later revokes the token, and ClawEh stops receiving messages.
 
 Settings save as you type. **Homeserver**, **User Id** and **Access Token**
 are required while the channel is enabled. The channel name, which you use in
-bindings, is always `matrix`; ClawEh connects one Matrix account.
+bindings, is always `matrix`; Agency connects one Matrix account.
 
 ### Other settings on the page
 
@@ -97,7 +97,7 @@ whoever invites it, but still answers only listed people there.
 
 ## Direct chats and rooms
 
-ClawEh treats a room with two members (the agent's account and one person) as
+Agency treats a room with two members (the agent's account and one person) as
 a direct chat, and a room with more members as a group room. A direct chat is
 always answered.
 
@@ -141,11 +141,11 @@ chat ID, also for a direct chat.
 
 ## Encryption
 
-ClawEh does not support Matrix end-to-end encryption. In an encrypted room it
+Agency does not support Matrix end-to-end encryption. In an encrypted room it
 cannot read the messages, so it never answers there. The first time it sees an
 encrypted room it logs a warning naming the room, and
 [Check Up](../admin/checkup.md) lists it under **Encrypted Matrix rooms** until
-ClawEh restarts.
+Agency restarts.
 
 - Create the chat or room with encryption turned off. Many Matrix apps turn
   encryption on for new direct chats by default, and once a room is encrypted
@@ -163,8 +163,8 @@ text.
 The agent can send files back; they are uploaded to the homeserver and posted
 in the room.
 
-ClawEh ignores message edits and other kinds of events (reactions, locations,
-polls). Messages sent while ClawEh was stopped are not answered when it
+Agency ignores message edits and other kinds of events (reactions, locations,
+polls). Messages sent while Agency was stopped are not answered when it
 starts. Saving the Matrix settings restarts the channel; messages sent while
 it restarts are answered once it is back. Messages sent while the channel was
 turned off are not answered when it is turned on again.
@@ -188,10 +188,10 @@ Matrix apps treat `/` themselves, so use `!status` there. See
   page.
 - **Channel credentials rejected** ([alert](../admin/alerts.md)): the
   homeserver refused the access token, for example because its session was
-  logged out. Get a new token and paste it into **Access Token**. ClawEh keeps
+  logged out. Get a new token and paste it into **Access Token**. Agency keeps
   trying every minute in case the token is restored.
 - **Matrix down: matrix** (alert): no working connection to the homeserver for
-  ten minutes. ClawEh keeps reconnecting and raises **Matrix up: matrix** when
+  ten minutes. Agency keeps reconnecting and raises **Matrix up: matrix** when
   it is back.
 - **Channel send failed** (alert, for `matrix`): a reply could not be posted
   after several tries, for example because the account has left the room.

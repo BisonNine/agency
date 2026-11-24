@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package config
@@ -14,7 +14,7 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// DefaultConfig returns the default configuration for ClawEh.
+// DefaultConfig returns the default configuration for Agency.
 func DefaultConfig() *Config {
 	// Determine the base path for the workspace.
 	// Priority: $CLAW_HOME > ~/.claw

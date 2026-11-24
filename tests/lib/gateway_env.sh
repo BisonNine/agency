@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Source this before starting any ClawEh gateway outside production, so a
+# Source this before starting any Agency gateway outside production, so a
 # test gateway never alerts the operator.
 #
 # The alerter (github.com/tenebris-tech/alerter) loads ~/.alerter, which holds

@@ -580,7 +580,7 @@ fi
 
 # ---- 6b. An external MCP server's tools work as source and fetch. ----
 # Their results are marked as untrusted content for the model; the
-# classifier reads the JSON inside the mark. The tools appear once ClawEh
+# classifier reads the JSON inside the mark. The tools appear once Agency
 # has connected to the stub's MCP server.
 EXT='{"id":"ext","enabled":true,"dry_run":true,"trigger":{"every_seconds":2},"source":{"tool":"mcp_mail_list","items":"items","id":"id"},"fetch":{"tool":"mcp_mail_read","args":{"id":"{{item.id}}"},"fields":{"subject":"subject","body":"body"}},"classify":'"$CLASSIFY"',"report":{"summary":"never"}}'
 ext_valid() { mcp classifier_validate "{\"definition\":$EXT}" | grep -qF "The definition is valid."; }
@@ -699,7 +699,7 @@ fi
 fetchfail_notice() { grep -rqF "[System: classifier] Classifier fetchfail: the run failed (stopped after 1 consecutive item failure: fetch shell_exec: the tool failed)." "$WS/sessions"; }
 if wait_for 15 fetchfail_notice && grep -rqF "This looks like a problem with shell_exec itself (credentials or an outage); check it before changing the classifier." "$WS/sessions" &&
     grep -rqF "UNTRUSTED_CONTENT" "$WS/sessions"; then
-    pass "Alice's notice names the cause in ClawEh's words, points at the tool, and marks the item's error as untrusted"
+    pass "Alice's notice names the cause in Agency's words, points at the tool, and marks the item's error as untrusted"
 else
     fail "the fetchfail notice is not in Alice's conversation"
 fi

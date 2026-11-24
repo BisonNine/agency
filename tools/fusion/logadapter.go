@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package fusion
@@ -11,17 +11,17 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// logComponent tags Fusion-originated lines in the unified ClawEh log.
+// logComponent tags Fusion-originated lines in the unified Agency log.
 const logComponent = "fusion"
 
-// fusionLogAdapter bridges MCPFusion's mlogger.Logger interface onto ClawEh's
-// central logger, so the embedded engine's events land in the main ClawEh log
+// fusionLogAdapter bridges MCPFusion's mlogger.Logger interface onto Agency's
+// central logger, so the embedded engine's events land in the main Agency log
 // (component "fusion") rather than a separate fusion.log file.
 //
-// Two deliberate level mappings: ClawEh has no dedicated Notice level, so
+// Two deliberate level mappings: Agency has no dedicated Notice level, so
 // Notice* logs at Info; and Fatal*/FatalExit log at Error and NEVER exit — the
 // engine is embedded, so a library-level "fatal" must not tear down the whole
-// ClawEh process (Fusion emits Fatal for ordinary request failures).
+// Agency process (Fusion emits Fatal for ordinary request failures).
 type fusionLogAdapter struct{}
 
 // Compile-time proof the adapter satisfies the interface WithLogger expects
@@ -85,12 +85,12 @@ func (fusionLogAdapter) FatalFields(m string, a ...any) {
 	logger.ErrorCF(logComponent, m, fieldsToMap(a))
 }
 
-// FatalExit must not terminate the process: the engine is embedded in ClawEh.
+// FatalExit must not terminate the process: the engine is embedded in Agency.
 func (fusionLogAdapter) FatalExit() {
 	logger.ErrorCF(logComponent, "fusion requested process exit (suppressed; engine is embedded)", nil)
 }
 
-// Close is a no-op: ClawEh owns the underlying logger's lifecycle.
+// Close is a no-op: Agency owns the underlying logger's lifecycle.
 func (fusionLogAdapter) Close() {}
 
 // fieldsToMap converts mlogger's alternating key/value args into a fields map,

@@ -4,7 +4,7 @@ Bindings decide which agent answers which chat; anything no binding covers goes 
 
 ## How a message finds its agent
 
-When a message arrives, ClawEh looks for the most specific binding that
+When a message arrives, Agency looks for the most specific binding that
 matches it, in this order:
 
 1. a binding for this exact chat (a Telegram group, a Slack channel, one

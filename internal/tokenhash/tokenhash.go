@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package tokenhash is the one way a bearer token is stored at rest. A token a

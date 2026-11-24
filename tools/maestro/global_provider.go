@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package maestro
@@ -62,7 +62,7 @@ func (globalMaestroProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDe
 		return nil
 	}
 
-	// Dispatch Maestro tasks as ClawEh sub-agents (host owns model selection).
+	// Dispatch Maestro tasks as Agency sub-agents (host owns model selection).
 	// Without a sub-agent runner Maestro would fall back to its own (empty) LLM
 	// config and fail every task, so refuse to expose the suite instead. Checked
 	// before any directory or log file is created for the agent.

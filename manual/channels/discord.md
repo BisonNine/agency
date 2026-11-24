@@ -12,7 +12,7 @@ Connect a Discord bot so people can talk to your agents in direct messages and o
    includes the `bot` scope and permission to view channels, read message
    history and send messages.
 
-## Connect ClawEh
+## Connect Agency
 
 1. In the WebUI sidebar, open **Channels → Discord**.
 2. Turn on **Enable channel**.
@@ -23,14 +23,14 @@ Connect a Discord bot so people can talk to your agents in direct messages and o
    in.
 5. Optional: turn on **Mention Only** so the bot answers on servers only when
    it is mentioned.
-6. Optional: set **HTTP Proxy** if ClawEh reaches Discord through a proxy.
+6. Optional: set **HTTP Proxy** if Agency reaches Discord through a proxy.
 
 Settings save as you type.
 
 ## Direct messages and servers
 
 - **Direct messages** to the bot are always answered.
-- **On a server**, ClawEh does not request Discord's privileged *Message
+- **On a server**, Agency does not request Discord's privileged *Message
   Content* access, so Discord passes it the text of a server message only when
   the message mentions the bot. In practice, mention the bot (`@Alice …`) to
   talk to it in a server channel.
@@ -62,7 +62,7 @@ In `config.json`, a binding can also name one Discord channel (peer kind
   messages from the bot, is recorded as **can't be reached** and logged as a
   warning; there is no alert and no retry.
 - **Discord down** ([alert](../admin/alerts.md)): no working connection to Discord for ten minutes.
-  ClawEh keeps reconnecting and raises **Discord up** when it is back.
+  Agency keeps reconnecting and raises **Discord up** when it is back.
 - Long replies are split into several messages, because Discord limits a
   message to 2,000 characters.
 

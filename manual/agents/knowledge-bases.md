@@ -64,7 +64,7 @@ The file tools cannot read or write `okf/`: the agent reaches its knowledge base
 - `kb_search`: the best-matching sections of one knowledge base for some words, each with the concept ID, title, heading and a short passage.
 - `kb_put`: creates or replaces one concept. The whole concept is replaced, so the agent gets it, changes it and puts it back; `type` is required.
 
-Edits made to the files outside ClawEh, by hand or with Git, are seen at the next search.
+Edits made to the files outside Agency, by hand or with Git, are seen at the next search.
 
 ## Backup
 

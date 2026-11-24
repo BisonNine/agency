@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package config
@@ -159,7 +159,7 @@ func quoteAgentID(s string) string {
 // agents.list[].id. taken, when not nil, reports an id another agent already
 // has: the suggested id is then one no other agent has (freeAgentID), so
 // following it does not lead to a second refusal. It is nil for references,
-// whose suggestion should name an existing agent. ClawEh never rewrites an
+// whose suggestion should name an existing agent. Agency never rewrites an
 // id: the operator fixes it.
 func agentIDError(id, where string, taken func(string) bool) error {
 	// The messages are sentences an operator reads (WebUI, startup), built by

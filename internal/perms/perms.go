@@ -365,7 +365,7 @@ func Check(dataDir, configPath string, policy Policy) ([]Finding, error) {
 	return findings, nil
 }
 
-// secretModes is the process default for the secret files and folders ClawEh
+// secretModes is the process default for the secret files and folders Agency
 // creates from code that has no configuration in hand (store openers, the pid
 // and lock files). Every process sets it from security.permissions.secrets in
 // the config it loads: the gateway at start and on every reload, the CLI
@@ -375,7 +375,7 @@ var (
 	secretModes   = config.Modes{Dir: config.DefaultDirMode, File: config.DefaultFileMode}
 )
 
-// current is the process default policy for files and folders ClawEh creates
+// current is the process default policy for files and folders Agency creates
 // from code that has no configuration in hand (SetPolicy, CurrentPolicy).
 var (
 	policyMu sync.RWMutex

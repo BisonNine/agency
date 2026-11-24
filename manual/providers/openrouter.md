@@ -2,7 +2,7 @@
 
 This page explains the four OpenRouter providers in the catalogue, which one to use for which model, and why OpenRouter sometimes refuses a model.
 
-OpenRouter reaches many vendors' models through one API key and one bill. ClawEh ships four providers that all point at `https://openrouter.ai/api/v1` with different settings. You need the key on each one you use.
+OpenRouter reaches many vendors' models through one API key and one bill. Agency ships four providers that all point at `https://openrouter.ai/api/v1` with different settings. You need the key on each one you use.
 
 ## Set up
 
@@ -39,17 +39,17 @@ Several catalogue models use OpenRouter names that follow a vendor's newest rele
 | OpenRouter DeepSeek Flash Latest | `~deepseek/deepseek-flash-latest` |
 | OpenRouter DeepSeek Pro Latest | `~deepseek/deepseek-pro-latest` |
 
-OpenRouter decides which model such a name points to, so the model behind an agent can change without any change on your side. Copy these identifiers exactly, including a leading `~`. When you need a fixed model, use OpenRouter's versioned id instead. The **Context Window (tokens)** set on these models is ClawEh's assumption; correct it if the model behind the name changes size.
+OpenRouter decides which model such a name points to, so the model behind an agent can change without any change on your side. Copy these identifiers exactly, including a leading `~`. When you need a fixed model, use OpenRouter's versioned id instead. The **Context Window (tokens)** set on these models is Agency's assumption; correct it if the model behind the name changes size.
 
 ## Why OpenRouter refuses a model
 
-When a request offers tools, ClawEh adds `"provider": {"require_parameters": true}` to requests sent to OpenRouter on the `openai-chat` protocol. This tells OpenRouter to route only to upstream hosts that support every parameter in the request. Without it, OpenRouter may pick a host that ignores the tools and answers in plain text.
+When a request offers tools, Agency adds `"provider": {"require_parameters": true}` to requests sent to OpenRouter on the `openai-chat` protocol. This tells OpenRouter to route only to upstream hosts that support every parameter in the request. Without it, OpenRouter may pick a host that ignores the tools and answers in plain text.
 
-The catch: if the request carries a parameter that no host of that model advertises, OpenRouter finds no host and answers HTTP 404 "No endpoints found…". ClawEh reports the model as `model not available`, puts it in cooldown and moves to the next model in the chain.
+The catch: if the request carries a parameter that no host of that model advertises, OpenRouter finds no host and answers HTTP 404 "No endpoints found…". Agency reports the model as `model not available`, puts it in cooldown and moves to the next model in the chain.
 
 The two usual causes:
 
-1. **Temperature.** ClawEh sends a temperature when the agent or **Default temperature** sets one. Many reasoning models do not accept it. Fix: add `temperature` to the model's **Drop Request Fields** (`drop_params`). The catalogue does this for OpenRouter GPT 5.5.
+1. **Temperature.** Agency sends a temperature when the agent or **Default temperature** sets one. Many reasoning models do not accept it. Fix: add `temperature` to the model's **Drop Request Fields** (`drop_params`). The catalogue does this for OpenRouter GPT 5.5.
 2. **Parallel tool calls.** **Disable Parallel Tool Calls** (`no_parallel_tool_calls`) on the provider sends `parallel_tool_calls: false`. If no host of the model supports that parameter, the model is refused. Fix: turn the setting off for the provider, or move the model to a provider without it.
 
 You can also list `provider` in **Drop Request Fields** to remove the routing hint altogether. The model is then no longer refused, but OpenRouter may again route it to a host that ignores tools.
@@ -67,7 +67,7 @@ OpenRouter lets a request choose or exclude upstream hosts with its `provider` o
 }
 ```
 
-This works on **OpenRouter Responses** models, and on `openai-chat` models with **Tools Enabled** off. On an `openai-chat` model that is offered tools, ClawEh already sends its own `provider` object (see above), so your `provider` entry is skipped and a warning naming the key is written to the log.
+This works on **OpenRouter Responses** models, and on `openai-chat` models with **Tools Enabled** off. On an `openai-chat` model that is offered tools, Agency already sends its own `provider` object (see above), so your `provider` entry is skipped and a warning naming the key is written to the log.
 
 ## Related
 

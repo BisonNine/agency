@@ -24,7 +24,7 @@ import { Switch } from "@/components/ui/switch"
  * and the backend creates whatever is missing.
  *
  * Every supported CLI is listed whether or not its binary is present. A CLI
- * ClawEh supports but the host lacks is a different thing from one it does not
+ * Agency supports but the host lacks is a different thing from one it does not
  * support, and hiding the row makes it look like the latter — so a missing one
  * is greyed out and says so.
  */

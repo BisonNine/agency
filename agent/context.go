@@ -297,7 +297,7 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 // pointer to the tool that supplies the time.
 //
 // Deliberately DAY granularity. This string sits in the cached prefix, ahead of
-// the whole conversation, and every HTTP provider ClawEh dispatches to caches by
+// the whole conversation, and every HTTP provider Agency dispatches to caches by
 // longest-common-prefix — at minute granularity the prefix breaks on nearly
 // every turn, taking the entire history with it. Measured against production
 // logs, first-dispatch cache hit rates were 5.6% and 1.6% for the two busiest
@@ -766,7 +766,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 // info that is stable for the life of a conversation: runtime identity, the
 // channel/chat the turn arrived on, and any channel-specific guidance.
 //
-// Nothing here may vary per turn. Every provider ClawEh dispatches to over HTTP
+// Nothing here may vary per turn. Every provider Agency dispatches to over HTTP
 // caches by longest-common-prefix, and the system message precedes the entire
 // conversation history — so a single per-request byte here invalidates the cache
 // for the whole history behind it, not just for the system prompt. That is why

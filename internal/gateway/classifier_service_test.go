@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package gateway
@@ -124,7 +124,7 @@ func TestNewClassifierService(t *testing.T) {
 
 	// A tool's error is redacted with the host's redaction before it is
 	// shown (here a live validation's refusal), and marked as untrusted
-	// content after ClawEh's own sentence.
+	// content after Agency's own sentence.
 	const key = "sk-live-0123456789abcdefghij"
 	alice.Tools.Register(secretTool{msg: "401 Unauthorized: api_key " + key})
 	secret, err := json.Marshal(map[string]any{
@@ -139,7 +139,7 @@ func TestNewClassifierService(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), key) ||
 		!strings.HasPrefix(err.Error(), "source probe_secret: the tool failed.\n"+untrusted.Preamble) ||
 		!strings.Contains(err.Error(), "401 Unauthorized") {
-		t.Errorf("Validate with a failing source = %v, want ClawEh's sentence, then the redacted error marked untrusted", err)
+		t.Errorf("Validate with a failing source = %v, want Agency's sentence, then the redacted error marked untrusted", err)
 	}
 }
 

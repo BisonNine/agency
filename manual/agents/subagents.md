@@ -4,7 +4,7 @@ A sub-agent is a short-lived copy of an agent that works on one task and reports
 
 ## What a sub-agent is
 
-When Alice spawns a sub-agent, ClawEh makes a temporary **clone** of Alice. The clone has:
+When Alice spawns a sub-agent, Agency makes a temporary **clone** of Alice. The clone has:
 
 - Alice's folder, instruction files, tools and skills, including shell commands if Alice has them;
 - Alice's **sub-agent models**, or her own models when none are set (see [Sub-agent models](#sub-agent-models));
@@ -68,7 +68,7 @@ Set the limit on the **System** page, in **Agent**, as **Max sub-agent depth** (
 
 ## Temporary agents
 
-Sub-agents are one kind of **temporary agent**: an agent created while ClawEh runs, not listed in the configuration. [Forums](../forums/index.md#who-can-take-part) create temporary agents too. In plain terms:
+Sub-agents are one kind of **temporary agent**: an agent created while Agency runs, not listed in the configuration. [Forums](../forums/index.md#who-can-take-part) create temporary agents too. In plain terms:
 
 - **Clones** copy a configured agent, as described above.
 - **Fresh** temporary agents start empty: their own empty folder, no instruction files, no skills and no tools.

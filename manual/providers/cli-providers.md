@@ -2,7 +2,7 @@
 
 This page shows how to run agents on a coding CLI installed on the same machine: Claude Code, Codex, Antigravity or Cursor.
 
-Instead of calling an API, ClawEh starts the CLI program for each model call, hands it the conversation, and reads back its answer. The CLI signs in with its own account (often a subscription), runs its own tool loop, and reaches ClawEh's tools through ClawEh's MCP server.
+Instead of calling an API, Agency starts the CLI program for each model call, hands it the conversation, and reads back its answer. The CLI signs in with its own account (often a subscription), runs its own tool loop, and reaches Agency's tools through Agency's MCP server.
 
 | CLI | Protocol | Program | Permission-bypass flag |
 |---|---|---|---|
@@ -15,18 +15,18 @@ Antigravity replaces the Gemini CLI, which Google deprecated. A configuration th
 
 ## Install and sign in
 
-1. Install the CLI on the ClawEh machine, following the vendor's instructions.
-2. Sign in once, **as the user the ClawEh service runs as**. The CLI keeps its login in that user's home directory, and ClawEh starts it as that user. A login made under your own account does not help a service running as another user.
-3. Check that the service can find the program. ClawEh looks for it on the `PATH` the service runs with, which `claw install` records when it installs the service. If you install a CLI later, or its location changes (for example after a Node.js or nvm upgrade), run `claw install` again, or set the program's full path in **Command** on the CLI's provider.
+1. Install the CLI on the Agency machine, following the vendor's instructions.
+2. Sign in once, **as the user the Agency service runs as**. The CLI keeps its login in that user's home directory, and Agency starts it as that user. A login made under your own account does not help a service running as another user.
+3. Check that the service can find the program. Agency looks for it on the `PATH` the service runs with, which `claw install` records when it installs the service. If you install a CLI later, or its location changes (for example after a Node.js or nvm upgrade), run `claw install` again, or set the program's full path in **Command** on the CLI's provider.
 
-A CLI can also authenticate with an API key from the service's environment. ClawEh passes the CLIs every variable starting with `ANTHROPIC_`, `OPENAI_`, `GOOGLE_`, `GEMINI_`, `CLAUDE_`, `CODEX_`, `CURSOR_`, `AGY_` or `ANTIGRAVITY_`, on top of the basic variables such as `PATH` and `HOME`. Other variables of the service are not passed.
+A CLI can also authenticate with an API key from the service's environment. Agency passes the CLIs every variable starting with `ANTHROPIC_`, `OPENAI_`, `GOOGLE_`, `GEMINI_`, `CLAUDE_`, `CODEX_`, `CURSOR_`, `AGY_` or `ANTIGRAVITY_`, on top of the basic variables such as `PATH` and `HOME`. Other variables of the service are not passed.
 
 ## Switch a CLI on
 
 Open **Providers**. The **Local CLI agents** section lists every supported CLI:
 
 - A CLI whose program was found shows its path and a switch. One that was not found is greyed out with "`<program>` not found on PATH", and its switch is disabled.
-- The **Args** line shows the full command line ClawEh runs.
+- The **Args** line shows the full command line Agency runs.
 
 Turning the switch on creates whatever is missing: a provider for the CLI and a model named after it, enabled, with a request timeout of 3600 seconds. Turning it off disables every model that runs through that CLI. Nothing is deleted, so switching it back on restores what was there.
 
@@ -45,25 +45,25 @@ To add another, click **Add Model** on the Models page, pick the CLI's provider,
 
 Once a CLI is set up, its row shows a checkbox, **Allow CLI to bypass restrictions** (`bypass_restrictions` on the provider). It is off by default and applies to every model of that CLI.
 
-**Off:** ClawEh does not pass the bypass flag. The CLI follows its own permission settings, and a tool call it would have to ask about is refused, because nobody is there to approve it. When that happens ClawEh does not pass on an empty or apologetic answer; the person gets a reply naming the CLI and the refused tools, for example:
+**Off:** Agency does not pass the bypass flag. The CLI follows its own permission settings, and a tool call it would have to ask about is refused, because nobody is there to approve it. When that happens Agency does not pass on an empty or apologetic answer; the person gets a reply naming the CLI and the refused tools, for example:
 
 ```
 Alice: The Claude CLI declined to use tools (file_write). Tick *Allow CLI to bypass restrictions* for this CLI on the Providers page, or allow the tools in the CLI's own settings.
 ```
 
-The reply starts with the agent's name, so it is clear whose CLI refused in a chat shared by several agents. ClawEh does not try the agent's next model in this case.
+The reply starts with the agent's name, so it is clear whose CLI refused in a chat shared by several agents. Agency does not try the agent's next model in this case.
 
-To keep bypass off and still let the CLI use ClawEh's tools, allow those tools in the CLI's own permission settings for the service user. ClawEh's tools reach the CLI under the MCP server name `claw` (tool names start with `mcp__claw__`). See the CLI's documentation for how to allow them.
+To keep bypass off and still let the CLI use Agency's tools, allow those tools in the CLI's own permission settings for the service user. Agency's tools reach the CLI under the MCP server name `claw` (tool names start with `mcp__claw__`). See the CLI's documentation for how to allow them.
 
-**On:** ClawEh passes the flag from the table above on every call. The CLI can then run commands and change files anywhere the service user can, without asking, outside ClawEh's own workspace and shell controls. Turn it on only for a CLI running as a user whose access you are comfortable giving to the agent.
+**On:** Agency passes the flag from the table above on every call. The CLI can then run commands and change files anywhere the service user can, without asking, outside Agency's own workspace and shell controls. Turn it on only for a CLI running as a user whose access you are comfortable giving to the agent.
 
 Either way, the [Check Up](../admin/checkup.md) page has one row per CLI provider saying which state it is in.
 
 ## Extra arguments
 
-A CLI model's `extra_args` in `config.json` are added after the arguments ClawEh always passes. They are not on the WebUI form. ClawEh supplies the arguments each CLI needs to run unattended (for example `--no-chrome` for Claude and `--skip-git-repo-check` for Codex), so a model does not need them, and one given again is not passed twice.
+A CLI model's `extra_args` in `config.json` are added after the arguments Agency always passes. They are not on the WebUI form. Agency supplies the arguments each CLI needs to run unattended (for example `--no-chrome` for Claude and `--skip-git-repo-check` for Codex), so a model does not need them, and one given again is not passed twice.
 
-A bypass flag written into `extra_args` is removed while **Allow CLI to bypass restrictions** is off, so the checkbox stays the one place this is decided. ClawEh logs a warning, and the agent's card on the **Agents** page shows "`<provider>` is not allowed to bypass its restrictions." with an **Allow it** link.
+A bypass flag written into `extra_args` is removed while **Allow CLI to bypass restrictions** is off, so the checkbox stays the one place this is decided. Agency logs a warning, and the agent's card on the **Agents** page shows "`<provider>` is not allowed to bypass its restrictions." with an **Allow it** link.
 
 A model's `env` (also `config.json` only) sets extra environment variables for that model's CLI. The Claude CLI always gets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, which turns off Claude Code's own memory so it does not compete with the agent's.
 
@@ -77,9 +77,9 @@ Temporary agents created fresh at run time (see [Sub-agents](../agents/subagents
 
 A CLI runs a whole job in one call, so CLI models are created with **Request Timeout (s)** 3600. Each turn is still limited by **Turn timeout (s)** on the System page, 900 seconds by default, which stops the turn and its CLI even if the request timeout is longer. Raise the turn timeout if your CLI jobs need more than 15 minutes. See [Concepts](./concepts.md#request-timeout).
 
-## Tools: ClawEh's MCP server
+## Tools: Agency's MCP server
 
-A CLI model does not receive ClawEh's tools in its prompt. It calls them through ClawEh's MCP server, which listens on `127.0.0.1:5911` by default and starts automatically while any enabled model uses a CLI. Its settings are under **MCP** → **Config** (**Enabled**, **Auto-enable**, **Listen Address**).
+A CLI model does not receive Agency's tools in its prompt. It calls them through Agency's MCP server, which listens on `127.0.0.1:5911` by default and starts automatically while any enabled model uses a CLI. Its settings are under **MCP** → **Config** (**Enabled**, **Auto-enable**, **Listen Address**).
 
 Each CLI has to be told about this server once, as the service user, under the name `claw` and with the `/internal` endpoint:
 
@@ -100,9 +100,9 @@ Cursor has no such command. Add this to `~/.cursor/mcp.json` of the service user
 "claw": { "url": "http://127.0.0.1:5911/internal" }
 ```
 
-If you change **Listen Address**, use the new port in these commands. [MCP](../mcp.md) covers the server in full. Without this step the CLI still answers, but it has none of ClawEh's tools.
+If you change **Listen Address**, use the new port in these commands. [MCP](../mcp.md) covers the server in full. Without this step the CLI still answers, but it has none of Agency's tools.
 
-ClawEh puts a session token in each agent's prompt, and the CLI sends it with every tool call. That is how one CLI installation can serve several agents: each call runs as the agent whose token it carries, with that agent's [tools](../agents/tools-and-skills.md), folders and permissions. The tools of external MCP servers that an agent is allowed reach the CLI the same way, through ClawEh.
+Agency puts a session token in each agent's prompt, and the CLI sends it with every tool call. That is how one CLI installation can serve several agents: each call runs as the agent whose token it carries, with that agent's [tools](../agents/tools-and-skills.md), folders and permissions. The tools of external MCP servers that an agent is allowed reach the CLI the same way, through Agency.
 
 While another agent's request runs on the same agent, a CLI agent's chat output for that moment is refused rather than risk the wrong chat.
 

@@ -1,12 +1,12 @@
 # Alerts
 
-ClawEh raises an alert when something needs a person rather than a retry, and delivers it outside the agents' own chats so you hear about it even when a channel is down.
+Agency raises an alert when something needs a person rather than a retry, and delivers it outside the agents' own chats so you hear about it even when a channel is down.
 
 ## What alerts are for
 
 Alerts are for failures and outages: a model whose key was revoked, a channel that cannot connect, a backup that did not run. A setting that is off or ignored is not an alert; it shows on the [Check Up](./checkup.md) page.
 
-Every ClawEh alert is sent at normal priority.
+Every Agency alert is sent at normal priority.
 
 ## Where alerts go
 
@@ -24,7 +24,7 @@ To see them in the WebUI:
 
 Alerts can also be delivered by Pushover, SMS (Telnyx), mail (SMTP) or a JSON webhook. These are set with `ALERTER_*` environment variables, not in the WebUI.
 
-1. Create the file `~/.alerter` in the home directory of the user ClawEh runs as, and make it private:
+1. Create the file `~/.alerter` in the home directory of the user Agency runs as, and make it private:
 
    ```
    touch ~/.alerter && chmod 600 ~/.alerter
@@ -39,13 +39,13 @@ Alerts can also be delivered by Pushover, SMS (Telnyx), mail (SMTP) or a JSON we
    | Mail | `ALERTER_SMTP_HOST`, `ALERTER_SMTP_FROM`, `ALERTER_SMTP_TO`; optional `ALERTER_SMTP_PORT`, `ALERTER_SMTP_USER`, `ALERTER_SMTP_PASSWORD` |
    | Webhook | `ALERTER_WEBHOOK_URL`; optional `ALERTER_WEBHOOK_HEADERS` |
 
-3. Restart ClawEh.
+3. Restart Agency.
 
 The same variables can instead be set in the service's environment, which wins over the file. To write the alerts log somewhere else, set `ALERTER_LOG` to a full path and file name.
 
-A channel with a missing or malformed variable stops alerting from starting; ClawEh then logs an error and runs without alerts. Check the [log](./logs.md) after a change.
+A channel with a missing or malformed variable stops alerting from starting; Agency then logs an error and runs without alerts. Check the [log](./logs.md) after a change.
 
-Each channel can be limited to a minimum priority with `ALERTER_PUSHOVER_MIN_PRI`, `ALERTER_SMS_MIN_PRI`, `ALERTER_SMTP_MIN_PRI` or `ALERTER_WEBHOOK_MIN_PRI` (0 normal, 1 urgent, 2 emergency). Since every ClawEh alert is normal, a channel set to 1 or 2 receives nothing from ClawEh.
+Each channel can be limited to a minimum priority with `ALERTER_PUSHOVER_MIN_PRI`, `ALERTER_SMS_MIN_PRI`, `ALERTER_SMTP_MIN_PRI` or `ALERTER_WEBHOOK_MIN_PRI` (0 normal, 1 urgent, 2 emergency). Since every Agency alert is normal, a channel set to 1 or 2 receives nothing from Agency.
 
 ## Repeats
 
@@ -63,7 +63,7 @@ This covers:
 
 Clearing a model's cooldown (`/cooldowns clear`, `/retry`) lets its next failure be reported without waiting for the day to pass.
 
-The reminders are counted from when ClawEh started; after a restart, a problem that is still there is reported again.
+The reminders are counted from when Agency started; after a restart, a problem that is still there is reported again.
 
 On top of this, the same alert about the same thing within ten minutes of the last one is never sent twice: it is counted, and the next one after that says how many were held back. So a problem that ends and comes back within ten minutes is reported once.
 
@@ -115,13 +115,13 @@ See [Channels](../channels/index.md#when-a-message-cannot-be-delivered) for whic
 | Forum `<id>` run `<n>` of `<agent>` stopped | A [forum](../forums/running.md#restarts) run stopped on an error it cannot recover from by itself. |
 | Classifier state unavailable | An agent's `classifiers/state.db` could not be opened, so none of its [classifiers](../agents/classifiers.md#where-they-live) runs. |
 
-### ClawEh itself
+### Agency itself
 
 | Alert | Raised when |
 |---|---|
-| HTTP listener stopped | The WebUI listener died; ClawEh exits so the service restarts it. |
-| MCP host server stopped | ClawEh's own MCP server died; ClawEh exits so the service restarts it. |
-| Agent loop stopped | The agent loop failed; ClawEh exits so the service restarts it. |
+| HTTP listener stopped | The WebUI listener died; Agency exits so the service restarts it. |
+| MCP host server stopped | Agency's own MCP server died; Agency exits so the service restarts it. |
+| Agent loop stopped | The agent loop failed; Agency exits so the service restarts it. |
 | Config file invalid | A change to `config.json` on disk could not be loaded and was not applied. |
 | Config reload failed | A valid change failed part way; some services may not be running. |
 | Agent references a missing model | An agent named a model that no longer exists; the next model is used. |
@@ -158,4 +158,4 @@ See [Channels](../channels/index.md#when-a-message-cannot-be-delivered) for whic
 | Nightly backup failed | The nightly backup did not run. See [Backup](./backup.md). |
 | Database failed integrity check | A database was damaged and left out of a backup. |
 
-If the alerts log itself cannot be opened, ClawEh writes an error to its own log and runs without alerts.
+If the alerts log itself cannot be opened, Agency writes an error to its own log and runs without alerts.

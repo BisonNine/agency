@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -21,7 +21,7 @@ import (
 // under the "classifier" namespace (classifier_list, classifier_create, ...)
 // and gates the whole suite on the calling agent's `classifiers` switch.
 
-// ToolHost is what the tool layer needs from ClawEh for one call.
+// ToolHost is what the tool layer needs from Agency for one call.
 type ToolHost interface {
 	// Scope returns the calling agent's scope: the owning agent (a clone
 	// acts as its source) and <workspace>/classifiers as an absolute path.

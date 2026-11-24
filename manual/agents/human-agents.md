@@ -77,4 +77,4 @@ When the question cannot be posted, the asker is told at once and Bob is not wai
 - It has no tools and no long-term memory, and no model ever reads its conversation. Images and voice messages to it are not described or transcribed.
 - It is never cloned or spawned as a [sub-agent](./subagents.md).
 - Devices do not list it among the agents they can pick.
-- A question waiting when ClawEh shuts down is cancelled, not posted again after the restart.
+- A question waiting when Agency shuts down is cancelled, not posted again after the restart.

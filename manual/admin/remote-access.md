@@ -1,6 +1,6 @@
 # Remote access
 
-Reach ClawEh from other machines, from outside your home or office, or through a reverse proxy or tunnel.
+Reach Agency from other machines, from outside your home or office, or through a reverse proxy or tunnel.
 
 This page shows the common setups and what to set for each. The settings
 themselves are described in [Network access](./network.md) and
@@ -8,14 +8,14 @@ themselves are described in [Network access](./network.md) and
 
 ## Decide what needs to be reached
 
-ClawEh has two separate front doors. Opening one does not open the other.
+Agency has two separate front doors. Opening one does not open the other.
 
 | What | Listener | Default port | Who uses it |
 |---|---|---|---|
 | The WebUI, its API and the [Message API](../channels/message-api.md) | HTTPS (and HTTP on this machine) | 18443 (HTTP 18790) | You, in a browser; apps that post messages |
 | The device listener | Its own | 18791 | Rabbit R1, voice apps (see [Devices](../channels/devices.md)) |
 
-Chat channels such as Telegram, Slack and Discord need neither: ClawEh connects
+Chat channels such as Telegram, Slack and Discord need neither: Agency connects
 out to them.
 
 Whatever you choose, every WebUI request needs the [admin sign-in](./login.md),
@@ -50,16 +50,16 @@ works the same way: allow the VPN's address range too.
 ## Reverse proxy (NGINX or Caddy)
 
 The proxy holds the public name and certificate and passes requests to
-ClawEh's HTTP listener on the same machine.
+Agency's HTTP listener on the same machine.
 
-### What to set in ClawEh
+### What to set in Agency
 
 On the **Network** page:
 
 1. Leave **HTTP (WebUI on this host)** → **Scope** on localhost. The proxy
    connects to `http://127.0.0.1:18790`.
 2. Under **HTTPS**, set **Hostname / external URL** to the public address, for
-   example `https://claw.example.com`. ClawEh answers only to names it knows;
+   example `https://claw.example.com`. Agency answers only to names it knows;
    without this, requests through the proxy get "421 Misdirected Request".
 3. Optionally set HTTPS **Listen on** to **Localhost only** or **Off**, so the
    proxy is the only way in from the network.
@@ -70,7 +70,7 @@ On the **Network** page:
 Steps 4 and 5 go together. A proxy on the same machine connects from
 localhost, which is always allowed. Without **Trusted proxies**, every request
 looks like it comes from localhost: the allowed networks never apply, and
-failed sign-ins never lock out an address, because localhost never is. With it, ClawEh uses the client
+failed sign-ins never lock out an address, because localhost never is. With it, Agency uses the client
 address the proxy reports, from the `X-Real-IP` header or else the first
 `X-Forwarded-For` entry. See
 [Behind a reverse proxy](./network.md#behind-a-reverse-proxy).
@@ -140,7 +140,7 @@ cloudflared tunnel route dns claw claw.example.com
 cloudflared tunnel --url http://127.0.0.1:18790 run claw
 ```
 
-Then set ClawEh as for a [reverse proxy](#what-to-set-in-claweh): **Hostname /
+Then set Agency as for a [reverse proxy](#what-to-set-in-agency): **Hostname /
 external URL** `https://claw.example.com`, **Trusted proxies** `127.0.0.1`,
 and **Allowed network CIDRs** `*` (or the networks you expect). Cloudflare
 passes the visitor's address in `X-Forwarded-For`.
@@ -155,11 +155,11 @@ is public.
 
 ### Directly over the tailnet
 
-1. Install Tailscale on the ClawEh machine and on your devices, and run
+1. Install Tailscale on the Agency machine and on your devices, and run
    `tailscale up`.
 2. On the **Network** page, add the tailnet range `100.64.0.0/10` to
    **Allowed network CIDRs**.
-3. To open ClawEh by its tailnet name (for example `claw.tailnet-name.ts.net`),
+3. To open Agency by its tailnet name (for example `claw.tailnet-name.ts.net`),
    add that name to **Extra certificate names** under **HTTPS** and click
    **Regenerate certificate**. Opening it by its `100.x.y.z` address works
    without this.
@@ -168,14 +168,14 @@ is public.
 
 ### With a Tailscale certificate
 
-`tailscale serve` gives ClawEh an HTTPS address with a real certificate on your
-tailnet and passes requests to ClawEh on this machine:
+`tailscale serve` gives Agency an HTTPS address with a real certificate on your
+tailnet and passes requests to Agency on this machine:
 
 ```bash
 tailscale serve --bg http://127.0.0.1:18790
 ```
 
-Set ClawEh as for a [reverse proxy](#what-to-set-in-claweh), with **Hostname /
+Set Agency as for a [reverse proxy](#what-to-set-in-agency), with **Hostname /
 external URL** set to the `https://….ts.net` address Tailscale prints.
 
 `tailscale funnel` does the same but publishes the address to the whole
@@ -204,13 +204,13 @@ proxy reports, for its lockouts and its allowed networks. Without it, every
 device appears to come from the proxy.
 
 Leave the device listener's **Scope** on localhost when only a proxy on this
-machine connects to it. On **Network**, ClawEh refuses to start with
+machine connects to it. On **Network**, Agency refuses to start with
 **Auto-approve pairings** on or without a device token.
 
 ## Check the result
 
 - **Addresses** on the **Network** page, and `claw status` on the server, show
-  where ClawEh can be opened.
+  where Agency can be opened.
 - [Check Up](./checkup.md) shows one row per listener, whether it is
   encrypted, and which networks are allowed.
 

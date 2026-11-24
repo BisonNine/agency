@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -21,7 +21,7 @@ import (
 // it. This file holds the Service, its per-forum state and the helpers
 // every operation shares; the operations are in the files named for them (launch.go, control.go, …) by concern.
 //
-// Host wiring (what ClawEh calls, in order):
+// Host wiring (what Agency calls, in order):
 //
 //	svc := forum.New(forum.Host{Messenger: ..., Agents: ..., Notifier: ...,
 //	        Logger: ...,

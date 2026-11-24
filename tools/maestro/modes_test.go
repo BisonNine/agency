@@ -13,7 +13,7 @@ import (
 
 // Everything Maestro creates in an agent's maestro folder, through the tools
 // and through the runner, takes the agents area's configured modes. The umask
-// is 0 so the test shows the modes ClawEh passes.
+// is 0 so the test shows the modes Agency passes.
 func TestMaestro_AgentsAreaModes(t *testing.T) {
 	old := syscall.Umask(0)
 	defer syscall.Umask(old)

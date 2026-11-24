@@ -179,7 +179,7 @@ type AgentConfig struct {
 
 	// AllowedFolders are real host folders this agent's file tools may use by
 	// their absolute path, besides its workspace. Write access follows the
-	// file-system permissions of the account ClawEh runs as.
+	// file-system permissions of the account Agency runs as.
 	AllowedFolders []AllowedFolderConfig `json:"allowed_folders,omitempty"`
 
 	// Knowledge gives the agent knowledge bases (OKF bundles) and the kb_*

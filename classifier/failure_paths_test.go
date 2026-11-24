@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -22,7 +22,7 @@ import (
 
 // classifier_test and classifier_rerun pass a failing source through with
 // its real reason, the one every failure notice tells the agent to use: in
-// ClawEh's words, then what the tool said marked as untrusted.
+// Agency's words, then what the tool said marked as untrusted.
 func TestToolsPassSourceFailuresThrough(t *testing.T) {
 	e := newEnv(t)
 	e.create(definition())

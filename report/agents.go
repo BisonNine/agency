@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package report
@@ -57,8 +57,8 @@ type folderRow struct {
 	highlight bool
 }
 
-// folderAccess collects every path an agent can reach through ClawEh's file
-// tools, plus the directories ClawEh itself writes on the agent's behalf,
+// folderAccess collects every path an agent can reach through Agency's file
+// tools, plus the directories Agency itself writes on the agent's behalf,
 // under the rule in tools/files (ReadPolicy and buildBaseFs): writes are
 // confined when restrict_to_workspace is on, reads when it is on and
 // allow_read_outside_workspace is off; allow-listed host patterns bypass both.

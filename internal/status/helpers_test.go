@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package status
@@ -36,7 +36,7 @@ func captureStdout(t *testing.T, fn func()) string {
 }
 
 // `claw status` reads configuration from disk and used to describe an
-// installation rather than a running system — it could not say whether ClawEh
+// installation rather than a running system — it could not say whether Agency
 // was up. The process line is the answer, so its two states are worth pinning.
 func TestPrintProcess_ReportsNotRunningWithoutAPidFile(t *testing.T) {
 	got := captureStdout(t, func() { printProcess(t.TempDir()) })

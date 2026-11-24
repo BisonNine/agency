@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -21,7 +21,7 @@ func (e *env) failingSource(msg string) {
 }
 
 // restart replaces the service with a new one over the same folders, as a
-// restart of ClawEh would.
+// restart of Agency would.
 func (e *env) restart() {
 	e.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

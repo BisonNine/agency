@@ -1,6 +1,6 @@
 # Tool Provider Layer — Developer Guide
 
-This document explains how ClawEh's tool-provider layer works and gives a spec
+This document explains how Agency's tool-provider layer works and gives a spec
 for adding a new tool module (a package of related tools). Registering a module
 once makes its tools available to **both** transports:
 
@@ -85,8 +85,8 @@ type ToolDefinition struct {
     PrimaryOnly   bool          // vestigial: declared by toolspec, not enforced
 
     DefaultAllow *bool          // Allow(true) ⇒ in the "Default tools" set
-    Category     string         // declared by toolspec, not read by ClawEh
-    ConfigKey    string         // declared by toolspec, not read by ClawEh
+    Category     string         // declared by toolspec, not read by Agency
+    ConfigKey    string         // declared by toolspec, not read by Agency
 }
 
 type ToolHandler func(call *ToolCall) (*Result, error)
@@ -160,7 +160,7 @@ resolved in `agent/instance.go`; the clone is created with
 `models`. Maestro dispatch goes through the same `RunSync` path.
 
 `ToolDefinition.PrimaryOnly` still exists in `toolspec` and is vestigial —
-**ClawEh does not read it**, so setting it has no effect. It once marked tools a
+**Agency does not read it**, so setting it has no effect. It once marked tools a
 spawned worker could not have, which was effectively a depth limit of one, and
 it was replaced by a real one: `agents.defaults.max_subagent_depth` (default 3,
 `tools/agents/depth.go`). A primary turn is depth 0, the sub-agents it spawns run
@@ -259,7 +259,7 @@ allowlist), over MCP, and in the WebUI catalogue.
 ### Step 3 — add a test probe
 
 `test.sh` / `tests/test_mcpserver.sh` exercise every MCP tool with the external
-`probe` binary. Add your tool to ClawEh test config's exposed tool list and
+`probe` binary. Add your tool to Agency test config's exposed tool list and
 add a probe case — success for hermetic tools, a graceful-error probe for
 network/LLM tools.
 

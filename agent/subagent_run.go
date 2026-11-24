@@ -1,4 +1,4 @@
-// ClawEh - sub-agent execution
+// Agency - sub-agent execution
 // License: MIT
 
 package agent

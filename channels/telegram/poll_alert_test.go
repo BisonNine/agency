@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package telegram
@@ -46,7 +46,7 @@ func TestPollFailureAlert_ChannelName(t *testing.T) {
 	ch.pollFailed(unauthorized, time.Minute)
 	require.Len(t, rec.alerts, 1)
 	a := rec.alerts[0]
-	require.Equal(t, alerter.Normal, a.Priority, "ClawEh alerts are normal priority")
+	require.Equal(t, alerter.Normal, a.Priority, "Agency alerts are normal priority")
 	require.Equal(t, "telegram-alice", a.EventID)
 	require.Equal(t, `telegram-alice: 401 "Unauthorized"`, a.Description)
 }

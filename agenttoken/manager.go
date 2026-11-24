@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package agenttoken defines the token formats used by the claw MCP layer and

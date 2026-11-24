@@ -1,16 +1,16 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
 // Package session mounts the session tools from the sessiontools package as a
-// ClawEh tool provider. The package defines the tools with BARE names
+// Agency tool provider. The package defines the tools with BARE names
 // ("messages", "search", ...); the aggregator publishes them under the
 // "session" namespace as "session_messages" and so on.
 //
-// This file is the only ClawEh-specific glue: it recovers the agent loop's
+// This file is the only Agency-specific glue: it recovers the agent loop's
 // closures and workspace from tools.ToolDeps, builds a sessiontools.Host, and
-// routes the tools' diagnostics into ClawEh's logger.
+// routes the tools' diagnostics into Agency's logger.
 package session
 
 import (

@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package report
@@ -52,7 +52,7 @@ const itemProxy = "Proxy"
 const itemUntrustedProxy = "Reverse proxy"
 
 // itemEncryptedMatrix is the row naming the Matrix rooms seen to be end-to-end
-// encrypted, which ClawEh can't read; the WebUI links it to the manual's
+// encrypted, which Agency can't read; the WebUI links it to the manual's
 // encryption section (assessmentLinks).
 const itemEncryptedMatrix = "Encrypted Matrix rooms"
 

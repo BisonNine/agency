@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package folderwatch
@@ -468,10 +468,10 @@ func TestTick_FolderWatchedAgainStartsOver(t *testing.T) {
 	}
 }
 
-// A folder that appears in the configuration while ClawEh runs starts over
+// A folder that appears in the configuration while Agency runs starts over
 // even when an old list of it is still on disk (written before the process
 // lost track of it); at process start an existing list is read, so a file
-// added while ClawEh was stopped is announced.
+// added while Agency was stopped is announced.
 func TestTick_NewFolderAtRuntimeIgnoresOldList(t *testing.T) {
 	e := newWatchEnv(t)
 	marker := markerPath(e.ws, "alice", e.folder)

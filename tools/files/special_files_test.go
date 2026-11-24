@@ -1,6 +1,6 @@
 //go:build unix
 
-// ClawEh
+// Agency
 // License: MIT
 
 package files

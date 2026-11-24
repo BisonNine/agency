@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -364,7 +364,7 @@ func (s *Service) check(ctx context.Context, scope Scope, def *Definition, live 
 
 // sourceRefusal is a tool's refusal of a source that failed (its tool's
 // error, a result that is not JSON or holds no list), with the real reason
-// so the agent can act on it: ClawEh's summary, then what the tool said
+// so the agent can act on it: Agency's summary, then what the tool said
 // inside Host.WrapUntrusted.
 func (s *Service) sourceRefusal(err error) error {
 	c := s.redactCause(causeOf(err))

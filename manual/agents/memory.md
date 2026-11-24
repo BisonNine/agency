@@ -12,7 +12,7 @@ The conversation is stored in the agent's `sessions/` folder.
 
 ## How the conversation is kept short
 
-A model can only read so much at once. ClawEh keeps the conversation within that limit in two ways, both automatic:
+A model can only read so much at once. Agency keeps the conversation within that limit in two ways, both automatic:
 
 - **Context eviction**: large, re-readable tool results, such as a file read or a web page fetched, are replaced with a short placeholder once the agent has moved on. The agent can read the content again if it needs it.
 - **Compaction**: when the conversation grows past a threshold, older messages are summarized by a memory model and only the summary and the recent messages stay in view.

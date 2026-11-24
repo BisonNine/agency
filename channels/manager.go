@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package channels
@@ -533,7 +533,7 @@ func (m *Manager) injectChannelDependencies(ch Channel, platform string) {
 }
 
 // resolveSecMsgAccounts returns the accounts to bind for a daemon, applying
-// daemon-level defaults. Pinned accounts are honored as-is; otherwise ClawEh
+// daemon-level defaults. Pinned accounts are honored as-is; otherwise Agency
 // discovers the daemon's linked accounts. ok is false when discovery failed
 // (daemon down): the accounts already running for the daemon are then kept,
 // and new ones are picked up on a later reload once it is reachable. The

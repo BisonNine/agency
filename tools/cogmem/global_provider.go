@@ -1,10 +1,10 @@
-// ClawEh - Cognitive Memory
+// Agency - Cognitive Memory
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
 // Package cogmem mounts the cognitive-memory tools from the agent SDK's cogmem
-// package (go.bison9.com/agent/cogmem/tools) as a ClawEh tool provider. It
+// package (go.bison9.com/agent/cogmem/tools) as an Agency tool provider. It
 // defines the tools with BARE names ("domain_get", "memory_create", ...); the
 // aggregator publishes them under the "cogmem" namespace as
 // "cogmem_domain_get" and so on.

@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package report
@@ -766,7 +766,7 @@ func TestAssessment_BehindProxy(t *testing.T) {
 		t.Errorf("proxy row = %q", r)
 	}
 
-	// An https external URL ClawEh does not serve itself is a proxy too.
+	// An https external URL Agency does not serve itself is a proxy too.
 	cfg.Gateway.TrustedProxies = nil
 	cfg.Gateway.ExternalURL = "https://claw.example.com"
 	s = collectAssessment(t.Context(), cfg, env)

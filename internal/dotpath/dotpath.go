@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -6,7 +6,7 @@
 // Package dotpath selects values from decoded JSON by a dot-separated path.
 // It is the one path rule shared by scheduled watches and classifiers, and
 // imports only the standard library so packages that must stay free of
-// ClawEh imports (the classifier core) can use it.
+// Agency imports (the classifier core) can use it.
 package dotpath
 
 import "strings"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ClawEh One-Line Online Installer
+# Agency One-Line Online Installer
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash
@@ -45,7 +45,7 @@ case "$os" in
     Linux)  os="linux" ;;
     Darwin) os="darwin" ;;
     *)
-        echo "Error: Unsupported OS '$os'. ClawEh supports Linux and macOS." >&2
+        echo "Error: Unsupported OS '$os'. Agency supports Linux and macOS." >&2
         exit 1
         ;;
 esac
@@ -75,7 +75,7 @@ if command -v curl >/dev/null 2>&1; then
 elif command -v wget >/dev/null 2>&1; then
     download() { wget -O "$2" "$1"; }
 else
-    echo "Error: 'curl' or 'wget' is required to download ClawEh." >&2
+    echo "Error: 'curl' or 'wget' is required to download Agency." >&2
     exit 1
 fi
 
@@ -103,7 +103,7 @@ if [ -n "${CLAW_PACKAGE:-}" ] && [ -f "${CLAW_PACKAGE}" ]; then
     echo "==> Using specified package: ${CLAW_PACKAGE}"
     cp "${CLAW_PACKAGE}" "$tmpdir/$asset"
 else
-    echo "==> Downloading ClawEh for ${os}/${arch} (${VERSION})..."
+    echo "==> Downloading Agency for ${os}/${arch} (${VERSION})..."
     if ! download "$asset_url" "$tmpdir/$asset"; then
         echo "Error: Failed to download release asset from ${asset_url}" >&2
         echo "Please check available releases at https://github.com/${REPO}/releases" >&2
@@ -161,7 +161,7 @@ fi
 # the prompts are written to the terminal. CLAW_ADMIN_USER and
 # CLAW_ADMIN_PASSWORD, when exported, reach `claw install` through the
 # environment.
-echo "==> Installing ClawEh service..."
+echo "==> Installing Agency service..."
 install_log="$tmpdir/install.log"
 if ! "$bin" install "${install_args[@]}" "$@" 2>&1 | tee "$install_log"; then
     unset CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD

@@ -1,8 +1,8 @@
-# ClawEh Web UI — Test Plan
+# Agency Web UI — Test Plan
 
 ## Overview
 
-This test plan covers manual and automated verification of the ClawEh web frontend and the WebUI HTTP layer that lives inside the merged `claw` binary. It is organized by feature area. Run against a locally running `claw` instance (`http://127.0.0.1:18790`).
+This test plan covers manual and automated verification of the Agency web frontend and the WebUI HTTP layer that lives inside the merged `claw` binary. It is organized by feature area. Run against a locally running `claw` instance (`http://127.0.0.1:18790`).
 
 ## Prerequisites
 
@@ -19,10 +19,10 @@ Verify all old "PicoClaw" / "picoclaw" references have been replaced.
 
 | # | Test | Expected |
 |---|------|----------|
-| 1.1 | Page title in browser tab | "ClawEh" |
-| 1.2 | App header / nav bar name | "ClawEh" |
-| 1.3 | Any "About" or version display | "ClawEh" or no vendor name |
-| 1.4 | Typing indicator text (if visible in chat) | "ClawEh" or agent name — not "PicoClaw" |
+| 1.1 | Page title in browser tab | "Agency" |
+| 1.2 | App header / nav bar name | "Agency" |
+| 1.3 | Any "About" or version display | "Agency" or no vendor name |
+| 1.4 | Typing indicator text (if visible in chat) | "Agency" or agent name — not "PicoClaw" |
 | 1.5 | Assistant message attribution | Not "picoclaw" |
 
 ---
@@ -33,7 +33,7 @@ Verify all old "PicoClaw" / "picoclaw" references have been replaced.
 |---|------|----------|
 | 2.1 | Click the Docs / Help link in the app header | Opens `https://github.com/PivotLLM/ClawEh` in a new tab — not `docs.picoclaw.io` |
 | 2.2 | Open Channels config page → click docs link | Opens `https://github.com/PivotLLM/ClawEh` in a new tab |
-| 2.3 | Inspect `<title>` in page source | `<title>ClawEh</title>` |
+| 2.3 | Inspect `<title>` in page source | `<title>Agency</title>` |
 
 ---
 

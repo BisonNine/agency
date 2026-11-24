@@ -33,7 +33,7 @@ type cliInfo struct {
 	Label    string `json:"label"`
 	Binary   string `json:"binary"`
 	// Installed is whether the binary was found. Rows stay listed when it was
-	// not, greyed out: a CLI ClawEh supports but the host lacks is a different
+	// not, greyed out: a CLI Agency supports but the host lacks is a different
 	// thing from one it does not support, and hiding it looks like the latter.
 	Installed bool   `json:"installed"`
 	Path      string `json:"path,omitempty"`
@@ -56,7 +56,7 @@ type cliInfo struct {
 	// JSON output, read from stdin. RequiredArgs are the non-security flags the
 	// CLI needs to run headless; BypassArgs are its permission-bypass flags,
 	// passed only when BypassRestrictions is on. All are reported so the row
-	// can show the whole command line: an operator asking what ClawEh runs on
+	// can show the whole command line: an operator asking what Agency runs on
 	// their machine is owed all of it, not the part that happens to live in
 	// config.
 	BaseArgs     []string `json:"base_args"`

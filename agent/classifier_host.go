@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package agent
@@ -36,7 +36,7 @@ import (
 	toolschedule "go.bison9.com/agency/tools/schedule"
 )
 
-// ClassifierHost is ClawEh's side of the classifier package's host contract
+// ClassifierHost is Agency's side of the classifier package's host contract
 // over one agent loop: classifier.ToolRunner (the owning agent's own tool
 // registry), classifier.ModelCaller (the agent's classifier model),
 // classifier.Notifier (the run summary posted to the agent's default chat,

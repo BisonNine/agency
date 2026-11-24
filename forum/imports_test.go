@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// The forum package imports no ClawEh package but its own forumfs and the
+// The forum package imports no Agency package but its own forumfs and the
 // stdlib-only internal/mergepatch, and forumfs imports nothing, so config can
 // name the forum's folders without depending on the forum.
 func TestForumImportsNoClawEhPackage(t *testing.T) {

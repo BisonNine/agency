@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package folderwatch polls notify-enabled allowed folders and tells each
@@ -57,7 +57,7 @@ var markerName = regexp.MustCompile(`^[0-9a-f]{32}\.txt$`)
 // that a reload adds (or whose notices it turns back on) is recognised as
 // new, and its old marker is not read: it baselines instead. Before the
 // process's first scan nothing is known, and existing markers are read, so
-// files added while ClawEh was stopped are announced.
+// files added while Agency was stopped are announced.
 type State struct {
 	mu      sync.Mutex
 	scanned bool

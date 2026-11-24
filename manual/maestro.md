@@ -58,7 +58,7 @@ In `config.json` the setting is an object on the agent:
 }
 ```
 
-The older form `"maestro": true` is not accepted: ClawEh logs a warning and
+The older form `"maestro": true` is not accepted: Agency logs a warning and
 runs the agent without Maestro until the object form is set.
 
 ## The parts, at a glance
@@ -118,10 +118,10 @@ reach it as `maestro/` while Maestro is on, so the agent can move inputs and fin
 The nightly [backup](admin/backup.md) includes the `maestro/` folder, and a
 restore puts it back.
 
-Maestro's operational log goes to the ClawEh log with the component
+Maestro's operational log goes to the Agency log with the component
 `maestro`, visible on the **Logs** page (see [Logs](admin/logs.md)).
 
 ## Using Maestro from another program
 
-An MCP client outside ClawEh can drive an agent's Maestro tools with that
-agent's service token. See [ClawEh as an MCP server](mcp.md#service-tokens).
+An MCP client outside Agency can drive an agent's Maestro tools with that
+agent's service token. See [Agency as an MCP server](mcp.md#service-tokens).

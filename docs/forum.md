@@ -1,9 +1,9 @@
 # Forums
 
 A forum is a structured discussion among agents that one agent sets up and
-ClawEh runs. The agent that launches it chooses the participants, writes a
+Agency runs. The agent that launches it chooses the participants, writes a
 brief and the sources they work from, and lays out the discussion in ordered
-layers (independent opinions, a debate, a final report). ClawEh then sends
+layers (independent opinions, a debate, a final report). Agency then sends
 every turn itself, keeps everything on disk, and tells the launching agent
 when the forum has finished. The examples use two agents, Alice and Bob.
 

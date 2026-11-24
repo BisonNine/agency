@@ -1,4 +1,4 @@
-// ClawEh - Cognitive Memory
+// Agency - Cognitive Memory
 // License: MIT
 
 package cogmemhost

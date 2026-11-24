@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// The classifier package imports no ClawEh package but its own classifierfs
+// The classifier package imports no Agency package but its own classifierfs
 // and the stdlib-only leaves internal/mergepatch and internal/dotpath, and
 // classifierfs imports nothing, so config can name the classifier folder
 // without depending on the engine and the agent loop can host it.

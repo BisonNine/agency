@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 package agent
@@ -29,7 +29,7 @@ import (
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
-// ForumHost is ClawEh's side of the forum package's host contract over one
+// ForumHost is Agency's side of the forum package's host contract over one
 // agent loop: forum.Messenger (the core Ask), forum.Agents (the agent
 // registry), forum.Notifier (the completion notice), forum.Cards (the
 // character-card library) and OnStuck (an operator alert). The gateway

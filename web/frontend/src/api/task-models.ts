@@ -1,4 +1,4 @@
-// API client for the Task models page: the models ClawEh uses for single
+// API client for the Task models page: the models Agency uses for single
 // calls without tools, in one ordered list per use.
 import { errorMessage } from "./error-message"
 

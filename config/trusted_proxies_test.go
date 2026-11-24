@@ -155,7 +155,7 @@ func TestBehindProxy(t *testing.T) {
 		{name: "nothing set"},
 		{name: "trusted proxy", trusted: []string{"10.0.0.5", " 10.0.1.0/24 "}, want: []string{"10.0.0.5", "10.0.1.0/24"}},
 		{name: "https external URL on another port", external: "https://claw.example.com", want: []string{"https://claw.example.com"}},
-		{name: "https external URL served by ClawEh", external: "https://claw.lan:18443"},
+		{name: "https external URL served by Agency", external: "https://claw.lan:18443"},
 		{name: "https external URL with HTTPS off", external: "https://claw.lan:18443", tlsMode: TLSModeOff, want: []string{"https://claw.lan:18443"}},
 		{name: "http external URL", external: "http://claw.lan:18790"},
 		{name: "wss device URL, device plain", devEnabled: true, devExternal: "wss://dev.example.com", want: []string{"wss://dev.example.com"}},

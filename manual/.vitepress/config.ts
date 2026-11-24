@@ -4,8 +4,8 @@ import { defineConfig } from "vitepress"
 // WebUI login (web/backend/manual.go). The same build will later back the
 // public website.
 export default defineConfig({
-  title: "ClawEh Manual",
-  description: "User manual for ClawEh",
+  title: "Agency Manual",
+  description: "User manual for Agency",
   lang: "en-US",
   base: "/manual/",
   // Output goes straight into the Go embed source.

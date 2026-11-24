@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -15,7 +15,7 @@
 // folder, classifiers/state.db. Every classifier runs on its own interval
 // timer; one run at a time.
 //
-// The package imports no ClawEh package but its own classifierfs and the
+// The package imports no Agency package but its own classifierfs and the
 // stdlib-only leaves internal/mergepatch and internal/dotpath, so the agent
 // loop can host it (agent.ClassifierHost) without an import cycle and the
 // engine is tested against fake hosts.

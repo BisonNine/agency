@@ -6,7 +6,7 @@ This page lists every command a person can type in a chat with an agent, what it
 
 - A command is a message that starts with `/`, for example `/status`. `!` works the same way (`!status`), which helps where the chat app treats `/` itself, as Slack does.
 - Command names are not case-sensitive. In Telegram, `/status@yourbot` also works, and the bot lists its commands in Telegram's command menu: type `/` to see them.
-- A command is answered by ClawEh itself and is not sent to the agent's model. `/compact` uses the memory models to summarize, and `/ask` and `/retry` start a turn.
+- A command is answered by Agency itself and is not sent to the agent's model. `/compact` uses the memory models to summarize, and `/ask` and `/retry` start a turn.
 - A command acts on the agent the chat reaches (see [Routing and bindings](../channels/routing.md)). Because each agent has [one conversation](../agents/memory.md#one-conversation-per-agent), a command that changes the conversation changes it for every chat that talks to that agent.
 - While the agent is working on a request, a command waits behind it. `/cancel` is the exception: it acts at once.
 - An unknown command gets "Unknown command: /name. Type /help for available commands."

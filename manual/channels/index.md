@@ -4,7 +4,7 @@ A channel is a way for people to reach your agents: a chat app, the WebUI chat, 
 
 ## How channels work
 
-Each channel connects ClawEh to one chat service. A message that arrives on a
+Each channel connects Agency to one chat service. A message that arrives on a
 channel is handed to one agent, and the agent's reply goes back the same way.
 
 - **Which agent answers** is decided by [bindings](./routing.md). A message that
@@ -37,7 +37,7 @@ briefly; the other channels keep running.
 
 ## When a message cannot be delivered
 
-When ClawEh cannot deliver a message, it says why. The same words appear in
+When Agency cannot deliver a message, it says why. The same words appear in
 the log and in what the agent is told (for example, "Not sent:
 device:… is offline."):
 

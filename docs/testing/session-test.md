@@ -1,6 +1,6 @@
 # Session / Long-Lived Memory — Test Protocol
 
-> **Purpose.** This is a manual test you paste to a ClawEh agent to validate its
+> **Purpose.** This is a manual test you paste to an Agency agent to validate its
 > long-lived memory and context compaction. It checks that on-demand compaction
 > works, that the conversation summary and message archive are durable and
 > retrievable through the agent's session tools, and — most importantly — that

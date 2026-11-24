@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package token implements the `claw token` CLI: mint, rotate, revoke, and list

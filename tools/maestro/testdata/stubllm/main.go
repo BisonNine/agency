@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // stubllm is a deterministic OpenAI-compatible chat server used by the Maestro

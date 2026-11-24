@@ -104,7 +104,7 @@ const deviceDefaultPort = 18791
 // BehindProxy names the reverse proxies this install is reached through: the
 // gateway.trusted_proxies entries, then each external URL (gateway.external_url,
 // and the device listener's while it is on) that is https/wss but not served by
-// ClawEh's own TLS listener for it, which means TLS ends at a proxy. Empty when
+// Agency's own TLS listener for it, which means TLS ends at a proxy. Empty when
 // there is none. Where a proxy terminates TLS, plain HTTP on the listener is
 // not a finding.
 func (c *Config) BehindProxy() []string {

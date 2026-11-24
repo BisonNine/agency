@@ -9,7 +9,7 @@ Agents search the web with `web_search` and read pages with `web_fetch`; this pa
 
 ## Search providers
 
-ClawEh supports six search services. Only one is used at a time: the first in this list that is enabled and has what it needs.
+Agency supports six search services. Only one is used at a time: the first in this list that is enabled and has what it needs.
 
 | Order | Provider | Section in `config.json` | Needs |
 |---|---|---|---|

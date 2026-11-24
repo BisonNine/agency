@@ -1,6 +1,6 @@
 # Forums
 
-A forum is a structured discussion among agents that one agent sets up and ClawEh runs to the end on its own.
+A forum is a structured discussion among agents that one agent sets up and Agency runs to the end on its own.
 
 ## What a forum is
 
@@ -8,7 +8,7 @@ You ask an agent, say Alice, for something that benefits from several
 independent views: a second opinion from three models, a critique-and-revise
 cycle for a document, a review panel for a proposal. Alice writes the forum's
 setup: who takes part, what they work from, and the order of the discussion.
-ClawEh then sends every turn itself, keeps everything on disk, and tells Alice
+Agency then sends every turn itself, keeps everything on disk, and tells Alice
 when the forum has finished. Alice reads the result and answers you.
 
 A forum is always set up by an agent. There is no WebUI page for creating

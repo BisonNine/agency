@@ -1,9 +1,9 @@
-// ClawEh - allowlisted environment for child processes
+// Agency - allowlisted environment for child processes
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
-// Package childenv builds the environment handed to processes ClawEh starts:
+// Package childenv builds the environment handed to processes Agency starts:
 // shell_exec commands, stdio MCP servers and CLI providers. The service
 // process carries its own configuration in CLAW_* variables and the alerter's
 // delivery credentials in ALERTER_*; a child that inherits the whole

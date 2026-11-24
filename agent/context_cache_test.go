@@ -504,7 +504,7 @@ description: global-v2
 }
 
 // TestSkillsNotLoadedFromWorkingDirectory verifies that a skills/ folder in
-// the directory ClawEh was started from is not a skill source.
+// the directory Agency was started from is not a skill source.
 func TestSkillsNotLoadedFromWorkingDirectory(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)

@@ -6,13 +6,13 @@ The WebUI has one admin account, created on the server, and every page needs it.
 
 There is no default account and no default password. The account cannot be created or changed from the browser.
 
-`claw install` (and the one-line installer) creates it before it starts the service (see [Installing ClawEh](../getting-started/install.md#the-admin-account)). If it was not created then, or you need a new password, use `claw admin` on the server.
+`claw install` (and the one-line installer) creates it before it starts the service (see [Installing Agency](../getting-started/install.md#the-admin-account)). If it was not created then, or you need a new password, use `claw admin` on the server.
 
 The account lives in `<CLAW_HOME>/credentials.json` (on a system install, `/opt/claw/credentials.json`). The password is stored only as a hash.
 
 ## Create or replace the account
 
-1. Open a terminal on the server, as the user ClawEh runs as.
+1. Open a terminal on the server, as the user Agency runs as.
 2. Run one of:
 
    ```
@@ -22,7 +22,7 @@ The account lives in `<CLAW_HOME>/credentials.json` (on a system install, `/opt/
 
 3. Type the password twice. It is not shown, and it must be at least 12 characters.
 
-Running `claw admin` again replaces the account. A running ClawEh picks up the change within a minute and signs every browser out.
+Running `claw admin` again replaces the account. A running Agency picks up the change within a minute and signs every browser out.
 
 Run as root on a system install, `claw admin` hands the file to the service account.
 
@@ -41,9 +41,9 @@ With `sudo`, keep them with `sudo --preserve-env=CLAW_ADMIN_USER,CLAW_ADMIN_PASS
 
 ## No account yet
 
-ClawEh still starts and every channel works. The WebUI shows **No admin account** with the command to run (`claw admin`) and a **Check again** button.
+Agency still starts and every channel works. The WebUI shows **No admin account** with the command to run (`claw admin`) and a **Check again** button.
 
-If the credentials file allows more than `security.permissions.secrets.file_mode` (`0600` by default), ClawEh refuses it and the log names the fix, such as `chmod 600 <path>`.
+If the credentials file allows more than `security.permissions.secrets.file_mode` (`0600` by default), Agency refuses it and the log names the fix, such as `chmod 600 <path>`.
 
 ## Sign in and sign out
 
@@ -60,7 +60,7 @@ Signing in is required from this machine too; localhost is not exempt.
 |---|---|
 | Idle timeout | 12 hours, reset by each use |
 | Longest session | 7 days |
-| After a restart of ClawEh | Everyone is signed out |
+| After a restart of Agency | Everyone is signed out |
 | After `claw admin` | Everyone is signed out |
 
 ## Failed sign-ins
@@ -81,7 +81,7 @@ Each lock that starts raises an [alert](./alerts.md) ("WebUI login address locke
 Do one of these on the server:
 
 - Run `claw admin` (a new password, or the same one).
-- Restart ClawEh.
+- Restart Agency.
 
 Both clear every lock at once.
 

@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
@@ -7,7 +7,7 @@
 // for the packages that must recognise them without importing the forum
 // package (config, the backup, the file tools, Check Up). It imports
 // nothing, so config can use it and the forum package keeps importing no
-// other ClawEh package.
+// other Agency package.
 package forumfs
 
 const (

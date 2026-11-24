@@ -23,7 +23,7 @@ Her answer goes to:
    chat with no browser open);
 3. nowhere, if she has no default channel. It still stays in her conversation.
 
-If the notice cannot be delivered, or the results cannot be written, ClawEh
+If the notice cannot be delivered, or the results cannot be written, Agency
 tries again every hour, up to five times per start of the service, and then
 gives up with a warning in the log.
 
@@ -76,7 +76,7 @@ and run, then each published output, quoted in a block, and the moderator's
 public decisions. It never contains a participant's private instructions,
 rejected replies or private messages.
 
-To follow a running forum from a shell on the ClawEh machine:
+To follow a running forum from a shell on the Agency machine:
 
 ```
 tail -f <workspace>/forums/<id>/runs/<n>/transcript.md

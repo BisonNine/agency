@@ -1,16 +1,16 @@
-# MCP: ClawEh as server and client
+# MCP: Agency as server and client
 
-ClawEh speaks the Model Context Protocol (MCP) in both directions: it serves its tools to CLI-based models and other MCP clients, and it connects to external MCP servers whose tools you grant to agents.
+Agency speaks the Model Context Protocol (MCP) in both directions: it serves its tools to CLI-based models and other MCP clients, and it connects to external MCP servers whose tools you grant to agents.
 
-## ClawEh as an MCP server
+## Agency as an MCP server
 
 ### Why it exists
 
 Agents on a [CLI provider](providers/cli-providers.md) (Claude Code, Codex CLI, Antigravity, Cursor CLI)
 run the vendor's CLI as a separate program. That program cannot call
-ClawEh's tools directly, so it calls them over MCP from ClawEh's **MCP
+Agency's tools directly, so it calls them over MCP from Agency's **MCP
 host**. Agents on an HTTP provider (Anthropic, OpenAI and similar APIs)
-call tools inside ClawEh and do not need it.
+call tools inside Agency and do not need it.
 
 ### Turn it on
 
@@ -31,16 +31,16 @@ The MCP host has two endpoints on that address:
 
 | Endpoint | Sign-in | Used by |
 |---|---|---|
-| `/internal` | A session token passed with every tool call | ClawEh's own CLI providers. One CLI install can act for several agents, each call naming its agent by its token. |
+| `/internal` | A session token passed with every tool call | Agency's own CLI providers. One CLI install can act for several agents, each call naming its agent by its token. |
 | `/mcp` (the **Endpoint Path**) | `Authorization: Bearer <token>`, one agent per connection | Other MCP clients, such as your own scripts or a desktop assistant. |
 
-### Register ClawEh in each CLI
+### Register Agency in each CLI
 
-Each CLI you use as a provider must know where ClawEh's MCP host is.
-Without this the CLI still answers, but has none of ClawEh's tools.
+Each CLI you use as a provider must know where Agency's MCP host is.
+Without this the CLI still answers, but has none of Agency's tools.
 
-- **All at once:** run `./set-mcp.sh` from the ClawEh source folder. It
-  registers ClawEh in Antigravity, Codex CLI and Claude Code, whichever are
+- **All at once:** run `./set-mcp.sh` from the Agency source folder. It
+  registers Agency in Antigravity, Codex CLI and Claude Code, whichever are
   installed. If you changed the port, run
   `CLAW_MCP_URL=http://127.0.0.1:<port>/internal ./set-mcp.sh`.
 - **Claude Code:**
@@ -50,25 +50,25 @@ Without this the CLI still answers, but has none of ClawEh's tools.
 - **Cursor CLI:** add `"claw": {"url": "http://127.0.0.1:5911/internal"}`
   under `mcpServers` in `~/.cursor/mcp.json`.
 
-Run these as the user the ClawEh service runs as.
+Run these as the user the Agency service runs as.
 
 ### Session tokens (CLI providers)
 
-ClawEh gives each conversation a session token, `SST` followed by 64
+Agency gives each conversation a session token, `SST` followed by 64
 characters, and places it in the agent's prompt with an instruction to pass
-it on every ClawEh tool call. You never handle it.
+it on every Agency tool call. You never handle it.
 
-- The token tells ClawEh which agent and conversation the call belongs to,
+- The token tells Agency which agent and conversation the call belongs to,
   and the call gets that agent's tools only.
 - It changes as the session is used, is revoked after 2 hours idle, and
   does not survive a restart.
-- The agent is told never to show it or write it to a file; ClawEh also
+- The agent is told never to show it or write it to a file; Agency also
   masks `SST...` values in its logs.
 
 ### Service tokens
 
 A service token is a long-lived credential for one agent, for an MCP client
-outside ClawEh, such as a program that drives an agent's Maestro projects.
+outside Agency, such as a program that drives an agent's Maestro projects.
 
 ```
 claw token issue  alice   # create (or replace) Alice's token and print it once
@@ -83,7 +83,7 @@ See [Command line](reference/cli.md) for every `claw` command.
   token on `/internal`.
 - It is stored only as a hash in `<CLAW_HOME>/internal/service-tokens.json`;
   a lost token cannot be shown again, only replaced.
-- A running ClawEh picks up a change within a few seconds; no restart.
+- A running Agency picks up a change within a few seconds; no restart.
 - It acts in the agent's **main conversation**, with the agent's tools and
   memory. It is as powerful as the agent itself. For an integration that
   must not see Alice's conversations or memory, create a separate agent for
@@ -116,10 +116,10 @@ never grant anything an agent lacks.
 
 ## External MCP servers
 
-ClawEh can connect to other MCP servers (a GitHub server, a browser
+Agency can connect to other MCP servers (a GitHub server, a browser
 automation server, your own) and offer their tools to your agents. Agents on
 HTTP providers get the tools directly; agents on CLI providers get them
-through ClawEh's MCP host, so no per-CLI setup is needed.
+through Agency's MCP host, so no per-CLI setup is needed.
 
 ### Add a server
 
@@ -129,7 +129,7 @@ through ClawEh's MCP host, so no per-CLI setup is needed.
    - **Name**: a short name such as `github`. The server's tools are named
      after it, and it is the name you grant to agents.
    - **Type**: `http` for a server reached by URL, or `stdio` for a program
-     ClawEh starts.
+     Agency starts.
    - For `http`: **URL**, and any **Headers** (one per line,
      `Header: value`), such as an authorization header.
    - For `stdio`: **Command**, **Arguments** (one per line),
@@ -144,7 +144,7 @@ Each server shows its state: **Connected**, **Reconnecting…**,
 again immediately, also during a cooldown after failures.
 
 A program started over `stdio` gets a limited environment, not the whole
-environment of the ClawEh service; pass what it needs under **Environment**
+environment of the Agency service; pass what it needs under **Environment**
 or in an env file.
 
 ### Grant a server to an agent
@@ -173,7 +173,7 @@ list it under **Denied tools** (for example `playwright_browser_run_code_unsafe`
 
 ### Keeping the tool list current
 
-ClawEh refreshes a server's tool list, without a restart, when:
+Agency refreshes a server's tool list, without a restart, when:
 
 - the server announces a change;
 - the regular check of each server (**Liveness probe interval (seconds)**,
@@ -182,7 +182,7 @@ ClawEh refreshes a server's tool list, without a restart, when:
   **Reconnect**).
 
 Renamed or removed tools disappear from the agents rather than lingering.
-A CLI that listed ClawEh's tools at the start of its session sees such a
+A CLI that listed Agency's tools at the start of its session sees such a
 change only when it next connects.
 
 ### Failures

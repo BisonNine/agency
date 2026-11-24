@@ -1,17 +1,17 @@
 # Troubleshooting
 
-This page lists common problems, the message ClawEh shows or logs for each, and the fix.
+This page lists common problems, the message Agency shows or logs for each, and the fix.
 
 ## Where to look first
 
 - **Check Up** in the WebUI marks configuration that needs attention. See [Check Up and the full report](../admin/checkup.md).
 - **Logs** in the WebUI shows the log and, through its source selector, the alerts. See [Logs](../admin/logs.md) and [Alerts](../admin/alerts.md).
 - On the server, the data directory holds `logs/claw.log` (everything), `logs/error.log` (warnings and errors only) and `logs/alerts.log`.
-- `claw status` shows whether ClawEh is running and where to reach it.
+- `claw status` shows whether Agency is running and where to reach it.
 
 ## The service does not start
 
-ClawEh writes the reason for a failed start to `logs/error.log` and to the service log. To read the service log on Linux:
+Agency writes the reason for a failed start to `logs/error.log` and to the service log. To read the service log on Linux:
 
 ```bash
 journalctl --user -u claw -n 50     # user service
@@ -29,12 +29,12 @@ Find the line that starts with `Error:` or contains `gateway exited with error`.
 | `error loading config: unexpected EOF`, or another JSON error | `config.json` is not valid JSON, usually after a hand edit. | Fix the file, or restore the copy from the latest backup. |
 | `error loading config: gateway.tls.mode "…": must be "all", "localhost" or "off"` | A listener setting has an invalid value. Other listener errors name their key the same way. | Correct the named key. |
 | `secret reference "file:…": … has mode …, more than security.permissions.secrets.file_mode allows …; run: chmod 600 …` | A secret file named in `config.json` allows more than the secrets mode. | Run the `chmod` command the message gives. |
-| `startup aborted: another instance is already running (lock held on "…")` | ClawEh is already running on this data directory, often a copy started by hand. | Stop the other copy, or use the running one. |
+| `startup aborted: another instance is already running (lock held on "…")` | Agency is already running on this data directory, often a copy started by hand. | Stop the other copy, or use the running one. |
 
-If ClawEh starts but the WebUI shows "No admin account. On the server run: claw admin", run `claw admin`. See [Signing in](../admin/login.md).
+If Agency starts but the WebUI shows "No admin account. On the server run: claw admin", run `claw admin`. See [Signing in](../admin/login.md).
 
 ::: tip
-An edit to `config.json` made while ClawEh runs is checked straight away. If it does not load, ClawEh keeps the running configuration and raises the alert "Config file invalid". Fix the file then, before a restart fails on it.
+An edit to `config.json` made while Agency runs is checked straight away. If it does not load, Agency keeps the running configuration and raises the alert "Config file invalid". Fix the file then, before a restart fails on it.
 :::
 
 ## The WebUI cannot be reached
@@ -43,14 +43,14 @@ An edit to `config.json` made while ClawEh runs is checked straight away. If it 
 |---|---|---|
 | "Forbidden" from another machine | Your network is not in the allowed networks. | `claw network 192.168.1.0/24` (your network), or **Allowed networks** on the **Network** page. |
 | Connection refused from another machine | The listener serves this machine only. | `claw network --https all`, then restart the service. |
-| `421 Misdirected Request` | You used a host name ClawEh does not know. | Set **Hostname / external URL** on the **Network** page to the address you use. |
+| `421 Misdirected Request` | You used a host name Agency does not know. | Set **Hostname / external URL** on the **Network** page to the address you use. |
 | "Too many failed sign-ins" | Login lockout after failed attempts. | Wait, or run `claw admin`. |
 
 See [Network access](../admin/network.md) and [Signing in](../admin/login.md).
 
 ## A model is unavailable
 
-When a model fails, ClawEh tries the next model in the agent's list and pauses the failing one for a while (a [cooldown](../providers/concepts.md#cooldowns)). The reply then starts with a line such as:
+When a model fails, Agency tries the next model in the agent's list and pauses the failing one for a while (a [cooldown](../providers/concepts.md#cooldowns)). The reply then starts with a line such as:
 
 > ⚠️ Claude Sonnet 5.5 unavailable — rate limited (retry in 9m). Using OpenAI GPT 5.5.
 
@@ -73,7 +73,7 @@ A CLI provider runs under its own permission settings unless **Allow CLI to bypa
 
 ### An agent's model disappeared
 
-The alert "Agent references a missing model" means a model named in an agent's list no longer exists. ClawEh removes the reference and the agent uses its next model. Pick an existing model on the **Agents** page.
+The alert "Agent references a missing model" means a model named in an agent's list no longer exists. Agency removes the reference and the agent uses its next model. Pick an existing model on the **Agents** page.
 
 ## An agent has no tools
 
@@ -124,7 +124,7 @@ Common marked rows and what they mean:
 
 | Row | Meaning | Fix |
 |---|---|---|
-| Data directory permissions | Files in the data directory can be read by others. | Restart ClawEh, which tightens them, or `chmod 700`/`600` as listed. |
+| Data directory permissions | Files in the data directory can be read by others. | Restart Agency, which tightens them, or `chmod 700`/`600` as listed. |
 | File confinement | Agents may read or write outside their workspace. | Turn on **Restrict to workspace** on the **System** page, under **Agent**. |
 | Shell access | Agents may run shell commands without the built-in deny patterns. | Turn deny patterns back on (`tools.exec.enable_deny_patterns`), or untick `shell_exec` for the agents listed. |
 | Channels accepting any sender | A channel's allowed senders contain `*`. | List the allowed users instead. |

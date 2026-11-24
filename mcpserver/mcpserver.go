@@ -1,4 +1,4 @@
-// ClawEh
+// Agency
 // License: MIT
 
 // Package mcpserver exposes claw host-side tools to MCP-compatible clients
@@ -11,8 +11,8 @@
 // store, differing only in how the session token (SST<64hex>) is transported:
 //
 //   - /internal — every tool carries a required `session_token` parameter. This
-//     is ClawEh's multi-assistant routing surface: one configured endpoint, a
-//     different token per call. ClawEh's own CLI providers point here.
+//     is Agency's multi-assistant routing surface: one configured endpoint, a
+//     different token per call. Agency's own CLI providers point here.
 //   - /mcp — the standard bearer endpoint: clean tool schemas (no session_token
 //     parameter) with auth via `Authorization: Bearer <token>`. A missing or
 //     invalid bearer is rejected at the HTTP layer with a 401. This is the
@@ -59,9 +59,9 @@ const DefaultListen = "127.0.0.1:5911"
 // MCP surface. Tools here have clean schemas; auth is Authorization: Bearer.
 const DefaultEndpointPath = "/mcp"
 
-// InternalEndpointPath is the HTTP endpoint for ClawEh's multi-assistant
+// InternalEndpointPath is the HTTP endpoint for Agency's multi-assistant
 // routing: every tool carries the in-call session_token parameter. This is the
-// endpoint ClawEh's own CLI providers point at.
+// endpoint Agency's own CLI providers point at.
 const InternalEndpointPath = "/internal"
 
 // MCPServer serves claw tools on two mcphost endpoints. tools/list on
@@ -317,7 +317,7 @@ func New(opts ...Option) (*MCPServer, error) {
 
 	m.tracker = newFirstCallTracker(m.workspaces)
 
-	// /internal — session-token parameter on every tool (ClawEh's CLI providers).
+	// /internal — session-token parameter on every tool (Agency's CLI providers).
 	internal, err := mcphost.New(newEndpointHost(m, false, m.internalAllow).config())
 	if err != nil {
 		return nil, fmt.Errorf("mcpserver: internal endpoint: %w", err)

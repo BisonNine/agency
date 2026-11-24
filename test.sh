@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ################################################################################
-# ClawEh Comprehensive Test Suite
+# Agency Comprehensive Test Suite
 # Runs all Go tests with race detector and coverage measurement, followed by
 # MCP server integration tests (probe-driven, self-contained).
 #
@@ -108,7 +108,7 @@ fi
 
 echo ""
 echo "${BOLD}============================================${NC}"
-echo "${BOLD}   ClawEh Test Suite${NC}"
+echo "${BOLD}   Agency Test Suite${NC}"
 if $FAST_MODE; then
     echo "${BOLD}   Mode: Fast (no race detector)${NC}"
 elif $COVERAGE_ONLY; then
@@ -937,7 +937,7 @@ EOF
                     # it is removed by a deferred cleanup that a hard kill never
                     # reaches.
                     if ! $TERM_CLEAN; then
-                        integ_fail "ClawEh did not exit within 5s of SIGTERM"
+                        integ_fail "Agency did not exit within 5s of SIGTERM"
                     elif [ -f "$INTEG_HOME/internal/claw.pid" ]; then
                         integ_fail "claw.pid survived SIGTERM — shutdown did not run"
                     else
