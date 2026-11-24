@@ -11,14 +11,17 @@ import (
 	"testing"
 
 	"go.bison9.com/agent/accounting"
+	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/models"
 	"go.bison9.com/agent/spawnllm"
 
 	"go.bison9.com/agency/agentreg"
+	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
+	"go.bison9.com/agency/tools"
 	toolsagents "go.bison9.com/agency/tools/agents"
 )
 
@@ -272,4 +275,160 @@ func TestTaskModelHost_BillsTheSpawner(t *testing.T) {
 			}
 		}
 	}
+}
+
+// codeRecorder answers every call and records the billing code each was
+// billed to; an empty code fails the test, since outside a turn the SDK
+// would silently bill it to the default.
+type codeRecorder struct {
+	t     *testing.T
+	mu    sync.Mutex
+	codes []string
+}
+
+func (r *codeRecorder) Chat(_ context.Context, id accounting.Identity, _ []spawnllm.Message,
+	_ []spawnllm.ToolDefinition, _ string, _ map[string]any,
+) (*spawnllm.LLMResponse, error) {
+	if id.Project == "" {
+		r.t.Errorf("a call for %s named no billing code", id.Agent)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.codes = append(r.codes, id.Project)
+	return &spawnllm.LLMResponse{Content: "ok", FinishReason: "stop"}, nil
+}
+
+func (r *codeRecorder) GetDefaultModel() string { return "test-model" }
+
+// last is the code of the latest call; it fails the test when there was
+// no call since mark.
+func (r *codeRecorder) last(t *testing.T, mark int) string {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.codes) <= mark {
+		t.Fatal("no model call was made")
+	}
+	return r.codes[len(r.codes)-1]
+}
+
+func (r *codeRecorder) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.codes)
+}
+
+// TestBilling_EveryCallSiteNamesACode walks the call sites of the billing
+// plan's table (3.2) that run in the agent loop: each model call is billed
+// to the code its site names, never to an empty one. The sites outside the
+// loop are pinned where they live: the task records and agent_spawn
+// (tools/agents), Maestro (tools/maestro), MCP calls and their background
+// results (mcpserver), scheduled jobs (tools/schedule), the classifier
+// (TestClassifierHost_CompleteBilling), forum participants
+// (TestForumHost_AskBilling), voice notes (TestPrepareInbound_VoiceBillingCode),
+// `claw cron add` (internal/cron) and `claw test` (internal/test).
+func TestBilling_EveryCallSiteNamesACode(t *testing.T) {
+	restore := logger.RedirectForTest(&safeBufLoop{})
+	defer restore()
+	tl := newTestAgentLoop(t)
+	al := tl.al
+	main, _ := al.GetRegistry().Get("main")
+	rec := &codeRecorder{t: t}
+	setTestProvider(main, rec)
+	if err := al.setSessionBilling(main, "agent:main:main", "garden"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	t.Run("main turn", func(t *testing.T) {
+		mark := rec.count()
+		if _, err := al.runAgentLoop(ctx, main, processOptions{SessionKey: "agent:main:main", Channel: "cli", ChatID: "direct", UserMessage: "hi"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != "garden" {
+			t.Errorf("billed %q, want the session's garden", got)
+		}
+	})
+	t.Run("a new session's turn", func(t *testing.T) {
+		mark := rec.count()
+		if _, err := al.runAgentLoop(ctx, main, processOptions{SessionKey: "agent:main:other", Channel: "cli", ChatID: "direct", UserMessage: "hi"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != global.DefaultBilling {
+			t.Errorf("billed %q, want the default", got)
+		}
+	})
+	t.Run("message carrying a code (ask, scheduled job, replay, background result)", func(t *testing.T) {
+		mark := rec.count()
+		msg := toAgent("main", "m1", "from a job")
+		msg.Metadata[bus.MetaBilling] = "acme"
+		if _, err := al.processMessage(ctx, msg); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != "acme" {
+			t.Errorf("billed %q, want acme", got)
+		}
+	})
+	t.Run("sub-agent or clone", func(t *testing.T) {
+		cloneID, err := al.GetRegistry().CreateClone("main", agentreg.EphemeralMemory())
+		if err != nil {
+			t.Fatal(err)
+		}
+		clone, _ := al.GetRegistry().Get(cloneID)
+		setTestProvider(clone, rec)
+		key := routing.BuildAgentMainSessionKey(clone.ID)
+		mark := rec.count()
+		if _, err := al.runAgentLoop(tools.WithBilling(ctx, "acme"), clone, processOptions{SessionKey: key, Channel: "subagent", ChatID: key, UserMessage: "work"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != "acme" {
+			t.Errorf("billed %q, want the task's acme", got)
+		}
+	})
+	t.Run("summary", func(t *testing.T) {
+		caller, _ := al.newCompressModelCaller(main, "agent:main:main", models.Summarize)
+		mark := rec.count()
+		if _, _, _, err := caller.complete(ctx, "sys", "user", false, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != "garden" {
+			t.Errorf("billed %q, want the session's garden", got)
+		}
+		mark = rec.count()
+		if _, _, _, err := caller.complete(tools.WithBilling(ctx, "acme"), "sys", "user", false, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != "acme" {
+			t.Errorf("summary in a turn billed %q, want the turn's acme", got)
+		}
+	})
+	t.Run("memory consolidation", func(t *testing.T) {
+		mark := rec.count()
+		if _, err := al.NewMemoryModelCaller(main).Complete(ctx, hook.CompleteRequest{System: "s", User: "u"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != global.MemoryBilling {
+			t.Errorf("billed %q, want memory", got)
+		}
+	})
+	t.Run("vision describe", func(t *testing.T) {
+		vc, ok := al.buildVisionLLMClient(al.GetConfig(), main, "test-model")
+		if !ok {
+			t.Fatal("no vision client")
+		}
+		mark := rec.count()
+		if _, err := vc.Complete(tools.WithBilling(ctx, "acme"), []spawnllm.Message{{Role: "user", Content: "look"}}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != "acme" {
+			t.Errorf("billed %q, want acme", got)
+		}
+		mark = rec.count()
+		if _, err := vc.Complete(ctx, []spawnllm.Message{{Role: "user", Content: "look"}}); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.last(t, mark); got != global.DefaultBilling {
+			t.Errorf("billed %q outside a session, want the default", got)
+		}
+	})
 }

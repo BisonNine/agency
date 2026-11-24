@@ -74,6 +74,8 @@ func TestCronAdd(t *testing.T) {
 		assert.Equal(t, int64(90000), *job.Schedule.EveryMS)
 		assert.Equal(t, cron.CronPayload{Mode: "agent", Message: "hello", Channel: "slack", To: "C1", PeerKind: "channel"}, job.Payload)
 		assert.True(t, job.Enabled)
+		// The operator's job is billed to the default code, named.
+		assert.Equal(t, "default", job.Billing)
 	})
 
 	t.Run("cron expression", func(t *testing.T) {
