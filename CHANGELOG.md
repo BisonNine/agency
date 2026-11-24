@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Debian and Ubuntu `.deb` packages (`agency`).** Releases now include
+  `agency_<version>_amd64.deb` and `agency_<version>_arm64.deb` alongside the
+  `.tar.gz` archives, installing `/usr/bin/claw`, `/usr/bin/claw-auth`, the
+  `/usr/bin/openclaw` symlink, and licence notices under
+  `/usr/share/doc/agency/`. After `apt install agency`, run `sudo claw install`
+  (system service) or `claw install` (user service) once to create the WebUI
+  admin account and register the service against `/usr/bin/claw`; subsequent
+  `apt upgrade` runs restart an active `claw.service` automatically, and
+  `claw upgrade` directs `apt`-managed installs to `apt` instead of overwriting
+  `/usr/bin/claw`.
 - **Agents can cancel their own sub-agents with the new `agent_cancel` tool.**
   `{"uuid": "<task id>"}` cancels one task, `{"all": true}` every running one;
   the tasks a cancelled task started are cancelled with it. Task-model calls

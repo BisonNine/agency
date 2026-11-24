@@ -455,3 +455,33 @@ func TestCommands_Flags(t *testing.T) {
 		}
 	}
 }
+
+// TestInstall_LinuxAptBinaryInPlace: when invoked as /usr/bin/claw on Linux
+// (installed via apt), neither system mode nor user mode copies a duplicate
+// binary into /usr/local/bin or ~/.local/bin; both point the service unit at
+// /usr/bin/claw so `apt upgrade` updates the running binary.
+func TestInstall_LinuxAptBinaryInPlace(t *testing.T) {
+	for _, asRoot := range []bool{false, true} {
+		mode := "user"
+		if asRoot {
+			mode = "system"
+		}
+		t.Run(mode, func(t *testing.T) {
+			e := newInstallEnv(t, "linux", asRoot)
+			e.exe = "/usr/bin/claw"
+			e.existing = nil
+
+			out, err := e.install(t, "", 0, "", "", "")
+			if err != nil {
+				t.Fatalf("install: %v\n%s", err, out)
+			}
+			if len(e.register) != 1 || e.register[0] != "/usr/bin/claw" {
+				t.Fatalf("registered binary = %v, want [/usr/bin/claw]", e.register)
+			}
+			localCopy := filepath.Join(e.tu.HomeDir, ".local", "bin", "claw")
+			if _, serr := os.Stat(localCopy); !errors.Is(serr, os.ErrNotExist) {
+				t.Errorf("unexpected copy written to %s", localCopy)
+			}
+		})
+	}
+}

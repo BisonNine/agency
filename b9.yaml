@@ -59,8 +59,26 @@ package:
     asset: 'claw-{os}-{arch}.tar.gz'
   bundle:
     enabled: false
+  deb:
+    enabled:     true
+    # CONTRACT: uploaded to the APT repository and GitHub releases.
+    asset:       'agency_{deb_version}_{deb_arch}.deb'
+    package:     agency
+    maintainer:  'Bison9 <support@bison9.com>'
+    description: 'Agency — Personal AI Assistant'
+    homepage:    'https://github.com/PivotLLM/ClawEh'
+    depends:     [ca-certificates]
+    targets:
+      - linux/amd64
+      - linux/arm64
+    symlinks:
+      - {link: /usr/bin/openclaw, target: claw}
+    scripts:     packaging/deb
 
 release:
   tag:   '{version}'
   title: 'v{tag}'
-  notes: 'Linux and macOS binaries (macOS binaries are signed)'
+  notes: 'Linux and macOS binaries and Debian/Ubuntu packages (macOS binaries are signed)'
+  cloudsmith:
+    enabled: true
+    repo:    bison9/agency

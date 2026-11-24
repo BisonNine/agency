@@ -2,6 +2,17 @@
 
 This page explains how to upgrade ClawEh and what to check after upgrading to 0.6.0 and 0.6.4.
 
+## Upgrade on Debian or Ubuntu (`apt`)
+
+If you installed the `agency` package with `apt`, upgrade it through `apt` rather than `claw upgrade`:
+
+```bash
+sudo apt update
+sudo apt install --only-upgrade agency
+```
+
+If `claw.service` is running as a system service, the package restarts it automatically. If you run a user service instead, restart it afterwards with `systemctl --user restart claw`.
+
 ## Upgrade with `claw upgrade`
 
 1. Check whether a new release is available:

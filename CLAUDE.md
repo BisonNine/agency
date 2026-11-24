@@ -223,7 +223,7 @@ and localStorage keys, the WebSocket subprotocol `claw-token`, the MCP realm
 `claw-mcp`, the `mcp__claw__` tool prefix, `claw-auth`, `openclaw`, ClawHub,
 `clawdbot-gateway`. Bare-word ones — installed binary file name, systemd
 service, launchd label, `/opt/claw`, log and lock file names, the release
-repository, the Maestro host model label `claw`, the folder-watch marker
+repository, the Debian package name `agency`, the Maestro host model label `claw`, the folder-watch marker
 header, the shell-rc marker `install` writes, the default agent ID `claw`
 (a directory name and routing key; its display name is the short name), the
 self-signed certificate's fallback CN — are defined once in
@@ -308,7 +308,7 @@ names, ports and deploy procedure for a given machine belong in
 `CLAUDE.local.md` (not committed). Never build to, install to, or restart a
 production instance directly; test against a dev instance.
 
-**Release artefacts (cut by the release maintainer with b9):** `b9 release <repo>` builds every target in `b9.yaml`, signs and notarizes the macOS binaries, packages the archives, writes `checksums.txt` and signs it with minisign (`signing.minisign` in `b9.yaml` names the public key; the secret key lives on the release host), verifies that signature against the same public key, then tags and uploads everything. The Makefile's `release-checksums` and `release-sign` targets are the manual fallback for a hand-built release. `claw upgrade` refuses a release without a valid `checksums.txt.minisig`, verified against the two minisign public keys in `app/keys.go` (`app.ReleasePublicKeys()`: a current and a next key, so a key can be rolled; the rotation steps are in that file). Both slots are filled.
+**Release artefacts (cut by the release maintainer with b9):** `b9 release <repo>` builds every target in `b9.yaml`, signs and notarizes the macOS binaries, packages the `.tar.gz` archives and the `amd64`/`arm64` Debian `.deb` packages (`agency_<version>_<arch>.deb`, maintainer scripts in `packaging/deb/`), writes `checksums.txt` and signs it with minisign (`signing.minisign` in `b9.yaml` names the public key; the secret key lives on the release host), verifies that signature against the same public key, then tags, uploads the GitHub release, and pushes the `.deb` packages to Cloudsmith (`release.cloudsmith` in `b9.yaml`, authenticated by `B9_CLOUDSMITH_API_KEY` on the release host). The Makefile's `release-checksums` and `release-sign` targets are the manual fallback for a hand-built release. `claw upgrade` refuses a release without a valid `checksums.txt.minisig`, verified against the two minisign public keys in `app/keys.go` (`app.ReleasePublicKeys()`: a current and a next key, so a key can be rolled; the rotation steps are in that file), and refuses to overwrite a Linux `/usr/bin/claw` managed by `dpkg`/`apt` (directing the operator to `apt`). Both key slots are filled.
 
 **Vulnerability gate and `b9.yaml`:** `make govulncheck` (part of `make test`)
 is `go run go.bison9.com/vulncheck/cmd/vulncheck@latest .` (`VULNCHECK` in
