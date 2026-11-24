@@ -1,6 +1,6 @@
 # Agency
 
-**Agency (formerly ClawEh) is a self-hosted application for long-running AI assistants: several agents, each with its own models, tools, memory and channels, managed from one web interface.**
+**Agency is a self-hosted application for long-running AI assistants: several agents, each with its own models, tools, memory and channels, managed from one web interface.**
 
 Written in Go, the code compiles into a single binary that you can download from Github releases, or you can compile it yourself.
 
@@ -110,46 +110,46 @@ Version 0.6.0 represents a significant evolution toward a more secure business-c
 The one-line installer installs Agency as a background service, asks for the admin account, and opens the setup wizard:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency-online-install.sh | bash
 ```
 
-Or download an archive from [GitHub Releases](https://github.com/BisonNine/agency/releases) (Linux and macOS, amd64 and arm64) and run `./claw install` (`sudo ./claw install` for a service that starts at boot). Then open **http://localhost:18790** and sign in.
+Or download an archive from [GitHub Releases](https://github.com/BisonNine/agency/releases) (Linux and macOS, amd64 and arm64) and run `./agency install` (`sudo ./agency install` for a service that starts at boot). Then open **http://localhost:18790** and sign in.
 
 Other options (a bare binary with `agency.sh`, an unattended install, a headless or remote host) are in the manual: [Installing Agency](manual/getting-started/install.md), then [Quick start](manual/getting-started/quickstart.md).
 
 ## File layout
 
-Everything claw keeps is in one data directory, `~/.agency` unless `AGENCY_HOME` names another. "You" marks what you may edit by hand; "claw" marks what claw manages and you should leave alone.
+Everything agency keeps is in one data directory, `~/.agency` unless `AGENCY_HOME` names another. "You" marks what you may edit by hand; "agency" marks what agency manages and you should leave alone.
 
 | Path | Who edits it | What it is |
 |---|---|---|
-| `config.json` | You | The configuration, which the web UI also edits and claw reloads when it changes. |
-| `credentials.json` | claw | The web UI admin account, changed with `claw admin`. |
+| `config.json` | You | The configuration, which the web UI also edits and agency reloads when it changes. |
+| `credentials.json` | agency | The web UI admin account, changed with `agency admin`. |
 | `agents/<id>/` | — | One folder per agent, its workspace (`agents.base_dir` moves them all). |
 | `agents/<id>/AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `MEMORY.md` | You | The agent's instructions, combined into its prompt on every turn. |
 | `agents/<id>/files/` | You and the agent | The agent's working area, which it can read and write. |
 | `agents/<id>/skills/` | You | Skills for this agent only. |
-| `agents/<id>/sessions/` | claw | The agent's conversation history. |
-| `agents/<id>/cogmem/` | claw | The agent's cognitive memory. |
-| `agents/<id>/state/` | claw | The agent's own state, such as interrupted turns, its message tokens and the files it has seen in its watched allowed folders. |
-| `agents/<id>/tmp/`, `tasks/` | claw | Scratch space and background task records for the agent. |
-| `agents/<id>/forums/` | claw | The agent's forums, which it can read but not change. |
-| `agents/<id>/maestro/` | claw | The agent's Maestro projects and playbooks. |
+| `agents/<id>/sessions/` | agency | The agent's conversation history. |
+| `agents/<id>/cogmem/` | agency | The agent's cognitive memory. |
+| `agents/<id>/state/` | agency | The agent's own state, such as interrupted turns, its message tokens and the files it has seen in its watched allowed folders. |
+| `agents/<id>/tmp/`, `tasks/` | agency | Scratch space and background task records for the agent. |
+| `agents/<id>/forums/` | agency | The agent's forums, which it can read but not change. |
+| `agents/<id>/maestro/` | agency | The agent's Maestro projects and playbooks. |
 | `common/` | You and the agents | A shared folder agents with access can exchange files through (`agents.common_dir` moves it). |
 | `skills/` | You | Shared skills; an agent uses only the ones it is granted. |
 | `cards/` | You and the agents you allow | Character cards; an agent uses only the one attached to it. |
-| `cli/` | claw | The working directory for CLI providers whose model sets no workspace. |
+| `cli/` | agency | The working directory for CLI providers whose model sets no workspace. |
 | `bin/` | You | Your scripts and programs; files here keep their execute bits, which every other folder's files lose at start. |
-| `internal/` | claw | claw's own state: service and message tokens, the device pairing database and Fusion's OAuth tokens. |
-| `internal/audit.db` | claw | The audit log of tool calls, configuration changes and logins. |
-| `internal/agency.pid`, `internal/agency.lock` | claw | Mark the running instance, so a second one refuses to start. |
-| `internal/temp/<uuid>/`, `internal/temp_agents.json` | claw | Temporary agents (sub-agent runs): each one's conversation and memory, and the list of those kept across restarts. Deleted when the run ends or after a day idle; not backed up. |
+| `internal/` | agency | agency's own state: service and message tokens, the device pairing database and Fusion's OAuth tokens. |
+| `internal/audit.db` | agency | The audit log of tool calls, configuration changes and logins. |
+| `internal/agency.pid`, `internal/agency.lock` | agency | Mark the running instance, so a second one refuses to start. |
+| `internal/temp/<uuid>/`, `internal/temp_agents.json` | agency | Temporary agents (sub-agent runs): each one's conversation and memory, and the list of those kept across restarts. Deleted when the run ends or after a day idle; not backed up. |
 | `fusion/` | You | Fusion's REST-API service definitions, its env file and `fusion.log`. |
-| `tls/` | claw | The self-signed HTTPS certificate and key (`gateway.tls.cert_file` uses your own instead). |
-| `logs/` | claw | `agency.log`, `error.log`, `alerts.log`, and `dumps/` when diagnostic dumps are on. |
-| `media/` | claw | A temporary cache of files sent and received on channels. |
-| `cron/` | claw | `jobs.json`, the scheduled jobs. |
-| `backup/` | claw | The nightly backup archives. |
+| `tls/` | agency | The self-signed HTTPS certificate and key (`gateway.tls.cert_file` uses your own instead). |
+| `logs/` | agency | `agency.log`, `error.log`, `alerts.log`, and `dumps/` when diagnostic dumps are on. |
+| `media/` | agency | A temporary cache of files sent and received on channels. |
+| `cron/` | agency | `jobs.json`, the scheduled jobs. |
+| `backup/` | agency | The nightly backup archives. |
 
 ## Building from source
 
@@ -167,12 +167,12 @@ cd agency
 make install
 ```
 
-The WebUI (`web/frontend`) and the user manual (`manual/`, VitePress) are built and embedded in the one `claw` binary, which serves the agent runtime, the WebUI, its API and the manual from one process.
+The WebUI (`web/frontend`) and the user manual (`manual/`, VitePress) are built and embedded in the one `agency` binary, which serves the agent runtime, the WebUI, its API and the manual from one process.
 
 | Target | Description |
 |---|---|
-| `make build` | Build `claw` for the current platform |
-| `make install` | Build, then run `claw install` |
+| `make build` | Build `agency` for the current platform |
+| `make install` | Build, then run `agency install` |
 | `make test` | The full gate: format check, vet, lint, govulncheck, the Go suite, the frontend checks, the manual build and the MCP integration tests |
 | `make manual` | Build the user manual |
 | `make check-webui` | The browser regression suite against a running dev instance |
@@ -213,7 +213,7 @@ Agency is intended to function as a personal or small-team assistant that runs o
 
 The WebUI requires an admin login, HTTPS is on by default, and the **Check Up** page lists the settings that need attention. See [Security and administration](manual/admin/index.md) in the manual.
 
-In general, Claw should be operated as a local, user-controlled tool, not as an internet-facing application.
+In general, Agency should be operated as a local, user-controlled tool, not as an internet-facing application.
 
 This application assumes that messages sent to assistants come from an authorized user and are not malicious. While it may provide configuration options to restrict which users on services such as Slack or Telegram are allowed to communicate with an assistant, misconfiguration is possible, and flaws, bypasses, or unexpected behavior may exist. Exposing an assistant through external communication channels can be very convenient, but it also increases risk substantially: if an account is compromised, access controls are configured incorrectly, or a bug or unknown vulnerability is present, unauthorized parties may be able to interact with the assistant and trigger actions or consume paid API resources.
 
@@ -225,7 +225,7 @@ Agency does not attempt to determine whether your deployment is appropriately se
 
 Users should also carefully consider the financial implications of connecting applications to LLM APIs and other metered services. A bug, a bad configuration, or accidental exposure through channels like Telegram or Slack can potentially result in large numbers of unintended requests and, in turn, unexpectedly large bills. This risk becomes especially serious when assistants are connected to paid APIs, tools, or automated workflows.
 
-To reduce the risk of financial surprises, we strongly recommend using prepaid APIs and/or subscription-based CLIs where possible. You should also ensure that appropriate cost monitoring, usage limits, budget alerts, rate limits, and other containment controls are in place. Choosing to run Claw, expose it through external services, and connect it to paid models or sensitive tools is your decision, and you bear full responsibility for the outcome.
+To reduce the risk of financial surprises, we strongly recommend using prepaid APIs and/or subscription-based CLIs where possible. You should also ensure that appropriate cost monitoring, usage limits, budget alerts, rate limits, and other containment controls are in place. Choosing to run Agency, expose it through external services, and connect it to paid models or sensitive tools is your decision, and you bear full responsibility for the outcome.
 
 ## Copyright and license
 

@@ -119,5 +119,5 @@ See [Devices](../channels/devices.md#switching-agents-from-the-device).
 
 ## Related pages
 
-- [Command line](./cli.md), for the `claw` commands run on the server.
+- [Command line](./cli.md), for the `agency` commands run on the server.
 - [WebUI chat](../channels/webui-chat.md)

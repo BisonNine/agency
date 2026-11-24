@@ -7,11 +7,9 @@ package app
 
 import (
 	"bytes"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -19,74 +17,108 @@ import (
 	"testing"
 )
 
-// productWord matches the product name or short name used as a word in a
-// string: "ClawEh", "Claw", "claw" — but not inside a longer identifier such as
-// CLAW_HOME, mcp__claw__ or openclaw.
-var productWord = regexp.MustCompile(`(?i)(^|[^a-z0-9_])claw(eh)?([^a-z0-9_]|$)`)
+// oldName matches the product's old name ("claw", "ClawEh") anywhere in a
+// word, in any case: CLAW_HOME, mcp__claw__ and claw.log are all old names.
+var oldName = regexp.MustCompile(`(?i)claw`)
 
-// fixedIdentifiers are names that contain the product's name but are not its
-// label: real files, directories, services, protocol keys and repository
-// paths that installs and other programs depend on. They keep their value
-// when the product is renamed, so a string may carry them. Each is removed
-// from a string before productWord is checked.
-//
-// To allow a new one, add the narrowest pattern that matches only the
-// identifier (never a bare "claw"), with a comment saying what it names. A
-// bare-word identifier (the binary file name, the systemd unit) is not
-// allowed here: define it in global/identifiers.go, the one file this guard
-// skips.
-var fixedIdentifiers = []*regexp.Regexp{
-	// Repositories under the PivotLLM organisation: the release repository
-	// (github.com/PivotLLM/ClawEh) and PivotLLM/ClawEh-skills.
-	regexp.MustCompile(`PivotLLM/ClawEh[\w-]*`),
-	// The macOS launchd job label and its plist.
-	regexp.MustCompile(`com\.pivotllm\.claweh(\.plist)?`),
-	// The data directory (~/.claw, a relative .claw) and the hidden temp
-	// names made beside files (.claw-backup-*, .claw-perm-test-%d).
-	regexp.MustCompile(`\.claw(-backup-|-perm-test-)?`),
-	// The system-wide data directory.
-	regexp.MustCompile(`/opt/claw\b`),
-	// File names: the log, pid and lock files and the systemd unit.
-	regexp.MustCompile(`\bclaw\.(log|pid|lock|service)\b`),
-	// The companion OAuth helper binary, and file, cookie and protocol names
-	// built on a "claw-" prefix: temp dirs and archives (claw-temp-agents,
-	// claw-backup-<ts>.tar.gz, claw-upgrade-*, claw-dl-*, claw-launchd.log),
-	// the WebSocket token subprotocol (claw-token) and the MCP bearer realm
-	// (claw-mcp).
-	regexp.MustCompile(`\bclaw-(auth|temp-agents|backup|upgrade|dl|launchd|token|mcp)\b`),
-	// The names `upgrade` extracts a release archive's binaries to.
-	regexp.MustCompile(`\bextracted-claw\b`),
+// thirdPartyNames are names of other people's things that contain the old
+// name. Each is removed from a line before oldName is checked. To allow
+// another, add the narrowest pattern that matches only it, with a comment
+// saying what it names.
+var thirdPartyNames = []*regexp.Regexp{
+	// The OpenClaw device protocol, its Go module (a3tai/openclaw-go) and the
+	// openclaw link the Rabbit R1 starts.
+	regexp.MustCompile(`(?i)openclaw`),
+	// PicoClaw (sipeed/picoclaw), the project Agency was forked from.
+	regexp.MustCompile(`(?i)picoclaw`),
+	// The ClawHub skills registry (clawhub.ai) and its config key.
+	regexp.MustCompile(`(?i)clawhub`),
+	// The setup payload type current R1 firmware parses.
+	regexp.MustCompile(`clawdbot-gateway`),
+	// The "Claw to Talk" Android app (com.alvin.clawtotalk) and the session
+	// key segment it sends.
+	regexp.MustCompile(`Claw to Talk|clawtotalk`),
 }
 
-// guardSkipFile is the one file of fixed identifiers that are bare words
-// (global/identifiers.go); every value in it is documented there.
-const guardSkipFile = "global/identifiers.go"
-
-// embedSkip lists embedded files and folders (paths from the repository root)
-// that are not checked, each with the reason. Every other file a //go:embed
-// directive outside app/ names is: guides, templates and other text the
-// binary serves to models and users name the product only through
-// placeholders ({{HOST}}, {{SHORT_NAME}}, {{PRODUCT_NAME}}) filled in at use.
-var embedSkip = map[string]string{
-	"channels/device/assets/bip39-english.txt": `the BIP39 word list; "claw" is one of its words`,
-	"web/backend/manual":                       "the user manual, documentation that names its own product",
-	"web/backend/dist":                         "the built frontend; web/frontend/src/product-name-guard.test.ts checks its sources",
+// skipFiles are files (or folders, ending in /) that are not checked, each
+// with the reason.
+var skipFiles = map[string]string{
+	"app/productname_guard_test.go":               "this guard names what it looks for",
+	"web/frontend/src/product-name-guard.test.ts": "the frontend guard, likewise",
+	"channels/device/assets/bip39-english.txt":    `the BIP39 word list; "claw" is one of its words`,
+	"refactor/": "the refactor's history, written under the old name",
 }
 
-// TestProductName_OnlyInApp enforces that the product name lives only in this
-// package: no non-test Go file elsewhere may hold "ClawEh", "Claw" or "claw"
-// as a word in a string literal, and no text file it embeds may hold it on
-// any line. Use Name, ShortName or BinaryName instead; a rename is then an
-// edit to app.go only. Comments, struct tags and import paths are not
-// checked.
-func TestProductName_OnlyInApp(t *testing.T) {
+// oldNameMarker marks a line of a test that checks an old name is ignored.
+const oldNameMarker = "rename-guard:old-name"
+
+// allowedSections are the parts of a file where the old name is history or
+// is what the reader has to type: from a line matching start up to the next
+// line matching end (nil: the end of the file).
+var allowedSections = map[string]struct{ start, end *regexp.Regexp }{
+	// Every release section but the topmost, which is still in development.
+	"CHANGELOG.md": {start: regexp.MustCompile(`^## \[`)},
+	// The steps that move an install from the old names.
+	"manual/getting-started/upgrading.md": {
+		start: regexp.MustCompile(`^## Moving an install from the old name$`),
+		end:   regexp.MustCompile(`^## `),
+	},
+}
+
+// TestOldName_Nowhere enforces that the product's old name appears nowhere
+// in the tree: not in code, tests, scripts, docs or file names, except for
+// third-party names, the files in skipFiles, the sections in
+// allowedSections and lines marked with oldNameMarker.
+func TestOldName_Nowhere(t *testing.T) {
 	root, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatal(err)
 	}
+	files := trackedFiles(t, root)
+	if len(files) < 100 {
+		t.Fatalf("found only %d files; the file listing is broken", len(files))
+	}
 	var hits []string
-	embedded := map[string]bool{}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	for _, rel := range files {
+		if skipped(rel) {
+			continue
+		}
+		if namesOldName(rel) {
+			hits = append(hits, rel+": file name")
+		}
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // deleted in the work tree, not yet in the index
+			}
+			t.Fatal(err)
+		}
+		hits = append(hits, oldNameLines(rel, data)...)
+	}
+	for _, h := range hits {
+		t.Error(h)
+	}
+	if len(hits) > 0 {
+		t.Log("The product's old name is gone. Use the current names (global/identifiers.go); " +
+			"a third-party name belongs in thirdPartyNames.")
+	}
+}
+
+// trackedFiles lists the files git tracks under root, as slash paths from it;
+// without git it walks the tree, leaving out dot folders and build output.
+func trackedFiles(t *testing.T, root string) []string {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "-z")
+	cmd.Dir = root
+	if out, err := cmd.Output(); err == nil {
+		return strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
+	}
+	generated := map[string]bool{
+		"build": true, "bin": true, "node_modules": true,
+		"web/backend/dist": true, "web/backend/manual": true,
+	}
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -96,157 +128,72 @@ func TestProductName_OnlyInApp(t *testing.T) {
 		}
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if rel != "." && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules" ||
-				rel == "app" || rel == "web/frontend" || rel == "manual") {
+			if rel != "." && (strings.HasPrefix(d.Name(), ".") || generated[rel] || generated[d.Name()]) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") || rel == guardSkipFile {
-			return nil
-		}
-		lits, embeds := productNameLiterals(t, path, rel)
-		hits = append(hits, lits...)
-		for _, e := range embeds {
-			for _, f := range embeddedFiles(t, root, filepath.Dir(path), e) {
-				embedded[f] = true
-			}
-		}
+		files = append(files, rel)
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded) == 0 {
-		t.Fatal("no embedded files found; the //go:embed scan is broken")
-	}
-	for rel := range embedded {
-		hits = append(hits, productNameLines(t, root, rel)...)
-	}
-	for _, h := range hits {
-		t.Error(h)
-	}
-	if len(hits) > 0 {
-		t.Log("Use app.Name() to identify the product, app.ShortName() in prose and " +
-			"app.BinaryName() in commands to type. A real file, service or protocol name " +
-			"belongs in fixedIdentifiers or global/identifiers.go.")
-	}
+	return files
 }
 
-// productNameLiterals returns "file:line: text" for each string literal in the
-// file that names the product outside the fixed identifiers, and the patterns
-// of the file's //go:embed directives.
-func productNameLiterals(t *testing.T, path, rel string) ([]string, []string) {
-	t.Helper()
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution|parser.ParseComments)
-	if err != nil {
-		t.Fatalf("parse %s: %v", rel, err)
-	}
-	// Struct tags are JSON keys and the like, not prose.
-	tags := map[*ast.BasicLit]bool{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		if fld, ok := n.(*ast.Field); ok && fld.Tag != nil {
-			tags[fld.Tag] = true
-		}
-		return true
-	})
-	var out []string
-	ast.Inspect(f, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.ImportSpec:
-			return false
-		case *ast.BasicLit:
-			if x.Kind != token.STRING || tags[x] {
-				return true
-			}
-			s, err := strconv.Unquote(x.Value)
-			if err == nil && namesProduct(s) {
-				out = append(out, rel+":"+strconv.Itoa(fset.Position(x.Pos()).Line)+": "+strconv.Quote(s))
-			}
-		}
-		return true
-	})
-	var embeds []string
-	for _, cg := range f.Comments {
-		for _, c := range cg.List {
-			if rest, ok := strings.CutPrefix(c.Text, "//go:embed "); ok {
-				embeds = append(embeds, strings.Fields(rest)...)
-			}
+func skipped(rel string) bool {
+	for p := range skipFiles {
+		if rel == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(rel, p)) {
+			return true
 		}
 	}
-	return out, embeds
+	return false
 }
 
-// embeddedFiles resolves one //go:embed pattern of a file in dir to the files
-// it names, as paths from root, leaving out embedSkip.
-func embeddedFiles(t *testing.T, root, dir, pattern string) []string {
-	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(dir, strings.TrimPrefix(pattern, "all:")))
-	if err != nil {
-		t.Fatalf("embed pattern %q in %s: %v", pattern, dir, err)
-	}
-	var out []string
-	for _, m := range matches {
-		err := filepath.WalkDir(m, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			rel = filepath.ToSlash(rel)
-			if _, skip := embedSkip[rel]; skip {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !d.IsDir() {
-				out = append(out, rel)
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return out
-}
-
-// productNameLines returns "file:line: text" for each line of an embedded
-// text file that names the product. Binary files are skipped.
-func productNameLines(t *testing.T, root, rel string) []string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
-	if err != nil {
-		t.Fatal(err)
-	}
+// oldNameLines returns "file:line: text" for each line of a text file that
+// names the old name outside the allowed parts. Binary files are skipped.
+func oldNameLines(rel string, data []byte) []string {
 	if bytes.IndexByte(data, 0) >= 0 {
 		return nil
 	}
+	sec, hasSection := allowedSections[rel]
+	inSection, starts := false, 0
 	var out []string
 	for i, line := range strings.Split(string(data), "\n") {
-		if namesProduct(line) {
+		if hasSection {
+			switch {
+			case inSection && sec.end != nil && sec.end.MatchString(line):
+				inSection = false
+			case !inSection && sec.start.MatchString(line):
+				starts++
+				// The CHANGELOG's first release heading is the one in
+				// development; the allowed history starts at the second.
+				inSection = rel != "CHANGELOG.md" || starts > 1
+			}
+		}
+		if inSection || strings.Contains(line, oldNameMarker) {
+			continue
+		}
+		if namesOldName(line) {
 			out = append(out, rel+":"+strconv.Itoa(i+1)+": "+strings.TrimSpace(line))
 		}
 	}
 	return out
 }
 
-// namesProduct reports whether s names the product once the fixed
-// identifiers are taken out.
-func namesProduct(s string) bool {
-	for _, re := range fixedIdentifiers {
+// namesOldName reports whether s holds the old name once the third-party
+// names are taken out.
+func namesOldName(s string) bool {
+	for _, re := range thirdPartyNames {
 		s = re.ReplaceAllString(s, " ")
 	}
-	return productWord.MatchString(s)
+	return oldName.MatchString(s)
 }
 
-// TestNamesProduct pins the guard's matching, so a loosened allow-list or
+// TestNamesOldName pins the guard's matching, so a loosened allow-list or
 // pattern shows up here rather than as a silent gap.
-func TestNamesProduct(t *testing.T) {
+func TestNamesOldName(t *testing.T) {
 	tests := []struct {
 		in   string
 		want bool
@@ -254,32 +201,45 @@ func TestNamesProduct(t *testing.T) {
 		{"ClawEh", true},
 		{"Claw is shutting down", true},
 		{"run: claw admin", true},
-		{"claw's own state", true},
-		{"restart claw.", true},
-		{"collides with claw-managed fields", true},
-		{"CLAW_HOME", false},
-		{"mcp__claw__*", false},
+		{"CLAW_HOME", true},
+		{"mcp__claw__*", true},
+		{"~/.claw/config.json", true},
+		{"/opt/claw", true},
+		{"logs/claw.log", true},
+		{"claw-auth version %s", true},
+		{"agency_home", false},
 		{"openclaw", false},
+		{"OpenClaw Gateway", false},
+		{"github.com/a3tai/openclaw-go", false},
+		{"sipeed/picoclaw", false},
 		{"clawhub.ai", false},
+		{"AGENCY_SKILLS_REGISTRIES_CLAWHUB_ENABLED", false},
 		{"clawdbot-gateway", false},
-		{"go.bison9.com/agency/app", false},
-		{"PivotLLM/ClawEh-skills/weather", false},
-		{"com.pivotllm.claweh.plist", false},
-		{"~/.claw/config.json", false},
-		{".claw-backup-*", false},
-		{"/opt/claw", false},
-		{"logs/claw.log", false},
-		{"claw.pid", false},
-		{"/etc/systemd/system/claw.service", false},
-		{"claw-auth version %s", false},
-		{"claw-backup-<timestamp>.tar.gz", false},
-		{"Bearer realm=\"claw-mcp\"", false},
-		{"extracted-claw-auth", false},
-		{"claw-auth is a helper for claw", true},
+		{"com.alvin.clawtotalk", false},
+		{"the Claw to Talk app", false},
+		{"openclaw acp; claw acp", true},
 	}
 	for _, tt := range tests {
-		if got := namesProduct(tt.in); got != tt.want {
-			t.Errorf("namesProduct(%q) = %v, want %v", tt.in, got, tt.want)
+		if got := namesOldName(tt.in); got != tt.want {
+			t.Errorf("namesOldName(%q) = %v, want %v", tt.in, got, tt.want)
 		}
+	}
+}
+
+// TestOldNameSections pins the allowed sections: released CHANGELOG history
+// and the manual's moving steps are allowed, the release in development and
+// the rest of the manual page are not, and a marked line is allowed anywhere.
+func TestOldNameSections(t *testing.T) {
+	changelog := "# Changelog\n## [0.6.6]\n- claw in development\n## [0.6.5]\n- claw released\n## [0.6.4]\n- claw older\n"
+	if got := oldNameLines("CHANGELOG.md", []byte(changelog)); len(got) != 1 || !strings.Contains(got[0], "CHANGELOG.md:3:") {
+		t.Errorf("CHANGELOG hits = %q, want only line 3", got)
+	}
+	manual := "# Upgrading\nclaw\n## Moving an install from the old name\nclaw\n## After\nclaw\n"
+	if got := oldNameLines("manual/getting-started/upgrading.md", []byte(manual)); len(got) != 2 ||
+		!strings.Contains(got[0], ":2:") || !strings.Contains(got[1], ":6:") {
+		t.Errorf("manual hits = %q, want lines 2 and 6", got)
+	}
+	if got := oldNameLines("x_test.go", []byte("a := \"claw\" // "+oldNameMarker+"\nb := \"claw\"\n")); len(got) != 1 {
+		t.Errorf("marked hits = %q, want only the unmarked line", got)
 	}
 }

@@ -26,7 +26,7 @@ Token** (starts with `xapp-`).
    | `groups:history` | reading private channels |
    | `im:history` | reading direct messages |
    | `mpim:history` | reading group direct messages |
-   | `commands` | the `/claw` slash command |
+   | `commands` | the `/agency` slash command |
    | `channels:read`, `users:read` | optional: looking up channels and people |
 
    Click **Install to Workspace**, approve, and copy the **Bot User OAuth
@@ -39,7 +39,7 @@ Token** (starts with `xapp-`).
    **Allow users to send Slash commands and messages from the messages tab**.
    Without this, people see "Sending messages to this app has been turned
    off".
-6. **Slash Commands**: click **Create New Command**, enter `/claw` as the
+6. **Slash Commands**: click **Create New Command**, enter `/agency` as the
    command, give it a short description (for example `Run an Agency command`)
    and click **Save**. No Request URL is needed in Socket Mode. Then
    reinstall the app to the workspace (Slack asks for the `commands` scope).
@@ -120,10 +120,10 @@ or `"placeholder": { "enabled": true, "text": "Working on it..." }`.
 
 Agency commands such as `/model` can be run these ways:
 
-- **`/claw model`**: the `/claw` slash command runs the command after it;
-  `/claw` alone shows the help. It needs step 6 above.
+- **`/agency model`**: the `/agency` slash command runs the command after it;
+  `/agency` alone shows the help. It needs step 6 above.
 - **`/model 0`**: a Slack slash command with the same name as an Agency
-  command runs that command. Add it the way step 6 adds `/claw`, once for each
+  command runs that command. Add it the way step 6 adds `/agency`, once for each
   command you want (for example `/model` or `/cancel`).
 - **` /model`** with a leading space: Slack only treats a message as a slash
   command when `/` is its first character, so the space sends it as a message.
@@ -133,7 +133,7 @@ The answer appears where the command was typed. If the app is not in that
 channel, only you see the answer to a slash command; invite the app to
 answer there.
 
-A slash command under any other name, such as `/claw`, treats its first word as
+A slash command under any other name, such as `/agency`, treats its first word as
 the command. If that word is not an Agency command, the text goes to the agent as
 an ordinary message.
 

@@ -5,7 +5,6 @@ CLAUDE.local.md
 
 
 # Binaries and build artifacts
-Agency
 bin/
 build/
 private/

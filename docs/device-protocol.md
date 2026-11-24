@@ -45,7 +45,7 @@ can be exposed to the network without exposing the unauthenticated WebUI.
 - TLS: off by default (plain `ws://`). With `channels.device.tls: true` the listener
   serves `wss://` on the same port with the WebUI HTTPS listener's certificate
   (self-signed or user-provided, hot-reloaded with it); it needs `gateway.tls.mode`
-  other than `"off"`. The pairing QR, `claw status` and `claw acp` follow the scheme.
+  other than `"off"`. The pairing QR, `agency status` and `agency acp` follow the scheme.
   A reverse proxy that terminates `wss://` and forwards plain `ws://` still works with
   TLS off.
 

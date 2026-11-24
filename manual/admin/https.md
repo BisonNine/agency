@@ -23,15 +23,15 @@ Ports, scope and **Listen on** take effect after a restart. The page says "Resta
 
 ## Open the WebUI over HTTPS
 
-1. Run `claw status` on the server, or look at **Addresses** on the **Network** page, for the address to open.
+1. Run `agency status` on the server, or look at **Addresses** on the **Network** page, for the address to open.
 2. Browse to it, for example `https://<server>:18443/`.
-3. The browser warns once about the self-signed certificate. Compare the SHA-256 fingerprint it shows with the one on the **Network** page (**Certificate** → **SHA-256 fingerprint**) or from `claw tls`, and accept it only if they match.
+3. The browser warns once about the self-signed certificate. Compare the SHA-256 fingerprint it shows with the one on the **Network** page (**Certificate** → **SHA-256 fingerprint**) or from `agency tls`, and accept it only if they match.
 
 ### Reaching it by a name
 
-Agency answers only to names it knows. To use a name such as `claw.home.arpa`:
+Agency answers only to names it knows. To use a name such as `agency.home.arpa`:
 
-1. On the **Network** page, under **HTTPS**, set **Hostname / external URL** to the address you type, for example `https://claw.home.arpa:18443`.
+1. On the **Network** page, under **HTTPS**, set **Hostname / external URL** to the address you type, for example `https://agency.home.arpa:18443`.
 2. Add any other names or addresses (a DNS alias, a NAT address) to **Extra certificate names**, pressing Enter after each.
 3. Under **Certificate**, click **Regenerate certificate** so the new names are in it.
 
@@ -44,14 +44,14 @@ With no certificate files set, Agency creates its own the first time HTTPS start
 Agency renews it by itself within 30 days of expiry, and at start when the names have changed. To renew it now, use **Regenerate certificate** on the **Network** page or run:
 
 ```
-claw tls --regenerate
+agency tls --regenerate
 ```
 
 Your browser will warn again after a new certificate is issued.
 
 ## Use your own certificate
 
-1. Put the PEM certificate (with its chain) and the private key where the service user can read them, for example `/etc/letsencrypt/live/claw.example.com/`.
+1. Put the PEM certificate (with its chain) and the private key where the service user can read them, for example `/etc/letsencrypt/live/agency.example.com/`.
 2. On the **Network** page, under **Certificate**, choose **External certificate**.
 3. Enter **Certificate file** and **Private key file** as full paths.
 4. Click **Save certificate**.
@@ -63,8 +63,8 @@ The same keys in `config.json`:
 ```json
 "gateway": {
   "tls": {
-    "cert_file": "/etc/letsencrypt/live/claw.example.com/fullchain.pem",
-    "key_file":  "/etc/letsencrypt/live/claw.example.com/privkey.pem"
+    "cert_file": "/etc/letsencrypt/live/agency.example.com/fullchain.pem",
+    "key_file":  "/etc/letsencrypt/live/agency.example.com/privkey.pem"
   }
 }
 ```
@@ -84,8 +84,8 @@ On the **Network** page, **Certificate** shows the **Source** (Self-signed or Fr
 On the server:
 
 ```
-claw tls        # the certificate in full
-claw status     # the addresses, the certificate's expiry and fingerprint
+agency tls        # the certificate in full
+agency status     # the addresses, the certificate's expiry and fingerprint
 ```
 
 ## Other listeners

@@ -1,18 +1,18 @@
-# ACP over stdio (`claw acp`)
+# ACP over stdio (`agency acp`)
 
-`claw acp` serves the **Agent Client Protocol (ACP)** over stdin/stdout and
+`agency acp` serves the **Agent Client Protocol (ACP)** over stdin/stdout and
 **bridges each prompt to the already-running Agency over its localhost
 WebSocket**. It exists for the Rabbit R1's new connection path: the device runs
 `rabbit-agent`, which spawns a local ACP agent process and drives it over the
 pipe (previously the R1 spoke the OpenClaw Gateway WebSocket protocol directly —
 see `device-protocol.md`).
 
-`rabbit-agent` is configured to spawn `claw acp` (in place of upstream
-`openclaw acp`). There is **one** Agency instance: the running service. `claw acp`
+`rabbit-agent` is configured to spawn `agency acp` (in place of upstream
+`openclaw acp`). There is **one** Agency instance: the running service. `agency acp`
 is a thin, stateless translator holding no agent loop of its own.
 
 ```
-rabbit-agent  ──ACP stdio──►  claw acp (bridge)  ──WS 127.0.0.1:<devicePort>──►  the ONE running Agency
+rabbit-agent  ──ACP stdio──►  agency acp (bridge)  ──WS 127.0.0.1:<devicePort>──►  the ONE running Agency
 ```
 
 This is the same shape as upstream `openclaw acp` (ACP stdio ↔ OpenClaw Gateway WS), and
@@ -39,10 +39,10 @@ client → initialize     → agent: {protocolVersion, agentInfo, authMethods:[]
 client → session/new    → agent: {sessionId}
 client → session/prompt {sessionId, prompt:[{type:"text",text}]}
               (blocks for the turn)
-   bridge → claw: chat.send {sessionKey:"main", message, idempotencyKey:runId}
-   claw → bridge: agent event (stream:"assistant") …          ← streamed
+   bridge → agency: chat.send {sessionKey:"main", message, idempotencyKey:runId}
+   agency → bridge: agent event (stream:"assistant") …          ← streamed
          agent → session/update {agent_message_chunk, content:{text}}   ← per delta
-   claw → bridge: agent lifecycle end  /  chat final
+   agency → bridge: agent lifecycle end  /  chat final
 client ← session/prompt result  ← agent: {stopReason:"end_turn"}
 ```
 
@@ -74,16 +74,16 @@ R1:
   pending pairing and rejects the connect. Because the bridge is a local
   same-user process, it then approves its own pending pairing directly in the
   local device store and reconnects (`autoApproveLocalDevice`). With
-  `--no-auto-pair` it stops instead; approve it once with `claw devices`, then
+  `--no-auto-pair` it stops instead; approve it once with `agency devices`, then
   re-run. There is no ACP-layer auth — the stdio pipe is the trust boundary.
 
 ## Running it
 
 ```
-claw acp                         # bridge to ws://127.0.0.1:<device-port>/ (wss:// with channels.device.tls)
-claw acp --url ws://127.0.0.1:18791/  # explicit device listener URL
-claw acp --no-auto-pair          # require a manual `claw devices` approval
-claw acp --debug                 # debug logging (file only — stdout is the wire)
+agency acp                         # bridge to ws://127.0.0.1:<device-port>/ (wss:// with channels.device.tls)
+agency acp --url ws://127.0.0.1:18791/  # explicit device listener URL
+agency acp --no-auto-pair          # require a manual `agency devices` approval
+agency acp --debug                 # debug logging (file only — stdout is the wire)
 ```
 
 Because stdout carries the protocol, the console logger is disabled and all
@@ -92,9 +92,9 @@ logging goes to `$AGENCY_HOME/logs/agency.log`.
 ### One-time pairing with `--no-auto-pair`
 
 1. Ensure Agency is running with the device channel enabled.
-2. Run `claw acp --no-auto-pair` once. It logs its `deviceId` and exits with a
+2. Run `agency acp --no-auto-pair` once. It logs its `deviceId` and exits with a
    "pairing required" message.
-3. Approve the pending device with `claw devices` (list → approve).
+3. Approve the pending device with `agency devices` (list → approve).
 4. Re-run it — it connects and serves.
 
 ## Content types
@@ -118,7 +118,7 @@ logging goes to `$AGENCY_HOME/logs/agency.log`.
 
 ## Code
 
-- `internal/gateway/acp_command.go` — the `claw acp` subcommand: identity/token
+- `internal/gateway/acp_command.go` — the `agency acp` subcommand: identity/token
   persistence, the WebSocket connection to Agency + pairing, and the ACP server.
 - `internal/gateway/acp_bridge.go` — `acpBridge` (the `acp.Handler`): forwards
   prompts via `chat.send` and translates Agency's `agent`/`chat` events into ACP

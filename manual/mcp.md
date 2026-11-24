@@ -44,14 +44,14 @@ Without this the CLI still answers, but has none of Agency's tools.
   whichever are installed, and turns off Code Mode for OpenCode. If you changed the port, run
   `AGENCY_MCP_URL=http://127.0.0.1:<port>/internal ./set-mcp.sh`.
 - **Claude Code:**
-  `claude mcp add --transport http claw --scope user http://127.0.0.1:5911/internal`
-- **Codex CLI:** `codex mcp add claw --url http://127.0.0.1:5911/internal`
-- **Antigravity:** `agy mcp add claw http://127.0.0.1:5911/internal --type http`
-- **OpenCode:** `opencode mcp add claw --url http://127.0.0.1:5911/internal --global`,
-  then add `"codemode": false` to the `claw` entry in
+  `claude mcp add --transport http agency --scope user http://127.0.0.1:5911/internal`
+- **Codex CLI:** `codex mcp add agency --url http://127.0.0.1:5911/internal`
+- **Antigravity:** `agy mcp add agency http://127.0.0.1:5911/internal --type http`
+- **OpenCode:** `opencode mcp add agency --url http://127.0.0.1:5911/internal --global`,
+  then add `"codemode": false` to the `agency` entry in
   `~/.config/opencode/opencode.json` (see
   [CLI providers](providers/cli-providers.md#tools-agency-s-mcp-server)).
-- **Cursor CLI:** add `"claw": {"url": "http://127.0.0.1:5911/internal"}`
+- **Cursor CLI:** add `"agency": {"url": "http://127.0.0.1:5911/internal"}`
   under `mcpServers` in `~/.cursor/mcp.json`.
 
 Run these as the user the Agency service runs as.
@@ -75,13 +75,13 @@ A service token is a long-lived credential for one agent, for an MCP client
 outside Agency, such as a program that drives an agent's Maestro projects.
 
 ```
-claw token issue  alice   # create (or replace) Alice's token and print it once
-claw token rotate alice   # same as issue
-claw token revoke alice   # remove it
-claw token list           # agents that have a token (tokens are not shown)
+agency token issue  alice   # create (or replace) Alice's token and print it once
+agency token rotate alice   # same as issue
+agency token revoke alice   # remove it
+agency token list           # agents that have a token (tokens are not shown)
 ```
 
-See [Command line](reference/cli.md) for every `claw` command.
+See [Command line](reference/cli.md) for every `agency` command.
 
 - Use it as `Authorization: Bearer <token>` on `/mcp`, or as the session
   token on `/internal`.

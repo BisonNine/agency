@@ -2,7 +2,7 @@
 
 This page installs Agency as a background service and creates the admin account you sign in with.
 
-There are four ways to install. All of them finish with `claw install`, which registers the service, creates the admin account and starts Agency.
+There are four ways to install. All of them finish with `agency install`, which registers the service, creates the admin account and starts Agency.
 
 ## Before you start
 
@@ -14,10 +14,10 @@ There are four ways to install. All of them finish with `claw install`, which re
 
 ## Option 1: the one-line installer
 
-This downloads the latest release, verifies its checksum, and runs `claw install`.
+This downloads the latest release, verifies its checksum, and runs `agency install`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency-online-install.sh | bash
 ```
 
 For a system service, end the line with `sudo bash` instead of `bash`.
@@ -28,15 +28,15 @@ To install a specific release, set `AGENCY_VERSION` (for example `AGENCY_VERSION
 
 ## Option 2: a release archive
 
-1. Download the archive for your platform from the [GitHub releases](https://github.com/BisonNine/agency/releases). The names are `claw-<os>-<arch>.tar.gz`, for example `claw-linux-amd64.tar.gz` or `claw-darwin-arm64.tar.gz`.
+1. Download the archive for your platform from the [GitHub releases](https://github.com/BisonNine/agency/releases). The names are `agency-<os>-<arch>.tar.gz`, for example `agency-linux-amd64.tar.gz` or `agency-darwin-arm64.tar.gz`.
 2. Unpack it and run the installer:
 
    ```bash
-   tar -xzf claw-linux-amd64.tar.gz
-   ./claw install
+   tar -xzf agency-linux-amd64.tar.gz
+   ./agency install
    ```
 
-   For a system service, run `sudo ./claw install`.
+   For a system service, run `sudo ./agency install`.
 
 ## Option 3: Debian or Ubuntu package (`apt`)
 
@@ -45,10 +45,10 @@ On Debian and Ubuntu (`amd64` and `arm64`), install the `agency` package from th
 ```bash
 sudo apt update
 sudo apt install agency
-sudo claw install
+sudo agency install
 ```
 
-For a user service instead of a system service, run `claw install` without `sudo`. The package places `/usr/bin/claw`, `/usr/bin/claw-auth` and `/usr/bin/openclaw`, and `claw install` points the service directly at `/usr/bin/claw` so future `sudo apt upgrade` runs update it in place.
+For a user service instead of a system service, run `agency install` without `sudo`. The package places `/usr/bin/agency`, `/usr/bin/agency-auth` and `/usr/bin/openclaw`, and `agency install` points the service directly at `/usr/bin/agency` so future `sudo apt upgrade` runs update it in place.
 
 ## Option 4: build from source
 
@@ -58,19 +58,19 @@ You need Git, Go, Node.js and pnpm.
 git clone https://github.com/BisonNine/agency.git
 cd agency
 make build
-./build/claw install
+./build/agency install
 ```
 
 ## The admin account
 
-The WebUI requires a login, and there is no default account. When none exists, `claw install` asks for one before it starts the service:
+The WebUI requires a login, and there is no default account. When none exists, `agency install` asks for one before it starts the service:
 
 - a username (no spaces, at most 64 characters);
 - a password, typed twice, at least 12 characters. It is not shown as you type.
 
 This works under `curl … | bash` too: the installer reads from your terminal, not from the pipe.
 
-An existing account is kept. To replace it later, run `claw admin` on the server. See [Signing in](../admin/login.md).
+An existing account is kept. To replace it later, run `agency admin` on the server. See [Signing in](../admin/login.md).
 
 ### Unattended install
 
@@ -79,11 +79,11 @@ Without a terminal, export the account in the same shell, run the installer, the
 ```bash
 read -r AGENCY_ADMIN_USER; read -rs AGENCY_ADMIN_PASSWORD
 export AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
-./claw install
+./agency install
 unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 ```
 
-With `sudo`, keep them across it: `sudo --preserve-env=AGENCY_ADMIN_USER,AGENCY_ADMIN_PASSWORD ./claw install`.
+With `sudo`, keep them across it: `sudo --preserve-env=AGENCY_ADMIN_USER,AGENCY_ADMIN_PASSWORD ./agency install`.
 
 ::: warning
 Do not write the password on the command line in front of the installer. It would be saved in your shell history.
@@ -96,22 +96,19 @@ If there is no account, no terminal and no variables, the installer stops withou
 | | User service | System service (`sudo`) |
 |---|---|---|
 | Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, `/opt/agency/bin` when the data directory is `/opt/agency`, else `/usr/local/bin` |
-| Linux service | `~/.config/systemd/user/claw.service` | `/etc/systemd/system/claw.service` |
+| Linux service | `~/.config/systemd/user/agency.service` | `/etc/systemd/system/agency.service` |
 | macOS service | `~/Library/LaunchAgents/com.bison9.agency.plist` | `/Library/LaunchDaemons/com.bison9.agency.plist` |
-
-On macOS, a service from an earlier release (`com.pivotllm.claweh`) is moved to `com.bison9.agency` automatically.
 
 It also:
 
 - creates the data directory, `~/.agency` by default (`AGENCY_HOME` overrides it; an existing `/opt/agency` is used if present);
 - writes a complete `config.json` there on first start;
-- creates an `openclaw` link next to `claw`, which the Rabbit R1 needs (see [Devices](../channels/devices.md));
-- on an `/opt/agency` install whose binary was in `/opt/agency` itself, names the old `/opt/agency/claw` and `/opt/agency/openclaw`, which are no longer used and can be removed;
+- creates an `openclaw` link next to `agency`, which the Rabbit R1 needs (see [Devices](../channels/devices.md));
 - prints the addresses where the WebUI can be opened.
 
 `--bin-dir` installs the binary somewhere else. `--user` picks the account the system service runs as (default: the user who ran `sudo`). `-y` skips the confirmation question but never the admin account.
 
-Re-run `claw install` with the same privilege as the first time: `sudo` for a system service, none for a user service. The installer refuses the other one.
+Re-run `agency install` with the same privilege as the first time: `sudo` for a system service, none for a user service. The installer refuses the other one.
 
 ## Opening the WebUI
 
@@ -120,14 +117,14 @@ By default Agency listens on:
 - `http://127.0.0.1:18790/` — plain HTTP, this machine only;
 - `https://<this machine>:18443/` — HTTPS on every interface, with a self-signed certificate. Your browser warns about it once.
 
-Other machines are refused until you allow their network, even over HTTPS (see [HTTPS and certificates](../admin/https.md)). `claw status` prints the current addresses at any time.
+Other machines are refused until you allow their network, even over HTTPS (see [HTTPS and certificates](../admin/https.md)). `agency status` prints the current addresses at any time.
 
 ## Installing on a headless or remote host
 
 To reach the WebUI from another machine, allow your network when you install:
 
 ```bash
-./claw install --allowed-cidrs 192.168.1.0/24
+./agency install --allowed-cidrs 192.168.1.0/24
 ```
 
 `--allowed-cidrs` takes a comma-separated list of networks, or `private` (the private LAN ranges) or `any` (any address). Prefer the narrowest range that works. Then open the HTTPS address from the other machine.
@@ -137,18 +134,18 @@ To reach the WebUI from another machine, allow your network when you install:
 The same options work with the one-line installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash -s -- --allowed-cidrs 192.168.1.0/24
+curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency-online-install.sh | bash -s -- --allowed-cidrs 192.168.1.0/24
 ```
 
-You can change network access later on the **Network** page or with `claw network`. See [Network access](../admin/network.md).
+You can change network access later on the **Network** page or with `agency network`. See [Network access](../admin/network.md).
 
 ## Running without a service
 
-You can also run `claw` in a terminal. It starts Agency in the foreground until you press Ctrl+C. Create the admin account first with `claw admin`.
+You can also run `agency` in a terminal. It starts Agency in the foreground until you press Ctrl+C. Create the admin account first with `agency admin`.
 
 ## Removing the service
 
-`claw uninstall` stops and removes the service. The binary and the data directory are left in place. Use `sudo` if the service was installed with `sudo`.
+`agency uninstall` stops and removes the service. The binary and the data directory are left in place. Use `sudo` if the service was installed with `sudo`.
 
 ## Next step
 

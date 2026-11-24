@@ -5,7 +5,7 @@ Status: **implemented**.
 ## Why
 The per-session MCP token (`SST…`) is bound to a conversation session: it rotates
 on session activity, is revoked after the 2h idle eviction, and dies on restart
-(the store is in-memory). That is correct for an agent calling claw back over MCP
+(the store is in-memory). That is correct for an agent calling agency back over MCP
 within a conversation, but it does not fit an **external client that drives
 Maestro (or other tools) over MCP** — that caller holds a token directly and is
 never re-prompted, so any rotation/eviction/restart breaks it.
@@ -16,7 +16,7 @@ uses) on a stable footing.
 
 ## Design
 - **Per-agent, long-lived.** One token per agent, persisted, valid until
-  explicitly revoked (no TTL — claw binds to `127.0.0.1`; a TTL can be added
+  explicitly revoked (no TTL — agency binds to `127.0.0.1`; a TTL can be added
   later).
 - **It drives the agent's MAIN session**, `agent:<id>:main`. A service token is
   a credential, not a separate assistant: an agent has one conversation, one
@@ -47,13 +47,13 @@ uses) on a stable footing.
 ## Persistence & activation
 - Stored at `$AGENCY_HOME/internal/service-tokens.json` (`0o600`), as
   `{"<agentID>": "sha256:<hex>"}` — the SHA-256 of the token, not the token.
-  `claw token issue` prints the plaintext once; it cannot be recovered later
+  `agency token issue` prints the plaintext once; it cannot be recovered later
   (issue a new one). A presented token is hashed for lookup. A file from an
   older version holding plaintext values is rewritten with hashes the first
   time it is loaded.
 - Loaded into the token store in `startMCPServer` (boot + every config reload),
   **and** a file watcher on `service-tokens.json` re-syncs the live store within
-  the poll interval — so `claw token issue|revoke` takes effect **without a
+  the poll interval — so `agency token issue|revoke` takes effect **without a
   restart**. The reconcile registers present tokens and revokes removed ones;
   conversation tokens are untouched. Writes are atomic, so no debounce is needed.
 
@@ -70,10 +70,10 @@ uses) on a stable footing.
 
 ## CLI (advanced users)
 ```
-claw token issue  <agent>   # mint (or replace) and print the agent's service token
-claw token rotate <agent>   # alias for issue — replace the existing token
-claw token revoke <agent>   # remove the agent's service token (also after the agent left the config)
-claw token list             # list agents that have a service token (tokens NOT shown)
+agency token issue  <agent>   # mint (or replace) and print the agent's service token
+agency token rotate <agent>   # alias for issue — replace the existing token
+agency token revoke <agent>   # remove the agent's service token (also after the agent left the config)
+agency token list             # list agents that have a service token (tokens NOT shown)
 ```
 Changes are written to the state file; a running Agency picks them up
 automatically within a few seconds (a file watcher re-syncs the live store).
@@ -89,8 +89,8 @@ automatically within a few seconds (a file watcher re-syncs the live store).
 - [x] Boot wiring in `startMCPServer`: load `service-tokens.json` and
       `RegisterService` each (alongside the existing `AGENCY_MCP_TEST_TOKEN` path).
 - [x] `internal/token` cobra command (`issue`/`rotate`/`revoke`/`list`) wired
-      into `NewClawCommand`.
-- [x] Manual (`manual/mcp.md`): document service tokens + the `claw token` commands.
+      into `NewAgencyCommand`.
+- [x] Manual (`manual/mcp.md`): document service tokens + the `agency token` commands.
 - [x] `docs/mcp.md`: cross-reference service tokens as the long-lived credential
       for the `/mcp` bearer endpoint.
 

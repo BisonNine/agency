@@ -18,7 +18,7 @@ Antigravity replaces the Gemini CLI, which Google deprecated. A configuration th
 
 1. Install the CLI on the Agency machine, following the vendor's instructions.
 2. Sign in once, **as the user the Agency service runs as** (for OpenCode, `opencode auth login`). The CLI keeps its login in that user's home directory, and Agency starts it as that user. A login made under your own account does not help a service running as another user.
-3. Check that the service can find the program. Agency looks for it on the `PATH` the service runs with, which `claw install` records when it installs the service. If you install a CLI later, or its location changes (for example after a Node.js or nvm upgrade), run `claw install` again, or set the program's full path in **Command** on the CLI's provider.
+3. Check that the service can find the program. Agency looks for it on the `PATH` the service runs with, which `agency install` records when it installs the service. If you install a CLI later, or its location changes (for example after a Node.js or nvm upgrade), run `agency install` again, or set the program's full path in **Command** on the CLI's provider.
 
 A CLI can also authenticate with an API key from the service's environment. Agency passes the CLIs every variable starting with `ANTHROPIC_`, `OPENAI_`, `GOOGLE_`, `GEMINI_`, `CLAUDE_`, `CODEX_`, `CURSOR_`, `AGY_`, `ANTIGRAVITY_` or `OPENCODE_`, on top of the basic variables such as `PATH` and `HOME`. Other variables of the service are not passed.
 
@@ -54,7 +54,7 @@ Alice: The Claude CLI declined to use tools (file_write). Tick *Allow CLI to byp
 
 The reply starts with the agent's name, so it is clear whose CLI refused in a chat shared by several agents. Agency does not try the agent's next model in this case.
 
-To keep bypass off and still let the CLI use Agency's tools, allow those tools in the CLI's own permission settings for the service user. Agency's tools reach the CLI under the MCP server name `claw` (tool names start with `mcp__agency__`, or `claw_` in OpenCode). See the CLI's documentation for how to allow them.
+To keep bypass off and still let the CLI use Agency's tools, allow those tools in the CLI's own permission settings for the service user. Agency's tools reach the CLI under the MCP server name `agency` (tool names start with `mcp__agency__`, or `agency_` in OpenCode). See the CLI's documentation for how to allow them.
 
 **On:** Agency passes the flag from the table above on every call. The CLI can then run commands and change files anywhere the service user can, without asking, outside Agency's own workspace and shell controls. Turn it on only for a CLI running as a user whose access you are comfortable giving to the agent.
 
@@ -84,35 +84,35 @@ A CLI runs a whole job in one call, so CLI models are created with **Request Tim
 
 A CLI model does not receive Agency's tools in its prompt. It calls them through Agency's MCP server, which listens on `127.0.0.1:5911` by default and starts automatically while any enabled model uses a CLI. Its settings are under **MCP** → **Config** (**Enabled**, **Auto-enable**, **Listen Address**).
 
-Each CLI has to be told about this server once, as the service user, under the name `claw` and with the `/internal` endpoint:
+Each CLI has to be told about this server once, as the service user, under the name `agency` and with the `/internal` endpoint:
 
 ```bash
 # Claude Code
-claude mcp add --transport http claw --scope user http://127.0.0.1:5911/internal
+claude mcp add --transport http agency --scope user http://127.0.0.1:5911/internal
 
 # Codex CLI
-codex mcp add claw --url http://127.0.0.1:5911/internal
+codex mcp add agency --url http://127.0.0.1:5911/internal
 
 # Antigravity
-agy mcp add claw http://127.0.0.1:5911/internal --type http
+agy mcp add agency http://127.0.0.1:5911/internal --type http
 ```
 
 Cursor has no such command. Add this to `~/.cursor/mcp.json` of the service user, under `"mcpServers"`:
 
 ```json
-"claw": { "url": "http://127.0.0.1:5911/internal" }
+"agency": { "url": "http://127.0.0.1:5911/internal" }
 ```
 
 OpenCode:
 
 ```bash
-opencode mcp add claw --url http://127.0.0.1:5911/internal --global
+opencode mcp add agency --url http://127.0.0.1:5911/internal --global
 ```
 
-The command has no option for Code Mode, so turn it off by hand: add `"codemode": false` to the `claw` entry in the service user's `~/.config/opencode/opencode.json`. With Code Mode on, the model must write a script to call a tool, and weaker models fail. The entry then reads:
+The command has no option for Code Mode, so turn it off by hand: add `"codemode": false` to the `agency` entry in the service user's `~/.config/opencode/opencode.json`. With Code Mode on, the model must write a script to call a tool, and weaker models fail. The entry then reads:
 
 ```json
-{"mcp":{"servers":{"claw":{"type":"remote","url":"http://127.0.0.1:5911/internal","codemode":false}}}}
+{"mcp":{"servers":{"agency":{"type":"remote","url":"http://127.0.0.1:5911/internal","codemode":false}}}}
 ```
 
 If OpenCode has no web search provider set up, also add `"permission":{"websearch":"deny"}` to that file: otherwise a run that tries its built-in web search fails.

@@ -46,7 +46,7 @@ Each agent has an ordered list of models. On the **Agents** page (see [Creating 
 
 In a chat, `/model` lists the agent's models and `/model <n>` switches the conversation to model number `n`.
 
-From a shell, `claw model` shows the default model and the enabled models; `claw model <model_name>` makes that model the default.
+From a shell, `agency model` shows the default model and the enabled models; `agency model <model_name>` makes that model the default.
 
 ### When Agency moves to the next model
 

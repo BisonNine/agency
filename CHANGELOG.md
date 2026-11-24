@@ -6,14 +6,14 @@
 
 - **Debian and Ubuntu `.deb` packages (`agency`).** Releases now include
   `agency_<version>_amd64.deb` and `agency_<version>_arm64.deb` alongside the
-  `.tar.gz` archives, installing `/usr/bin/claw`, `/usr/bin/claw-auth`, the
+  `.tar.gz` archives, installing `/usr/bin/agency`, `/usr/bin/agency-auth`, the
   `/usr/bin/openclaw` symlink, and licence notices under
-  `/usr/share/doc/agency/`. After `apt install agency`, run `sudo claw install`
-  (system service) or `claw install` (user service) once to create the WebUI
-  admin account and register the service against `/usr/bin/claw`; subsequent
-  `apt upgrade` runs restart an active `claw.service` automatically, and
-  `claw upgrade` directs `apt`-managed installs to `apt` instead of overwriting
-  `/usr/bin/claw`.
+  `/usr/share/doc/agency/`. After `apt install agency`, run `sudo agency install`
+  (system service) or `agency install` (user service) once to create the WebUI
+  admin account and register the service against `/usr/bin/agency`; subsequent
+  `apt upgrade` runs restart an active `agency.service` automatically, and
+  `agency upgrade` directs `apt`-managed installs to `apt` instead of overwriting
+  `/usr/bin/agency`.
 - **Agents can cancel their own sub-agents with the new `agent_cancel` tool.**
   `{"uuid": "<task id>"}` cancels one task, `{"all": true}` every running one;
   the tasks a cancelled task started are cancelled with it. Task-model calls
@@ -99,9 +99,9 @@
   `task_dispatch`.** The sub-agent, task-model call or Maestro task, and
   everything it starts, is billed to this code instead of the agent's.
 - **Accounting log.** Each model call is written as one JSON line to
-  `<CLAW_HOME>/logs/accounting.log`: the agent, the billing code (`project`),
+  `<AGENCY_HOME>/logs/accounting.log`: the agent, the billing code (`project`),
   the model, the tokens and the cost. When a provider reports no cost, it is
-  estimated from `<CLAW_HOME>/pricing.json` if that file exists; it is read
+  estimated from `<AGENCY_HOME>/pricing.json` if that file exists; it is read
   at start and at every configuration reload, and a file that cannot be read
   keeps the previous table. The accounting log is not in the backup, like
   the other logs.
@@ -116,7 +116,7 @@
   Cursor. It has its row and switch under **Local CLI agents** on the
   Providers page. **Allow CLI to bypass restrictions** adds `--auto`. It gets
   the variables starting with `OPENCODE_`. Its prompt names Agency's tools
-  `claw_<tool>`, as OpenCode does. `set-mcp.sh` registers Agency in OpenCode
+  `agency_<tool>`, as OpenCode does. `set-mcp.sh` registers Agency in OpenCode
   and turns off Code Mode there.
 
 ### Changed
@@ -213,22 +213,25 @@
   `working_dir`, a command runs in the folder the agent's previous command in
   the same conversation ended in (after a `cd`), else in the workspace as
   before.
-- **The product is now named Agency** in the WebUI,
-  logs, alerts, reports and messages. Nothing on an install changes: the
-  `claw` binary, the `claw` service, the `~/.claw` data directory, the
-  `CLAW_*` environment variables and the `mcp__claw__` tool prefix keep their
-  names.
+- **BREAKING: the program, service, data directory, environment variables,
+  tool prefix and release archives are now named `agency`.** The programs
+  are `agency` and `agency-auth`, with the `openclaw` link. The service is
+  `agency.service`. The data directory is `~/.agency` or `/opt/agency`.
+  The variables are `AGENCY_*`, such as `AGENCY_HOME`. CLI agents see the
+  tools as `mcp__agency__<tool>` (`agency_<tool>` in OpenCode): run
+  `set-mcp.sh` again, and change any CLI allow-list that names the old
+  prefix. Release archives are `agency-<os>-<arch>.tar.gz`. The old names
+  are not read, and an existing install is not moved automatically: follow
+  "Moving an install from the old name" on the manual's Upgrading page.
+  Sign in to the WebUI again afterwards.
+- **The product is now named Agency** in the WebUI, logs, alerts, reports
+  and messages.
 - **Releases and the installer now come from `BisonNine/agency`.**
-  `claw upgrade`, the install scripts and the links in the WebUI use the new
-  repository.
+  `agency upgrade`, the install scripts and the links in the WebUI use the
+  new repository.
 - **On macOS the service and app identifier are now `com.bison9.agency`.**
-  `claw install` and `claw upgrade` move an existing service from
-  `com.pivotllm.claweh` automatically, keeping its binary, data and settings.
-  `claw uninstall` removes either. After `claw upgrade` from 0.6.5 or earlier,
-  run `claw install` once to move it.
 - **The install script is now `agency.sh`.** Its variables are
-  `AGENCY_VERSION` and `AGENCY_INSTALL_DIR`. The old `claweh.sh` and the
-  `CLAWEH_*` variables still work.
+  `AGENCY_VERSION` and `AGENCY_INSTALL_DIR`.
 - **BREAKING: the `propose_domains` and `auto_promote` memory settings are
   removed.** They never had any effect; an existing config file that has them
   still loads, and the next save drops them.
@@ -244,7 +247,7 @@
   keep running and the prompt kept waiting for it.
 - **A message whose attachments cannot be sent to an OpenAI Responses model is
   no longer sent with empty content.** Its text alone is sent.
-- **`claw-auth -debug` no longer writes the OAuth client secret and
+- **`agency-auth -debug` no longer writes the OAuth client secret and
   authorization code to its log.** Only the first field of a request was
   masked.
 - **The memory editor refuses an unknown status before changing anything.**
@@ -253,7 +256,7 @@
   when some session archives could not be read, instead of only reporting a
   failure.
 - **The WebUI setup error no longer repeats "failed to save config".**
-- **`claw agent`: an input error in interactive mode ends the session.** It
+- **`agency agent`: an input error in interactive mode ends the session.** It
   used to be retried in a loop that logged the same error over and over.
 - **Media downloads no longer re-send the Authorization header on a redirect
   from one IP address to another.** Two addresses that shared their last two
@@ -365,7 +368,7 @@
 - **A damaged scheduled jobs file no longer stops the service from starting.**
   `cron/jobs.json` is renamed to `jobs.json.unreadable-<date-time>`, scheduling
   starts again with no jobs, and the "Cron store unreadable" alert names the
-  renamed file; a config reload does the same. `claw cron add` refuses to save
+  renamed file; a config reload does the same. `agency cron add` refuses to save
   over a file it cannot read.
 
 ## [0.6.5]

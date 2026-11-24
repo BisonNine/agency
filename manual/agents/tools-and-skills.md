@@ -104,7 +104,7 @@ Some tool sets are switched on and off as a whole, on the lower part of the card
 
 ## Grant skills
 
-Skills are instructions packaged as folders with a `SKILL.md`. Shared skills are managed on the **Skills** page (or with `claw skills`; see [Command line](../reference/cli.md#skills)); an agent can also have skills of its own in its `skills/` folder.
+Skills are instructions packaged as folders with a `SKILL.md`. Shared skills are managed on the **Skills** page (or with `agency skills`; see [Command line](../reference/cli.md#skills)); an agent can also have skills of its own in its `skills/` folder.
 
 Under **Skills** on the agent's card:
 

@@ -7,15 +7,15 @@ This page lists common problems, the message Agency shows or logs for each, and 
 - **Check Up** in the WebUI marks configuration that needs attention. See [Check Up and the full report](../admin/checkup.md).
 - **Logs** in the WebUI shows the log and, through its source selector, the alerts. See [Logs](../admin/logs.md) and [Alerts](../admin/alerts.md).
 - On the server, the data directory holds `logs/agency.log` (everything), `logs/error.log` (warnings and errors only) and `logs/alerts.log`.
-- `claw status` shows whether Agency is running and where to reach it.
+- `agency status` shows whether Agency is running and where to reach it.
 
 ## The service does not start
 
 Agency writes the reason for a failed start to `logs/error.log` and to the service log. To read the service log on Linux:
 
 ```bash
-journalctl --user -u claw -n 50     # user service
-sudo journalctl -u claw -n 50       # system service
+journalctl --user -u agency -n 50     # user service
+sudo journalctl -u agency -n 50       # system service
 ```
 
 Find the line that starts with `Error:` or contains `gateway exited with error`.
@@ -31,7 +31,7 @@ Find the line that starts with `Error:` or contains `gateway exited with error`.
 | `secret reference "file:…": … has mode …, more than security.permissions.secrets.file_mode allows …; run: chmod 600 …` | A secret file named in `config.json` allows more than the secrets mode. | Run the `chmod` command the message gives. |
 | `startup aborted: another instance is already running (lock held on "…")` | Agency is already running on this data directory, often a copy started by hand. | Stop the other copy, or use the running one. |
 
-If Agency starts but the WebUI shows "No admin account. On the server run: claw admin", run `claw admin`. See [Signing in](../admin/login.md).
+If Agency starts but the WebUI shows "No admin account. On the server run: agency admin", run `agency admin`. See [Signing in](../admin/login.md).
 
 ::: tip
 An edit to `config.json` made while Agency runs is checked straight away. If it does not load, Agency keeps the running configuration and raises the alert "Config file invalid". Fix the file then, before a restart fails on it.
@@ -41,10 +41,10 @@ An edit to `config.json` made while Agency runs is checked straight away. If it 
 
 | What you see | Cause | Fix |
 |---|---|---|
-| "Forbidden" from another machine | Your network is not in the allowed networks. | `claw network 192.168.1.0/24` (your network), or **Allowed networks** on the **Network** page. |
-| Connection refused from another machine | The listener serves this machine only. | `claw network --https all`, then restart the service. |
+| "Forbidden" from another machine | Your network is not in the allowed networks. | `agency network 192.168.1.0/24` (your network), or **Allowed networks** on the **Network** page. |
+| Connection refused from another machine | The listener serves this machine only. | `agency network --https all`, then restart the service. |
 | `421 Misdirected Request` | You used a host name Agency does not know. | Set **Hostname / external URL** on the **Network** page to the address you use. |
-| "Too many failed sign-ins" | Login lockout after failed attempts. | Wait, or run `claw admin`. |
+| "Too many failed sign-ins" | Login lockout after failed attempts. | Wait, or run `agency admin`. |
 
 See [Network access](../admin/network.md) and [Signing in](../admin/login.md).
 
@@ -58,7 +58,7 @@ If every model fails, the reply is "All models failed", with the reason for each
 
 What to do:
 
-1. Test the model from the server: `claw test model <name>`. `claw test models` tests all enabled models.
+1. Test the model from the server: `agency test model <name>`. `agency test models` tests all enabled models.
 2. Check the alerts on the **Logs** page. "Model authentication or billing failure" means a wrong or revoked API key, exhausted credit, or a CLI that is logged out. Fix the key on the **Providers** page or log the CLI in again.
 3. In a chat with the agent, `/cooldowns list` shows the paused models and `/cooldowns clear` ends the pauses after you fixed the cause.
 4. Give the agent a second model on the **Agents** page so it can fall back.

@@ -33,7 +33,7 @@ Any credential field (an `api_key`, a `token`, a `…_secret` or `…password` f
 ```
 
 ```json
-"token": "file:/etc/claw/telegram.token"
+"token": "file:/etc/agency/telegram.token"
 ```
 
 - `env:NAME` reads the environment variable when Agency starts.
@@ -53,7 +53,7 @@ The reference is written back unchanged when the configuration is saved. A refer
 | `providers` | Where models are reached: each provider's name, protocol, base URL and API key. CLI providers carry `bypass_restrictions` (**Allow CLI to bypass restrictions**). | **Providers** page. See [Providers and models](../providers/index.md). |
 | `models` | The models agents can use: a name, the provider, the provider's model id, and limits such as `request_timeout` and `context_window`. | **Models** page. See [Providers and models](../providers/index.md). |
 | `summarization` | The models used for memory consolidation and conversation summaries, tried before an agent's own models. | **System** page, **Agent defaults**. See [Memory models](../providers/concepts.md#memory-models). |
-| `gateway` | The WebUI listeners: HTTP host and port, HTTPS port and `tls` mode and certificate, `external_url`, `allowed_cidrs`, `lockout_exempt` and `trusted_proxies`. | **Network** page, or `claw network`. See [Network access](../admin/network.md) and [HTTPS and certificates](../admin/https.md). |
+| `gateway` | The WebUI listeners: HTTP host and port, HTTPS port and `tls` mode and certificate, `external_url`, `allowed_cidrs`, `lockout_exempt` and `trusted_proxies`. | **Network** page, or `agency network`. See [Network access](../admin/network.md) and [HTTPS and certificates](../admin/https.md). |
 | `tools` | Install-wide tool settings: web search providers, limits for shell commands, scheduled jobs, skills registries, the MCP servers Agency connects to (`tools.mcp.servers`). Which tools each agent gets is set on the agent. | **MCP** › **Servers** for MCP servers, **MCP** › **Config** for tool discovery, `config.json` for the rest. See [Tools and skills](../agents/tools-and-skills.md) and [MCP](../mcp.md). |
 | `devices` | Hardware device events, such as USB plug and unplug. Not the paired devices. | **System** page, **Devices**. |
 | `task_models` | Models for single calls, one ordered list per use (`text`, `image`, `tts`, `stt`, `vision`, `classify`). | **Task models** page. |

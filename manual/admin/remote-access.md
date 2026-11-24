@@ -59,7 +59,7 @@ On the **Network** page:
 1. Leave **HTTP (WebUI on this host)** → **Scope** on localhost. The proxy
    connects to `http://127.0.0.1:18790`.
 2. Under **HTTPS**, set **Hostname / external URL** to the public address, for
-   example `https://claw.example.com`. Agency answers only to names it knows;
+   example `https://agency.example.com`. Agency answers only to names it knows;
    without this, requests through the proxy get "421 Misdirected Request".
 3. Optionally set HTTPS **Listen on** to **Localhost only** or **Off**, so the
    proxy is the only way in from the network.
@@ -90,10 +90,10 @@ map $http_upgrade $connection_upgrade {
 
 server {
     listen 443 ssl;
-    server_name claw.example.com;
+    server_name agency.example.com;
 
-    ssl_certificate     /etc/letsencrypt/live/claw.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/claw.example.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/agency.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/agency.example.com/privkey.pem;
 
     location / {
         proxy_pass http://127.0.0.1:18790;
@@ -121,7 +121,7 @@ Caddy gets the certificate itself and passes WebSockets without extra
 settings.
 
 ```
-claw.example.com {
+agency.example.com {
     reverse_proxy 127.0.0.1:18790 {
         header_up X-Real-IP {remote_host}
     }
@@ -135,13 +135,13 @@ on your router. Cloudflare holds the certificate for your name.
 
 ```bash
 cloudflared tunnel login
-cloudflared tunnel create claw
-cloudflared tunnel route dns claw claw.example.com
-cloudflared tunnel --url http://127.0.0.1:18790 run claw
+cloudflared tunnel create agency
+cloudflared tunnel route dns agency agency.example.com
+cloudflared tunnel --url http://127.0.0.1:18790 run agency
 ```
 
 Then set Agency as for a [reverse proxy](#what-to-set-in-agency): **Hostname /
-external URL** `https://claw.example.com`, **Trusted proxies** `127.0.0.1`,
+external URL** `https://agency.example.com`, **Trusted proxies** `127.0.0.1`,
 and **Allowed network CIDRs** `*` (or the networks you expect). Cloudflare
 passes the visitor's address in `X-Forwarded-For`.
 
@@ -159,7 +159,7 @@ is public.
    `tailscale up`.
 2. On the **Network** page, add the tailnet range `100.64.0.0/10` to
    **Allowed network CIDRs**.
-3. To open Agency by its tailnet name (for example `claw.tailnet-name.ts.net`),
+3. To open Agency by its tailnet name (for example `agency.tailnet-name.ts.net`),
    add that name to **Extra certificate names** under **HTTPS** and click
    **Regenerate certificate**. Opening it by its `100.x.y.z` address works
    without this.
@@ -209,7 +209,7 @@ machine connects to it. On **Network**, Agency refuses to start with
 
 ## Check the result
 
-- **Addresses** on the **Network** page, and `claw status` on the server, show
+- **Addresses** on the **Network** page, and `agency status` on the server, show
   where Agency can be opened.
 - [Check Up](./checkup.md) shows one row per listener, whether it is
   encrypted, and which networks are allowed.

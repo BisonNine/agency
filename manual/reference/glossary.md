@@ -2,7 +2,7 @@
 
 This page explains the terms used in Agency and this manual.
 
-**Admin account** — The one account that may sign in to the WebUI. Created by `claw install` or `claw admin`, stored in `credentials.json`. See [Signing in](../admin/login.md).
+**Admin account** — The one account that may sign in to the WebUI. Created by `agency install` or `agency admin`, stored in `credentials.json`. See [Signing in](../admin/login.md).
 
 **Agent** — An assistant. It has an id, a display name, a list of models, the tools and skills it is granted, a workspace and a memory. See [Agents](../agents/index.md).
 
@@ -42,7 +42,7 @@ This page explains the terms used in Agency and this manual.
 
 **Default channel** — Where an agent's own messages go when nobody asked, such as scheduled job output. Set under **Default Channel** on the agent's card. See [Default channel](../agents/creating.md#default-channel).
 
-**Default model** — The first of the **Default models** on the **System** page, used by every agent whose own model list is empty. Also set with **Set as default** on the **Models** page or with `claw model`. See [Which model an agent uses](../providers/concepts.md#which-model-an-agent-uses).
+**Default model** — The first of the **Default models** on the **System** page, used by every agent whose own model list is empty. Also set with **Set as default** on the **Models** page or with `agency model`. See [Which model an agent uses](../providers/concepts.md#which-model-an-agent-uses).
 
 **Default tools** — The button on the Agents page that writes the standard tool set into an agent's tool list. See [Tools and skills](../agents/tools-and-skills.md#grant-tools).
 
@@ -66,7 +66,7 @@ This page explains the terms used in Agency and this manual.
 
 **Provider** — Where models are reached: an API endpoint with its key, or a CLI. See [Providers and models](../providers/index.md).
 
-**Service token** — A long-lived credential that lets an external MCP client use an agent's tools. Managed with `claw token`. See [Service tokens](../mcp.md#service-tokens).
+**Service token** — A long-lived credential that lets an external MCP client use an agent's tools. Managed with `agency token`. See [Service tokens](../mcp.md#service-tokens).
 
 **Shell commands** — The `shell_exec` tool, which runs commands on the machine. Granted per agent by ticking `shell_exec` under **Internal tools** (or with **Coding tools**); off by default. See [Shell commands](../agents/tools-and-skills.md#shell-commands).
 

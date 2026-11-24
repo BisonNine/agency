@@ -68,21 +68,21 @@ Jobs cannot be scheduled for a [human agent](./human-agents.md).
 
 ## Jobs from the command line
 
-The `claw cron` command shows and manages every job, whatever agent it belongs to:
+The `agency cron` command shows and manages every job, whatever agent it belongs to:
 
 ```
-claw cron list
-claw cron disable <job-id>
-claw cron enable <job-id>
-claw cron remove <job-id>
+agency cron list
+agency cron disable <job-id>
+agency cron enable <job-id>
+agency cron remove <job-id>
 ```
 
-`claw cron add` creates a job delivered to a chat you name rather than to an agent:
+`agency cron add` creates a job delivered to a chat you name rather than to an agent:
 
 ```
-claw cron add --name "Standup" --message "Time for the standup." --cron "0 9 * * 1-5" --channel slack --to C0323456789
+agency cron add --name "Standup" --message "Time for the standup." --cron "0 9 * * 1-5" --channel slack --to C0323456789
 ```
 
-The message is handled by whichever agent that chat is bound to (see [Routing and bindings](../channels/routing.md)). All `claw cron` options are in [Command line](../reference/cli.md). Use `--every <seconds>` instead of `--cron` for an interval.
+The message is handled by whichever agent that chat is bound to (see [Routing and bindings](../channels/routing.md)). All `agency cron` options are in [Command line](../reference/cli.md). Use `--every <seconds>` instead of `--cron` for an interval.
 
 Jobs are stored in `cron/jobs.json` in the data directory and survive restarts. If that file cannot be read, it is renamed to `jobs.json.unreadable-<date-time>`, scheduling starts again with no jobs, and you get an alert.

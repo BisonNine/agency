@@ -26,40 +26,40 @@ func TestParseGitHubRef(t *testing.T) {
 	}{
 		{
 			name:         "simple owner/repo",
-			repo:         "PivotLLM/Agency",
-			wantOwner:    "PivotLLM",
+			repo:         "BisonNine/Agency",
+			wantOwner:    "BisonNine",
 			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "",
 		},
 		{
 			name:         "owner/repo with subpath",
-			repo:         "PivotLLM/Agency/skills/test",
-			wantOwner:    "PivotLLM",
+			repo:         "BisonNine/Agency/skills/test",
+			wantOwner:    "BisonNine",
 			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "skills/test",
 		},
 		{
 			name:         "full URL with tree",
-			repo:         "https://github.com/PivotLLM/Agency/tree/dev/skills/test",
-			wantOwner:    "PivotLLM",
+			repo:         "https://github.com/BisonNine/Agency/tree/dev/skills/test",
+			wantOwner:    "BisonNine",
 			wantRepoName: "Agency",
 			wantRef:      "dev",
 			wantSubPath:  "skills/test",
 		},
 		{
 			name:         "full URL with blob",
-			repo:         "https://github.com/PivotLLM/Agency/blob/main/README.md",
-			wantOwner:    "PivotLLM",
+			repo:         "https://github.com/BisonNine/Agency/blob/main/README.md",
+			wantOwner:    "BisonNine",
 			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "README.md",
 		},
 		{
 			name:         "full URL without ref",
-			repo:         "https://github.com/PivotLLM/Agency",
-			wantOwner:    "PivotLLM",
+			repo:         "https://github.com/BisonNine/Agency",
+			wantOwner:    "BisonNine",
 			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "",
@@ -84,8 +84,8 @@ func TestParseGitHubRef(t *testing.T) {
 		},
 		{
 			name:         "with whitespace",
-			repo:         "  PivotLLM/Agency  ",
-			wantOwner:    "PivotLLM",
+			repo:         "  BisonNine/Agency  ",
+			wantOwner:    "BisonNine",
 			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "",
@@ -468,7 +468,7 @@ func TestSkillInstaller_InstallFromGitHub_SkillAlreadyExists(t *testing.T) {
 	}
 
 	// Try to install the same skill - should fail
-	err = installer.InstallFromGitHub(context.Background(), "PivotLLM/Agency")
+	err = installer.InstallFromGitHub(context.Background(), "BisonNine/Agency")
 	if err == nil {
 		t.Error("InstallFromGitHub() expected error for existing skill, got nil")
 	}

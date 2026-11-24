@@ -10,7 +10,7 @@ You reach an agent through [channels](../channels/index.md): the built-in WebUI 
 
 Each agent uses one or more **models**. A model is reached through a [provider](../providers/index.md): an API such as OpenAI, Anthropic or OpenRouter, or a coding CLI installed on the same machine (Claude Code, Codex, Antigravity, Cursor, OpenCode).
 
-Everything runs in one program, `claw`. It serves the agents, the WebUI and its API from the same process.
+Everything runs in one program, `agency`. It serves the agents, the WebUI and its API from the same process.
 
 ## Main ideas
 

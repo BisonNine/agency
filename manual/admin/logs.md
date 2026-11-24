@@ -92,7 +92,7 @@ The data directory holds keys and tokens, so at every start Agency sets every fo
 
 - The data directory itself, and every folder and file in it, are set to exactly their area's mode. This adds access as well as removing it.
 - Files outside `bin/` lose execute bits their mode does not have. Keep scripts and programs in `bin/`.
-- A data directory that is itself a symbolic link is followed to its folder. Inside it, symbolic links are never followed or changed, a file with more than one hard link is left alone with a warning, and the running `claw` program keeps its mode wherever it is.
+- A data directory that is itself a symbolic link is followed to its folder. Inside it, symbolic links are never followed or changed, a file with more than one hard link is left alone with a warning, and the running `agency` program keeps its mode wherever it is.
 - Each change is logged at INFO, naming the file and the old and new modes.
 
 `config.json` is never loosened or tightened past its mode silently. If it allows more than `root.file_mode`, Agency refuses to start with a message like:
@@ -113,7 +113,7 @@ To fix it:
 
 A `config.json` that allows less than `root.file_mode` is set to it.
 
-The message appears in the service's output (`systemctl status claw`, or `journalctl -u claw`), or in the terminal when Agency was started by hand.
+The message appears in the service's output (`systemctl status agency`, or `journalctl -u agency`), or in the terminal when Agency was started by hand.
 
 The admin credentials file and any `file:` secret reference are checked against `secrets.file_mode` the same way: one that allows more is refused, and the log names the `chmod` to run. See [Signing in](./login.md#no-account-yet).
 

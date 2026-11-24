@@ -1,35 +1,35 @@
 # Upgrading
 
-This page explains how to upgrade Agency and what to check after upgrading to 0.6.0 and 0.6.4.
+This page explains how to upgrade Agency, how to move an install from the old name, and what to check after upgrading to 0.6.0 and 0.6.4.
 
 ## Upgrade on Debian or Ubuntu (`apt`)
 
-If you installed the `agency` package with `apt`, upgrade it through `apt` rather than `claw upgrade`:
+If you installed the `agency` package with `apt`, upgrade it through `apt` rather than `agency upgrade`:
 
 ```bash
 sudo apt update
 sudo apt install --only-upgrade agency
 ```
 
-If `claw.service` is running as a system service, the package restarts it automatically. If you run a user service instead, restart it afterwards with `systemctl --user restart claw`.
+If `agency.service` is running as a system service, the package restarts it automatically. If you run a user service instead, restart it afterwards with `systemctl --user restart agency`.
 
-## Upgrade with `claw upgrade`
+## Upgrade with `agency upgrade`
 
 1. Check whether a new release is available:
 
    ```bash
-   claw upgrade --check
+   agency upgrade --check
    ```
 
 2. Upgrade:
 
    ```bash
-   claw upgrade
+   agency upgrade
    ```
 
-   For a system service, run `sudo claw upgrade`.
+   For a system service, run `sudo agency upgrade`.
 
-`claw upgrade` downloads the release for your platform, verifies its signature and checksum, replaces the binary, and restarts the service if it is running. A release without a valid signature is refused.
+`agency upgrade` downloads the release for your platform, verifies its signature and checksum, replaces the binary, and restarts the service if it is running. A release without a valid signature is refused.
 
 Useful options:
 
@@ -37,20 +37,34 @@ Useful options:
 - `--force` reinstalls even if you already run that version.
 - `-y` skips the confirmation question.
 
-`claw update` is the same command.
+`agency update` is the same command.
 
 ## Refresh the service file
 
-Some releases change the service file that `claw install` writes. `claw upgrade` does not rewrite it. After upgrading, run `claw install` again with the same privilege as the first time (`sudo` for a system service). It keeps your data and your admin account.
+Some releases change the service file that `agency install` writes. `agency upgrade` does not rewrite it. After upgrading, run `agency install` again with the same privilege as the first time (`sudo` for a system service). It keeps your data and your admin account.
 
-On macOS, `claw install` and `claw upgrade` move a service from an earlier release (`com.pivotllm.claweh`) to `com.bison9.agency` automatically. Upgrading from 0.6.5 or earlier runs the old upgrader, so run `claw install` once afterwards.
+## Moving an install from the old name
+
+Releases before 0.6.6 were named `claw`. An install under that name is not moved automatically; move it by hand:
+
+1. Stop the old service and remove its service file:
+   - Linux system service: `sudo systemctl disable --now claw`, then delete `/etc/systemd/system/claw.service` and run `sudo systemctl daemon-reload`.
+   - Linux user service: `systemctl --user disable --now claw`, then delete `~/.config/systemd/user/claw.service` and run `systemctl --user daemon-reload`.
+   - macOS: `sudo launchctl bootout system/com.pivotllm.claweh` and delete `/Library/LaunchDaemons/com.pivotllm.claweh.plist`, or for a user agent `launchctl bootout gui/$(id -u)/com.pivotllm.claweh` and delete `~/Library/LaunchAgents/com.pivotllm.claweh.plist`.
+2. Move the data directory to the new name: `sudo mv /opt/claw /opt/agency`, or `mv ~/.claw ~/.agency`.
+3. Install the new program (`sudo apt install agency`, or the install script) and run `sudo agency install`, or `agency install` for a user service. The old `claw` and `claw-auth` programs can then be deleted.
+4. Run `./set-mcp.sh` again. CLI agents now see the tools as `mcp__agency__…` (`agency_…` in OpenCode). Remove the old `claw` entry from each CLI (for example `claude mcp remove claw`), and change any CLI allow-list that names `mcp__claw__`.
+5. Replace every `CLAW_*` environment variable with its `AGENCY_*` name, in your shell profile and in any environment file.
+6. Sign in to the WebUI again.
+
+Old backups keep their `claw-backup-…` names and are not pruned; delete them when you no longer need them.
 
 ## Before a large upgrade
 
 Take a backup first:
 
 ```bash
-claw backup
+agency backup
 ```
 
 See [Backup and restore](../admin/backup.md).
@@ -61,7 +75,7 @@ See [Backup and restore](../admin/backup.md).
 
 ### You must sign in
 
-The WebUI and its API now require the admin account, also from the same machine. If you have none, the WebUI shows "No admin account. On the server run: claw admin". Run `claw admin` on the server.
+The WebUI and its API now require the admin account, also from the same machine. If you have none, the WebUI shows "No admin account. On the server run: agency admin". Run `agency admin` on the server.
 
 ### HTTPS is on
 
@@ -150,6 +164,6 @@ which provider and model ID to use.
 
 ## After any upgrade
 
-1. Run `claw version` to confirm the new version.
+1. Run `agency version` to confirm the new version.
 2. Open [Check Up](../admin/checkup.md) and act on any marked rows.
 3. Check `logs/error.log` in the data directory (see [Logs](../admin/logs.md)) for warnings such as "unknown config key", which name settings that no longer apply.

@@ -43,7 +43,7 @@ The token is part of the path. The body is the message, as plain text, up to
 1 MB. No sign-in is needed: the token is the credential.
 
 ```bash
-curl -X POST "https://claw.example.com:18443/api/message/$TOKEN" \
+curl -X POST "https://agency.example.com:18443/api/message/$TOKEN" \
   -H "Content-Type: text/plain" \
   --data "ALARM: zone 3 (garage) motion detected. System is armed-away."
 ```

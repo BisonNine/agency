@@ -85,7 +85,7 @@ func TestParseLaunchdPlist(t *testing.T) {
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.pivotllm.agency</string>
+	<string>com.bison9.agency</string>
 	<key>UserName</key>
 	<string>macagency</string>
 	<key>ProgramArguments</key>

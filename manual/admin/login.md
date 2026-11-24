@@ -6,7 +6,7 @@ The WebUI has one admin account, created on the server, and every page needs it.
 
 There is no default account and no default password. The account cannot be created or changed from the browser.
 
-`claw install` (and the one-line installer) creates it before it starts the service (see [Installing Agency](../getting-started/install.md#the-admin-account)). If it was not created then, or you need a new password, use `claw admin` on the server.
+`agency install` (and the one-line installer) creates it before it starts the service (see [Installing Agency](../getting-started/install.md#the-admin-account)). If it was not created then, or you need a new password, use `agency admin` on the server.
 
 The account lives in `<AGENCY_HOME>/credentials.json` (on a system install, `/opt/agency/credentials.json`). The password is stored only as a hash.
 
@@ -16,15 +16,15 @@ The account lives in `<AGENCY_HOME>/credentials.json` (on a system install, `/op
 2. Run one of:
 
    ```
-   claw admin            # asks for the username and the password
-   claw admin alice      # username given, asks for the password
+   agency admin            # asks for the username and the password
+   agency admin alice      # username given, asks for the password
    ```
 
 3. Type the password twice. It is not shown, and it must be at least 12 characters.
 
-Running `claw admin` again replaces the account. A running Agency picks up the change within a minute and signs every browser out.
+Running `agency admin` again replaces the account. A running Agency picks up the change within a minute and signs every browser out.
 
-Run as root on a system install, `claw admin` hands the file to the service account.
+Run as root on a system install, `agency admin` hands the file to the service account.
 
 ### Unattended install
 
@@ -33,7 +33,7 @@ The installer can take the account from two environment variables, `AGENCY_ADMIN
 ```
 read -r AGENCY_ADMIN_USER; read -rs AGENCY_ADMIN_PASSWORD
 export AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
-claw install
+agency install
 unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 ```
 
@@ -41,13 +41,13 @@ With `sudo`, keep them with `sudo --preserve-env=AGENCY_ADMIN_USER,AGENCY_ADMIN_
 
 ## No account yet
 
-Agency still starts and every channel works. The WebUI shows **No admin account** with the command to run (`claw admin`) and a **Check again** button.
+Agency still starts and every channel works. The WebUI shows **No admin account** with the command to run (`agency admin`) and a **Check again** button.
 
 If the credentials file allows more than `security.permissions.secrets.file_mode` (`0600` by default), Agency refuses it and the log names the fix, such as `chmod 600 <path>`.
 
 ## Sign in and sign out
 
-1. Open the WebUI address (`claw status` prints it).
+1. Open the WebUI address (`agency status` prints it).
 2. Enter **Username** and **Password**, then **Sign in**.
 
 To sign out, use **Sign out** next to the version at the bottom of the sidebar.
@@ -61,7 +61,7 @@ Signing in is required from this machine too; localhost is not exempt.
 | Idle timeout | 12 hours, reset by each use |
 | Longest session | 7 days |
 | After a restart of Agency | Everyone is signed out |
-| After `claw admin` | Everyone is signed out |
+| After `agency admin` | Everyone is signed out |
 
 ## Failed sign-ins
 
@@ -80,7 +80,7 @@ Each lock that starts raises an [alert](./alerts.md) ("WebUI login address locke
 
 Do one of these on the server:
 
-- Run `claw admin` (a new password, or the same one).
+- Run `agency admin` (a new password, or the same one).
 - Restart Agency.
 
 Both clear every lock at once.
@@ -91,4 +91,4 @@ On the **Network** page, under **Allowed networks**, **Never locked out** lists 
 
 ## Forgot the password
 
-Run `claw admin` on the server and set a new one. See also [If you are locked out](./network.md#if-you-are-locked-out).
+Run `agency admin` on the server and set a new one. See also [If you are locked out](./network.md#if-you-are-locked-out).

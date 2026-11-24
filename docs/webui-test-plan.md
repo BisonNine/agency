@@ -41,8 +41,8 @@ restart the dev instance after changing listener settings by hand.
 
 | Requirement | Notes |
 |---|---|
-| A running Agency | `make build && cp build/claw ~/bin/claw && sudo systemctl restart claw-dev` |
-| An admin account | The WebUI and `/api/*` are behind a login. Create the account on the dev instance with `claw admin`, then `export AGENCY_E2E_USER=… AGENCY_E2E_PASSWORD=…`. The runner signs in first and stops with that instruction if it cannot |
+| A running Agency | `make build && cp build/agency ~/bin/agency && sudo systemctl restart agency-dev` |
+| An admin account | The WebUI and `/api/*` are behind a login. Create the account on the dev instance with `agency admin`, then `export AGENCY_E2E_USER=… AGENCY_E2E_PASSWORD=…`. The runner signs in first and stops with that instruction if it cannot |
 | At least one agent, model and provider | The plan asserts against live data; an empty install fails A3 |
 | Playwright + Chromium | Found in the npx cache under the home directory; override with `PLAYWRIGHT_MODULE` / `CHROME_PATH` |
 
@@ -337,7 +337,7 @@ chat socket must stop reconnecting. The banner shown while Agency itself
 is down (*Connection lost. Reconnecting…*) cannot be exercised against the live
 dev instance without stopping it; it is covered by unit tests only
 (`connection-banner.test.tsx`, `auth-redirect.test.ts` and
-`claw-chat-controller.test.ts` under `web/frontend/src`).
+`agency-chat-controller.test.ts` under `web/frontend/src`).
 
 | ID | Process | Expected |
 |---|---|---|

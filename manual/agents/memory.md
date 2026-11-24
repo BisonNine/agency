@@ -4,7 +4,7 @@ Each agent has one conversation, shared by every chat that reaches it, and a lon
 
 ## One conversation per agent
 
-Every message to an agent, from any [chat](../channels/index.md), device, the WebUI chat, `claw agent` or an [MCP service token](../mcp.md#service-tokens), goes into the same conversation, with one history and one memory. If you talk to Alice on Telegram and then in the WebUI chat, she remembers both.
+Every message to an agent, from any [chat](../channels/index.md), device, the WebUI chat, `agency agent` or an [MCP service token](../mcp.md#service-tokens), goes into the same conversation, with one history and one memory. If you talk to Alice on Telegram and then in the WebUI chat, she remembers both.
 
 Where you want a separate conversation, create a separate agent. Turn its **Cognitive memory** off if it should keep no long-term memory.
 

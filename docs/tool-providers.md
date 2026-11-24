@@ -117,11 +117,11 @@ type Result struct {
 
 // Dependency injection. Capabilities a host may not offer are nilable.
 type Deps struct {
-    Cfg       any    // *config.Config in Claw (type-assert)
+    Cfg       any    // *config.Config in Agency (type-assert)
     AgentID   string
     Workspace string
     Spawn     any    // global.Spawner; nil ⇒ host cannot spawn sub-agents
-    Host      any    // host-specific strong deps; Claw passes tools.ToolDeps
+    Host      any    // host-specific strong deps; Agency passes tools.ToolDeps
 }
 
 // Optional metadata a host may use for gating/grouping.
@@ -278,7 +278,7 @@ network/LLM tools.
 - **Return errors *and* set `Result`.** A returned `error` is for `errors.Is/As`;
   `Result.IsError`/`Result.ForLLM` are the model-facing outcome. The bridge folds
   a non-nil error into `IsError` + `ForLLM`, so returning `(nil, err)` is fine.
-- **Recover strong host deps when needed.** Claw passes its rich
+- **Recover strong host deps when needed.** Agency passes its rich
   `tools.ToolDeps` via `deps.Host`; recover it with
   `cd, _ := deps.Host.(tools.ToolDeps)` (gives `Workspace`, `AgentCfg`,
   `Dispatcher`, session closures, etc.). A pure module that needs none of that
@@ -368,16 +368,16 @@ call to a tool removed since the model's list returns an ordinary tool error.
 
 `toolspec` is intentionally dependency-free
 (standard library only), so the `ToolProvider`/`ToolDefinition` contract can be vendored or
-imported by another codebase (e.g. Maestro/MCPFusion) without pulling in Claw.
+imported by another codebase (e.g. Maestro/MCPFusion) without pulling in Agency.
 A package written against `toolspec` alone — no `tools`, `config`, etc.
 — is portable: any host that can adapt `toolspec.ToolProvider` into its own
-registry can mount it. Claw's adapter is `tools.NamespacedProvider`; another host
+registry can mount it. Agency's adapter is `tools.NamespacedProvider`; another host
 would supply its own equivalent.
 
-When a module needs Claw-specific dependencies, it reaches them through
+When a module needs Agency-specific dependencies, it reaches them through
 `deps.Host.(tools.ToolDeps)` — which keeps the *portable* part (the tool
-definitions and handlers' signatures) free of Claw imports while still letting
-the handler bodies use Claw internals when running inside Claw.
+definitions and handlers' signatures) free of Agency imports while still letting
+the handler bodies use Agency internals when running inside Agency.
 
 ### Spawning sub-agents from a module
 
@@ -404,7 +404,7 @@ The three modes are: `SpawnDetached` (fire-and-forget, result discarded),
 `OnResult` when it finishes — wire it to `call.Notify` to surface it on the
 originating channel), and `SpawnAndWait` (run to completion and return the
 worker's `Result` synchronously). `Spawner` lives in `global` (stdlib-only),
-so an external module can depend on it without importing the rest of Claw; the
+so an external module can depend on it without importing the rest of Agency; the
 host supplies the concrete implementation.
 
 ---

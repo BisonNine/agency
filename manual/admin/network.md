@@ -25,31 +25,31 @@ Prefer the narrowest network that works. Use `*` rather than `0.0.0.0/0` for "an
 
 ### From the server
 
-`claw network` changes the same setting without the WebUI, which helps when the allowlist is what keeps you out. It is safe to run while Agency is running; the change applies within about 15 seconds.
+`agency network` changes the same setting without the WebUI, which helps when the allowlist is what keeps you out. It is safe to run while Agency is running; the change applies within about 15 seconds.
 
 ```
-claw network --show             # what is allowed now
-claw network                    # allow the private LAN ranges
-claw network 192.168.1.0/24     # allow one subnet (comma-separate several)
-claw network any                # any address
-claw network none               # back to localhost only
+agency network --show             # what is allowed now
+agency network                    # allow the private LAN ranges
+agency network 192.168.1.0/24     # allow one subnet (comma-separate several)
+agency network any                # any address
+agency network none               # back to localhost only
 ```
 
 ### Where the listeners listen
 
-`claw network` also sets where each listener listens. These take effect after a restart.
+`agency network` also sets where each listener listens. These take effect after a restart.
 
 ```
-claw network --http localhost|network
-claw network --https all|localhost|off
-claw network --device localhost|network
+agency network --http localhost|network
+agency network --https all|localhost|off
+agency network --device localhost|network
 ```
 
 On the **Network** page the same settings are **HTTP** → **Scope**, **HTTPS** → **Listen on**, and **Device listener** → **Scope**. After a change the page shows "Restart required to apply changes." with **Restart now**.
 
 ## The Addresses card
 
-At the top of the **Network** page, **Addresses** lists where Agency can be opened right now: **On this host**, **On the network (HTTPS)**, and **On the network (plain HTTP)** when HTTP is on the network. `claw status` prints the same.
+At the top of the **Network** page, **Addresses** lists where Agency can be opened right now: **On this host**, **On the network (HTTPS)**, and **On the network (plain HTTP)** when HTTP is on the network. `agency status` prints the same.
 
 ## Never locked out
 
@@ -94,14 +94,14 @@ The device listener and the WebUI are independent: opening one to the network do
 
 ## If you are locked out
 
-Run these on the server, as the user Agency runs as (on a system install, `sudo -u <service user> AGENCY_HOME=/opt/agency claw …`).
+Run these on the server, as the user Agency runs as (on a system install, `sudo -u <service user> AGENCY_HOME=/opt/agency agency …`).
 
 | What you see | Fix |
 |---|---|
-| "Forbidden" (403) from another machine | `claw network`, or `claw network 192.168.1.0/24`. Applies within about 15 seconds. |
-| Connection refused from another machine | `claw network --https all` (or `--http network`, `--device network`), then restart the service. |
-| Wrong or forgotten password | `claw admin`. |
-| "Too many failed sign-ins" | Wait without trying, or run `claw admin`, or restart the service. |
+| "Forbidden" (403) from another machine | `agency network`, or `agency network 192.168.1.0/24`. Applies within about 15 seconds. |
+| Connection refused from another machine | `agency network --https all` (or `--http network`, `--device network`), then restart the service. |
+| Wrong or forgotten password | `agency admin`. |
+| "Too many failed sign-ins" | Wait without trying, or run `agency admin`, or restart the service. |
 
 ## Check the result
 

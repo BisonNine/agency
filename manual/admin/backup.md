@@ -1,8 +1,8 @@
 # Backup and restore
 
-Agency writes one backup archive every night, and `claw restore` puts an install back from one.
+Agency writes one backup archive every night, and `agency restore` puts an install back from one.
 
-The nightly backup is on by default. Each run writes one file, `claw-backup-YYYYMMDD-HHMMSS.tar.gz`, readable only by the service user. It contains every secret the install has, so keep copies somewhere private.
+The nightly backup is on by default. Each run writes one file, `agency-backup-YYYYMMDD-HHMMSS.tar.gz`, readable only by the service user. It contains every secret the install has, so keep copies somewhere private.
 
 ## Settings
 
@@ -29,8 +29,8 @@ The same settings in `config.json`:
 - On the server:
 
   ```
-  claw backup
-  claw backup --dest /mnt/nas/claw
+  agency backup
+  agency backup --dest /mnt/nas/agency
   ```
 
   It prints the archive's path, size and number of files. If a database had to be left out, it names it and exits with an error.
@@ -40,7 +40,7 @@ The same settings in `config.json`:
 A backup on the same disk protects against mistakes, not against losing the machine. Either set **Destination directory** to a mounted network folder, or copy the archives after each run, for example:
 
 ```
-rsync -a --chmod=F600,D700 "$AGENCY_HOME/backup/" backup-host:claw-backups/
+rsync -a --chmod=F600,D700 "$AGENCY_HOME/backup/" backup-host:agency-backups/
 ```
 
 Each archive is complete on its own.
@@ -85,11 +85,11 @@ Back such a folder up yourself, or move the agent back into the agents folder.
 
 ## Restore
 
-1. Stop Agency, for example `sudo systemctl stop claw`. `claw restore` refuses to run while Agency is running.
+1. Stop Agency, for example `sudo systemctl stop agency`. `agency restore` refuses to run while Agency is running.
 2. Run:
 
    ```
-   claw restore /path/to/claw-backup-20260926-030000.tar.gz
+   agency restore /path/to/agency-backup-20260926-030000.tar.gz
    ```
 
 3. It lists every file it will write, marking the ones it will replace, and asks you to confirm. (`--yes` skips the question.)
@@ -101,7 +101,7 @@ Back such a folder up yourself, or move the agent back into the agents folder.
 
 1. Install Agency.
 2. Copy the archive to the new machine.
-3. Run `claw restore` as above, with Agency stopped.
+3. Run `agency restore` as above, with Agency stopped.
 
 The archive's paths are relative to the data directory, so the new one can be anywhere.
 

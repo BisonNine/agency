@@ -38,8 +38,8 @@ The definition says how Agency authenticates to the service:
 |---|---|---|
 | `bearer`, `api_key`, `basic` | Nobody | Agency uses the key or password from `fusion/env`. The same credential serves every agent. |
 | `oauth2_device` | Each agent's user | A code shown in the chat, entered on the provider's sign-in page. |
-| `oauth2_external` | Each agent's user | The `claw-auth` helper on a computer with a web browser. Used for Google. |
-| `user_credentials` | Each agent's user | The `claw-auth` helper asks for the values (such as a personal API key). |
+| `oauth2_external` | Each agent's user | The `agency-auth` helper on a computer with a web browser. Used for Google. |
+| `user_credentials` | Each agent's user | The `agency-auth` helper asks for the values (such as a personal API key). |
 
 Sign-ins belong to the **agent**: Alice's Microsoft 365 sign-in is used only
 by Alice. To reach two accounts, use two agents.
@@ -94,30 +94,30 @@ The agent handles sign-in in the chat. You act on what it relays.
    should use.
 4. Ask the agent to try again.
 
-### With the claw-auth helper
+### With the agency-auth helper
 
 1. Ask the agent to use the service. When it is not signed in, it gives you a
    command such as:
 
    ```
-   claw-auth eyJ1IjoiaHR0cHM6Ly9jbGF3LmV4YW1wbGU...
+   agency-auth eyJ1IjoiaHR0cHM6Ly9jbGF3LmV4YW1wbGU...
    ```
 
 2. Within 15 minutes, run that command on a computer with a web browser,
    and sign in when the browser opens (or type the values it asks for).
 3. Ask the agent to try again.
 
-The computer running `claw-auth` must reach Agency's web address: the
+The computer running `agency-auth` must reach Agency's web address: the
 **Hostname / external URL** on the **Network** page when set, otherwise the
 HTTPS address Agency derives (for example `https://<host name>:18443`). A
 computer other than the Agency machine must also be in **Allowed networks**
 on the same page (see [Network access](admin/network.md)). The sign-in itself does not need the WebUI login.
 
-`claw-auth` is included in every release download, next to `claw`. If you
-build Agency from source, `make build` builds it too (or `make claw-auth` on
-its own); the binary is written to `build/claw-auth`.
+`agency-auth` is included in every release download, next to `agency`. If you
+build Agency from source, `make build` builds it too (or `make agency-auth` on
+its own); the binary is written to `build/agency-auth`.
 
-To sign in again to a service that uses `claw-auth`, for example with a
+To sign in again to a service that uses `agency-auth`, for example with a
 different account, ask the agent to run the service's sign-in setup again.
 That discards the old sign-in and gives you a new command.
 
@@ -136,8 +136,8 @@ That discards the old sign-in and gives you a new command.
 
 - One tool per endpoint, named `<service>_<endpoint>`, with the descriptions
   from the definition.
-- For a service that uses `claw-auth`, a `<service>_auth_setup` tool that
-  produces the `claw-auth` command.
+- For a service that uses `agency-auth`, a `<service>_auth_setup` tool that
+  produces the `agency-auth` command.
 - Tools that delete data or cannot be undone (all `DELETE` endpoints, and
   any the definition marks as destructive) are listed but refuse to run
   unless `fusion/env` contains `MCP_FUSION_ALLOW_DESTRUCTIVE=true`. The

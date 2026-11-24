@@ -6,10 +6,10 @@ It assumes Agency is installed and running. If not, see [Installing Agency](./in
 
 ## 1. Sign in
 
-1. Open the address the installer printed, for example `http://127.0.0.1:18790/` on the same machine. `claw status` prints it again.
+1. Open the address the installer printed, for example `http://127.0.0.1:18790/` on the same machine. `agency status` prints it again.
 2. Sign in with the admin account you created during the install.
 
-If the page says "No admin account", run `claw admin` on the server and reload the page. See [Signing in](../admin/login.md).
+If the page says "No admin account", run `agency admin` on the server and reload the page. See [Signing in](../admin/login.md).
 
 ## 2. Run the setup wizard
 
