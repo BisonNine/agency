@@ -43,7 +43,7 @@ func TestHandleListSkills(t *testing.T) {
 		t.Fatalf("WriteFile(workspace skill) error = %v", err)
 	}
 
-	globalSkillDir := filepath.Join(os.Getenv("CLAW_HOME"), "skills", "global-skill")
+	globalSkillDir := filepath.Join(os.Getenv("AGENCY_HOME"), "skills", "global-skill")
 	if err := os.MkdirAll(globalSkillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(global skill) error = %v", err)
 	}
@@ -113,7 +113,7 @@ func TestHandleGetSkill(t *testing.T) {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
 
-	shared := filepath.Join(os.Getenv("CLAW_HOME"), "skills")
+	shared := filepath.Join(os.Getenv("AGENCY_HOME"), "skills")
 	err = config.SaveConfig(configPath, cfg)
 	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
@@ -165,7 +165,7 @@ func TestHandleGetSkillUsesResolvedPath(t *testing.T) {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
 
-	shared := filepath.Join(os.Getenv("CLAW_HOME"), "skills")
+	shared := filepath.Join(os.Getenv("AGENCY_HOME"), "skills")
 	err = config.SaveConfig(configPath, cfg)
 	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
@@ -249,7 +249,7 @@ func TestHandleImportSkill(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	skillFile := filepath.Join(os.Getenv("CLAW_HOME"), "skills", "plain-skill", "SKILL.md")
+	skillFile := filepath.Join(os.Getenv("AGENCY_HOME"), "skills", "plain-skill", "SKILL.md")
 	content, err := os.ReadFile(skillFile)
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
@@ -259,7 +259,7 @@ func TestHandleImportSkill(t *testing.T) {
 		t.Fatalf("saved skill content mismatch:\n%s", string(content))
 	}
 	if runtime.GOOS != "windows" {
-		// Imported skills live under CLAW_HOME: directory and SKILL.md are owner-only.
+		// Imported skills live under AGENCY_HOME: directory and SKILL.md are owner-only.
 		di, err := os.Stat(filepath.Dir(skillFile))
 		if err != nil {
 			t.Fatalf("Stat(skill dir) error = %v", err)
@@ -304,7 +304,7 @@ func TestHandleDeleteSkill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	shared := filepath.Join(os.Getenv("CLAW_HOME"), "skills")
+	shared := filepath.Join(os.Getenv("AGENCY_HOME"), "skills")
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}

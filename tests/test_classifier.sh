@@ -2,7 +2,7 @@
 # Classifiers end to end on a running gateway (run by test.sh after the probe
 # suite; hermetic: no network, no real model, no operator alerts).
 #
-# Starts its own gateway in a temporary CLAW_HOME with one agent, Alice, whose
+# Starts its own gateway in a temporary AGENCY_HOME with one agent, Alice, whose
 # classifiers switch is on and whose classifier model is a local stub
 # (tests/testdata/classifierllm: an OpenAI-compatible server answering a fixed
 # category per marker in the item, and a minimal Telegram Bot API that Alice's
@@ -68,9 +68,9 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gateway_env.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLAW_BIN="${1:-}"
+AGENCY_BIN="${1:-}"
 PROBE="${PROBE_PATH:-probe}"
-if [ -z "$CLAW_BIN" ] || [ ! -x "$CLAW_BIN" ]; then
+if [ -z "$AGENCY_BIN" ] || [ ! -x "$AGENCY_BIN" ]; then
     echo "FAIL: usage: $0 <claw-binary>" >&2
     exit 2
 fi
@@ -90,18 +90,18 @@ WS="$HOME_DIR/agents/alice"
 CLS_DIR="$WS/classifiers"
 STUB_LOG="$TMP/stub.log"
 GW_OUT="$TMP/gateway.out"
-CLAW_LOG="$HOME_DIR/logs/claw.log"
+AGENCY_LOG="$HOME_DIR/logs/claw.log"
 STUB_PID=""
-CLAW_PID=""
+AGENCY_PID=""
 
 cleanup() {
-    if [ -n "$CLAW_PID" ] && kill -0 "$CLAW_PID" 2>/dev/null; then
-        kill -TERM "$CLAW_PID" 2>/dev/null
+    if [ -n "$AGENCY_PID" ] && kill -0 "$AGENCY_PID" 2>/dev/null; then
+        kill -TERM "$AGENCY_PID" 2>/dev/null
         for _ in $(seq 1 20); do
-            kill -0 "$CLAW_PID" 2>/dev/null || break
+            kill -0 "$AGENCY_PID" 2>/dev/null || break
             sleep 0.25
         done
-        kill -KILL "$CLAW_PID" 2>/dev/null || true
+        kill -KILL "$AGENCY_PID" 2>/dev/null || true
     fi
     [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
     if [ "${KEEP:-}" = "1" ]; then
@@ -219,19 +219,19 @@ chmod 600 "$HOME_DIR/config.json"
 
 ADMIN_USER="e2e"
 ADMIN_PASSWORD="e2e-$(openssl rand -hex 16)"
-if ! CLAW_ADMIN_USER="$ADMIN_USER" CLAW_ADMIN_PASSWORD="$ADMIN_PASSWORD" "$TMP/classifierllm" -admin-credentials "$HOME_DIR" >"$TMP/admin.out" 2>&1; then
+if ! AGENCY_ADMIN_USER="$ADMIN_USER" AGENCY_ADMIN_PASSWORD="$ADMIN_PASSWORD" "$TMP/classifierllm" -admin-credentials "$HOME_DIR" >"$TMP/admin.out" 2>&1; then
     echo "FAIL: the admin account was not created"
     sed 's/^/    /' "$TMP/admin.out"
     exit 1
 fi
-TOKEN="$(CLAW_HOME="$HOME_DIR" "$CLAW_BIN" token issue alice | awk '/^  [^ ]+$/ {print $1; exit}')"
+TOKEN="$(AGENCY_HOME="$HOME_DIR" "$AGENCY_BIN" token issue alice | awk '/^  [^ ]+$/ {print $1; exit}')"
 if [ -z "$TOKEN" ]; then
     echo "FAIL: no service token for alice"
     exit 1
 fi
 
-CLAW_HOME="$HOME_DIR" "$CLAW_BIN" gateway >"$GW_OUT" 2>&1 &
-CLAW_PID=$!
+AGENCY_HOME="$HOME_DIR" "$AGENCY_BIN" gateway >"$GW_OUT" 2>&1 &
+AGENCY_PID=$!
 if ! wait_for 30 curl -sf "http://127.0.0.1:$GW_PORT/ready"; then
     echo "FAIL: the gateway did not become ready"
     tail -n 40 "$GW_OUT" | sed 's/^/    /'
@@ -269,7 +269,7 @@ if wait_for 30 run_done sort && wait_for 30 run_done dry; then
     pass "both classifiers ran"
 else
     fail "a classifier did not run within 30s"
-    grep -i classifier "$CLAW_LOG" | tail -n 20 | sed 's/^/    /'
+    grep -i classifier "$AGENCY_LOG" | tail -n 20 | sed 's/^/    /'
 fi
 
 check_file() { # check_file <path> <present|absent> <what>
@@ -411,7 +411,7 @@ miss_runs_at_least() { [ "$(miss_failed_runs)" -ge "$1" ] 2>/dev/null; }
 MISS_SUMMARY="Alice: Classifier md-missing (dry run): the run failed (classify.instructions_dir files/classifiers/none can't be read: it does not exist)."
 MISS_MUTED="$MISS_SUMMARY Further errors won't be reported for 24 hours."
 miss_summaries() { grep 'telegram: chat=4242 ' "$STUB_LOG" | grep -cF "Classifier md-missing" || true; }
-miss_notices() { grep -c 'classifier=md-missing agent=alice: run failure reported to the agent' "$CLAW_LOG" || true; }
+miss_notices() { grep -c 'classifier=md-missing agent=alice: run failure reported to the agent' "$AGENCY_LOG" || true; }
 if wait_for 30 miss_runs_at_least 4; then
     sleep 1 # a notice of the last run, if one were sent, has been delivered
     if [ "$(miss_summaries)" = 2 ] && grep -qF "text=\"$MISS_SUMMARY\"" "$STUB_LOG" && grep -qF "text=\"$MISS_MUTED\"" "$STUB_LOG"; then
@@ -561,7 +561,7 @@ if ! echo "$OUT" | grep -qF "Classifier empties updated."; then fail "classifier
 
 # ---- 6. A hand-edited invalid definition is not run and is reported. ----
 printf '{"id":"broken","owner":"alice","enabled":true,"trigger":{"every_seconds":0},"source":%s,"classify":%s}\n' "$SOURCE" "$CLASSIFY" >"$CLS_DIR/broken.json"
-if wait_for 15 grep -q "classifier file $CLS_DIR/broken.json (agent alice) is not run" "$CLAW_LOG"; then
+if wait_for 15 grep -q "classifier file $CLS_DIR/broken.json (agent alice) is not run" "$AGENCY_LOG"; then
     pass "the invalid definition is logged as not run"
 else
     fail "no log line for the invalid definition"
@@ -690,11 +690,11 @@ if wait_for 30 fetchfail_row; then
 else
     fail "fetchfail activity: $(sql "SELECT outcome, error FROM activity WHERE classifier='fetchfail'" | tr '\n' ' ')"
 fi
-fetchfail_reported() { grep -q 'classifier=fetchfail agent=alice: run failure reported to the agent' "$CLAW_LOG"; }
-if wait_for 15 fetchfail_reported && grep -q 'WRN classifier=fetchfail agent=alice: run error:' "$CLAW_LOG"; then
+fetchfail_reported() { grep -q 'classifier=fetchfail agent=alice: run failure reported to the agent' "$AGENCY_LOG"; }
+if wait_for 15 fetchfail_reported && grep -q 'WRN classifier=fetchfail agent=alice: run error:' "$AGENCY_LOG"; then
     pass "the failed run is logged at warn and reported to Alice"
 else
-    fail "fetchfail not logged at warn or not reported: $(grep 'classifier=fetchfail' "$CLAW_LOG" | tail -n 3)"
+    fail "fetchfail not logged at warn or not reported: $(grep 'classifier=fetchfail' "$AGENCY_LOG" | tail -n 3)"
 fi
 fetchfail_notice() { grep -rqF "[System: classifier] Classifier fetchfail: the run failed (stopped after 1 consecutive item failure: fetch shell_exec: the tool failed)." "$WS/sessions"; }
 if wait_for 15 fetchfail_notice && grep -rqF "This looks like a problem with shell_exec itself (credentials or an outage); check it before changing the classifier." "$WS/sessions" &&
@@ -723,7 +723,7 @@ done
 echo "  Classifiers end to end: $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
     echo "  --- classifier log lines ---"
-    grep -i classifier "$CLAW_LOG" | tail -n 30 | sed 's/^/    /'
+    grep -i classifier "$AGENCY_LOG" | tail -n 30 | sed 's/^/    /'
     exit 1
 fi
 exit 0

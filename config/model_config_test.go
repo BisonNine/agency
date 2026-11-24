@@ -176,7 +176,7 @@ func TestFullConfig_JSON_ModelConfig(t *testing.T) {
 	jsonStr := `{
 		"agents": {
 			"defaults": {
-				"workspace": "~/.claw/workspace",
+				"workspace": "~/.agency/workspace",
 				"models": ["gpt4", "claude"],
 				"max_tokens": 4096
 			}

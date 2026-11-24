@@ -56,7 +56,7 @@ func stubConfig(t *testing.T, models ...modelspec.Model) *config.Config {
 		return &st
 	})
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := config.DefaultConfig()
 	cfg.Providers = []modelspec.Provider{{Name: "stub", Protocol: "openai-chat", BaseURL: stub.URL(), APIKey: "test-key"}}
 	cfg.Models = models
@@ -150,7 +150,7 @@ func TestModelCommand(t *testing.T) {
 
 func TestBadConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte("{bad"), 0o600))
 	for _, args := range [][]string{{"models"}, {"model", "Alice"}} {
 		_, err := runTest(t, args...)

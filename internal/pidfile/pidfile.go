@@ -9,7 +9,7 @@
 //
 // The data directory is the right scope. One binary runs several instances —
 // a production service and a developer one on the same host — and a CLI command
-// already resolves CLAW_HOME to find the config. Looking the process up through
+// already resolves AGENCY_HOME to find the config. Looking the process up through
 // systemd instead would need the command to know which unit it is, which it has
 // no way to determine.
 package pidfile

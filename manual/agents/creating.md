@@ -58,7 +58,7 @@ The default agent handles messages that do not match any binding. Set it on the 
 
 ## Workspace
 
-Each agent has a folder, its workspace. By default it is `agents/<id>` in the data directory (`~/.claw/agents/alice`). To move every agent's folder to another disk, set **Agent base directory** on the System page. To place one agent's folder somewhere specific, set `workspace` on that agent in `config.json`:
+Each agent has a folder, its workspace. By default it is `agents/<id>` in the data directory (`~/.agency/agents/alice`). To move every agent's folder to another disk, set **Agent base directory** on the System page. To place one agent's folder somewhere specific, set `workspace` on that agent in `config.json`:
 
 ```json
 { "id": "alice", "workspace": "/srv/agents/alice" }

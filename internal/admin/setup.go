@@ -22,8 +22,8 @@ import (
 // unattended install. Both must be set; they are read only when no account
 // exists yet.
 const (
-	EnvUser     = "CLAW_ADMIN_USER"
-	EnvPassword = "CLAW_ADMIN_PASSWORD"
+	EnvUser     = "AGENCY_ADMIN_USER"
+	EnvPassword = "AGENCY_ADMIN_PASSWORD"
 )
 
 // maxAttempts bounds how often an interactive prompt re-asks after an invalid
@@ -196,7 +196,7 @@ func readSecret(t *Terminal, prompt string) (string, error) {
 // EnsureOptions configures EnsureAccount. Home is required; the rest default
 // to the process environment and terminal.
 type EnsureOptions struct {
-	Home string // CLAW_HOME the service reads
+	Home string // AGENCY_HOME the service reads
 
 	// Getenv reads EnvUser and EnvPassword; nil means os.Getenv.
 	Getenv func(string) string
@@ -222,7 +222,7 @@ type EnsureOptions struct {
 // ErrNoAccountNoTerminal.
 func EnsureAccount(opts EnsureOptions) (username string, created bool, err error) {
 	if opts.Home == "" {
-		return "", false, errors.New("admin account: CLAW_HOME is empty")
+		return "", false, errors.New("admin account: AGENCY_HOME is empty")
 	}
 	getenv := opts.Getenv
 	if getenv == nil {

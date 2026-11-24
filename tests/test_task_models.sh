@@ -2,7 +2,7 @@
 # Task models end to end on a running gateway (run by test.sh after the
 # classifier test; hermetic: no network, no real model, no operator alerts).
 #
-# Starts its own gateway in a temporary CLAW_HOME with a stub vendor
+# Starts its own gateway in a temporary AGENCY_HOME with a stub vendor
 # (tests/testdata/taskmodelsllm: OpenAI-style chat, images, speech and
 # transcription, and Gemini's generateContent TTS) and task models for every
 # kind, one ordered list per use: two models in Generate text, the first of
@@ -41,9 +41,9 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gateway_env.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLAW_BIN="${1:-}"
+AGENCY_BIN="${1:-}"
 PROBE="${PROBE_PATH:-probe}"
-if [ -z "$CLAW_BIN" ] || [ ! -x "$CLAW_BIN" ]; then
+if [ -z "$AGENCY_BIN" ] || [ ! -x "$AGENCY_BIN" ]; then
     echo "FAIL: usage: $0 <claw-binary>" >&2
     exit 2
 fi
@@ -62,19 +62,19 @@ HOME_DIR="$TMP/home"
 WS="$HOME_DIR/agents/alice"
 STUB_LOG="$TMP/stub.log"
 GW_OUT="$TMP/gateway.out"
-CLAW_LOG="$HOME_DIR/logs/claw.log"
+AGENCY_LOG="$HOME_DIR/logs/claw.log"
 AUDIT_DB="$HOME_DIR/internal/audit.db"
 STUB_PID=""
-CLAW_PID=""
+AGENCY_PID=""
 
 cleanup() {
-    if [ -n "$CLAW_PID" ] && kill -0 "$CLAW_PID" 2>/dev/null; then
-        kill -TERM "$CLAW_PID" 2>/dev/null
+    if [ -n "$AGENCY_PID" ] && kill -0 "$AGENCY_PID" 2>/dev/null; then
+        kill -TERM "$AGENCY_PID" 2>/dev/null
         for _ in $(seq 1 20); do
-            kill -0 "$CLAW_PID" 2>/dev/null || break
+            kill -0 "$AGENCY_PID" 2>/dev/null || break
             sleep 0.25
         done
-        kill -KILL "$CLAW_PID" 2>/dev/null || true
+        kill -KILL "$AGENCY_PID" 2>/dev/null || true
     fi
     [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
     if [ "${KEEP:-}" = "1" ]; then
@@ -238,12 +238,12 @@ cat >"$HOME_DIR/config.json" <<EOF
 EOF
 chmod 600 "$HOME_DIR/config.json"
 
-if ! CLAW_ADMIN_USER="e2e" CLAW_ADMIN_PASSWORD="e2e-$(openssl rand -hex 16)" "$TMP/classifierllm" -admin-credentials "$HOME_DIR" >"$TMP/admin.out" 2>&1; then
+if ! AGENCY_ADMIN_USER="e2e" AGENCY_ADMIN_PASSWORD="e2e-$(openssl rand -hex 16)" "$TMP/classifierllm" -admin-credentials "$HOME_DIR" >"$TMP/admin.out" 2>&1; then
     echo "FAIL: the admin account was not created"
     sed 's/^/    /' "$TMP/admin.out"
     exit 1
 fi
-issue_token() { CLAW_HOME="$HOME_DIR" "$CLAW_BIN" token issue "$1" | awk '/^  [^ ]+$/ {print $1; exit}'; }
+issue_token() { AGENCY_HOME="$HOME_DIR" "$AGENCY_BIN" token issue "$1" | awk '/^  [^ ]+$/ {print $1; exit}'; }
 ALICE="$(issue_token alice)"
 BOB="$(issue_token bob)"
 if [ -z "$ALICE" ] || [ -z "$BOB" ]; then
@@ -251,8 +251,8 @@ if [ -z "$ALICE" ] || [ -z "$BOB" ]; then
     exit 1
 fi
 
-CLAW_HOME="$HOME_DIR" "$CLAW_BIN" gateway >"$GW_OUT" 2>&1 &
-CLAW_PID=$!
+AGENCY_HOME="$HOME_DIR" "$AGENCY_BIN" gateway >"$GW_OUT" 2>&1 &
+AGENCY_PID=$!
 if ! wait_for 30 curl -sf "http://127.0.0.1:$GW_PORT/ready"; then
     echo "FAIL: the gateway did not become ready"
     tail -n 40 "$GW_OUT" | sed 's/^/    /'
@@ -382,7 +382,7 @@ if [ -z "$(find "$HOME_DIR/internal/temp" -mindepth 1 -maxdepth 1 -name 'task-*'
 echo "  Task models end to end: $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
     echo "  --- task model log lines ---"
-    grep -iE 'task model|Task model' "$CLAW_LOG" | tail -n 30 | sed 's/^/    /'
+    grep -iE 'task model|Task model' "$AGENCY_LOG" | tail -n 30 | sed 's/^/    /'
     echo "  --- stub log ---"
     tail -n 30 "$STUB_LOG" | sed 's/^/    /'
     exit 1

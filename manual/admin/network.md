@@ -94,7 +94,7 @@ The device listener and the WebUI are independent: opening one to the network do
 
 ## If you are locked out
 
-Run these on the server, as the user Agency runs as (on a system install, `sudo -u <service user> CLAW_HOME=/opt/claw claw …`).
+Run these on the server, as the user Agency runs as (on a system install, `sudo -u <service user> AGENCY_HOME=/opt/agency claw …`).
 
 | What you see | Fix |
 |---|---|

@@ -77,7 +77,7 @@ func TestGetTLS_CertificateSources(t *testing.T) {
 func TestRegenerateTLS_BrokenConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	t.Setenv("CLAW_HOME", filepath.Join(dir, ".claw"))
+	t.Setenv("AGENCY_HOME", filepath.Join(dir, ".agency"))
 	p := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(p, []byte("{"), 0o600); err != nil {
 		t.Fatal(err)

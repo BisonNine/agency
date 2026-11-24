@@ -111,14 +111,14 @@ func realTempDir(t *testing.T) string {
 	return dir
 }
 
-// fixtureConfig builds a small realistic config under a fresh CLAW_HOME:
+// fixtureConfig builds a small realistic config under a fresh AGENCY_HOME:
 // one API provider with a key, two CLI providers, two agents (one with a
 // symlinked workspace, one with explicit tools and an allowed folder), MCP servers of
 // both transports, and every channel type with a fake credential.
 func fixtureConfig(t *testing.T) (*config.Config, Environment) {
 	t.Helper()
 	home := realTempDir(t)
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := config.DefaultConfig()
 
 	realWS := filepath.Join(home, "real-workspace")

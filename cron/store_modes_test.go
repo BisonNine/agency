@@ -18,7 +18,7 @@ func TestCronStore_ConfiguredModes(t *testing.T) {
 	old := syscall.Umask(0o077)
 	defer syscall.Umask(old)
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := config.DefaultConfig()
 	cfg.Security.Permissions.Default = config.AreaPermissions{DirMode: "0750", FileMode: "0640"}
 	perms.SetPolicy(perms.PolicyFor(cfg))

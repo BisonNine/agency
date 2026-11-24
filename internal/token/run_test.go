@@ -123,7 +123,7 @@ func TestTokenUnknownAgentMessage(t *testing.T) {
 
 func TestTokenBadConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte("{bad"), 0o600))
 	for _, args := range [][]string{{"issue", "alice"}, {"revoke", "alice"}, {"list"}} {
 		_, err := runToken(t, args...)

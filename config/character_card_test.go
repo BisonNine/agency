@@ -86,7 +86,7 @@ func TestStoreUpdate_RefusesCardOnHumanAgent(t *testing.T) {
 func storeFor(t *testing.T, cfg *Config) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	if err := SaveConfig(p, cfg); err != nil {
 		t.Fatal(err)

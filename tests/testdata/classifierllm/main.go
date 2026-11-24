@@ -34,8 +34,8 @@
 // two at a time from its "skip" argument on. Agency marks such results as
 // untrusted content for the model; a classifier must read them as JSON.
 //
-// With -admin-credentials <CLAW_HOME> it instead writes the WebUI admin
-// account from CLAW_ADMIN_USER and CLAW_ADMIN_PASSWORD (what `claw install`
+// With -admin-credentials <AGENCY_HOME> it instead writes the WebUI admin
+// account from AGENCY_ADMIN_USER and AGENCY_ADMIN_PASSWORD (what `claw install`
 // does without a terminal) and exits, so the test can log in to the API.
 package main
 
@@ -89,7 +89,7 @@ func mailServer() *server.MCPServer {
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:0", "address to listen on")
-	credentials := flag.String("admin-credentials", "", "write the admin account into this CLAW_HOME and exit")
+	credentials := flag.String("admin-credentials", "", "write the admin account into this AGENCY_HOME and exit")
 	flag.Parse()
 	log.SetOutput(os.Stdout)
 

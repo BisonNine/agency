@@ -104,7 +104,7 @@ runs the agent without Maestro until the object form is set.
 ## Where its data lives
 
 Everything is in the agent's workspace, by default
-`<CLAW_HOME>/agents/<agent>/maestro/`:
+`<AGENCY_HOME>/agents/<agent>/maestro/`:
 
 | Folder | Contents |
 |---|---|

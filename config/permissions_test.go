@@ -224,8 +224,8 @@ func TestOldTopLevelPermissionKeys(t *testing.T) {
 func TestSavePermissionDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	t.Setenv("CLAW_TEST_PERMS_KEY", "sk-secret")
-	body := `{"default_config":true,"gateway":{"tls":{}},"tools":{"web":{"brave":{"api_key":"env:CLAW_TEST_PERMS_KEY"}}},` +
+	t.Setenv("AGENCY_TEST_PERMS_KEY", "sk-secret")
+	body := `{"default_config":true,"gateway":{"tls":{}},"tools":{"web":{"brave":{"api_key":"env:AGENCY_TEST_PERMS_KEY"}}},` +
 		`"security":{"permissions":{"logs":{"dir_mode":"0750"}}}}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -246,7 +246,7 @@ func TestSavePermissionDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{`"default_config": true`, `"env:CLAW_TEST_PERMS_KEY"`, `"bin": {`} {
+	for _, want := range []string{`"default_config": true`, `"env:AGENCY_TEST_PERMS_KEY"`, `"bin": {`} {
 		if !strings.Contains(text, want) {
 			t.Errorf("written config lacks %s", want)
 		}
@@ -276,7 +276,7 @@ func TestSavePermissionDefaults(t *testing.T) {
 func TestSavePermissionDefaultsOnlyTouchesTheBlock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	t.Setenv("CLAW_TOOLS_WEB_BRAVE_API_KEY", "sk-from-env")
+	t.Setenv("AGENCY_TOOLS_WEB_BRAVE_API_KEY", "sk-from-env")
 	body := `{
   "zz_unknown": {"kept": [1, 2]},
   "logging": {"level": "warn"},
@@ -406,7 +406,7 @@ func TestWithinRelative(t *testing.T) {
 
 func TestAgentModes(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := DefaultConfig()
 	ws := filepath.Join(t.TempDir(), "alice")
 	cfg.Agents.List = []AgentConfig{{ID: "alice", Workspace: ws}}

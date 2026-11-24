@@ -9,7 +9,7 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// runCommand executes `claw network` with args against the temp CLAW_HOME set
+// runCommand executes `claw network` with args against the temp AGENCY_HOME set
 // up by the caller, returning combined output. It drives the real cobra command
 // so the argument parsing, the flag, and the default-when-bare behaviour are all
 // covered rather than just the helpers underneath.

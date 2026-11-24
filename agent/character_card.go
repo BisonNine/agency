@@ -16,7 +16,7 @@ import (
 )
 
 // Character cards in an agent's prompt. The library is
-// <CLAW_HOME>/cards/<id>.json (config.CardsPath, opened through ccv3.Open);
+// <AGENCY_HOME>/cards/<id>.json (config.CardsPath, opened through ccv3.Open);
 // a configured agent names a card with agents.list[].character_card, and a
 // clone made with a card of its own carries the rendered text
 // (agentreg.Spec.CardPrompt). Fresh temporary agents are not handled here:

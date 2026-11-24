@@ -27,7 +27,7 @@ type TaskModelsConfig struct {
 	ResultTextChars int `json:"result_text_chars,omitempty"`
 	// EchoTranscription sends the transcript of an incoming voice message
 	// back to the sender before the agent answers.
-	EchoTranscription bool `json:"echo_transcription,omitempty" env:"CLAW_TASK_MODELS_ECHO_TRANSCRIPTION"`
+	EchoTranscription bool `json:"echo_transcription,omitempty" env:"AGENCY_TASK_MODELS_ECHO_TRANSCRIPTION"`
 
 	TextModels     []TaskModelRef   `json:"text,omitempty"`
 	ImageModels    []ImageTaskModel `json:"image,omitempty"`

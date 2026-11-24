@@ -73,7 +73,7 @@ var (
 )
 
 // SetMediaStagingDir points downloaded media at a directory under the instance
-// data dir (e.g. ~/.claw/media or /opt/claw/media) instead of shared /tmp,
+// data dir (e.g. ~/.agency/media or /opt/agency/media) instead of shared /tmp,
 // created with dirMode, its files with fileMode (security.permissions.media; a
 // zero mode means 0700 or 0600). The gateway sets this at startup from
 // cfg.DataDir(); empty restores the fallback.

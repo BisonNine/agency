@@ -15,17 +15,17 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// Against the real Bot API (opt-in: CLAW_TEST_TELEGRAM=1 and a bot token in
-// CLAW_TEST_TELEGRAM_TOKEN), a send to a chat that cannot exist is reported
+// Against the real Bot API (opt-in: AGENCY_TEST_TELEGRAM=1 and a bot token in
+// AGENCY_TEST_TELEGRAM_TOKEN), a send to a chat that cannot exist is reported
 // as not found, with Telegram's reason kept and the token left out. Nothing
 // is delivered to anyone.
 func TestLive_SendToMissingChat(t *testing.T) {
-	if os.Getenv("CLAW_TEST_TELEGRAM") != "1" {
-		t.Skip("set CLAW_TEST_TELEGRAM=1 and CLAW_TEST_TELEGRAM_TOKEN to run against the real Telegram API")
+	if os.Getenv("AGENCY_TEST_TELEGRAM") != "1" {
+		t.Skip("set AGENCY_TEST_TELEGRAM=1 and AGENCY_TEST_TELEGRAM_TOKEN to run against the real Telegram API")
 	}
-	token := os.Getenv("CLAW_TEST_TELEGRAM_TOKEN")
+	token := os.Getenv("AGENCY_TEST_TELEGRAM_TOKEN")
 	if token == "" {
-		t.Skip("CLAW_TEST_TELEGRAM_TOKEN is not set")
+		t.Skip("AGENCY_TEST_TELEGRAM_TOKEN is not set")
 	}
 	secret := token
 	if _, after, ok := strings.Cut(token, ":"); ok {

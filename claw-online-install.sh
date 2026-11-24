@@ -8,12 +8,12 @@
 #   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash -s -- --host 0.0.0.0 --allowed-cidrs 192.168.1.0/24
 #
 # Environment variables:
-#   CLAW_VERSION   Version/tag to install (e.g. 0.5.4); default: latest
-#   CLAW_PACKAGE   Path to a local tar.gz archive (for offline/test use)
+#   AGENCY_VERSION   Version/tag to install (e.g. 0.5.4); default: latest
+#   AGENCY_PACKAGE   Path to a local tar.gz archive (for offline/test use)
 #
 # Admin account:
 #   The WebUI requires an admin login, and the installer will not start the
-#   service without one. When <CLAW_HOME>/credentials.json does not exist yet,
+#   service without one. When <AGENCY_HOME>/credentials.json does not exist yet,
 #   `claw install` asks for a username and a password (twice, not echoed, at
 #   least 12 characters). Under `curl … | bash` stdin is this script, so the
 #   prompt is read from the terminal (/dev/tty) instead. An existing account is
@@ -23,21 +23,21 @@
 #   run the installer, then unset them. Do not put them on the command line in
 #   front of `curl` — they would only reach curl, and the password would land in
 #   your shell history:
-#     read -r CLAW_ADMIN_USER; read -rs CLAW_ADMIN_PASSWORD
-#     export CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+#     read -r AGENCY_ADMIN_USER; read -rs AGENCY_ADMIN_PASSWORD
+#     export AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 #     curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
-#     unset CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+#     unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 #   With `sudo bash`, keep them across sudo:
-#     … | sudo --preserve-env=CLAW_ADMIN_USER,CLAW_ADMIN_PASSWORD bash
+#     … | sudo --preserve-env=AGENCY_ADMIN_USER,AGENCY_ADMIN_PASSWORD bash
 #
-#   CLAW_ADMIN_USER      Admin username (no whitespace, at most 64 characters)
-#   CLAW_ADMIN_PASSWORD  Admin password (at least 12 characters)
+#   AGENCY_ADMIN_USER      Admin username (no whitespace, at most 64 characters)
+#   AGENCY_ADMIN_PASSWORD  Admin password (at least 12 characters)
 #
 set -euo pipefail
 
 REPO="BisonNine/agency"
 BINARY="claw"
-VERSION="${CLAW_VERSION:-latest}"
+VERSION="${AGENCY_VERSION:-latest}"
 
 # --- detect OS ---
 os="$(uname -s)"
@@ -99,9 +99,9 @@ tmpdir="$(mktemp -d 2>/dev/null || mktemp -d -t claw-install)" || {
 trap 'rm -rf "$tmpdir"' EXIT INT TERM
 
 # --- download package and checksum ---
-if [ -n "${CLAW_PACKAGE:-}" ] && [ -f "${CLAW_PACKAGE}" ]; then
-    echo "==> Using specified package: ${CLAW_PACKAGE}"
-    cp "${CLAW_PACKAGE}" "$tmpdir/$asset"
+if [ -n "${AGENCY_PACKAGE:-}" ] && [ -f "${AGENCY_PACKAGE}" ]; then
+    echo "==> Using specified package: ${AGENCY_PACKAGE}"
+    cp "${AGENCY_PACKAGE}" "$tmpdir/$asset"
 else
     echo "==> Downloading Agency for ${os}/${arch} (${VERSION})..."
     if ! download "$asset_url" "$tmpdir/$asset"; then
@@ -158,17 +158,17 @@ fi
 # stdin is left alone: `claw install` never reads it for the admin account
 # prompt when it is not a terminal (here it is this script), and opens
 # /dev/tty instead. stdout goes through tee only to capture the URLs below;
-# the prompts are written to the terminal. CLAW_ADMIN_USER and
-# CLAW_ADMIN_PASSWORD, when exported, reach `claw install` through the
+# the prompts are written to the terminal. AGENCY_ADMIN_USER and
+# AGENCY_ADMIN_PASSWORD, when exported, reach `claw install` through the
 # environment.
 echo "==> Installing Agency service..."
 install_log="$tmpdir/install.log"
 if ! "$bin" install "${install_args[@]}" "$@" 2>&1 | tee "$install_log"; then
-    unset CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+    unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
     echo "Error: Installation failed; the service was not started. See the message above for how to proceed." >&2
     exit 1
 fi
-unset CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 
 # --- resolve web UI URLs ---
 # `claw install` ends with the same listener summary `claw status` prints,

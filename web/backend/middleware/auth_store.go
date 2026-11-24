@@ -44,7 +44,7 @@ type authSession struct {
 	lastSeen time.Time
 }
 
-// AuthStore holds the admin credentials loaded from <CLAW_HOME>/credentials.json
+// AuthStore holds the admin credentials loaded from <AGENCY_HOME>/credentials.json
 // and the server-side login sessions. Sessions live in memory only: a gateway
 // restart signs everyone out. The store outlives config reloads (it belongs to
 // the listener, like the IP allowlist), so a reload does not.

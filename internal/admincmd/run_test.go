@@ -59,8 +59,8 @@ func fakeTerminal(t *testing.T, username string, passwords []string, closeErr er
 const goodPassword = "a long enough password"
 
 func TestResolveHome_InstalledServiceHome(t *testing.T) {
-	stubDetect(t, &install.ExistingInstall{ClawHome: "/srv/claw", User: "alice"})
-	t.Setenv("CLAW_HOME", "")
+	stubDetect(t, &install.ExistingInstall{AgencyHome: "/srv/claw", User: "alice"})
+	t.Setenv("AGENCY_HOME", "")
 	home, inst := ResolveHome()
 	if home != "/srv/claw" || inst == nil || inst.User != "alice" {
 		t.Fatalf("ResolveHome() = %q, %+v; want the installed service's home", home, inst)
@@ -76,9 +76,9 @@ func TestResolveHome_DefaultUnderUserHome(t *testing.T) {
 			stubDetect(t, inst)
 			userHome := t.TempDir()
 			t.Setenv("HOME", userHome)
-			t.Setenv("CLAW_HOME", "")
+			t.Setenv("AGENCY_HOME", "")
 			home, _ := ResolveHome()
-			if want := filepath.Join(userHome, ".claw"); home != want {
+			if want := filepath.Join(userHome, ".agency"); home != want {
 				t.Fatalf("ResolveHome() = %q, want %q", home, want)
 			}
 		})
@@ -86,17 +86,17 @@ func TestResolveHome_DefaultUnderUserHome(t *testing.T) {
 }
 
 // TestResolveHome_NoUserHome: without a home directory the fallback is a
-// relative .claw rather than a path under the filesystem root.
+// relative .agency rather than a path under the filesystem root.
 func TestResolveHome_NoUserHome(t *testing.T) {
 	var seen string
 	orig := detectInstall
 	t.Cleanup(func() { detectInstall = orig })
 	detectInstall = func(h string) *install.ExistingInstall { seen = h; return nil }
 	t.Setenv("HOME", "")
-	t.Setenv("CLAW_HOME", "")
+	t.Setenv("AGENCY_HOME", "")
 	home, _ := ResolveHome()
-	if home != ".claw" || seen != "" {
-		t.Fatalf("ResolveHome() = %q (detection given %q), want .claw and no home", home, seen)
+	if home != ".agency" || seen != "" {
+		t.Fatalf("ResolveHome() = %q (detection given %q), want .agency and no home", home, seen)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestRun_Errors(t *testing.T) {
 	stubDetect(t, nil)
 	t.Run("password mismatch", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("CLAW_HOME", home)
+		t.Setenv("AGENCY_HOME", home)
 		fakeTerminal(t, "", []string{goodPassword}, nil)
 		if err := run(io.Discard, "alice"); err == nil {
 			t.Fatal("run() succeeded without a confirmed password")
@@ -154,7 +154,7 @@ func TestRun_Errors(t *testing.T) {
 	})
 	t.Run("unreadable config", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("CLAW_HOME", home)
+		t.Setenv("AGENCY_HOME", home)
 		if err := os.Mkdir(filepath.Join(home, "config.json"), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -168,21 +168,21 @@ func TestRun_Errors(t *testing.T) {
 		if err := os.Mkdir(admin.Path(home), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("CLAW_HOME", home)
+		t.Setenv("AGENCY_HOME", home)
 		fakeTerminal(t, "", []string{goodPassword, goodPassword}, nil)
 		if err := run(io.Discard, "alice"); err == nil {
 			t.Fatal("run() wrote credentials under a file")
 		}
 	})
 	t.Run("close error reported", func(t *testing.T) {
-		t.Setenv("CLAW_HOME", t.TempDir())
+		t.Setenv("AGENCY_HOME", t.TempDir())
 		fakeTerminal(t, "", []string{goodPassword, goodPassword}, errors.New("eio"))
 		if err := run(io.Discard, "alice"); err == nil || !strings.Contains(err.Error(), "close terminal: eio") {
 			t.Fatalf("run() = %v, want the close error", err)
 		}
 	})
 	t.Run("close error does not mask an earlier one", func(t *testing.T) {
-		t.Setenv("CLAW_HOME", t.TempDir())
+		t.Setenv("AGENCY_HOME", t.TempDir())
 		fakeTerminal(t, "", nil, errors.New("eio"))
 		err := run(io.Discard, "alice")
 		if err == nil || strings.Contains(err.Error(), "close terminal") {
@@ -200,7 +200,7 @@ func TestRun_RootChownsToServiceAccount(t *testing.T) {
 		t.Skip("no current user")
 	}
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	stubDetect(t, &install.ExistingInstall{User: me.Username})
 	stubEUID(t, 0)
 	fakeTerminal(t, "", []string{goodPassword, goodPassword}, nil)
@@ -261,7 +261,7 @@ func TestChownToService(t *testing.T) {
 func TestNewAdminCommand(t *testing.T) {
 	stubDetect(t, nil)
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	fakeTerminal(t, "", []string{goodPassword, goodPassword}, nil)
 	cmd := NewAdminCommand()
 	var out bytes.Buffer
@@ -290,7 +290,7 @@ func TestNewAdminCommand(t *testing.T) {
 // TestRun_ChownFailureReported: a service account that cannot be found is an
 // error, not a credentials file the service cannot read.
 func TestRun_ChownFailureReported(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	stubDetect(t, &install.ExistingInstall{User: "no-such-user-x"})
 	stubEUID(t, 0)
 	fakeTerminal(t, "", []string{goodPassword, goodPassword}, nil)

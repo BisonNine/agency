@@ -9,7 +9,7 @@ type ToolDiscoveryConfig struct {
 	// native tools and the cogmem suite stay always-on. A hidden tool may be
 	// called at any time. The MCP host is never subject to discovery — external
 	// clients always receive the full tool list.
-	Enabled bool `json:"enabled" env:"CLAW_TOOLS_DISCOVERY_ENABLED"`
+	Enabled bool `json:"enabled" env:"AGENCY_TOOLS_DISCOVERY_ENABLED"`
 	// AlwaysShownNamespaces pins discovery-eligible tool namespaces (matched by
 	// MatchVisibility: "file", "maestro", "fusion", a "<server>" for an upstream MCP
 	// server, or "*") so they stay in the in-loop model's tool list even when
@@ -18,7 +18,7 @@ type ToolDiscoveryConfig struct {
 	// not be listed. Empty pins nothing; only consulted when Enabled is true.
 	AlwaysShownNamespaces []string `json:"always_shown_namespaces,omitempty"`
 	// MaxSearchResults caps search_tools results.
-	MaxSearchResults int `json:"max_search_results" env:"CLAW_MAX_SEARCH_RESULTS"`
+	MaxSearchResults int `json:"max_search_results" env:"AGENCY_MAX_SEARCH_RESULTS"`
 }
 
 // DefaultDiscoveryMaxSearchHits is the search_tools result cap applied when
@@ -30,46 +30,46 @@ type ToolConfig struct {
 }
 
 type BraveConfig struct {
-	Enabled    bool     `json:"enabled"     env:"CLAW_TOOLS_WEB_BRAVE_ENABLED"`
-	APIKey     string   `json:"api_key"     env:"CLAW_TOOLS_WEB_BRAVE_API_KEY"`
-	APIKeys    []string `json:"api_keys"    env:"CLAW_TOOLS_WEB_BRAVE_API_KEYS"`
-	MaxResults int      `json:"max_results" env:"CLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+	Enabled    bool     `json:"enabled"     env:"AGENCY_TOOLS_WEB_BRAVE_ENABLED"`
+	APIKey     string   `json:"api_key"     env:"AGENCY_TOOLS_WEB_BRAVE_API_KEY"`
+	APIKeys    []string `json:"api_keys"    env:"AGENCY_TOOLS_WEB_BRAVE_API_KEYS"`
+	MaxResults int      `json:"max_results" env:"AGENCY_TOOLS_WEB_BRAVE_MAX_RESULTS"`
 }
 
 type TavilyConfig struct {
-	Enabled    bool     `json:"enabled"     env:"CLAW_TOOLS_WEB_TAVILY_ENABLED"`
-	APIKey     string   `json:"api_key"     env:"CLAW_TOOLS_WEB_TAVILY_API_KEY"`
-	APIKeys    []string `json:"api_keys"    env:"CLAW_TOOLS_WEB_TAVILY_API_KEYS"`
-	BaseURL    string   `json:"base_url"    env:"CLAW_TOOLS_WEB_TAVILY_BASE_URL"`
-	MaxResults int      `json:"max_results" env:"CLAW_TOOLS_WEB_TAVILY_MAX_RESULTS"`
+	Enabled    bool     `json:"enabled"     env:"AGENCY_TOOLS_WEB_TAVILY_ENABLED"`
+	APIKey     string   `json:"api_key"     env:"AGENCY_TOOLS_WEB_TAVILY_API_KEY"`
+	APIKeys    []string `json:"api_keys"    env:"AGENCY_TOOLS_WEB_TAVILY_API_KEYS"`
+	BaseURL    string   `json:"base_url"    env:"AGENCY_TOOLS_WEB_TAVILY_BASE_URL"`
+	MaxResults int      `json:"max_results" env:"AGENCY_TOOLS_WEB_TAVILY_MAX_RESULTS"`
 }
 
 type DuckDuckGoConfig struct {
-	Enabled    bool `json:"enabled"     env:"CLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
-	MaxResults int  `json:"max_results" env:"CLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
+	Enabled    bool `json:"enabled"     env:"AGENCY_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
+	MaxResults int  `json:"max_results" env:"AGENCY_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
 type PerplexityConfig struct {
-	Enabled    bool     `json:"enabled"     env:"CLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
-	APIKey     string   `json:"api_key"     env:"CLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
-	APIKeys    []string `json:"api_keys"    env:"CLAW_TOOLS_WEB_PERPLEXITY_API_KEYS"`
-	MaxResults int      `json:"max_results" env:"CLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+	Enabled    bool     `json:"enabled"     env:"AGENCY_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	APIKey     string   `json:"api_key"     env:"AGENCY_TOOLS_WEB_PERPLEXITY_API_KEY"`
+	APIKeys    []string `json:"api_keys"    env:"AGENCY_TOOLS_WEB_PERPLEXITY_API_KEYS"`
+	MaxResults int      `json:"max_results" env:"AGENCY_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
 type SearXNGConfig struct {
-	Enabled    bool   `json:"enabled"     env:"CLAW_TOOLS_WEB_SEARXNG_ENABLED"`
-	BaseURL    string `json:"base_url"    env:"CLAW_TOOLS_WEB_SEARXNG_BASE_URL"`
-	MaxResults int    `json:"max_results" env:"CLAW_TOOLS_WEB_SEARXNG_MAX_RESULTS"`
+	Enabled    bool   `json:"enabled"     env:"AGENCY_TOOLS_WEB_SEARXNG_ENABLED"`
+	BaseURL    string `json:"base_url"    env:"AGENCY_TOOLS_WEB_SEARXNG_BASE_URL"`
+	MaxResults int    `json:"max_results" env:"AGENCY_TOOLS_WEB_SEARXNG_MAX_RESULTS"`
 }
 
 type GLMSearchConfig struct {
-	Enabled bool   `json:"enabled"  env:"CLAW_TOOLS_WEB_GLM_ENABLED"`
-	APIKey  string `json:"api_key"  env:"CLAW_TOOLS_WEB_GLM_API_KEY"`
-	BaseURL string `json:"base_url" env:"CLAW_TOOLS_WEB_GLM_BASE_URL"`
+	Enabled bool   `json:"enabled"  env:"AGENCY_TOOLS_WEB_GLM_ENABLED"`
+	APIKey  string `json:"api_key"  env:"AGENCY_TOOLS_WEB_GLM_API_KEY"`
+	BaseURL string `json:"base_url" env:"AGENCY_TOOLS_WEB_GLM_BASE_URL"`
 	// SearchEngine specifies the search backend: "search_std" (default),
 	// "search_pro", "search_pro_sogou", or "search_pro_quark".
-	SearchEngine string `json:"search_engine" env:"CLAW_TOOLS_WEB_GLM_SEARCH_ENGINE"`
-	MaxResults   int    `json:"max_results"   env:"CLAW_TOOLS_WEB_GLM_MAX_RESULTS"`
+	SearchEngine string `json:"search_engine" env:"AGENCY_TOOLS_WEB_GLM_SEARCH_ENGINE"`
+	MaxResults   int    `json:"max_results"   env:"AGENCY_TOOLS_WEB_GLM_MAX_RESULTS"`
 }
 
 type WebToolsConfig struct {
@@ -81,41 +81,41 @@ type WebToolsConfig struct {
 	GLMSearch  GLMSearchConfig  `                                json:"glm_search"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
-	Proxy           string `json:"proxy,omitempty"             env:"CLAW_TOOLS_WEB_PROXY"`
-	FetchLimitBytes int64  `json:"fetch_limit_bytes,omitempty" env:"CLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
+	Proxy           string `json:"proxy,omitempty"             env:"AGENCY_TOOLS_WEB_PROXY"`
+	FetchLimitBytes int64  `json:"fetch_limit_bytes,omitempty" env:"AGENCY_TOOLS_WEB_FETCH_LIMIT_BYTES"`
 }
 
 type CronToolsConfig struct {
-	ToolConfig         `    envPrefix:"CLAW_TOOLS_CRON_"`
-	ExecTimeoutMinutes int `                                 env:"CLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
+	ToolConfig         `    envPrefix:"AGENCY_TOOLS_CRON_"`
+	ExecTimeoutMinutes int `                                 env:"AGENCY_TOOLS_CRON_EXEC_TIMEOUT_MINUTES" json:"exec_timeout_minutes"` // 0 means no timeout
 }
 
 type ExecConfig struct {
-	EnableDenyPatterns  bool     `                                 env:"CLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
-	CustomDenyPatterns  []string `                                 env:"CLAW_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
-	CustomAllowPatterns []string `                                 env:"CLAW_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
-	TimeoutSeconds      int      `                                 env:"CLAW_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
+	EnableDenyPatterns  bool     `                                 env:"AGENCY_TOOLS_EXEC_ENABLE_DENY_PATTERNS"  json:"enable_deny_patterns"`
+	CustomDenyPatterns  []string `                                 env:"AGENCY_TOOLS_EXEC_CUSTOM_DENY_PATTERNS"  json:"custom_deny_patterns"`
+	CustomAllowPatterns []string `                                 env:"AGENCY_TOOLS_EXEC_CUSTOM_ALLOW_PATTERNS" json:"custom_allow_patterns"`
+	TimeoutSeconds      int      `                                 env:"AGENCY_TOOLS_EXEC_TIMEOUT_SECONDS"       json:"timeout_seconds"` // 0 means use default (60s)
 	// The limits of the shell tools' jobs (see ExecConfig.Effective). 0 or
 	// absent is the default; a negative value is refused at load and on save.
-	MaxTimeoutSeconds int `json:"max_timeout_seconds,omitempty"  env:"CLAW_TOOLS_EXEC_MAX_TIMEOUT_SECONDS"`
-	MaxJobs           int `json:"max_jobs,omitempty"             env:"CLAW_TOOLS_EXEC_MAX_JOBS"`
-	MaxJobSeconds     int `json:"max_job_seconds,omitempty"      env:"CLAW_TOOLS_EXEC_MAX_JOB_SECONDS"`
-	MaxJobOutputBytes int `json:"max_job_output_bytes,omitempty" env:"CLAW_TOOLS_EXEC_MAX_JOB_OUTPUT_BYTES"`
-	JobLogDays        int `json:"job_log_days,omitempty"         env:"CLAW_TOOLS_EXEC_JOB_LOG_DAYS"`
+	MaxTimeoutSeconds int `json:"max_timeout_seconds,omitempty"  env:"AGENCY_TOOLS_EXEC_MAX_TIMEOUT_SECONDS"`
+	MaxJobs           int `json:"max_jobs,omitempty"             env:"AGENCY_TOOLS_EXEC_MAX_JOBS"`
+	MaxJobSeconds     int `json:"max_job_seconds,omitempty"      env:"AGENCY_TOOLS_EXEC_MAX_JOB_SECONDS"`
+	MaxJobOutputBytes int `json:"max_job_output_bytes,omitempty" env:"AGENCY_TOOLS_EXEC_MAX_JOB_OUTPUT_BYTES"`
+	JobLogDays        int `json:"job_log_days,omitempty"         env:"AGENCY_TOOLS_EXEC_JOB_LOG_DAYS"`
 }
 
 type SkillsToolsConfig struct {
-	Registry              ToolConfig             `json:"registry"                 envPrefix:"CLAW_TOOLS_SKILLS_REGISTRY_"`
+	Registry              ToolConfig             `json:"registry"                 envPrefix:"AGENCY_TOOLS_SKILLS_REGISTRY_"`
 	Registries            SkillsRegistriesConfig `json:"registries"`
 	Github                SkillsGithubConfig     `json:"github"`
-	MaxConcurrentSearches int                    `json:"max_concurrent_searches"  env:"CLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
+	MaxConcurrentSearches int                    `json:"max_concurrent_searches"  env:"AGENCY_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `json:"search_cache"`
 }
 
 type MediaCleanupConfig struct {
-	ToolConfig `    envPrefix:"CLAW_MEDIA_CLEANUP_"`
-	MaxAge     int `                                    env:"CLAW_MEDIA_CLEANUP_MAX_AGE"  json:"max_age_minutes"`
-	Interval   int `                                    env:"CLAW_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
+	ToolConfig `    envPrefix:"AGENCY_MEDIA_CLEANUP_"`
+	MaxAge     int `                                    env:"AGENCY_MEDIA_CLEANUP_MAX_AGE"  json:"max_age_minutes"`
+	Interval   int `                                    env:"AGENCY_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
 }
 
 type ReadFileToolConfig struct {
@@ -123,8 +123,8 @@ type ReadFileToolConfig struct {
 }
 
 type ToolsConfig struct {
-	AllowReadPaths  []string           `json:"allow_read_paths"  env:"CLAW_TOOLS_ALLOW_READ_PATHS"`
-	AllowWritePaths []string           `json:"allow_write_paths" env:"CLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	AllowReadPaths  []string           `json:"allow_read_paths"  env:"AGENCY_TOOLS_ALLOW_READ_PATHS"`
+	AllowWritePaths []string           `json:"allow_write_paths" env:"AGENCY_TOOLS_ALLOW_WRITE_PATHS"`
 	Web             WebToolsConfig     `json:"web"`
 	Cron            CronToolsConfig    `json:"cron"`
 	Exec            ExecConfig         `json:"exec"`
@@ -136,12 +136,12 @@ type ToolsConfig struct {
 	// tools.mcp.
 	Discovery ToolDiscoveryConfig `json:"discovery"`
 	// ReadFile carries the read-size limit used at tool construction.
-	ReadFile ReadFileToolConfig `json:"read_file"                                                envPrefix:"CLAW_TOOLS_READ_FILE_"`
+	ReadFile ReadFileToolConfig `json:"read_file"                                                envPrefix:"AGENCY_TOOLS_READ_FILE_"`
 }
 
 type SearchCacheConfig struct {
-	MaxSize    int `json:"max_size"    env:"CLAW_SKILLS_SEARCH_CACHE_MAX_SIZE"`
-	TTLSeconds int `json:"ttl_seconds" env:"CLAW_SKILLS_SEARCH_CACHE_TTL_SECONDS"`
+	MaxSize    int `json:"max_size"    env:"AGENCY_SKILLS_SEARCH_CACHE_MAX_SIZE"`
+	TTLSeconds int `json:"ttl_seconds" env:"AGENCY_SKILLS_SEARCH_CACHE_TTL_SECONDS"`
 }
 
 type SkillsRegistriesConfig struct {
@@ -149,20 +149,20 @@ type SkillsRegistriesConfig struct {
 }
 
 type SkillsGithubConfig struct {
-	Token string `json:"token,omitempty" env:"CLAW_TOOLS_SKILLS_GITHUB_AUTH_TOKEN"`
-	Proxy string `json:"proxy,omitempty" env:"CLAW_TOOLS_SKILLS_GITHUB_PROXY"`
+	Token string `json:"token,omitempty" env:"AGENCY_TOOLS_SKILLS_GITHUB_AUTH_TOKEN"`
+	Proxy string `json:"proxy,omitempty" env:"AGENCY_TOOLS_SKILLS_GITHUB_PROXY"`
 }
 
 type ClawHubRegistryConfig struct {
-	Enabled         bool   `json:"enabled"           env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_ENABLED"`
-	BaseURL         string `json:"base_url"          env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"`
-	AuthToken       string `json:"auth_token"        env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_AUTH_TOKEN"`
-	SearchPath      string `json:"search_path"       env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"`
-	SkillsPath      string `json:"skills_path"       env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
-	DownloadPath    string `json:"download_path"     env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"`
-	Timeout         int    `json:"timeout"           env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
-	MaxZipSize      int    `json:"max_zip_size"      env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
-	MaxResponseSize int    `json:"max_response_size" env:"CLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
+	Enabled         bool   `json:"enabled"           env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_ENABLED"`
+	BaseURL         string `json:"base_url"          env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"`
+	AuthToken       string `json:"auth_token"        env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_AUTH_TOKEN"`
+	SearchPath      string `json:"search_path"       env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"`
+	SkillsPath      string `json:"skills_path"       env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
+	DownloadPath    string `json:"download_path"     env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"`
+	Timeout         int    `json:"timeout"           env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
+	MaxZipSize      int    `json:"max_zip_size"      env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
+	MaxResponseSize int    `json:"max_response_size" env:"AGENCY_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
 }
 
 // MCPServerConfig defines configuration for a single MCP server
@@ -234,15 +234,15 @@ func (t *ToolsConfig) MCPClientEffectivelyEnabled() bool {
 // instead of emitting tool-call JSON in their prose. The allowlist is
 // global — applied once for all CLI clients, not per-LLM.
 type MCPHostConfig struct {
-	Enabled bool `json:"enabled"                     env:"CLAW_MCP_HOST_ENABLED"`
+	Enabled bool `json:"enabled"                     env:"AGENCY_MCP_HOST_ENABLED"`
 	// AutoEnable, when true, starts the MCP host automatically whenever any
 	// enabled model in ModelList uses a *-cli protocol (claude-cli, codex-cli,
 	// antigravity-cli,
 	// gemini-cli). Those CLIs depend on MCP to call claw's host-side tools.
 	// Explicit Enabled=true always wins.
-	AutoEnable   bool   `json:"auto_enable"             env:"CLAW_MCP_HOST_AUTO_ENABLE"`
-	Listen       string `json:"listen,omitempty"        env:"CLAW_MCP_HOST_LISTEN"`
-	EndpointPath string `json:"endpoint_path,omitempty" env:"CLAW_MCP_HOST_ENDPOINT_PATH"`
+	AutoEnable   bool   `json:"auto_enable"             env:"AGENCY_MCP_HOST_AUTO_ENABLE"`
+	Listen       string `json:"listen,omitempty"        env:"AGENCY_MCP_HOST_LISTEN"`
+	EndpointPath string `json:"endpoint_path,omitempty" env:"AGENCY_MCP_HOST_ENDPOINT_PATH"`
 	// InternalTools and ExternalTools are per-endpoint visibility filters that
 	// govern which tools appear in tools/list (the catalogue) on /internal and
 	// the bearer endpoint (/mcp) respectively. They are a COARSE exposure filter

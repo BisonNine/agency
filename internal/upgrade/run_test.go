@@ -177,7 +177,6 @@ func newUpgradeEnv(t *testing.T, tag string) *upgradeEnv {
 	t.Setenv("TMPDIR", tmpRoot)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(global.EnvVarHome, "")
-	t.Setenv("CLAW_HOME", "")
 	binDir := filepath.Join(tmpRoot, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -506,7 +505,7 @@ func TestRunUpgrade_ExistingInstall(t *testing.T) {
 	dataDir := t.TempDir()
 	for _, active := range []bool{true, false} {
 		e.install = &install.ExistingInstall{
-			BinaryPath: installed, ClawHome: dataDir, ServicePath: "/etc/systemd/system/claw.service",
+			BinaryPath: installed, AgencyHome: dataDir, ServicePath: "/etc/systemd/system/claw.service",
 			ServiceType: "systemd-system", IsActive: active,
 		}
 		var err error
@@ -531,8 +530,8 @@ func TestRunUpgrade_ExistingInstall(t *testing.T) {
 		if readFile(t, installed) != newBinary {
 			t.Error("the installed binary was not upgraded")
 		}
-		if os.Getenv("CLAW_HOME") != dataDir || os.Getenv(global.EnvVarHome) != dataDir {
-			t.Errorf("CLAW_HOME = %q, want %q", os.Getenv("CLAW_HOME"), dataDir)
+		if os.Getenv("AGENCY_HOME") != dataDir || os.Getenv(global.EnvVarHome) != dataDir {
+			t.Errorf("AGENCY_HOME = %q, want %q", os.Getenv("AGENCY_HOME"), dataDir)
 		}
 		if err := os.WriteFile(installed, []byte("installed claw"), 0o755); err != nil {
 			t.Fatal(err)
@@ -699,7 +698,7 @@ func TestIsBuildOrTempDir(t *testing.T) {
 		"/var/temp/claw":             true,
 		"/x/claw-upgrade-123/claw":   true,
 		"/usr/local/bin/claw":        false,
-		"/opt/claw/bin/claw":         false,
+		"/opt/agency/bin/claw":       false,
 		"/home/alice/buildings/claw": false,
 	} {
 		if got := isBuildOrTempDir(p); got != want {

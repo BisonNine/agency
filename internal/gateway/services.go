@@ -129,8 +129,8 @@ func setupAndStartServices(
 	services.FolderWatcher.Start()
 	logger.InfoC("folderwatch", "Allowed folder watcher started")
 
-	// Stage downloaded media under the instance data dir (e.g. ~/.claw/media,
-	// /opt/claw/media) rather than shared /tmp, so files stay app-owned and two
+	// Stage downloaded media under the instance data dir (e.g. ~/.agency/media,
+	// /opt/agency/media) rather than shared /tmp, so files stay app-owned and two
 	// instances on one host can't collide on a single dir.
 	mediaModes := cfg.PermissionModes(config.AreaMedia)
 	utils.SetMediaStagingDir(filepath.Join(cfg.DataDir(), "media"), mediaModes.Dir, mediaModes.File)
@@ -691,7 +691,7 @@ func handleConfigReload(
 	stopAndCleanupServices(services, al, serviceShutdownTimeout, nil, true) //nolint:contextcheck // the old services stop on a fresh bounded context so their shutdown completes even if the run context ends mid-reload; shutdownGateway shares the helper with no context
 
 	warnNoDefaultModel(ctx, newCfg, "No model configured after reload, running in unconfigured state")
-	loadPricing(internal.GetClawHome())
+	loadPricing(internal.GetAgencyHome())
 
 	// Use the atomic reload method on AgentLoop to safely swap the config.
 	// This handles locking internally to prevent races with in-flight LLM calls

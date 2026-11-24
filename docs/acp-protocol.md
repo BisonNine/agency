@@ -61,7 +61,7 @@ The bridge authenticates to Agency **as a paired device**, exactly like the
 R1:
 
 - **Ed25519 device identity**, generated and persisted under
-  `$CLAW_HOME/internal/acp-bridge/` (via the library's `identity.Store`). It survives
+  `$AGENCY_HOME/internal/acp-bridge/` (via the library's `identity.Store`). It survives
   the short-lived spawns `rabbit-agent` makes, so pairing happens only once.
 - **Auth token**: the configured device-channel `token` (or `word_token`) is
   presented on connect; once Agency issues a device token at connect
@@ -87,7 +87,7 @@ claw acp --debug                 # debug logging (file only — stdout is the wi
 ```
 
 Because stdout carries the protocol, the console logger is disabled and all
-logging goes to `$CLAW_HOME/logs/claw.log`.
+logging goes to `$AGENCY_HOME/logs/claw.log`.
 
 ### One-time pairing with `--no-auto-pair`
 

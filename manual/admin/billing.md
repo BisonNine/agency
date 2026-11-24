@@ -17,7 +17,7 @@ Every agent has the `billing` tool. To take it away from one agent, add `billing
 
 ## The accounting log
 
-The records are written to `<CLAW_HOME>/logs/accounting.log`, one JSON object per line, with the [logs area's](./logs.md#file-permissions) file modes. A line, shortened:
+The records are written to `<AGENCY_HOME>/logs/accounting.log`, one JSON object per line, with the [logs area's](./logs.md#file-permissions) file modes. A line, shortened:
 
 ```json
 {"time":"2026-11-23T09:14:02.123456Z","agent":"alice","agent_name":"Alice","project":"pentest-acme","kind":"text","model":"gpt-4o","input_tokens":1200,"output_tokens":340,"cost_usd":0.0064,"cost_source":"provided","success":true}
@@ -29,7 +29,7 @@ The accounting log is not in the [backup](./backup.md), like the other logs.
 
 ## Pricing table
 
-When a provider does not report a call's cost, Agency can estimate it from a pricing table. Put it in `<CLAW_HOME>/pricing.json`:
+When a provider does not report a call's cost, Agency can estimate it from a pricing table. Put it in `<AGENCY_HOME>/pricing.json`:
 
 ```json
 {"prices": [

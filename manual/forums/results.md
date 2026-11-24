@@ -50,7 +50,7 @@ outputs only when it needs them.
 ## Where the files are
 
 Everything is in the launching agent's workspace (by default
-`<CLAW_HOME>/agents/<agent>/`):
+`<AGENCY_HOME>/agents/<agent>/`):
 
 ```
 forums/<id>/

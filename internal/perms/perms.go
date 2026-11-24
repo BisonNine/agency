@@ -4,7 +4,7 @@
  ******************************************************************************/
 
 // Package perms holds the data directory to the modes security.permissions
-// sets. CLAW_HOME holds the config (with provider keys), OAuth token stores,
+// sets. AGENCY_HOME holds the config (with provider keys), OAuth token stores,
 // device pairing tokens, TLS keys and session archives. Every folder and
 // every regular file in it belongs to one area (root, secrets, bin, logs,
 // agents, media, common, backup, default) and Enforce sets each to exactly

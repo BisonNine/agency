@@ -287,7 +287,7 @@ func TestPromptPassword_IOErrors(t *testing.T) {
 }
 
 func TestEnsureAccount_Defaults(t *testing.T) {
-	if _, _, err := EnsureAccount(EnsureOptions{}); err == nil || !strings.Contains(err.Error(), "CLAW_HOME is empty") {
+	if _, _, err := EnsureAccount(EnsureOptions{}); err == nil || !strings.Contains(err.Error(), "AGENCY_HOME is empty") {
 		t.Fatalf("EnsureAccount without a home = %v", err)
 	}
 	// Without Getenv the process environment supplies the account.

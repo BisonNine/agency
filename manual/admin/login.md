@@ -8,7 +8,7 @@ There is no default account and no default password. The account cannot be creat
 
 `claw install` (and the one-line installer) creates it before it starts the service (see [Installing Agency](../getting-started/install.md#the-admin-account)). If it was not created then, or you need a new password, use `claw admin` on the server.
 
-The account lives in `<CLAW_HOME>/credentials.json` (on a system install, `/opt/claw/credentials.json`). The password is stored only as a hash.
+The account lives in `<AGENCY_HOME>/credentials.json` (on a system install, `/opt/agency/credentials.json`). The password is stored only as a hash.
 
 ## Create or replace the account
 
@@ -28,16 +28,16 @@ Run as root on a system install, `claw admin` hands the file to the service acco
 
 ### Unattended install
 
-The installer can take the account from two environment variables, `CLAW_ADMIN_USER` and `CLAW_ADMIN_PASSWORD`. Set both or neither. Read them in rather than typing them on the command line, so the password does not land in the shell history:
+The installer can take the account from two environment variables, `AGENCY_ADMIN_USER` and `AGENCY_ADMIN_PASSWORD`. Set both or neither. Read them in rather than typing them on the command line, so the password does not land in the shell history:
 
 ```
-read -r CLAW_ADMIN_USER; read -rs CLAW_ADMIN_PASSWORD
-export CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+read -r AGENCY_ADMIN_USER; read -rs AGENCY_ADMIN_PASSWORD
+export AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 claw install
-unset CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 ```
 
-With `sudo`, keep them with `sudo --preserve-env=CLAW_ADMIN_USER,CLAW_ADMIN_PASSWORD`.
+With `sudo`, keep them with `sudo --preserve-env=AGENCY_ADMIN_USER,AGENCY_ADMIN_PASSWORD`.
 
 ## No account yet
 

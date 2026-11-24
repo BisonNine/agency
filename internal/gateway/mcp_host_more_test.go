@@ -51,11 +51,11 @@ func startTestMCPHost(t *testing.T, cfg *config.Config, al *agent.AgentLoop) *ga
 	return services
 }
 
-// TestStartMCPServer_TestToken: CLAW_MCP_TEST_TOKEN is a session token of the
+// TestStartMCPServer_TestToken: AGENCY_MCP_TEST_TOKEN is a session token of the
 // default agent.
 func TestStartMCPServer_TestToken(t *testing.T) {
 	cfg, al, _ := mcpHostLoop(t)
-	t.Setenv("CLAW_MCP_TEST_TOKEN", "test-token-alice")
+	t.Setenv("AGENCY_MCP_TEST_TOKEN", "test-token-alice")
 	services := startTestMCPHost(t, cfg, al)
 	if _, ok := services.SessionTokens.Resolve("test-token-alice"); !ok {
 		t.Fatal("the test token does not resolve")

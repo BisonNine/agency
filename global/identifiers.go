@@ -30,9 +30,9 @@ const (
 	LaunchdLabel = "com.bison9.agency"
 
 	// SystemDataDir is the data directory of a system-wide install.
-	SystemDataDir = "/opt/claw"
+	SystemDataDir = "/opt/agency"
 
-	// LogFileName is the main log file under <CLAW_HOME>/logs.
+	// LogFileName is the main log file under <AGENCY_HOME>/logs.
 	LogFileName = "claw.log"
 
 	// LockFileName is the single-instance lock file in the data directory.

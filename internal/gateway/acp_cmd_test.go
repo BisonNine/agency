@@ -60,11 +60,10 @@ func withACPStdio(t *testing.T) *acpStdio {
 	return &acpStdio{in: inW, out: bufio.NewReader(outR)}
 }
 
-// acpHome writes a CLAW_HOME config whose device channel is the test gateway's.
+// acpHome writes a AGENCY_HOME config whose device channel is the test gateway's.
 func acpHome(t *testing.T, g *acpTestGateway, extra string) {
 	t.Helper()
 	t.Setenv(global.EnvVarHome, g.dataDir)
-	t.Setenv("CLAW_HOME", g.dataDir)
 	body := fmt.Sprintf(`{"channels":{"device":{"enabled":true,"token":%q,"host":"127.0.0.1","port":%d,"tls":%v}}%s}`,
 		g.dev.Token, g.dev.Port, g.dev.TLS, extra)
 	if err := os.WriteFile(filepath.Join(g.dataDir, "config.json"), []byte(body), 0o600); err != nil {

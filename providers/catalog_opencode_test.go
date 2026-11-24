@@ -67,7 +67,7 @@ func TestCatalogue_OpenCodeModel(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script CLI")
 	}
-	t.Setenv("CLAW_TEST_SERVICE_SECRET", "do-not-pass")
+	t.Setenv("AGENCY_TEST_SERVICE_SECRET", "do-not-pass")
 	t.Setenv("OPENCODE_CONFIG", "/home/alice/.config/opencode/opencode.json")
 
 	tests := []struct {
@@ -110,7 +110,7 @@ func TestCatalogue_OpenCodeModel(t *testing.T) {
 				t.Errorf("the prompt was not piped on stdin: %q", stdin)
 			}
 			env := strings.Join(readLines(t, filepath.Join(dir, "env")), "\n")
-			if strings.Contains(env, "CLAW_TEST_SERVICE_SECRET") {
+			if strings.Contains(env, "AGENCY_TEST_SERVICE_SECRET") {
 				t.Error("the CLI saw a variable outside the allowlist")
 			}
 			if !strings.Contains(env, "OPENCODE_CONFIG=") {

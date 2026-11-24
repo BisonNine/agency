@@ -74,7 +74,7 @@ Example: your own SearXNG server:
 }
 ```
 
-Keys may be written as `env:NAME` or `file:/path` references, in `api_key` and in each entry of `api_keys`. See [Keeping secrets out of the file](../reference/configuration.md#keeping-secrets-out-of-the-file). Each setting can also be set with an environment variable, for example `CLAW_TOOLS_WEB_BRAVE_API_KEY` or `CLAW_TOOLS_WEB_SEARXNG_BASE_URL`.
+Keys may be written as `env:NAME` or `file:/path` references, in `api_key` and in each entry of `api_keys`. See [Keeping secrets out of the file](../reference/configuration.md#keeping-secrets-out-of-the-file). Each setting can also be set with an environment variable, for example `AGENCY_TOOLS_WEB_BRAVE_API_KEY` or `AGENCY_TOOLS_WEB_SEARXNG_BASE_URL`.
 
 The full report on the [Check Up](../admin/checkup.md) page lists each provider under **Web tools**, with whether it is on and whether its key is set.
 

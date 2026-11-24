@@ -11,12 +11,12 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// testConfigPath writes a default config into a temp CLAW_HOME.
+// testConfigPath writes a default config into a temp AGENCY_HOME.
 func testConfigPath(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	t.Setenv("CLAW_HOME", filepath.Join(dir, ".claw"))
+	t.Setenv("AGENCY_HOME", filepath.Join(dir, ".agency"))
 	p := filepath.Join(dir, "config.json")
 	if err := config.SaveConfig(p, config.DefaultConfig()); err != nil {
 		t.Fatal(err)

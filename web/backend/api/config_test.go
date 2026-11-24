@@ -22,7 +22,7 @@ func TestHandleUpdateConfig_DoesNotInheritDefaultModelFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewBufferString(`{
 		"agents": {
 			"defaults": {
-				"workspace": "~/.claw/workspace"
+				"workspace": "~/.agency/workspace"
 			},
 			"list": [{"id": "main", "name": "Main", "default": true}]
 		},

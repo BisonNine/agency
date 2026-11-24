@@ -5,10 +5,10 @@
 
 // Package childenv builds the environment handed to processes Agency starts:
 // shell_exec commands, stdio MCP servers and CLI providers. The service
-// process carries its own configuration in CLAW_* variables and the alerter's
+// process carries its own configuration in AGENCY_* variables and the alerter's
 // delivery credentials in ALERTER_*; a child that inherits the whole
 // environment reads all of them. Base returns only what a child needs to run,
-// so everything else, and in particular CLAW_* and ALERTER_*, stays in the
+// so everything else, and in particular AGENCY_* and ALERTER_*, stays in the
 // parent.
 package childenv
 

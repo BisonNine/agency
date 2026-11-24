@@ -48,7 +48,7 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	jsonData := `{
 		"agents": {
 			"defaults": {
-				"workspace": "~/.claw/workspace",
+				"workspace": "~/.agency/workspace",
 				"model": "glm-4.7",
 				"max_tokens": 8192,
 				"max_tool_iterations": 20
@@ -126,7 +126,7 @@ func TestConfig_NoAgentsListInheritsDefault(t *testing.T) {
 	jsonData := `{
 		"agents": {
 			"defaults": {
-				"workspace": "~/.claw/workspace",
+				"workspace": "~/.agency/workspace",
 				"model": "glm-4.7",
 				"max_tokens": 8192,
 				"max_tool_iterations": 20
@@ -417,10 +417,10 @@ func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	}
 }
 
-// The data-directory paths all hang off CLAW_HOME: the shared common
+// The data-directory paths all hang off AGENCY_HOME: the shared common
 // directory, claw's internal state and the CLI working directory.
 func TestDefaultConfig_DataDirPaths(t *testing.T) {
-	t.Setenv("CLAW_HOME", "/custom/claw/home")
+	t.Setenv("AGENCY_HOME", "/custom/claw/home")
 
 	cfg := DefaultConfig()
 	for name, got := range map[string]string{
@@ -452,7 +452,7 @@ func TestDefaultConfig_DataDirPaths(t *testing.T) {
 // and loading the default config creates nothing on disk.
 func TestDefaultConfig_SeedAgentWorkspace(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "claw-home")
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 
 	cfg := DefaultConfig()
 	if ws := cfg.Agents.List[0].Workspace; ws != "" {

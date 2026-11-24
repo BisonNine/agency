@@ -14,7 +14,7 @@ import (
 	"go.bison9.com/agency/internal/testalerts"
 )
 
-// cliHome is a CLAW_HOME for the commands: a config whose agents live under
+// cliHome is a AGENCY_HOME for the commands: a config whose agents live under
 // the home, one live database and one plain file.
 func cliHome(t *testing.T) string {
 	t.Helper()
@@ -80,7 +80,7 @@ func TestBackupCommand(t *testing.T) {
 }
 
 // TestBackupCommand_DefaultDest: without --dest the archive goes to
-// <CLAW_HOME>/backup.
+// <AGENCY_HOME>/backup.
 func TestBackupCommand_DefaultDest(t *testing.T) {
 	home := cliHome(t)
 	out, _, err := runCmd(t, nil, "")

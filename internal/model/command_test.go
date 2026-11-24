@@ -21,7 +21,7 @@ func initTest(t *testing.T) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	configPath = filepath.Join(tmpDir, "config.json")
-	t.Setenv("CLAW_HOME", tmpDir)
+	t.Setenv("AGENCY_HOME", tmpDir)
 }
 
 // openaiProvider returns a credentialed openai provider for use in test configs.

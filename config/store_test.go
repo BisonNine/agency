@@ -19,7 +19,7 @@ import (
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	cfg := DefaultConfig()
 	cfg.Providers = []modelspec.Provider{{Name: "openai", Protocol: "openai-chat", BaseURL: "https://api.openai.com/v1", APIKey: "sk-default-0123456789"}}
@@ -318,12 +318,12 @@ func TestStore_ParallelUpdatesNeverLoseAWrite(t *testing.T) {
 }
 
 func TestStore_UpdateResolvesAndPreservesSecretReference(t *testing.T) {
-	t.Setenv("CLAW_TEST_STORE_KEY", "sk-live-value-0123456789")
+	t.Setenv("AGENCY_TEST_STORE_KEY", "sk-live-value-0123456789")
 	s := newTestStore(t)
 
 	// The WebUI submits the reference as a literal string in the field.
 	err := s.Update(func(c *Config) error {
-		c.Providers[0].APIKey = "env:CLAW_TEST_STORE_KEY"
+		c.Providers[0].APIKey = "env:AGENCY_TEST_STORE_KEY"
 		return nil
 	})
 	if err != nil {
@@ -332,7 +332,7 @@ func TestStore_UpdateResolvesAndPreservesSecretReference(t *testing.T) {
 	if got := s.Current().Providers[0].APIKey; got != "sk-live-value-0123456789" {
 		t.Fatalf("in-memory api_key = %q, want the resolved value", got)
 	}
-	if got := providerAPIKeyOnDisk(t, s.Path(), 0); got != "env:CLAW_TEST_STORE_KEY" {
+	if got := providerAPIKeyOnDisk(t, s.Path(), 0); got != "env:AGENCY_TEST_STORE_KEY" {
 		t.Fatalf("on disk = %q, want the reference", got)
 	}
 
@@ -340,15 +340,15 @@ func TestStore_UpdateResolvesAndPreservesSecretReference(t *testing.T) {
 	if err = s.Update(func(c *Config) error { c.Providers[0].BaseURL = "https://example.test/v1"; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if got := providerAPIKeyOnDisk(t, s.Path(), 0); got != "env:CLAW_TEST_STORE_KEY" {
+	if got := providerAPIKeyOnDisk(t, s.Path(), 0); got != "env:AGENCY_TEST_STORE_KEY" {
 		t.Fatalf("after unrelated update on disk = %q, want the reference kept", got)
 	}
 
 	// A missing variable is a validation error and changes nothing.
-	if err = os.Unsetenv("CLAW_TEST_STORE_MISSING"); err != nil {
+	if err = os.Unsetenv("AGENCY_TEST_STORE_MISSING"); err != nil {
 		t.Fatal(err)
 	}
-	err = s.Update(func(c *Config) error { c.Providers[0].APIKey = "env:CLAW_TEST_STORE_MISSING"; return nil })
+	err = s.Update(func(c *Config) error { c.Providers[0].APIKey = "env:AGENCY_TEST_STORE_MISSING"; return nil })
 	var verr *ValidationError
 	if !errors.As(err, &verr) || !strings.Contains(err.Error(), "providers[0].api_key") {
 		t.Fatalf("Update error = %v, want a ValidationError naming providers[0].api_key", err)
@@ -360,7 +360,7 @@ func TestStore_UpdateResolvesAndPreservesSecretReference(t *testing.T) {
 
 func TestNewStore_MissingFileLoadsDefaults(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	s, err := NewStore(filepath.Join(dir, "config.json"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)

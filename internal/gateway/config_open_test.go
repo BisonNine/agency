@@ -31,8 +31,8 @@ func (b *lockedBuf) String() string {
 func TestOpenConfigStore_WarnsUnknownKeyOnce(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	home := filepath.Join(dir, ".claw")
-	t.Setenv("CLAW_HOME", home)
+	home := filepath.Join(dir, ".agency")
+	t.Setenv("AGENCY_HOME", home)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -60,8 +60,8 @@ func TestOpenConfigStore_WarnsUnknownKeyOnce(t *testing.T) {
 func TestOpenConfigStore_SeedsFirstRun(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	home := filepath.Join(dir, ".claw")
-	t.Setenv("CLAW_HOME", home)
+	home := filepath.Join(dir, ".agency")
+	t.Setenv("AGENCY_HOME", home)
 
 	store, err := openConfigStore(filepath.Join(home, "config.json"))
 	if err != nil {

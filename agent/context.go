@@ -59,7 +59,7 @@ type ContextBuilder struct {
 	fixedPrompt string
 
 	// cardPath is the configured agent's character card file
-	// (<CLAW_HOME>/cards/<id>.json, WithCharacterCard), tracked for cache
+	// (<AGENCY_HOME>/cards/<id>.json, WithCharacterCard), tracked for cache
 	// invalidation like a bootstrap file, and renderCard renders it into the
 	// static prompt after the identity rules. Empty: no card.
 	cardPath   string
@@ -273,14 +273,14 @@ func (cb *ContextBuilder) WithSkillsFilter(filter []string) *ContextBuilder {
 }
 
 func getGlobalConfigDir() string {
-	if home := os.Getenv("CLAW_HOME"); home != "" {
+	if home := os.Getenv(global.EnvVarHome); home != "" {
 		return home
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".claw")
+	return filepath.Join(home, global.DefaultDataDir)
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {

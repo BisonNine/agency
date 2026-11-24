@@ -45,7 +45,7 @@ func captureStdout(t *testing.T, fn func()) string {
 func setupHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := `{"agents":{"list":[{"id":"alice"},{"id":"bob"}]}}`
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte(cfg), 0o600))
 	return home
@@ -118,7 +118,7 @@ func TestPurgeRejectsArgs(t *testing.T) {
 
 func TestPurgeBadConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte("{bad"), 0o600))
 	_, err := runMemory(t, "purge")
 	require.Error(t, err)

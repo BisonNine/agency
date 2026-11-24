@@ -43,7 +43,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return <-done
 }
 
-// newHome points CLAW_HOME at a fresh directory holding config.json with body
+// newHome points AGENCY_HOME at a fresh directory holding config.json with body
 // ("" writes no config) and returns the directory.
 func newHome(t *testing.T, body string) string {
 	t.Helper()

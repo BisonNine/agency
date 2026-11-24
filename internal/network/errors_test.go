@@ -9,11 +9,11 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// badConfig points CLAW_HOME at a config that does not parse.
+// badConfig points AGENCY_HOME at a config that does not parse.
 func badConfig(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	if err := os.WriteFile(filepath.Join(home, "config.json"), []byte("{bad"), 0o600); err != nil {
 		t.Fatal(err)
 	}

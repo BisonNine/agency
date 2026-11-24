@@ -330,7 +330,7 @@ func resolveServerEnvFile(
 }
 
 // buildStdioEnv assembles the child environment for a stdio server: the
-// allowlisted parent environment (childenv.Base — never CLAW_* or ALERTER_*),
+// allowlisted parent environment (childenv.Base — never AGENCY_* or ALERTER_*),
 // overlaid by an optional env file, overlaid by the server's explicit Env map
 // (config wins over file wins over parent).
 func buildStdioEnv(cfg config.MCPServerConfig) ([]string, error) {

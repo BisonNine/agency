@@ -23,7 +23,7 @@ import (
 func setupHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := `{"agents":{"list":[{"id":"alice","default":true},{"id":"bob"}]}}`
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte(cfg), 0o600))
 	return home

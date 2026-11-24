@@ -22,8 +22,8 @@ func lookup(env []string, k string) (string, bool) {
 }
 
 func TestBase_DropsSecretsKeepsBasics(t *testing.T) {
-	t.Setenv("CLAW_HOME", "/srv/claw")
-	t.Setenv("CLAW_GATEWAY_TOKEN", "secret")
+	t.Setenv("AGENCY_HOME", "/srv/claw")
+	t.Setenv("AGENCY_GATEWAY_TOKEN", "secret")
 	t.Setenv("ALERTER_PUSHOVER_TOKEN", "secret")
 	t.Setenv("ANTHROPIC_API_KEY", "secret")
 	t.Setenv("RANDOM_OTHER", "x")
@@ -40,7 +40,7 @@ func TestBase_DropsSecretsKeepsBasics(t *testing.T) {
 	env := Base()
 
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "CLAW_") || strings.HasPrefix(kv, "ALERTER_") {
+		if strings.HasPrefix(kv, "AGENCY_") || strings.HasPrefix(kv, "ALERTER_") {
 			t.Errorf("Base() leaked %q", kv)
 		}
 	}
@@ -76,7 +76,7 @@ func TestBase_DropsSecretsKeepsBasics(t *testing.T) {
 }
 
 func TestCLI_AddsCLIAuthOnly(t *testing.T) {
-	t.Setenv("CLAW_GATEWAY_TOKEN", "secret")
+	t.Setenv("AGENCY_GATEWAY_TOKEN", "secret")
 	t.Setenv("ALERTER_SMTP_PASSWORD", "secret")
 	t.Setenv("ANTHROPIC_API_KEY", "k1")
 	t.Setenv("OPENAI_API_KEY", "k2")
@@ -101,7 +101,7 @@ func TestCLI_AddsCLIAuthOnly(t *testing.T) {
 			t.Errorf("CLI() dropped %s", k)
 		}
 	}
-	for _, k := range []string{"CLAW_GATEWAY_TOKEN", "ALERTER_SMTP_PASSWORD", "GITHUB_TOKEN"} {
+	for _, k := range []string{"AGENCY_GATEWAY_TOKEN", "ALERTER_SMTP_PASSWORD", "GITHUB_TOKEN"} {
 		if _, ok := lookup(env, k); ok {
 			t.Errorf("CLI() kept %s, want it dropped", k)
 		}
@@ -157,7 +157,7 @@ func TestKeep_PlatformNames(t *testing.T) {
 		{"windows", "SystemRoot", true},
 		{"windows", "Path", true},
 		{"windows", "XPC_FLAGS", false},
-		{"windows", "CLAW_SECRET", false},
+		{"windows", "AGENCY_SECRET", false},
 		{"linux", "XPC_FLAGS", false},
 		{"linux", "SYSTEMROOT", false},
 		{"linux", "LC_ALL", true},

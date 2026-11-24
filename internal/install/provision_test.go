@@ -38,14 +38,14 @@ func TestProvisionAndRegister_NoAccountNoTerminalStopsBeforeService(t *testing.T
 	t.Setenv(admin.EnvUser, "")
 	t.Setenv(admin.EnvPassword, "")
 	calls := stubInstallSeams(t, noTerminal)
-	clawHome := filepath.Join(t.TempDir(), "claw")
+	agencyHome := filepath.Join(t.TempDir(), "claw")
 	tu := &TargetUser{Username: "tester"}
 
-	_, err := provisionAndRegister(tu, "/nonexistent/claw", "/nonexistent", clawHome, false)
+	_, err := provisionAndRegister(tu, "/nonexistent/claw", "/nonexistent", agencyHome, false)
 	if !errors.Is(err, admin.ErrNoAccountNoTerminal) {
 		t.Fatalf("provisionAndRegister = %v; want ErrNoAccountNoTerminal", err)
 	}
-	for _, want := range []string{"export CLAW_ADMIN_USER and CLAW_ADMIN_PASSWORD", "`alice-claw admin`", "was not registered or started"} {
+	for _, want := range []string{"export AGENCY_ADMIN_USER and AGENCY_ADMIN_PASSWORD", "`alice-claw admin`", "was not registered or started"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error lacks %q:\n%v", want, err)
 		}
@@ -53,7 +53,7 @@ func TestProvisionAndRegister_NoAccountNoTerminalStopsBeforeService(t *testing.T
 	if *calls != 0 {
 		t.Fatalf("service registered %d time(s) without an admin account", *calls)
 	}
-	if _, serr := os.Stat(admin.Path(clawHome)); !errors.Is(serr, os.ErrNotExist) {
+	if _, serr := os.Stat(admin.Path(agencyHome)); !errors.Is(serr, os.ErrNotExist) {
 		t.Fatalf("credentials file exists: %v", serr)
 	}
 }
@@ -65,20 +65,20 @@ func TestProvisionAndRegister_EnvAccountThenService(t *testing.T) {
 		t.Error("terminal opened although the environment supplies the account")
 		return noTerminal(nil)
 	})
-	clawHome := filepath.Join(t.TempDir(), "claw")
+	agencyHome := filepath.Join(t.TempDir(), "claw")
 
-	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/claw", "/nonexistent", clawHome, false)
+	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/claw", "/nonexistent", agencyHome, false)
 	if err != nil || user != "jane" {
 		t.Fatalf("provisionAndRegister = %q, %v; want jane, nil", user, err)
 	}
 	if *calls != 1 {
 		t.Fatalf("service registered %d time(s), want 1", *calls)
 	}
-	fi, err := os.Stat(clawHome)
+	fi, err := os.Stat(agencyHome)
 	if err != nil || fi.Mode().Perm() != 0o700 {
-		t.Fatalf("CLAW_HOME %v, err %v; want a 0700 directory", fi, err)
+		t.Fatalf("AGENCY_HOME %v, err %v; want a 0700 directory", fi, err)
 	}
-	creds, err := admin.Load(admin.Path(clawHome), admin.DefaultFileMode)
+	creds, err := admin.Load(admin.Path(agencyHome), admin.DefaultFileMode)
 	if err != nil || !creds.Verify("jane", "jane's long password") {
 		t.Fatalf("Load/Verify: %v", err)
 	}
@@ -88,12 +88,12 @@ func TestProvisionAndRegister_ExistingAccountKept(t *testing.T) {
 	t.Setenv(admin.EnvUser, "")
 	t.Setenv(admin.EnvPassword, "")
 	calls := stubInstallSeams(t, noTerminal) // must not be needed
-	clawHome := t.TempDir()
-	if err := admin.Write(admin.Path(clawHome), "kim", "kim's long password", admin.DefaultFileMode); err != nil {
+	agencyHome := t.TempDir()
+	if err := admin.Write(admin.Path(agencyHome), "kim", "kim's long password", admin.DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}
 
-	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/claw", "/nonexistent", clawHome, true)
+	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/claw", "/nonexistent", agencyHome, true)
 	if err != nil || user != "kim" || *calls != 1 {
 		t.Fatalf("provisionAndRegister = %q, %v, registrations %d; want kim, nil, 1", user, err, *calls)
 	}
@@ -106,13 +106,13 @@ func TestProvisionAndRegister_RootChownsToServiceAccount(t *testing.T) {
 	t.Setenv(admin.EnvUser, "lee")
 	t.Setenv(admin.EnvPassword, "lee's long password")
 	stubInstallSeams(t, noTerminal)
-	clawHome := filepath.Join(t.TempDir(), "claw")
+	agencyHome := filepath.Join(t.TempDir(), "claw")
 	tu := &TargetUser{Username: "nobody", UID: "65534", GID: "65534", IsRoot: true}
 
-	if _, err := provisionAndRegister(tu, "/nonexistent/claw", "/nonexistent", clawHome, false); err != nil {
+	if _, err := provisionAndRegister(tu, "/nonexistent/claw", "/nonexistent", agencyHome, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{clawHome, admin.Path(clawHome)} {
+	for _, p := range []string{agencyHome, admin.Path(agencyHome)} {
 		fi, err := os.Stat(p)
 		if err != nil {
 			t.Fatal(err)

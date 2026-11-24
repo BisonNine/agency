@@ -389,7 +389,7 @@ export function SystemPage() {
             // Sent even when blank: the merge patch keeps any key it does not
             // see, so omitting an empty dest would make it impossible to clear.
             // The backend drops an empty string from config.json (omitempty)
-            // and falls back to <CLAW_HOME>/backup.
+            // and falls back to <AGENCY_HOME>/backup.
             dest: form.backupDest.trim(),
           },
           // Blank (or 0) is the default; null removes the key from the file.

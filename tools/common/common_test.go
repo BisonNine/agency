@@ -135,7 +135,7 @@ func TestPutCreatesCommonDir(t *testing.T) {
 		t.Fatalf("expected common dir created with file: %v", err)
 	}
 	if runtime.GOOS != "windows" {
-		// The common dir lives under CLAW_HOME: created owner-only.
+		// The common dir lives under AGENCY_HOME: created owner-only.
 		di, err := os.Stat(commonDir)
 		if err != nil {
 			t.Fatal(err)

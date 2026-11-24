@@ -26,7 +26,7 @@ import (
 )
 
 // e2eGateway is a whole gateway (gatewayCmd) running in this process on a
-// temp CLAW_HOME: a stub model, one agent, plain HTTP on a free loopback
+// temp AGENCY_HOME: a stub model, one agent, plain HTTP on a free loopback
 // port, an admin account, no operator alert channels and no real process
 // exit.
 type e2eGateway struct {
@@ -75,7 +75,7 @@ func e2eConfig(t *testing.T, home, stubURL string, port int, extra string) strin
 	return cfg
 }
 
-// newE2EHome prepares CLAW_HOME with the config and admin account, and
+// newE2EHome prepares AGENCY_HOME with the config and admin account, and
 // isolates the process state a gateway touches.
 func newE2EHome(t *testing.T, extra string) *e2eGateway {
 	t.Helper()
@@ -88,7 +88,6 @@ func newE2EHome(t *testing.T, extra string) *e2eGateway {
 		signals: make(chan chan<- os.Signal, 1),
 	}
 	t.Setenv(global.EnvVarHome, g.home)
-	t.Setenv("CLAW_HOME", g.home)
 	// No ~/.alerter and no alert channel: alerts land in the home's alerts.log.
 	t.Setenv("HOME", t.TempDir())
 	for _, k := range []string{

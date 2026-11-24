@@ -17,10 +17,10 @@ import (
 // DefaultConfig returns the default configuration for Agency.
 func DefaultConfig() *Config {
 	// Determine the base path for the workspace.
-	// Priority: $CLAW_HOME > ~/.claw
+	// Priority: $AGENCY_HOME > ~/.agency
 	var homePath string
-	if clawHome := os.Getenv(global.EnvVarHome); clawHome != "" {
-		homePath = clawHome
+	if agencyHome := os.Getenv(global.EnvVarHome); agencyHome != "" {
+		homePath = agencyHome
 	} else {
 		userHome, err := os.UserHomeDir()
 		if err != nil {

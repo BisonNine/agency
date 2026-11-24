@@ -215,7 +215,7 @@ func TestLoadConfig_MigratesMounts(t *testing.T) {
 	defer restore()
 
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	path := filepath.Join(dir, "config.json")
 	src := filepath.Join(dir, "src")
 	ref := filepath.Join(dir, "ref")
@@ -278,7 +278,7 @@ func TestLoadConfig_MigratesMounts(t *testing.T) {
 // unrelated save.
 func TestLoadConfig_MigratedRelativeMountTolerated(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	path := filepath.Join(dir, "config.json")
 	doc := `{"agents":{"list":[{"id":"alice","mounts":[{"name":"notes","path":"notes"}]}]}}`
 	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
@@ -304,7 +304,7 @@ func TestLoadConfig_MigratedReadOnlyMountNowWritable(t *testing.T) {
 	defer restore()
 
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	path := filepath.Join(dir, "config.json")
 	ro := filepath.Join(dir, "ref")
 	rw := filepath.Join(dir, "src")

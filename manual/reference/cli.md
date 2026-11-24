@@ -2,7 +2,7 @@
 
 This page lists every `claw` command and its main options.
 
-Run the commands on the machine Agency is installed on, as the user it runs as. On a system install that is, for example, `sudo -u <service user> CLAW_HOME=/opt/claw claw status`.
+Run the commands on the machine Agency is installed on, as the user it runs as. On a system install that is, for example, `sudo -u <service user> AGENCY_HOME=/opt/agency claw status`.
 
 `claw <command> --help` shows the full help for any command.
 

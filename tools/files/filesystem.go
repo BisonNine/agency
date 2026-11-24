@@ -603,7 +603,7 @@ const maxRecursiveListEntries = 1000
 
 // listRecursive walks the tree under start via the sandboxed fs (scoping and
 // allowed folders still apply), listing entries with workspace-relative paths. Hidden
-// directories (.git, etc.) and the .claw marker are skipped.
+// directories (.git, etc.) and the .agency marker are skipped.
 func (t *ListDirTool) listRecursive(start string) *toolkit.Result {
 	var b strings.Builder
 	count := 0

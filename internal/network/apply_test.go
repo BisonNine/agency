@@ -10,14 +10,14 @@ import (
 	"go.bison9.com/agency/web/backend/middleware"
 )
 
-// seedConfig points CLAW_HOME at a temp dir holding a default config, and
+// seedConfig points AGENCY_HOME at a temp dir holding a default config, and
 // returns its path. Every test here writes a real config file, because the
 // bug this command exists to recover from is a config-file problem and a test
 // that stubs the file out would not see it.
 func seedConfig(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	path := filepath.Join(home, "config.json")
 	if err := config.SaveConfig(path, config.DefaultConfig()); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)

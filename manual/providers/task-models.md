@@ -267,7 +267,7 @@ the next save. A model listed twice in one list is refused. Renaming a model
 on the Models page renames it in every list; a model in a list can't be
 deleted until it is taken off, and the refusal names the list (for example
 `task_models.tts[tts-1]`). The environment variable
-`CLAW_TASK_MODELS_ECHO_TRANSCRIPTION` sets **Echo transcription**.
+`AGENCY_TASK_MODELS_ECHO_TRANSCRIPTION` sets **Echo transcription**.
 
 ## Check Up
 

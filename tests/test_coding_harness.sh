@@ -2,7 +2,7 @@
 # The coding harness end to end on a running gateway (run by test.sh after
 # the task models test; hermetic: no network, no model, no operator alerts).
 #
-# Starts its own gateway in a temporary CLAW_HOME with one agent, Alice,
+# Starts its own gateway in a temporary AGENCY_HOME with one agent, Alice,
 # whose tools are exactly the ten coding tools (what the Agents page's
 # "Allow coding tools" grants) and one allowed folder outside the workspace
 # that the account cannot write. Her files/ holds a git repository: a
@@ -41,9 +41,9 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gateway_env.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLAW_BIN="${1:-}"
+AGENCY_BIN="${1:-}"
 PROBE="${PROBE_PATH:-probe}"
-if [ -z "$CLAW_BIN" ] || [ ! -x "$CLAW_BIN" ]; then
+if [ -z "$AGENCY_BIN" ] || [ ! -x "$AGENCY_BIN" ]; then
     echo "FAIL: usage: $0 <claw-binary>" >&2
     exit 2
 fi
@@ -69,16 +69,16 @@ WS="$HOME_DIR/agents/alice"
 REPO="$WS/files/repo"
 EXT="$TMP/reference"
 GW_OUT="$TMP/gateway.out"
-CLAW_PID=""
+AGENCY_PID=""
 
 cleanup() {
-    if [ -n "$CLAW_PID" ] && kill -0 "$CLAW_PID" 2>/dev/null; then
-        kill -TERM "$CLAW_PID" 2>/dev/null
+    if [ -n "$AGENCY_PID" ] && kill -0 "$AGENCY_PID" 2>/dev/null; then
+        kill -TERM "$AGENCY_PID" 2>/dev/null
         for _ in $(seq 1 20); do
-            kill -0 "$CLAW_PID" 2>/dev/null || break
+            kill -0 "$AGENCY_PID" 2>/dev/null || break
             sleep 0.25
         done
-        kill -KILL "$CLAW_PID" 2>/dev/null || true
+        kill -KILL "$AGENCY_PID" 2>/dev/null || true
     fi
     chmod -R u+w "$EXT" 2>/dev/null
     if [ "${KEEP:-}" = "1" ]; then
@@ -250,19 +250,19 @@ cat >"$HOME_DIR/config.json" <<EOF
 EOF
 chmod 600 "$HOME_DIR/config.json"
 
-if ! CLAW_ADMIN_USER="e2e" CLAW_ADMIN_PASSWORD="e2e-$(openssl rand -hex 16)" "$TMP/classifierllm" -admin-credentials "$HOME_DIR" >"$TMP/admin.out" 2>&1; then
+if ! AGENCY_ADMIN_USER="e2e" AGENCY_ADMIN_PASSWORD="e2e-$(openssl rand -hex 16)" "$TMP/classifierllm" -admin-credentials "$HOME_DIR" >"$TMP/admin.out" 2>&1; then
     echo "FAIL: the admin account was not created"
     sed 's/^/    /' "$TMP/admin.out"
     exit 1
 fi
-ALICE="$(CLAW_HOME="$HOME_DIR" "$CLAW_BIN" token issue alice | awk '/^  [^ ]+$/ {print $1; exit}')"
+ALICE="$(AGENCY_HOME="$HOME_DIR" "$AGENCY_BIN" token issue alice | awk '/^  [^ ]+$/ {print $1; exit}')"
 if [ -z "$ALICE" ]; then
     echo "FAIL: no service token for Alice"
     exit 1
 fi
 
-CLAW_HOME="$HOME_DIR" "$CLAW_BIN" gateway >"$GW_OUT" 2>&1 &
-CLAW_PID=$!
+AGENCY_HOME="$HOME_DIR" "$AGENCY_BIN" gateway >"$GW_OUT" 2>&1 &
+AGENCY_PID=$!
 if ! wait_for 30 curl -sf "http://127.0.0.1:$GW_PORT/ready"; then
     echo "FAIL: the gateway did not become ready"
     tail -n 40 "$GW_OUT" | sed 's/^/    /'

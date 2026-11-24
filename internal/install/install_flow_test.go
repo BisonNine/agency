@@ -18,14 +18,14 @@ import (
 // account's home and the data directory all in temp dirs; service manager
 // commands recorded; the account from the environment.
 type installEnv struct {
-	h        *host
-	log      *cmdLog
-	exe      string
-	tu       *TargetUser
-	clawHome string
-	existing *ExistingInstall
-	lookups  []string
-	register []string // targetBin of each registration
+	h          *host
+	log        *cmdLog
+	exe        string
+	tu         *TargetUser
+	agencyHome string
+	existing   *ExistingInstall
+	lookups    []string
+	register   []string // targetBin of each registration
 }
 
 // newInstallEnv builds the machine. With asRoot the account is the current
@@ -45,9 +45,8 @@ func newInstallEnv(t *testing.T, goos string, asRoot bool) *installEnv {
 		t.Fatal(err)
 	}
 	e.tu = &TargetUser{Username: me.Username, UID: me.Uid, GID: me.Gid, GroupName: "staff", HomeDir: t.TempDir(), IsRoot: asRoot}
-	e.clawHome = filepath.Join(t.TempDir(), "data")
-	t.Setenv(global.EnvVarHome, e.clawHome)
-	t.Setenv("CLAW_HOME", e.clawHome)
+	e.agencyHome = filepath.Join(t.TempDir(), "data")
+	t.Setenv(global.EnvVarHome, e.agencyHome)
 	t.Setenv("SHELL", "/bin/bash")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	t.Setenv(admin.EnvUser, "bob")
@@ -66,12 +65,12 @@ func newInstallEnv(t *testing.T, goos string, asRoot bool) *installEnv {
 
 	orig := registerService
 	t.Cleanup(func() { registerService = orig })
-	registerService = func(tu *TargetUser, targetBin, binDir, clawHome string) error {
+	registerService = func(tu *TargetUser, targetBin, binDir, agencyHome string) error {
 		e.register = append(e.register, targetBin)
 		if tu.IsRoot {
 			return nil // a system service lives outside the temp dirs
 		}
-		return h.register(tu, targetBin, binDir, clawHome)
+		return h.register(tu, targetBin, binDir, agencyHome)
 	}
 	return e
 }
@@ -98,7 +97,7 @@ func readJSON(t *testing.T, p string) map[string]any {
 
 // TestInstall_UserModeLinux: a user install copies the binary to
 // ~/.local/bin with the openclaw alias, puts it on PATH and exports
-// CLAW_HOME in the shell rc, writes the bind and allowlist settings, creates
+// AGENCY_HOME in the shell rc, writes the bind and allowlist settings, creates
 // the admin account and registers the user unit.
 func TestInstall_UserModeLinux(t *testing.T) {
 	e := newInstallEnv(t, "linux", false)
@@ -118,19 +117,19 @@ func TestInstall_UserModeLinux(t *testing.T) {
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
-	for _, want := range []string{global.InstallRCMarker, `export PATH="` + binDir + `:$PATH"`, `export CLAW_HOME="` + e.clawHome + `"`} {
+	for _, want := range []string{global.InstallRCMarker, `export PATH="` + binDir + `:$PATH"`, `export AGENCY_HOME="` + e.agencyHome + `"`} {
 		if !strings.Contains(string(rc), want) {
 			t.Errorf(".bashrc lacks %q:\n%s", want, rc)
 		}
 	}
-	gw, ok := readJSON(t, filepath.Join(e.clawHome, "config.json"))["gateway"].(map[string]any)
+	gw, ok := readJSON(t, filepath.Join(e.agencyHome, "config.json"))["gateway"].(map[string]any)
 	if !ok {
 		t.Fatal("config has no gateway object")
 	}
 	if gw["host"] != "0.0.0.0" || gw["port"] != float64(18999) || fmt.Sprint(gw["allowed_cidrs"]) != "[192.168.1.0/24]" {
 		t.Errorf("gateway = %v", gw)
 	}
-	creds, cerr := admin.Load(admin.Path(e.clawHome), admin.DefaultFileMode)
+	creds, cerr := admin.Load(admin.Path(e.agencyHome), admin.DefaultFileMode)
 	if cerr != nil || creds.Username != "bob" {
 		t.Fatalf("credentials = %+v, %v", creds, cerr)
 	}
@@ -266,10 +265,10 @@ func TestInstall_Errors(t *testing.T) {
 		}, "copying binary to"},
 		{"config unreadable", func(t *testing.T, e *installEnv) (string, string, string) {
 			t.Helper()
-			if err := os.MkdirAll(e.clawHome, 0o700); err != nil {
+			if err := os.MkdirAll(e.agencyHome, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(e.clawHome, "config.json"), []byte("{not json"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(e.agencyHome, "config.json"), []byte("{not json"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			return "127.0.0.1", "", t.TempDir()
@@ -354,7 +353,7 @@ func TestUninstall(t *testing.T) {
 			if _, serr := os.Stat(h.path(p)); !errors.Is(serr, os.ErrNotExist) {
 				t.Errorf("service file left: %v", serr)
 			}
-			for _, want := range []string{tc.desc + " (" + p + ")", "Service removed successfully.", "/home/alice/.claw"} {
+			for _, want := range []string{tc.desc + " (" + p + ")", "Service removed successfully.", "/home/alice/.agency"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("output lacks %q:\n%s", want, out)
 				}
@@ -413,7 +412,7 @@ func TestUninstall_Paths(t *testing.T) {
 	})
 	t.Run("existing service account and data dir", func(t *testing.T) {
 		h, _ := newUninstallHost(t, "linux")
-		h.detect = func(string) *ExistingInstall { return &ExistingInstall{User: "carol", ClawHome: "/srv/claw"} }
+		h.detect = func(string) *ExistingInstall { return &ExistingInstall{User: "carol", AgencyHome: "/srv/claw"} }
 		var err error
 		out := captureStdout(t, func() { err = h.uninstall("", true) })
 		if err != nil {

@@ -3,7 +3,7 @@
 # Agency gateway (Maestro embedded, host mode).
 #
 # It builds claw and a deterministic stub model server, starts a gateway in a
-# temporary CLAW_HOME with one Maestro-enabled agent, issues a service token,
+# temporary AGENCY_HOME with one Maestro-enabled agent, issues a service token,
 # runs Maestro's test.sh (from the pinned Maestro module) with MODE=host over
 # the /mcp endpoint, then stops everything and cleans up.
 #
@@ -35,11 +35,11 @@ done
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/claw-maestro-host.XXXXXX")"
 HOME_DIR="$TMP/home"
 AGENT="maestro-test"
-CLAW_PID=""
+AGENCY_PID=""
 STUB_PID=""
 
 cleanup() {
-    [ -n "$CLAW_PID" ] && kill "$CLAW_PID" 2>/dev/null && wait "$CLAW_PID" 2>/dev/null
+    [ -n "$AGENCY_PID" ] && kill "$AGENCY_PID" 2>/dev/null && wait "$AGENCY_PID" 2>/dev/null
     [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null && wait "$STUB_PID" 2>/dev/null
     if [ "$KEEP" = true ]; then
         echo "Temporary directory kept: $TMP"
@@ -89,21 +89,21 @@ EOF
 # Issue the service token before the gateway starts: it loads the token file
 # at startup and only re-reads it on its reload interval.
 echo "== Issuing a service token for $AGENT"
-TOKEN="$(CLAW_HOME="$HOME_DIR" "$TMP/claw" token issue "$AGENT" | awk '/^  [^ ]+$/ {print $1; exit}')"
+TOKEN="$(AGENCY_HOME="$HOME_DIR" "$TMP/claw" token issue "$AGENT" | awk '/^  [^ ]+$/ {print $1; exit}')"
 if [ -z "$TOKEN" ]; then
     echo "ERROR: could not obtain a service token" >&2
     exit 1
 fi
 
-echo "== Starting claw (CLAW_HOME=$HOME_DIR, gateway :$GW_PORT, mcp :$MCP_PORT)"
-CLAW_HOME="$HOME_DIR" "$TMP/claw" > "$TMP/claw.out" 2>&1 &
-CLAW_PID=$!
+echo "== Starting claw (AGENCY_HOME=$HOME_DIR, gateway :$GW_PORT, mcp :$MCP_PORT)"
+AGENCY_HOME="$HOME_DIR" "$TMP/claw" > "$TMP/claw.out" 2>&1 &
+AGENCY_PID=$!
 
 for i in $(seq 1 60); do
     if curl -s -o /dev/null "http://127.0.0.1:$MCP_PORT/mcp"; then
         break
     fi
-    if ! kill -0 "$CLAW_PID" 2>/dev/null; then
+    if ! kill -0 "$AGENCY_PID" 2>/dev/null; then
         echo "ERROR: claw exited early; output:" >&2
         cat "$TMP/claw.out" >&2
         exit 1

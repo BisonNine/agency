@@ -42,7 +42,7 @@ Without this the CLI still answers, but has none of Agency's tools.
 - **All at once:** run `./set-mcp.sh` from the Agency source folder. It
   registers Agency in Antigravity, Codex CLI, Claude Code and OpenCode,
   whichever are installed, and turns off Code Mode for OpenCode. If you changed the port, run
-  `CLAW_MCP_URL=http://127.0.0.1:<port>/internal ./set-mcp.sh`.
+  `AGENCY_MCP_URL=http://127.0.0.1:<port>/internal ./set-mcp.sh`.
 - **Claude Code:**
   `claude mcp add --transport http claw --scope user http://127.0.0.1:5911/internal`
 - **Codex CLI:** `codex mcp add claw --url http://127.0.0.1:5911/internal`
@@ -85,7 +85,7 @@ See [Command line](reference/cli.md) for every `claw` command.
 
 - Use it as `Authorization: Bearer <token>` on `/mcp`, or as the session
   token on `/internal`.
-- It is stored only as a hash in `<CLAW_HOME>/internal/service-tokens.json`;
+- It is stored only as a hash in `<AGENCY_HOME>/internal/service-tokens.json`;
   a lost token cannot be shown again, only replaced.
 - A running Agency picks up a change within a few seconds; no restart.
 - It acts in the agent's **main conversation**, with the agent's tools and

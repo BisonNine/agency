@@ -14,7 +14,7 @@ import (
 // false, and saving it writes each key out so the next load agrees.
 func TestDefaultOnSwitches_ExplicitFalseInFile(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	body := `{"channels":{
 		"slack":{"placeholder":{"enabled":false}},

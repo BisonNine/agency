@@ -37,7 +37,7 @@ const (
 )
 
 // NamedTokenPath returns the absolute path to the named-token state file for the
-// given data directory (e.g. $CLAW_HOME or ~/.claw). It mirrors servicetoken.Path
+// given data directory (e.g. $AGENCY_HOME or ~/.agency). It mirrors servicetoken.Path
 // so all long-lived token state lives together under internal/.
 func NamedTokenPath(dataDir string) string {
 	return filepath.Join(dataDir, global.InternalDir, namedFileName)

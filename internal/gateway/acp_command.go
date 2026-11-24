@@ -66,7 +66,7 @@ func acpCmd(debug bool, wsURL string, autoPair bool) error {
 	// console logger before any log line and route everything to the log file.
 	logger.DisableConsole()
 
-	baseDir := internal.GetClawHome()
+	baseDir := internal.GetAgencyHome()
 	logPath := filepath.Join(baseDir, "logs", global.LogFileName)
 	logger.SetErrorLogLevel(logger.ParseLevel(global.ErrorLogLevel))
 	if err := logger.EnableFileLogging(logPath, false); err != nil {

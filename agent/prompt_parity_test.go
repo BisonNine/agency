@@ -42,7 +42,7 @@ func parityContextBuilder(t *testing.T) *ContextBuilder {
 	t.Helper()
 	// Keep the global skill root empty so the prompt depends only on the
 	// workspace built here.
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 
 	ws := t.TempDir()
 	files := map[string]string{

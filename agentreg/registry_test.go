@@ -105,7 +105,7 @@ func (h *fakeHost) hooks() Hooks[*fakeInst] {
 
 func commitOK() bool { return true }
 
-// testConfig is a configuration with a data directory (CLAW_HOME), agents
+// testConfig is a configuration with a data directory (AGENCY_HOME), agents
 // alice (default, model m1) and bob, and the model m1.
 func testConfig(t *testing.T) *config.Config {
 	t.Helper()
@@ -125,7 +125,7 @@ func mustNew(t *testing.T, cfg *config.Config, h *fakeHost) *Registry[*fakeInst]
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	// Registered after the test's CLAW_HOME, so it runs before that
+	// Registered after the test's AGENCY_HOME, so it runs before that
 	// directory is removed: Close waits for any deferred delete still writing
 	// temp_agents.json.
 	t.Cleanup(r.Close)

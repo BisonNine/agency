@@ -45,7 +45,7 @@ func TestPlaceholderDisabled_SurvivesSaveAndLoad(t *testing.T) {
 // on for Slack and Matrix, off for Discord and the WebUI.
 func TestPlaceholderAbsent_UsesDefault(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(p, []byte(`{"channels":{"slack":{"enabled":false},"matrix":{},"discord":{}}}`), 0o600); err != nil {
 		t.Fatal(err)

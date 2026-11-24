@@ -10,7 +10,7 @@ type SummarizationConfig struct {
 	// DebugCapture, when true, appends the verbatim request and response of every
 	// summarization LLM invocation to <agent-workspace>/compact.jsonl. Debugging
 	// only; off by default.
-	DebugCapture bool `json:"debug_capture,omitempty" env:"CLAW_SUMMARIZATION_DEBUG_CAPTURE"`
+	DebugCapture bool `json:"debug_capture,omitempty" env:"AGENCY_SUMMARIZATION_DEBUG_CAPTURE"`
 }
 
 // MemoryConfig configures the cognitive-memory subsystem for an agent. The
@@ -69,7 +69,7 @@ type MemoryRetentionConfig struct {
 	// memories are ever deleted by age — a fact, preference, rule or
 	// operational note is permanent, so no policy here can silently drop a
 	// standing instruction.
-	EventDays int `json:"event_days,omitempty" env:"CLAW_MEMORY_RETENTION_EVENT_DAYS"`
+	EventDays int `json:"event_days,omitempty" env:"AGENCY_MEMORY_RETENTION_EVENT_DAYS"`
 
 	// RetiredDays is how long a retired memory is kept before it is deleted.
 	// Retiring takes a memory out of use but leaves the row, so a store that
@@ -77,7 +77,7 @@ type MemoryRetentionConfig struct {
 	//
 	// 0 uses DefaultRetiredRetentionDays; -1 keeps them forever. Measured from
 	// when the memory was retired, not when it was created.
-	RetiredDays int `json:"retired_days,omitempty" env:"CLAW_MEMORY_RETENTION_RETIRED_DAYS"`
+	RetiredDays int `json:"retired_days,omitempty" env:"AGENCY_MEMORY_RETENTION_RETIRED_DAYS"`
 }
 
 // Retention defaults. Deliberately not configurable: they are the meaning of an

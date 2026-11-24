@@ -83,7 +83,7 @@ func withStdin(t *testing.T, input string, fn func()) {
 }
 
 // newHome writes a config for one agent "main" on the stub provider (model
-// alias "m") under a fresh CLAW_HOME and returns the stub.
+// alias "m") under a fresh AGENCY_HOME and returns the stub.
 func newHome(t *testing.T) *stubprovider.Server {
 	t.Helper()
 	stub := stubprovider.New(t)
@@ -113,7 +113,7 @@ func newHome(t *testing.T) *stubprovider.Server {
 	return stub
 }
 
-// newLoop builds an agent loop from the CLAW_HOME config, for the
+// newLoop builds an agent loop from the AGENCY_HOME config, for the
 // interactive-mode tests.
 func newLoop(t *testing.T) *agent.AgentLoop {
 	t.Helper()

@@ -36,7 +36,7 @@ Each agent turn gets a short `turn_id`. It is on the turn's tool calls in the au
 
 ## Where it is kept
 
-`<CLAW_HOME>/internal/audit.db`, readable only by the service user. Events are kept for 90 days; older ones are deleted daily. Nothing is ever edited.
+`<AGENCY_HOME>/internal/audit.db`, readable only by the service user. Events are kept for 90 days; older ones are deleted daily. Nothing is ever edited.
 
 The audit log is included in the [nightly backup](./backup.md).
 

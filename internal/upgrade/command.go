@@ -206,13 +206,13 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 		exePath = existing.BinaryPath
 	}
 
-	// Set CLAW_HOME if custom install path is detected
-	if existing != nil && existing.ClawHome != "" {
-		if envErr := setClawHome(existing.ClawHome); envErr != nil {
+	// Set AGENCY_HOME if custom install path is detected
+	if existing != nil && existing.AgencyHome != "" {
+		if envErr := setAgencyHome(existing.AgencyHome); envErr != nil {
 			return envErr
 		}
 	} else if strings.HasPrefix(exePath, global.SystemDataDir) {
-		if envErr := setClawHome(global.SystemDataDir); envErr != nil {
+		if envErr := setAgencyHome(global.SystemDataDir); envErr != nil {
 			return envErr
 		}
 	}
@@ -232,8 +232,8 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 	fmt.Printf("  Target Version:  v%s (tag: %s)\n", latestVer, release.TagName)
 	fmt.Printf("  Release Asset:   %s\n", assets.archive.Name)
 	fmt.Printf("  Target Binary:   %s\n", exePath)
-	if existing != nil && existing.ClawHome != "" {
-		fmt.Printf("  Data Directory:  %s\n", existing.ClawHome)
+	if existing != nil && existing.AgencyHome != "" {
+		fmt.Printf("  Data Directory:  %s\n", existing.AgencyHome)
 	} else if strings.HasPrefix(exePath, global.SystemDataDir) {
 		fmt.Printf("  Data Directory:  %s\n", global.SystemDataDir)
 	}
@@ -556,7 +556,7 @@ func atomicReplace(srcPath, dstPath string) error {
 }
 
 func checkDirWritable(dir string) error {
-	testFile := filepath.Join(dir, fmt.Sprintf(".claw-perm-test-%d", os.Getpid()))
+	testFile := filepath.Join(dir, fmt.Sprintf(".agency-perm-test-%d", os.Getpid()))
 	f, err := os.OpenFile(testFile, os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // probe file with a generated name in the install dir
 	if err != nil {
 		return err
@@ -568,13 +568,10 @@ func checkDirWritable(dir string) error {
 	return nil
 }
 
-// setClawHome exports dir as the data directory under both env var names.
-func setClawHome(dir string) error {
+// setAgencyHome exports dir as the data directory.
+func setAgencyHome(dir string) error {
 	if err := os.Setenv(global.EnvVarHome, dir); err != nil {
 		return fmt.Errorf("setting %s: %w", global.EnvVarHome, err)
-	}
-	if err := os.Setenv("CLAW_HOME", dir); err != nil {
-		return fmt.Errorf("setting CLAW_HOME: %w", err)
 	}
 	return nil
 }

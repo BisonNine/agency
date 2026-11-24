@@ -29,7 +29,7 @@ func NewTLSCommand() *cobra.Command {
 			"HTTPS on gateway.tls_port (default 18443) where gateway.tls.mode says: \"all\" interfaces\n" +
 			"(the default), \"localhost\" only, or \"off\". HTTPS presents either the operator's\n" +
 			"certificate (gateway.tls.cert_file and key_file) or a self-signed one it generates\n" +
-			"under <CLAW_HOME>/tls and renews itself.\n\n" +
+			"under <AGENCY_HOME>/tls and renews itself.\n\n" +
 			"This prints that certificate. Compare the SHA-256 fingerprint with the one your\n" +
 			"browser shows before accepting a self-signed certificate.\n\n" +
 			"--regenerate replaces the self-signed certificate now, for example after adding\n" +

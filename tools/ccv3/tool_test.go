@@ -20,7 +20,7 @@ import (
 	"go.bison9.com/agency/tools"
 )
 
-// testConfig is a configuration under a temporary CLAW_HOME: alice has the
+// testConfig is a configuration under a temporary AGENCY_HOME: alice has the
 // switch, bob does not, Carol (named) has the switch and the card
 // "Sherlock", Dave the card "sherlock" too.
 func testConfig(t *testing.T) *config.Config {

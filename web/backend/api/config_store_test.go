@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	testRefEnv   = "CLAW_TEST_REF_API_KEY"
+	testRefEnv   = "AGENCY_TEST_REF_API_KEY"
 	testRefValue = "sk-resolved-from-env-0123456789"
 )
 
@@ -25,7 +25,7 @@ func refFixture(t *testing.T) (string, *Handler, *http.ServeMux) {
 	t.Setenv(testRefEnv, testRefValue)
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	t.Setenv("CLAW_HOME", filepath.Join(dir, ".claw"))
+	t.Setenv("AGENCY_HOME", filepath.Join(dir, ".agency"))
 	p := filepath.Join(dir, "config.json")
 	body := `{
 		"agents": {"defaults": {"models": ["m"]}, "list": [{"id": "main", "name": "Main", "default": true}]},
@@ -119,12 +119,12 @@ func TestPutConfig_RoundTripKeepsSecretReference(t *testing.T) {
 }
 
 func TestPatchConfig_KeepsSecretReferenceAndAcceptsNewOne(t *testing.T) {
-	t.Setenv("CLAW_TEST_TG_TOKEN", "9999:tg-from-env")
+	t.Setenv("AGENCY_TEST_TG_TOKEN", "9999:tg-from-env")
 	p, h, mux := refFixture(t)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPatch, "/api/config",
-		strings.NewReader(`{"channels": {"telegram": [{"id": "b1", "enabled": true, "token": "env:CLAW_TEST_TG_TOKEN"}]}}`))
+		strings.NewReader(`{"channels": {"telegram": [{"id": "b1", "enabled": true, "token": "env:AGENCY_TEST_TG_TOKEN"}]}}`))
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -138,7 +138,7 @@ func TestPatchConfig_KeepsSecretReferenceAndAcceptsNewOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"env:CLAW_TEST_TG_TOKEN"`) || strings.Contains(string(raw), "tg-from-env") {
+	if !strings.Contains(string(raw), `"env:AGENCY_TEST_TG_TOKEN"`) || strings.Contains(string(raw), "tg-from-env") {
 		t.Fatalf("new reference not preserved on disk:\n%s", raw)
 	}
 	cfg, err := h.currentConfig()
@@ -182,7 +182,7 @@ func TestPutConfig_NewLiteralReplacesReference(t *testing.T) {
 }
 
 func TestPutConfig_MissingEnvReferenceIs400(t *testing.T) {
-	if err := os.Unsetenv("CLAW_TEST_NOT_SET_ANYWHERE"); err != nil {
+	if err := os.Unsetenv("AGENCY_TEST_NOT_SET_ANYWHERE"); err != nil {
 		t.Fatal(err)
 	}
 	p, _, mux := refFixture(t)
@@ -190,7 +190,7 @@ func TestPutConfig_MissingEnvReferenceIs400(t *testing.T) {
 	if err := json.Unmarshal([]byte(getConfigBody(t, mux)), &doc); err != nil {
 		t.Fatal(err)
 	}
-	objectAt(t, doc, "providers", 0)["api_key"] = "env:CLAW_TEST_NOT_SET_ANYWHERE"
+	objectAt(t, doc, "providers", 0)["api_key"] = "env:AGENCY_TEST_NOT_SET_ANYWHERE"
 	body, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +199,7 @@ func TestPutConfig_MissingEnvReferenceIs400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(body))
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "CLAW_TEST_NOT_SET_ANYWHERE") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "AGENCY_TEST_NOT_SET_ANYWHERE") {
 		t.Fatalf("PUT = %d %s, want 400 naming the variable", rec.Code, rec.Body.String())
 	}
 	if got := diskProviderKey(t, p); got != "env:"+testRefEnv {

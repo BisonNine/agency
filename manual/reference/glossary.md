@@ -36,7 +36,7 @@ This page explains the terms used in Agency and this manual.
 
 **Cooldown** — A pause Agency puts on a model after it fails, so the agent uses its next model instead. Its length depends on the kind of failure. See [Cooldowns](../providers/concepts.md#cooldowns).
 
-**Data directory** — The folder where Agency keeps everything: `~/.claw`, or the folder named by `CLAW_HOME`.
+**Data directory** — The folder where Agency keeps everything: `~/.agency`, or the folder named by `AGENCY_HOME`.
 
 **Default agent** — The agent that answers messages no binding sends elsewhere. Chosen as **Default agent** on the **System** page; without a choice, the first agent is used. See [The default agent](../channels/routing.md#the-default-agent).
 

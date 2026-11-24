@@ -444,18 +444,18 @@ Updated content.`
 }
 
 // TestGlobalSkillFileContentChange verifies that modifying a global skill
-// (~/.claw/skills) invalidates the cached system prompt.
+// (~/.agency/skills) invalidates the cached system prompt.
 func TestGlobalSkillFileContentChange(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
-	// The global skills dir is $CLAW_HOME/skills when CLAW_HOME is set; an
+	// The global skills dir is $AGENCY_HOME/skills when AGENCY_HOME is set; an
 	// inherited one would point the builder away from this test's home.
-	t.Setenv("CLAW_HOME", "")
+	t.Setenv("AGENCY_HOME", "")
 
 	tmpDir := setupWorkspace(t, nil)
 	defer removeAll(t, tmpDir)
 
-	globalSkillPath := filepath.Join(tmpHome, ".claw", "skills", "global-skill", "SKILL.md")
+	globalSkillPath := filepath.Join(tmpHome, ".agency", "skills", "global-skill", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(globalSkillPath), 0o755); err != nil {
 		t.Fatal(err)
 	}

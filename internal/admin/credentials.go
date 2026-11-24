@@ -19,7 +19,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// FileName is the credentials file's name inside CLAW_HOME.
+// FileName is the credentials file's name inside AGENCY_HOME.
 const FileName = "credentials.json"
 
 // DefaultFileMode is the credentials file's mode when
@@ -58,9 +58,9 @@ type Credentials struct {
 	Updated      time.Time `json:"updated"`
 }
 
-// Path returns the credentials file path for a CLAW_HOME.
-func Path(clawHome string) string {
-	return filepath.Join(clawHome, FileName)
+// Path returns the credentials file path for a AGENCY_HOME.
+func Path(agencyHome string) string {
+	return filepath.Join(agencyHome, FileName)
 }
 
 // Load reads and validates the credentials file at path. It returns
@@ -83,7 +83,7 @@ func Load(path string, allowed fs.FileMode) (*Credentials, error) {
 		return nil, &PermissionError{Path: path, Mode: mode, Allowed: allowed.Perm()}
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // path is <CLAW_HOME>/credentials.json, chosen by the operator
+	data, err := os.ReadFile(path) //nolint:gosec // path is <AGENCY_HOME>/credentials.json, chosen by the operator
 	if err != nil {
 		return nil, fmt.Errorf("read credentials file: %w", err)
 	}

@@ -32,7 +32,7 @@ import (
 // gatewayCmd runs the gateway until it is stopped: a signal, a core service
 // that died, or a restart request.
 func gatewayCmd(debug bool) error {
-	baseDir := internal.GetClawHome()
+	baseDir := internal.GetAgencyHome()
 	logPath := startFileLogging(baseDir)
 
 	// The PID lock is taken before connecting to any external service: if
@@ -118,7 +118,7 @@ func gatewayCmd(debug bool) error {
 
 	// Record the pid so `claw status` can find THIS instance. Scoped to the data
 	// directory because one binary runs several gateways on a host, and a CLI
-	// command already resolves CLAW_HOME to find the config. Written before the
+	// command already resolves AGENCY_HOME to find the config. Written before the
 	// services start, so an instance that is accepting connections is always
 	// visible through the file (the usual daemon order); the deferred removal
 	// still cleans up if startup fails below. Non-fatal: a gateway that cannot
@@ -299,7 +299,7 @@ func newGatewayAgentLoop(
 	agentLoop.SetAlerter(operatorAlerter)
 	logModes := cfg.PermissionModes(config.AreaLogs)
 	agentLoop.SetDumpsDir(dump.Dir{
-		Path:     filepath.Join(internal.GetClawHome(), "logs", "dumps"),
+		Path:     filepath.Join(internal.GetAgencyHome(), "logs", "dumps"),
 		DirMode:  logModes.Dir,
 		FileMode: logModes.File,
 	})

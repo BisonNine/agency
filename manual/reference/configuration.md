@@ -6,7 +6,7 @@ Most settings have a place in the WebUI, and that is the safer way to change the
 
 ## Where it is
 
-`config.json` is in the data directory: `~/.claw/config.json`, or `$CLAW_HOME/config.json` when `CLAW_HOME` is set.
+`config.json` is in the data directory: `~/.agency/config.json`, or `$AGENCY_HOME/config.json` when `AGENCY_HOME` is set.
 
 Agency writes a complete file on first start, with every section present and the known providers and models listed. That file is the reference for what can be set.
 
@@ -70,9 +70,9 @@ The reference is written back unchanged when the configuration is saved. A refer
 
 ## Environment variables
 
-`CLAW_HOME` sets the data directory.
+`AGENCY_HOME` sets the data directory.
 
-Many settings can also be set with a `CLAW_…` environment variable, for example `CLAW_GATEWAY_PORT`. Such a variable overrides the value in `config.json`. Set it in the service definition, not in a shell, so the service sees it.
+Many settings can also be set with a `AGENCY_…` environment variable, for example `AGENCY_GATEWAY_PORT`. Such a variable overrides the value in `config.json`. Set it in the service definition, not in a shell, so the service sees it.
 
 ## Agent ids
 

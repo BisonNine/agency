@@ -19,7 +19,7 @@ import (
 func setupHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	return filepath.Join(home, "cron", "jobs.json")
 }
 
@@ -55,7 +55,7 @@ func TestCronRootShowsHelp(t *testing.T) {
 
 func TestCronBadConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte("{bad"), 0o600))
 	_, err := runCron(t, "list")
 	require.Error(t, err)

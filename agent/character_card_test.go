@@ -52,7 +52,7 @@ func TestCardPrompt_PlacementAndIdentity(t *testing.T) {
 // A clone's own card wins over its source's configured card; a configured
 // card that does not exist leaves the agent without a card.
 func TestWithCharacterCard_CloneOverrideAndMissing(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	cfg := config.DefaultConfig()
 	ac := &config.AgentConfig{ID: "alice", CharacterCard: "nobody"}
 	spec := agentreg.Spec{ID: "alice", Config: ac, Workspace: t.TempDir()}
@@ -76,7 +76,7 @@ func TestWithCharacterCard_CloneOverrideAndMissing(t *testing.T) {
 // points into the test's own temp space, plus one card, "watson".
 func cardsConfig(t *testing.T) *config.Config {
 	t.Helper()
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	base := newTestConfig(t)
 	cfg := config.DefaultConfig()
 	cfg.Agents = base.Agents

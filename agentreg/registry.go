@@ -117,7 +117,7 @@ type Spec struct {
 	Workspace string
 	// StateDir holds the conversation archive (sessions/) and the cognitive
 	// memory (cogmem/). It is the workspace for a config agent and
-	// <CLAW_HOME>/internal/temp/<uuid> for a temporary one.
+	// <AGENCY_HOME>/internal/temp/<uuid> for a temporary one.
 	StateDir string
 	// Ephemeral marks a memory that is read but never written by the loop:
 	// nothing is observed into it or consolidated. An ephemeral agent is not
@@ -291,9 +291,9 @@ type Registry[T Instance] struct {
 	inserted  InsertedFunc[T]
 	closedFn  ClosedFunc[T]
 	clock     clock.Clock
-	statePath string // <CLAW_HOME>/internal/temp_agents.json; "" = not persisted
+	statePath string // <AGENCY_HOME>/internal/temp_agents.json; "" = not persisted
 
-	// rootMu guards tempRoot. The owner's root is <CLAW_HOME>/internal/temp.
+	// rootMu guards tempRoot. The owner's root is <AGENCY_HOME>/internal/temp.
 	// Any other process gets a private directory under the system temp
 	// directory, made on first use and removed by Close, so it never puts
 	// anything where the owner cleans up.

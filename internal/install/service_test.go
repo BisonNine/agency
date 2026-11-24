@@ -99,12 +99,12 @@ func TestInstallSystemd_System(t *testing.T) {
 	h, log := svcHost(t, "linux")
 	mkHostDir(t, h, filepath.Dir(systemUnitPath))
 	var err error
-	out := captureStdout(t, func() { err = h.installSystemd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/claw") })
+	out := captureStdout(t, func() { err = h.installSystemd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/agency") })
 	if err != nil {
 		t.Fatal(err)
 	}
 	unit := readHostFile(t, h, systemUnitPath)
-	for _, want := range []string{"User=alice\n", "Group=staff\n", "ExecStart=/usr/local/bin/claw\n", "CLAW_HOME=/opt/claw\n", "WantedBy=multi-user.target"} {
+	for _, want := range []string{"User=alice\n", "Group=staff\n", "ExecStart=/usr/local/bin/claw\n", "AGENCY_HOME=/opt/agency\n", "WantedBy=multi-user.target"} {
 		if !strings.Contains(unit, want) {
 			t.Errorf("unit lacks %q:\n%s", want, unit)
 		}
@@ -122,7 +122,7 @@ func TestInstallSystemd_SystemErrors(t *testing.T) {
 	t.Run("unit not writable", func(t *testing.T) {
 		h, log := svcHost(t, "linux")
 		var err error
-		captureStdout(t, func() { err = h.installSystemd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/claw") })
+		captureStdout(t, func() { err = h.installSystemd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/agency") })
 		if err == nil || !strings.Contains(err.Error(), "writing systemd unit "+systemUnitPath) {
 			t.Fatalf("err = %v", err)
 		}
@@ -136,7 +136,7 @@ func TestInstallSystemd_SystemErrors(t *testing.T) {
 			mkHostDir(t, h, filepath.Dir(systemUnitPath))
 			log.fail[failing] = "unit broken"
 			var err error
-			captureStdout(t, func() { err = h.installSystemd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/claw") })
+			captureStdout(t, func() { err = h.installSystemd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/agency") })
 			if err == nil || !strings.Contains(err.Error(), failing+": unit broken") {
 				t.Fatalf("err = %v", err)
 			}
@@ -154,7 +154,9 @@ func TestInstallSystemd_User(t *testing.T) {
 			log.fail["loginctl enable-linger alice"] = "denied"
 		}
 		var err error
-		out := captureStdout(t, func() { err = h.installSystemd(alice, "/home/alice/bin/claw", "/home/alice/bin", "/home/alice/.claw") })
+		out := captureStdout(t, func() {
+			err = h.installSystemd(alice, "/home/alice/bin/claw", "/home/alice/bin", "/home/alice/.agency")
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -181,7 +183,7 @@ func TestInstallSystemd_UserErrors(t *testing.T) {
 		h, _ := svcHost(t, "linux")
 		writeHostFile(t, h, "/home/alice/.config", "", 0o600)
 		var err error
-		captureStdout(t, func() { err = h.installSystemd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.installSystemd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.Contains(err.Error(), "creating directory /home/alice/.config/systemd/user") {
 			t.Fatalf("err = %v", err)
 		}
@@ -190,7 +192,7 @@ func TestInstallSystemd_UserErrors(t *testing.T) {
 		h, _ := svcHost(t, "linux")
 		mkHostDir(t, h, userUnitPath("/home/alice"))
 		var err error
-		captureStdout(t, func() { err = h.installSystemd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.installSystemd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.Contains(err.Error(), "writing user systemd unit") {
 			t.Fatalf("err = %v", err)
 		}
@@ -200,7 +202,7 @@ func TestInstallSystemd_UserErrors(t *testing.T) {
 			h, log := svcHost(t, "linux")
 			log.fail[failing] = "no session bus"
 			var err error
-			captureStdout(t, func() { err = h.installSystemd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+			captureStdout(t, func() { err = h.installSystemd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 			if err == nil || !strings.Contains(err.Error(), failing+": no session bus") {
 				t.Fatalf("err = %v", err)
 			}
@@ -261,7 +263,7 @@ func TestInstallLaunchd(t *testing.T) {
 		h, log := svcHost(t, "darwin")
 		mkHostDir(t, h, filepath.Dir(systemLaunchdPath))
 		var err error
-		out := captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/claw") })
+		out := captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/agency") })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,7 +271,7 @@ func TestInstallLaunchd(t *testing.T) {
 		if !strings.Contains(plist, "<key>UserName</key>") || !strings.Contains(plist, "<string>/usr/local/bin/claw</string>") {
 			t.Errorf("plist:\n%s", plist)
 		}
-		if fi, serr := os.Stat(h.path("/opt/claw/logs")); serr != nil || !fi.IsDir() {
+		if fi, serr := os.Stat(h.path("/opt/agency/logs")); serr != nil || !fi.IsDir() {
 			t.Errorf("logs folder not created: %v", serr)
 		}
 		want := "launchctl bootout system/" + launchdLabel + "\nlaunchctl unload -w " + systemLaunchdPath + "\nlaunchctl bootstrap system " + systemLaunchdPath
@@ -285,7 +287,7 @@ func TestInstallLaunchd(t *testing.T) {
 		mkHostDir(t, h, filepath.Dir(systemLaunchdPath))
 		log.fail["launchctl bootstrap system "+systemLaunchdPath] = "old launchctl"
 		var err error
-		captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/claw") })
+		captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/agency") })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -299,7 +301,7 @@ func TestInstallLaunchd(t *testing.T) {
 		log.fail["launchctl bootstrap system "+systemLaunchdPath] = "boot failed"
 		log.fail["launchctl load -w "+systemLaunchdPath] = "load failed"
 		var err error
-		captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/claw") })
+		captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/agency") })
 		if err == nil || !strings.Contains(err.Error(), "boot failed / load failed") {
 			t.Fatalf("err = %v", err)
 		}
@@ -307,7 +309,7 @@ func TestInstallLaunchd(t *testing.T) {
 	t.Run("daemon plist not writable", func(t *testing.T) {
 		h, _ := svcHost(t, "darwin")
 		var err error
-		captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/claw") })
+		captureStdout(t, func() { err = h.installLaunchd(aliceRoot, "/usr/local/bin/claw", "/usr/local/bin", "/opt/agency") })
 		if err == nil || !strings.Contains(err.Error(), "writing launchd daemon") {
 			t.Fatalf("err = %v", err)
 		}
@@ -316,7 +318,7 @@ func TestInstallLaunchd(t *testing.T) {
 		h, log := svcHost(t, "darwin")
 		var err error
 		out := captureStdout(t, func() {
-			err = h.installLaunchd(alice, "/Users/alice/bin/claw", "/Users/alice/bin", "/Users/alice/.claw")
+			err = h.installLaunchd(alice, "/Users/alice/bin/claw", "/Users/alice/bin", "/Users/alice/.agency")
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -338,12 +340,12 @@ func TestInstallLaunchd(t *testing.T) {
 		dest := userLaunchdPath("/home/alice")
 		log.fail["launchctl bootstrap gui/1001 "+dest] = "boot failed"
 		var err error
-		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err != nil {
 			t.Fatalf("fallback to load failed: %v", err)
 		}
 		log.fail["launchctl load -w "+dest] = "load failed"
-		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.Contains(err.Error(), "launchctl bootstrap gui/1001: boot failed / load failed") {
 			t.Fatalf("err = %v", err)
 		}
@@ -352,7 +354,7 @@ func TestInstallLaunchd(t *testing.T) {
 		h, _ := svcHost(t, "darwin")
 		writeHostFile(t, h, "/home/alice/Library", "", 0o600)
 		var err error
-		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.Contains(err.Error(), "creating directory") {
 			t.Fatalf("err = %v", err)
 		}
@@ -361,16 +363,16 @@ func TestInstallLaunchd(t *testing.T) {
 		h, _ := svcHost(t, "darwin")
 		mkHostDir(t, h, userLaunchdPath("/home/alice"))
 		var err error
-		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.Contains(err.Error(), "writing launchd agent") {
 			t.Fatalf("err = %v", err)
 		}
 	})
 	t.Run("logs folder blocked", func(t *testing.T) {
 		h, _ := svcHost(t, "darwin")
-		writeHostFile(t, h, "/home/alice/.claw/logs", "", 0o600)
+		writeHostFile(t, h, "/home/alice/.agency/logs", "", 0o600)
 		var err error
-		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.installLaunchd(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.Contains(err.Error(), "creating logs directory") {
 			t.Fatalf("err = %v", err)
 		}
@@ -435,12 +437,12 @@ func TestRegister(t *testing.T) {
 	t.Run("linux", func(t *testing.T) {
 		h, log := svcHost(t, "linux")
 		var err error
-		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err != nil || !strings.HasPrefix(joinLines(log.lines()), "systemctl --user") {
 			t.Fatalf("err = %v, commands %v", err, log.lines())
 		}
 		log.fail["systemctl --user daemon-reload"] = "x"
-		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.HasPrefix(err.Error(), "installing systemd service: ") {
 			t.Fatalf("err = %v", err)
 		}
@@ -448,22 +450,22 @@ func TestRegister(t *testing.T) {
 	t.Run("darwin", func(t *testing.T) {
 		h, log := svcHost(t, "darwin")
 		var err error
-		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err != nil || !strings.HasPrefix(joinLines(log.lines()), "launchctl") {
 			t.Fatalf("err = %v, commands %v", err, log.lines())
 		}
-		if ierr := os.RemoveAll(h.path("/home/alice/.claw/logs")); ierr != nil {
+		if ierr := os.RemoveAll(h.path("/home/alice/.agency/logs")); ierr != nil {
 			t.Fatal(ierr)
 		}
-		writeHostFile(t, h, "/home/alice/.claw/logs", "", 0o600)
-		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.claw") })
+		writeHostFile(t, h, "/home/alice/.agency/logs", "", 0o600)
+		captureStdout(t, func() { err = h.register(alice, "/x/claw", "/x", "/home/alice/.agency") })
 		if err == nil || !strings.HasPrefix(err.Error(), "installing launchd service: ") {
 			t.Fatalf("err = %v", err)
 		}
 	})
 	t.Run("other", func(t *testing.T) {
 		h, log := svcHost(t, "freebsd")
-		if err := h.register(alice, "/x/claw", "/x", "/home/alice/.claw"); err != nil || len(log.lines()) != 0 {
+		if err := h.register(alice, "/x/claw", "/x", "/home/alice/.agency"); err != nil || len(log.lines()) != 0 {
 			t.Fatalf("err = %v, commands %v", err, log.lines())
 		}
 	})

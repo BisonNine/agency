@@ -10,7 +10,7 @@ Every Agency alert is sent at normal priority.
 
 ## Where alerts go
 
-Every alert is written to `<CLAW_HOME>/logs/alerts.log`.
+Every alert is written to `<AGENCY_HOME>/logs/alerts.log`.
 
 To see them in the WebUI:
 

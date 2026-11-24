@@ -61,7 +61,7 @@ func realPath(t *testing.T, p string) string {
 func TestFreshAgent_CLIModelIsolated(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
-	t.Setenv("CLAW_TEST_SERVICE_SECRET", "do-not-leak")
+	t.Setenv("AGENCY_TEST_SERVICE_SECRET", "do-not-leak")
 
 	logDir := t.TempDir()
 	cfg := ownerTestConfig(t)
@@ -103,7 +103,7 @@ func TestFreshAgent_CLIModelIsolated(t *testing.T) {
 				t.Fatalf("%s: args %v, bypass flag %s present = %v, want %v", tc.agent, args, flag, !tc.wantBypass, tc.wantBypass)
 			}
 		}
-		if env := readLog(t, logDir, "env"); strings.Contains(env, "CLAW_TEST_SERVICE_SECRET") {
+		if env := readLog(t, logDir, "env"); strings.Contains(env, "AGENCY_TEST_SERVICE_SECRET") {
 			t.Fatalf("%s: the service environment reached the CLI", tc.agent)
 		}
 	}

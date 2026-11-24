@@ -13,7 +13,7 @@ On the **System** page, in the **Backup** section:
 | **Nightly backup** | On | Write an archive once a day. |
 | **Backup time** | 03:00 | Local time of day. |
 | **Keep backups (days)** | 30 | Older archives are deleted from the destination. |
-| **Destination directory** | `<CLAW_HOME>/backup` | Where archives are written. |
+| **Destination directory** | `<AGENCY_HOME>/backup` | Where archives are written. |
 
 The page saves by itself, and changes apply within a minute without a restart.
 
@@ -40,7 +40,7 @@ The same settings in `config.json`:
 A backup on the same disk protects against mistakes, not against losing the machine. Either set **Destination directory** to a mounted network folder, or copy the archives after each run, for example:
 
 ```
-rsync -a --chmod=F600,D700 "$CLAW_HOME/backup/" backup-host:claw-backups/
+rsync -a --chmod=F600,D700 "$AGENCY_HOME/backup/" backup-host:claw-backups/
 ```
 
 Each archive is complete on its own.
@@ -94,7 +94,7 @@ Back such a folder up yourself, or move the agent back into the agents folder.
 
 3. It lists every file it will write, marking the ones it will replace, and asks you to confirm. (`--yes` skips the question.)
 4. Every database in the archive is checked before anything changes. If one fails, the restore stops and nothing is changed.
-5. Replaced files are moved to `<CLAW_HOME>/restore-backup-<timestamp>/`. Delete that folder once you are happy with the result.
+5. Replaced files are moved to `<AGENCY_HOME>/restore-backup-<timestamp>/`. Delete that folder once you are happy with the result.
 6. Start Agency.
 
 ### Restore on a new machine

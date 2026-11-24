@@ -11,7 +11,7 @@ import (
 )
 
 // The PID file and the data directory it may have to create are owner-only:
-// nothing under CLAW_HOME is world-readable.
+// nothing under AGENCY_HOME is world-readable.
 func TestWriteOwnerOnlyModes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")

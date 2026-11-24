@@ -72,7 +72,7 @@ A model's `env` (also `config.json` only) sets extra environment variables for t
 
 ## Where the CLI runs
 
-The CLI runs in the model's **Workspace Path** (`workspace`). When that is empty, it runs in `<CLAW_HOME>/cli`, shared by all CLI models. The **Check Up** report lists each CLI model's command line and working directory.
+The CLI runs in the model's **Workspace Path** (`workspace`). When that is empty, it runs in `<AGENCY_HOME>/cli`, shared by all CLI models. The **Check Up** report lists each CLI model's command line and working directory.
 
 Temporary agents created fresh at run time (see [Sub-agents](../agents/subagents.md)) are the exception: their CLI runs in the agent's own empty folder and never with the bypass flag, whatever the checkbox says.
 

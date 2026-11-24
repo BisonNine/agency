@@ -144,7 +144,7 @@ func buildMergedMux(srv *webserver.Server) *http.ServeMux {
 	return mux
 }
 
-// enforceDataDirPerms holds CLAW_HOME to policy (the configured modes) before
+// enforceDataDirPerms holds AGENCY_HOME to policy (the configured modes) before
 // anything else in it is read: the directory, its folders and its files are
 // set to exactly their area's modes (perms.Enforce).
 func enforceDataDirPerms(baseDir string, policy perms.Policy) error {
@@ -196,7 +196,7 @@ func warnOtherAccess(cfg *config.Config) {
 	}
 }
 
-// openAuditLog opens <CLAW_HOME>/internal/audit.db as the process-wide audit store. A
+// openAuditLog opens <AGENCY_HOME>/internal/audit.db as the process-wide audit store. A
 // gateway that cannot open it still serves, without an audit trail.
 func openAuditLog(baseDir string) {
 	if err := audit.Init(baseDir); err != nil {

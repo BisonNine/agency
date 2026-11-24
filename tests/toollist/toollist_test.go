@@ -116,7 +116,7 @@ func capture(t *testing.T, v variant) []byte {
 	home := t.TempDir()
 	copyFile(t, "../capabilities/testdata/fixture.json", filepath.Join(home, "config.json"))
 	copyTree(t, "../capabilities/testdata/fusion", filepath.Join(home, "fusion"))
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg, err := config.LoadConfig(filepath.Join(home, "config.json"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)

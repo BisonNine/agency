@@ -127,7 +127,7 @@ func TestLoadConfig_BuiltinListKeyPresence(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(l.name+"/"+tc.name, func(t *testing.T) {
 				dir := t.TempDir()
-				t.Setenv("CLAW_HOME", dir)
+				t.Setenv("AGENCY_HOME", dir)
 				doc := `{}`
 				if tc.value != "" {
 					doc = tc.value

@@ -11,7 +11,7 @@ import (
 )
 
 // Task status, results and run-marker files live under the agent workspace and
-// must be owner-only, like everything else Agency creates under CLAW_HOME.
+// must be owner-only, like everything else Agency creates under AGENCY_HOME.
 func TestTaskFiles_OwnerOnlyModes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")

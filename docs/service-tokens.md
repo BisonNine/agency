@@ -45,7 +45,7 @@ uses) on a stable footing.
   record in the shared session-token store.
 
 ## Persistence & activation
-- Stored at `$CLAW_HOME/internal/service-tokens.json` (`0o600`), as
+- Stored at `$AGENCY_HOME/internal/service-tokens.json` (`0o600`), as
   `{"<agentID>": "sha256:<hex>"}` — the SHA-256 of the token, not the token.
   `claw token issue` prints the plaintext once; it cannot be recovered later
   (issue a new one). A presented token is hashed for lookup. A file from an
@@ -87,7 +87,7 @@ automatically within a few seconds (a file watcher re-syncs the live store).
       `RegisterService(token, agentID, archiveDir)` that binds the service
       session key.
 - [x] Boot wiring in `startMCPServer`: load `service-tokens.json` and
-      `RegisterService` each (alongside the existing `CLAW_MCP_TEST_TOKEN` path).
+      `RegisterService` each (alongside the existing `AGENCY_MCP_TEST_TOKEN` path).
 - [x] `internal/token` cobra command (`issue`/`rotate`/`revoke`/`list`) wired
       into `NewClawCommand`.
 - [x] Manual (`manual/mcp.md`): document service tokens + the `claw token` commands.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CLI provider smoke test (opt-in: CLAW_TEST_CLI=1).
+# CLI provider smoke test (opt-in: AGENCY_TEST_CLI=1).
 #
 # Starts one turn through a real Claude CLI configured the way an operator gets
 # it out of the box: "Allow CLI to bypass restrictions" off, so whether the CLI's tool
@@ -13,25 +13,25 @@
 #
 # Costs one model call on the operator's CLI account, hence opt-in.
 #
-#   CLAW_TEST_CLI=1 ./test.sh                # as part of the gate
+#   AGENCY_TEST_CLI=1 ./test.sh                # as part of the gate
 #   tests/test_cli_provider.sh build/claw    # standalone, with a claw binary
 #
 # Environment:
-#   CLAW_TEST_CLI_COMMAND  the CLI binary (default: claude)
+#   AGENCY_TEST_CLI_COMMAND  the CLI binary (default: claude)
 set -uo pipefail
 
 # A test gateway must never alert the operator: no ALERTER_* channel from ~/.alerter.
 # shellcheck source=tests/lib/gateway_env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gateway_env.sh"
 
-CLAW_BIN="${1:-}"
-if [ -z "$CLAW_BIN" ] || [ ! -x "$CLAW_BIN" ]; then
+AGENCY_BIN="${1:-}"
+if [ -z "$AGENCY_BIN" ] || [ ! -x "$AGENCY_BIN" ]; then
     echo "usage: $0 <claw binary>" >&2
     exit 2
 fi
-CLI_CMD="${CLAW_TEST_CLI_COMMAND:-claude}"
+CLI_CMD="${AGENCY_TEST_CLI_COMMAND:-claude}"
 if ! command -v "$CLI_CMD" >/dev/null 2>&1; then
-    echo "FAIL: CLI '$CLI_CMD' not on PATH (set CLAW_TEST_CLI_COMMAND)"
+    echo "FAIL: CLI '$CLI_CMD' not on PATH (set AGENCY_TEST_CLI_COMMAND)"
     exit 1
 fi
 
@@ -48,13 +48,13 @@ cat > "$HOME_DIR/config.json" <<CFG
 }
 CFG
 chmod 600 "$HOME_DIR/config.json"
-# The CLI runs in <CLAW_HOME>/cli; the service creates it at start, this
+# The CLI runs in <AGENCY_HOME>/cli; the service creates it at start, this
 # one-shot command does not.
 mkdir -p "$HOME_DIR/cli"
 
 PROMPT="Use the Write tool to create a file named probe.txt in the current directory containing the single word hello, then reply with exactly: wrote probe.txt"
 echo "CLI provider smoke: $CLI_CMD, Allow CLI to bypass restrictions off"
-OUT=$(CLAW_HOME="$HOME_DIR" timeout 240 "$CLAW_BIN" agent -m "$PROMPT" 2>"$HOME_DIR/stderr.log")
+OUT=$(AGENCY_HOME="$HOME_DIR" timeout 240 "$AGENCY_BIN" agent -m "$PROMPT" 2>"$HOME_DIR/stderr.log")
 RC=$?
 LAST=$(printf '%s\n' "$OUT" | grep -v '^\s*$' | tail -3)
 echo "$LAST" | sed 's/^/    /'

@@ -222,7 +222,7 @@ func hitGET(t *testing.T, mux *http.ServeMux, path string) *httptest.ResponseRec
 // process — exactly the failure mode this test exists to catch.
 func TestRebuildSharedHTTPServer_MergedBinaryRoutesSurviveReload(t *testing.T) {
 	// Use a temp config file so the api.Handler has somewhere to read/write
-	// without polluting the developer's real ~/.claw/config.json.
+	// without polluting the developer's real ~/.agency/config.json.
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := config.DefaultConfig()
 	if err := config.SaveConfig(configPath, cfg); err != nil {

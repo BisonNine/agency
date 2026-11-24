@@ -16,10 +16,10 @@ Services are defined by files, not in the WebUI.
    Microsoft 365, Google Workspace, weather services) in its `configs/`
    folder, and its configuration guide describes the format.
 2. Copy the file into the `fusion/` folder of the data directory
-   (`<CLAW_HOME>/fusion/`, by default `~/.claw/fusion/`). Every `*.json` file
+   (`<AGENCY_HOME>/fusion/`, by default `~/.agency/fusion/`). Every `*.json` file
    there is loaded.
 3. Put the secrets the definition refers to (written as `${NAME}` in the
-   file, such as a client ID or an API key) in `<CLAW_HOME>/fusion/env`, one
+   file, such as a client ID or an API key) in `<AGENCY_HOME>/fusion/env`, one
    `NAME=value` per line. Keep that file readable by the service user only.
 4. Restart Agency. Changes in the `fusion/` folder are read only at start.
 
@@ -123,7 +123,7 @@ That discards the old sign-in and gives you a new command.
 
 ## Tokens
 
-- Sign-in tokens are kept in `<CLAW_HOME>/internal/fusion-tokens.db`, one
+- Sign-in tokens are kept in `<AGENCY_HOME>/internal/fusion-tokens.db`, one
   set per agent and service, and refreshed automatically.
 - The nightly [backup](admin/backup.md) includes them.
 - If the token store cannot be opened, every Fusion tool is disabled and

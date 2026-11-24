@@ -3,7 +3,7 @@
 //
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
-// Package layout prepares the data directory (CLAW_HOME) at start by creating
+// Package layout prepares the data directory (AGENCY_HOME) at start by creating
 // the directories claw owns.
 //
 // The layout, by purpose:

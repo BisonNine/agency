@@ -75,7 +75,7 @@ func openAIProvider(name string) modelspec.Provider {
 // settings stand.
 func TestCatalogModels_FillsDefaults(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.RequestTimeout = 45
 	cfg.Models = []modelspec.Model{

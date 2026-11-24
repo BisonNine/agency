@@ -69,7 +69,7 @@ func TestGatewayValidate_TrustedProxies(t *testing.T) {
 }
 
 func TestLoadConfig_RejectsBadTrustedProxies(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{"gateway":{"trusted_proxies":["10.0.0.0/99"]}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestDeviceValidateExposure(t *testing.T) {
 }
 
 func TestLoadConfig_RefusesExposedOpenDeviceGateway(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.json")
 	body := `{"channels":{"device":{"enabled":true,"host":"0.0.0.0","token":"t","auto_approve":true}}}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

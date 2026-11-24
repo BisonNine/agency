@@ -10,7 +10,7 @@
 #                        /usr/local/bin (falls back to ~/.local/bin if unwritable)
 #
 # Only the `claw` binary (and license notices) is installed — the data directory
-# (~/.claw) is never touched. To try a build without disturbing an existing
+# (~/.agency) is never touched. To try a build without disturbing an existing
 # install, point it at a throwaway dir and check the version:
 #
 #   AGENCY_INSTALL_DIR="$HOME/claw-test/bin" sh -c "$(curl -fsSL .../agency.sh)"

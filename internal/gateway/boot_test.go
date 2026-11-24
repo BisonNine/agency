@@ -28,7 +28,7 @@ func TestEnforceDataDirPerms_SetsDataDirMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := fi.Mode().Perm(); got != 0o700 {
-		t.Fatalf("CLAW_HOME mode = %04o, want 0700", got)
+		t.Fatalf("AGENCY_HOME mode = %04o, want 0700", got)
 	}
 }
 
@@ -50,7 +50,7 @@ func writeBootConfig(t *testing.T, home, body string, mode os.FileMode) string {
 // file is not rewritten (the missing permission keys are not added).
 func TestOpenBootConfig_LooseConfigRefused(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	body := `{"security":{"permissions":{"root":{"dir_mode":"0700","file_mode":"0640"}}}}`
 	configPath := writeBootConfig(t, home, body, 0o644)
 	store, _, _, err := openBootConfig(home, configPath)
@@ -71,7 +71,7 @@ func TestOpenBootConfig_LooseConfigRefused(t *testing.T) {
 // file mode is set to exactly that mode.
 func TestOpenBootConfig_TighterConfigWidened(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	configPath := writeBootConfig(t, home,
 		`{"security":{"permissions":{"root":{"dir_mode":"0750","file_mode":"0640"}}}}`, 0o600)
 	if _, _, _, err := openBootConfig(home, configPath); err != nil {
@@ -94,7 +94,7 @@ func TestOpenBootConfig_TighterConfigWidened(t *testing.T) {
 // nothing.
 func TestOpenBootConfig_WritesPermissionDefaults(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	configPath := writeBootConfig(t, home,
 		`{"default_config":true,"security":{"permissions":{"dir_mode":"0750","logs":{"file_mode":"0640"}}}}`, 0o600)
 	if _, _, _, err := openBootConfig(home, configPath); err != nil {
@@ -159,7 +159,7 @@ func TestOpenBootConfig_WritesPermissionDefaults(t *testing.T) {
 // tightened to the agents area's 0750, not to 0700.
 func TestOpenBootConfig_EnforcesConfiguredModes(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	if err := os.Chmod(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestOpenBootConfig_EnforcesConfiguredModes(t *testing.T) {
 // the key named, before anything is changed.
 func TestOpenBootConfig_InvalidModeStops(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	if err := os.Chmod(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -209,11 +209,11 @@ func TestOpenBootConfig_InvalidModeStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := fi.Mode().Perm(); got != 0o755 {
-		t.Errorf("CLAW_HOME mode = %04o after a refused start, want 0755 untouched", got)
+		t.Errorf("AGENCY_HOME mode = %04o after a refused start, want 0755 untouched", got)
 	}
 }
 
-// TestOpenAuditLog_CreatesDatabase: boot opens <CLAW_HOME>/internal/audit.db, private,
+// TestOpenAuditLog_CreatesDatabase: boot opens <AGENCY_HOME>/internal/audit.db, private,
 // and shutdown closes it.
 func TestOpenAuditLog_CreatesDatabase(t *testing.T) {
 	home := t.TempDir()
@@ -242,7 +242,7 @@ func TestOpenAuditLog_CreatesDatabase(t *testing.T) {
 	}
 }
 
-// TestAcquireLock_PrivateModes: the lock file and a freshly created CLAW_HOME
+// TestAcquireLock_PrivateModes: the lock file and a freshly created AGENCY_HOME
 // are owner-only.
 func TestAcquireLock_PrivateModes(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "claw-home")

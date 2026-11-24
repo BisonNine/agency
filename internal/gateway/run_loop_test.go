@@ -39,7 +39,7 @@ type bootedGateway struct {
 	done     chan error
 }
 
-// bootGateway starts the services on a temp CLAW_HOME (extra is spliced into
+// bootGateway starts the services on a temp AGENCY_HOME (extra is spliced into
 // the config) and runs the main loop in the background.
 func bootGateway(t *testing.T, extra string) *bootedGateway {
 	t.Helper()
@@ -57,7 +57,7 @@ func bootGatewayWith(t *testing.T, extra string, mutate func(string) string) *bo
 	return bootGatewayIn(t, g)
 }
 
-// bootGatewayIn starts the services on g's CLAW_HOME as it is and runs the
+// bootGatewayIn starts the services on g's AGENCY_HOME as it is and runs the
 // main loop in the background.
 func bootGatewayIn(t *testing.T, g *e2eGateway) *bootedGateway {
 	t.Helper()

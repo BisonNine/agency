@@ -17,7 +17,7 @@ import (
 func writeSecretConfig(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -57,13 +57,13 @@ func providerAPIKeyOnDisk(t *testing.T, path string, idx int) string {
 }
 
 func TestLoadConfig_ResolvesEnvAndFileReferences(t *testing.T) {
-	t.Setenv("CLAW_TEST_OPENAI_KEY", "sk-from-env-0123456789")
+	t.Setenv("AGENCY_TEST_OPENAI_KEY", "sk-from-env-0123456789")
 	keyFile := filepath.Join(t.TempDir(), "brave.key")
 	if err := os.WriteFile(keyFile, []byte("  BSA-from-file-0123456789\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	p := writeSecretConfig(t, `{
-		"providers": [{"name": "openai", "protocol": "openai-chat", "base_url": "https://api.openai.com/v1", "api_key": "env:CLAW_TEST_OPENAI_KEY"}],
+		"providers": [{"name": "openai", "protocol": "openai-chat", "base_url": "https://api.openai.com/v1", "api_key": "env:AGENCY_TEST_OPENAI_KEY"}],
 		"models": [{"model_name": "m", "model": "gpt-4o", "provider": "openai", "enabled": true}],
 		"agents": {"list": [{"id": "main", "name": "Main", "default": true}]},
 		"tools": {"web": {"brave": {"api_key": "file:`+keyFile+`"}}}
@@ -95,7 +95,7 @@ func TestLoadConfig_ResolvesEnvAndFileReferences(t *testing.T) {
 	if strings.Contains(string(raw), "sk-from-env") || strings.Contains(string(raw), "BSA-from-file") {
 		t.Fatalf("resolved secret written to disk:\n%s", raw)
 	}
-	if got := providerAPIKeyOnDisk(t, p, 0); got != "env:CLAW_TEST_OPENAI_KEY" {
+	if got := providerAPIKeyOnDisk(t, p, 0); got != "env:AGENCY_TEST_OPENAI_KEY" {
 		t.Fatalf("api_key on disk = %q, want the reference", got)
 	}
 
@@ -110,8 +110,8 @@ func TestLoadConfig_ResolvesEnvAndFileReferences(t *testing.T) {
 }
 
 func TestSaveConfig_NewLiteralReplacesReference(t *testing.T) {
-	t.Setenv("CLAW_TEST_KEY", "old-secret-value-0123456789")
-	p := writeSecretConfig(t, `{"providers": [{"name": "openai", "protocol": "openai-chat", "api_key": "env:CLAW_TEST_KEY"}]}`)
+	t.Setenv("AGENCY_TEST_KEY", "old-secret-value-0123456789")
+	p := writeSecretConfig(t, `{"providers": [{"name": "openai", "protocol": "openai-chat", "api_key": "env:AGENCY_TEST_KEY"}]}`)
 	cfg, err := LoadConfig(p)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
@@ -126,10 +126,10 @@ func TestSaveConfig_NewLiteralReplacesReference(t *testing.T) {
 }
 
 func TestSaveConfig_ReferenceFollowsValueWhenIndexShifts(t *testing.T) {
-	t.Setenv("CLAW_TEST_KEY_B", "second-secret-value-0123456789")
+	t.Setenv("AGENCY_TEST_KEY_B", "second-secret-value-0123456789")
 	p := writeSecretConfig(t, `{"providers": [
 		{"name": "a", "protocol": "openai-chat", "api_key": "literal-a-0123456789"},
-		{"name": "b", "protocol": "openai-chat", "api_key": "env:CLAW_TEST_KEY_B"}]}`)
+		{"name": "b", "protocol": "openai-chat", "api_key": "env:AGENCY_TEST_KEY_B"}]}`)
 	cfg, err := LoadConfig(p)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
@@ -138,21 +138,21 @@ func TestSaveConfig_ReferenceFollowsValueWhenIndexShifts(t *testing.T) {
 	if err := SaveConfig(p, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
-	if got := providerAPIKeyOnDisk(t, p, 0); got != "env:CLAW_TEST_KEY_B" {
+	if got := providerAPIKeyOnDisk(t, p, 0); got != "env:AGENCY_TEST_KEY_B" {
 		t.Fatalf("api_key on disk = %q, want the reference to follow its value to the new index", got)
 	}
 }
 
 func TestLoadConfig_MissingEnvReferenceNamesKey(t *testing.T) {
-	if err := os.Unsetenv("CLAW_TEST_MISSING_KEY"); err != nil {
+	if err := os.Unsetenv("AGENCY_TEST_MISSING_KEY"); err != nil {
 		t.Fatal(err)
 	}
-	p := writeSecretConfig(t, `{"channels": {"discord": {"token": "env:CLAW_TEST_MISSING_KEY"}}}`)
+	p := writeSecretConfig(t, `{"channels": {"discord": {"token": "env:AGENCY_TEST_MISSING_KEY"}}}`)
 	_, err := LoadConfig(p)
 	if err == nil {
 		t.Fatal("LoadConfig succeeded with an unset env reference")
 	}
-	for _, want := range []string{"channels.discord.token", "CLAW_TEST_MISSING_KEY", "not set"} {
+	for _, want := range []string{"channels.discord.token", "AGENCY_TEST_MISSING_KEY", "not set"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
@@ -297,8 +297,8 @@ func TestProbePass_PreservesLargeIntegers(t *testing.T) {
 }
 
 func TestMarshalWithSecretRefs_ShowsReferences(t *testing.T) {
-	t.Setenv("CLAW_TEST_KEY", "secret-value-0123456789")
-	p := writeSecretConfig(t, `{"providers": [{"name": "openai", "protocol": "openai-chat", "api_key": "env:CLAW_TEST_KEY"}]}`)
+	t.Setenv("AGENCY_TEST_KEY", "secret-value-0123456789")
+	p := writeSecretConfig(t, `{"providers": [{"name": "openai", "protocol": "openai-chat", "api_key": "env:AGENCY_TEST_KEY"}]}`)
 	cfg, err := LoadConfig(p)
 	if err != nil {
 		t.Fatal(err)
@@ -307,7 +307,7 @@ func TestMarshalWithSecretRefs_ShowsReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), `"api_key":"env:CLAW_TEST_KEY"`) || strings.Contains(string(out), "secret-value") {
+	if !strings.Contains(string(out), `"api_key":"env:AGENCY_TEST_KEY"`) || strings.Contains(string(out), "secret-value") {
 		t.Fatalf("MarshalWithSecretRefs = %s", out)
 	}
 }

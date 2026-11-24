@@ -16,16 +16,16 @@ type GatewayConfig struct {
 	// HTTP on the network too; that is allowed but unencrypted, and the
 	// configuration report marks it. The HTTPS listener does not follow Host:
 	// it is placed by TLS.Mode. See HTTPBindHosts and HTTPSBindHosts.
-	Host string `json:"host" env:"CLAW_GATEWAY_HOST"`
+	Host string `json:"host" env:"AGENCY_GATEWAY_HOST"`
 	// Port is the plain-HTTP listener's port (default 18790).
-	Port int `json:"port" env:"CLAW_GATEWAY_PORT"`
+	Port int `json:"port" env:"AGENCY_GATEWAY_PORT"`
 	// TLSPort is the HTTPS listener's port (default 18443). It is separate from
 	// Port because the two listeners bind different addresses; they share one
 	// handler chain.
-	TLSPort int `json:"tls_port,omitempty" env:"CLAW_GATEWAY_TLS_PORT"`
+	TLSPort int `json:"tls_port,omitempty" env:"AGENCY_GATEWAY_TLS_PORT"`
 	// TLS places the HTTPS listener (Mode) and names the certificate it
 	// presents. Empty means HTTPS on all interfaces with a self-signed
-	// certificate generated under <CLAW_HOME>/tls.
+	// certificate generated under <AGENCY_HOME>/tls.
 	TLS TLSConfig `json:"tls,omitempty"`
 	// ExternalURL is the base URL advertised to external clients (e.g. the
 	// claw-auth OAuth utility) for reaching this gateway's HTTP API, and the
@@ -33,7 +33,7 @@ type GatewayConfig struct {
 	// EffectiveExternalURL); set it to e.g. https://claw.example.com:18443 to
 	// reach the WebUI by a host name, or to a reverse proxy's URL. Its host is
 	// added to the self-signed certificate and to the accepted Host names.
-	ExternalURL string `json:"external_url,omitempty" env:"CLAW_GATEWAY_EXTERNAL_URL"`
+	ExternalURL string `json:"external_url,omitempty" env:"AGENCY_GATEWAY_EXTERNAL_URL"`
 	// AllowedCIDRs is the IP allowlist for the shared HTTP server (WebUI/API +
 	// health). Empty means loopback only: the WebUI and /api/* have no operator
 	// authentication, so nothing off-box reaches them until an allowlist is set
@@ -65,15 +65,15 @@ type GatewayConfig struct {
 // TLSModeOff). CertFile and KeyFile are PEM paths (anywhere on disk) and go
 // together: setting one without the other is a config error. With neither set
 // the gateway generates and maintains a self-signed certificate under
-// <CLAW_HOME>/tls whose names are localhost, the loopback addresses, the host
+// <AGENCY_HOME>/tls whose names are localhost, the loopback addresses, the host
 // name, its FQDN, every non-loopback interface address, the host of
 // external_url and ExtraNames.
 type TLSConfig struct {
 	// Mode is "all" (HTTPS on every interface; empty means this), "localhost"
 	// (127.0.0.1 and [::1] only) or "off" (no HTTPS listener).
-	Mode     string `json:"mode,omitempty" env:"CLAW_GATEWAY_TLS_MODE"`
-	CertFile string `json:"cert_file,omitempty" env:"CLAW_GATEWAY_TLS_CERT_FILE"`
-	KeyFile  string `json:"key_file,omitempty"  env:"CLAW_GATEWAY_TLS_KEY_FILE"`
+	Mode     string `json:"mode,omitempty" env:"AGENCY_GATEWAY_TLS_MODE"`
+	CertFile string `json:"cert_file,omitempty" env:"AGENCY_GATEWAY_TLS_CERT_FILE"`
+	KeyFile  string `json:"key_file,omitempty"  env:"AGENCY_GATEWAY_TLS_KEY_FILE"`
 	// ExtraNames are additional DNS names or IP addresses for the self-signed
 	// certificate (a DNS alias, a NAT address). Ignored with a user certificate.
 	ExtraNames []string `json:"extra_names,omitempty"`

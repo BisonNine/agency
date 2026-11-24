@@ -41,7 +41,7 @@ frontend-deps`, or `pnpm install --frozen-lockfile` in `web/frontend`; the gate
 does not install them itself. A missing `oxlint` skips only the lint step.
 
 **MCP integration.** Builds the binary, starts a real Agency instance in a temporary
-`CLAW_HOME` with the MCP host enabled and one Fusion service (the MCPFusion
+`AGENCY_HOME` with the MCP host enabled and one Fusion service (the MCPFusion
 module's `wxca` sample), drives it with the `probe` tool (MCPProbe) and checks
 workspace, PID-file and restart behaviour, then tears everything down. Section 8
 of `tests/test_mcpserver.sh` checks per-agent Fusion gating on the running
@@ -62,7 +62,7 @@ CLI command lines and environment. It fails when any of that changes until
 ./tests/capabilities/`), which is the moment to write the BREAKING changelog
 entry. See "Capability changes" in `CLAUDE.md`.
 
-**CLI provider smoke (opt-in).** With `CLAW_TEST_CLI=1`, `test.sh` also runs
+**CLI provider smoke (opt-in).** With `AGENCY_TEST_CLI=1`, `test.sh` also runs
 `tests/test_cli_provider.sh` against the built binary: one turn through a real
 Claude CLI with "Allow CLI to bypass restrictions" off, asking for a tool call the CLI
 must approve. It passes when the tool ran or when the turn ended with the
@@ -75,9 +75,9 @@ passes when the card file is in the gateway's `cards/` library and the gateway
 logged the tool's write, so a model's tool call over MCP from a CLI provider is
 exercised end to end; the model's reply alone is not evidence. Each costs one
 model call on the CLI account, so both are off by default and the summary
-prints `CLI smoke: skipped`. `CLAW_TEST_CLI_COMMAND` names another CLI binary.
+prints `CLI smoke: skipped`. `AGENCY_TEST_CLI_COMMAND` names another CLI binary.
 
-**Telegram live check (opt-in).** `CLAW_TEST_TELEGRAM=1 CLAW_TEST_TELEGRAM_TOKEN=<bot token> go test ./channels/telegram/ -run TestLive` sends to chats that cannot exist and expects "recipient not found" with Telegram's reason and no token in the error; nothing is delivered.
+**Telegram live check (opt-in).** `AGENCY_TEST_TELEGRAM=1 AGENCY_TEST_TELEGRAM_TOKEN=<bot token> go test ./channels/telegram/ -run TestLive` sends to chats that cannot exist and expects "recipient not found" with Telegram's reason and no token in the error; nothing is delivered.
 
 Useful flags:
 

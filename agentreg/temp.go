@@ -26,11 +26,11 @@ import (
 	"go.bison9.com/agency/routing"
 )
 
-// TempDirName is the directory under <CLAW_HOME>/internal that holds the
+// TempDirName is the directory under <AGENCY_HOME>/internal that holds the
 // temporary agents, one <uuid> directory each.
 const TempDirName = "temp"
 
-// StateFileName is the file under <CLAW_HOME>/internal that lists the
+// StateFileName is the file under <AGENCY_HOME>/internal that lists the
 // temporary agents that survive a restart (those without an ephemeral
 // memory).
 const StateFileName = "temp_agents.json"
@@ -172,7 +172,7 @@ func (r *Registry[T]) CreateCloneInTurn(sourceID string, opts ...CloneOption) (i
 
 // CreateFresh adds a fresh temporary agent and returns its UUID id: cfg (its
 // id ignored) with an empty workspace of its own under
-// <CLAW_HOME>/internal/temp/<uuid>/workspace, no tools, no prompt files and
+// <AGENCY_HOME>/internal/temp/<uuid>/workspace, no tools, no prompt files and
 // no skills. Its system prompt is WithSystemPrompt's text or
 // DefaultSystemPrompt, and its mode (ModeMemory unless WithoutMemory or
 // SingleShot) decides its cognitive memory, overriding cfg.Cogmem.

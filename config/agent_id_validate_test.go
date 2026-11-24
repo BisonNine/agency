@@ -11,11 +11,11 @@ import (
 	"testing"
 )
 
-// writeConfigFile writes body as config.json in a fresh CLAW_HOME.
+// writeConfigFile writes body as config.json in a fresh AGENCY_HOME.
 func writeConfigFile(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)

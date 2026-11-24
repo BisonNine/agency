@@ -49,7 +49,7 @@ func (failWriter) Write([]byte) (int, error) { return 0, errors.New("write faile
 func setupHome(t *testing.T, cfg string) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	if cfg != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte(cfg), 0o600))
 	}
@@ -162,7 +162,7 @@ func TestTLSCommandErrors(t *testing.T) {
 }
 
 func TestOptionsFromConfig(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	cfg := config.DefaultConfig()
 	cfg.Gateway.TLS.CertFile = " /a.crt "
 	cfg.Gateway.TLS.KeyFile = " /a.key "
@@ -183,7 +183,7 @@ func TestOptionsFromConfig(t *testing.T) {
 func TestNamesForConfig(t *testing.T) {
 	assert.Nil(t, NamesForConfig(nil))
 
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	cfg := config.DefaultConfig()
 	cfg.Gateway.TLS.Mode = config.TLSModeOff
 	assert.Nil(t, NamesForConfig(cfg), "HTTPS off")

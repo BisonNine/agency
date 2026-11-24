@@ -14,7 +14,7 @@ import (
 
 func accessConfig(t *testing.T, host, mode string) *config.Config {
 	t.Helper()
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	cfg := config.DefaultConfig()
 	cfg.Gateway.Host = host
 	cfg.Gateway.Port = 18790

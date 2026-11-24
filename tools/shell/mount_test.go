@@ -136,7 +136,7 @@ func TestInvalidPatternBuildsNoTools(t *testing.T) {
 }
 
 func TestChildEnvIsAllowlisted(t *testing.T) {
-	t.Setenv("CLAW_GATEWAY_TOKEN", "secret-token")
+	t.Setenv("AGENCY_GATEWAY_TOKEN", "secret-token")
 	t.Setenv("ALERTER_PUSHOVER_TOKEN", "secret-alerter")
 	t.Setenv("CLAWEH_TEST_MARKER", "visible-only-if-inherited")
 	m := testMount(t)
@@ -147,7 +147,7 @@ func TestChildEnvIsAllowlisted(t *testing.T) {
 		t.Fatalf("env: %s", res.ForLLM)
 	}
 	for line := range strings.SplitSeq(res.ForLLM, "\n") {
-		if strings.HasPrefix(line, "CLAW_") || strings.HasPrefix(line, "ALERTER_") || strings.HasPrefix(line, "CLAWEH_TEST_MARKER=") {
+		if strings.HasPrefix(line, "AGENCY_") || strings.HasPrefix(line, "ALERTER_") || strings.HasPrefix(line, "CLAWEH_TEST_MARKER=") {
 			t.Errorf("child inherited %q", line)
 		}
 	}

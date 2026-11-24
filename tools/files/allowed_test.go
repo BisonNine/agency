@@ -232,15 +232,15 @@ func TestAllowedFolder_ListAndHideMarker(t *testing.T) {
 	ws := t.TempDir()
 	src := t.TempDir()
 	mustWrite(t, filepath.Join(src, "a.md"), "x")
-	mustWrite(t, filepath.Join(src, ".claw"), "") // new-file marker
+	mustWrite(t, filepath.Join(src, ".agency"), "") // new-file marker
 	allowFolders(t, ws, src)
 
 	res := NewListDirTool(ws, true).Execute(context.Background(), map[string]any{"path": src})
 	if res.IsError || !contains(res.ForLLM, "a.md") {
 		t.Fatalf("list should show a.md: %s", res.ForLLM)
 	}
-	if contains(res.ForLLM, ".claw") {
-		t.Fatalf(".claw marker must be hidden from listings: %s", res.ForLLM)
+	if contains(res.ForLLM, ".agency") {
+		t.Fatalf(".agency marker must be hidden from listings: %s", res.ForLLM)
 	}
 }
 

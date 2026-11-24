@@ -362,13 +362,13 @@ fi
 # Optional: MCP Server Integration Tests
 #
 # Fully self-contained: builds claw, starts a fresh gateway in a temporary
-# CLAW_HOME with mcp_host enabled, runs the probe-driven test, then tears
+# AGENCY_HOME with mcp_host enabled, runs the probe-driven test, then tears
 # everything down. No assumptions about an already-running claw.
 #===============================================================================
 
 INTEGRATION_RAN=false
 INTEGRATION_PASSED=true
-CLI_SMOKE_STATUS="skipped (set CLAW_TEST_CLI=1)"
+CLI_SMOKE_STATUS="skipped (set AGENCY_TEST_CLI=1)"
 CLI_SMOKE_PASSED=true
 INTEGRATION_PASS_COUNT=0
 INTEGRATION_FAIL_COUNT=0
@@ -546,7 +546,7 @@ PY
                     integ_fail "MCPFusion sample service not found at $FUSION_SAMPLE; Fusion gating checks cannot run"
                 fi
 
-                # With CLAW_TEST_CLI=1 and a Claude CLI on PATH, the config also
+                # With AGENCY_TEST_CLI=1 and a Claude CLI on PATH, the config also
                 # gets a Claude CLI provider and model and an agent "cli" on it
                 # (with ccv3), which main may spawn: tests/test_cli_ccv3.sh has the
                 # probe spawn it so a real CLI turn calls the ccv3 tool over this
@@ -557,8 +557,8 @@ PY
                 CLI_LIVE_JSON=""
                 CLI_LIVE_AGENT=""
                 CLI_LIVE_ALLOW=""
-                CLI_LIVE_CMD="${CLAW_TEST_CLI_COMMAND:-claude}"
-                if [ "${CLAW_TEST_CLI:-}" = "1" ] && command -v "$CLI_LIVE_CMD" >/dev/null 2>&1; then
+                CLI_LIVE_CMD="${AGENCY_TEST_CLI_COMMAND:-claude}"
+                if [ "${AGENCY_TEST_CLI:-}" = "1" ] && command -v "$CLI_LIVE_CMD" >/dev/null 2>&1; then
                     printf '{"mcpServers":{"claw":{"type":"http","url":"http://127.0.0.1:%s/internal"}}}\n' "$MCP_PORT" > "$INTEG_HOME/mcp.json"
                     chmod 600 "$INTEG_HOME/mcp.json"
                     CLI_LIVE_JSON="\"providers\": [{\"name\": \"Claude CLI\", \"protocol\": \"claude-cli\", \"command\": \"$(command -v "$CLI_LIVE_CMD")\"}],
@@ -749,8 +749,8 @@ EOF
                 mkdir -p "$INTEG_HOME/internal"
                 printf '{"main":"%s","alice":"%s","bob":"%s"}\n' "$TEST_SERVICE_TOKEN" "$ALICE_SERVICE_TOKEN" "$BOB_SERVICE_TOKEN" > "$INTEG_HOME/internal/service-tokens.json"
 
-                echo "${DIM}Starting gateway (CLAW_HOME=$INTEG_HOME, MCP=127.0.0.1:$MCP_PORT)...${NC}"
-                CLAW_HOME="$INTEG_HOME" CLAW_MCP_TEST_TOKEN="$TEST_SESSION_TOKEN" "$INTEG_BIN" gateway >"$INTEG_LOG" 2>&1 &
+                echo "${DIM}Starting gateway (AGENCY_HOME=$INTEG_HOME, MCP=127.0.0.1:$MCP_PORT)...${NC}"
+                AGENCY_HOME="$INTEG_HOME" AGENCY_MCP_TEST_TOKEN="$TEST_SESSION_TOKEN" "$INTEG_BIN" gateway >"$INTEG_LOG" 2>&1 &
                 INTEG_PID=$!
 
                 # ---- Wait for the MCP port to accept connections. ----
@@ -883,7 +883,7 @@ EOF
                     fi
 
                     # ---- Workspace re-population: delete alice's dir and restart ----
-                    if [ "${CLAW_TEST_CLI:-}" = "1" ]; then
+                    if [ "${AGENCY_TEST_CLI:-}" = "1" ]; then
                         echo ""
                         echo "${BOLD}--- CLI provider smoke (opt-in) ---${NC}"
                         echo ""
@@ -898,12 +898,12 @@ EOF
                         echo "${BOLD}--- CLI tool call over MCP (opt-in) ---${NC}"
                         echo ""
                         if [ -z "$CLI_LIVE_JSON" ]; then
-                            echo "  skipped: CLI '$CLI_LIVE_CMD' not on PATH (set CLAW_TEST_CLI_COMMAND)"
+                            echo "  skipped: CLI '$CLI_LIVE_CMD' not on PATH (set AGENCY_TEST_CLI_COMMAND)"
                             CLI_SMOKE_STATUS="failed"
                             CLI_SMOKE_PASSED=false
                             integ_fail "CLI tool call over MCP: no CLI on PATH"
                         elif PROBE_PATH="$PROBE_BIN" MCP_URL="http://127.0.0.1:$MCP_PORT/internal" \
-                             SESSION_TOKEN="$TEST_SESSION_TOKEN" CLAW_HOME="$INTEG_HOME" GATEWAY_LOG="$INTEG_LOG" \
+                             SESSION_TOKEN="$TEST_SESSION_TOKEN" AGENCY_HOME="$INTEG_HOME" GATEWAY_LOG="$INTEG_LOG" \
                              bash "$SCRIPT_DIR/tests/test_cli_ccv3.sh"; then
                             :
                         else
@@ -952,7 +952,7 @@ EOF
                     echo "  ${DIM}Deleted alice's workspace directory${NC}"
 
                     # Restart the gateway.
-                    CLAW_HOME="$INTEG_HOME" CLAW_MCP_TEST_TOKEN="$TEST_SESSION_TOKEN" \
+                    AGENCY_HOME="$INTEG_HOME" AGENCY_MCP_TEST_TOKEN="$TEST_SESSION_TOKEN" \
                         "$INTEG_BIN" gateway >>"$INTEG_LOG" 2>&1 &
                     INTEG_PID=$!
 
@@ -1039,7 +1039,7 @@ EOF
 }
 EOF
                 chmod 600 "$ALERT_HOME/config.json"
-                HOME="$ALERT_TMP/userhome" CLAW_HOME="$ALERT_HOME" "$INTEG_BIN" gateway >"$ALERT_LOG" 2>&1 &
+                HOME="$ALERT_TMP/userhome" AGENCY_HOME="$ALERT_HOME" "$INTEG_BIN" gateway >"$ALERT_LOG" 2>&1 &
                 ALERT_PID=$!
                 for _ in $(seq 1 40); do
                     grep -qs 'No Such Model' "$ALERTS_FILE" && break

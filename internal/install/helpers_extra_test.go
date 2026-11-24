@@ -62,7 +62,7 @@ func TestEnsureUserEnv(t *testing.T) {
 			t.Errorf("dir on PATH: note = %q", note)
 		}
 		rc := filepath.Join(tu.HomeDir, ".bashrc")
-		if err := os.WriteFile(rc, []byte("export PATH=/opt/in/rc:$PATH\nexport CLAW_HOME=/srv/x\n"), 0o644); err != nil {
+		if err := os.WriteFile(rc, []byte("export PATH=/opt/in/rc:$PATH\nexport AGENCY_HOME=/srv/x\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if note := ensureUserEnv(tu, "/opt/in/rc", "/srv/x"); note != "" {
@@ -72,7 +72,7 @@ func TestEnsureUserEnv(t *testing.T) {
 			t.Errorf("another rc written: %v", err)
 		}
 	})
-	t.Run("only CLAW_HOME", func(t *testing.T) {
+	t.Run("only AGENCY_HOME", func(t *testing.T) {
 		t.Setenv("SHELL", "/bin/bash")
 		tu := tuFor(t)
 		note := ensureUserEnv(tu, "/usr/local/bin", "/srv/claw")
@@ -80,10 +80,10 @@ func TestEnsureUserEnv(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(rc), "PATH") || !strings.Contains(string(rc), `export CLAW_HOME="/srv/claw"`) {
+		if strings.Contains(string(rc), "PATH") || !strings.Contains(string(rc), `export AGENCY_HOME="/srv/claw"`) {
 			t.Errorf(".bashrc:\n%s", rc)
 		}
-		if !strings.HasPrefix(note, "Exported CLAW_HOME=/srv/claw in ") || !strings.HasSuffix(note, "or open a new terminal.") {
+		if !strings.HasPrefix(note, "Exported AGENCY_HOME=/srv/claw in ") || !strings.HasSuffix(note, "or open a new terminal.") {
 			t.Errorf("note = %q", note)
 		}
 	})
@@ -278,7 +278,7 @@ func TestSmallHelpers(t *testing.T) {
 	}
 	t.Setenv(global.EnvVarHome, "/srv/claw")
 	if got := dataDir("/home/alice"); got != "/srv/claw" {
-		t.Errorf("dataDir with CLAW_HOME = %q", got)
+		t.Errorf("dataDir with AGENCY_HOME = %q", got)
 	}
 	if got := serviceManagerName("darwin"); got != "launchd" {
 		t.Errorf("serviceManagerName(darwin) = %q", got)
@@ -289,8 +289,8 @@ func TestSmallHelpers(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/x/claw", "/Users/alice", "/x", "", false)
-	if !strings.Contains(plist, "/Users/alice/.claw/logs/claw-launchd.log") {
-		t.Errorf("plist without CLAW_HOME logs elsewhere:\n%s", plist)
+	if !strings.Contains(plist, "/Users/alice/.agency/logs/claw-launchd.log") {
+		t.Errorf("plist without AGENCY_HOME logs elsewhere:\n%s", plist)
 	}
 	h := fakeHost(t)
 	if got := h.ownerName("/missing"); got != "" {
@@ -306,7 +306,7 @@ func TestPrintInstalledURLs(t *testing.T) {
 	if out := captureStdout(t, func() { printInstalledURLs(home) }); !strings.Contains(out, "http://127.0.0.1:18123/") {
 		t.Errorf("output = %q", out)
 	}
-	// Without a home the configured CLAW_HOME is read.
+	// Without a home the configured AGENCY_HOME is read.
 	t.Setenv(global.EnvVarHome, home)
 	if out := captureStdout(t, func() { printInstalledURLs("") }); !strings.Contains(out, "18123") {
 		t.Errorf("output = %q", out)

@@ -35,4 +35,4 @@ Run these on the machine Agency is installed on, as the user it runs as.
 | `claw tls` | Shows the HTTPS certificate. See [HTTPS and certificates](./https.md). |
 | `claw backup`, `claw restore` | Take or restore a backup. See [Backup and restore](./backup.md). |
 
-On a system install, run them as the service user with the data directory set, for example `sudo -u <service user> CLAW_HOME=/opt/claw claw status`.
+On a system install, run them as the service user with the data directory set, for example `sudo -u <service user> AGENCY_HOME=/opt/agency claw status`.

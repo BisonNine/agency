@@ -44,7 +44,7 @@ func captureStdout(t *testing.T, fn func()) string {
 func setupHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	return home
 }
 
@@ -89,8 +89,8 @@ func clawhub(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	t.Setenv("CLAW_SKILLS_REGISTRIES_CLAWHUB_ENABLED", "true")
-	t.Setenv("CLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL", srv.URL)
+	t.Setenv("AGENCY_SKILLS_REGISTRIES_CLAWHUB_ENABLED", "true")
+	t.Setenv("AGENCY_SKILLS_REGISTRIES_CLAWHUB_BASE_URL", srv.URL)
 }
 
 func writeJSON(t *testing.T, w http.ResponseWriter, v any) {
@@ -120,7 +120,7 @@ func TestSkillsPreRunErrors(t *testing.T) {
 
 	t.Run("bad proxy", func(t *testing.T) {
 		setupHome(t)
-		t.Setenv("CLAW_TOOLS_SKILLS_GITHUB_PROXY", "ftp://proxy.invalid")
+		t.Setenv("AGENCY_TOOLS_SKILLS_GITHUB_PROXY", "ftp://proxy.invalid")
 		_, err := runSkills(t, "list")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error creating skills installer")
@@ -204,7 +204,7 @@ func TestSkillsRemoveMissingExits(t *testing.T) {
 	}
 	home := t.TempDir()
 	child := exec.Command(os.Args[0], "-test.run=^TestSkillsRemoveMissingExits$")
-	child.Env = append(os.Environ(), "SKILLS_REMOVE_CHILD=1", "CLAW_HOME="+home)
+	child.Env = append(os.Environ(), "SKILLS_REMOVE_CHILD=1", "AGENCY_HOME="+home)
 	out, err := child.Output()
 	var exitErr *exec.ExitError
 	require.ErrorAs(t, err, &exitErr)

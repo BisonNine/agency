@@ -21,7 +21,7 @@ internal/onboard/workspace/
 test.out
 
 # Agency data directory
-.claw/
+.agency/
 config.json
 sessions/
 !/internal/sessions/

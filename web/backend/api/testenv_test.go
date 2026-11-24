@@ -9,7 +9,7 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// setupTestEnv creates an isolated HOME/CLAW_HOME with a minimal valid config
+// setupTestEnv creates an isolated HOME/AGENCY_HOME with a minimal valid config
 // (one openai api-key provider + model + default agent) and returns the config
 // path plus a cleanup func. Shared by the API handler tests.
 func setupTestEnv(t *testing.T) string {
@@ -17,7 +17,7 @@ func setupTestEnv(t *testing.T) string {
 
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
-	t.Setenv("CLAW_HOME", filepath.Join(tmp, ".claw"))
+	t.Setenv("AGENCY_HOME", filepath.Join(tmp, ".agency"))
 
 	cfg := config.DefaultConfig()
 	cfg.Providers = []modelspec.Provider{{

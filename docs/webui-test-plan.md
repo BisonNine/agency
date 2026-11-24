@@ -12,7 +12,7 @@ fills into the page it serves (title and `product-*` meta tags) and returns
 response; the runner reads it once at start and compares against it.
 
 ```
-export CLAW_E2E_USER=<admin>  CLAW_E2E_PASSWORD=<password>
+export AGENCY_E2E_USER=<admin>  AGENCY_E2E_PASSWORD=<password>
 node tests/frontend-e2e.mjs                      # whole plan
 node tests/frontend-e2e.mjs --only F,J           # selected groups
 node tests/frontend-e2e.mjs --base http://host:port
@@ -42,7 +42,7 @@ restart the dev instance after changing listener settings by hand.
 | Requirement | Notes |
 |---|---|
 | A running Agency | `make build && cp build/claw ~/bin/claw && sudo systemctl restart claw-dev` |
-| An admin account | The WebUI and `/api/*` are behind a login. Create the account on the dev instance with `claw admin`, then `export CLAW_E2E_USER=… CLAW_E2E_PASSWORD=…`. The runner signs in first and stops with that instruction if it cannot |
+| An admin account | The WebUI and `/api/*` are behind a login. Create the account on the dev instance with `claw admin`, then `export AGENCY_E2E_USER=… AGENCY_E2E_PASSWORD=…`. The runner signs in first and stops with that instruction if it cannot |
 | At least one agent, model and provider | The plan asserts against live data; an empty install fails A3 |
 | Playwright + Chromium | Found in the npx cache under the home directory; override with `PLAYWRIGHT_MODULE` / `CHROME_PATH` |
 

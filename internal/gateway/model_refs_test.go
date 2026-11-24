@@ -14,7 +14,7 @@ import (
 // openStore writes body to config.json in dir and opens the store on it.
 func openStore(t *testing.T, dir, body string) *config.Store {
 	t.Helper()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	path := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)

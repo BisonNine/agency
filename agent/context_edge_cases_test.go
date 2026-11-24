@@ -84,14 +84,14 @@ func TestContext_CardRenderFails(t *testing.T) {
 	}
 }
 
-// The global config dir is CLAW_HOME, else ~/.claw, else "" when there is
+// The global config dir is AGENCY_HOME, else ~/.agency, else "" when there is
 // no home directory.
 func TestContext_GlobalConfigDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv(global.EnvVarHome, "")
 	t.Setenv("HOME", home)
-	if got := getGlobalConfigDir(); got != filepath.Join(home, ".claw") {
-		t.Fatalf("getGlobalConfigDir = %q, want %s", got, filepath.Join(home, ".claw"))
+	if got := getGlobalConfigDir(); got != filepath.Join(home, ".agency") {
+		t.Fatalf("getGlobalConfigDir = %q, want %s", got, filepath.Join(home, ".agency"))
 	}
 	t.Setenv("HOME", "")
 	if got := getGlobalConfigDir(); got != "" {

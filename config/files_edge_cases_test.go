@@ -198,14 +198,14 @@ func TestMergeSecretRefs(t *testing.T) {
 }
 
 func TestResolveConfigSecretsRefusesMissingEnv(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
-	t.Setenv("CLAW_TEST_ABSENT_KEY", "")
-	if err := os.Unsetenv("CLAW_TEST_ABSENT_KEY"); err != nil {
+	t.Setenv("AGENCY_HOME", t.TempDir())
+	t.Setenv("AGENCY_TEST_ABSENT_KEY", "")
+	if err := os.Unsetenv("AGENCY_TEST_ABSENT_KEY"); err != nil {
 		t.Fatal(err)
 	}
 	cfg := DefaultConfig()
-	cfg.Channels.Discord.Token = "env:CLAW_TEST_ABSENT_KEY"
-	if _, err := resolveConfigSecrets(cfg); err == nil || !strings.Contains(err.Error(), "CLAW_TEST_ABSENT_KEY") {
+	cfg.Channels.Discord.Token = "env:AGENCY_TEST_ABSENT_KEY"
+	if _, err := resolveConfigSecrets(cfg); err == nil || !strings.Contains(err.Error(), "AGENCY_TEST_ABSENT_KEY") {
 		t.Errorf("err = %v, want one naming the variable", err)
 	}
 }
@@ -218,7 +218,7 @@ func TestCloneNil(t *testing.T) {
 }
 
 func TestStoreLoadErrors(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{not json`), 0o600); err != nil {
 		t.Fatal(err)
@@ -245,7 +245,7 @@ func TestStoreLoadErrors(t *testing.T) {
 }
 
 func TestLoadConfigReadAndDecodeErrors(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	dir := t.TempDir()
 	if _, err := LoadConfig(dir); err == nil {
 		t.Error("loading a directory succeeded")
@@ -260,7 +260,7 @@ func TestLoadConfigReadAndDecodeErrors(t *testing.T) {
 }
 
 func TestLoadConfigMigratesLegacyCompressionKeys(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.json")
 	body := `{"agents":{"defaults":{"compress_normal_percent":60,"compress_safety_percent":90,"compress_token_safety_margin":1.2}}}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {

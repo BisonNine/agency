@@ -12,15 +12,15 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// storeFixture writes a minimal config into a private CLAW_HOME, opens the
+// storeFixture writes a minimal config into a private AGENCY_HOME, opens the
 // gateway's store on it and builds the merged WebUI server on that store, the
 // way gatewayCmd and setupAndStartServices do.
 func storeFixture(t *testing.T) (*config.Store, *http.ServeMux) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	home := filepath.Join(dir, ".claw")
-	t.Setenv("CLAW_HOME", home)
+	home := filepath.Join(dir, ".agency")
+	t.Setenv("AGENCY_HOME", home)
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}

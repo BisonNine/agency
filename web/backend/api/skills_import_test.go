@@ -20,7 +20,7 @@ func skillsMux(t *testing.T) (*http.ServeMux, string) {
 	h := NewHandler(setupTestEnv(t))
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
-	return mux, filepath.Join(os.Getenv("CLAW_HOME"), "skills")
+	return mux, filepath.Join(os.Getenv("AGENCY_HOME"), "skills")
 }
 
 // importSkill uploads content as filename to POST /api/skills/import.

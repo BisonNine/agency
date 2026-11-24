@@ -20,7 +20,7 @@ import (
 
 func TestStatusCommandBadConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	require.NoError(t, os.WriteFile(filepath.Join(home, "config.json"), []byte("{bad"), 0o600))
 	out := captureStdout(t, func() { NewStatusCommand().Run(nil, nil) })
 	assert.True(t, strings.HasPrefix(out, "Error loading config: "), out)
@@ -28,7 +28,7 @@ func TestStatusCommandBadConfig(t *testing.T) {
 
 func TestStatusCommandReport(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := `{"providers":[` +
 		`{"name":"Alice AI","protocol":"openai","api_key":"k"},` +
 		`{"name":"Bob Local","protocol":"ollama","base_url":"http://127.0.0.1:11434"},` +
@@ -56,7 +56,7 @@ func TestStatusCommandNoConfigFile(t *testing.T) {
 		t.Skip("root ignores directory permissions")
 	}
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	require.NoError(t, os.Chmod(home, 0o500))
 	t.Cleanup(func() {
 		if err := os.Chmod(home, 0o700); err != nil {

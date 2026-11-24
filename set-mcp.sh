@@ -18,16 +18,16 @@
 #
 # PORT — the URL below must match the MCP host `listen` port in your Agency config
 #   (tools → mcp_host → listen, e.g. 127.0.0.1:5911). If you change that port,
-#   update CLAW_MCP_URL here, or export it before running:
-#       CLAW_MCP_URL=http://127.0.0.1:6000/internal ./set-mcp.sh
+#   update AGENCY_MCP_URL here, or export it before running:
+#       AGENCY_MCP_URL=http://127.0.0.1:6000/internal ./set-mcp.sh
 
-CLAW_MCP_URL="${CLAW_MCP_URL:-http://127.0.0.1:5911/internal}"
+AGENCY_MCP_URL="${AGENCY_MCP_URL:-http://127.0.0.1:5911/internal}"
 
 set -u
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-echo "Agency MCP endpoint: $CLAW_MCP_URL"
+echo "Agency MCP endpoint: $AGENCY_MCP_URL"
 echo ""
 
 # Each CLI is refreshed one at a time (remove, then add, then list) and only when
@@ -36,7 +36,7 @@ echo ""
 if have agy; then
     echo "== Antigravity =="
     agy mcp remove claw 2>/dev/null || true
-    agy mcp add claw "$CLAW_MCP_URL" --type http
+    agy mcp add claw "$AGENCY_MCP_URL" --type http
     agy mcp list
     echo ""
 else
@@ -47,7 +47,7 @@ fi
 if have codex; then
     echo "== Codex CLI =="
     codex mcp remove claw 2>/dev/null || true
-    codex mcp add claw --url "$CLAW_MCP_URL"
+    codex mcp add claw --url "$AGENCY_MCP_URL"
     codex mcp list
     echo ""
 else
@@ -58,7 +58,7 @@ fi
 if have claude; then
     echo "== Claude Code =="
     claude mcp remove claw 2>/dev/null || true
-    claude mcp add --transport http claw --scope user "$CLAW_MCP_URL"
+    claude mcp add --transport http claw --scope user "$AGENCY_MCP_URL"
     claude mcp list
     echo ""
 else
@@ -71,7 +71,7 @@ if have opencode; then
     # `opencode mcp add` replaces the whole entry and has no flag for Code Mode,
     # so it is turned off again in the file the command wrote: with it on, the
     # model must write a script to call a tool, and weaker models fail.
-    if out=$(opencode mcp add claw --url "$CLAW_MCP_URL" --global); then
+    if out=$(opencode mcp add claw --url "$AGENCY_MCP_URL" --global); then
         echo "$out"
         cfg=$(printf '%s\n' "$out" | sed -n 's/^MCP server "claw" added to //p')
         if [ -n "$cfg" ] && have python3 && python3 - "$cfg" 2>/dev/null <<'PY'
@@ -101,6 +101,6 @@ echo "Done."
 if have cursor-agent || have agent; then
     echo "== Cursor: no 'mcp add' subcommand — configure it by hand =="
     echo "   Add this to ~/.cursor/mcp.json under \"mcpServers\":"
-    echo "     \"claw\": { \"url\": \"$CLAW_MCP_URL\" }"
+    echo "     \"claw\": { \"url\": \"$AGENCY_MCP_URL\" }"
     echo ""
 fi

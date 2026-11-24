@@ -60,7 +60,7 @@ import (
 // with os.ErrExist instead of replacing the first. transcript.md is the
 // exception: it is appended to, or rewritten in place, and fsynced after
 // each write, so a reader following it keeps the same file. Directories are created 0700 and files
-// 0600, as everywhere under CLAW_HOME. Every read and write inside the root
+// 0600, as everywhere under AGENCY_HOME. Every read and write inside the root
 // goes through os.Root and refuses a symbolic link anywhere on the path
 // below the root (noSymlinks), so nothing is read from or written to
 // outside it; IDs used in paths (layer, participant, turn) are checked

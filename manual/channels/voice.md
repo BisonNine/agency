@@ -74,7 +74,7 @@ Agency can send the transcript back to the chat first, so the person sees what
 was understood: "Transcript: …", or "No voice detected in the audio" when
 nothing came out. It is off by default. Turn on **Echo transcription** on the
 [Task models](../providers/task-models.md) page (`task_models.echo_transcription`,
-or the environment variable `CLAW_TASK_MODELS_ECHO_TRANSCRIPTION=true` for the
+or the environment variable `AGENCY_TASK_MODELS_ECHO_TRANSCRIPTION=true` for the
 service).
 
 ## Costs and keys

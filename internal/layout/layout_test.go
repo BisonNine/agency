@@ -14,11 +14,11 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// newConfig returns the default config with CLAW_HOME at a fresh temp dir.
+// newConfig returns the default config with AGENCY_HOME at a fresh temp dir.
 func newConfig(t *testing.T) (*config.Config, string) {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "claw-home")
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	return config.DefaultConfig(), home
 }
 
@@ -70,7 +70,7 @@ func TestPrepareIsIdempotent(t *testing.T) {
 	}
 }
 
-// agents.common_dir is created instead of <CLAW_HOME>/common.
+// agents.common_dir is created instead of <AGENCY_HOME>/common.
 func TestPrepareCommonDirOverride(t *testing.T) {
 	cfg, home := newConfig(t)
 	custom := filepath.Join(t.TempDir(), "shared")

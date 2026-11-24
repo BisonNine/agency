@@ -23,25 +23,25 @@ type ExistingInstall struct {
 	ServiceType string // "systemd-system", "systemd-user", "launchd-daemon", "launchd-agent"
 	ServicePath string
 	User        string
-	ClawHome    string
+	AgencyHome  string
 	IsActive    bool
 }
 
-// optClawHome is the data directory of the standard system install. Its
-// binary and the openclaw alias live in its bin area, optClawBinDir.
-const optClawHome = global.SystemDataDir
+// optAgencyHome is the data directory of the standard system install. Its
+// binary and the openclaw alias live in its bin area, optAgencyBinDir.
+const optAgencyHome = global.SystemDataDir
 
-// optClawBinDir is where an /opt/claw install keeps the binary and the alias.
-var optClawBinDir = filepath.Join(optClawHome, config.BinDirName)
+// optAgencyBinDir is where an /opt/agency install keeps the binary and the alias.
+var optAgencyBinDir = filepath.Join(optAgencyHome, config.BinDirName)
 
-// inOptClaw reports whether p is /opt/claw or a path inside it (not a
-// sibling such as /opt/claw-old).
-func inOptClaw(p string) bool {
-	return p == optClawHome || strings.HasPrefix(p, optClawHome+"/")
+// inOptAgency reports whether p is /opt/agency or a path inside it (not a
+// sibling such as /opt/agency-old).
+func inOptAgency(p string) bool {
+	return p == optAgencyHome || strings.HasPrefix(p, optAgencyHome+"/")
 }
 
 // host is the machine the installer inspects. Every path the installer works
-// with is the machine's own (/opt/claw, /etc/systemd/system/...); root, when
+// with is the machine's own (/opt/agency, /etc/systemd/system/...); root, when
 // set, is prefixed to them on disk, so tests build a fake install in a temp
 // dir. The command hooks keep tests from consulting the real system.
 type host struct {
@@ -113,10 +113,10 @@ func (h *host) ownerName(p string) string {
 	return u.Username
 }
 
-// optClawBinary is the binary of an /opt/claw install: bin/claw, else the
-// older /opt/claw/claw, else "".
-func (h *host) optClawBinary() string {
-	for _, p := range []string{TargetBinaryPath(optClawBinDir), filepath.Join(optClawHome, global.InstalledBinaryName)} {
+// optAgencyBinary is the binary of an /opt/agency install: bin/claw, else the
+// older /opt/agency/claw, else "".
+func (h *host) optAgencyBinary() string {
+	for _, p := range []string{TargetBinaryPath(optAgencyBinDir), filepath.Join(optAgencyHome, global.InstalledBinaryName)} {
 		if h.fileExists(p) {
 			return p
 		}
@@ -124,16 +124,16 @@ func (h *host) optClawBinary() string {
 	return ""
 }
 
-// leftoverOptClawFiles lists the binary and alias an older /opt/claw install
+// leftoverOptAgencyFiles lists the binary and alias an older /opt/agency install
 // kept directly in the data directory, which are no longer used once binDir
-// is optClawBinDir.
-func (h *host) leftoverOptClawFiles(binDir string) []string {
-	if binDir != optClawBinDir {
+// is optAgencyBinDir.
+func (h *host) leftoverOptAgencyFiles(binDir string) []string {
+	if binDir != optAgencyBinDir {
 		return nil
 	}
 	var out []string
 	for _, name := range []string{global.InstalledBinaryName, openClawAlias} {
-		if p := filepath.Join(optClawHome, name); h.exists(p) {
+		if p := filepath.Join(optAgencyHome, name); h.exists(p) {
 			out = append(out, p)
 		}
 	}
@@ -173,12 +173,12 @@ func (h *host) detectLinuxInstall(homeDir string) *ExistingInstall {
 		return inst
 	}
 
-	// 3. Check /opt/claw (standard production / system install location)
-	if h.dirExists(optClawHome) {
+	// 3. Check /opt/agency (standard production / system install location)
+	if h.dirExists(optAgencyHome) {
 		return &ExistingInstall{
-			ClawHome:   optClawHome,
-			BinaryPath: h.optClawBinary(),
-			User:       h.ownerName(optClawHome),
+			AgencyHome: optAgencyHome,
+			BinaryPath: h.optAgencyBinary(),
+			User:       h.ownerName(optAgencyHome),
 		}
 	}
 
@@ -201,11 +201,11 @@ func (h *host) detectDarwinInstall(homeDir string) *ExistingInstall {
 		}
 	}
 
-	// 3. Check /opt/claw
-	if h.dirExists(optClawHome) {
+	// 3. Check /opt/agency
+	if h.dirExists(optAgencyHome) {
 		return &ExistingInstall{
-			ClawHome:   optClawHome,
-			BinaryPath: h.optClawBinary(),
+			AgencyHome: optAgencyHome,
+			BinaryPath: h.optAgencyBinary(),
 		}
 	}
 
@@ -230,8 +230,8 @@ func (h *host) detectFromBinary() *ExistingInstall {
 			continue
 		}
 		inst := &ExistingInstall{BinaryPath: resolved}
-		if inOptClaw(resolved) {
-			inst.ClawHome = optClawHome
+		if inOptAgency(resolved) {
+			inst.AgencyHome = optAgencyHome
 		}
 		return inst
 	}
@@ -266,19 +266,19 @@ func (h *host) parseSystemdUnit(path, serviceType string) *ExistingInstall {
 			workingDir = strings.Trim(after, "\"' \t")
 		} else if after, ok := strings.CutPrefix(line, "Environment="); ok {
 			envVal := after
-			if _, after, ok := strings.Cut(envVal, "CLAW_HOME="); ok {
+			if _, after, ok := strings.Cut(envVal, "AGENCY_HOME="); ok {
 				sub := after
 				if len(sub) > 0 && (sub[0] == '"' || sub[0] == '\'') {
 					q := sub[0]
 					if end := strings.IndexByte(sub[1:], q); end != -1 {
-						inst.ClawHome = sub[1 : 1+end]
+						inst.AgencyHome = sub[1 : 1+end]
 					} else {
-						inst.ClawHome = strings.Trim(sub, "\"' \t")
+						inst.AgencyHome = strings.Trim(sub, "\"' \t")
 					}
 				} else {
 					fields := strings.Fields(sub)
 					if len(fields) > 0 {
-						inst.ClawHome = strings.Trim(fields[0], "\"' \t")
+						inst.AgencyHome = strings.Trim(fields[0], "\"' \t")
 					}
 				}
 			}
@@ -288,22 +288,22 @@ func (h *host) parseSystemdUnit(path, serviceType string) *ExistingInstall {
 		}
 	}
 
-	// Fallback inference for ClawHome
-	if inst.ClawHome == "" {
-		if inOptClaw(inst.BinaryPath) {
-			inst.ClawHome = optClawHome
+	// Fallback inference for AgencyHome
+	if inst.AgencyHome == "" {
+		if inOptAgency(inst.BinaryPath) {
+			inst.AgencyHome = optAgencyHome
 		} else if workingDir != "" && workingDir != "/" && !strings.HasPrefix(workingDir, "/home") {
-			inst.ClawHome = workingDir
-		} else if pathHasOptClaw(pathEnv) {
-			inst.ClawHome = optClawHome
-		} else if h.dirExists(optClawHome) {
-			inst.ClawHome = optClawHome
+			inst.AgencyHome = workingDir
+		} else if pathHasOptAgency(pathEnv) {
+			inst.AgencyHome = optAgencyHome
+		} else if h.dirExists(optAgencyHome) {
+			inst.AgencyHome = optAgencyHome
 		}
 	}
 
 	// Fallback inference for User
-	if inst.User == "" && inst.ClawHome != "" {
-		inst.User = h.ownerName(inst.ClawHome)
+	if inst.User == "" && inst.AgencyHome != "" {
+		inst.User = h.ownerName(inst.AgencyHome)
 	}
 	if inst.User == "" && inst.BinaryPath != "" {
 		inst.User = h.ownerName(inst.BinaryPath)
@@ -312,13 +312,13 @@ func (h *host) parseSystemdUnit(path, serviceType string) *ExistingInstall {
 	return inst
 }
 
-// pathHasOptClaw reports whether a unit's PATH value lists a folder in
-// /opt/claw.
-func pathHasOptClaw(pathEnv string) bool {
+// pathHasOptAgency reports whether a unit's PATH value lists a folder in
+// /opt/agency.
+func pathHasOptAgency(pathEnv string) bool {
 	dirs := strings.FieldsFunc(pathEnv, func(r rune) bool {
 		return r == ':' || r == '"' || r == '\'' || r == ' ' || r == '\t'
 	})
-	return slices.ContainsFunc(dirs, inOptClaw)
+	return slices.ContainsFunc(dirs, inOptAgency)
 }
 
 func (h *host) parseLaunchdPlist(path, serviceType string) *ExistingInstall {
@@ -353,22 +353,22 @@ func (h *host) parseLaunchdPlist(path, serviceType string) *ExistingInstall {
 		}
 	}
 
-	// Extract CLAW_HOME
-	if idx := strings.Index(content, "<key>CLAW_HOME</key>"); idx != -1 {
+	// Extract AGENCY_HOME
+	if idx := strings.Index(content, "<key>AGENCY_HOME</key>"); idx != -1 {
 		sub := content[idx:]
 		if start := strings.Index(sub, "<string>"); start != -1 {
 			if end := strings.Index(sub[start+8:], "</string>"); end != -1 {
-				inst.ClawHome = sub[start+8 : start+8+end]
+				inst.AgencyHome = sub[start+8 : start+8+end]
 			}
 		}
 	}
 
-	// Fallback inference for ClawHome
-	if inst.ClawHome == "" {
-		if inOptClaw(inst.BinaryPath) {
-			inst.ClawHome = optClawHome
-		} else if h.dirExists(optClawHome) {
-			inst.ClawHome = optClawHome
+	// Fallback inference for AgencyHome
+	if inst.AgencyHome == "" {
+		if inOptAgency(inst.BinaryPath) {
+			inst.AgencyHome = optAgencyHome
+		} else if h.dirExists(optAgencyHome) {
+			inst.AgencyHome = optAgencyHome
 		}
 	}
 

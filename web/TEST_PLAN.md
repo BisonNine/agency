@@ -41,7 +41,7 @@ Verify all old "PicoClaw" / "picoclaw" references have been replaced.
 
 | # | Test | Expected |
 |---|------|----------|
-| 3.1 | Open Settings → Agents → Workspace field placeholder | Shows `~/.claw/workspace` |
+| 3.1 | Open Settings → Agents → Workspace field placeholder | Shows `~/.agency/workspace` |
 | 3.2 | Save a config change and reload | Config persists correctly |
 
 ---
@@ -86,7 +86,7 @@ covers this path; see commit `515ed8f` for the merge).
 | # | Test | Expected |
 |---|------|----------|
 | 6.1 | `GET /api/gateway/status` | `gateway_status: "running"` whenever `claw` is up |
-| 6.2 | `CLAW_HOME` env var override | If set, `claw` uses that as the base directory |
+| 6.2 | `AGENCY_HOME` env var override | If set, `claw` uses that as the base directory |
 | 6.3 | Save config via WebUI → `/api/config` | File on disk updates; in-process watcher triggers reload (no subprocess restart) |
 
 ---

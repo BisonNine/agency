@@ -24,7 +24,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// LockFileName is the process's PID/lock file in CLAW_HOME/internal. claw holds
+// LockFileName is the process's PID/lock file in AGENCY_HOME/internal. claw holds
 // an exclusive flock on it while it runs (internal/gateway/lockfile.go); the
 // restore refuses to touch a home whose lock is held.
 const LockFileName = global.LockFileName
@@ -40,7 +40,7 @@ var dbSidecars = [...]string{"-wal", "-shm", "-journal"}
 // GatewayRunning reports whether a gateway holds the lock in home. A missing
 // or stale (unlocked) lock file means not running.
 func GatewayRunning(home string) (bool, error) {
-	f, err := os.Open(filepath.Join(home, internalDir, LockFileName)) //nolint:gosec // fixed name under CLAW_HOME
+	f, err := os.Open(filepath.Join(home, internalDir, LockFileName)) //nolint:gosec // fixed name under AGENCY_HOME
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil

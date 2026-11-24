@@ -73,9 +73,9 @@ func NewInstallCommand() *cobra.Command {
 			"    • Linux: registers a systemd system service (/etc/systemd/system/claw.service)\n" +
 			"    • macOS: registers a launchd LaunchDaemon (/Library/LaunchDaemons/" + global.LaunchdLabel + ".plist)\n" +
 			"    • Binary copied to /usr/local/bin\n\n" +
-			"The WebUI requires an admin login. If <CLAW_HOME>/credentials.json does not exist, the\n" +
-			"installer creates the account before starting the service: from CLAW_ADMIN_USER and\n" +
-			"CLAW_ADMIN_PASSWORD when both are exported, else by prompting on the terminal (/dev/tty\n" +
+			"The WebUI requires an admin login. If <AGENCY_HOME>/credentials.json does not exist, the\n" +
+			"installer creates the account before starting the service: from AGENCY_ADMIN_USER and\n" +
+			"AGENCY_ADMIN_PASSWORD when both are exported, else by prompting on the terminal (/dev/tty\n" +
 			"when stdin is a pipe). With neither it stops without starting the service. --yes does\n" +
 			"not skip this. An existing account is never changed; use `" + app.BinaryName() + " admin` to replace it.\n\n" +
 			"On a headless host, pass --host 0.0.0.0 so the WebUI listens on the network, AND\n" +
@@ -204,8 +204,8 @@ func checkExistingMode(existing *ExistingInstall, isRoot bool) error {
 }
 
 // resolveBinDir selects the destination directory for the installed binary.
-// An /opt/claw install keeps it in the data directory's bin area,
-// /opt/claw/bin, also when an older install put it in /opt/claw itself.
+// An /opt/agency install keeps it in the data directory's bin area,
+// /opt/agency/bin, also when an older install put it in /opt/agency itself.
 func (h *host) resolveBinDir(tu *TargetUser, customDir string, existing *ExistingInstall) (string, error) {
 	if customDir != "" {
 		if err := os.MkdirAll(h.path(customDir), 0o755); err != nil {
@@ -215,20 +215,20 @@ func (h *host) resolveBinDir(tu *TargetUser, customDir string, existing *Existin
 	}
 
 	// If an existing installation binary was detected, preserve that exact
-	// directory, except the data directory itself of an /opt/claw install.
+	// directory, except the data directory itself of an /opt/agency install.
 	if existing != nil && existing.BinaryPath != "" {
 		existingDir := filepath.Dir(existing.BinaryPath)
-		if existingDir == optClawHome {
-			return h.ensureOptClawBinDir()
+		if existingDir == optAgencyHome {
+			return h.ensureOptAgencyBinDir()
 		}
 		if h.dirExists(existingDir) {
 			return existingDir, nil
 		}
 	}
 
-	// An existing /opt/claw install gets its binary in /opt/claw/bin.
-	if existing != nil && existing.ClawHome == optClawHome {
-		return h.ensureOptClawBinDir()
+	// An existing /opt/agency install gets its binary in /opt/agency/bin.
+	if existing != nil && existing.AgencyHome == optAgencyHome {
+		return h.ensureOptAgencyBinDir()
 	}
 
 	if tu.IsRoot {
@@ -259,13 +259,13 @@ func isPackageManagedBinDir(goos, binDir string) bool {
 	return goos == "linux" && (binDir == "/usr/bin" || binDir == "/bin")
 }
 
-// ensureOptClawBinDir creates /opt/claw/bin, if missing, with the bin area's
+// ensureOptAgencyBinDir creates /opt/agency/bin, if missing, with the bin area's
 // default folder mode (the service sets the configured one at start).
-func (h *host) ensureOptClawBinDir() (string, error) {
-	if err := fileutil.MkdirAllExact(h.path(optClawBinDir), config.DefaultDirMode); err != nil {
-		return "", fmt.Errorf("creating %s: %w", optClawBinDir, err)
+func (h *host) ensureOptAgencyBinDir() (string, error) {
+	if err := fileutil.MkdirAllExact(h.path(optAgencyBinDir), config.DefaultDirMode); err != nil {
+		return "", fmt.Errorf("creating %s: %w", optAgencyBinDir, err)
 	}
-	return optClawBinDir, nil
+	return optAgencyBinDir, nil
 }
 
 // confirmPrompt asks the user for confirmation on stdin.
@@ -322,10 +322,10 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	if err != nil {
 		return err
 	}
-	if customBinDir == "" && (existing == nil || (existing.BinaryPath == "" && existing.ClawHome == "")) && isPackageManagedBinDir(h.goos, filepath.Dir(exePath)) {
+	if customBinDir == "" && (existing == nil || (existing.BinaryPath == "" && existing.AgencyHome == "")) && isPackageManagedBinDir(h.goos, filepath.Dir(exePath)) {
 		binDir = filepath.Dir(exePath)
 	}
-	if binDir == optClawBinDir {
+	if binDir == optAgencyBinDir {
 		fixOwnership(binDir, tu)
 	}
 	pkgManagedBin := isPackageManagedBinDir(h.goos, binDir)
@@ -349,15 +349,12 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		}
 	}
 
-	clawHome := h.resolveClawHome(tu, binDir, existing)
-	homeExisted := dirExists(clawHome)
+	agencyHome := h.resolveAgencyHome(tu, binDir, existing)
+	homeExisted := dirExists(agencyHome)
 
-	// Explicitly set CLAW_HOME in process environment so any config access or helper uses clawHome
-	if envErr := os.Setenv(global.EnvVarHome, clawHome); envErr != nil {
+	// Explicitly set AGENCY_HOME in process environment so any config access or helper uses agencyHome
+	if envErr := os.Setenv(global.EnvVarHome, agencyHome); envErr != nil {
 		return fmt.Errorf("setting %s: %w", global.EnvVarHome, envErr)
-	}
-	if envErr := os.Setenv("CLAW_HOME", clawHome); envErr != nil {
-		return fmt.Errorf("setting CLAW_HOME: %w", envErr)
 	}
 
 	// 1. Present installation summary and prompt for confirmation
@@ -374,7 +371,7 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	fmt.Printf("  Mode:            %s\n", modeName)
 	fmt.Printf("  Run As User:     %s (UID: %s, GID: %s)\n", tu.Username, tu.UID, tu.GID)
 	fmt.Printf("  Home Directory:  %s\n", tu.HomeDir)
-	fmt.Printf("  Data Directory:  %s\n", clawHome)
+	fmt.Printf("  Data Directory:  %s\n", agencyHome)
 	fmt.Printf("  Target Binary:   %s\n", targetBin)
 	fmt.Printf("  Alias Symlink:   %s -> %s\n", filepath.Join(binDir, openClawAlias), global.InstalledBinaryName)
 	fmt.Printf("  Service File:    %s\n", serviceFilePath)
@@ -406,21 +403,21 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		fmt.Printf("Installed alias:  %s -> %s (for the Rabbit R1's `openclaw acp`)\n",
 			filepath.Join(binDir, openClawAlias), global.InstalledBinaryName)
 	}
-	for _, old := range h.leftoverOptClawFiles(binDir) {
+	for _, old := range h.leftoverOptAgencyFiles(binDir) {
 		fmt.Printf("%s is no longer used and can be removed.\n", old)
 	}
 
-	// 3. Ensure binDir is on PATH and CLAW_HOME is exported in shell rc
-	if note := ensureUserEnv(tu, binDir, clawHome); note != "" {
+	// 3. Ensure binDir is on PATH and AGENCY_HOME is exported in shell rc
+	if note := ensureUserEnv(tu, binDir, agencyHome); note != "" {
 		fmt.Println(note)
 	}
 
 	// 3b. Apply bind settings if provided
 	if host != "" || port != 0 {
-		if err := applyServerSettings(host, port, clawHome); err != nil {
+		if err := applyServerSettings(host, port, agencyHome); err != nil {
 			return fmt.Errorf("applying server settings: %w", err)
 		}
-		fixOwnership(filepath.Join(clawHome, "config.json"), tu)
+		fixOwnership(filepath.Join(agencyHome, "config.json"), tu)
 	}
 
 	// 3c. Apply IP allowlist if provided
@@ -441,20 +438,20 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		if err := applyAllowlist(allowedCIDRs); err != nil {
 			return fmt.Errorf("applying allowlist: %w", err)
 		}
-		fixOwnership(filepath.Join(clawHome, "config.json"), tu)
+		fixOwnership(filepath.Join(agencyHome, "config.json"), tu)
 	}
 
 	// 4. Make sure the admin account exists, then register and start the
 	// background service. Without the account the service is not started.
-	adminUser, provErr := provisionAndRegister(tu, targetBin, binDir, clawHome, homeExisted)
+	adminUser, provErr := provisionAndRegister(tu, targetBin, binDir, agencyHome, homeExisted)
 	if provErr != nil {
 		return provErr
 	}
-	fixOwnership(filepath.Join(clawHome, "logs"), tu)
+	fixOwnership(filepath.Join(agencyHome, "logs"), tu)
 
 	fmt.Println("\nInstalled and running.")
-	printInstalledURLs(clawHome)
-	fmt.Printf("Admin account: %s (%s)\n", adminUser, admin.Path(clawHome))
+	printInstalledURLs(agencyHome)
+	fmt.Printf("Admin account: %s (%s)\n", adminUser, admin.Path(agencyHome))
 	fmt.Println()
 	fmt.Println("Hints:")
 	switch h.goos {
@@ -473,7 +470,7 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	default:
 		fmt.Printf("  Check status: %s status\n", targetBin)
 	}
-	fmt.Printf("  View logs:    tail -f %s\n", filepath.Join(clawHome, "logs", global.LogFileName))
+	fmt.Printf("  View logs:    tail -f %s\n", filepath.Join(agencyHome, "logs", global.LogFileName))
 	if tu.IsRoot {
 		fmt.Printf("  Uninstall:    sudo %s uninstall\n", targetBin)
 	} else {
@@ -484,19 +481,19 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 
 // registerService writes the service definition and enables and starts it.
 // It is replaced in tests.
-var registerService = func(tu *TargetUser, targetBin, binDir, clawHome string) error {
-	return realHost().register(tu, targetBin, binDir, clawHome)
+var registerService = func(tu *TargetUser, targetBin, binDir, agencyHome string) error {
+	return realHost().register(tu, targetBin, binDir, agencyHome)
 }
 
 // register is registerService on h.
-func (h *host) register(tu *TargetUser, targetBin, binDir, clawHome string) error {
+func (h *host) register(tu *TargetUser, targetBin, binDir, agencyHome string) error {
 	switch h.goos {
 	case "linux":
-		if err := h.installSystemd(tu, targetBin, binDir, clawHome); err != nil {
+		if err := h.installSystemd(tu, targetBin, binDir, agencyHome); err != nil {
 			return fmt.Errorf("installing systemd service: %w", err)
 		}
 	case "darwin":
-		if err := h.installLaunchd(tu, targetBin, binDir, clawHome); err != nil {
+		if err := h.installLaunchd(tu, targetBin, binDir, agencyHome); err != nil {
 			return fmt.Errorf("installing launchd service: %w", err)
 		}
 	}
@@ -507,25 +504,25 @@ func (h *host) register(tu *TargetUser, targetBin, binDir, clawHome string) erro
 // real one (stdin, else /dev/tty). It is replaced in tests.
 var adminTerminal func(io.Writer) (*admin.Terminal, error)
 
-// provisionAndRegister ensures clawHome holds an admin account and only then
+// provisionAndRegister ensures agencyHome holds an admin account and only then
 // registers and starts the service, so an install never leaves a WebUI that
 // nobody can sign in to. It returns the account's username. homeExisted says
-// whether clawHome was there before the install began; a directory the
+// whether agencyHome was there before the install began; a directory the
 // installer created as root is handed to the service account.
-func provisionAndRegister(tu *TargetUser, targetBin, binDir, clawHome string, homeExisted bool) (string, error) {
-	if err := os.MkdirAll(clawHome, 0o700); err != nil {
-		return "", fmt.Errorf("creating %s: %w", clawHome, err)
+func provisionAndRegister(tu *TargetUser, targetBin, binDir, agencyHome string, homeExisted bool) (string, error) {
+	if err := os.MkdirAll(agencyHome, 0o700); err != nil {
+		return "", fmt.Errorf("creating %s: %w", agencyHome, err)
 	}
 	if !homeExisted {
-		fixOwnership(clawHome, tu)
+		fixOwnership(agencyHome, tu)
 	}
 	// The credentials file takes security.permissions.secrets.file_mode from
 	// an existing config; only that block is read.
-	perms, err := config.ReadPermissions(filepath.Join(clawHome, "config.json"))
+	perms, err := config.ReadPermissions(filepath.Join(agencyHome, "config.json"))
 	if err != nil {
 		return "", fmt.Errorf("reading security.permissions: %w", err)
 	}
-	opts := admin.EnsureOptions{Home: clawHome, OpenTerminal: adminTerminal, FileMode: perms.Modes(config.AreaSecrets).File}
+	opts := admin.EnsureOptions{Home: agencyHome, OpenTerminal: adminTerminal, FileMode: perms.Modes(config.AreaSecrets).File}
 	if tu.IsRoot {
 		opts.Chown = func(path string) error { return chownToTarget(path, tu) }
 	}
@@ -534,11 +531,11 @@ func provisionAndRegister(tu *TargetUser, targetBin, binDir, clawHome string, ho
 		return "", fmt.Errorf("%w\nThe %s service was not registered or started. Rerunning the installer is safe", err, serviceName)
 	}
 	if created {
-		fmt.Printf("Created admin account %q (%s)\n", username, admin.Path(clawHome))
+		fmt.Printf("Created admin account %q (%s)\n", username, admin.Path(agencyHome))
 	} else {
-		fmt.Printf("Admin account %q already exists (%s); left unchanged\n", username, admin.Path(clawHome))
+		fmt.Printf("Admin account %q already exists (%s); left unchanged\n", username, admin.Path(agencyHome))
 	}
-	if err := registerService(tu, targetBin, binDir, clawHome); err != nil {
+	if err := registerService(tu, targetBin, binDir, agencyHome); err != nil {
 		return "", err
 	}
 	return username, nil
@@ -636,21 +633,21 @@ func serviceManagerName(goos string) string {
 	return "launchd"
 }
 
-// resolveClawHome determines the directory for CLAW_HOME.
+// resolveAgencyHome determines the directory for AGENCY_HOME.
 // It prioritizes explicit environment variables, detected existing installations,
-// /opt/claw if installed there or existing, or the user's ~/.claw directory.
-func (h *host) resolveClawHome(tu *TargetUser, binDir string, existing *ExistingInstall) string {
+// /opt/agency if installed there or existing, or the user's ~/.agency directory.
+func (h *host) resolveAgencyHome(tu *TargetUser, binDir string, existing *ExistingInstall) string {
 	if envHome := os.Getenv(global.EnvVarHome); envHome != "" {
 		return envHome
 	}
-	if existing != nil && existing.ClawHome != "" {
-		return existing.ClawHome
+	if existing != nil && existing.AgencyHome != "" {
+		return existing.AgencyHome
 	}
-	if binDir == optClawBinDir || (existing != nil && inOptClaw(existing.BinaryPath)) {
+	if binDir == optAgencyBinDir || (existing != nil && inOptAgency(existing.BinaryPath)) {
 		return global.SystemDataDir
 	}
-	if h.dirExists(optClawHome) {
-		return optClawHome
+	if h.dirExists(optAgencyHome) {
+		return optAgencyHome
 	}
 	return filepath.Join(tu.HomeDir, global.DefaultDataDir)
 }
@@ -658,21 +655,21 @@ func (h *host) resolveClawHome(tu *TargetUser, binDir string, existing *Existing
 // buildUnit is preserved for backwards compatibility with tests and callers.
 func buildUnit(username, group, execPath, binDir string) string {
 	homeDir := filepath.Join("/home", username)
-	clawHome := filepath.Join(homeDir, global.DefaultDataDir)
+	agencyHome := filepath.Join(homeDir, global.DefaultDataDir)
 	if envHome := os.Getenv(global.EnvVarHome); envHome != "" {
-		clawHome = envHome
+		agencyHome = envHome
 	}
-	return buildSystemUnit(username, group, execPath, homeDir, binDir, clawHome)
+	return buildSystemUnit(username, group, execPath, homeDir, binDir, agencyHome)
 }
 
 // applyServerSettings writes the requested bind host/port into the config (a
 // blank/zero value leaves the existing one untouched), creating the config from
 // defaults if it doesn't exist yet. It warns when binding a non-loopback address
 // because the WebUI has no authentication.
-func applyServerSettings(host string, port int, optionalClawHome ...string) error {
+func applyServerSettings(host string, port int, optionalAgencyHome ...string) error {
 	path := internal.GetConfigPath()
-	if len(optionalClawHome) > 0 && optionalClawHome[0] != "" {
-		path = filepath.Join(optionalClawHome[0], "config.json")
+	if len(optionalAgencyHome) > 0 && optionalAgencyHome[0] != "" {
+		path = filepath.Join(optionalAgencyHome[0], "config.json")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -738,11 +735,11 @@ func printListenerSummary(w io.Writer, gw config.GatewayConfig) {
 
 // printInstalledURLs prints the listener summary for the installed config,
 // or for the defaults when it cannot be read.
-func printInstalledURLs(clawHome string) {
+func printInstalledURLs(agencyHome string) {
 	gw := config.DefaultConfig().Gateway
 	cfgPath := internal.GetConfigPath()
-	if clawHome != "" {
-		cfgPath = filepath.Join(clawHome, "config.json")
+	if agencyHome != "" {
+		cfgPath = filepath.Join(agencyHome, "config.json")
 	}
 	if cfg, err := config.LoadConfig(cfgPath); err == nil {
 		gw = cfg.Gateway
@@ -791,7 +788,7 @@ func applyAllowlist(csv string) error {
 // servicePATH builds the PATH baked into the systemd unit or launchd plist.
 // It prioritizes the target user's local bin directories (~/.local/bin, ~/bin)
 // so dev tools (claude code, agy, codex, cursor, etc.) are reachable, the binary
-// directory itself (e.g. /opt/claw), any home-relative tool paths (e.g. cargo, nvm),
+// directory itself (e.g. /opt/agency), any home-relative tool paths (e.g. cargo, nvm),
 // and standard clean system directories (/usr/local/bin, /usr/bin, /bin).
 // Unneeded sbin and vendor-specific paths (e.g. thinlinc, snap) are excluded.
 func servicePATH(homeDir, binDir string) string {
@@ -817,7 +814,7 @@ func servicePATH(homeDir, binDir string) string {
 		}
 	}
 
-	// 2. Target binary directory (e.g. /opt/claw)
+	// 2. Target binary directory (e.g. /opt/agency)
 	if binDir != "" {
 		add(binDir)
 	}
@@ -848,8 +845,8 @@ func isSystemOrSnapPath(p string) bool {
 	}
 }
 
-// ensureUserEnv ensures binDir is on PATH and CLAW_HOME is exported in the target user's shell rc.
-func ensureUserEnv(tu *TargetUser, binDir, clawHome string) string {
+// ensureUserEnv ensures binDir is on PATH and AGENCY_HOME is exported in the target user's shell rc.
+func ensureUserEnv(tu *TargetUser, binDir, agencyHome string) string {
 	rc := userShellRC(tu.HomeDir)
 	if rc == "" {
 		return ""
@@ -874,16 +871,16 @@ func ensureUserEnv(tu *TargetUser, binDir, clawHome string) string {
 		}
 	}
 
-	// Check if CLAW_HOME needs to be exported
-	needClawHome := false
+	// Check if AGENCY_HOME needs to be exported
+	needAgencyHome := false
 	defaultHome := filepath.Join(tu.HomeDir, global.DefaultDataDir)
-	if clawHome != defaultHome {
+	if agencyHome != defaultHome {
 		if !strings.Contains(content, global.EnvVarHome) {
-			needClawHome = true
+			needAgencyHome = true
 		}
 	}
 
-	if !needPath && !needClawHome {
+	if !needPath && !needAgencyHome {
 		return ""
 	}
 
@@ -896,9 +893,9 @@ func ensureUserEnv(tu *TargetUser, binDir, clawHome string) string {
 		lines = append(lines, fmt.Sprintf("export PATH=%q", binDir+":$PATH"))
 		notes = append(notes, fmt.Sprintf("Added %s to PATH in %s", binDir, rc))
 	}
-	if needClawHome {
-		lines = append(lines, fmt.Sprintf("export %s=%q", global.EnvVarHome, clawHome))
-		notes = append(notes, fmt.Sprintf("Exported %s=%s in %s", global.EnvVarHome, clawHome, rc))
+	if needAgencyHome {
+		lines = append(lines, fmt.Sprintf("export %s=%q", global.EnvVarHome, agencyHome))
+		notes = append(notes, fmt.Sprintf("Exported %s=%s in %s", global.EnvVarHome, agencyHome, rc))
 	}
 
 	f, err := os.OpenFile(rc, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // user's shell rc file; conventional mode kept
@@ -975,8 +972,8 @@ func copyBinary(src, dst string) error {
 // exists and the uninstall runs as root or for the account that owns it,
 // else the target user's own.
 func uninstallDataDir(tu *TargetUser, existing *ExistingInstall, systemDir string) string {
-	if existing != nil && existing.ClawHome != "" {
-		return existing.ClawHome
+	if existing != nil && existing.AgencyHome != "" {
+		return existing.AgencyHome
 	}
 	if dirExists(systemDir) && (tu.IsRoot || ownedByUID(systemDir, tu.UID)) {
 		return systemDir

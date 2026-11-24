@@ -16,8 +16,8 @@ import (
 )
 
 func TestResolveHome_EnvWins(t *testing.T) {
-	stubDetect(t, &install.ExistingInstall{ClawHome: "/opt/claw"})
-	t.Setenv("CLAW_HOME", "/tmp/claw-test-home")
+	stubDetect(t, &install.ExistingInstall{AgencyHome: "/opt/agency"})
+	t.Setenv("AGENCY_HOME", "/tmp/claw-test-home")
 	home, _ := ResolveHome()
 	if home != "/tmp/claw-test-home" {
 		t.Fatalf("ResolveHome() = %q", home)
@@ -40,7 +40,7 @@ func TestRun_RequiresTerminal(t *testing.T) {
 
 func TestRun_WritesAccountFromTerminal(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	orig := openTerminal
 	t.Cleanup(func() { openTerminal = orig })
 	var prompts bytes.Buffer

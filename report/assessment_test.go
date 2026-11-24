@@ -211,7 +211,7 @@ func TestAssessment_Marks(t *testing.T) {
 	}
 }
 
-// TestAssessment_DataDirPermissions: a CLAW_HOME at its configured modes is
+// TestAssessment_DataDirPermissions: a AGENCY_HOME at its configured modes is
 // unmarked and the row lists every area's modes; a path more open than its
 // mode marks the row, counts, and names the first one with its mode and the
 // configured one; a path tighter than its mode is not reported.
@@ -252,7 +252,7 @@ func TestAssessment_DataDirPermissions(t *testing.T) {
 	if r[0] != "*" {
 		t.Errorf("loose permissions mark = %q, want *", r[0])
 	}
-	contains(t, r[2], "1 path under CLAW_HOME is more open than the configured modes (first: "+loosePath+" 0644, configured 0600)", "loose status")
+	contains(t, r[2], "1 path under AGENCY_HOME is more open than the configured modes (first: "+loosePath+" 0644, configured 0600)", "loose status")
 
 	// A loose data directory counts too, and comes first.
 	if err := os.Chmod(env.DataDir, 0o755); err != nil {
@@ -260,7 +260,7 @@ func TestAssessment_DataDirPermissions(t *testing.T) {
 	}
 	s = collectAssessment(t.Context(), cfg, env)
 	r = assessmentRow(t, s, "Data directory permissions")
-	contains(t, r[2], "2 paths under CLAW_HOME are more open than the configured modes (first: "+env.DataDir+" 0755, configured 0700)", "loose dir status")
+	contains(t, r[2], "2 paths under AGENCY_HOME are more open than the configured modes (first: "+env.DataDir+" 0755, configured 0700)", "loose dir status")
 
 	// Tighter than configured is not reported.
 	if err := os.Chmod(env.DataDir, 0o700); err != nil {
@@ -308,7 +308,7 @@ func TestPermsStatus_TruncatedAndError(t *testing.T) {
 	contains(t, got, "The check was truncated at the entry cap", "truncated note")
 
 	got = permsStatus([]perms.Finding{{Path: "/x/tokens.json", Mode: 0o644, Want: 0o600}}, perms.ErrTruncated, "")
-	contains(t, got, "1 path under CLAW_HOME is more open than the configured modes (first: /x/tokens.json 0644, configured 0600)", "truncated with findings")
+	contains(t, got, "1 path under AGENCY_HOME is more open than the configured modes (first: /x/tokens.json 0644, configured 0600)", "truncated with findings")
 	contains(t, got, "truncated at the entry cap", "truncated note with findings")
 
 	got = permsStatus(nil, errors.New("boom"), "")

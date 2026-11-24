@@ -36,7 +36,7 @@ func TestDefaultOnChannelBools_FalseSurvivesSaveAndLoad(t *testing.T) {
 // A config that does not mention them gets the defaults: on for both.
 func TestDefaultOnChannelBools_AbsentUsesDefault(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	body := `{"channels":{"telegram":[{"id":"default"}],"matrix":{}}}`
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
@@ -58,7 +58,7 @@ func TestDefaultOnChannelBools_AbsentUsesDefault(t *testing.T) {
 // first.
 func TestTelegramBotDefaults_EveryBot(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	p := filepath.Join(dir, "config.json")
 	body := `{"channels":{"telegram":[{"id":"alice"},{"id":"bob"},{"id":"carol"}]}}`
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {

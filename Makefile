@@ -98,8 +98,8 @@ INSTALL_BIN_DIR=$(INSTALL_PREFIX)/bin
 INSTALL_TMP_SUFFIX=.new
 
 # Data directory
-CLAW_HOME?=$(HOME)/.claw
-WORKSPACE_DIR?=$(CLAW_HOME)/workspace
+AGENCY_HOME?=$(HOME)/.agency
+WORKSPACE_DIR?=$(AGENCY_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 
@@ -159,8 +159,8 @@ BUILD_ENV=GOOS=$(PLATFORM) GOARCH=$(ARCH)$(if $(GOARM), GOARM=$(GOARM))$(if $(GO
 EXE=$(if $(filter windows,$(PLATFORM)),.exe)
 
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
-CLAW_AUTH_NAME=claw-auth
-CLAW_AUTH_PATH=$(BUILD_DIR)/$(CLAW_AUTH_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
+AGENCY_AUTH_NAME=claw-auth
+AGENCY_AUTH_PATH=$(BUILD_DIR)/$(AGENCY_AUTH_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
 
 # Frontend / embedded SPA
 FRONTEND_DIR=web/frontend
@@ -196,18 +196,18 @@ build: $(EMBED_INDEX) $(MANUAL_INDEX) generate
 	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(notdir $(BINARY_PATH)) $(BUILD_DIR)/$(BINARY_NAME)$(EXE)
-	@echo "Building $(CLAW_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
-	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(CLAW_AUTH_PATH) ./cmd/claw-auth
-	@echo "Build complete: $(CLAW_AUTH_PATH)"
-	@ln -sf $(notdir $(CLAW_AUTH_PATH)) $(BUILD_DIR)/$(CLAW_AUTH_NAME)$(EXE)
+	@echo "Building $(AGENCY_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
+	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(AGENCY_AUTH_PATH) ./cmd/claw-auth
+	@echo "Build complete: $(AGENCY_AUTH_PATH)"
+	@ln -sf $(notdir $(AGENCY_AUTH_PATH)) $(BUILD_DIR)/$(AGENCY_AUTH_NAME)$(EXE)
 
 ## claw-auth: Build the standalone claw-auth OAuth helper CLI (runs on the user's own computer).
 claw-auth:
-	@echo "Building $(CLAW_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
+	@echo "Building $(AGENCY_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(CLAW_AUTH_PATH) ./cmd/claw-auth
-	@echo "Build complete: $(CLAW_AUTH_PATH)"
-	@ln -sf $(notdir $(CLAW_AUTH_PATH)) $(BUILD_DIR)/$(CLAW_AUTH_NAME)$(EXE)
+	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(AGENCY_AUTH_PATH) ./cmd/claw-auth
+	@echo "Build complete: $(AGENCY_AUTH_PATH)"
+	@ln -sf $(notdir $(AGENCY_AUTH_PATH)) $(BUILD_DIR)/$(AGENCY_AUTH_NAME)$(EXE)
 
 ## frontend: Build the SPA into the Go embed source (web/backend/dist).
 frontend: $(EMBED_INDEX)
@@ -264,15 +264,15 @@ uninstall:
 	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME) $(HOME)/bin/$(BINARY_NAME)
 	@rm -f $(INSTALL_BIN_DIR)/openclaw $(HOME)/bin/openclaw
 	@echo "Removed binaries"
-	@echo "Note: Data directory $(CLAW_HOME) was not removed. Run 'make uninstall-all' to remove everything."
+	@echo "Note: Data directory $(AGENCY_HOME) was not removed. Run 'make uninstall-all' to remove everything."
 
 ## uninstall-all: Remove claw and all data
 uninstall-all:
 	@echo "Removing binaries..."
 	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)
 	@echo "Removing data directory..."
-	@rm -rf $(CLAW_HOME)
-	@echo "Removed: $(CLAW_HOME)"
+	@rm -rf $(AGENCY_HOME)
+	@echo "Removed: $(AGENCY_HOME)"
 	@echo "Complete uninstallation done!"
 
 ## generate: Run go generate (refreshes embedded onboard workspace)
@@ -556,10 +556,10 @@ help:
 	@echo "  ARCH                    # Target GOARCH (default: host, $(ARCH))"
 	@echo "  GOARM / GOMIPS          # Optional sub-arch (e.g. GOARM=7, GOMIPS=softfloat)"
 	@echo "  INSTALL_PREFIX          # Installation prefix (default: ~/.local)"
-	@echo "  CLAW_HOME               # Data directory (default: ~/.claw)"
+	@echo "  AGENCY_HOME               # Data directory (default: ~/.agency)"
 	@echo ""
 	@echo "Current Configuration:"
 	@echo "  Platform: $(PLATFORM)/$(ARCH)"
 	@echo "  Binary:   $(BINARY_PATH)"
 	@echo "  Install:  $(INSTALL_BIN_DIR)"
-	@echo "  Data:     $(CLAW_HOME)"
+	@echo "  Data:     $(AGENCY_HOME)"

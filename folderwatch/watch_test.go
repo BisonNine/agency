@@ -81,7 +81,7 @@ func TestDetectNewFiles_IgnoresHidden(t *testing.T) {
 	dir, ws := t.TempDir(), t.TempDir()
 	detect(w, ws, dir) // baseline
 
-	// A hidden file (an old in-folder .claw marker among them) is never reported.
+	// A hidden file (an old in-folder .agency marker among them) is never reported.
 	for _, name := range []string{".secret", global.FolderMarkerFile} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("h"), 0o644); err != nil {
 			t.Fatal(err)

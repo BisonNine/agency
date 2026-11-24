@@ -3,7 +3,7 @@
 
 // Package audit is the append-only record of who did what: every agent tool
 // call, every configuration write through the WebUI, and every authentication
-// event. Rows live in <CLAW_HOME>/internal/audit.db (SQLite, WAL, mode 0600) and are
+// event. Rows live in <AGENCY_HOME>/internal/audit.db (SQLite, WAL, mode 0600) and are
 // never updated or deleted except by the retention prune.
 //
 // Recording is asynchronous: Record hands the event to a buffered channel that
@@ -216,7 +216,7 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	}
 	// Create the file ourselves so the mode is right from the first byte; the
 	// chmod makes it exact whatever the umask or an earlier run left.
-	f, err := os.OpenFile(abs, os.O_RDWR|os.O_CREATE, modes.File) //nolint:gosec // path is <CLAW_HOME>/internal/audit.db
+	f, err := os.OpenFile(abs, os.O_RDWR|os.O_CREATE, modes.File) //nolint:gosec // path is <AGENCY_HOME>/internal/audit.db
 	if err != nil {
 		return nil, fmt.Errorf("audit: create %s: %w", abs, err)
 	}

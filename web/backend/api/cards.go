@@ -19,7 +19,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// The character-card library (<CLAW_HOME>/cards, ccv3) for the Cards page
+// The character-card library (<AGENCY_HOME>/cards, ccv3) for the Cards page
 // and the Agents page's card selector. Every write is audited (card_import,
 // card_delete); the ccv3 tool's writes are audited as tool calls.
 

@@ -160,7 +160,7 @@ func TestAuthThrottle_ExemptSwap(t *testing.T) {
 // gateway runs again on every config reload, reads gateway.lockout_exempt, so
 // a changed list replaces the previous one.
 func TestDeviceFactory_AppliesLockoutExempt(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	build := func(exempt []string) *DeviceChannel {
 		t.Helper()
 		cfg := config.DefaultConfig()

@@ -29,7 +29,7 @@ func NewBackupCommand() *cobra.Command {
 		Short: "Write a backup archive of the " + app.ShortName() + " install",
 		Long: "Writes claw-backup-<timestamp>.tar.gz containing config.json, the cron jobs\n" +
 			"file, internal/ (tokens and the device pairing database), credentials.json,\n" +
-			"tls/ and cards/ when present, and every SQLite database under CLAW_HOME (session archives,\n" +
+			"tls/ and cards/ when present, and every SQLite database under AGENCY_HOME (session archives,\n" +
 			"cognitive memory, the fusion OAuth store), each checked with quick_check and\n" +
 			"copied with VACUUM INTO, and the agents' forums, Maestro data, classifiers and\n" +
 			"knowledge bases. Safe to run while " + app.ShortName() + " is up.\n" +
@@ -41,7 +41,7 @@ func NewBackupCommand() *cobra.Command {
 			return runBackup(cmd, dest)
 		},
 	}
-	cmd.Flags().StringVar(&dest, "dest", "", "directory to write the archive to (default: backup.dest, else $CLAW_HOME/backup)")
+	cmd.Flags().StringVar(&dest, "dest", "", "directory to write the archive to (default: backup.dest, else $AGENCY_HOME/backup)")
 	return cmd
 }
 
@@ -75,10 +75,10 @@ func NewRestoreCommand() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "restore <archive>",
-		Short: "Restore a backup archive into CLAW_HOME",
+		Short: "Restore a backup archive into AGENCY_HOME",
 		Long: "Restores a claw-backup-*.tar.gz written by `" + app.BinaryName() + " backup` or the nightly backup.\n" +
 			app.ShortName() + " must be stopped. Every file the archive will replace is listed and,\n" +
-			"after confirmation, moved to $CLAW_HOME/restore-backup-<timestamp>/ before the\n" +
+			"after confirmation, moved to $AGENCY_HOME/restore-backup-<timestamp>/ before the\n" +
 			"archived copy is put in place. Restored databases are checked with quick_check\n" +
 			"first; if any fails the restore aborts and nothing is changed. An agent with\n" +
 			"its own workspace outside agents.base_dir is restored only as far as the\n" +
@@ -93,7 +93,7 @@ func NewRestoreCommand() *cobra.Command {
 }
 
 func runRestore(cmd *cobra.Command, archive string, yes bool) error {
-	home := internal.GetClawHome()
+	home := internal.GetAgencyHome()
 	running, err := GatewayRunning(home)
 	if err != nil {
 		return err

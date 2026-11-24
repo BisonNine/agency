@@ -76,7 +76,7 @@ func TestCatalogue_CLIModelWiring(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script CLI")
 	}
-	t.Setenv("CLAW_TEST_SERVICE_SECRET", "do-not-pass")
+	t.Setenv("AGENCY_TEST_SERVICE_SECRET", "do-not-pass")
 
 	dir := t.TempDir()
 	if err := callCLI(t, cliScript(t, dir, "hello"), true); err != nil {
@@ -86,7 +86,7 @@ func TestCatalogue_CLIModelWiring(t *testing.T) {
 		t.Errorf("bypass on: args %v lack the bypass flag", args)
 	}
 	env := strings.Join(readLines(t, filepath.Join(dir, "env")), "\n")
-	if strings.Contains(env, "CLAW_TEST_SERVICE_SECRET") {
+	if strings.Contains(env, "AGENCY_TEST_SERVICE_SECRET") {
 		t.Error("the CLI saw a variable outside the allowlist")
 	}
 	for _, want := range []string{"ALICE_SETTING=on", "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1", "PATH="} {

@@ -37,7 +37,7 @@ const prefix = "SST"
 const fileName = "service-tokens.json"
 
 // Path returns the absolute path to the service-token state file for the given
-// data directory (e.g. $CLAW_HOME or ~/.claw).
+// data directory (e.g. $AGENCY_HOME or ~/.agency).
 func Path(dataDir string) string {
 	return filepath.Join(dataDir, global.InternalDir, fileName)
 }

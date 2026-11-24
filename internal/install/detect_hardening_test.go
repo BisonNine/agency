@@ -20,15 +20,15 @@ const plistDaemon = `<?xml version="1.0" encoding="UTF-8"?>
 	<string>alice</string>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<key>CLAW_HOME</key>
-		<string>/Users/alice/.claw</string>
+		<key>AGENCY_HOME</key>
+		<string>/Users/alice/.agency</string>
 	</dict>
 </dict>
 </plist>
 `
 
 // The macOS detection order: LaunchDaemon, then the user's LaunchAgent, then
-// /opt/claw (bin layout
+// /opt/agency (bin layout
 // first), then nothing.
 func TestDetectDarwinInstall_Matrix(t *testing.T) {
 	cases := []struct {
@@ -45,23 +45,23 @@ func TestDetectDarwinInstall_Matrix(t *testing.T) {
 			name:     "launch daemon",
 			files:    map[string]string{systemLaunchdPath: plistDaemon, userLaunchdPath("/Users/alice"): plistDaemon},
 			wantType: "launchd-daemon", wantPath: systemLaunchdPath,
-			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.claw", wantUser: "alice",
+			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.agency", wantUser: "alice",
 		},
 		{
 			name:     "launch agent",
 			files:    map[string]string{userLaunchdPath("/Users/alice"): plistDaemon},
 			wantType: "launchd-agent", wantPath: userLaunchdPath("/Users/alice"),
-			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.claw", wantUser: "alice",
+			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.agency", wantUser: "alice",
 		},
 		{
 			name:    "opt claw bin layout",
-			files:   map[string]string{"/opt/claw/claw": "x", "/opt/claw/bin/claw": "x"},
-			wantBin: "/opt/claw/bin/claw", wantHome: "/opt/claw",
+			files:   map[string]string{"/opt/agency/claw": "x", "/opt/agency/bin/claw": "x"},
+			wantBin: "/opt/agency/bin/claw", wantHome: "/opt/agency",
 		},
 		{
 			name:    "opt claw old layout",
-			files:   map[string]string{"/opt/claw/claw": "x"},
-			wantBin: "/opt/claw/claw", wantHome: "/opt/claw",
+			files:   map[string]string{"/opt/agency/claw": "x"},
+			wantBin: "/opt/agency/claw", wantHome: "/opt/agency",
 		},
 		{name: "nothing", wantNil: true},
 	}
@@ -84,46 +84,46 @@ func TestDetectDarwinInstall_Matrix(t *testing.T) {
 			if inst.ServiceType != tc.wantType || inst.ServicePath != tc.wantPath {
 				t.Errorf("service = %q at %q, want %q at %q", inst.ServiceType, inst.ServicePath, tc.wantType, tc.wantPath)
 			}
-			if inst.BinaryPath != tc.wantBin || inst.ClawHome != tc.wantHome || inst.User != tc.wantUser {
+			if inst.BinaryPath != tc.wantBin || inst.AgencyHome != tc.wantHome || inst.User != tc.wantUser {
 				t.Errorf("bin, home, user = %q, %q, %q, want %q, %q, %q",
-					inst.BinaryPath, inst.ClawHome, inst.User, tc.wantBin, tc.wantHome, tc.wantUser)
+					inst.BinaryPath, inst.AgencyHome, inst.User, tc.wantBin, tc.wantHome, tc.wantUser)
 			}
 		})
 	}
 }
 
 // A plist that cannot be read, or that lacks the keys, gives only what is
-// known; the data directory is inferred from the binary or /opt/claw.
+// known; the data directory is inferred from the binary or /opt/agency.
 func TestParseLaunchdPlist_MissingAndGarbled(t *testing.T) {
 	h := fakeHost(t)
 	inst := h.parseLaunchdPlist("/Library/LaunchDaemons/none.plist", "launchd-daemon")
-	if inst.ServicePath != "/Library/LaunchDaemons/none.plist" || inst.BinaryPath != "" || inst.ClawHome != "" {
+	if inst.ServicePath != "/Library/LaunchDaemons/none.plist" || inst.BinaryPath != "" || inst.AgencyHome != "" {
 		t.Errorf("missing plist = %+v, want only the service path", inst)
 	}
 
 	// Keys with no <string> after them, and an unterminated string.
 	writeHostFile(t, h, "/p/garbled.plist", "<key>ProgramArguments</key><array>\n<key>UserName</key><string>bob", 0o644)
 	inst = h.parseLaunchdPlist("/p/garbled.plist", "launchd-agent")
-	if inst.BinaryPath != "" || inst.User != "" || inst.ClawHome != "" {
+	if inst.BinaryPath != "" || inst.User != "" || inst.AgencyHome != "" {
 		t.Errorf("garbled plist = %+v, want nothing parsed", inst)
 	}
 
-	// Binary in /opt/claw: data directory /opt/claw.
-	writeHostFile(t, h, "/p/opt.plist", "<key>ProgramArguments</key><array><string>/opt/claw/bin/claw</string></array>", 0o644)
-	if inst = h.parseLaunchdPlist("/p/opt.plist", "launchd-daemon"); inst.ClawHome != "/opt/claw" {
-		t.Errorf("ClawHome = %q, want /opt/claw from the binary", inst.ClawHome)
+	// Binary in /opt/agency: data directory /opt/agency.
+	writeHostFile(t, h, "/p/opt.plist", "<key>ProgramArguments</key><array><string>/opt/agency/bin/claw</string></array>", 0o644)
+	if inst = h.parseLaunchdPlist("/p/opt.plist", "launchd-daemon"); inst.AgencyHome != "/opt/agency" {
+		t.Errorf("AgencyHome = %q, want /opt/agency from the binary", inst.AgencyHome)
 	}
 
-	// Binary in a sibling folder: not an /opt/claw install.
-	writeHostFile(t, h, "/p/sib.plist", "<key>ProgramArguments</key><array><string>/opt/claw-old/claw</string></array>", 0o644)
-	if inst = h.parseLaunchdPlist("/p/sib.plist", "launchd-daemon"); inst.ClawHome != "" {
-		t.Errorf("ClawHome = %q for /opt/claw-old/claw, want none", inst.ClawHome)
+	// Binary in a sibling folder: not an /opt/agency install.
+	writeHostFile(t, h, "/p/sib.plist", "<key>ProgramArguments</key><array><string>/opt/agency-old/claw</string></array>", 0o644)
+	if inst = h.parseLaunchdPlist("/p/sib.plist", "launchd-daemon"); inst.AgencyHome != "" {
+		t.Errorf("AgencyHome = %q for /opt/agency-old/claw, want none", inst.AgencyHome)
 	}
 
-	// Binary elsewhere, but /opt/claw exists.
-	writeHostFile(t, h, "/opt/claw/config.json", "{}", 0o600)
-	if inst = h.parseLaunchdPlist("/p/sib.plist", "launchd-daemon"); inst.ClawHome != "/opt/claw" {
-		t.Errorf("ClawHome = %q with /opt/claw present, want /opt/claw", inst.ClawHome)
+	// Binary elsewhere, but /opt/agency exists.
+	writeHostFile(t, h, "/opt/agency/config.json", "{}", 0o600)
+	if inst = h.parseLaunchdPlist("/p/sib.plist", "launchd-daemon"); inst.AgencyHome != "/opt/agency" {
+		t.Errorf("AgencyHome = %q with /opt/agency present, want /opt/agency", inst.AgencyHome)
 	}
 }
 
@@ -132,24 +132,24 @@ func TestParseLaunchdPlist_MissingAndGarbled(t *testing.T) {
 func TestParseSystemdUnit_Inference(t *testing.T) {
 	owner := ""
 	cases := []struct {
-		name     string
-		unit     string
-		optClaw  bool
-		wantHome string
-		wantUser func(t *testing.T) string
+		name      string
+		unit      string
+		optAgency bool
+		wantHome  string
+		wantUser  func(t *testing.T) string
 	}{
-		{name: "unterminated quote", unit: "Environment=CLAW_HOME=\"/srv/claw\nExecStart=/usr/bin/claw\n", wantHome: "/srv/claw"},
-		{name: "quoted value", unit: "Environment=CLAW_HOME=\"/srv/my claw\" X=1\n", wantHome: "/srv/my claw"},
-		{name: "single quoted", unit: "Environment='CLAW_HOME=/srv/claw' 'X=1'\n", wantHome: "/srv/claw"},
-		{name: "bare with others", unit: "Environment=CLAW_HOME=/srv/claw OTHER=1\n", wantHome: "/srv/claw"},
+		{name: "unterminated quote", unit: "Environment=AGENCY_HOME=\"/srv/claw\nExecStart=/usr/bin/claw\n", wantHome: "/srv/claw"},
+		{name: "quoted value", unit: "Environment=AGENCY_HOME=\"/srv/my claw\" X=1\n", wantHome: "/srv/my claw"},
+		{name: "single quoted", unit: "Environment='AGENCY_HOME=/srv/claw' 'X=1'\n", wantHome: "/srv/claw"},
+		{name: "bare with others", unit: "Environment=AGENCY_HOME=/srv/claw OTHER=1\n", wantHome: "/srv/claw"},
 		{name: "working directory", unit: "WorkingDirectory=\"/srv/data\"\nExecStart=/usr/bin/claw\n", wantHome: "/srv/data"},
 		{name: "working directory root ignored", unit: "WorkingDirectory=/\nExecStart=/usr/bin/claw\n", wantHome: ""},
 		{name: "working directory in home ignored", unit: "WorkingDirectory=/home/alice\nExecStart=/usr/bin/claw\n", wantHome: ""},
-		{name: "PATH lists /opt/claw/bin", unit: "Environment=\"PATH=/usr/bin:/opt/claw/bin\"\nExecStart=/usr/bin/claw\n", wantHome: "/opt/claw"},
-		{name: "PATH lists a sibling only", unit: "Environment=PATH=/usr/bin:/opt/claw-old/bin\nExecStart=/usr/bin/claw\n", wantHome: ""},
+		{name: "PATH lists /opt/agency/bin", unit: "Environment=\"PATH=/usr/bin:/opt/agency/bin\"\nExecStart=/usr/bin/claw\n", wantHome: "/opt/agency"},
+		{name: "PATH lists a sibling only", unit: "Environment=PATH=/usr/bin:/opt/agency-old/bin\nExecStart=/usr/bin/claw\n", wantHome: ""},
 		{name: "binary in sibling", unit: "ExecStart=/opt/clawdev/claw gateway\n", wantHome: ""},
 		{
-			name: "opt claw dir exists", unit: "ExecStart=/usr/bin/claw\n", optClaw: true, wantHome: "/opt/claw",
+			name: "opt claw dir exists", unit: "ExecStart=/usr/bin/claw\n", optAgency: true, wantHome: "/opt/agency",
 			wantUser: currentOwner,
 		},
 		{name: "empty unit", unit: "", wantHome: ""},
@@ -159,14 +159,14 @@ func TestParseSystemdUnit_Inference(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := fakeHost(t)
 			writeHostFile(t, h, systemUnitPath, tc.unit, 0o644)
-			if tc.optClaw {
-				if err := os.MkdirAll(h.path("/opt/claw"), 0o755); err != nil {
+			if tc.optAgency {
+				if err := os.MkdirAll(h.path("/opt/agency"), 0o755); err != nil {
 					t.Fatal(err)
 				}
 			}
 			inst := h.parseSystemdUnit(systemUnitPath, "systemd-system")
-			if inst.ClawHome != tc.wantHome {
-				t.Errorf("ClawHome = %q, want %q", inst.ClawHome, tc.wantHome)
+			if inst.AgencyHome != tc.wantHome {
+				t.Errorf("AgencyHome = %q, want %q", inst.AgencyHome, tc.wantHome)
 			}
 			want := owner
 			if tc.wantUser != nil {
@@ -196,7 +196,7 @@ func TestParseSystemdUnit_Unreadable(t *testing.T) {
 	h := fakeHost(t)
 	inst := h.parseSystemdUnit("/etc/systemd/system/missing.service", "systemd-system")
 	if inst.ServicePath != "/etc/systemd/system/missing.service" || inst.ServiceType != "systemd-system" ||
-		inst.BinaryPath != "" || inst.User != "" || inst.ClawHome != "" {
+		inst.BinaryPath != "" || inst.User != "" || inst.AgencyHome != "" {
 		t.Errorf("parseSystemdUnit(missing) = %+v", inst)
 	}
 }
@@ -261,36 +261,36 @@ func TestDetectFromBinary(t *testing.T) {
 				}
 				return
 			}
-			if inst == nil || inst.BinaryPath != tc.want || inst.ClawHome != "" {
+			if inst == nil || inst.BinaryPath != tc.want || inst.AgencyHome != "" {
 				t.Fatalf("detectFromBinary() = %+v, want binary %q and no data directory", inst, tc.want)
 			}
 		})
 	}
 }
 
-// inOptClaw matches /opt/claw and what is inside it, never a sibling.
-func TestInOptClaw(t *testing.T) {
+// inOptAgency matches /opt/agency and what is inside it, never a sibling.
+func TestInOptAgency(t *testing.T) {
 	for p, want := range map[string]bool{
-		"/opt/claw":            true,
-		"/opt/claw/bin/claw":   true,
-		"/opt/claw/claw":       true,
-		"/opt/claw-old/claw":   false,
-		"/opt/clawdev":         false,
-		"/opt":                 false,
-		"":                     false,
-		"/usr/local/bin/claw":  false,
-		"/srv/opt/claw/claw":   false,
-		"/opt/claw/../x/claw":  true, // lexical, as the unit writes it
-		"/opt/claw_backup/bin": false,
+		"/opt/agency":           true,
+		"/opt/agency/bin/claw":  true,
+		"/opt/agency/claw":      true,
+		"/opt/agency-old/claw":  false,
+		"/opt/clawdev":          false,
+		"/opt":                  false,
+		"":                      false,
+		"/usr/local/bin/claw":   false,
+		"/srv/opt/agency/claw":  false,
+		"/opt/agency/../x/claw": true, // lexical, as the unit writes it
+		"/opt/claw_backup/bin":  false,
 	} {
-		if got := inOptClaw(p); got != want {
-			t.Errorf("inOptClaw(%q) = %v, want %v", p, got, want)
+		if got := inOptAgency(p); got != want {
+			t.Errorf("inOptAgency(%q) = %v, want %v", p, got, want)
 		}
 	}
 }
 
 // The linux detector falls back to the binary when there is no service and
-// no /opt/claw.
+// no /opt/agency.
 func TestDetectLinuxInstall_FallsBackToBinary(t *testing.T) {
 	sh, err := exec.LookPath("sh")
 	if err != nil {
@@ -308,18 +308,18 @@ func TestDetectLinuxInstall_FallsBackToBinary(t *testing.T) {
 	}
 }
 
-// A user unit wins over /opt/claw; its activity comes from systemctl --user.
-func TestDetectLinuxInstall_UserUnitBeatsOptClaw(t *testing.T) {
+// A user unit wins over /opt/agency; its activity comes from systemctl --user.
+func TestDetectLinuxInstall_UserUnitBeatsOptAgency(t *testing.T) {
 	h := fakeHost(t)
-	writeHostFile(t, h, userUnitPath("/home/alice"), "Environment=CLAW_HOME=/home/alice/.claw\nExecStart=/home/alice/bin/claw\n", 0o644)
-	writeHostFile(t, h, "/opt/claw/bin/claw", "x", 0o700)
+	writeHostFile(t, h, userUnitPath("/home/alice"), "Environment=AGENCY_HOME=/home/alice/.agency\nExecStart=/home/alice/bin/claw\n", 0o644)
+	writeHostFile(t, h, "/opt/agency/bin/claw", "x", 0o700)
 	var asked []string
 	h.commandOK = func(name string, args ...string) bool {
 		asked = append([]string{name}, args...)
 		return true
 	}
 	inst := h.detectLinuxInstall("/home/alice")
-	if inst == nil || inst.ServiceType != "systemd-user" || inst.ClawHome != "/home/alice/.claw" {
+	if inst == nil || inst.ServiceType != "systemd-user" || inst.AgencyHome != "/home/alice/.agency" {
 		t.Fatalf("detectLinuxInstall() = %+v, want the user service", inst)
 	}
 	if !inst.IsActive || len(asked) < 2 || asked[1] != "--user" {
@@ -327,18 +327,18 @@ func TestDetectLinuxInstall_UserUnitBeatsOptClaw(t *testing.T) {
 	}
 }
 
-// A dangling openclaw alias left in /opt/claw is still reported as a
+// A dangling openclaw alias left in /opt/agency is still reported as a
 // leftover (Lstat, not Stat).
-func TestLeftoverOptClawFiles_DanglingAlias(t *testing.T) {
+func TestLeftoverOptAgencyFiles_DanglingAlias(t *testing.T) {
 	h := fakeHost(t)
-	if err := os.MkdirAll(h.path("/opt/claw"), 0o755); err != nil {
+	if err := os.MkdirAll(h.path("/opt/agency"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("claw", h.path("/opt/claw/openclaw")); err != nil {
+	if err := os.Symlink("claw", h.path("/opt/agency/openclaw")); err != nil {
 		t.Fatal(err)
 	}
-	got := h.leftoverOptClawFiles(optClawBinDir)
-	if len(got) != 1 || got[0] != "/opt/claw/openclaw" {
-		t.Errorf("leftoverOptClawFiles() = %q, want the dangling alias only", got)
+	got := h.leftoverOptAgencyFiles(optAgencyBinDir)
+	if len(got) != 1 || got[0] != "/opt/agency/openclaw" {
+		t.Errorf("leftoverOptAgencyFiles() = %q, want the dangling alias only", got)
 	}
 }

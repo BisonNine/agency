@@ -10,7 +10,7 @@
 //
 // The WebUI and /api/* sit behind the admin login, so the suite signs in first
 // and every page and API probe carries that session. Create the account on the
-// dev instance with `claw admin` and export CLAW_E2E_USER / CLAW_E2E_PASSWORD.
+// dev instance with `claw admin` and export AGENCY_E2E_USER / AGENCY_E2E_PASSWORD.
 //
 // Requires Playwright and a Chromium build. Both come with the playwright-mcp
 // install: Playwright is looked up in the npx cache under the home directory
@@ -79,13 +79,13 @@ if (!existsSync(CHROME)) {
   process.exit(2)
 }
 
-const USER = process.env.CLAW_E2E_USER ?? ""
-const PASSWORD = process.env.CLAW_E2E_PASSWORD ?? ""
+const USER = process.env.AGENCY_E2E_USER ?? ""
+const PASSWORD = process.env.AGENCY_E2E_PASSWORD ?? ""
 if (!USER || !PASSWORD) {
   console.error(
-    "CLAW_E2E_USER and CLAW_E2E_PASSWORD are not set.\n" +
+    "AGENCY_E2E_USER and AGENCY_E2E_PASSWORD are not set.\n" +
       "The WebUI requires an admin login. On the dev instance run `claw admin` to create\n" +
-      "the account, then export CLAW_E2E_USER and CLAW_E2E_PASSWORD before running this suite.",
+      "the account, then export AGENCY_E2E_USER and AGENCY_E2E_PASSWORD before running this suite.",
   )
   process.exit(2)
 }
@@ -193,9 +193,9 @@ async function signIn() {
   if (r.status === 204) return
   const hint =
     r.json?.error === "no admin account"
-      ? "The dev instance has no admin account. Run `claw admin` on it, then export CLAW_E2E_USER / CLAW_E2E_PASSWORD."
+      ? "The dev instance has no admin account. Run `claw admin` on it, then export AGENCY_E2E_USER / AGENCY_E2E_PASSWORD."
       : r.status === 401
-        ? `The gateway refused CLAW_E2E_USER=${JSON.stringify(USER)}. Run \`claw admin\` on the dev instance and export the credentials it creates.`
+        ? `The gateway refused AGENCY_E2E_USER=${JSON.stringify(USER)}. Run \`claw admin\` on the dev instance and export the credentials it creates.`
         : r.status === 429
           ? `Login is locked out (${r.json?.error ?? "too many failures"}). Wait, then retry.`
           : r.text.slice(0, 200)

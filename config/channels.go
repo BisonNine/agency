@@ -221,58 +221,58 @@ func (a SecMsgAccountConfig) ChannelName(daemon SecMsgConfig) string {
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled"                 env:"CLAW_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token"                   env:"CLAW_CHANNELS_DISCORD_TOKEN"`
-	Proxy     string              `json:"proxy"                   env:"CLAW_CHANNELS_DISCORD_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from"              env:"CLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled"                 env:"AGENCY_CHANNELS_DISCORD_ENABLED"`
+	Token     string              `json:"token"                   env:"AGENCY_CHANNELS_DISCORD_TOKEN"`
+	Proxy     string              `json:"proxy"                   env:"AGENCY_CHANNELS_DISCORD_PROXY"`
+	AllowFrom FlexibleStringSlice `json:"allow_from"              env:"AGENCY_CHANNELS_DISCORD_ALLOW_FROM"`
 	// MentionOnly is the retired flat form of GroupTrigger.MentionOnly, read
 	// only so a load can migrate it (migrateChannelConfigs clears it).
-	MentionOnly        bool               `json:"mention_only,omitempty"  env:"CLAW_CHANNELS_DISCORD_MENTION_ONLY" removed:"true"`
+	MentionOnly        bool               `json:"mention_only,omitempty"  env:"AGENCY_CHANNELS_DISCORD_MENTION_ONLY" removed:"true"`
 	GroupTrigger       GroupTriggerConfig `json:"group_trigger,omitempty"`
 	Typing             TypingConfig       `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig  `json:"placeholder,omitempty"`
-	ReasoningChannelID string             `json:"reasoning_channel_id"    env:"CLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string             `json:"reasoning_channel_id"    env:"AGENCY_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
 }
 
 type SlackConfig struct {
-	Enabled            bool                `json:"enabled"                 env:"CLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken           string              `json:"bot_token"               env:"CLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken           string              `json:"app_token"               env:"CLAW_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"CLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                 env:"AGENCY_CHANNELS_SLACK_ENABLED"`
+	BotToken           string              `json:"bot_token"               env:"AGENCY_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken           string              `json:"app_token"               env:"AGENCY_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              env:"AGENCY_CHANNELS_SLACK_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Typing             TypingConfig        `json:"typing,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"CLAW_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    env:"AGENCY_CHANNELS_SLACK_REASONING_CHANNEL_ID"`
 }
 
 type MatrixConfig struct {
-	Enabled            bool                `json:"enabled"                  env:"CLAW_CHANNELS_MATRIX_ENABLED"`
-	Homeserver         string              `json:"homeserver"               env:"CLAW_CHANNELS_MATRIX_HOMESERVER"`
-	UserID             string              `json:"user_id"                  env:"CLAW_CHANNELS_MATRIX_USER_ID"`
-	AccessToken        string              `json:"access_token"             env:"CLAW_CHANNELS_MATRIX_ACCESS_TOKEN"`
-	DeviceID           string              `json:"device_id,omitempty"      env:"CLAW_CHANNELS_MATRIX_DEVICE_ID"`
-	JoinOnInvite       bool                `json:"join_on_invite"           env:"CLAW_CHANNELS_MATRIX_JOIN_ON_INVITE"`
-	MessageFormat      string              `json:"message_format,omitempty" env:"CLAW_CHANNELS_MATRIX_MESSAGE_FORMAT"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"               env:"CLAW_CHANNELS_MATRIX_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                  env:"AGENCY_CHANNELS_MATRIX_ENABLED"`
+	Homeserver         string              `json:"homeserver"               env:"AGENCY_CHANNELS_MATRIX_HOMESERVER"`
+	UserID             string              `json:"user_id"                  env:"AGENCY_CHANNELS_MATRIX_USER_ID"`
+	AccessToken        string              `json:"access_token"             env:"AGENCY_CHANNELS_MATRIX_ACCESS_TOKEN"`
+	DeviceID           string              `json:"device_id,omitempty"      env:"AGENCY_CHANNELS_MATRIX_DEVICE_ID"`
+	JoinOnInvite       bool                `json:"join_on_invite"           env:"AGENCY_CHANNELS_MATRIX_JOIN_ON_INVITE"`
+	MessageFormat      string              `json:"message_format,omitempty" env:"AGENCY_CHANNELS_MATRIX_MESSAGE_FORMAT"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"               env:"AGENCY_CHANNELS_MATRIX_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"CLAW_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"     env:"AGENCY_CHANNELS_MATRIX_REASONING_CHANNEL_ID"`
 }
 
 type WebUIConfig struct {
-	Enabled        bool                `json:"enabled"                     env:"CLAW_CHANNELS_WEBUI_ENABLED"`
-	Token          string              `json:"token"                       env:"CLAW_CHANNELS_WEBUI_TOKEN"`
+	Enabled        bool                `json:"enabled"                     env:"AGENCY_CHANNELS_WEBUI_ENABLED"`
+	Token          string              `json:"token"                       env:"AGENCY_CHANNELS_WEBUI_TOKEN"`
 	PingInterval   int                 `json:"ping_interval,omitempty"`
 	ReadTimeout    int                 `json:"read_timeout,omitempty"`
 	WriteTimeout   int                 `json:"write_timeout,omitempty"`
 	MaxConnections int                 `json:"max_connections,omitempty"`
-	AllowFrom      FlexibleStringSlice `json:"allow_from"                  env:"CLAW_CHANNELS_WEBUI_ALLOW_FROM"`
+	AllowFrom      FlexibleStringSlice `json:"allow_from"                  env:"AGENCY_CHANNELS_WEBUI_ALLOW_FROM"`
 	Placeholder    PlaceholderConfig   `json:"placeholder,omitempty"`
 }
 
 type DevicesConfig struct {
-	Enabled    bool `json:"enabled"     env:"CLAW_DEVICES_ENABLED"`
-	MonitorUSB bool `json:"monitor_usb" env:"CLAW_DEVICES_MONITOR_USB"`
+	Enabled    bool `json:"enabled"     env:"AGENCY_DEVICES_ENABLED"`
+	MonitorUSB bool `json:"monitor_usb" env:"AGENCY_DEVICES_MONITOR_USB"`
 }
 
 // DeviceChannelConfig configures the external-device gateway: an OpenClaw
@@ -281,12 +281,12 @@ type DevicesConfig struct {
 // admin port, so it can be exposed to the network without exposing the
 // unauthenticated WebUI. Distinct from DevicesConfig (USB hardware monitor).
 type DeviceChannelConfig struct {
-	Enabled bool   `json:"enabled"                env:"CLAW_CHANNELS_DEVICE_ENABLED"`
-	Token   string `json:"token"                  env:"CLAW_CHANNELS_DEVICE_TOKEN"` // shared gateway auth token presented in the QR
+	Enabled bool   `json:"enabled"                env:"AGENCY_CHANNELS_DEVICE_ENABLED"`
+	Token   string `json:"token"                  env:"AGENCY_CHANNELS_DEVICE_TOKEN"` // shared gateway auth token presented in the QR
 	// WordToken is a human-typeable passphrase (5 BIP39 words) accepted as an
 	// alternative shared token, for clients where the user types the token by hand
 	// instead of scanning the QR. Authenticates equivalently to Token.
-	WordToken string `json:"word_token,omitempty" env:"CLAW_CHANNELS_DEVICE_WORD_TOKEN"`
+	WordToken string `json:"word_token,omitempty" env:"AGENCY_CHANNELS_DEVICE_WORD_TOKEN"`
 	// Host is the device listener bind address: 127.0.0.1 (loopback, default) or
 	// 0.0.0.0 to listen for local-network connections. Port defaults to
 	// device.DefaultDevicePort (18791) when unset.
@@ -308,7 +308,7 @@ type DeviceChannelConfig struct {
 	// gateway.tls.mode other than "off" (see validateListeners).
 	TLS          bool                `json:"tls"`
 	AllowOrigins []string            `json:"allow_origins,omitempty"`
-	AllowFrom    FlexibleStringSlice `json:"allow_from"             env:"CLAW_CHANNELS_DEVICE_ALLOW_FROM"`
+	AllowFrom    FlexibleStringSlice `json:"allow_from"             env:"AGENCY_CHANNELS_DEVICE_ALLOW_FROM"`
 }
 
 // ValidateExposure refuses an enabled device listener on a network address

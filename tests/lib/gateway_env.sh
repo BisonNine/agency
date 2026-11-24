@@ -6,10 +6,10 @@
 # the operator's real Pushover, SMS, SMTP and webhook settings, into every
 # gateway, but only for variables not already in the environment. A channel
 # whose variables are all empty is not created, so exporting them empty keeps
-# delivery off and alerts land only in <CLAW_HOME>/logs/alerts.log. Every
+# delivery off and alerts land only in <AGENCY_HOME>/logs/alerts.log. Every
 # variable that switches a channel on is listed: one left to ~/.alerter would
 # either deliver or leave a channel half-configured, which disables alerting
-# altogether. ALERTER_LOG is emptied so the alerts log stays in CLAW_HOME.
+# altogether. ALERTER_LOG is emptied so the alerts log stays in AGENCY_HOME.
 #
 # Safe to source more than once.
 export ALERTER_PUSHOVER_TOKEN= ALERTER_PUSHOVER_DEST= \

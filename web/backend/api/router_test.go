@@ -17,7 +17,7 @@ import (
 func TestRemovedToolsEndpointsAre404(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
-	t.Setenv("CLAW_HOME", filepath.Join(tmp, ".claw"))
+	t.Setenv("AGENCY_HOME", filepath.Join(tmp, ".agency"))
 	configPath := filepath.Join(tmp, "config.json")
 	if err := config.SaveConfig(configPath, config.DefaultConfig()); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)

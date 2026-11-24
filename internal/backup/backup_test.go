@@ -80,7 +80,7 @@ func writeFileT(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-// fixture builds a CLAW_HOME with everything the backup should and should not
+// fixture builds a AGENCY_HOME with everything the backup should and should not
 // pick up. The live databases stay open for the test's lifetime.
 func fixture(t *testing.T) Source {
 	t.Helper()
@@ -254,7 +254,7 @@ func TestRunDefaultDestUnderHomeIsExcluded(t *testing.T) {
 		}
 	}
 	// The temp dir used for VACUUM copies is gone.
-	matches, err := filepath.Glob(filepath.Join(dest, ".claw-backup-*"))
+	matches, err := filepath.Glob(filepath.Join(dest, ".agency-backup-*"))
 	if err != nil {
 		t.Fatal(err)
 	}

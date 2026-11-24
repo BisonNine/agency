@@ -25,11 +25,11 @@ type AgentsConfig struct {
 	// overrides this. Empty
 	// defaults to <data_dir>/agents. Point it at another volume to relocate all
 	// agent files at once.
-	BaseDir string `json:"base_dir,omitempty" env:"CLAW_AGENTS_BASE_DIR"`
+	BaseDir string `json:"base_dir,omitempty" env:"AGENCY_AGENTS_BASE_DIR"`
 	// CommonDir is the global path to the shared directory that agents can read
 	// from and write to via the "common" tools. Empty defaults to
 	// <data_dir>/common (see Config.ResolveCommonDir).
-	CommonDir string        `json:"common_dir,omitempty" env:"CLAW_AGENTS_COMMON_DIR"`
+	CommonDir string        `json:"common_dir,omitempty" env:"AGENCY_AGENTS_COMMON_DIR"`
 	Defaults  AgentDefaults `json:"defaults"`
 	// List is never omitted: LoadConfig fills an absent list with the built-in
 	// default agent, so an emptied list is written as [] (see MarshalJSON).
@@ -110,7 +110,7 @@ type AgentConfig struct {
 	TaskModels *AgentTaskModels `json:"task_models,omitempty"`
 
 	// CharacterCard names a card in the character-card library
-	// (<CLAW_HOME>/cards/<id>.json, Config.CardsPath) that is rendered into
+	// (<AGENCY_HOME>/cards/<id>.json, Config.CardsPath) that is rendered into
 	// the agent's system prompt. Empty: none. Clones inherit it. A human agent
 	// never has one (Store.Update refuses it).
 	CharacterCard string `json:"character_card,omitempty"`
@@ -789,22 +789,22 @@ func (c *Config) ValidateBindings() error {
 type AgentDefaults struct {
 	// RestrictToWorkspace confines the file tools to the workspace and the
 	// agent's allowed folders. It does not affect shell_exec.
-	RestrictToWorkspace bool `json:"restrict_to_workspace"           env:"CLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	RestrictToWorkspace bool `json:"restrict_to_workspace"           env:"AGENCY_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 	// StreamToolActivity, when true, sends the model's inter-tool narration and
 	// each tool's user-facing output to the channel as it happens. When false
 	// (default) the user receives only the final answer, not the play-by-play.
-	StreamToolActivity        bool `json:"stream_tool_activity,omitempty"  env:"CLAW_AGENTS_DEFAULTS_STREAM_TOOL_ACTIVITY"`
-	AllowReadOutsideWorkspace bool `json:"allow_read_outside_workspace"    env:"CLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
+	StreamToolActivity        bool `json:"stream_tool_activity,omitempty"  env:"AGENCY_AGENTS_DEFAULTS_STREAM_TOOL_ACTIVITY"`
+	AllowReadOutsideWorkspace bool `json:"allow_read_outside_workspace"    env:"AGENCY_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
 	// ShowReasoningAsContent, when true, lets a model's reasoning_content be used
 	// as the user-facing reply when the model returns empty content. Default false:
 	// reasoning never reaches the main chat (it would otherwise leak raw
 	// chain-of-thought, e.g. a model that degenerates into reasoning-only output).
-	ShowReasoningAsContent bool `json:"show_reasoning_as_content,omitempty" env:"CLAW_AGENTS_DEFAULTS_SHOW_REASONING_AS_CONTENT"`
+	ShowReasoningAsContent bool `json:"show_reasoning_as_content,omitempty" env:"AGENCY_AGENTS_DEFAULTS_SHOW_REASONING_AS_CONTENT"`
 	// WorkspaceWriteSubdir confines writes to <workspace>/<subdir> while reads
 	// remain workspace-wide. Only applies when RestrictToWorkspace is true.
 	// Default "files" (writes land in <workspace>/files). Set to "" to make the
 	// whole workspace writable (legacy behavior).
-	WorkspaceWriteSubdir string `json:"workspace_write_subdir"          env:"CLAW_AGENTS_DEFAULTS_WORKSPACE_WRITE_SUBDIR"`
+	WorkspaceWriteSubdir string `json:"workspace_write_subdir"          env:"AGENCY_AGENTS_DEFAULTS_WORKSPACE_WRITE_SUBDIR"`
 	// WorkspaceReadSubdirs confines agent file reads to these <workspace>/<subdir>
 	// directories (plus allow-listed host paths). Only applies when
 	// RestrictToWorkspace is true. Default ["files","skills"] — the agent's
@@ -813,44 +813,44 @@ type AgentDefaults struct {
 	// at it; see the files tool provider.) Empty makes reads workspace-wide
 	// (legacy), which exposes config/subsystem files (AGENTS.md, COGMEM.md, …) the
 	// agent already receives in its prompt or should never read.
-	WorkspaceReadSubdirs []string `json:"workspace_read_subdirs"          env:"CLAW_AGENTS_DEFAULTS_WORKSPACE_READ_SUBDIRS"`
+	WorkspaceReadSubdirs []string `json:"workspace_read_subdirs"          env:"AGENCY_AGENTS_DEFAULTS_WORKSPACE_READ_SUBDIRS"`
 	// Models is not omitempty: the defaults template fills it, so an emptied
 	// list must be written out or the next load would bring the template back.
 	Models []string `json:"models"`
 	// RequestTimeout is the global default request timeout (seconds) applied to
 	// any model whose own request_timeout is 0. Default 300; CLI models override
 	// it higher (e.g. 3600). 0 falls back to the built-in 120s HTTP default.
-	RequestTimeout int `json:"request_timeout,omitempty"       env:"CLAW_AGENTS_DEFAULTS_REQUEST_TIMEOUT"`
+	RequestTimeout int `json:"request_timeout,omitempty"       env:"AGENCY_AGENTS_DEFAULTS_REQUEST_TIMEOUT"`
 	// TurnTimeout is the overall wall-clock budget (seconds) for a single user
 	// turn — all LLM iterations plus every tool call. It is a hard backstop that
 	// guarantees the turn ends (the context is cancelled) so the user always gets
 	// a reply and the typing indicator clears, even if a provider or tool hangs.
 	// 0 falls back to the built-in default (DefaultTurnTimeout).
-	TurnTimeout int `json:"turn_timeout,omitempty"          env:"CLAW_AGENTS_DEFAULTS_TURN_TIMEOUT"`
+	TurnTimeout int `json:"turn_timeout,omitempty"          env:"AGENCY_AGENTS_DEFAULTS_TURN_TIMEOUT"`
 	// ToolTimeout is the per-tool-call budget (seconds). A tool whose context
 	// deadline elapses is cancelled and reported as a timeout to the model, which
 	// can then continue the turn. 0 falls back to DefaultToolTimeout.
-	ToolTimeout int `json:"tool_timeout,omitempty"          env:"CLAW_AGENTS_DEFAULTS_TOOL_TIMEOUT"`
+	ToolTimeout int `json:"tool_timeout,omitempty"          env:"AGENCY_AGENTS_DEFAULTS_TOOL_TIMEOUT"`
 	// MaxSubagentDepth bounds sub-agent recursion: a primary turn is depth 0, its
 	// spawned workers depth 1, theirs depth 2, and so on; a spawn is refused once
 	// the spawning agent is already at this depth. 0 falls back to
 	// DefaultMaxSubagentDepth. Applies to both agent_spawn and maestro dispatch.
-	MaxSubagentDepth int `json:"max_subagent_depth,omitempty"    env:"CLAW_AGENTS_DEFAULTS_MAX_SUBAGENT_DEPTH"`
+	MaxSubagentDepth int `json:"max_subagent_depth,omitempty"    env:"AGENCY_AGENTS_DEFAULTS_MAX_SUBAGENT_DEPTH"`
 	// MaxConcurrentTurns caps how many turns run at once across all sessions;
 	// further turns wait for a free slot. 0 = unlimited. Read at startup.
-	MaxConcurrentTurns int `json:"max_concurrent_turns,omitempty"  env:"CLAW_AGENTS_DEFAULTS_MAX_CONCURRENT_TURNS"`
+	MaxConcurrentTurns int `json:"max_concurrent_turns,omitempty"  env:"AGENCY_AGENTS_DEFAULTS_MAX_CONCURRENT_TURNS"`
 	// DailySpendAlertUSD raises one operator alert the first time the day's
 	// (UTC) summed model cost reaches this amount. 0 = off.
-	DailySpendAlertUSD float64 `json:"daily_spend_alert_usd,omitempty" env:"CLAW_AGENTS_DEFAULTS_DAILY_SPEND_ALERT_USD"`
+	DailySpendAlertUSD float64 `json:"daily_spend_alert_usd,omitempty" env:"AGENCY_AGENTS_DEFAULTS_DAILY_SPEND_ALERT_USD"`
 	// ProgressInterval is how often (seconds) a long-running turn emits a
 	// lightweight progress update so it never looks dead. 0 falls back to
 	// DefaultProgressInterval; a negative value disables progress updates.
-	ProgressInterval  int      `json:"progress_interval,omitempty"     env:"CLAW_AGENTS_DEFAULTS_PROGRESS_INTERVAL"`
-	MaxTokens         int      `json:"max_tokens"                      env:"CLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature       *float64 `json:"temperature,omitempty"           env:"CLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations int      `json:"max_tool_iterations"             env:"CLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	ContextWindow     int      `json:"context_window,omitempty"        env:"CLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
-	MaxMediaSize      int      `json:"max_media_size,omitempty"        env:"CLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	ProgressInterval  int      `json:"progress_interval,omitempty"     env:"AGENCY_AGENTS_DEFAULTS_PROGRESS_INTERVAL"`
+	MaxTokens         int      `json:"max_tokens"                      env:"AGENCY_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature       *float64 `json:"temperature,omitempty"           env:"AGENCY_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations int      `json:"max_tool_iterations"             env:"AGENCY_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	ContextWindow     int      `json:"context_window,omitempty"        env:"AGENCY_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
+	MaxMediaSize      int      `json:"max_media_size,omitempty"        env:"AGENCY_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
 	// Compression is the default context-compaction policy for every agent
 	// (overridable per agent via AgentConfig.Compression). See CompressionConfig.
 	Compression *CompressionConfig `json:"compression,omitempty"`
@@ -867,11 +867,11 @@ type AgentDefaults struct {
 	CompressCharsPerToken      *float64 `json:"compress_chars_per_token,omitempty" removed:"true"`
 	CompressTokenSafetyMargin  *float64 `json:"compress_token_safety_margin,omitempty" removed:"true"`
 
-	ArchiveMessageCount    int `json:"archive_message_count,omitempty"         env:"CLAW_AGENTS_DEFAULTS_ARCHIVE_MESSAGE_COUNT"`
-	ArchiveDays            int `json:"archive_days,omitempty"                  env:"CLAW_AGENTS_DEFAULTS_ARCHIVE_DAYS"`
-	SummaryMaxCount        int `json:"summary_max_count,omitempty"             env:"CLAW_AGENTS_DEFAULTS_SUMMARY_MAX_COUNT"`
-	SummaryRetentionDays   int `json:"summary_retention_days,omitempty"        env:"CLAW_AGENTS_DEFAULTS_SUMMARY_RETENTION_DAYS"`
-	ArchiveContentMaxBytes int `json:"archive_content_max_bytes,omitempty"     env:"CLAW_AGENTS_DEFAULTS_ARCHIVE_CONTENT_MAX_BYTES"`
+	ArchiveMessageCount    int `json:"archive_message_count,omitempty"         env:"AGENCY_AGENTS_DEFAULTS_ARCHIVE_MESSAGE_COUNT"`
+	ArchiveDays            int `json:"archive_days,omitempty"                  env:"AGENCY_AGENTS_DEFAULTS_ARCHIVE_DAYS"`
+	SummaryMaxCount        int `json:"summary_max_count,omitempty"             env:"AGENCY_AGENTS_DEFAULTS_SUMMARY_MAX_COUNT"`
+	SummaryRetentionDays   int `json:"summary_retention_days,omitempty"        env:"AGENCY_AGENTS_DEFAULTS_SUMMARY_RETENTION_DAYS"`
+	ArchiveContentMaxBytes int `json:"archive_content_max_bytes,omitempty"     env:"AGENCY_AGENTS_DEFAULTS_ARCHIVE_CONTENT_MAX_BYTES"`
 
 	// ContextEviction is the default per-turn tool-result eviction policy
 	// (overridable per agent via AgentConfig.ContextEviction).

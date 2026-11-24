@@ -66,7 +66,7 @@ In `config.json`:
 
 With **Notify on new files** ticked, Agency checks the folder every 10 seconds. When a new file appears, the agent gets a message naming the agent, the folder and the file, such as "New file in Alice's allowed folder /srv/src: /srv/src/sub/x.md", in its default channel, as if it had been sent there, and handles it like any other message. Files that are only changed do not count. The agent needs a **Default Channel** for this; without one the notice is skipped and logged.
 
-Agency keeps the list of files each agent has seen in that agent's own folder (`state/folderwatch/` in its workspace), so a read-only folder gets notices too, and two agents watching the same folder are each told. The first check of a folder only records what is already there, and so does the first check after a folder is added again or its notices are turned back on. Versions before 0.6.4 kept this list in a `.claw` file in the folder; it is no longer used and can be deleted.
+Agency keeps the list of files each agent has seen in that agent's own folder (`state/folderwatch/` in its workspace), so a read-only folder gets notices too, and two agents watching the same folder are each told. The first check of a folder only records what is already there, and so does the first check after a folder is added again or its notices are turned back on. Versions before 0.6.4 kept this list in a `.agency` file in the folder; it is no longer used and can be deleted.
 
 ### Folders set as mounts before 0.6.4
 
@@ -78,7 +78,7 @@ When **Maestro** is on, `maestro/` is simply part of the workspace; there is no 
 
 The common folder is shared by every agent that has **Share common directory** on (the default). Agents reach it with the `common_*` tools (`common_list`, `common_get`, `common_put`, `common_delete`), which must also be granted in the agent's tools; **Default tools** leaves out `common_delete`. They can copy files between it and their own folders. `common_put` copies only a file the agent's file tools may read. `common_get` writes only where the agent's file tools may write.
 
-By default the common folder is `common` in the data directory (`~/.claw/common`). Change it with **Common directory** on the System page.
+By default the common folder is `common` in the data directory (`~/.agency/common`). Change it with **Common directory** on the System page.
 
 Turn **Share common directory** off for an agent that must not see what other agents share.
 

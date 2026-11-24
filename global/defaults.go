@@ -6,8 +6,8 @@
 package global
 
 // DefaultDataDir is the default data directory name under the user's home directory.
-// The full path is filepath.Join(os.UserHomeDir(), DefaultDataDir) → ~/.claw
-const DefaultDataDir = ".claw"
+// The full path is filepath.Join(os.UserHomeDir(), DefaultDataDir) → ~/.agency
+const DefaultDataDir = ".agency"
 
 // InternalDir is the directory under the data directory that holds claw's own
 // state: token stores and the device database. Nobody edits it.
@@ -22,7 +22,7 @@ const CLIDir = "cli"
 const CommonDir = "common"
 
 // EnvVarHome is the environment variable that overrides the default data directory.
-const EnvVarHome = "CLAW_HOME"
+const EnvVarHome = "AGENCY_HOME"
 
 // ImageDownscaleMaxEdgePx is the longest-edge pixel threshold for the
 // file_view_image tool: an image whose longest edge exceeds this is downscaled
@@ -53,7 +53,7 @@ const DefaultMessagePrefix = "SECURITY NOTICE: The following content was deliver
 
 // DefaultConfigReloadIntervalSeconds is how often the daemon polls the config
 // file for changes. Override per-deployment via Config.ConfigReloadIntervalSeconds
-// or CLAW_CONFIG_RELOAD_INTERVAL_SECONDS. Minimum enforced at 1 second.
+// or AGENCY_CONFIG_RELOAD_INTERVAL_SECONDS. Minimum enforced at 1 second.
 const DefaultConfigReloadIntervalSeconds = 5
 
 // FolderNotifyIntervalSeconds is how often notify-enabled allowed folders are
@@ -65,7 +65,7 @@ const FolderNotifyIntervalSeconds = 10
 // FolderMarkerFile is the watermark file versions before 0.6.4 kept in each
 // watched folder. The watcher no longer reads or writes it, and it is left in
 // place; it stays hidden from agent file listings.
-const FolderMarkerFile = ".claw"
+const FolderMarkerFile = ".agency"
 
 // MinConfigReloadIntervalSeconds is the floor applied to any configured value
 // to prevent pathological polling rates.

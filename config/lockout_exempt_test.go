@@ -72,7 +72,7 @@ func TestGatewayValidate_LockoutExempt(t *testing.T) {
 }
 
 func TestLoadConfig_RejectsBadLockoutExempt(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{"gateway":{"lockout_exempt":["10.0.0.0/99"]}}`), 0o600); err != nil {
 		t.Fatal(err)

@@ -83,7 +83,7 @@ func noExecutable(t *testing.T) {
 // group.
 func operatorConfig(t *testing.T, home string) *config.Config {
 	t.Helper()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := config.DefaultConfig()
 	cfg.Security.Permissions = config.PermissionsConfig{
 		Root:    config.AreaPermissions{DirMode: "0750", FileMode: "0640"},

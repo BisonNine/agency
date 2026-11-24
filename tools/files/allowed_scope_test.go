@@ -18,7 +18,7 @@ import (
 // removed; outside the workspace the folder is usable.
 func TestAllowedFolder_ContainingWorkspaceKeepsWorkspaceRules(t *testing.T) {
 	home := t.TempDir()
-	ws := filepath.Join(home, ".claw", "workspace-alice")
+	ws := filepath.Join(home, ".agency", "workspace-alice")
 	mustWrite(t, filepath.Join(ws, "files", "keep.md"), "keep")
 	mustWrite(t, filepath.Join(ws, "skills", "s", "SKILL.md"), "skill")
 	mustWrite(t, filepath.Join(ws, "secrets", "keys.md"), "secret")

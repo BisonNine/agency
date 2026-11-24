@@ -11,12 +11,12 @@ import (
 	"go.bison9.com/agency/servicetoken"
 )
 
-// setupHome points CLAW_HOME at a temp dir with a minimal two-agent config and
+// setupHome points AGENCY_HOME at a temp dir with a minimal two-agent config and
 // returns the data dir.
 func setupHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 	cfg := `{"agents":{"list":[{"id":"alice","name":"alice","default":true},{"id":"bob","name":"bob"}]}}`
 	if err := os.WriteFile(filepath.Join(home, "config.json"), []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)

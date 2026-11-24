@@ -117,7 +117,7 @@ type Config struct {
 	// file for changes and triggers a reload. Defaults to
 	// global.DefaultConfigReloadIntervalSeconds; floored at
 	// global.MinConfigReloadIntervalSeconds.
-	ConfigReloadIntervalSeconds int `json:"config_reload_interval_seconds,omitempty" env:"CLAW_CONFIG_RELOAD_INTERVAL_SECONDS"`
+	ConfigReloadIntervalSeconds int `json:"config_reload_interval_seconds,omitempty" env:"AGENCY_CONFIG_RELOAD_INTERVAL_SECONDS"`
 
 	dataDir string // runtime-only: base data directory, not serialized
 
@@ -170,28 +170,28 @@ func nonNilSlice[T any](s []T) []T {
 }
 
 type LoggingConfig struct {
-	File    bool   `json:"file"                env:"CLAW_LOGGING_FILE"`
-	Console bool   `json:"console"             env:"CLAW_LOGGING_CONSOLE"`
-	Level   string `json:"level"               env:"CLAW_LOGGING_LEVEL"`
-	JSON    bool   `json:"json"                env:"CLAW_LOGGING_JSON"`
+	File    bool   `json:"file"                env:"AGENCY_LOGGING_FILE"`
+	Console bool   `json:"console"             env:"AGENCY_LOGGING_CONSOLE"`
+	Level   string `json:"level"               env:"AGENCY_LOGGING_LEVEL"`
+	JSON    bool   `json:"json"                env:"AGENCY_LOGGING_JSON"`
 	// RetentionDays is how many days of rolled daily logs (YYYYMMDD-claw.log) to
 	// keep. The active claw.log is rolled at local midnight (and, if the gateway
 	// was down at midnight, as soon as it next starts). 0 keeps logs forever.
-	RetentionDays int `json:"retention_days"      env:"CLAW_LOGGING_RETENTION_DAYS"`
+	RetentionDays int `json:"retention_days"      env:"AGENCY_LOGGING_RETENTION_DAYS"`
 	// LogMessageContent controls whether inbound message text and API request/response
 	// bodies are included in log entries. Defaults to false to protect user privacy.
-	LogMessageContent bool `json:"log_message_content" env:"CLAW_LOGGING_MESSAGE_CONTENT"`
+	LogMessageContent bool `json:"log_message_content" env:"AGENCY_LOGGING_MESSAGE_CONTENT"`
 	// DumpRefusals, when true, writes the full LLM input and output to a file
 	// in logs/dumps/ whenever the provider returns finish_reason "refusal".
-	DumpRefusals bool `json:"dump_refusals" env:"CLAW_LOGGING_DUMP_REFUSALS"`
+	DumpRefusals bool `json:"dump_refusals" env:"AGENCY_LOGGING_DUMP_REFUSALS"`
 	// DumpAll, when true, writes the full LLM input and output to a file
 	// in logs/dumps/ for every LLM response, regardless of finish reason.
-	DumpAll bool `json:"dump_all" env:"CLAW_LOGGING_DUMP_ALL"`
+	DumpAll bool `json:"dump_all" env:"AGENCY_LOGGING_DUMP_ALL"`
 	// DumpFailedCompressions, when true, writes the summarization request and the
 	// raw model response to a file in logs/dumps/ whenever a summarization
 	// (context compaction) attempt fails — an API error, a non-JSON response, or
 	// a rejected summary. Diagnostic only.
-	DumpFailedCompressions bool `json:"dump_failed_compressions" env:"CLAW_LOGGING_DUMP_FAILED_COMPRESSIONS"`
+	DumpFailedCompressions bool `json:"dump_failed_compressions" env:"AGENCY_LOGGING_DUMP_FAILED_COMPRESSIONS"`
 }
 
 // ConfigReloadInterval returns the effective config-file polling interval as a
@@ -274,12 +274,12 @@ func (c *Config) AgentSessionDirs() []string {
 	return dirs
 }
 
-// DataDir returns the base data directory (~/.claw or $CLAW_HOME).
+// DataDir returns the base data directory (~/.agency or $AGENCY_HOME).
 func (c *Config) DataDir() string {
 	return c.dataDir
 }
 
-// SkillsPath returns the centralized skills directory (~/.claw/skills).
+// SkillsPath returns the centralized skills directory (~/.agency/skills).
 func (c *Config) SkillsPath() string {
 	return filepath.Join(c.dataDir, "skills")
 }
@@ -288,25 +288,25 @@ func (c *Config) SkillsPath() string {
 // directory.
 const CardsDirName = "cards"
 
-// CardsPath returns the character-card library (~/.claw/cards): one
+// CardsPath returns the character-card library (~/.agency/cards): one
 // <id>.json per card, shared by every agent that is given one.
 func (c *Config) CardsPath() string {
 	return filepath.Join(c.dataDir, CardsDirName)
 }
 
-// CronPath returns the cron store directory (~/.claw/cron).
+// CronPath returns the cron store directory (~/.agency/cron).
 func (c *Config) CronPath() string {
 	return filepath.Join(c.dataDir, "cron")
 }
 
-// FusionPath returns the MCPFusion config directory (~/.claw/fusion), holding the
+// FusionPath returns the MCPFusion config directory (~/.agency/fusion), holding the
 // JSON service definitions, an optional env file, and fusion.log.
 func (c *Config) FusionPath() string {
 	return filepath.Join(c.dataDir, "fusion")
 }
 
 // FusionTokensPath returns the shared SQLite store for fusion OAuth tokens and
-// auth codes (~/.claw/internal/fusion-tokens.db).
+// auth codes (~/.agency/internal/fusion-tokens.db).
 func (c *Config) FusionTokensPath() string {
 	return filepath.Join(c.InternalPath(), "fusion-tokens.db")
 }

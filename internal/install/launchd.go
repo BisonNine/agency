@@ -24,7 +24,7 @@ func userLaunchdPath(homeDir string) string {
 // buildLaunchdPlist renders the launchd XML plist for macOS.
 // If isSystem is true, UserName and GroupName are included to ensure Agency drops
 // root privileges and runs as the target user.
-func buildLaunchdPlist(label, username, groupname, execPath, homeDir, binDir, clawHome string, isSystem bool) string {
+func buildLaunchdPlist(label, username, groupname, execPath, homeDir, binDir, agencyHome string, isSystem bool) string {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 	b.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">` + "\n")
@@ -56,17 +56,17 @@ func buildLaunchdPlist(label, username, groupname, execPath, homeDir, binDir, cl
 		fmt.Fprintf(&b, "\t\t<key>HOME</key>\n\t\t<string>%s</string>\n", homeDir)
 	}
 	fmt.Fprintf(&b, "\t\t<key>PATH</key>\n\t\t<string>%s</string>\n", servicePATH(homeDir, binDir))
-	if clawHome != "" {
-		fmt.Fprintf(&b, "\t\t<key>%s</key>\n\t\t<string>%s</string>\n", global.EnvVarHome, clawHome)
+	if agencyHome != "" {
+		fmt.Fprintf(&b, "\t\t<key>%s</key>\n\t\t<string>%s</string>\n", global.EnvVarHome, agencyHome)
 	}
 	b.WriteString("\t</dict>\n")
 
 	// Standard log paths
 	logFile := "/tmp/claw-launchd.log"
-	if clawHome != "" {
-		logFile = filepath.Join(clawHome, "logs", "claw-launchd.log")
+	if agencyHome != "" {
+		logFile = filepath.Join(agencyHome, "logs", "claw-launchd.log")
 	} else if homeDir != "" {
-		logFile = filepath.Join(homeDir, ".claw", "logs", "claw-launchd.log")
+		logFile = filepath.Join(homeDir, ".agency", "logs", "claw-launchd.log")
 	}
 	fmt.Fprintf(&b, "\t<key>StandardOutPath</key>\n\t<string>%s</string>\n", logFile)
 	fmt.Fprintf(&b, "\t<key>StandardErrorPath</key>\n\t<string>%s</string>\n", logFile)
@@ -91,9 +91,9 @@ func launchdDomainFor(tu *TargetUser) launchdDomain {
 }
 
 // installLaunchd writes the launchd plist and loads the service via launchctl.
-func (h *host) installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string) error {
+func (h *host) installLaunchd(tu *TargetUser, targetBin, binDir, agencyHome string) error {
 	// Ensure user log directory exists
-	logsDir := filepath.Join(clawHome, "logs")
+	logsDir := filepath.Join(agencyHome, "logs")
 	if err := os.MkdirAll(h.path(logsDir), 0o755); err != nil {
 		return fmt.Errorf("creating logs directory %s: %w", logsDir, err)
 	}
@@ -101,14 +101,14 @@ func (h *host) installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string
 	d := launchdDomainFor(tu)
 	if tu.IsRoot {
 		// System Mode: writes to /Library/LaunchDaemons/<label>.plist
-		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome, true)
+		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, agencyHome, true)
 		if err := os.WriteFile(h.path(d.path), []byte(plist), 0o644); err != nil {
 			return fmt.Errorf("writing launchd daemon %s: %w", d.path, err)
 		}
 		fmt.Printf("Registered launchd daemon: %s (running as %s:%s)\n", d.path, tu.Username, tu.GroupName)
 	} else {
 		// User Mode: writes to ~/Library/LaunchAgents/<label>.plist
-		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome, false)
+		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, agencyHome, false)
 		if err := os.MkdirAll(h.path(filepath.Dir(d.path)), 0o755); err != nil {
 			return fmt.Errorf("creating directory %s: %w", filepath.Dir(d.path), err)
 		}

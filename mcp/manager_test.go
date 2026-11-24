@@ -740,10 +740,10 @@ func containsStr(s []string, v string) bool {
 }
 
 // TestBuildStdioEnv_AllowlistedBaseWithOverlay verifies that a stdio server's
-// environment starts from the allowlisted parent environment (no CLAW_* or
+// environment starts from the allowlisted parent environment (no AGENCY_* or
 // ALERTER_*), with env_file values overlaid and config env winning over both.
 func TestBuildStdioEnv_AllowlistedBaseWithOverlay(t *testing.T) {
-	t.Setenv("CLAW_GATEWAY_TOKEN", "secret")
+	t.Setenv("AGENCY_GATEWAY_TOKEN", "secret")
 	t.Setenv("ALERTER_SMTP_PASSWORD", "secret")
 	t.Setenv("PATH", "/usr/bin:/bin")
 	t.Setenv("HOME", "/home/alice")
@@ -772,7 +772,7 @@ func TestBuildStdioEnv_AllowlistedBaseWithOverlay(t *testing.T) {
 		}
 		got[k] = v
 	}
-	for _, k := range []string{"CLAW_GATEWAY_TOKEN", "ALERTER_SMTP_PASSWORD"} {
+	for _, k := range []string{"AGENCY_GATEWAY_TOKEN", "ALERTER_SMTP_PASSWORD"} {
 		if _, ok := got[k]; ok {
 			t.Errorf("stdio env leaked %s", k)
 		}

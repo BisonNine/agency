@@ -39,7 +39,7 @@ A request for a name Agency does not know is refused with "421 Misdirected Reque
 
 ## The self-signed certificate
 
-With no certificate files set, Agency creates its own the first time HTTPS starts, in `<CLAW_HOME>/tls/`. It covers the machine's host name, its addresses, the external URL's host, the extra names, and `localhost`. It is valid for ten years.
+With no certificate files set, Agency creates its own the first time HTTPS starts, in `<AGENCY_HOME>/tls/`. It covers the machine's host name, its addresses, the external URL's host, the extra names, and `localhost`. It is valid for ten years.
 
 Agency renews it by itself within 30 days of expiry, and at start when the names have changed. To renew it now, use **Regenerate certificate** on the **Network** page or run:
 

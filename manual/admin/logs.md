@@ -4,7 +4,7 @@ Agency writes its own log files under the data directory, and the **Logs** page 
 
 ## Where the logs are
 
-All in `<CLAW_HOME>/logs/` (by default `~/.claw/logs/`; on a system install `/opt/claw/logs/`):
+All in `<AGENCY_HOME>/logs/` (by default `~/.agency/logs/`; on a system install `/opt/agency/logs/`):
 
 | File | What it holds |
 |---|---|
@@ -76,14 +76,14 @@ Use `debug` only while looking into a problem; it is much more verbose.
 
 `log_message_content`, `dump_all` and `dump_refusals` write message content to disk. [Check Up](./checkup.md) marks the **Message content in logs** row while any of them is on.
 
-Each option can also be set with an environment variable in the service, such as `CLAW_LOGGING_LEVEL` or `CLAW_LOGGING_RETENTION_DAYS`.
+Each option can also be set with an environment variable in the service, such as `AGENCY_LOGGING_LEVEL` or `AGENCY_LOGGING_RETENTION_DAYS`.
 
 ## Follow one turn
 
 Each agent turn has a short `turn_id` on its log lines and on its entries in the [audit log](./audit.md). Search `claw.log` for it to see the whole turn:
 
 ```
-grep 1a2b3c4d ~/.claw/logs/claw.log
+grep 1a2b3c4d ~/.agency/logs/claw.log
 ```
 
 ## Startup permission checks
@@ -98,7 +98,7 @@ The data directory holds keys and tokens, so at every start Agency sets every fo
 `config.json` is never loosened or tightened past its mode silently. If it allows more than `root.file_mode`, Agency refuses to start with a message like:
 
 ```
-<CLAW_HOME>/config.json has mode 0644, more than security.permissions.root.file_mode allows (0600); it holds credentials, so refusing to start. Fix with: chmod 600 <CLAW_HOME>/config.json
+<AGENCY_HOME>/config.json has mode 0644, more than security.permissions.root.file_mode allows (0600); it holds credentials, so refusing to start. Fix with: chmod 600 <AGENCY_HOME>/config.json
 ```
 
 To fix it:
@@ -106,7 +106,7 @@ To fix it:
 1. Run the `chmod` the message names, as the user Agency runs as. For example:
 
    ```
-   chmod 600 ~/.claw/config.json
+   chmod 600 ~/.agency/config.json
    ```
 
 2. Start Agency again.

@@ -451,7 +451,7 @@ func TestTrustedProxyAllowlist(t *testing.T) {
 // The channel factory, run again on every config reload, applies
 // gateway.trusted_proxies.
 func TestDeviceFactory_AppliesTrustedProxies(t *testing.T) {
-	t.Setenv("CLAW_HOME", t.TempDir())
+	t.Setenv("AGENCY_HOME", t.TempDir())
 	cfg := config.DefaultConfig()
 	cfg.Channels.Device.Enabled = true
 	cfg.Channels.Device.Token = "shared"

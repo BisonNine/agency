@@ -51,7 +51,7 @@ func TestEffectiveCapabilities(t *testing.T) {
 	home := t.TempDir()
 	copyFile(t, "testdata/fixture.json", filepath.Join(home, "config.json"), 0o600)
 	copyTree(t, "testdata/fusion", filepath.Join(home, "fusion"))
-	t.Setenv("CLAW_HOME", home)
+	t.Setenv("AGENCY_HOME", home)
 
 	cfg, err := config.LoadConfig(filepath.Join(home, "config.json"))
 	if err != nil {

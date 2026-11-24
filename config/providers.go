@@ -25,15 +25,15 @@ var rrCounter atomic.Uint64
 // per-request or transient.
 type CooldownConfig struct {
 	// BillingAuthMinutes covers HTTP 401, 402, 403 (auth / out-of-credits).
-	BillingAuthMinutes int `json:"billing_auth_minutes,omitempty" env:"CLAW_COOLDOWN_BILLING_AUTH_MINUTES"`
+	BillingAuthMinutes int `json:"billing_auth_minutes,omitempty" env:"AGENCY_COOLDOWN_BILLING_AUTH_MINUTES"`
 	// RateLimitMinutes covers HTTP 429.
-	RateLimitMinutes int `json:"rate_limit_minutes,omitempty" env:"CLAW_COOLDOWN_RATE_LIMIT_MINUTES"`
+	RateLimitMinutes int `json:"rate_limit_minutes,omitempty" env:"AGENCY_COOLDOWN_RATE_LIMIT_MINUTES"`
 	// BadRequestMinutes covers HTTP 400.
-	BadRequestMinutes int `json:"bad_request_minutes,omitempty" env:"CLAW_COOLDOWN_BAD_REQUEST_MINUTES"`
+	BadRequestMinutes int `json:"bad_request_minutes,omitempty" env:"AGENCY_COOLDOWN_BAD_REQUEST_MINUTES"`
 	// ClientErrorMinutes covers other 4xx (404, 408, …; not 400/401/402/403/429/413).
-	ClientErrorMinutes int `json:"client_error_minutes,omitempty" env:"CLAW_COOLDOWN_CLIENT_ERROR_MINUTES"`
+	ClientErrorMinutes int `json:"client_error_minutes,omitempty" env:"AGENCY_COOLDOWN_CLIENT_ERROR_MINUTES"`
 	// ServerErrorMinutes covers 5xx.
-	ServerErrorMinutes int `json:"server_error_minutes,omitempty" env:"CLAW_COOLDOWN_SERVER_ERROR_MINUTES"`
+	ServerErrorMinutes int `json:"server_error_minutes,omitempty" env:"AGENCY_COOLDOWN_SERVER_ERROR_MINUTES"`
 }
 
 // BillingAuth is the cooldown for HTTP 401, 402 and 403; 0 means never.

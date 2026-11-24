@@ -47,7 +47,7 @@ func TestUnknownConfigKeys(t *testing.T) {
 func TestUnknownConfigKeys_KnownKeysAreClean(t *testing.T) {
 	// A config the program wrote itself must not produce a single warning.
 	dir := t.TempDir()
-	t.Setenv("CLAW_HOME", dir)
+	t.Setenv("AGENCY_HOME", dir)
 	cfg := DefaultConfig()
 	data, err := MarshalWithSecretRefs(cfg)
 	if err != nil {

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// Extracted skill archives land under CLAW_HOME, so every directory and file
+// Extracted skill archives land under AGENCY_HOME, so every directory and file
 // ExtractZipFile creates is owner-only regardless of the modes in the archive.
 func TestExtractZipFile_OwnerOnlyModes(t *testing.T) {
 	if runtime.GOOS == "windows" {

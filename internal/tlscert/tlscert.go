@@ -4,7 +4,7 @@
 // Package tlscert provides the certificate behind the gateway's HTTPS listener:
 // either the operator's PEM pair (gateway.tls.cert_file/key_file) or a
 // self-signed certificate the package generates and renews under
-// <CLAW_HOME>/tls. Whatever the source, the files are watched and a changed
+// <AGENCY_HOME>/tls. Whatever the source, the files are watched and a changed
 // pair is swapped in behind tls.Config.GetCertificate without restarting the
 // listener; a pair that fails to load leaves the previous certificate serving
 // and raises an alert.
@@ -38,12 +38,12 @@ type Source string
 const (
 	// SourceFile is an operator-supplied PEM pair.
 	SourceFile Source = "file"
-	// SourceSelfSigned is the pair this package generates under <CLAW_HOME>/tls.
+	// SourceSelfSigned is the pair this package generates under <AGENCY_HOME>/tls.
 	SourceSelfSigned Source = "self-signed"
 )
 
 const (
-	// DirName is the directory under CLAW_HOME that holds the self-signed pair.
+	// DirName is the directory under AGENCY_HOME that holds the self-signed pair.
 	DirName = "tls"
 	// SelfSignedCertFile and SelfSignedKeyFile are the self-signed pair's names.
 	SelfSignedCertFile = "self-signed.crt"
@@ -69,7 +69,7 @@ var expiryWarnDays = []int{14, 3, 0}
 
 // Options selects and describes the certificate.
 type Options struct {
-	// DataDir is CLAW_HOME; the self-signed pair lives in DataDir/tls.
+	// DataDir is AGENCY_HOME; the self-signed pair lives in DataDir/tls.
 	DataDir string
 	// CertFile and KeyFile, both set, name the operator's PEM pair.
 	CertFile, KeyFile string

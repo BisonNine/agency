@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A model's tool call over MCP (opt-in: CLAW_TEST_CLI=1, run by test.sh while
+# A model's tool call over MCP (opt-in: AGENCY_TEST_CLI=1, run by test.sh while
 # the integration gateway is up).
 #
 # The probe suite calls the ccv3 tool itself (tests/test_mcpserver.sh, 4h), and
@@ -18,14 +18,14 @@
 # Costs one model call on the operator's CLI account, hence opt-in.
 #
 # Environment (set by test.sh): PROBE_PATH, MCP_URL (…/internal), SESSION_TOKEN
-# (main's), CLAW_HOME (the gateway's), GATEWAY_LOG.
+# (main's), AGENCY_HOME (the gateway's), GATEWAY_LOG.
 set -uo pipefail
 
 # A test gateway must never alert the operator: no ALERTER_* channel from ~/.alerter.
 # shellcheck source=tests/lib/gateway_env.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/gateway_env.sh"
 
-for v in PROBE_PATH MCP_URL SESSION_TOKEN CLAW_HOME GATEWAY_LOG; do
+for v in PROBE_PATH MCP_URL SESSION_TOKEN AGENCY_HOME GATEWAY_LOG; do
     if [ -z "${!v:-}" ]; then
         echo "FAIL: $v is not set" >&2
         exit 2
@@ -33,7 +33,7 @@ for v in PROBE_PATH MCP_URL SESSION_TOKEN CLAW_HOME GATEWAY_LOG; do
 done
 
 CARD_ID="probe-cli-$(printf '%06d' "$$")"
-CARD_FILE="$CLAW_HOME/cards/$CARD_ID.json"
+CARD_FILE="$AGENCY_HOME/cards/$CARD_ID.json"
 TASK="Call the ccv3 tool with action create, id $CARD_ID and card {\"name\": \"Probe\", \"description\": \"Created by the CLI smoke test.\"}. Then reply with exactly: created $CARD_ID"
 PARAMS=$(python3 -c '
 import json, sys

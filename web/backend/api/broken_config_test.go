@@ -16,7 +16,7 @@ import (
 func TestHandlers_BrokenConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	t.Setenv("CLAW_HOME", filepath.Join(dir, ".claw"))
+	t.Setenv("AGENCY_HOME", filepath.Join(dir, ".agency"))
 	p := filepath.Join(dir, "config.json")
 	const broken = "{not json"
 	if err := os.WriteFile(p, []byte(broken), 0o600); err != nil {

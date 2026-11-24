@@ -285,7 +285,7 @@ func TestConfigSave_RefusesNewMissingCard(t *testing.T) {
 		t.Error("the handler opened a card library relative to the working directory")
 	}
 	// Remove the card behind the agent's back; an unrelated save still works.
-	store, err := ccv3.Open(filepath.Join(os.Getenv("CLAW_HOME"), "cards"))
+	store, err := ccv3.Open(filepath.Join(os.Getenv("AGENCY_HOME"), "cards"))
 	if err != nil {
 		t.Fatal(err)
 	}

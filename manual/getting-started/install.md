@@ -9,7 +9,7 @@ There are four ways to install. All of them finish with `claw install`, which re
 - A Linux or macOS machine on amd64 or arm64 (Linux 386 is also available).
 - A terminal on that machine.
 - Decide who runs the service:
-  - **As your user** (no `sudo`): Agency starts when you log in. The data directory is `~/.claw`.
+  - **As your user** (no `sudo`): Agency starts when you log in. The data directory is `~/.agency`.
   - **As a system service** (with `sudo`): Agency starts at boot without anyone logging in. It still runs as your user, never as root.
 
 ## Option 1: the one-line installer
@@ -24,7 +24,7 @@ For a system service, end the line with `sudo bash` instead of `bash`.
 
 When it finishes, it opens the WebUI in your browser if it can, or prints the addresses to open.
 
-To install a specific release, set `CLAW_VERSION` (for example `CLAW_VERSION=0.6.0`) before the command.
+To install a specific release, set `AGENCY_VERSION` (for example `AGENCY_VERSION=0.6.0`) before the command.
 
 ## Option 2: a release archive
 
@@ -77,13 +77,13 @@ An existing account is kept. To replace it later, run `claw admin` on the server
 Without a terminal, export the account in the same shell, run the installer, then remove the variables:
 
 ```bash
-read -r CLAW_ADMIN_USER; read -rs CLAW_ADMIN_PASSWORD
-export CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+read -r AGENCY_ADMIN_USER; read -rs AGENCY_ADMIN_PASSWORD
+export AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 ./claw install
-unset CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
+unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 ```
 
-With `sudo`, keep them across it: `sudo --preserve-env=CLAW_ADMIN_USER,CLAW_ADMIN_PASSWORD ./claw install`.
+With `sudo`, keep them across it: `sudo --preserve-env=AGENCY_ADMIN_USER,AGENCY_ADMIN_PASSWORD ./claw install`.
 
 ::: warning
 Do not write the password on the command line in front of the installer. It would be saved in your shell history.
@@ -95,7 +95,7 @@ If there is no account, no terminal and no variables, the installer stops withou
 
 | | User service | System service (`sudo`) |
 |---|---|---|
-| Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, `/opt/claw/bin` when the data directory is `/opt/claw`, else `/usr/local/bin` |
+| Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, `/opt/agency/bin` when the data directory is `/opt/agency`, else `/usr/local/bin` |
 | Linux service | `~/.config/systemd/user/claw.service` | `/etc/systemd/system/claw.service` |
 | macOS service | `~/Library/LaunchAgents/com.bison9.agency.plist` | `/Library/LaunchDaemons/com.bison9.agency.plist` |
 
@@ -103,10 +103,10 @@ On macOS, a service from an earlier release (`com.pivotllm.claweh`) is moved to 
 
 It also:
 
-- creates the data directory, `~/.claw` by default (`CLAW_HOME` overrides it; an existing `/opt/claw` is used if present);
+- creates the data directory, `~/.agency` by default (`AGENCY_HOME` overrides it; an existing `/opt/agency` is used if present);
 - writes a complete `config.json` there on first start;
 - creates an `openclaw` link next to `claw`, which the Rabbit R1 needs (see [Devices](../channels/devices.md));
-- on an `/opt/claw` install whose binary was in `/opt/claw` itself, names the old `/opt/claw/claw` and `/opt/claw/openclaw`, which are no longer used and can be removed;
+- on an `/opt/agency` install whose binary was in `/opt/agency` itself, names the old `/opt/agency/claw` and `/opt/agency/openclaw`, which are no longer used and can be removed;
 - prints the addresses where the WebUI can be opened.
 
 `--bin-dir` installs the binary somewhere else. `--user` picks the account the system service runs as (default: the user who ran `sudo`). `-y` skips the confirmation question but never the admin account.

@@ -6,7 +6,7 @@
 // pairing database), credentials.json, tls/ and cards/ (the character-card
 // library) when present, each agent's forums, Maestro data, classifiers and
 // own knowledge bases (okf/), and every SQLite
-// database under CLAW_HOME (session archives, cognitive memory, the fusion
+// database under AGENCY_HOME (session archives, cognitive memory, the fusion
 // OAuth store) — and restores one. It is driven on a nightly schedule by the
 // gateway, on demand from the WebUI, and by `claw backup` / `claw restore`.
 //
@@ -56,7 +56,7 @@ const (
 	ManifestVersion = 1
 
 	// externalAgentsPrefix is where agent workspaces live inside the archive
-	// when agents.base_dir points outside CLAW_HOME; the manifest records the
+	// when agents.base_dir points outside AGENCY_HOME; the manifest records the
 	// real directory so a restore can put them back.
 	externalAgentsPrefix = "external/agents/"
 
@@ -68,11 +68,11 @@ const (
 	stampLayout = "20060102-150405"
 
 	// restoreBackupPrefix names the directory a restore moves the replaced
-	// files into: <CLAW_HOME>/restore-backup-<stamp>/.
+	// files into: <AGENCY_HOME>/restore-backup-<stamp>/.
 	restoreBackupPrefix = "restore-backup-"
 
 	// restoreStagingPrefix names the directory a restore extracts into before
-	// checking and swapping: <CLAW_HOME>/.restore-staging-<stamp>/.
+	// checking and swapping: <AGENCY_HOME>/.restore-staging-<stamp>/.
 	restoreStagingPrefix = ".restore-staging-"
 
 	credentialsFile = "credentials.json"
@@ -114,7 +114,7 @@ var dbExtensions = [...]string{".db", ".sqlite", ".sqlite3"}
 
 // Source is what a backup reads.
 type Source struct {
-	Home       string // CLAW_HOME
+	Home       string // AGENCY_HOME
 	ConfigPath string // config.json (normally <Home>/config.json)
 	CronDir    string // holds jobs.json
 	AgentsDir  string // agent workspaces; walked separately only when outside Home
@@ -126,7 +126,7 @@ type Source struct {
 // Options tune a run. The zero value is what the nightly scheduler uses.
 type Options struct {
 	// Dest is the directory the archive is written to. Empty means
-	// backup.dest from the config, or <CLAW_HOME>/backup when that is unset.
+	// backup.dest from the config, or <AGENCY_HOME>/backup when that is unset.
 	Dest string
 	// Alerter receives the alert for a database that failed quick_check.
 	// nil means the process default.
@@ -198,7 +198,7 @@ func Run(src Source, dest string, now time.Time, a alerter.Alerter) (*Result, er
 
 	stamp := now.Format(stampLayout)
 	final := filepath.Join(dest, ArchivePrefix+stamp+ArchiveSuffix)
-	tmpDir, err := os.MkdirTemp(dest, ".claw-backup-*")
+	tmpDir, err := os.MkdirTemp(dest, ".agency-backup-*")
 	if err != nil {
 		return nil, fmt.Errorf("backup: temp dir: %w", err)
 	}
@@ -333,7 +333,7 @@ func addFile(tw *tar.Writer, readPath, orig, name string) error {
 	if err != nil {
 		return fmt.Errorf("backup: stat %s: %w", orig, err)
 	}
-	f, err := os.Open(readPath) //nolint:gosec // paths come from the walk of CLAW_HOME or this package's temp dir
+	f, err := os.Open(readPath) //nolint:gosec // paths come from the walk of AGENCY_HOME or this package's temp dir
 	if err != nil {
 		return fmt.Errorf("backup: open %s: %w", readPath, err)
 	}
@@ -571,7 +571,7 @@ func collectAgentFolder(agentsDir, prefix, folder, skip string, excluded func(re
 		base := prefix + a.Name() + "/" + folder + "/"
 		// Temporary agents' workspaces live in internal/temp/, never in the
 		// agents directory; this only matters when agents.base_dir is set to
-		// CLAW_HOME's internal/ (or internal/temp/) folder, where it keeps them
+		// AGENCY_HOME's internal/ (or internal/temp/) folder, where it keeps them
 		// out like the rest of internal/temp/.
 		if isTempAgentPath(base) {
 			continue
@@ -702,7 +702,7 @@ func within(dir, path string) bool {
 }
 
 // DestFor resolves the backup directory: an explicit override, else
-// backup.dest from the config, else <CLAW_HOME>/backup.
+// backup.dest from the config, else <AGENCY_HOME>/backup.
 func DestFor(cfg *config.Config, override string) string {
 	if override != "" {
 		return override

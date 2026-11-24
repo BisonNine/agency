@@ -119,7 +119,7 @@ Other options (a bare binary with `agency.sh`, an unattended install, a headless
 
 ## File layout
 
-Everything claw keeps is in one data directory, `~/.claw` unless `CLAW_HOME` names another. "You" marks what you may edit by hand; "claw" marks what claw manages and you should leave alone.
+Everything claw keeps is in one data directory, `~/.agency` unless `AGENCY_HOME` names another. "You" marks what you may edit by hand; "claw" marks what claw manages and you should leave alone.
 
 | Path | Who edits it | What it is |
 |---|---|---|

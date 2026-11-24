@@ -13,7 +13,7 @@ import (
 	"go.bison9.com/agency/global"
 )
 
-// backupCfg loads a config for a temp CLAW_HOME with the backup at 02:30 into
+// backupCfg loads a config for a temp AGENCY_HOME with the backup at 02:30 into
 // dest, enabled or not.
 func backupCfg(t *testing.T, enabled bool, dest string) (*config.Config, string) {
 	t.Helper()

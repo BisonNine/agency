@@ -12,37 +12,37 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// GetClawHome returns the claw home directory.
+// GetAgencyHome returns the claw home directory.
 // Priority:
-// 1. $CLAW_HOME environment variable
+// 1. $AGENCY_HOME environment variable
 // 2. Existing service definition (systemd unit or launchd plist)
-// 3. /opt/claw if running from /opt/claw, if /opt/claw/config.json exists, or if /opt/claw exists and ~/.claw does not
-// 4. ~/.claw (default data directory)
-func GetClawHome() string {
-	if home := os.Getenv("CLAW_HOME"); home != "" {
+// 3. /opt/agency if running from /opt/agency, if /opt/agency/config.json exists, or if /opt/agency exists and ~/.agency does not
+// 4. ~/.agency (default data directory)
+func GetAgencyHome() string {
+	if home := os.Getenv(global.EnvVarHome); home != "" {
 		return home
 	}
 
-	if detected := detectInstalledClawHome(); detected != "" {
-		if err := os.Setenv("CLAW_HOME", detected); err != nil {
-			logger.WarnCF("config", "failed to set CLAW_HOME", map[string]any{"path": detected, "error": err.Error()})
+	if detected := detectInstalledAgencyHome(); detected != "" {
+		if err := os.Setenv(global.EnvVarHome, detected); err != nil {
+			logger.WarnCF("config", "failed to set AGENCY_HOME", map[string]any{"path": detected, "error": err.Error()})
 		}
 		return detected
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		logger.WarnCF("config", "cannot determine home directory; using relative .claw", map[string]any{"error": err.Error()})
+		logger.WarnCF("config", "cannot determine home directory; using relative .agency", map[string]any{"error": err.Error()})
 	}
-	return filepath.Join(home, ".claw")
+	return filepath.Join(home, global.DefaultDataDir)
 }
 
-// installRoot is the system install location detectInstalledClawHome checks.
-// A variable only so tests can point it away from a real /opt/claw.
+// installRoot is the system install location detectInstalledAgencyHome checks.
+// A variable only so tests can point it away from a real /opt/agency.
 var installRoot = global.SystemDataDir
 
-func detectInstalledClawHome() string {
-	// 1. Check if running executable is inside /opt/claw
+func detectInstalledAgencyHome() string {
+	// 1. Check if running executable is inside /opt/agency
 	if exe, err := os.Executable(); err == nil {
 		if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
 			exe = resolved
@@ -52,17 +52,17 @@ func detectInstalledClawHome() string {
 		}
 	}
 
-	// 2. If the user already has ~/.claw/config.json, respect their user directory
+	// 2. If the user already has ~/.agency/config.json, respect their user directory
 	if userHome, err := os.UserHomeDir(); err == nil && userHome != "" {
-		userCfg := filepath.Join(userHome, ".claw", "config.json")
+		userCfg := filepath.Join(userHome, global.DefaultDataDir, "config.json")
 		if fi, err := os.Stat(userCfg); err == nil && !fi.IsDir() {
-			return "" // User explicitly has ~/.claw configured
+			return "" // User explicitly has ~/.agency configured
 		}
 	}
 
-	// 3. Check if /opt/claw/config.json exists and is owned by the current user
+	// 3. Check if /opt/agency/config.json exists and is owned by the current user
 	if fi, err := os.Stat(filepath.Join(installRoot, "config.json")); err == nil && !fi.IsDir() {
-		// If current user is the owner of /opt/claw, or running as that user
+		// If current user is the owner of /opt/agency, or running as that user
 		if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
 			curUID := os.Getuid()
 			if curUID == int(stat.Uid) {
@@ -75,7 +75,7 @@ func detectInstalledClawHome() string {
 }
 
 func GetConfigPath() string {
-	return filepath.Join(GetClawHome(), "config.json")
+	return filepath.Join(GetAgencyHome(), "config.json")
 }
 
 // LoadConfig seeds and loads the config, and sets the process default

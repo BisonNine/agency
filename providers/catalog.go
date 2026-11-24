@@ -74,7 +74,7 @@ func (b *CatalogBuilder) Alerts() *ModelAlerts { return b.alerts }
 
 // catalogModels are the models a catalogue is built with: every enabled
 // model, with what the dispatcher used to fill in at call time filled in now.
-// A model with no workspace runs its CLI in <CLAW_HOME>/cli; a model with no
+// A model with no workspace runs its CLI in <AGENCY_HOME>/cli; a model with no
 // request timeout takes the agents' default.
 func catalogModels(cfg *config.Config) []modelspec.Model {
 	out := make([]modelspec.Model, 0, len(cfg.Models))
@@ -242,7 +242,7 @@ func Digest(cfg *config.Config) string {
 
 // responseLogFileModes are the modes a model's response_log_file, and any
 // folders created for it, take: those of the security.permissions area it lies
-// in (the logs area for a file under <CLAW_HOME>/logs), from the policy the
+// in (the logs area for a file under <AGENCY_HOME>/logs), from the policy the
 // current config installed. They are read when a client is built, and the
 // digest compares them, so a changed mode rebuilds the client on the next
 // reload.

@@ -38,7 +38,7 @@ func fakeProc(t *testing.T, pid int, exe, comm, self string) {
 
 func TestIsOurExecutable(t *testing.T) {
 	const pid = 4242
-	installed := filepath.Join("/opt/claw/bin", global.InstalledBinaryName)
+	installed := filepath.Join("/opt/agency/bin", global.InstalledBinaryName)
 	tests := []struct {
 		name            string
 		exe, comm, self string

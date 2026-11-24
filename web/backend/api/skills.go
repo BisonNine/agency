@@ -190,7 +190,7 @@ func (h *Handler) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Skill not found", http.StatusNotFound)
 }
 
-// newSkillsLoader lists the shared skills root (<CLAW_HOME>/skills);
+// newSkillsLoader lists the shared skills root (<AGENCY_HOME>/skills);
 // per-agent skills are not part of this view.
 func newSkillsLoader(sharedSkills string) *skills.SkillsLoader {
 	return skills.NewSkillsLoader("", sharedSkills)

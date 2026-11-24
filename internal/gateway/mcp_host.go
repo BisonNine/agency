@@ -145,16 +145,16 @@ func tempAgentTools(agentLoop *agent.AgentLoop) func(agentID string) (*tools.Too
 	}
 }
 
-// registerTestSessionToken registers CLAW_MCP_TEST_TOKEN, when set, as a
+// registerTestSessionToken registers AGENCY_MCP_TEST_TOKEN, when set, as a
 // session token of the default agent (for the integration tests).
 func registerTestSessionToken(agentLoop *agent.AgentLoop, srv *mcpserver.MCPServer) {
-	testTok := os.Getenv("CLAW_MCP_TEST_TOKEN")
+	testTok := os.Getenv("AGENCY_MCP_TEST_TOKEN")
 	if testTok == "" {
 		return
 	}
 	defaultAgentID := agentLoop.GetRegistry().DefaultID()
 	if defaultAgentID == "" {
-		logger.WarnC("mcpserver", "CLAW_MCP_TEST_TOKEN set but no default agent found — skipping registration")
+		logger.WarnC("mcpserver", "AGENCY_MCP_TEST_TOKEN set but no default agent found — skipping registration")
 		return
 	}
 	if da, ok := agentLoop.GetRegistry().Get(defaultAgentID); ok && da != nil {

@@ -31,7 +31,7 @@ The [Glossary](../reference/glossary.md) explains these and other terms.
 
 ## Where its files are
 
-Agency keeps everything in one data directory: `~/.claw`, unless the `CLAW_HOME` environment variable names another. The main files are:
+Agency keeps everything in one data directory: `~/.agency`, unless the `AGENCY_HOME` environment variable names another. The main files are:
 
 | Path | What it is |
 |---|---|

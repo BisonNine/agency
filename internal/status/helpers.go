@@ -72,7 +72,7 @@ func statusCmd() {
 //
 // The instance is found through the PID file in the data directory, which is
 // what makes the answer specific — one binary runs several instances on a host,
-// and this command already resolved CLAW_HOME to find the config, so it reports
+// and this command already resolved AGENCY_HOME to find the config, so it reports
 // on the instance the caller is actually asking about.
 func printProcess(dataDir string) {
 	pid, running := pidfile.Read(dataDir)

@@ -39,7 +39,7 @@ cleaned up, whether the switch is on or off.
 | A fresh agent | `"model": "<name>"` | A temporary agent with no tools and no workspace files, on one of the launching agent's models (`forum_models` lists them). Optional `system_prompt` and `mode` (`memory`, `no_memory`, `single_shot`). Deleted when the forum ends. |
 
 A clone or fresh participant may add `character_card` (a card ID from
-`<CLAW_HOME>/cards/`; see `manual/agents/character-cards.md`); an existing
+`<AGENCY_HOME>/cards/`; see `manual/agents/character-cards.md`); an existing
 agent may not, since it uses its own card. A clone runs with that card
 instead of Bob's; a fresh participant's prompt is the card, followed by its
 `system_prompt` under `# Instructions` when both are given. Without `name`,

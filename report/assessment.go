@@ -446,7 +446,7 @@ func channelSetUp(cfg *config.Config, name string) bool {
 	return false
 }
 
-// permsStatus describes what perms.Check found under CLAW_HOME against the
+// permsStatus describes what perms.Check found under AGENCY_HOME against the
 // configured modes (summary, from PermissionsConfig.Summary). A truncated
 // walk still reports the findings it collected, and says it stopped early.
 func permsStatus(findings []perms.Finding, err error, summary string) string {
@@ -458,9 +458,9 @@ func permsStatus(findings []perms.Finding, err error, summary string) string {
 		s = "Matches the configured modes (" + summary + ")."
 	} else {
 		f := findings[0]
-		noun := "paths under CLAW_HOME are"
+		noun := "paths under AGENCY_HOME are"
 		if len(findings) == 1 {
-			noun = "path under CLAW_HOME is"
+			noun = "path under AGENCY_HOME is"
 		}
 		s = fmt.Sprintf("%d %s more open than the configured modes (first: %s %04o, configured %04o); "+app.ShortName()+" sets them at start.",
 			len(findings), noun, f.Path, f.Mode, f.Want)

@@ -45,7 +45,7 @@ func TestWriteFileAtomic_CreatesParentDirs(t *testing.T) {
 		t.Errorf("file not created: %v", err)
 	}
 	if runtime.GOOS != "windows" {
-		// Parents the helper creates are owner-only; callers write under CLAW_HOME.
+		// Parents the helper creates are owner-only; callers write under AGENCY_HOME.
 		for _, d := range []string{filepath.Join(dir, "nested"), filepath.Join(dir, "nested", "deep")} {
 			fi, err := os.Stat(d)
 			if err != nil {
