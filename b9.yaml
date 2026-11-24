@@ -44,10 +44,10 @@ signing:
 artifacts:
   - name: claw
     from: 'build/claw-{os}-{arch}'
-    macos_bundle_id: com.tenebris.claweh
+    macos_bundle_id: com.bison9.agency
   - name: claw-auth
     from: 'build/claw-auth-{os}-{arch}'
-    macos_bundle_id: com.tenebris.claweh
+    macos_bundle_id: com.bison9.agency
 
 package:
   extra_files:

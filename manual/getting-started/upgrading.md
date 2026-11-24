@@ -43,6 +43,8 @@ Useful options:
 
 Some releases change the service file that `claw install` writes. `claw upgrade` does not rewrite it. After upgrading, run `claw install` again with the same privilege as the first time (`sudo` for a system service). It keeps your data and your admin account.
 
+On macOS, `claw install` and `claw upgrade` move a service from an earlier release (`com.pivotllm.claweh`) to `com.bison9.agency` automatically. Upgrading from 0.6.5 or earlier runs the old upgrader, so run `claw install` once afterwards.
+
 ## Before a large upgrade
 
 Take a backup first:

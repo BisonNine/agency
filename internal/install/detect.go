@@ -187,19 +187,21 @@ func (h *host) detectLinuxInstall(homeDir string) *ExistingInstall {
 }
 
 func (h *host) detectDarwinInstall(homeDir string) *ExistingInstall {
-	// 1. Check LaunchDaemon (/Library/LaunchDaemons/com.pivotllm.claweh.plist)
-	if h.fileExists(systemLaunchdPath) {
-		inst := h.parseLaunchdPlist(systemLaunchdPath, "launchd-daemon")
-		inst.IsActive = h.isLaunchdServiceActive(launchdLabel)
-		return inst
+	// 1. Check LaunchDaemon (/Library/LaunchDaemons/<label>.plist), then
+	// 2. LaunchAgent (~/Library/LaunchAgents/<label>.plist), each under the
+	// current label and then the legacy one.
+	plists := []struct{ path, serviceType, label string }{
+		{systemLaunchdPath, "launchd-daemon", launchdLabel},
+		{legacySystemLaunchdPath, "launchd-daemon", legacyLaunchdLabel},
+		{userLaunchdPath(homeDir), "launchd-agent", launchdLabel},
+		{legacyUserLaunchdPath(homeDir), "launchd-agent", legacyLaunchdLabel},
 	}
-
-	// 2. Check LaunchAgent (~/Library/LaunchAgents/com.pivotllm.claweh.plist)
-	userPath := userLaunchdPath(homeDir)
-	if h.fileExists(userPath) {
-		inst := h.parseLaunchdPlist(userPath, "launchd-agent")
-		inst.IsActive = h.isLaunchdServiceActive(launchdLabel)
-		return inst
+	for _, p := range plists {
+		if h.fileExists(p.path) {
+			inst := h.parseLaunchdPlist(p.path, p.serviceType)
+			inst.IsActive = h.isLaunchdServiceActive(p.label)
+			return inst
+		}
 	}
 
 	// 3. Check /opt/claw

@@ -182,6 +182,11 @@
 - **Releases and the installer now come from `BisonNine/agency`.**
   `claw upgrade`, the install scripts and the links in the WebUI use the new
   repository.
+- **On macOS the service and app identifier are now `com.bison9.agency`.**
+  `claw install` and `claw upgrade` move an existing service from
+  `com.pivotllm.claweh` automatically, keeping its binary, data and settings.
+  `claw uninstall` removes either. After `claw upgrade` from 0.6.5 or earlier,
+  run `claw install` once to move it.
 - **BREAKING: the `propose_domains` and `auto_promote` memory settings are
   removed.** They never had any effect; an existing config file that has them
   still loads, and the next save drops them.

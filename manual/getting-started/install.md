@@ -97,7 +97,9 @@ If there is no account, no terminal and no variables, the installer stops withou
 |---|---|---|
 | Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, `/opt/claw/bin` when the data directory is `/opt/claw`, else `/usr/local/bin` |
 | Linux service | `~/.config/systemd/user/claw.service` | `/etc/systemd/system/claw.service` |
-| macOS service | `~/Library/LaunchAgents/com.pivotllm.claweh.plist` | `/Library/LaunchDaemons/com.pivotllm.claweh.plist` |
+| macOS service | `~/Library/LaunchAgents/com.bison9.agency.plist` | `/Library/LaunchDaemons/com.bison9.agency.plist` |
+
+On macOS, a service from an earlier release (`com.pivotllm.claweh`) is moved to `com.bison9.agency` automatically.
 
 It also:
 

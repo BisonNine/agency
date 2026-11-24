@@ -27,7 +27,11 @@ const (
 	SystemdUnitFile = ServiceName + ".service"
 
 	// LaunchdLabel is the launchd job label `install` registers on macOS.
-	LaunchdLabel = "com.pivotllm.claweh"
+	LaunchdLabel = "com.bison9.agency"
+
+	// LegacyLaunchdLabel is the launchd job label earlier releases registered.
+	// It is used only to find such a service and move it to LaunchdLabel.
+	LegacyLaunchdLabel = "com.pivotllm.claweh"
 
 	// SystemDataDir is the data directory of a system-wide install.
 	SystemDataDir = "/opt/claw"

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -14,11 +15,22 @@ const (
 	launchdLabel      = global.LaunchdLabel
 	launchdPlistName  = global.LaunchdLabel + ".plist"
 	systemLaunchdPath = "/Library/LaunchDaemons/" + launchdPlistName
+
+	// The label and plists of earlier releases, kept only to find and move
+	// such a service.
+	legacyLaunchdLabel      = global.LegacyLaunchdLabel
+	legacyLaunchdPlistName  = global.LegacyLaunchdLabel + ".plist"
+	legacySystemLaunchdPath = "/Library/LaunchDaemons/" + legacyLaunchdPlistName
 )
 
 // userLaunchdPath returns the path to the LaunchAgent plist for the given user.
 func userLaunchdPath(homeDir string) string {
 	return filepath.Join(homeDir, "Library", "LaunchAgents", launchdPlistName)
+}
+
+// legacyUserLaunchdPath is userLaunchdPath for the legacy label.
+func legacyUserLaunchdPath(homeDir string) string {
+	return filepath.Join(homeDir, "Library", "LaunchAgents", legacyLaunchdPlistName)
 }
 
 // buildLaunchdPlist renders the launchd XML plist for macOS.
@@ -75,7 +87,29 @@ func buildLaunchdPlist(label, username, groupname, execPath, homeDir, binDir, cl
 	return b.String()
 }
 
+// launchdDomain is where tu's service lives: the launchd domain target and
+// the plist paths of the current and the legacy label in it. A root install
+// is a system daemon; any other is the user's agent.
+type launchdDomain struct {
+	target     string // "system" or "gui/<uid>"
+	path       string // plist of launchdLabel
+	legacyPath string // plist of legacyLaunchdLabel
+}
+
+func launchdDomainFor(tu *TargetUser) launchdDomain {
+	if tu.IsRoot {
+		return launchdDomain{target: "system", path: systemLaunchdPath, legacyPath: legacySystemLaunchdPath}
+	}
+	return launchdDomain{
+		target:     "gui/" + tu.UID,
+		path:       userLaunchdPath(tu.HomeDir),
+		legacyPath: legacyUserLaunchdPath(tu.HomeDir),
+	}
+}
+
 // installLaunchd writes the launchd plist and loads the service via launchctl.
+// A service registered under the legacy label in the same domain is unloaded
+// and its plist removed first, so the install moves it to the current label.
 func (h *host) installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string) error {
 	// Ensure user log directory exists
 	logsDir := filepath.Join(clawHome, "logs")
@@ -83,74 +117,141 @@ func (h *host) installLaunchd(tu *TargetUser, targetBin, binDir, clawHome string
 		return fmt.Errorf("creating logs directory %s: %w", logsDir, err)
 	}
 
+	d := launchdDomainFor(tu)
 	if tu.IsRoot {
-		// System Mode: writes to /Library/LaunchDaemons/com.pivotllm.claweh.plist
+		// System Mode: writes to /Library/LaunchDaemons/<label>.plist
 		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome, true)
-		if err := os.WriteFile(h.path(systemLaunchdPath), []byte(plist), 0o644); err != nil {
-			return fmt.Errorf("writing launchd daemon %s: %w", systemLaunchdPath, err)
+		if err := os.WriteFile(h.path(d.path), []byte(plist), 0o644); err != nil {
+			return fmt.Errorf("writing launchd daemon %s: %w", d.path, err)
 		}
-		fmt.Printf("Registered launchd daemon: %s (running as %s:%s)\n", systemLaunchdPath, tu.Username, tu.GroupName)
-
-		// Unload previous instance if present
-		h.runBestEffort("launchctl", "bootout", "system/"+launchdLabel)
-		h.runBestEffort("launchctl", "unload", "-w", systemLaunchdPath)
-
-		// Bootstrap service (modern launchctl fallback to load -w)
-		if out, err := h.run("launchctl", "bootstrap", "system", systemLaunchdPath); err != nil {
-			// Fallback to legacy launchctl load
-			if loadOut, loadErr := h.run("launchctl", "load", "-w", systemLaunchdPath); loadErr != nil {
-				return fmt.Errorf("launchctl bootstrap system: %s / %s (%w)", string(out), string(loadOut), loadErr)
-			}
+		fmt.Printf("Registered launchd daemon: %s (running as %s:%s)\n", d.path, tu.Username, tu.GroupName)
+	} else {
+		// User Mode: writes to ~/Library/LaunchAgents/<label>.plist
+		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome, false)
+		if err := os.MkdirAll(h.path(filepath.Dir(d.path)), 0o755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", filepath.Dir(d.path), err)
 		}
+		if err := os.WriteFile(h.path(d.path), []byte(plist), 0o644); err != nil {
+			return fmt.Errorf("writing launchd agent %s: %w", d.path, err)
+		}
+		fmt.Printf("Registered launchd user agent: %s\n", d.path)
+	}
+
+	if _, err := h.retireLegacyLaunchd(d); err != nil {
+		return err
+	}
+	if err := h.loadLaunchd(d); err != nil {
+		return err
+	}
+	if tu.IsRoot {
 		fmt.Printf("Loaded launchd system daemon %s\n", launchdLabel)
 	} else {
-		// User Mode: writes to ~/Library/LaunchAgents/com.pivotllm.claweh.plist
-		plist := buildLaunchdPlist(launchdLabel, tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, clawHome, false)
-		destPath := userLaunchdPath(tu.HomeDir)
-		if err := os.MkdirAll(h.path(filepath.Dir(destPath)), 0o755); err != nil {
-			return fmt.Errorf("creating directory %s: %w", filepath.Dir(destPath), err)
-		}
-		if err := os.WriteFile(h.path(destPath), []byte(plist), 0o644); err != nil {
-			return fmt.Errorf("writing launchd agent %s: %w", destPath, err)
-		}
-		fmt.Printf("Registered launchd user agent: %s\n", destPath)
-
-		// Unload previous instance if present
-		guiTarget := "gui/" + tu.UID
-		h.runBestEffort("launchctl", "bootout", guiTarget+"/"+launchdLabel)
-		h.runBestEffort("launchctl", "unload", "-w", destPath)
-
-		// Bootstrap service (modern launchctl fallback to load -w)
-		if out, err := h.run("launchctl", "bootstrap", guiTarget, destPath); err != nil {
-			// Fallback to legacy launchctl load
-			if loadOut, loadErr := h.run("launchctl", "load", "-w", destPath); loadErr != nil {
-				return fmt.Errorf("launchctl bootstrap %s: %s / %s (%w)", guiTarget, string(out), string(loadOut), loadErr)
-			}
-		}
 		fmt.Printf("Loaded launchd user agent %s\n", launchdLabel)
 	}
 	return nil
 }
 
-// uninstallLaunchd unloads and removes the launchd service plist.
+// loadLaunchd unloads any running instance of the service in d and loads its
+// plist again.
+func (h *host) loadLaunchd(d launchdDomain) error {
+	h.runBestEffort("launchctl", "bootout", d.target+"/"+launchdLabel)
+	h.runBestEffort("launchctl", "unload", "-w", d.path)
+
+	// Bootstrap service (modern launchctl fallback to load -w)
+	if out, err := h.run("launchctl", "bootstrap", d.target, d.path); err != nil {
+		// Fallback to legacy launchctl load
+		if loadOut, loadErr := h.run("launchctl", "load", "-w", d.path); loadErr != nil {
+			return fmt.Errorf("launchctl bootstrap %s: %s / %s (%w)", d.target, string(out), string(loadOut), loadErr)
+		}
+	}
+	return nil
+}
+
+// retireLegacyLaunchd unloads a service registered in d under the legacy
+// label and removes its plist. It reports whether there was one.
+func (h *host) retireLegacyLaunchd(d launchdDomain) (bool, error) {
+	if !h.fileExists(d.legacyPath) {
+		return false, nil
+	}
+	h.runBestEffort("launchctl", "bootout", d.target+"/"+legacyLaunchdLabel)
+	h.runBestEffort("launchctl", "unload", "-w", d.legacyPath)
+	if err := os.Remove(h.path(d.legacyPath)); err != nil && !os.IsNotExist(err) {
+		return true, fmt.Errorf("removing %s: %w", d.legacyPath, err)
+	}
+	fmt.Printf("Removed the service registered as %s: %s\n", legacyLaunchdLabel, d.legacyPath)
+	return true, nil
+}
+
+// MigrateLegacyLaunchd moves a macOS service registered under the legacy
+// launchd label to the current one: run as root it moves the system daemon,
+// otherwise the current user's agent. The plist keeps everything but its
+// label, so the binary, data directory and settings stay the same. Nothing
+// happens when there is no legacy service, or on another system.
+func MigrateLegacyLaunchd() error {
+	h := realHost()
+	if h.goos != "darwin" {
+		return nil
+	}
+	tu := &TargetUser{IsRoot: geteuid() == 0}
+	if !tu.IsRoot {
+		u, err := user.Current()
+		if err != nil {
+			return fmt.Errorf("cannot determine current user: %w", err)
+		}
+		tu.UID, tu.HomeDir = u.Uid, u.HomeDir
+	}
+	return h.migrateLegacyLaunchd(tu)
+}
+
+// migrateLegacyLaunchd is MigrateLegacyLaunchd for tu's domain on h. When a
+// plist for the current label is already there it is kept and the legacy one
+// only removed.
+func (h *host) migrateLegacyLaunchd(tu *TargetUser) error {
+	if h.goos != "darwin" {
+		return nil
+	}
+	d := launchdDomainFor(tu)
+	if !h.fileExists(d.legacyPath) {
+		return nil
+	}
+	if !h.fileExists(d.path) {
+		data, err := os.ReadFile(h.path(d.legacyPath))
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", d.legacyPath, err)
+		}
+		plist := strings.Replace(string(data),
+			"<string>"+legacyLaunchdLabel+"</string>", "<string>"+launchdLabel+"</string>", 1)
+		if err := os.WriteFile(h.path(d.path), []byte(plist), 0o644); err != nil { //nolint:gosec // the installer's own plist path, built from fixed names and the account's home
+			return fmt.Errorf("writing %s: %w", d.path, err)
+		}
+	}
+	if _, err := h.retireLegacyLaunchd(d); err != nil {
+		return err
+	}
+	if err := h.loadLaunchd(d); err != nil {
+		return err
+	}
+	fmt.Printf("The service is now registered as %s: %s\n", launchdLabel, d.path)
+	return nil
+}
+
+// uninstallLaunchd unloads and removes the launchd service plist, under the
+// current label and the legacy one.
 func (h *host) uninstallLaunchd(tu *TargetUser) error {
 	var errs []string
+	d := launchdDomainFor(tu)
+	h.runBestEffort("launchctl", "bootout", d.target+"/"+launchdLabel)
+	h.runBestEffort("launchctl", "unload", "-w", d.path)
+	if err := os.Remove(h.path(d.path)); err != nil && !os.IsNotExist(err) {
+		errs = append(errs, fmt.Sprintf("removing %s: %v", d.path, err))
+	}
 	if tu.IsRoot {
-		h.runBestEffort("launchctl", "bootout", "system/"+launchdLabel)
-		h.runBestEffort("launchctl", "unload", "-w", systemLaunchdPath)
-		if err := os.Remove(h.path(systemLaunchdPath)); err != nil && !os.IsNotExist(err) {
-			errs = append(errs, fmt.Sprintf("removing %s: %v", systemLaunchdPath, err))
-		}
-		fmt.Printf("Removed launchd daemon: %s\n", systemLaunchdPath)
+		fmt.Printf("Removed launchd daemon: %s\n", d.path)
 	} else {
-		guiTarget := "gui/" + tu.UID
-		destPath := userLaunchdPath(tu.HomeDir)
-		h.runBestEffort("launchctl", "bootout", guiTarget+"/"+launchdLabel)
-		h.runBestEffort("launchctl", "unload", "-w", destPath)
-		if err := os.Remove(h.path(destPath)); err != nil && !os.IsNotExist(err) {
-			errs = append(errs, fmt.Sprintf("removing %s: %v", destPath, err))
-		}
-		fmt.Printf("Removed launchd agent: %s\n", destPath)
+		fmt.Printf("Removed launchd agent: %s\n", d.path)
+	}
+	if _, err := h.retireLegacyLaunchd(d); err != nil {
+		errs = append(errs, err.Error())
 	}
 
 	if len(errs) > 0 {

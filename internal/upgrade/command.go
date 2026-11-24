@@ -61,6 +61,8 @@ var (
 	commandOutput = func(name string, args ...string) ([]byte, error) {
 		return exec.Command(name, args...).Output() //nolint:gosec // fixed service manager binaries with arguments built by the upgrader
 	}
+	// migrateLaunchd moves a macOS service from the legacy launchd label.
+	migrateLaunchd = install.MigrateLegacyLaunchd
 )
 
 // GitHubRelease represents the GitHub releases API response.
@@ -688,9 +690,20 @@ func restartActiveService() {
 			}
 		}
 	case "darwin":
-		const label = global.LaunchdLabel
+		// Move a service registered under the label of earlier releases to
+		// the current one. If that fails, the service still runs under the
+		// old label and is restarted under it.
+		if err := migrateLaunchd(); err != nil {
+			fmt.Printf("Warning: could not move the launchd service to %s (%v).\n", global.LaunchdLabel, err)
+		}
 		out, err := commandOutput("launchctl", "list")
-		if err == nil && strings.Contains(string(out), label) {
+		if err != nil {
+			return
+		}
+		for _, label := range []string{global.LaunchdLabel, global.LegacyLaunchdLabel} {
+			if !strings.Contains(string(out), label) {
+				continue
+			}
 			fmt.Printf("Restarting launchd service %s...\n", label)
 			uid := strconv.Itoa(getuid())
 			if kErr := runCommand("launchctl", "kickstart", "-k", "gui/"+uid+"/"+label); kErr == nil {
@@ -700,6 +713,7 @@ func restartActiveService() {
 					fmt.Printf("Warning: could not restart launchd service %s (%v). Restart it manually.\n", label, sysErr)
 				}
 			}
+			return
 		}
 	}
 }

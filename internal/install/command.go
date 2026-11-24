@@ -66,12 +66,12 @@ func NewInstallCommand() *cobra.Command {
 			"service to run " + app.ShortName() + " automatically:\n\n" +
 			"  - Run as regular user: Installs in User Mode (user space, no sudo required).\n" +
 			"    • Linux: registers a systemd user service (~/.config/systemd/user/claw.service)\n" +
-			"    • macOS: registers a launchd LaunchAgent (~/Library/LaunchAgents/com.pivotllm.claweh.plist)\n" +
+			"    • macOS: registers a launchd LaunchAgent (~/Library/LaunchAgents/" + global.LaunchdLabel + ".plist)\n" +
 			"    • Binary copied to ~/bin (if exists) or ~/.local/bin\n\n" +
 			"  - Run with sudo: Installs in System Mode (system boot service).\n" +
 			"    • Detects invoking user ($SUDO_USER) so " + app.ShortName() + " never executes as root\n" +
 			"    • Linux: registers a systemd system service (/etc/systemd/system/claw.service)\n" +
-			"    • macOS: registers a launchd LaunchDaemon (/Library/LaunchDaemons/com.pivotllm.claweh.plist)\n" +
+			"    • macOS: registers a launchd LaunchDaemon (/Library/LaunchDaemons/" + global.LaunchdLabel + ".plist)\n" +
 			"    • Binary copied to /usr/local/bin\n\n" +
 			"The WebUI requires an admin login. If <CLAW_HOME>/credentials.json does not exist, the\n" +
 			"installer creates the account before starting the service: from CLAW_ADMIN_USER and\n" +
@@ -594,10 +594,15 @@ func (h *host) uninstall(targetUser string, autoYes bool) error {
 			serviceDesc = fmt.Sprintf("systemd user service (%s)", userUnitPath(tu.HomeDir))
 		}
 	} else {
+		d := launchdDomainFor(tu)
+		plist := d.path
+		if !h.fileExists(d.path) && h.fileExists(d.legacyPath) {
+			plist = d.legacyPath
+		}
 		if tu.IsRoot {
-			serviceDesc = fmt.Sprintf("launchd daemon (%s)", systemLaunchdPath)
+			serviceDesc = fmt.Sprintf("launchd daemon (%s)", plist)
 		} else {
-			serviceDesc = fmt.Sprintf("launchd agent (%s)", userLaunchdPath(tu.HomeDir))
+			serviceDesc = fmt.Sprintf("launchd agent (%s)", plist)
 		}
 	}
 

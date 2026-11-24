@@ -20,8 +20,8 @@ func TestCheckExistingMode(t *testing.T) {
 	testbinary.Set(t, "alice-claw")
 	system := &ExistingInstall{ServiceType: "systemd-system", ServicePath: "/etc/systemd/system/claw.service", User: "alice"}
 	userSvc := &ExistingInstall{ServiceType: "systemd-user", ServicePath: "/home/alice/.config/systemd/user/claw.service", User: "alice"}
-	daemon := &ExistingInstall{ServiceType: "launchd-daemon", ServicePath: "/Library/LaunchDaemons/com.pivotllm.claweh.plist"}
-	agent := &ExistingInstall{ServiceType: "launchd-agent", ServicePath: "/Users/alice/Library/LaunchAgents/com.pivotllm.claweh.plist", User: "alice"}
+	daemon := &ExistingInstall{ServiceType: "launchd-daemon", ServicePath: "/Library/LaunchDaemons/" + launchdPlistName}
+	agent := &ExistingInstall{ServiceType: "launchd-agent", ServicePath: "/Users/alice/Library/LaunchAgents/" + launchdPlistName, User: "alice"}
 	binaryOnly := &ExistingInstall{BinaryPath: "/opt/claw/claw"}
 
 	cases := []struct {
@@ -309,7 +309,7 @@ func TestBuildUserUnit(t *testing.T) {
 }
 
 func TestBuildLaunchdPlist_UserMode(t *testing.T) {
-	plist := buildLaunchdPlist("com.pivotllm.claweh", "alice", "staff", "/Users/alice/.local/bin/claw", "/Users/alice", "/Users/alice/.local/bin", "/Users/alice/.claw", false)
+	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/Users/alice/.local/bin/claw", "/Users/alice", "/Users/alice/.local/bin", "/Users/alice/.claw", false)
 	if strings.Contains(plist, "<key>UserName</key>") {
 		t.Errorf("LaunchAgent plist in user mode must NOT contain UserName:\n%s", plist)
 	}
@@ -331,7 +331,7 @@ func TestBuildLaunchdPlist_UserMode(t *testing.T) {
 }
 
 func TestBuildLaunchdPlist_SystemMode(t *testing.T) {
-	plist := buildLaunchdPlist("com.pivotllm.claweh", "alice", "staff", "/usr/local/bin/claw", "/Users/alice", "/usr/local/bin", "/opt/claw", true)
+	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/usr/local/bin/claw", "/Users/alice", "/usr/local/bin", "/opt/claw", true)
 	if !strings.Contains(plist, "<key>UserName</key>\n\t<string>alice</string>") {
 		t.Errorf("LaunchDaemon plist in system mode missing UserName:\n%s", plist)
 	}
