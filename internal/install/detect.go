@@ -188,18 +188,15 @@ func (h *host) detectLinuxInstall(homeDir string) *ExistingInstall {
 
 func (h *host) detectDarwinInstall(homeDir string) *ExistingInstall {
 	// 1. Check LaunchDaemon (/Library/LaunchDaemons/<label>.plist), then
-	// 2. LaunchAgent (~/Library/LaunchAgents/<label>.plist), each under the
-	// current label and then the legacy one.
-	plists := []struct{ path, serviceType, label string }{
-		{systemLaunchdPath, "launchd-daemon", launchdLabel},
-		{legacySystemLaunchdPath, "launchd-daemon", legacyLaunchdLabel},
-		{userLaunchdPath(homeDir), "launchd-agent", launchdLabel},
-		{legacyUserLaunchdPath(homeDir), "launchd-agent", legacyLaunchdLabel},
+	// 2. LaunchAgent (~/Library/LaunchAgents/<label>.plist).
+	plists := []struct{ path, serviceType string }{
+		{systemLaunchdPath, "launchd-daemon"},
+		{userLaunchdPath(homeDir), "launchd-agent"},
 	}
 	for _, p := range plists {
 		if h.fileExists(p.path) {
 			inst := h.parseLaunchdPlist(p.path, p.serviceType)
-			inst.IsActive = h.isLaunchdServiceActive(p.label)
+			inst.IsActive = h.isLaunchdServiceActive(launchdLabel)
 			return inst
 		}
 	}

@@ -8,8 +8,6 @@
 #   AGENCY_VERSION       release tag to install (e.g. 0.6.6); default: latest
 #   AGENCY_INSTALL_DIR   directory to install the binary into; default:
 #                        /usr/local/bin (falls back to ~/.local/bin if unwritable)
-# The earlier names CLAWEH_VERSION and CLAWEH_INSTALL_DIR are used when the new
-# ones are unset.
 #
 # Only the `claw` binary (and license notices) is installed — the data directory
 # (~/.claw) is never touched. To try a build without disturbing an existing
@@ -24,9 +22,6 @@ set -eu
 REPO="BisonNine/agency"
 BINARY="claw"
 
-# The earlier variable names still work when the new ones are unset.
-AGENCY_VERSION="${AGENCY_VERSION:-${CLAWEH_VERSION:-}}"
-AGENCY_INSTALL_DIR="${AGENCY_INSTALL_DIR:-${CLAWEH_INSTALL_DIR:-}}"
 VERSION="${AGENCY_VERSION:-latest}"
 
 err() { printf '%s\n' "$*" >&2; }
@@ -103,7 +98,7 @@ if install_bin "$dest_dir" ""; then
 	:
 elif command -v sudo >/dev/null 2>&1 && install_bin "$dest_dir" "sudo"; then
 	sudo="sudo"
-elif [ -z "$AGENCY_INSTALL_DIR" ] && install_bin "$HOME/.local/bin" ""; then
+elif [ -z "${AGENCY_INSTALL_DIR:-}" ] && install_bin "$HOME/.local/bin" ""; then
 	dest_dir="$HOME/.local/bin"
 else
 	die "could not install to $dest_dir — set AGENCY_INSTALL_DIR to a writable dir, or re-run with sudo"

@@ -594,11 +594,7 @@ func (h *host) uninstall(targetUser string, autoYes bool) error {
 			serviceDesc = fmt.Sprintf("systemd user service (%s)", userUnitPath(tu.HomeDir))
 		}
 	} else {
-		d := launchdDomainFor(tu)
-		plist := d.path
-		if !h.fileExists(d.path) && h.fileExists(d.legacyPath) {
-			plist = d.legacyPath
-		}
+		plist := launchdDomainFor(tu).path
 		if tu.IsRoot {
 			serviceDesc = fmt.Sprintf("launchd daemon (%s)", plist)
 		} else {

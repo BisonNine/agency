@@ -27,8 +27,8 @@ const plistDaemon = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
-// The macOS detection order: LaunchDaemon, then the user's LaunchAgent (each
-// under the current label, then the legacy one), then /opt/claw (bin layout
+// The macOS detection order: LaunchDaemon, then the user's LaunchAgent, then
+// /opt/claw (bin layout
 // first), then nothing.
 func TestDetectDarwinInstall_Matrix(t *testing.T) {
 	cases := []struct {
@@ -51,24 +51,6 @@ func TestDetectDarwinInstall_Matrix(t *testing.T) {
 			name:     "launch agent",
 			files:    map[string]string{userLaunchdPath("/Users/alice"): plistDaemon},
 			wantType: "launchd-agent", wantPath: userLaunchdPath("/Users/alice"),
-			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.claw", wantUser: "alice",
-		},
-		{
-			name:     "legacy launch daemon",
-			files:    map[string]string{legacySystemLaunchdPath: plistDaemon, legacyUserLaunchdPath("/Users/alice"): plistDaemon},
-			wantType: "launchd-daemon", wantPath: legacySystemLaunchdPath,
-			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.claw", wantUser: "alice",
-		},
-		{
-			name:     "launch daemon under both labels",
-			files:    map[string]string{legacySystemLaunchdPath: plistDaemon, systemLaunchdPath: plistDaemon},
-			wantType: "launchd-daemon", wantPath: systemLaunchdPath,
-			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.claw", wantUser: "alice",
-		},
-		{
-			name:     "legacy launch agent",
-			files:    map[string]string{legacyUserLaunchdPath("/Users/alice"): plistDaemon},
-			wantType: "launchd-agent", wantPath: legacyUserLaunchdPath("/Users/alice"),
 			wantBin: "/usr/local/bin/claw", wantHome: "/Users/alice/.claw", wantUser: "alice",
 		},
 		{

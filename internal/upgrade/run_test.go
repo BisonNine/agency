@@ -164,9 +164,6 @@ type upgradeEnv struct {
 	install  *install.ExistingInstall
 	active   map[string]bool // joined command line -> succeeds
 	commands []string
-	// migrations counts calls of migrateLaunchd; migrateErr is what they return.
-	migrations int
-	migrateErr error
 }
 
 const newBinary = "#!/bin/sh\necho new claw\n"
@@ -197,10 +194,10 @@ func newUpgradeEnv(t *testing.T, tag string) *upgradeEnv {
 
 	saved := []func(){}
 	restore := func(f func()) { saved = append(saved, f) }
-	oldBase, oldExe, oldDetect, oldKeys, oldMigrate := apiBaseURL, executable, detectInstall, releaseKeys, migrateLaunchd
+	oldBase, oldExe, oldDetect, oldKeys := apiBaseURL, executable, detectInstall, releaseKeys
 	oldGOOS, oldEUID, oldUID, oldRun, oldOut := goos, geteuid, getuid, runCommand, commandOutput
 	restore(func() {
-		apiBaseURL, executable, detectInstall, releaseKeys, migrateLaunchd = oldBase, oldExe, oldDetect, oldKeys, oldMigrate
+		apiBaseURL, executable, detectInstall, releaseKeys = oldBase, oldExe, oldDetect, oldKeys
 		goos, geteuid, getuid, runCommand, commandOutput = oldGOOS, oldEUID, oldUID, oldRun, oldOut
 	})
 	t.Cleanup(func() {
@@ -212,10 +209,6 @@ func newUpgradeEnv(t *testing.T, tag string) *upgradeEnv {
 	apiBaseURL = e.gh.srv.URL
 	executable = func() (string, error) { return e.exe, nil }
 	detectInstall = func(string) *install.ExistingInstall { return e.install }
-	migrateLaunchd = func() error {
-		e.migrations++
-		return e.migrateErr
-	}
 	releaseKeys = func() []string { return []string{e.gh.signer.publicKeyLine()} }
 	goos = "linux"
 	geteuid = func() int { return 1000 }
@@ -817,16 +810,14 @@ func TestComputeSHA256_Missing(t *testing.T) {
 func TestRestartActiveService(t *testing.T) {
 	const svc = upgradeServiceName
 	const label = global.LaunchdLabel
-	const legacy = global.LegacyLaunchdLabel
 	tests := []struct {
-		name       string
-		goos       string
-		euid       int
-		active     []string
-		launchd    string
-		migrateErr error
-		wantCmds   []string
-		wantOut    string
+		name     string
+		goos     string
+		euid     int
+		active   []string
+		launchd  string
+		wantCmds []string
+		wantOut  string
 	}{
 		{
 			name:     "user service",
@@ -891,23 +882,6 @@ func TestRestartActiveService(t *testing.T) {
 			wantOut:  "Warning: could not restart launchd service " + label,
 		},
 		{
-			name:     "launchd service still under the legacy label",
-			goos:     "darwin",
-			launchd:  "123\t0\t" + legacy + "\n",
-			active:   []string{"launchctl kickstart -k gui/501/" + legacy},
-			wantCmds: []string{"launchctl kickstart -k gui/501/" + legacy},
-			wantOut:  "Restarting launchd service " + legacy,
-		},
-		{
-			name:       "launchd move fails",
-			goos:       "darwin",
-			launchd:    legacy + "\n",
-			migrateErr: errors.New("removing plist: permission denied"),
-			active:     []string{"launchctl kickstart -k system/" + legacy},
-			wantCmds:   []string{"launchctl kickstart -k gui/501/" + legacy, "launchctl kickstart -k system/" + legacy},
-			wantOut:    "Warning: could not move the launchd service to " + label + " (removing plist: permission denied).",
-		},
-		{
 			name:    "launchd not loaded",
 			goos:    "darwin",
 			launchd: "com.example.other\n",
@@ -920,7 +894,6 @@ func TestRestartActiveService(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newUpgradeEnv(t, newerTag)
-			e.migrateErr = tc.migrateErr
 			goos = tc.goos
 			geteuid = func() int { return tc.euid }
 			getuid = func() int { return 501 }
@@ -942,13 +915,6 @@ func TestRestartActiveService(t *testing.T) {
 			}
 			if tc.wantOut == "" && out != "" {
 				t.Errorf("unexpected output:\n%s", out)
-			}
-			wantMigrations := 0
-			if tc.goos == "darwin" {
-				wantMigrations = 1
-			}
-			if e.migrations != wantMigrations {
-				t.Errorf("launchd label moved %d times, want %d", e.migrations, wantMigrations)
 			}
 		})
 	}
