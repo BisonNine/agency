@@ -2,7 +2,7 @@
 
 This page installs ClawEh as a background service and creates the admin account you sign in with.
 
-There are three ways to install. All three end with the same command, `claw install`, which copies the binary, registers the service, creates the admin account and starts ClawEh.
+There are four ways to install. All of them finish with `claw install`, which registers the service, creates the admin account and starts ClawEh.
 
 ## Before you start
 
@@ -38,7 +38,19 @@ To install a specific release, set `CLAW_VERSION` (for example `CLAW_VERSION=0.6
 
    For a system service, run `sudo ./claw install`.
 
-## Option 3: build from source
+## Option 3: Debian or Ubuntu package (`apt`)
+
+On Debian and Ubuntu (`amd64` and `arm64`), install the `agency` package from the APT repository (or from a downloaded `agency_<version>_<arch>.deb` file with `sudo apt install ./agency_<version>_<arch>.deb`):
+
+```bash
+sudo apt update
+sudo apt install agency
+sudo claw install
+```
+
+For a user service instead of a system service, run `claw install` without `sudo`. The package places `/usr/bin/claw`, `/usr/bin/claw-auth` and `/usr/bin/openclaw`, and `claw install` points the service directly at `/usr/bin/claw` so future `sudo apt upgrade` runs update it in place.
+
+## Option 4: build from source
 
 You need Git, Go, Node.js and pnpm.
 
@@ -83,7 +95,7 @@ If there is no account, no terminal and no variables, the installer stops withou
 
 | | User service | System service (`sudo`) |
 |---|---|---|
-| Binary | `~/bin` if it exists, else `~/.local/bin` | `/usr/local/bin`, or `/opt/claw/bin` when the data directory is `/opt/claw` |
+| Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, `/opt/claw/bin` when the data directory is `/opt/claw`, else `/usr/local/bin` |
 | Linux service | `~/.config/systemd/user/claw.service` | `/etc/systemd/system/claw.service` |
 | macOS service | `~/Library/LaunchAgents/com.pivotllm.claweh.plist` | `/Library/LaunchDaemons/com.pivotllm.claweh.plist` |
 

@@ -170,13 +170,21 @@ const newBinary = "#!/bin/sh\necho new claw\n"
 
 func newUpgradeEnv(t *testing.T, tag string) *upgradeEnv {
 	t.Helper()
-	t.Setenv("TMPDIR", t.TempDir())
+	tmpRoot := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(tmpRoot); err == nil {
+		tmpRoot = resolved
+	}
+	t.Setenv("TMPDIR", tmpRoot)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv(global.EnvVarHome, "")
 	t.Setenv("CLAW_HOME", "")
+	binDir := filepath.Join(tmpRoot, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	e := &upgradeEnv{
 		gh:     newFakeGitHub(t, tag, makeTarGz(t, map[string]string{"claw": newBinary, "claw-auth": "new auth"})),
-		binDir: t.TempDir(),
+		binDir: binDir,
 		active: map[string]bool{},
 	}
 	e.exe = filepath.Join(e.binDir, "claw")
@@ -936,4 +944,58 @@ func TestNewUpgradeCommand(t *testing.T) {
 	if readFile(t, e.exe) != newBinary {
 		t.Error("upgrade -y did not install")
 	}
+}
+
+// TestRunUpgrade_PackageManagedLinux: a binary in /usr/bin on Linux is owned by
+// dpkg/apt, so `claw upgrade` refuses to overwrite it and directs the operator
+// to apt, while `claw upgrade --check` still checks GitHub and prints the apt
+// command.
+func TestRunUpgrade_PackageManagedLinux(t *testing.T) {
+	t.Run("direct /usr/bin/claw refuses before hitting GitHub", func(t *testing.T) {
+		e := newUpgradeEnv(t, newerTag)
+		executable = func() (string, error) { return "/usr/bin/claw", nil }
+
+		var err error
+		captureStdout(t, func() { err = runUpgrade(false, false, "", true) })
+		if err == nil || !strings.Contains(err.Error(), "sudo apt update && sudo apt install --only-upgrade "+global.DebPackageName) {
+			t.Fatalf("err = %v, want apt upgrade hint", err)
+		}
+		if got := e.gh.requested(); len(got) != 0 {
+			t.Errorf("expected no GitHub requests, got %v", got)
+		}
+	})
+
+	t.Run("--check prints apt hint", func(t *testing.T) {
+		_ = newUpgradeEnv(t, newerTag)
+		executable = func() (string, error) { return "/usr/bin/claw", nil }
+
+		var err error
+		out := captureStdout(t, func() { err = runUpgrade(true, false, "", false) })
+		if err != nil {
+			t.Fatalf("upgrade --check: %v", err)
+		}
+		want := "sudo apt update && sudo apt install --only-upgrade " + global.DebPackageName
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	})
+
+	t.Run("build binary targeting detected /usr/bin/claw refuses", func(t *testing.T) {
+		e := newUpgradeEnv(t, newerTag)
+		buildExe := filepath.Join(t.TempDir(), "build", "claw")
+		if err := os.MkdirAll(filepath.Dir(buildExe), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(buildExe, []byte("build"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		executable = func() (string, error) { return buildExe, nil }
+		e.install = &install.ExistingInstall{BinaryPath: "/usr/bin/claw"}
+
+		var err error
+		captureStdout(t, func() { err = runUpgrade(false, false, "", true) })
+		if err == nil || !strings.Contains(err.Error(), "sudo apt update && sudo apt install --only-upgrade "+global.DebPackageName) {
+			t.Fatalf("err = %v, want apt upgrade hint", err)
+		}
+	})
 }

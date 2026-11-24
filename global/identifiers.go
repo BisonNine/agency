@@ -51,6 +51,9 @@ const (
 	// from (owner PivotLLM).
 	ReleaseRepoName = "ClawEh"
 
+	// DebPackageName is the Debian/Ubuntu binary package name (`apt install agency`).
+	DebPackageName = "agency"
+
 	// MaestroHostModel is the model label Maestro records for a task the host
 	// ran without naming a model; Maestro stores it and hands it back as a
 	// task's llm_model_id.

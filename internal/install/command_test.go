@@ -234,9 +234,43 @@ func TestLinkOpenClawAlias(t *testing.T) {
 		t.Fatalf("openclaw -> %q, want %q (relative, so moving the dir keeps it valid)", target, "claw")
 	}
 
-	// Re-running install must replace an existing link rather than failing.
+	// Re-running install must keep or replace an existing link rather than failing.
 	if err := linkOpenClawAlias(dir, "claw"); err != nil {
-		t.Fatalf("second linkOpenClawAlias() error = %v, want it to replace the existing link", err)
+		t.Fatalf("second linkOpenClawAlias() error = %v", err)
+	}
+
+	// A read-only directory (such as /usr/bin for a non-root user after `apt install`)
+	// whose openclaw link already points at claw must succeed without unlinking.
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if cerr := os.Chmod(dir, 0o755); cerr != nil {
+			t.Log(cerr)
+		}
+	})
+	if err := linkOpenClawAlias(dir, "claw"); err != nil {
+		t.Fatalf("linkOpenClawAlias() on read-only dir with matching link = %v, want nil", err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// A link pointing elsewhere in a writable directory is replaced.
+	if err := linkOpenClawAlias(dir, "claw-other"); err != nil {
+		t.Fatalf("linkOpenClawAlias() replacing target error = %v", err)
+	}
+	if got, err := os.Readlink(link); err != nil || got != "claw-other" {
+		t.Fatalf("openclaw -> %q, %v, want claw-other", got, err)
+	}
+}
+
+func TestIsPackageManagedBinDir(t *testing.T) {
+	if !isPackageManagedBinDir("linux", "/usr/bin") || !isPackageManagedBinDir("linux", "/bin") {
+		t.Error("expected /usr/bin and /bin on linux to be package-managed")
+	}
+	if isPackageManagedBinDir("darwin", "/usr/bin") || isPackageManagedBinDir("linux", "/usr/local/bin") {
+		t.Error("unexpected package-managed classification")
 	}
 }
 

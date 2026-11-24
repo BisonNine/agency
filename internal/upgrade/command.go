@@ -110,7 +110,43 @@ func NewUpgradeCommand() *cobra.Command {
 	return cmd
 }
 
+func isPackageManagedBinary(osName, binPath string) bool {
+	if osName != "linux" || binPath == "" {
+		return false
+	}
+	dir := filepath.Dir(filepath.Clean(binPath))
+	return dir == "/usr/bin" || dir == "/bin"
+}
+
+func packageManagedUpgradeErr(binPath string) error {
+	return fmt.Errorf(
+		"%s at %s was installed by the system package manager.\n"+
+			"Upgrade it with apt instead:\n"+
+			"  sudo apt update && sudo apt install --only-upgrade %s",
+		app.ShortName(), binPath, global.DebPackageName)
+}
+
+func runningPackageManagedBinary() string {
+	p, err := executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, rerr := filepath.EvalSymlinks(p); rerr == nil {
+		p = resolved
+	}
+	if isPackageManagedBinary(goos, p) {
+		return p
+	}
+	return ""
+}
+
 func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error {
+	if !checkOnly {
+		if pkgBin := runningPackageManagedBinary(); pkgBin != "" {
+			return packageManagedUpgradeErr(pkgBin)
+		}
+	}
+
 	currentVer := app.SemVer()
 	fmt.Printf("Current %s version: v%s\n", app.Name(), currentVer)
 	fmt.Println("Checking for releases on GitHub...")
@@ -126,7 +162,11 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 	if checkOnly {
 		if cmp < 0 {
 			fmt.Printf("A newer version of %s is available: v%s -> v%s\n", app.ShortName(), currentVer, latestVer)
-			fmt.Printf("Run `%s upgrade` to install it.\n", app.BinaryName())
+			if runningPackageManagedBinary() != "" {
+				fmt.Printf("Run `sudo apt update && sudo apt install --only-upgrade %s` to install it.\n", global.DebPackageName)
+			} else {
+				fmt.Printf("Run `%s upgrade` to install it.\n", app.BinaryName())
+			}
 		} else if cmp > 0 {
 			fmt.Printf("%s is running a newer version than latest release (v%s vs release v%s).\n", app.ShortName(), currentVer, latestVer)
 		} else {
@@ -178,6 +218,9 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 	}
 
 	// Verify write permission on target executable directory
+	if isPackageManagedBinary(goos, exePath) {
+		return packageManagedUpgradeErr(exePath)
+	}
 	binDir := filepath.Dir(exePath)
 	if wErr := checkDirWritable(binDir); wErr != nil {
 		return fmt.Errorf("permission denied writing to %s.\nPlease run with sudo: sudo %s upgrade", binDir, app.BinaryName())
@@ -554,6 +597,19 @@ func isBuildOrTempDir(path string) bool {
 	parts := strings.SplitSeq(clean, string(filepath.Separator))
 	for p := range parts {
 		if p == "build" || p == "tmp" || p == "temp" || strings.HasPrefix(p, "claw-upgrade-") {
+			return true
+		}
+	}
+	return underTempDir(clean)
+}
+
+func underTempDir(p string) bool {
+	roots := []string{filepath.Clean(os.TempDir())}
+	if resolved, err := filepath.EvalSymlinks(roots[0]); err == nil {
+		roots = append(roots, resolved)
+	}
+	for _, root := range roots {
+		if strings.HasPrefix(p, root+string(filepath.Separator)) {
 			return true
 		}
 	}

@@ -251,6 +251,14 @@ func (h *host) resolveBinDir(tu *TargetUser, customDir string, existing *Existin
 	return binDir, nil
 }
 
+// isPackageManagedBinDir reports whether binDir is owned by the OS package
+// manager on Linux (/usr/bin, /bin), where binaries and symlinks belong to
+// root:root under dpkg and must not be copied over or chowned to the service
+// user.
+func isPackageManagedBinDir(goos, binDir string) bool {
+	return goos == "linux" && (binDir == "/usr/bin" || binDir == "/bin")
+}
+
 // ensureOptClawBinDir creates /opt/claw/bin, if missing, with the bin area's
 // default folder mode (the service sets the configured one at start).
 func (h *host) ensureOptClawBinDir() (string, error) {
@@ -314,9 +322,13 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	if err != nil {
 		return err
 	}
+	if customBinDir == "" && (existing == nil || (existing.BinaryPath == "" && existing.ClawHome == "")) && isPackageManagedBinDir(h.goos, filepath.Dir(exePath)) {
+		binDir = filepath.Dir(exePath)
+	}
 	if binDir == optClawBinDir {
 		fixOwnership(binDir, tu)
 	}
+	pkgManagedBin := isPackageManagedBinDir(h.goos, binDir)
 	targetBin := TargetBinaryPath(binDir)
 
 	// Determine service file path for summary
@@ -378,7 +390,9 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	if err := copyBinary(exePath, targetBin); err != nil {
 		return fmt.Errorf("copying binary to %s: %w", targetBin, err)
 	}
-	fixOwnership(targetBin, tu)
+	if !pkgManagedBin {
+		fixOwnership(targetBin, tu)
+	}
 	fmt.Printf("\nInstalled binary: %s\n", targetBin)
 
 	// 2b. Symlink openclaw -> claw (for Rabbit R1 ACP connection)
@@ -386,7 +400,9 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		fmt.Printf("Warning: could not create the openclaw alias (%v).\n"+
 			"  The Rabbit R1 spawns `openclaw acp`; without this link it cannot connect.\n", err)
 	} else {
-		fixOwnership(filepath.Join(binDir, openClawAlias), tu)
+		if !pkgManagedBin {
+			fixOwnership(filepath.Join(binDir, openClawAlias), tu)
+		}
 		fmt.Printf("Installed alias:  %s -> %s (for the Rabbit R1's `openclaw acp`)\n",
 			filepath.Join(binDir, openClawAlias), global.InstalledBinaryName)
 	}
@@ -735,8 +751,14 @@ func printInstalledURLs(clawHome string) {
 
 // linkOpenClawAlias points <binDir>/openclaw at the installed binary. The link is
 // relative so it survives the directory being moved, and is replaced if present.
+// When the desired relative link is already in place (for example in a
+// read-only /usr/bin managed by dpkg), it is left untouched so a non-root user
+// install succeeds without rewriting /usr/bin.
 func linkOpenClawAlias(binDir, target string) error {
 	link := filepath.Join(binDir, openClawAlias)
+	if cur, err := os.Readlink(link); err == nil && cur == target {
+		return nil
+	}
 	if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
 		return err
 	}

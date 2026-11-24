@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        if systemctl is-active --quiet claw.service; then
+            systemctl try-restart claw.service >/dev/null 2>&1 || true
+        elif [ -z "${2:-}" ] && [ ! -f /etc/systemd/system/claw.service ]; then
+            echo "Agency installed (/usr/bin/claw, /usr/bin/claw-auth)."
+            echo "Next: run 'sudo claw install' (system service) or 'claw install' (user service)"
+            echo "to create the WebUI admin account and start the service."
+        fi
+    elif [ -z "${2:-}" ] && [ ! -f /etc/systemd/system/claw.service ]; then
+        echo "Agency installed (/usr/bin/claw, /usr/bin/claw-auth)."
+        echo "Next: run 'sudo claw install' (system service) or 'claw install' (user service)"
+        echo "to create the WebUI admin account and start the service."
+    fi
+fi
+
+exit 0
