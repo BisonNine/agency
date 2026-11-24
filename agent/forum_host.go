@@ -23,7 +23,6 @@ import (
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/forum"
 	"go.bison9.com/agency/forum/forumfs"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/routing"
 	"go.bison9.com/agency/tools"
@@ -168,11 +167,7 @@ func (h *ForumHost) Ask(ctx context.Context, agentID, message string, wait time.
 	askCtx := toolsagents.WithSpawnDepth(ctx, cfg.Agents.Defaults.GetMaxSubagentDepth()-1)
 	// The participant's turn is billed to the code the forum was launched
 	// under; a run launched before billing codes to the default.
-	billing := info.Origin.Billing
-	if billing == "" {
-		billing = global.DefaultBilling
-	}
-	askCtx = tools.WithBilling(askCtx, billing)
+	askCtx = tools.WithBilling(askCtx, tools.CheckedBilling(info.Origin.Billing, "forum "+info.ForumID))
 	// The participant's turn ends when the forum stops waiting for it (the
 	// call timeout, the run deadline, a cancel), so its model call is not
 	// left running for a reply nobody reads.

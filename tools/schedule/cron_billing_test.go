@@ -78,3 +78,59 @@ func TestCronTool_CallerBillingWithoutResolver(t *testing.T) {
 		t.Errorf("inherited = %q", got)
 	}
 }
+
+// A job whose stored code is not one (a hand-edited file) runs under the
+// default instead of failing its turn.
+func TestCronTool_InvalidStoredBilling(t *testing.T) {
+	tool := newTestCronTool(t)
+	tool.SetBilling(func(context.Context) string { return "acme" })
+	if res := tool.Execute(agentCtx("alice"), map[string]any{"action": "add", "message": "m", "at_seconds": float64(600)}); res.IsError {
+		t.Fatal(res.ForLLM)
+	}
+	job := tool.cronService.ListJobs(true)[0]
+	job.Billing = "not a code"
+	if got := firedBilling(t, tool, &job); got != "default" {
+		t.Errorf("invalid stored code fired with %q, want default", got)
+	}
+}
+
+// A watch probe runs the agent's tool under the job's billing code.
+func TestWatchProbe_BilledToTheJob(t *testing.T) {
+	f := newWatchFixture(t)
+	jobs := f.tool.cronService.ListJobs(true)
+	job := jobs[0]
+	job.Billing = "acme"
+	if err := f.tool.cronService.UpdateJob(&job); err != nil {
+		t.Fatal(err)
+	}
+	f.fire()
+	if f.probe.sawCtx == nil {
+		t.Fatal("probe not called")
+	}
+	if code, ok := tools.Billing(f.probe.sawCtx); !ok || code != "acme" {
+		t.Errorf("probe billed %q (%v), want acme", code, ok)
+	}
+}
+
+// A listener's calls run under the job's billing code.
+func TestListen_BilledToTheJob(t *testing.T) {
+	tool := &scriptedTool{replies: []scriptedReply{{text: `{"event":{"id":"e1"}}`}}}
+	ct, msgBus := newListenEnv(t, tool)
+	ct.SetBilling(func(context.Context) string { return "acme" })
+	addListenJob(t, ct, nil)
+	ct.StartListeners(context.Background())
+	defer ct.StopListeners()
+	msg, ok := nextInbound(t, msgBus, 3*time.Second)
+	if !ok {
+		t.Fatal("event not delivered")
+	}
+	if msg.Metadata[bus.MetaBilling] != "acme" {
+		t.Errorf("event carries %q, want acme", msg.Metadata[bus.MetaBilling])
+	}
+	tool.mu.Lock()
+	first := tool.billings[0]
+	tool.mu.Unlock()
+	if first != "acme" {
+		t.Errorf("listener call billed %q, want acme", first)
+	}
+}

@@ -164,19 +164,14 @@ func (al *AgentLoop) setBilling(ctx context.Context, agent *AgentInstance, sessi
 }
 
 // withInboundBilling puts the billing code an inbound message carries
-// (bus.MetaBilling) on ctx as the turn's inherited code. A code
-// CheckProject refuses is ignored with a warning.
+// (bus.MetaBilling) on ctx as the turn's inherited code, checked
+// (tools.CheckedBilling: one that is not a code is the default).
 func withInboundBilling(ctx context.Context, msg bus.InboundMessage) context.Context {
 	code := inboundMetadata(msg, bus.MetaBilling)
 	if code == "" {
 		return ctx
 	}
-	if err := accounting.CheckProject(code); err != nil {
-		logger.WarnCF("agent", "Ignoring invalid billing code on inbound message",
-			map[string]any{"channel": msg.Channel, "chat_id": msg.ChatID})
-		return ctx
-	}
-	return tools.WithBilling(ctx, code)
+	return tools.WithBilling(ctx, tools.CheckedBilling(code, "message on "+msg.Channel))
 }
 
 // inheritedBilling is the code of the turn on ctx when it was inherited,

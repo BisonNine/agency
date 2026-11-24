@@ -14,6 +14,7 @@ import (
 	"go.bison9.com/agency/cron"
 	"go.bison9.com/agency/cronmsg"
 	"go.bison9.com/agency/logger"
+	"go.bison9.com/agency/tools"
 )
 
 // A listen job turns a long-poll tool into a persistent callback. Where a
@@ -195,7 +196,7 @@ func (t *CronTool) runListener(ctx context.Context, job *cron.CronJob) {
 			return
 		}
 		started := time.Now()
-		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		callCtx, cancel := context.WithTimeout(tools.WithBilling(ctx, jobBilling(job)), timeout)
 		result, err := t.probeWithContext(callCtx, job.AgentID, w)
 		timedOut := errors.Is(callCtx.Err(), context.DeadlineExceeded)
 		cancel()

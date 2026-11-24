@@ -234,7 +234,7 @@ func nonNilArgs(args map[string]any) map[string]any {
 // classification that cannot be recorded fails the item before its action
 // runs, so a later run never repeats an action it did not know had run.
 func (s *Service) handleItem(ctx context.Context, scope Scope, def *Definition, in instructions, st *stateDB, item listedItem, reuse *processedRow, mode itemMode) decision {
-	ctx = withClassifier(ctx, NormalizeID(def.ID))
+	ctx = withDefinition(ctx, def)
 	dry := mode == modeDry || (mode == modeRerun && def.DryRun)
 	d := s.decide(ctx, scope, def, in, item, reuse)
 	d.Error, d.cause = s.host.redact(d.Error), s.redactCause(d.cause)

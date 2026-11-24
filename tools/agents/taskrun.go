@@ -12,7 +12,6 @@ import (
 	"go.bison9.com/agent/hook"
 	"go.bison9.com/agent/toolkit"
 
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
@@ -111,11 +110,8 @@ func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, c
 // record, so a relaunch after a restart keeps it.
 func (sm *SubagentManager) withTaskBilling(ctx context.Context, tr *taskRun) context.Context {
 	tr.mu.Lock()
-	code := tr.rec.Billing
+	code := tools.CheckedBilling(tr.rec.Billing, "task "+tr.rec.UUID)
 	tr.mu.Unlock()
-	if code == "" {
-		code = global.DefaultBilling
-	}
 	ctx = tools.WithBilling(ctx, code)
 	tools.InheritedBillingOf(ctx).OnSet(func(code string) {
 		tr.mu.Lock()

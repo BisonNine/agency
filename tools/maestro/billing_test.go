@@ -15,11 +15,15 @@ import (
 	"go.bison9.com/agency/tools"
 )
 
-// billingStubRunner records whether a dispatch ran with an inherited code.
-type billingStubRunner struct{ inherited bool }
+// billingStubRunner records whether a dispatch ran with an inherited code,
+// and which.
+type billingStubRunner struct {
+	inherited bool
+	code      string
+}
 
 func (r *billingStubRunner) RunSync(ctx context.Context, _, _ string) (*global.SyncResult, error) {
-	_, r.inherited = tools.Billing(ctx)
+	r.code, r.inherited = tools.Billing(ctx)
 	return &global.SyncResult{Content: "ok"}, nil
 }
 
@@ -64,5 +68,18 @@ func TestDispatcher_NoBilling(t *testing.T) {
 	}
 	if r.inherited {
 		t.Error("a request without a code ran with one")
+	}
+}
+
+// A task code that is not one (a hand-edited task set) runs under the
+// default instead of failing every attempt.
+func TestDispatcher_InvalidBilling(t *testing.T) {
+	r := &billingStubRunner{}
+	d := &dispatcher{run: r}
+	if _, err := d.Dispatch(context.Background(), &mllm.DispatchRequest{Prompt: "x", Billing: "not a code"}); err != nil {
+		t.Fatal(err)
+	}
+	if r.code != global.DefaultBilling {
+		t.Errorf("worker billed %q, want the default", r.code)
 	}
 }

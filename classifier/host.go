@@ -72,6 +72,33 @@ func withClassifier(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, classifierKey{}, id)
 }
 
+// billingKey is the context key of the billing code of the classifier a
+// call is made for.
+type billingKey struct{}
+
+// withDefinition marks ctx as a call made for def: its id and its billing
+// code.
+func withDefinition(ctx context.Context, def *Definition) context.Context {
+	return WithBilling(withClassifier(ctx, NormalizeID(def.ID)), def.Billing)
+}
+
+// WithBilling returns ctx marking a call made for a classifier billed to
+// code. The service sets it on every tool call it makes for a classifier;
+// a host's tests use it to make one.
+func WithBilling(ctx context.Context, code string) context.Context {
+	return context.WithValue(ctx, billingKey{}, code)
+}
+
+// Billing returns the billing code of the classifier a tool call is made
+// for (Definition.Billing), "" when ctx carries none or the classifier has
+// none. The host bills the tool's own model work to it.
+func Billing(ctx context.Context) string {
+	if code, ok := ctx.Value(billingKey{}).(string); ok {
+		return code
+	}
+	return ""
+}
+
 // ClassifierID returns the id of the classifier a tool or model call is
 // made for, "" when ctx carries none. The host uses it to name the
 // classifier in its log lines and in the folder of an isolated CLI call.

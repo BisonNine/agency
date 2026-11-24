@@ -330,7 +330,7 @@ type sourcePage struct {
 // list, or when an element's source.id resolves to nothing (naming the
 // element's index).
 func callSource(ctx context.Context, def *Definition, agentID string, tools ToolRunner, args map[string]any) (sourcePage, error) {
-	ctx = withClassifier(ctx, NormalizeID(def.ID))
+	ctx = withDefinition(ctx, def)
 	result, err := tools.Call(ctx, agentID, def.Source.Tool, args)
 	if err != nil {
 		return sourcePage{}, &toolError{role: roleSource, tool: def.Source.Tool, err: err}

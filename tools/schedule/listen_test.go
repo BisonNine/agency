@@ -26,6 +26,8 @@ type scriptedTool struct {
 	mu      sync.Mutex
 	replies []scriptedReply
 	calls   int
+	// billings is the inherited billing code of each call ("" for none).
+	billings []string
 }
 
 type scriptedReply struct {
@@ -40,6 +42,8 @@ func (s *scriptedTool) Parameters() map[string]any { return map[string]any{"type
 func (s *scriptedTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
 	s.mu.Lock()
 	s.calls++
+	code, _ := tools.Billing(ctx)
+	s.billings = append(s.billings, code)
 	var r scriptedReply
 	if len(s.replies) > 0 {
 		r, s.replies = s.replies[0], s.replies[1:]

@@ -51,6 +51,7 @@ func (f *fakeTools) setSchema(tool string, schema map[string]any) {
 type toolCall struct {
 	agent, tool string
 	classifier  string // ClassifierID of the call's context
+	billing     string // Billing of the call's context
 	args        map[string]any
 }
 
@@ -66,7 +67,7 @@ func (f *fakeTools) Has(agentID, tool string) error {
 func (f *fakeTools) Call(ctx context.Context, agentID, tool string, args map[string]any) (string, error) {
 	f.mu.Lock()
 	h, ok := f.handlers[tool]
-	f.calls = append(f.calls, toolCall{agent: agentID, tool: tool, classifier: ClassifierID(ctx), args: args})
+	f.calls = append(f.calls, toolCall{agent: agentID, tool: tool, classifier: ClassifierID(ctx), billing: Billing(ctx), args: args})
 	f.mu.Unlock()
 	if !ok {
 		return "", ToolUnavailable(fmt.Sprintf("tool %s is not available to agent %s", tool, agentID))

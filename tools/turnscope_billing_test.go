@@ -59,3 +59,15 @@ func TestToolDepsBillingOf(t *testing.T) {
 		t.Errorf("resolver = %q", got)
 	}
 }
+
+func TestCheckedBilling(t *testing.T) {
+	for _, tc := range []struct{ code, want string }{
+		{"acme", "acme"},
+		{"", global.DefaultBilling},
+		{"not a code", global.DefaultBilling},
+	} {
+		if got := CheckedBilling(tc.code, "test"); got != tc.want {
+			t.Errorf("CheckedBilling(%q) = %q, want %q", tc.code, got, tc.want)
+		}
+	}
+}

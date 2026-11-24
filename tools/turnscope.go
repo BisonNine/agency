@@ -7,6 +7,11 @@ import (
 	"context"
 	"slices"
 	"sync"
+
+	"go.bison9.com/agent/accounting"
+
+	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/logger"
 )
 
 // Turn-scope values a turn hands to everything it starts: the tools it calls,
@@ -119,4 +124,22 @@ func Billing(ctx context.Context) (code string, ok bool) {
 		return "", false
 	}
 	return b.Code(), true
+}
+
+// CheckedBilling is a billing code read back from where it was kept (a task
+// record, a job, a classifier, a forum run, a message), ready to bill a call
+// to: code when accounting.CheckProject accepts it; global.DefaultBilling
+// for an empty one (written before billing codes) and, with one warning
+// naming source, for one it refuses (a hand-edited file), so a bad code
+// never fails a model call or reaches the accounting log.
+func CheckedBilling(code, source string) string {
+	if code == "" {
+		return global.DefaultBilling
+	}
+	if err := accounting.CheckProject(code); err != nil {
+		logger.WarnCF("billing", "Invalid billing code ignored; the default is used",
+			map[string]any{"source": source, "code": code})
+		return global.DefaultBilling
+	}
+	return code
 }

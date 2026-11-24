@@ -409,12 +409,13 @@ func (s *Service) Create(ctx context.Context, scope Scope, raw []byte) (string, 
 	if err != nil {
 		return "", err
 	}
+	// Agency writes the code, before the live source call, which carries it.
+	def.Billing = scope.Billing
 	if err = s.check(ctx, scope, def, true); err != nil {
 		return "", err
 	}
 	now := s.host.clock().Now().UTC().Truncate(time.Second)
 	def.Owner, def.CreatedAt, def.UpdatedAt = NormalizeID(scope.AgentID), now, now
-	def.Billing = scope.Billing
 	data, err := marshalDefinition(def)
 	if err != nil {
 		return "", err
@@ -466,9 +467,6 @@ func (s *Service) Update(ctx context.Context, scope Scope, id string, patch []by
 	if NormalizeID(def.ID) != NormalizeID(id) {
 		return &ValidationError{Issues: []string{"id cannot be changed; create a new classifier instead."}}
 	}
-	if err = s.check(ctx, scope, def, true); err != nil {
-		return err
-	}
 	var old struct {
 		CreatedAt time.Time `json:"created_at"`
 		Billing   string    `json:"billing"`
@@ -477,8 +475,12 @@ func (s *Service) Update(ctx context.Context, scope Scope, id string, patch []by
 		// Unreadable: the update does not invent a creation time or a code.
 		old.CreatedAt, old.Billing = time.Time{}, ""
 	}
-	def.Owner, def.CreatedAt, def.UpdatedAt = NormalizeID(scope.AgentID), old.CreatedAt, s.host.clock().Now().UTC().Truncate(time.Second)
+	// The code is kept, before the live source call, which carries it.
 	def.Billing = old.Billing
+	if err = s.check(ctx, scope, def, true); err != nil {
+		return err
+	}
+	def.Owner, def.CreatedAt, def.UpdatedAt = NormalizeID(scope.AgentID), old.CreatedAt, s.host.clock().Now().UTC().Truncate(time.Second)
 	data, err := marshalDefinition(def)
 	if err != nil {
 		return err
@@ -791,7 +793,7 @@ func answered(d decision) bool { return d.Category != "" || d.Outcome == Outcome
 func (s *Service) testAgain(ctx context.Context, scope Scope, def *Definition, in instructions, item listedItem, first decision) decision {
 	d := decision{data: first.data}
 	d.ItemID, d.MissingFields, d.ShortenedFields = first.ItemID, first.MissingFields, first.ShortenedFields
-	d = s.classify(withClassifier(ctx, NormalizeID(def.ID)), scope, def, in, d)
+	d = s.classify(withDefinition(ctx, def), scope, def, in, d)
 	d.Error, d.cause = s.host.redact(d.Error), s.redactCause(d.cause)
 	d.At = s.host.clock().Now().UTC()
 	if d.Category != "" {

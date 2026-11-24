@@ -56,3 +56,24 @@ func TestClassifierBillingNotInSchema(t *testing.T) {
 		t.Error("the definition schema offers billing")
 	}
 }
+
+// A classifier's tool calls (source, fetch, action) carry its billing code,
+// so a tool that starts model work bills it to the classifier's code; the
+// live source call of a create carries the code the classifier gets.
+func TestClassifierToolCallsCarryBilling(t *testing.T) {
+	e := newEnv(t)
+	e.scope.Billing = "acme"
+	e.create(definition())
+	e.run("inbox-priority")
+	e.tools.mu.Lock()
+	calls := append([]toolCall(nil), e.tools.calls...)
+	e.tools.mu.Unlock()
+	if len(calls) == 0 {
+		t.Fatal("no tool call")
+	}
+	for _, c := range calls {
+		if c.billing != "acme" {
+			t.Errorf("%s called with billing %q, want acme", c.tool, c.billing)
+		}
+	}
+}

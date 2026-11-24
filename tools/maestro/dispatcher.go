@@ -77,11 +77,16 @@ func (d *dispatcher) Dispatch(ctx context.Context, req *mllm.DispatchRequest) (*
 	if d == nil || d.run == nil {
 		return nil, mllm.Permanent(fmt.Errorf("%w: host dispatcher not available", global.ErrSpawnUnavailable))
 	}
-	// The worker is billed to the task's code, as a code of its own: a
-	// change it makes (its billing tool) stays with it. Without one it keeps
-	// the code on ctx, copied.
-	code := req.Billing
-	if code == "" {
+	// The worker is billed to the task's code (checked: Maestro keeps it in
+	// the task set), on a value of its own, so a change it makes with its
+	// billing tool never reaches the dispatching work. Maestro does not
+	// learn of that change: its next dispatch of the task (a retry, QA, a
+	// revision) uses the task's stored code again. Without a code the
+	// worker keeps the one on ctx, copied.
+	var code string
+	if req.Billing != "" {
+		code = tools.CheckedBilling(req.Billing, "Maestro task")
+	} else {
 		code, _ = tools.Billing(ctx)
 	}
 	ctx = tools.WithBilling(ctx, code)

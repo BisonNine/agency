@@ -130,7 +130,7 @@ func TestSpawn_TaskChangesItsOwnCode(t *testing.T) {
 // A relaunched task runs under the code its record holds; a record written
 // before billing codes runs under the default.
 func TestSupervise_RelaunchKeepsTheCode(t *testing.T) {
-	for _, tc := range []struct{ stored, want string }{{"acme-2", "acme-2"}, {"", global.DefaultBilling}} {
+	for _, tc := range []struct{ stored, want string }{{"acme-2", "acme-2"}, {"", global.DefaultBilling}, {"not a code", global.DefaultBilling}} {
 		b := &billingRun{}
 		_, mgr := billingManager(t, b, nil)
 		dir := mgr.tasksDir()

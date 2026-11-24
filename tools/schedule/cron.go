@@ -71,6 +71,13 @@ func (t *CronTool) SetBilling(fn func(ctx context.Context) string) {
 	t.billing = fn
 }
 
+// jobBilling is the billing code job's runs and probes are billed to: its
+// own, checked; a job created before billing codes, or one whose code is not
+// one, runs under the default.
+func jobBilling(job *cron.CronJob) string {
+	return tools.CheckedBilling(job.Billing, "scheduled job "+job.ID)
+}
+
 // callerBilling is the billing code of the work calling on ctx.
 func (t *CronTool) callerBilling(ctx context.Context) string {
 	if t.billing != nil {
@@ -571,12 +578,8 @@ func (t *CronTool) deliver(ctx context.Context, job *cron.CronJob, content strin
 		}
 	}
 
-	// Each run is billed to the job's code; a job created before billing
-	// codes to the default.
-	billing := job.Billing
-	if billing == "" {
-		billing = global.DefaultBilling
-	}
+	// Each run is billed to the job's code.
+	billing := jobBilling(job)
 	msg := bus.InboundMessage{
 		Channel:  channel,
 		SenderID: "cron",

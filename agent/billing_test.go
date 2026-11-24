@@ -23,6 +23,7 @@ import (
 	"go.bison9.com/agent/toolkit"
 
 	"go.bison9.com/agency/bus"
+	"go.bison9.com/agency/classifier"
 	"go.bison9.com/agency/forum"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/logger"
@@ -363,8 +364,8 @@ func TestWithInboundBilling(t *testing.T) {
 		t.Errorf("carried code = %q (%v), want acme", code, ok)
 	}
 	msg.Metadata[bus.MetaBilling] = "a b"
-	if _, ok := tools.Billing(withInboundBilling(ctx, msg)); ok {
-		t.Error("an invalid code was applied")
+	if code, _ := tools.Billing(withInboundBilling(ctx, msg)); code != global.DefaultBilling {
+		t.Errorf("an invalid carried code gave %q, want the default", code)
 	}
 }
 
@@ -477,13 +478,14 @@ func TestForumHost_AskBilling(t *testing.T) {
 	t.Cleanup(logger.RedirectForTest(&safeBufLoop{}))
 	rec := &billingRecorder{}
 	r := newForumRig(t, forumConfig(t, true, false), rec)
-	for _, tc := range []struct{ origin, want string }{{"acme", "acme"}, {"", global.DefaultBilling}} {
+	for _, tc := range []struct{ origin, want string }{{"acme", "acme"}, {"", global.DefaultBilling}, {"not a code", global.DefaultBilling}} {
 		ctx := forum.WithAskInfo(context.Background(), forum.AskInfo{ForumID: "f1", Origin: forum.Origin{AgentID: "alice", Billing: tc.origin}})
+		before := len(rec.seen())
 		if _, err := r.host.Ask(ctx, "bob", "hello", 10*time.Second); err != nil {
 			t.Fatalf("Ask: %v", err)
 		}
 		got := rec.seen()
-		if len(got) == 0 || got[len(got)-1] != tc.want {
+		if len(got) != before+1 || got[len(got)-1] != tc.want {
 			t.Errorf("origin billed %q: participant's call billed %v, want %q", tc.origin, got, tc.want)
 		}
 	}
@@ -560,14 +562,14 @@ func TestClassifierHost_CompleteBilling(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(srv.handle))
 	defer ts.Close()
 	_, host, _ := newClassifierHostLoop(t, classifierHostConfig(t, ts.URL))
-	for _, code := range []string{"acme", ""} {
+	for _, code := range []string{"acme", "", "not a code"} {
 		if _, _, err := host.Complete(context.Background(), "alice", code, "Sort it.", "<item>hi</item>"); err != nil {
 			t.Fatalf("Complete: %v", err)
 		}
 	}
 	got := recs.byKind("text")
-	if len(got) != 2 || got[0]["project"] != "acme" || got[1]["project"] != global.DefaultBilling {
-		t.Errorf("records %v, want acme then default", got)
+	if len(got) != 3 || got[0]["project"] != "acme" || got[1]["project"] != global.DefaultBilling || got[2]["project"] != global.DefaultBilling {
+		t.Errorf("records %v, want acme, then default twice", got)
 	}
 }
 
@@ -589,5 +591,32 @@ func TestWorkToolCount_IgnoresBilling(t *testing.T) {
 	reg.Register(&mockEchoTool{})
 	if n := workToolCount(reg); n != 1 {
 		t.Errorf("billing and one tool count %d", n)
+	}
+}
+
+// billingTool records the inherited billing code of its call.
+type billingTool struct{ code *string }
+
+func (b billingTool) Name() string               { return "inbox_list" }
+func (b billingTool) Description() string        { return "records its billing code" }
+func (b billingTool) Parameters() map[string]any { return map[string]any{"type": "object"} }
+func (b billingTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Result {
+	*b.code, _ = tools.Billing(ctx)
+	return toolkit.NewResult("[]")
+}
+
+// A classifier's tool call runs under the classifier's code (checked), so a
+// tool that starts model work bills it there.
+func TestClassifierHost_CallBilling(t *testing.T) {
+	al, host, _ := newClassifierHostLoop(t, classifierHostConfig(t, "http://127.0.0.1:0"))
+	var seen string
+	registerOn(t, al, "alice", billingTool{code: &seen})
+	for _, tc := range []struct{ code, want string }{{"acme", "acme"}, {"", global.DefaultBilling}, {"not a code", global.DefaultBilling}} {
+		if _, err := host.Call(classifier.WithBilling(context.Background(), tc.code), "alice", "inbox_list", map[string]any{}); err != nil {
+			t.Fatal(err)
+		}
+		if seen != tc.want {
+			t.Errorf("classifier billed %q: tool call billed %q, want %q", tc.code, seen, tc.want)
+		}
 	}
 }

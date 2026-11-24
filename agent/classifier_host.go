@@ -28,7 +28,6 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/constants"
 	"go.bison9.com/agency/fileutil"
-	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/audit"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/providers"
@@ -235,7 +234,10 @@ func (h *ClassifierHost) Call(ctx context.Context, agentID, tool string, args ma
 	if err != nil {
 		return "", err
 	}
-	callCtx, cancel := al.clk().WithTimeout(ctx, toolschedule.WatchProbeTimeout)
+	// The tool runs under the classifier's billing code, so model work it
+	// starts (a Maestro dispatch, a sub-agent) is billed there.
+	billed := tools.WithBilling(ctx, tools.CheckedBilling(classifier.Billing(ctx), "classifier "+classifier.ClassifierID(ctx)))
+	callCtx, cancel := al.clk().WithTimeout(billed, toolschedule.WatchProbeTimeout)
 	defer cancel()
 	out, err := reg.ExecuteUnattended(callCtx, tool, args)
 	if ctx.Err() == nil && errors.Is(callCtx.Err(), context.DeadlineExceeded) {
@@ -318,11 +320,8 @@ func (h *ClassifierHost) Complete(ctx context.Context, agentID, billing, system,
 	// The chain records a failure against the model's health, and an answer
 	// clears it, as for any other call.
 	var last finishRecorder
-	if billing == "" {
-		billing = global.DefaultBilling
-	}
 	id := a.Identity()
-	id.Project = billing
+	id.Project = tools.CheckedBilling(billing, "classifier "+classifier.ClassifierID(ctx))
 	_, chatErr := chain.Chat(ctx, id, models.Request{Messages: []spawnllm.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
