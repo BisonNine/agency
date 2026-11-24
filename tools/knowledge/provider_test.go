@@ -176,3 +176,14 @@ func TestTools_OwnAndShared(t *testing.T) {
 		t.Errorf("clone get = %v", got)
 	}
 }
+
+// Store is the installed store, nil without one.
+func TestStore(t *testing.T) {
+	if Store() != nil {
+		t.Fatal("a store before SetStore")
+	}
+	withStore(t)
+	if Store() == nil {
+		t.Error("no store after SetStore")
+	}
+}

@@ -153,6 +153,9 @@ func (globalMaestroProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDe
 			Runner:        run,
 			Dispatcher:    swap,
 			ImportAllowed: allowImport,
+			// Tasks may name knowledge-base records to insert into their
+			// prompts only when the agent has knowledge bases.
+			Knowledge: knowledgeFor(c, deps.AgentID, workspace),
 			// The billing code of the work calling task_run or
 			// task_dispatch, asked while the call is handled. Maestro sets
 			// it on the runner, which a clone shares with its source, so it

@@ -37,6 +37,10 @@ var store atomic.Pointer[kb.Store]
 // knowledge-base tools.
 func SetStore(s *kb.Store) { store.Store(s) }
 
+// Store returns the installed store, nil when there is none (Maestro reads
+// the records its tasks name through it).
+func Store() *kb.Store { return store.Load() }
+
 // GlobalProvider mounts the knowledge-base tools. It is an all-or-nothing
 // suite gated by the per-agent `knowledge` switch (default off).
 var GlobalProvider globalKnowledgeProvider

@@ -66,6 +66,20 @@ The file tools cannot read or write `okf/`: the agent reaches its knowledge base
 
 Edits made to the files outside Agency, by hand or with Git, are seen at the next search.
 
+## In Maestro tasks
+
+An agent with both knowledge bases and [Maestro](../maestro.md) on can have a task name records to put in its prompt, with the `knowledge` argument of `task_create`, `task_update`, `task_dispatch` and `list_create_tasks`:
+
+```json
+{"kb": "cc2022", "include": ["SFR/FCS_COP.1"], "query": "key sizes", "limit": 5}
+```
+
+- `kb` is one knowledge base the agent can reach (its own, or `shared/<name>`).
+- `include` lists concept IDs: each is inserted in full, with the concepts it includes.
+- `query` adds the best-matching passages; `limit` (1 to 20, default 5) caps them.
+
+The records go into the worker's prompt, the review (QA) prompt and the revision prompt. A record that cannot be loaded, or an unknown knowledge base, fails the task at once, without a retry. Without knowledge bases on, the argument is not offered.
+
 ## Backup
 
 The agent's own knowledge bases are in the [backup](../admin/backup.md). Shared knowledge bases are not: back them up where they live.

@@ -105,6 +105,12 @@
   at start and at every configuration reload, and a file that cannot be read
   keeps the previous table. The accounting log is not in the backup, like
   the other logs.
+- **Knowledge in Maestro tasks.** For an agent with both knowledge bases and
+  Maestro on, `task_create`, `task_update`, `task_dispatch` and
+  `list_create_tasks` take a `knowledge` argument naming records and a
+  search in one knowledge base. They are inserted into the task's worker,
+  review and revision prompts. A record that cannot be loaded fails the task
+  without a retry.
 
 ### Changed
 

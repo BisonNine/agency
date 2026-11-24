@@ -19,23 +19,27 @@ import (
 
 	"go.bison9.com/agent/loop"
 	"go.bison9.com/agent/spawnllm"
+	"go.bison9.com/agent/toolbox/kb"
 
 	"go.bison9.com/agency/agent"
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal/gateway"
+	"go.bison9.com/agency/tools/knowledge"
 )
 
-// variant is one configuration the lists are captured for.
+// variant is one configuration the lists are captured for. knowledge runs
+// it with a knowledge-base store, as the gateway does.
 type variant struct {
-	name  string
-	apply func(cfg *config.Config)
+	name      string
+	apply     func(cfg *config.Config)
+	knowledge bool
 }
 
 var variants = []variant{
-	{"off", func(cfg *config.Config) { cfg.Tools.Discovery.Enabled = false }},
-	{"on", func(cfg *config.Config) { cfg.Tools.Discovery.Enabled = true }},
-	{"on_pinned", func(cfg *config.Config) {
+	{name: "off", apply: func(cfg *config.Config) { cfg.Tools.Discovery.Enabled = false }},
+	{name: "on", apply: func(cfg *config.Config) { cfg.Tools.Discovery.Enabled = true }},
+	{name: "on_pinned", apply: func(cfg *config.Config) {
 		cfg.Tools.Discovery.Enabled = true
 		cfg.Tools.Discovery.AlwaysShownNamespaces = []string{"wxca", "file"}
 		cfg.Tools.Discovery.MaxSearchResults = 4
@@ -49,12 +53,23 @@ var variants = []variant{
 			}
 		}
 	}},
-	{"off_maestro", func(cfg *config.Config) {
+	{name: "off_maestro", apply: func(cfg *config.Config) {
 		cfg.Tools.Discovery.Enabled = false
 		cfg.Tools.Discovery.AlwaysShownNamespaces = []string{"wxca"}
 		for i := range cfg.Agents.List {
 			if cfg.Agents.List[i].ID == "alice" {
 				cfg.Agents.List[i].Maestro = &config.MaestroConfig{Enabled: true}
+			}
+		}
+	}},
+	// Maestro and knowledge bases both on: Maestro's tasks take knowledge.
+	{name: "off_maestro_knowledge", knowledge: true, apply: func(cfg *config.Config) {
+		cfg.Tools.Discovery.Enabled = false
+		cfg.Tools.Discovery.AlwaysShownNamespaces = []string{"wxca"}
+		for i := range cfg.Agents.List {
+			if cfg.Agents.List[i].ID == "alice" {
+				cfg.Agents.List[i].Maestro = &config.MaestroConfig{Enabled: true}
+				cfg.Agents.List[i].Knowledge = &config.KnowledgeConfig{Enabled: true}
 			}
 		}
 	}},
@@ -107,6 +122,19 @@ func capture(t *testing.T, v variant) []byte {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	v.apply(cfg)
+	if v.knowledge {
+		store, kbErr := kb.New(kb.Options{})
+		if kbErr != nil {
+			t.Fatalf("kb.New: %v", kbErr)
+		}
+		knowledge.SetStore(store)
+		t.Cleanup(func() {
+			knowledge.SetStore(nil)
+			if closeErr := store.Close(); closeErr != nil {
+				t.Errorf("close the store: %v", closeErr)
+			}
+		})
+	}
 
 	al, err := agent.NewAgentLoop(t.Context(), cfg, bus.NewMessageBus())
 	if err != nil {
