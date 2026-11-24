@@ -11,6 +11,7 @@ import (
 
 	"go.bison9.com/agency/channels/device"
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/mcpreg"
 	"go.bison9.com/agency/internal/tlscert"
 	"go.bison9.com/agency/web/backend/middleware"
 )
@@ -96,6 +97,10 @@ type Handler struct {
 	deviceMu        sync.Mutex
 	deviceStore     *device.Store
 	deviceStorePath string
+
+	// registrar registers the tool server in the CLIs; nil means the shared
+	// one for the service user's CLIs (cliRegistrar). Tests set it.
+	registrar *mcpreg.Registrar
 }
 
 // SetReloadTrigger wires the gateway's force-reload function into the handler so

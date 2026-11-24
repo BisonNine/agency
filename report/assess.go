@@ -40,6 +40,15 @@ var assessmentLinks = map[string]string{
 	itemVision:          taskModelsLink,
 }
 
+// rowLink is the WebUI location of a row: assessmentLinks, else the tool
+// server rows' own.
+func rowLink(item, status string) string {
+	if link, ok := assessmentLinks[item]; ok {
+		return link
+	}
+	return toolServerLink(item, status)
+}
+
 // Assessment is the identity and the security assessment table as data, for
 // callers that render the table themselves rather than the PDF.
 type Assessment struct {
@@ -56,7 +65,7 @@ func Assess(ctx context.Context, cfg *config.Config, env Environment) Assessment
 	var rows []AssessmentRow
 	for _, t := range s.Tables {
 		for _, r := range t.Rows {
-			rows = append(rows, AssessmentRow{Action: r[0] == actionMark, Item: r[1], Status: r[2], Link: assessmentLinks[r[1]]})
+			rows = append(rows, AssessmentRow{Action: r[0] == actionMark, Item: r[1], Status: r[2], Link: rowLink(r[1], r[2])})
 		}
 	}
 	return Assessment{

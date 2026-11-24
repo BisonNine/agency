@@ -55,6 +55,8 @@ func TestHandlers_BrokenConfig(t *testing.T) {
 		{"GET", "/api/memory", 500, "failed to resolve sessions directory\n"},
 		{"GET", "/api/report/pdf", 500, loadFailed},
 		{"GET", "/api/report/assessment", 500, `{"error":"` + loadFailed},
+		{"GET", "/api/system/clis/registration", 500, `{"error":"` + loadFailed},
+		{"POST", "/api/system/clis/antigravity-cli/register", 500, `{"error":"` + loadFailed},
 		{"GET", "/api/system/clis", 500, loadFailed},
 		{"GET", "/api/skills", 500, loadFailed},
 		{"GET", "/api/skills/x", 500, loadFailed},

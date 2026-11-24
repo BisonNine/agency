@@ -84,13 +84,32 @@ A CLI runs a whole job in one call, so CLI models are created with **Request Tim
 
 A CLI model does not receive Agency's tools in its prompt. It calls them through Agency's MCP server, which listens on `127.0.0.1:5911` by default and starts automatically while any enabled model uses a CLI. Its settings are under **MCP** → **Config** (**Enabled**, **Auto-enable**, **Listen Address**).
 
-Each CLI has to be told about this server once, as the service user, under the name `agency` and with the `/internal` endpoint:
+Each CLI has to be told about this server once, as the service user, under the name `agency` and with the `/internal` endpoint.
+
+**From the WebUI.** Each row in **Local CLI agents** on the **Providers** page shows whether this is done, and a **Register tool server** button that does it, run by Agency as its service user with the address from its own settings:
+
+| Label | Meaning |
+|---|---|
+| **Registered** | The CLI uses this Agency's tool server. |
+| **Not registered** | The CLI has no `agency` entry. Click **Register tool server**. |
+| **Registered to a different address** | The CLI's `agency` entry points elsewhere; the address is shown beside it. The button reads **Replace** and asks before replacing it. |
+| **CLI not installed** | The program was not found. |
+| **Not checked** | Agency could not read the CLI's settings. Registering still works; the command line below shows the same thing by hand. |
+| **Tool server is off** | There is no address to register. The label links to **MCP** → **Config**, where the server is turned on. |
+
+The [Check Up](../admin/checkup.md) page has a **Tool server** row for each CLI in use, with the same state, linked to this section. Each registration is recorded in the [audit log](../admin/audit.md).
+
+Agency reads Claude, Codex and Antigravity through their own `mcp` commands, and OpenCode and Cursor from their settings files (`~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`). It writes Cursor's file itself, keeping everything else in it, and leaves a file that does not parse alone.
+
+**From the command line.** The same commands, as the service user:
 
 ```bash
 # Claude Code
+claude mcp remove agency --scope user   # only when an entry exists
 claude mcp add --transport http agency --scope user http://127.0.0.1:5911/internal
 
 # Codex CLI
+codex mcp remove agency                 # only when an entry exists
 codex mcp add agency --url http://127.0.0.1:5911/internal
 
 # Antigravity
@@ -115,11 +134,13 @@ The command has no option for Code Mode, so turn it off by hand: add `"codemode"
 {"mcp":{"servers":{"agency":{"type":"remote","url":"http://127.0.0.1:5911/internal","codemode":false}}}}
 ```
 
+The **Register tool server** button does this for OpenCode too.
+
 If OpenCode has no web search provider set up, also add `"permission":{"websearch":"deny"}` to that file: otherwise a run that tries its built-in web search fails.
 
 `./set-mcp.sh` in the Agency source folder runs these commands for every CLI that is installed, and turns off Code Mode for OpenCode.
 
-If you change **Listen Address**, use the new port in these commands. [MCP](../mcp.md) covers the server in full. Without this step the CLI still answers, but it has none of Agency's tools.
+If you change **Listen Address**, each row then reads **Registered to a different address**: click **Replace**, or use the new port in these commands. [MCP](../mcp.md) covers the server in full. Without this step the CLI still answers, but it has none of Agency's tools.
 
 Agency puts a session token in each agent's prompt, and the CLI sends it with every tool call. That is how one CLI installation can serve several agents: each call runs as the agent whose token it carries, with that agent's [tools](../agents/tools-and-skills.md), folders and permissions. The tools of external MCP servers that an agent is allowed reach the CLI the same way, through Agency.
 

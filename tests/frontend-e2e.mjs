@@ -2630,6 +2630,55 @@ if (useGroup("I", "Models and providers")) {
       }
     }
   })
+
+  await check(13, "every CLI row shows whether the tool server is registered in it", async () => {
+    // Read only: the Register tool server button is never pressed here, since
+    // it would change the CLIs' own configuration on the test machine.
+    const LABELS = {
+      registered: "Registered",
+      not_registered: "Not registered",
+      other_address: "Registered to a different address",
+      not_installed: "CLI not installed",
+      not_checked: "Not checked",
+      host_off: "Tool server is off",
+    }
+    const r = await api("/api/system/clis/registration")
+    assert(r.status === 200, `registration = ${r.status}`)
+    const regs = r.json?.clis ?? []
+    const clis = (await api("/api/system/clis")).json ?? []
+    assert(regs.length === clis.length, `${regs.length} states for ${clis.length} CLIs`)
+    const { close, page, problems } = await open("/providers")
+    const seen = []
+    for (const reg of regs) {
+      const label = page.locator(`[data-testid=cli-register-state-${reg.protocol}]`)
+      await page.waitForFunction(
+        (id) => document.querySelector(`[data-testid=cli-register-state-${id}]`)?.dataset.state !== "checking",
+        reg.protocol,
+        { timeout: 60000 },
+      )
+      const state = await label.getAttribute("data-state")
+      const text = (await label.innerText()).trim()
+      const button = page.locator(`[data-testid=cli-register-button-${reg.protocol}]`)
+      const buttonText = (await button.innerText()).trim()
+      const disabled = await button.isDisabled()
+      assert(state === reg.state, `${reg.protocol}: row ${state}, API ${reg.state}`)
+      assert(text === LABELS[reg.state], `${reg.protocol}: label "${text}"`)
+      assert(buttonText === (reg.state === "other_address" ? "Replace" : "Register tool server"), `${reg.protocol}: button "${buttonText}"`)
+      assert(disabled === (reg.state === "not_installed" || reg.state === "host_off"), `${reg.protocol}: button disabled=${disabled}`)
+      if (reg.state === "host_off") {
+        const href = await page.locator(`[data-testid=cli-register-host-off-${reg.protocol}]`).getAttribute("href")
+        assert(href === "/mcp/config", `${reg.protocol}: host-off link ${href}`)
+      }
+      if (reg.state === "other_address") {
+        const addr = (await page.locator(`[data-testid=cli-register-address-${reg.protocol}]`).innerText()).trim()
+        assert(addr === reg.address, `${reg.protocol}: address "${addr}", API "${reg.address}"`)
+      }
+      seen.push(`${reg.protocol}=${reg.state}`)
+    }
+    await close()
+    assert(problems.length === 0, `console errors: ${problems[0]}`)
+    return seen.join(", ")
+  })
 }
 
 // J. Devices — the store-open regression
@@ -2888,6 +2937,30 @@ if (useGroup("K", "Logs, MCP, memory, task models, report")) {
     assert(shownDest === backupDest, `/system backup dest shows ${JSON.stringify(shownDest)}, config ${JSON.stringify(backupDest)}`)
     assert(numbers.includes(maxTokens), `/system shows no max tokens ${maxTokens} (${numbers.join(", ")})`)
     return `${servers.length} servers, listen ${listen}, max tokens ${maxTokens}`
+  })
+
+  await check(11, "Check Up has a tool server row for every CLI in use", async () => {
+    const LABELS = {
+      registered: "Registered.",
+      not_registered: "Not registered.",
+      not_installed: "CLI not installed.",
+      not_checked: "Not checked.",
+      host_off: "Tool server is off.",
+    }
+    const clis = ((await api("/api/system/clis")).json ?? []).filter((c) => c.enabled)
+    const regs = (await api("/api/system/clis/registration")).json ?? {}
+    const rows = ((await api("/api/report/assessment")).json?.assessment ?? []).filter((r) => r.item.startsWith("Tool server ("))
+    assert(rows.length === clis.length, `${rows.length} tool server rows for ${clis.length} CLIs in use`)
+    for (const cli of clis) {
+      const row = rows.find((r) => r.item === `Tool server (${cli.label})`)
+      assert(row, `no row for ${cli.label}`)
+      const reg = (regs.clis ?? []).find((c) => c.protocol === cli.protocol)
+      const want = reg.state === "other_address" ? `Registered to a different address: ${reg.address}.` : LABELS[reg.state]
+      assert(row.status === want, `${cli.label}: "${row.status}", want "${want}"`)
+      const link = reg.state === "host_off" ? "/mcp/config" : "/providers#cli-agents"
+      assert(row.link === link, `${cli.label}: link ${row.link}`)
+    }
+    return rows.length === 0 ? "no CLI in use" : rows.map((r) => `${r.item}: ${r.status}`).join("; ")
   })
 }
 

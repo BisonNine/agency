@@ -87,6 +87,54 @@ export async function setCLIBypassRestrictions(
   })
 }
 
+/** Whether the tool server is registered in a CLI (internal/mcpreg). */
+export type CLIRegistrationState =
+  | "registered"
+  | "not_registered"
+  | "other_address"
+  | "not_installed"
+  | "not_checked"
+  | "host_off"
+
+export interface CLIRegistration {
+  protocol: string
+  label: string
+  state: CLIRegistrationState
+  /** What the CLI's entry points at, for other_address. */
+  address?: string
+}
+
+export interface CLIRegistrations {
+  /** The endpoint each CLI is registered with; "" while the MCP host is off. */
+  url: string
+  clis: CLIRegistration[]
+}
+
+// getCLIRegistrations reads, for every CLI, whether the tool server is
+// registered in it. Slower than listCLIs (it asks each CLI), so it is a query
+// of its own and the rows render before it answers.
+export async function getCLIRegistrations(): Promise<CLIRegistrations> {
+  const res = await request<CLIRegistrations>("/api/system/clis/registration")
+  return { url: res.url ?? "", clis: res.clis ?? [] }
+}
+
+// registerCLI registers the tool server in one CLI and returns its state read
+// back. An entry pointing at another address is replaced only with replace;
+// without it the server refuses, naming that address.
+export async function registerCLI(
+  protocol: string,
+  replace: boolean,
+): Promise<CLIRegistration> {
+  return request<CLIRegistration>(
+    `/api/system/clis/${encodeURIComponent(protocol)}/register`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ replace }),
+    },
+  )
+}
+
 export interface SetupStatus {
   // pristine: an auto-seeded config the user has never saved.
   pristine: boolean

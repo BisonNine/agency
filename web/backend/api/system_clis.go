@@ -74,6 +74,8 @@ type cliInfo struct {
 func (h *Handler) registerSystemCLIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/system/clis", h.handleListCLIs)
 	mux.HandleFunc("PUT /api/system/clis/{protocol}", h.handleSetCLIEnabled)
+	mux.HandleFunc("GET /api/system/clis/registration", h.handleCLIRegistrations)
+	mux.HandleFunc("POST /api/system/clis/{protocol}/register", h.handleCLIRegister)
 }
 
 // handleListCLIs reports every supported CLI agent: whether its binary is

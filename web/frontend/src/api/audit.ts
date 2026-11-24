@@ -14,6 +14,7 @@ export type AuditKind =
   | "shell_ctrl_start"
   | "shell_ctrl_input"
   | "shell_ctrl_stop"
+  | "cli_register"
 
 export const AUDIT_KINDS: AuditKind[] = [
   "tool_call",
@@ -28,6 +29,7 @@ export const AUDIT_KINDS: AuditKind[] = [
   "shell_ctrl_start",
   "shell_ctrl_input",
   "shell_ctrl_stop",
+  "cli_register",
 ]
 
 export interface AuditEvent {

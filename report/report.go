@@ -10,7 +10,11 @@
 // are reported only as set/not set, by name, or by count.
 package report
 
-import "time"
+import (
+	"time"
+
+	"go.bison9.com/agency/internal/mcpreg"
+)
 
 // Environment carries facts about the running process that the config cannot
 // supply. The caller fills it; this package never reads the environment.
@@ -36,6 +40,10 @@ type Environment struct {
 	// EncryptedMatrixRooms names the Matrix rooms seen since Agency started to
 	// be end-to-end encrypted, which it can't read; empty when there were none.
 	EncryptedMatrixRooms []string
+	// CLIRegistrations is whether the tool server is registered in each CLI
+	// an enabled model runs on (internal/mcpreg); a CLI missing here is
+	// reported as not checked.
+	CLIRegistrations []mcpreg.Status
 }
 
 // Report is the collected report: identity, then one Section per area.

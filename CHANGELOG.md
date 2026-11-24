@@ -118,6 +118,17 @@
   the variables starting with `OPENCODE_`. Its prompt names Agency's tools
   `agency_<tool>`, as OpenCode does. `set-mcp.sh` registers Agency in OpenCode
   and turns off Code Mode there.
+- **Register the tool server from the WebUI.** Each row under **Local CLI
+  agents** on the Providers page says whether the CLI is registered with this
+  Agency's MCP host (Registered, Not registered, Registered to a different
+  address, CLI not installed, Not checked, Tool server is off) and has a
+  **Register tool server** button. It runs what `set-mcp.sh` does, as the
+  service user, with the address from **Listen Address**. An entry pointing
+  elsewhere is replaced only after **Replace** and a confirmation naming both
+  addresses. Check Up has a **Tool server** row for each CLI in use. New API:
+  `GET /api/system/clis/registration` and
+  `POST /api/system/clis/{protocol}/register`; each registration is an audit
+  row of kind `cli_register`.
 
 ### Changed
 

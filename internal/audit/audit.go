@@ -65,6 +65,10 @@ const (
 	// KindShellStop is a shell job stopped by shell_ctrl, or a foreground
 	// command stopped at its timeout.
 	KindShellStop = "shell_ctrl_stop"
+	// KindCLIRegister is the tool server registered in a CLI from the CLI
+	// providers list: the CLI, the address and whether an entry pointing
+	// elsewhere was replaced.
+	KindCLIRegister = "cli_register"
 )
 
 // Outcome values.

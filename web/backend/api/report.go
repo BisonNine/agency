@@ -4,16 +4,20 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/user"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/channels/matrix"
+	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/mcpreg"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/report"
 )
@@ -32,8 +36,10 @@ func (h *Handler) handleReportAssessment(w http.ResponseWriter, r *http.Request)
 		writeJSONError(w, http.StatusInternalServerError, "Failed to load config: "+err.Error())
 		return
 	}
+	env := h.runningEnvironment(cfg.DataDir(), time.Now())
+	env.CLIRegistrations = h.enabledCLIRegistrations(r.Context(), cfg)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, report.Assess(r.Context(), cfg, h.runningEnvironment(cfg.DataDir(), time.Now())))
+	writeJSON(w, http.StatusOK, report.Assess(r.Context(), cfg, env))
 }
 
 // handleReportPDF streams the configuration report for this install: the
@@ -46,7 +52,9 @@ func (h *Handler) handleReportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	rep := report.Collect(r.Context(), cfg, h.runningEnvironment(cfg.DataDir(), now))
+	env := h.runningEnvironment(cfg.DataDir(), now)
+	env.CLIRegistrations = h.enabledCLIRegistrations(r.Context(), cfg)
+	rep := report.Collect(r.Context(), cfg, env)
 
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition",
@@ -56,6 +64,30 @@ func (h *Handler) handleReportPDF(w http.ResponseWriter, r *http.Request) {
 		// Headers may already be out; all that is left is to record it.
 		logger.ErrorCF("api", "configuration report render failed", map[string]any{"error": err.Error()})
 	}
+}
+
+// enabledCLIRegistrations reads whether the tool server is registered in
+// each CLI an enabled model runs on, the CLIs Check Up has a row for. Nothing
+// is read while the MCP host is off: the rows say so from the config.
+func (h *Handler) enabledCLIRegistrations(ctx context.Context, cfg *config.Config) []mcpreg.Status {
+	url := mcpreg.InternalURL(cfg)
+	if url == "" {
+		return nil
+	}
+	protocols := report.EnabledCLIProtocols(cfg)
+	out := make([]mcpreg.Status, len(protocols))
+	var wg sync.WaitGroup
+	for i, proto := range protocols {
+		wg.Go(func() {
+			st, err := h.cliRegistrar().Check(ctx, proto, url)
+			if err != nil { // a catalogue CLI the registrar does not know
+				st = mcpreg.Status{Protocol: proto, State: mcpreg.NotChecked}
+			}
+			out[i] = st
+		})
+	}
+	wg.Wait()
+	return out
 }
 
 // runningEnvironment is reportEnvironment plus what the running listener has

@@ -6,10 +6,18 @@ import { useTranslation } from "react-i18next"
 import type { ProviderInfo } from "@/api/providers"
 import {
   type CLIInfo,
+  type CLIRegistration,
+  type CLIRegistrations,
+  getCLIRegistrations,
   listCLIs,
+  registerCLI,
   setCLIBypassRestrictions,
   setCLIEnabled,
 } from "@/api/system"
+import {
+  CLIRegisterLine,
+  ReplaceRegistrationDialog,
+} from "@/components/providers/cli-register"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
@@ -38,11 +46,67 @@ export function CLIAgentsSection({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
+  const [confirmReplace, setConfirmReplace] = useState<CLIRegistration | null>(
+    null,
+  )
 
   const { data: clis = [], isPending } = useQuery({
     queryKey: ["system-clis"],
     queryFn: listCLIs,
   })
+
+  // Read separately: it asks each CLI, so the rows render first and their
+  // labels fill in.
+  const { data: registrations } = useQuery({
+    queryKey: ["cli-registration"],
+    queryFn: getCLIRegistrations,
+  })
+
+  const register = useMutation({
+    mutationFn: ({
+      target,
+      replace,
+    }: {
+      target: CLIRegistration
+      replace: boolean
+    }) => registerCLI(target.protocol, replace),
+    onMutate: () => {
+      setError("")
+      setNotice("")
+    },
+    onSuccess: (st) => {
+      queryClient.setQueryData<CLIRegistrations>(["cli-registration"], (old) =>
+        old
+          ? {
+              ...old,
+              clis: old.clis.map((c) => (c.protocol === st.protocol ? st : c)),
+            }
+          : old,
+      )
+      void queryClient.invalidateQueries({ queryKey: ["report-assessment"] })
+      if (st.state === "registered") {
+        setNotice(t("providers.cli.register.done", { label: st.label }))
+      }
+    },
+    onError: (e: unknown, { target }) => {
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : t("providers.cli.register.failed", { label: target.label }),
+      )
+      // The server read the CLI again; show what it found.
+      void queryClient.invalidateQueries({ queryKey: ["cli-registration"] })
+    },
+  })
+
+  const startRegister = (target: CLIRegistration) => {
+    if (target.state === "other_address") {
+      setConfirmReplace(target)
+      return
+    }
+    register.mutate({ target, replace: false })
+  }
 
   const toggle = useMutation({
     mutationFn: ({
@@ -59,6 +123,8 @@ export function CLIAgentsSection({
       void queryClient.invalidateQueries({ queryKey: ["system-clis"] })
       void queryClient.invalidateQueries({ queryKey: ["providers"] })
       void queryClient.invalidateQueries({ queryKey: ["models"] })
+      // A CLI switched on can start the tool server (auto-enable).
+      void queryClient.invalidateQueries({ queryKey: ["cli-registration"] })
     },
     onError: (e: unknown) =>
       setError(e instanceof Error ? e.message : t("providers.cli.toggleError")),
@@ -85,7 +151,7 @@ export function CLIAgentsSection({
   }
 
   return (
-    <section className="pt-6" data-testid="cli-agents">
+    <section className="pt-6" id="cli-agents" data-testid="cli-agents">
       <h2 className="text-foreground text-sm font-semibold">
         {t("providers.cli.title")}
       </h2>
@@ -98,6 +164,14 @@ export function CLIAgentsSection({
           {error}
         </p>
       )}
+      {notice && (
+        <p
+          className="mt-3 rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400"
+          data-testid="cli-register-notice"
+        >
+          {notice}
+        </p>
+      )}
 
       <div className="border-border divide-border mt-3 divide-y rounded-lg border">
         {clis.map((cli) => (
@@ -107,6 +181,14 @@ export function CLIAgentsSection({
             busy={
               toggle.isPending && toggle.variables?.protocol === cli.protocol
             }
+            registration={registrations?.clis.find(
+              (r) => r.protocol === cli.protocol,
+            )}
+            registering={
+              register.isPending &&
+              register.variables?.target.protocol === cli.protocol
+            }
+            onRegister={startRegister}
             onToggle={(enabled) =>
               toggle.mutate({ protocol: cli.protocol, enabled })
             }
@@ -121,6 +203,16 @@ export function CLIAgentsSection({
           />
         ))}
       </div>
+
+      <ReplaceRegistrationDialog
+        target={confirmReplace}
+        url={registrations?.url ?? ""}
+        onCancel={() => setConfirmReplace(null)}
+        onConfirm={(target) => {
+          setConfirmReplace(null)
+          register.mutate({ target, replace: true })
+        }}
+      />
     </section>
   )
 }
@@ -128,12 +220,18 @@ export function CLIAgentsSection({
 function CLIRow({
   cli,
   busy,
+  registration,
+  registering,
+  onRegister,
   onToggle,
   onBypass,
   onEdit,
 }: {
   cli: CLIInfo
   busy: boolean
+  registration?: CLIRegistration
+  registering: boolean
+  onRegister: (target: CLIRegistration) => void
   onToggle: (enabled: boolean) => void
   onBypass: (on: boolean) => void
   onEdit: () => void
@@ -212,6 +310,12 @@ function CLIRow({
             </span>
           </label>
         )}
+        <CLIRegisterLine
+          protocol={cli.protocol}
+          registration={registration}
+          busy={registering}
+          onRegister={() => registration && onRegister(registration)}
+        />
       </div>
 
       {/* Shown on every configured row, not only where the switch governs

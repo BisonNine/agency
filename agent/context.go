@@ -22,6 +22,7 @@ import (
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/global"
+	"go.bison9.com/agency/internal/mcpreg"
 	"go.bison9.com/agency/kbhost"
 	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/skills"
@@ -868,13 +869,10 @@ func sessionTokenLayer(token, protocol string) ctxengine.Layer {
 }
 
 // hostToolPrefix is the prefix a model on protocol calls the host's MCP tools
-// under: OpenCode's own naming for the OpenCode CLI, the Claude-style
-// mcp__agency__ for every other protocol.
+// under, from the CLI table (internal/mcpreg): OpenCode's own naming for the
+// OpenCode CLI, the Claude-style mcp__agency__ for every other protocol.
 func hostToolPrefix(protocol string) string {
-	if protocol == "opencode-cli" {
-		return global.HostMCPOpenCodeToolPrefix
-	}
-	return global.HostMCPToolPrefix
+	return mcpreg.ToolPrefix(protocol)
 }
 
 func (cb *ContextBuilder) AddToolResult(

@@ -39,13 +39,22 @@ The MCP host has two endpoints on that address:
 Each CLI you use as a provider must know where Agency's MCP host is.
 Without this the CLI still answers, but has none of Agency's tools.
 
-- **All at once:** run `./set-mcp.sh` from the Agency source folder. It
+- **From the WebUI:** on **Providers**, each row in **Local CLI agents**
+  says whether the CLI is registered and has a **Register tool server**
+  button (**Replace** when the CLI points at another address). Agency runs
+  the commands below for you, as its service user, with the address from
+  **Listen Address**. While the MCP host is off the row says **Tool server
+  is off** and the button is disabled; see
+  [CLI providers](providers/cli-providers.md#tools-agency-s-mcp-server).
+- **All at once from the command line:** run `./set-mcp.sh` from the Agency source folder. It
   registers Agency in Antigravity, Codex CLI, Claude Code and OpenCode,
   whichever are installed, and turns off Code Mode for OpenCode. If you changed the port, run
   `AGENCY_MCP_URL=http://127.0.0.1:<port>/internal ./set-mcp.sh`.
 - **Claude Code:**
   `claude mcp add --transport http agency --scope user http://127.0.0.1:5911/internal`
+  (after `claude mcp remove agency --scope user` when an entry exists)
 - **Codex CLI:** `codex mcp add agency --url http://127.0.0.1:5911/internal`
+  (after `codex mcp remove agency` when an entry exists)
 - **Antigravity:** `agy mcp add --type http agency http://127.0.0.1:5911/internal`
 - **OpenCode:** `opencode mcp add agency --url http://127.0.0.1:5911/internal --global`,
   then add `"codemode": false` to the `agency` entry in

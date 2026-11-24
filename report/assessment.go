@@ -324,6 +324,12 @@ func collectAssessment(ctx context.Context, cfg *config.Config, env Environment)
 			"Allow CLI to bypass restrictions is off for "+p.Name+": whether its tool calls run depends on the CLI's own permission settings.")
 	}
 
+	// Whether each CLI in use has the tool server registered: without it the
+	// CLI runs with none of the host's tools.
+	for _, r := range cliRegistrationRows(cfg, env) {
+		add(r.action, r.item, r.status)
+	}
+
 	// Fusion on with nothing granted is the state an upgrade from the
 	// all-or-nothing switch leaves behind: the agent has no Fusion tools.
 	for _, a := range enabledAgents(cfg) {

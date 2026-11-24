@@ -1,4 +1,5 @@
 import { IconPlus, IconTrash } from "@tabler/icons-react"
+import { Link } from "@tanstack/react-router"
 import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -79,6 +80,23 @@ export function EnableSection({ form, onFieldChange }: EnableSectionProps) {
         checked={form.autoEnable}
         onCheckedChange={(checked) => onFieldChange("autoEnable", checked)}
       />
+      {/* The CLI providers' Register tool server button depends on this:
+          say so here too, and link back. */}
+      {!form.enabled && !form.autoEnable && (
+        <p
+          className="text-muted-foreground py-3 text-xs"
+          data-testid="mcp-host-off-note"
+        >
+          {t("pages.mcp.off_note")}{" "}
+          <Link
+            to="/providers"
+            hash="cli-agents"
+            className="underline underline-offset-2"
+          >
+            {t("pages.mcp.off_note_link")}
+          </Link>
+        </p>
+      )}
     </SectionCard>
   )
 }

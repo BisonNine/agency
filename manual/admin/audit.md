@@ -14,6 +14,7 @@ The audit log records every tool an agent runs, every configuration save, every 
 | **Classification** | A classifier handles an item: its category, the action and its outcome. | The agent that owns the classifier. |
 | **Shell start**, **Shell input**, **Shell stop** (`shell_ctrl_start`, `shell_ctrl_input`, `shell_ctrl_stop`) | An agent starts a [shell command or job](../agents/shell.md), sends a job input (its length, never its content), or stops one. | The agent, marked as a clone when one did it. |
 | **Card import**, **Card delete** | A [character card](../agents/character-cards.md) is imported, replaced or deleted on the Cards page. Edits an agent makes with the `ccv3` tool are tool calls. | The WebUI username and client address. |
+| **Tool server registration** (`cli_register`) | **Register tool server** or **Replace** is pressed for a CLI on the [Providers](../providers/cli-providers.md#tools-agency-s-mcp-server) page: the CLI, the address and whether an entry pointing elsewhere was replaced. | The WebUI username and client address. |
 
 What is kept, and what is not:
 
@@ -25,7 +26,7 @@ What is kept, and what is not:
 ## Read it in the WebUI
 
 1. Open **Audit** in the **Services** group.
-2. Narrow the list with **Kind** (**Tool call**, **Config write**, **Auth**, **Restart**, **Card import**, **Card delete**, **Classifier change**, **Classification**, **Task model**, **Shell start**, **Shell input**, **Shell stop**) and **Agent**.
+2. Narrow the list with **Kind** (**Tool call**, **Config write**, **Auth**, **Restart**, **Card import**, **Card delete**, **Classifier change**, **Classification**, **Task model**, **Shell start**, **Shell input**, **Shell stop**, **Tool server registration**) and **Agent**.
 3. Newest events are at the top. Click **Load more** to page back, and **Refresh** to fetch new events.
 
 Columns: **Time**, **Kind**, **Actor / agent**, **Channel**, **Tool / summary**, **Outcome**, **Duration**.

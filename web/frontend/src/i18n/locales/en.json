@@ -716,7 +716,8 @@
         "task_model": "Task model",
         "shell_ctrl_start": "Shell start",
         "shell_ctrl_input": "Shell input",
-        "shell_ctrl_stop": "Shell stop"
+        "shell_ctrl_stop": "Shell stop",
+        "cli_register": "Tool server registration"
       },
       "col": {
         "time": "Time",
@@ -746,6 +747,8 @@
       "enabled_hint": "When true, the MCP server always starts at daemon launch.",
       "auto_enable": "Auto-enable",
       "auto_enable_hint": "When Enabled=false, still start the MCP server automatically if any enabled model uses a *-cli protocol. Explicit Enabled=true always wins.",
+      "off_note": "CLI providers can't be registered while the tool server is off.",
+      "off_note_link": "CLI providers",
       "transport_desc": "Network address and endpoint path for the MCP Streamable HTTP listener.",
       "listen": "Listen Address",
       "listen_hint": "host:port the MCP server binds to. Use 127.0.0.1 for local-only access.",
@@ -922,7 +925,24 @@
       "modelCount_other": "{{enabled}} of {{count}} models on",
       "toggleError": "Failed to change the CLI agent",
       "bypass": "Allow CLI to bypass restrictions",
-      "bypassHint": "Passes the CLI's skip-permissions / sandbox-bypass flag. It can then run commands and edit files anywhere the service user can, without asking."
+      "bypassHint": "Passes the CLI's skip-permissions / sandbox-bypass flag. It can then run commands and edit files anywhere the service user can, without asking.",
+      "register": {
+        "state": {
+          "registered": "Registered",
+          "not_registered": "Not registered",
+          "other_address": "Registered to a different address",
+          "not_installed": "CLI not installed",
+          "not_checked": "Not checked",
+          "host_off": "Tool server is off",
+          "checking": "Checking"
+        },
+        "button": "Register tool server",
+        "replace": "Replace",
+        "done": "{{label}} is registered.",
+        "failed": "Could not register {{label}}.",
+        "confirmTitle": "Replace tool server address",
+        "confirmBody": "Replace {{old}} with {{new}} for {{label}}?"
+      }
     },
     "status": {
       "configured": "Configured",

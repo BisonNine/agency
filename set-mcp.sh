@@ -5,6 +5,10 @@
 # and OpenCode (opencode). Run it after installing/updating any of those CLIs, or
 # after changing the Agency MCP port. CLIs that are not on your PATH are skipped.
 #
+# The WebUI does the same from each CLI's row on the Providers page (Register
+# tool server); the commands here are the ones it runs (internal/mcpreg), so
+# keep the two in step.
+#
 # Cursor is deliberately not handled here: it has no `mcp add` subcommand and is
 # configured by editing ~/.cursor/mcp.json, so this script reports what to add
 # rather than rewriting a file it does not own.
@@ -30,12 +34,12 @@ have() { command -v "$1" >/dev/null 2>&1; }
 echo "Agency MCP endpoint: $AGENCY_MCP_URL"
 echo ""
 
-# Each CLI is refreshed one at a time (remove, then add, then list) and only when
-# its binary is on the PATH.
+# Each CLI is refreshed one at a time and only when its binary is on the PATH.
+# Claude and Codex refuse or keep an existing entry, so it is removed first;
+# Antigravity's add updates one in place.
 
 if have agy; then
     echo "== Antigravity =="
-    agy mcp remove agency 2>/dev/null || true
     agy mcp add --type http agency "$AGENCY_MCP_URL"
     agy mcp list
     echo ""
@@ -57,7 +61,7 @@ fi
 
 if have claude; then
     echo "== Claude Code =="
-    claude mcp remove agency 2>/dev/null || true
+    claude mcp remove agency --scope user 2>/dev/null || true
     claude mcp add --transport http agency --scope user "$AGENCY_MCP_URL"
     claude mcp list
     echo ""

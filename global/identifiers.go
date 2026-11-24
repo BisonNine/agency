@@ -38,15 +38,20 @@ const (
 	// LockFileName is the single-instance lock file in the data directory.
 	LockFileName = "agency.lock"
 
+	// HostMCPServerKey is the name this host's MCP server is registered under
+	// in each CLI's own configuration (`claude mcp add ... agency ...`).
+	HostMCPServerKey = "agency"
+
 	// HostMCPToolPrefix is the prefix CLI agents see on this host's MCP tools:
-	// the MCP server is registered under the key "agency", and the CLIs name its
-	// tools mcp__<key>__<tool>. Changing it would rename every host tool.
-	HostMCPToolPrefix = "mcp__agency__"
+	// the MCP server is registered under HostMCPServerKey, and the CLIs name
+	// its tools mcp__<key>__<tool>. Changing it would rename every host tool.
+	HostMCPToolPrefix = "mcp__" + HostMCPServerKey + "__"
 
 	// HostMCPOpenCodeToolPrefix is the prefix OpenCode shows this host's MCP
 	// tools under: it names a server's tools <key>_<tool> (with the server's
-	// Code Mode off), so the server registered as "agency" gives agency_<tool>.
-	HostMCPOpenCodeToolPrefix = "agency_"
+	// Code Mode off), so the server registered as HostMCPServerKey gives
+	// agency_<tool>.
+	HostMCPOpenCodeToolPrefix = HostMCPServerKey + "_"
 
 	// HostMCPRealm is the realm of the WWW-Authenticate challenge the host's
 	// bearer MCP endpoint answers a refused request with.
