@@ -39,7 +39,7 @@ Agency keeps everything in one data directory: `~/.agency`, unless the `AGENCY_H
 | `credentials.json` | The WebUI admin account. |
 | `agents/<id>/` | One folder per agent: its prompt files, its `files/` working area, conversation and memory. |
 | `skills/` | Skills shared by all agents. |
-| `logs/` | `claw.log`, `error.log` and `alerts.log`. |
+| `logs/` | `agency.log`, `error.log` and `alerts.log`. |
 | `backup/` | The nightly backup archives ([Backup and restore](../admin/backup.md)). |
 
 ## Next step

@@ -35,8 +35,8 @@ echo ""
 
 if have agy; then
     echo "== Antigravity =="
-    agy mcp remove claw 2>/dev/null || true
-    agy mcp add claw "$AGENCY_MCP_URL" --type http
+    agy mcp remove agency 2>/dev/null || true
+    agy mcp add agency "$AGENCY_MCP_URL" --type http
     agy mcp list
     echo ""
 else
@@ -46,8 +46,8 @@ fi
 
 if have codex; then
     echo "== Codex CLI =="
-    codex mcp remove claw 2>/dev/null || true
-    codex mcp add claw --url "$AGENCY_MCP_URL"
+    codex mcp remove agency 2>/dev/null || true
+    codex mcp add agency --url "$AGENCY_MCP_URL"
     codex mcp list
     echo ""
 else
@@ -57,8 +57,8 @@ fi
 
 if have claude; then
     echo "== Claude Code =="
-    claude mcp remove claw 2>/dev/null || true
-    claude mcp add --transport http claw --scope user "$AGENCY_MCP_URL"
+    claude mcp remove agency 2>/dev/null || true
+    claude mcp add --transport http agency --scope user "$AGENCY_MCP_URL"
     claude mcp list
     echo ""
 else
@@ -71,23 +71,23 @@ if have opencode; then
     # `opencode mcp add` replaces the whole entry and has no flag for Code Mode,
     # so it is turned off again in the file the command wrote: with it on, the
     # model must write a script to call a tool, and weaker models fail.
-    if out=$(opencode mcp add claw --url "$AGENCY_MCP_URL" --global); then
+    if out=$(opencode mcp add agency --url "$AGENCY_MCP_URL" --global); then
         echo "$out"
-        cfg=$(printf '%s\n' "$out" | sed -n 's/^MCP server "claw" added to //p')
+        cfg=$(printf '%s\n' "$out" | sed -n 's/^MCP server "agency" added to //p')
         if [ -n "$cfg" ] && have python3 && python3 - "$cfg" 2>/dev/null <<'PY'
 import json, sys
 path = sys.argv[1]
 with open(path) as f:
     config = json.load(f)
-config["mcp"]["servers"]["claw"]["codemode"] = False
+config["mcp"]["servers"]["agency"]["codemode"] = False
 with open(path, "w") as f:
     json.dump(config, f, indent=2)
     f.write("\n")
 PY
         then
-            echo "Code Mode off for claw in $cfg"
+            echo "Code Mode off for agency in $cfg"
         else
-            echo "Turn Code Mode off by hand: add \"codemode\": false to mcp.servers.claw in the global opencode.json"
+            echo "Turn Code Mode off by hand: add \"codemode\": false to mcp.servers.agency in the global opencode.json"
         fi
     fi
     echo ""
@@ -101,6 +101,6 @@ echo "Done."
 if have cursor-agent || have agent; then
     echo "== Cursor: no 'mcp add' subcommand — configure it by hand =="
     echo "   Add this to ~/.cursor/mcp.json under \"mcpServers\":"
-    echo "     \"claw\": { \"url\": \"$AGENCY_MCP_URL\" }"
+    echo "     \"agency\": { \"url\": \"$AGENCY_MCP_URL\" }"
     echo ""
 fi

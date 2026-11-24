@@ -91,10 +91,10 @@ func fixture(t *testing.T) Source {
 	writeFileT(t, filepath.Join(home, "tls", "server.key"), "KEY", 0o600)
 	writeFileT(t, filepath.Join(home, "cards", "bob.json"), `{"spec":"chara_card_v3"}`, 0o600)
 	writeFileT(t, filepath.Join(home, "internal", "tokens.json"), `{"t":1}`, 0o600)
-	writeFileT(t, filepath.Join(home, "internal", "claw.pid"), "123\n", 0o600)
-	writeFileT(t, filepath.Join(home, "internal", "claw.lock"), "123\n", 0o600)
+	writeFileT(t, filepath.Join(home, "internal", "agency.pid"), "123\n", 0o600)
+	writeFileT(t, filepath.Join(home, "internal", "agency.lock"), "123\n", 0o600)
 	writeFileT(t, filepath.Join(home, "media", "cache.bin"), "media", 0o644)
-	writeFileT(t, filepath.Join(home, "logs", "claw.log"), "log", 0o644)
+	writeFileT(t, filepath.Join(home, "logs", "agency.log"), "log", 0o644)
 	writeFileT(t, filepath.Join(home, "backup", "claw-backup-20200101-000000.tar.gz"), "old", 0o600)
 	writeFileT(t, filepath.Join(home, "agents", "main", "tmp", "scratch.db"), "not a db", 0o644)
 	writeFileT(t, filepath.Join(home, "agents", "main", "files", "notes.txt"), "not archived", 0o644)
@@ -200,10 +200,10 @@ func TestRunArchivesLiveWALDatabases(t *testing.T) {
 		t.Fatalf("manifest = %+v", m)
 	}
 	for _, excluded := range []string{
-		"media/cache.bin", "logs/claw.log", "backup/claw-backup-20200101-000000.tar.gz",
+		"media/cache.bin", "logs/agency.log", "backup/claw-backup-20200101-000000.tar.gz",
 		"agents/main/tmp/scratch.db", "agents/main/files/notes.txt",
 		"internal/gateway.db-wal", "internal/gateway.db-shm",
-		"internal/claw.pid", "internal/claw.lock",
+		"internal/agency.pid", "internal/agency.lock",
 	} {
 		if _, ok := entries[excluded]; ok {
 			t.Errorf("%s must not be archived", excluded)

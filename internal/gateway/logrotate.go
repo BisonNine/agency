@@ -13,20 +13,20 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// datedLogRe matches a rolled daily log such as "20260616-claw.log" or
-// "20260616-error.log". The active claw.log / error.log have no date prefix and
+// datedLogRe matches a rolled daily log such as "20260616-agency.log" or
+// "20260616-error.log". The active agency.log / error.log have no date prefix and
 // are never matched, nor are files under logs/dumps/.
 var datedLogRe = regexp.MustCompile(`^\d{8}-.+\.log$`)
 
 // startLogRotation rolls the active logs at local midnight, rolls immediately on
-// startup when the active claw.log was last written before today (covering the
+// startup when the active agency.log was last written before today (covering the
 // case where the gateway was down at midnight), and prunes rolled archives older
 // than retentionDays. retentionDays <= 0 keeps archives forever. The goroutine
 // exits when ctx is cancelled.
 func startLogRotation(ctx context.Context, logPath string, retentionDays int, a alerter.Alerter) {
 	dir := filepath.Dir(logPath)
 
-	// Startup roll: archive claw.log now if its last write predates today.
+	// Startup roll: archive agency.log now if its last write predates today.
 	if fi, err := os.Stat(logPath); err == nil && fi.Size() > 0 {
 		if dateOf(fi.ModTime()).Before(dateOf(time.Now())) {
 			rollLogs(a)

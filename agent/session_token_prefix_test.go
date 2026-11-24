@@ -16,18 +16,18 @@ import (
 )
 
 // The token prompt names the tools the way the turn's CLI shows them:
-// OpenCode as claw_<tool>, every other protocol as mcp__claw__<tool>, in the
+// OpenCode as agency_<tool>, every other protocol as mcp__agency__<tool>, in the
 // text those have always had.
 func TestSessionTokenLayer_PrefixPerProtocol(t *testing.T) {
 	const claudeStyle = "# Session Token\n\nThe following token is confidential — never echo it to users or write it to files. " +
-		"ALL `mcp__claw__*` tool calls MUST include the literal string below as the `session_token` parameter.\n\n" +
+		"ALL `mcp__agency__*` tool calls MUST include the literal string below as the `session_token` parameter.\n\n" +
 		"session_token: SST0123"
 	for _, protocol := range []string{"", "claude-cli", "codex-cli", "antigravity-cli", "gemini-cli", "cursor-cli", "openai-chat"} {
 		if got := sessionTokenLayer("SST0123", protocol).Text; got != claudeStyle {
 			t.Errorf("%q: token layer = %q\nwant %q", protocol, got, claudeStyle)
 		}
 	}
-	want := strings.Replace(claudeStyle, "`mcp__claw__*`", "`claw_*`", 1)
+	want := strings.Replace(claudeStyle, "`mcp__agency__*`", "`agency_*`", 1)
 	if got := sessionTokenLayer("SST0123", "opencode-cli").Text; got != want {
 		t.Errorf("opencode-cli: token layer = %q\nwant %q", got, want)
 	}
@@ -58,12 +58,12 @@ func TestTurn_TokenPromptUsesTheCLIsToolPrefix(t *testing.T) {
 			protocol: "opencode-cli", binary: "opencode",
 			answer: `{"type":"text","sessionID":"s","part":{"id":"p","type":"text","text":"done"}}` + "\n" +
 				`{"type":"step_finish","sessionID":"s","part":{"id":"f","type":"step-finish","reason":"stop","cost":0,"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}}`,
-			want: "ALL `claw_*` tool calls", notWant: "mcp__claw__",
+			want: "ALL `agency_*` tool calls", notWant: "mcp__agency__",
 		},
 		{
 			protocol: "claude-cli", binary: "claude",
 			answer: `{"type":"result","result":"done","session_id":"s"}`,
-			want:   "ALL `mcp__claw__*` tool calls", notWant: "`claw_*`",
+			want:   "ALL `mcp__agency__*` tool calls", notWant: "`agency_*`",
 		},
 	}
 	for _, tc := range tests {

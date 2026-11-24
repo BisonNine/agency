@@ -31,7 +31,7 @@ import (
 )
 
 // Name is the file written into the data directory's internal/.
-const Name = "claw.pid"
+const Name = "agency.pid"
 
 // Path returns the PID file path for a data directory.
 func Path(dataDir string) string { return filepath.Join(dataDir, global.InternalDir, Name) }

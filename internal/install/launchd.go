@@ -62,11 +62,11 @@ func buildLaunchdPlist(label, username, groupname, execPath, homeDir, binDir, ag
 	b.WriteString("\t</dict>\n")
 
 	// Standard log paths
-	logFile := "/tmp/claw-launchd.log"
+	logFile := "/tmp/agency-launchd.log"
 	if agencyHome != "" {
-		logFile = filepath.Join(agencyHome, "logs", "claw-launchd.log")
+		logFile = filepath.Join(agencyHome, "logs", "agency-launchd.log")
 	} else if homeDir != "" {
-		logFile = filepath.Join(homeDir, ".agency", "logs", "claw-launchd.log")
+		logFile = filepath.Join(homeDir, ".agency", "logs", "agency-launchd.log")
 	}
 	fmt.Fprintf(&b, "\t<key>StandardOutPath</key>\n\t<string>%s</string>\n", logFile)
 	fmt.Fprintf(&b, "\t<key>StandardErrorPath</key>\n\t<string>%s</string>\n", logFile)

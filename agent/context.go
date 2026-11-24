@@ -869,7 +869,7 @@ func sessionTokenLayer(token, protocol string) ctxengine.Layer {
 
 // hostToolPrefix is the prefix a model on protocol calls the host's MCP tools
 // under: OpenCode's own naming for the OpenCode CLI, the Claude-style
-// mcp__claw__ for every other protocol.
+// mcp__agency__ for every other protocol.
 func hostToolPrefix(protocol string) string {
 	if protocol == "opencode-cli" {
 		return global.HostMCPOpenCodeToolPrefix

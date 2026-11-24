@@ -650,7 +650,7 @@
       "format": "Format",
       "unsaved_changes": "You have unsaved changes.",
       "log_retention_days": "Log retention (days)",
-      "log_retention_days_hint": "Days of rolled daily logs (YYYYMMDD-claw.log / -error.log) to keep. claw.log rolls at local midnight. 0 = keep forever.",
+      "log_retention_days_hint": "Days of rolled daily logs (YYYYMMDD-agency.log / -error.log) to keep. agency.log rolls at local midnight. 0 = keep forever.",
       "backup_desc": "Nightly backup: config.json, the cron jobs file, credentials, TLS material, state and every SQLite database (sessions, memory) written as one claw-backup-<timestamp>.tar.gz archive. Agent workspace files are not included. On by default.",
       "backup_enabled": "Nightly backup",
       "backup_enabled_hint": "When on, write a claw-backup-<timestamp>.tar.gz archive to the destination directory once a day.",

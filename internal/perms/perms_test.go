@@ -121,7 +121,7 @@ var tree = []struct {
 	{"bin/backup.sh", 0o755, 0o700, "bin keeps exec, loses group/other"},
 	{"bin/get-token", 0o600, 0o700, "bin wins over a secret name"},
 	{"logs/", 0o700, 0o750, "logs folder widened (logs are walked)"},
-	{"logs/claw.log", 0o600, 0o640, "log widened"},
+	{"logs/agency.log", 0o600, 0o640, "log widened"},
 	{"logs/dumps/", 0o755, 0o750, "logs subtree"},
 	{"logs/token.log", 0o644, 0o640, "a secret name does not override logs"},
 	{"media/", 0o755, 0o700, "media folder tightened (media is walked)"},
@@ -181,7 +181,7 @@ func TestEnforceExactModes(t *testing.T) {
 		t.Errorf("symlink replaced or removed: %v", err)
 	}
 	joined := strings.Join(rec.info, "\n")
-	for _, want := range []string{"set file permissions " + filepath.Join(home, "logs", "claw.log"), "set file permissions " + home} {
+	for _, want := range []string{"set file permissions " + filepath.Join(home, "logs", "agency.log"), "set file permissions " + home} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("INFO log lacks %q:\n%s", want, joined)
 		}
@@ -267,7 +267,7 @@ func TestCheckReportsWithoutChanging(t *testing.T) {
 	if err := os.Chmod(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	place(t, home, "logs/claw.log", 0o600)     // tighter than 0640: not reported
+	place(t, home, "logs/agency.log", 0o600)   // tighter than 0640: not reported
 	place(t, home, "internal/audit.db", 0o644) // looser than 0600: reported
 	place(t, home, "logs/", 0o750)
 	place(t, home, "internal/", 0o700)
@@ -417,7 +417,7 @@ func TestEnforceSymlinkedDataDir(t *testing.T) {
 	if err := os.Symlink(target, home); err != nil {
 		t.Fatal(err)
 	}
-	logFile := place(t, target, "logs/claw.log", 0o600)
+	logFile := place(t, target, "logs/agency.log", 0o600)
 	secret := place(t, target, "internal/gateway.db", 0o644)
 	if err := Enforce(home, PolicyFor(operatorConfig(t, home)), Logger{}); err != nil {
 		t.Fatalf("Enforce: %v", err)

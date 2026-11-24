@@ -6,7 +6,7 @@ This page lists common problems, the message Agency shows or logs for each, and 
 
 - **Check Up** in the WebUI marks configuration that needs attention. See [Check Up and the full report](../admin/checkup.md).
 - **Logs** in the WebUI shows the log and, through its source selector, the alerts. See [Logs](../admin/logs.md) and [Alerts](../admin/alerts.md).
-- On the server, the data directory holds `logs/claw.log` (everything), `logs/error.log` (warnings and errors only) and `logs/alerts.log`.
+- On the server, the data directory holds `logs/agency.log` (everything), `logs/error.log` (warnings and errors only) and `logs/alerts.log`.
 - `claw status` shows whether Agency is running and where to reach it.
 
 ## The service does not start

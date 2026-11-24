@@ -8,18 +8,18 @@ All in `<AGENCY_HOME>/logs/` (by default `~/.agency/logs/`; on a system install 
 
 | File | What it holds |
 |---|---|
-| `claw.log` | The main log: everything at or above the configured level. |
+| `agency.log` | The main log: everything at or above the configured level. |
 | `error.log` | Warnings and errors only, to scan for problems quickly. |
 | `alerts.log` | Every [alert](./alerts.md). |
 | `accounting.log` | One line per model call, with its agent, [billing code](./billing.md), tokens and cost. Not rotated. |
-| `YYYYMMDD-claw.log`, `YYYYMMDD-error.log` | Earlier days. |
+| `YYYYMMDD-agency.log`, `YYYYMMDD-error.log` | Earlier days. |
 | `dumps/` | Diagnostic dumps, when turned on. |
 
 Log files are readable only by the service user.
 
 ## Daily rotation
 
-At local midnight `claw.log` and `error.log` are renamed with the date and new files are started. If Agency was not running at midnight, this happens at its next start.
+At local midnight `agency.log` and `error.log` are renamed with the date and new files are started. If Agency was not running at midnight, this happens at its next start.
 
 Earlier days are kept for 30 days by default. To change that:
 
@@ -32,7 +32,7 @@ If rotation fails, the "Log rotation failed" [alert](./alerts.md) is raised.
 ## The Logs page
 
 1. Open **Logs** in the **Services** group.
-2. The **Log** selector chooses **Agency log** (`claw.log`) or **Alerts** (`alerts.log`).
+2. The **Log** selector chooses **Agency log** (`agency.log`) or **Alerts** (`alerts.log`).
 3. **Show** sets how many of the latest lines to display (100 to 2000).
 4. Click **Refresh** to fetch new lines; the page does not update by itself.
 
@@ -64,7 +64,7 @@ Use `debug` only while looking into a problem; it is much more verbose.
 
 | Option | Default | What it does |
 |---|---|---|
-| `file` | `true` | Write `claw.log` and `error.log`. |
+| `file` | `true` | Write `agency.log` and `error.log`. |
 | `console` | `true` | Also write to the console. |
 | `level` | `info` | Lowest level written. |
 | `json` | `false` | Write JSON lines instead of plain text. |
@@ -80,10 +80,10 @@ Each option can also be set with an environment variable in the service, such as
 
 ## Follow one turn
 
-Each agent turn has a short `turn_id` on its log lines and on its entries in the [audit log](./audit.md). Search `claw.log` for it to see the whole turn:
+Each agent turn has a short `turn_id` on its log lines and on its entries in the [audit log](./audit.md). Search `agency.log` for it to see the whole turn:
 
 ```
-grep 1a2b3c4d ~/.agency/logs/claw.log
+grep 1a2b3c4d ~/.agency/logs/agency.log
 ```
 
 ## Startup permission checks

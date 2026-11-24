@@ -32,7 +32,7 @@ Columns: **Time**, **Kind**, **Actor / agent**, **Channel**, **Tool / summary**,
 
 ## Follow one turn through the logs
 
-Each agent turn gets a short `turn_id`. It is on the turn's tool calls in the audit log and on its lines in `claw.log`, so you can search the [log](./logs.md) for it to see the whole turn.
+Each agent turn gets a short `turn_id`. It is on the turn's tool calls in the audit log and on its lines in `agency.log`, so you can search the [log](./logs.md) for it to see the whole turn.
 
 ## Where it is kept
 

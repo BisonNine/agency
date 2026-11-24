@@ -27,7 +27,7 @@ func TestWriteOwnerOnlyModes(t *testing.T) {
 	if got := di.Mode().Perm(); got != 0o700 {
 		t.Errorf("data dir mode = %04o, want 0700", got)
 	}
-	if want := filepath.Join(dir, "internal", "claw.pid"); Path(dir) != want {
+	if want := filepath.Join(dir, "internal", "agency.pid"); Path(dir) != want {
 		t.Errorf("Path = %s, want %s", Path(dir), want)
 	}
 	fi, err := os.Stat(Path(dir))

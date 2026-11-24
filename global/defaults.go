@@ -42,7 +42,7 @@ const (
 const DefaultLogRetentionDays = 30
 
 // ErrorLogLevel is the minimum level (this level and above) mirrored to the
-// high-signal error.log beside claw.log: "warn" captures warnings, errors, and
+// high-signal error.log beside agency.log: "warn" captures warnings, errors, and
 // fatals. Valid values: debug, info, warn, error, fatal.
 const ErrorLogLevel = "warn"
 

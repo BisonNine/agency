@@ -46,8 +46,8 @@ func TestBearerAuth(t *testing.T) {
 			t.Errorf("%s: status = %d, want %d (%s)", name, rec.Code, wantCode, rec.Body)
 		}
 		if wantCode == http.StatusUnauthorized {
-			if got := rec.Header().Get("WWW-Authenticate"); got != `Bearer realm="claw-mcp"` {
-				t.Errorf("%s: WWW-Authenticate = %q, want the claw-mcp Bearer challenge", name, got)
+			if got := rec.Header().Get("WWW-Authenticate"); got != `Bearer realm="agency-mcp"` {
+				t.Errorf("%s: WWW-Authenticate = %q, want the agency-mcp Bearer challenge", name, got)
 			}
 		}
 	}

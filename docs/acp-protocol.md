@@ -87,7 +87,7 @@ claw acp --debug                 # debug logging (file only — stdout is the wi
 ```
 
 Because stdout carries the protocol, the console logger is disabled and all
-logging goes to `$AGENCY_HOME/logs/claw.log`.
+logging goes to `$AGENCY_HOME/logs/agency.log`.
 
 ### One-time pairing with `--no-auto-pair`
 

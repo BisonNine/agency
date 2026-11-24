@@ -54,7 +54,7 @@ Alice: The Claude CLI declined to use tools (file_write). Tick *Allow CLI to byp
 
 The reply starts with the agent's name, so it is clear whose CLI refused in a chat shared by several agents. Agency does not try the agent's next model in this case.
 
-To keep bypass off and still let the CLI use Agency's tools, allow those tools in the CLI's own permission settings for the service user. Agency's tools reach the CLI under the MCP server name `claw` (tool names start with `mcp__claw__`, or `claw_` in OpenCode). See the CLI's documentation for how to allow them.
+To keep bypass off and still let the CLI use Agency's tools, allow those tools in the CLI's own permission settings for the service user. Agency's tools reach the CLI under the MCP server name `claw` (tool names start with `mcp__agency__`, or `claw_` in OpenCode). See the CLI's documentation for how to allow them.
 
 **On:** Agency passes the flag from the table above on every call. The CLI can then run commands and change files anywhere the service user can, without asking, outside Agency's own workspace and shell controls. Turn it on only for a CLI running as a user whose access you are comfortable giving to the agent.
 

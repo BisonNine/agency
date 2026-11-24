@@ -16,14 +16,14 @@ func TestPruneOldLogs(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	mk("20260101-claw.log")    // old → delete (cutoff = 2026-05-17)
-	mk("20260101-error.log")   // old → delete
-	mk("20260610-claw.log")    // within retention → keep
-	mk("20260610-error.log")   // within retention → keep
-	mk("claw.log")             // active → keep
-	mk("error.log")            // active → keep
-	mk("20260101-claw.log.gz") // non-.log suffix → keep
-	mk("notalog.txt")          // unrelated → keep
+	mk("20260101-agency.log")    // old → delete (cutoff = 2026-05-17)
+	mk("20260101-error.log")     // old → delete
+	mk("20260610-agency.log")    // within retention → keep
+	mk("20260610-error.log")     // within retention → keep
+	mk("agency.log")             // active → keep
+	mk("error.log")              // active → keep
+	mk("20260101-agency.log.gz") // non-.log suffix → keep
+	mk("notalog.txt")            // unrelated → keep
 
 	pruneOldLogs(dir, 30, now)
 
@@ -37,20 +37,20 @@ func TestPruneOldLogs(t *testing.T) {
 			t.Fatalf("%s should have been kept: %v", n, err)
 		}
 	}
-	gone("20260101-claw.log")
+	gone("20260101-agency.log")
 	gone("20260101-error.log")
-	kept("20260610-claw.log")
+	kept("20260610-agency.log")
 	kept("20260610-error.log")
-	kept("claw.log")
+	kept("agency.log")
 	kept("error.log")
-	kept("20260101-claw.log.gz")
+	kept("20260101-agency.log.gz")
 	kept("notalog.txt")
 }
 
 func TestPruneOldLogs_ZeroKeepsForever(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 6, 16, 12, 0, 0, 0, time.Local) //nolint:gosmopolitan // logs roll on the local calendar day by design
-	old := "20200101-claw.log"
+	old := "20200101-agency.log"
 	if err := os.WriteFile(filepath.Join(dir, old), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}

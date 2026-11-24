@@ -10,7 +10,7 @@ import (
 // none and a roll neither archives nor reopens the old files.
 func TestDisableFileLogging_ForgetsTheFiles(t *testing.T) {
 	dir := t.TempDir()
-	logPath := filepath.Join(dir, "claw.log")
+	logPath := filepath.Join(dir, "agency.log")
 	if err := EnableFileLogging(logPath, false); err != nil {
 		t.Fatal(err)
 	}
@@ -19,7 +19,7 @@ func TestDisableFileLogging_ForgetsTheFiles(t *testing.T) {
 	if got := GetLogFilePath(); got != "" {
 		t.Errorf("GetLogFilePath after disable = %q, want empty", got)
 	}
-	for _, name := range []string{"claw.log", errorLogName} {
+	for _, name := range []string{"agency.log", errorLogName} {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
 			t.Fatal(err)
 		}

@@ -4,7 +4,7 @@
 // WebUI HTTP handlers, so there is no subprocess to spawn, stop, or
 // supervise. Lifecycle endpoints (start/stop/restart/status/events) were
 // removed along with the WebUI controls that backed them. The logs endpoint
-// tails the unified claw.log the whole process writes to.
+// tails the unified agency.log the whole process writes to.
 
 package api
 
@@ -25,7 +25,7 @@ const (
 	defaultLogLines = 250
 	maxLogLines     = 5000
 	// maxTailBytes caps how far back we read from the log file so a large
-	// claw.log never forces a full read; sized for the longest realistic lines.
+	// agency.log never forces a full read; sized for the longest realistic lines.
 	maxTailBytes = 16 << 20 // 16 MiB
 	bytesPerLine = 1024     // budget estimate for tail sizing
 )
@@ -56,7 +56,7 @@ func (h *Handler) handleGatewayReload(w http.ResponseWriter, r *http.Request) {
 	encodeJSON(w, map[string]string{"status": "reloaded"})
 }
 
-// handleGatewayLogs returns the last N lines of the unified claw.log, newest
+// handleGatewayLogs returns the last N lines of the unified agency.log, newest
 // last. N comes from the "lines" query param (default 250, capped at 5000).
 //
 //	GET /api/gateway/logs?lines=250

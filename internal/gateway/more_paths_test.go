@@ -347,7 +347,7 @@ func TestACPPromptAttachments_Named(t *testing.T) {
 func TestPruneOldLogs_Edges(t *testing.T) {
 	pruneOldLogs(filepath.Join(t.TempDir(), "missing"), 7, time.Now()) // no folder: nothing to do
 	dir := t.TempDir()
-	odd := filepath.Join(dir, "99999999-claw.log") // dated-looking but no date
+	odd := filepath.Join(dir, "99999999-agency.log") // dated-looking but no date
 	if err := os.WriteFile(odd, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestPruneOldLogs_Edges(t *testing.T) {
 		t.Errorf("an undated file was pruned: %v", err)
 	}
 	if os.Geteuid() != 0 {
-		old := filepath.Join(dir, "20000101-claw.log")
+		old := filepath.Join(dir, "20000101-agency.log")
 		if err := os.WriteFile(old, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -385,7 +385,7 @@ func TestGatewayCmd_DegradedStart(t *testing.T) {
 	g.rewriteConfig(t, func(s string) string {
 		return strings.Replace(s, `"base_dir": `, `"common_dir": "`+filepath.Join(blocker, "common")+`", "base_dir": `, 1)
 	})
-	if err := os.MkdirAll(filepath.Join(g.home, "internal", "claw.pid", "x"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(g.home, "internal", "agency.pid", "x"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(g.home, "logs"), nil, 0o600); err != nil {

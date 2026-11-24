@@ -85,7 +85,7 @@ func TestToolActivitySummary(t *testing.T) {
 		},
 		{
 			desc: "underscored tool name is backticked (not italicised by telegram)",
-			tool: "mcp__claw__cogmem_memory_create",
+			tool: "mcp__agency__cogmem_memory_create",
 			args: nil,
 			want: "🔧 `cogmem_memory_create`",
 		},
@@ -98,7 +98,7 @@ func TestToolActivitySummary(t *testing.T) {
 		},
 		{
 			desc: "get_tool_details shows the target tool name",
-			tool: "mcp__claw__get_tool_details",
+			tool: "mcp__agency__get_tool_details",
 			args: map[string]any{"name": "wxca_city_get"},
 			want: "🔧 `get_tool_details` `wxca_city_get`",
 		},

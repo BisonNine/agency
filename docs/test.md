@@ -70,7 +70,7 @@ must approve. It passes when the tool ran or when the turn ended with the
 With the same switch, `tests/test_cli_ccv3.sh` runs while the integration
 gateway is up: the probe asks main's `agent_spawn` to run a turn on an agent
 whose model is the Claude CLI, pointed by its `mcp.json` at that gateway's own
-MCP host and allowed only `mcp__claw__ccv3`, and told to create a card. It
+MCP host and allowed only `mcp__agency__ccv3`, and told to create a card. It
 passes when the card file is in the gateway's `cards/` library and the gateway
 logged the tool's write, so a model's tool call over MCP from a CLI provider is
 exercised end to end; the model's reply alone is not evidence. Each costs one

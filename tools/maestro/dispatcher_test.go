@@ -67,8 +67,9 @@ func TestDispatcher_PropagatesDepth(t *testing.T) {
 // default"; anything else is passed to the host as a model alias.
 func TestDispatcher_ModelHintPassthrough(t *testing.T) {
 	cases := map[string]string{
-		"": "", "default": "", "Default": "", "host": "", "claw": "", "  fast  ": "fast", "Pro": "Pro",
+		"": "", "default": "", "Default": "", "host": "", "agency": "", "  fast  ": "fast", "Pro": "Pro",
 	}
+	cases["claw"] = "claw" // rename-guard:old-name — the old label is an ordinary model name now
 	for hint, want := range cases {
 		runner := &stubRunner{}
 		d := &dispatcher{run: runner}

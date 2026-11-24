@@ -150,9 +150,9 @@ func TestGatewayCmd_QuietLogging(t *testing.T) {
 	if err := g.wait(t); exitCode(err) != exitCodeServiceDied {
 		t.Fatalf("gatewayCmd = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(g.home, "logs", "claw.log")); err == nil {
-		if b, rerr := os.ReadFile(filepath.Join(g.home, "logs", "claw.log")); rerr != nil || strings.Contains(string(b), "Shutting down") {
-			t.Error("claw.log written with file logging off")
+	if _, err := os.Stat(filepath.Join(g.home, "logs", "agency.log")); err == nil {
+		if b, rerr := os.ReadFile(filepath.Join(g.home, "logs", "agency.log")); rerr != nil || strings.Contains(string(b), "Shutting down") {
+			t.Error("agency.log written with file logging off")
 		}
 	}
 }

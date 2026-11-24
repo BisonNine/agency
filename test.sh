@@ -559,11 +559,11 @@ PY
                 CLI_LIVE_ALLOW=""
                 CLI_LIVE_CMD="${AGENCY_TEST_CLI_COMMAND:-claude}"
                 if [ "${AGENCY_TEST_CLI:-}" = "1" ] && command -v "$CLI_LIVE_CMD" >/dev/null 2>&1; then
-                    printf '{"mcpServers":{"claw":{"type":"http","url":"http://127.0.0.1:%s/internal"}}}\n' "$MCP_PORT" > "$INTEG_HOME/mcp.json"
+                    printf '{"mcpServers":{"agency":{"type":"http","url":"http://127.0.0.1:%s/internal"}}}\n' "$MCP_PORT" > "$INTEG_HOME/mcp.json"
                     chmod 600 "$INTEG_HOME/mcp.json"
                     CLI_LIVE_JSON="\"providers\": [{\"name\": \"Claude CLI\", \"protocol\": \"claude-cli\", \"command\": \"$(command -v "$CLI_LIVE_CMD")\"}],
   \"models\": [{\"model_name\": \"Claude CLI\", \"model\": \"claude-cli\", \"provider\": \"Claude CLI\", \"enabled\": true, \"request_timeout\": 180,
-    \"extra_args\": [\"--mcp-config\", \"$INTEG_HOME/mcp.json\", \"--strict-mcp-config\", \"--allowedTools\", \"mcp__claw__ccv3\"]}],"
+    \"extra_args\": [\"--mcp-config\", \"$INTEG_HOME/mcp.json\", \"--strict-mcp-config\", \"--allowedTools\", \"mcp__agency__ccv3\"]}],"
                     CLI_LIVE_AGENT=",
       {\"id\": \"cli\", \"name\": \"cli\", \"models\": [\"Claude CLI\"], \"ccv3\": true}"
                     CLI_LIVE_ALLOW="\"subagents\": {\"allow_agents\": [\"cli\"]},"
@@ -785,19 +785,19 @@ EOF
                     # The port probe above can win a race with the write, so
                     # poll briefly rather than testing once.
                     for _ in $(seq 1 20); do
-                        [ -f "$INTEG_HOME/internal/claw.pid" ] && break
+                        [ -f "$INTEG_HOME/internal/agency.pid" ] && break
                         sleep 0.25
                     done
-                    if [ -f "$INTEG_HOME/internal/claw.pid" ]; then
-                        PIDFILE_CONTENT=$(cat "$INTEG_HOME/internal/claw.pid" 2>/dev/null | tr -d ' \n')
+                    if [ -f "$INTEG_HOME/internal/agency.pid" ]; then
+                        PIDFILE_CONTENT=$(cat "$INTEG_HOME/internal/agency.pid" 2>/dev/null | tr -d ' \n')
                         if [ "$PIDFILE_CONTENT" = "$INTEG_PID" ]; then
-                            echo "  ${GREEN}PASS${NC}: claw.pid written at startup (pid $PIDFILE_CONTENT)"
+                            echo "  ${GREEN}PASS${NC}: agency.pid written at startup (pid $PIDFILE_CONTENT)"
                             INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
                         else
-                            integ_fail "claw.pid says '$PIDFILE_CONTENT', process is $INTEG_PID"
+                            integ_fail "agency.pid says '$PIDFILE_CONTENT', process is $INTEG_PID"
                         fi
                     else
-                        integ_fail "claw.pid not written at startup"
+                        integ_fail "agency.pid not written at startup"
                     fi
                     echo ""
 
@@ -939,10 +939,10 @@ EOF
                     # reaches.
                     if ! $TERM_CLEAN; then
                         integ_fail "Agency did not exit within 5s of SIGTERM"
-                    elif [ -f "$INTEG_HOME/internal/claw.pid" ]; then
-                        integ_fail "claw.pid survived SIGTERM — shutdown did not run"
+                    elif [ -f "$INTEG_HOME/internal/agency.pid" ]; then
+                        integ_fail "agency.pid survived SIGTERM — shutdown did not run"
                     else
-                        echo "  ${GREEN}PASS${NC}: SIGTERM ran graceful shutdown (claw.pid removed)"
+                        echo "  ${GREEN}PASS${NC}: SIGTERM ran graceful shutdown (agency.pid removed)"
                         INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))
                     fi
                     echo ""

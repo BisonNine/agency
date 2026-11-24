@@ -10,7 +10,7 @@ import (
 
 func TestRollLogFile(t *testing.T) {
 	dir := t.TempDir()
-	logPath := filepath.Join(dir, "claw.log")
+	logPath := filepath.Join(dir, "agency.log")
 
 	if err := EnableFileLogging(logPath, false); err != nil {
 		t.Fatalf("EnableFileLogging: %v", err)
@@ -25,7 +25,7 @@ func TestRollLogFile(t *testing.T) {
 	// Force a known mtime so the archive name is deterministic.
 	ts := time.Date(2026, 1, 2, 10, 0, 0, 0, time.Local) //nolint:gosmopolitan // logs roll on the local calendar day by design
 	if err := os.Chtimes(logPath, ts, ts); err != nil {
-		t.Fatalf("chtimes claw.log: %v", err)
+		t.Fatalf("chtimes agency.log: %v", err)
 	}
 	if err := os.Chtimes(filepath.Join(dir, "error.log"), ts, ts); err != nil {
 		t.Fatalf("chtimes error.log: %v", err)
@@ -36,7 +36,7 @@ func TestRollLogFile(t *testing.T) {
 	}
 
 	// Both active logs are archived under the mtime date.
-	clawArchive := filepath.Join(dir, "20260102-claw.log")
+	clawArchive := filepath.Join(dir, "20260102-agency.log")
 	errArchive := filepath.Join(dir, "20260102-error.log")
 	if _, err := os.Stat(clawArchive); err != nil {
 		t.Fatalf("expected dated claw archive: %v", err)
@@ -78,7 +78,7 @@ func TestRollLogFile_NoFileLogging(t *testing.T) {
 
 func TestFatalWritesToAllSinksBeforeExit(t *testing.T) {
 	dir := t.TempDir()
-	logPath := filepath.Join(dir, "claw.log")
+	logPath := filepath.Join(dir, "agency.log")
 	if err := EnableFileLogging(logPath, false); err != nil {
 		t.Fatalf("EnableFileLogging: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestFatalWritesToAllSinksBeforeExit(t *testing.T) {
 	clawData := mustReadFile(t, logPath)
 	errData := mustReadFile(t, filepath.Join(dir, "error.log"))
 	if !strings.Contains(string(clawData), "fatal boom") {
-		t.Fatalf("claw.log missing fatal line: %q", clawData)
+		t.Fatalf("agency.log missing fatal line: %q", clawData)
 	}
 	if !strings.Contains(string(errData), "fatal boom") {
 		t.Fatalf("error.log missing fatal line: %q", errData)

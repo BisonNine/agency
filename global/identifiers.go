@@ -33,24 +33,24 @@ const (
 	SystemDataDir = "/opt/agency"
 
 	// LogFileName is the main log file under <AGENCY_HOME>/logs.
-	LogFileName = "claw.log"
+	LogFileName = "agency.log"
 
 	// LockFileName is the single-instance lock file in the data directory.
-	LockFileName = "claw.lock"
+	LockFileName = "agency.lock"
 
 	// HostMCPToolPrefix is the prefix CLI agents see on this host's MCP tools:
-	// the MCP server is registered under the key "claw", and the CLIs name its
+	// the MCP server is registered under the key "agency", and the CLIs name its
 	// tools mcp__<key>__<tool>. Changing it would rename every host tool.
-	HostMCPToolPrefix = "mcp__claw__"
+	HostMCPToolPrefix = "mcp__agency__"
 
 	// HostMCPOpenCodeToolPrefix is the prefix OpenCode shows this host's MCP
 	// tools under: it names a server's tools <key>_<tool> (with the server's
-	// Code Mode off), so the server registered as "claw" gives claw_<tool>.
-	HostMCPOpenCodeToolPrefix = "claw_"
+	// Code Mode off), so the server registered as "agency" gives agency_<tool>.
+	HostMCPOpenCodeToolPrefix = "agency_"
 
 	// HostMCPRealm is the realm of the WWW-Authenticate challenge the host's
 	// bearer MCP endpoint answers a refused request with.
-	HostMCPRealm = "claw-mcp"
+	HostMCPRealm = "agency-mcp"
 
 	// ReleaseRepoName is the GitHub repository `upgrade` downloads releases
 	// from (owner BisonNine).
@@ -62,7 +62,7 @@ const (
 	// MaestroHostModel is the model label Maestro records for a task the host
 	// ran without naming a model; Maestro stores it and hands it back as a
 	// task's llm_model_id.
-	MaestroHostModel = "claw"
+	MaestroHostModel = "agency"
 
 	// FolderWatchMarkerHeader is the first line of a folder-watch marker file.
 	// The watcher parses it; a different header discards existing markers.

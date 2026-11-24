@@ -12,12 +12,12 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// staleLog enables file logging to dir/claw.log, writes a line and dates the
+// staleLog enables file logging to dir/agency.log, writes a line and dates the
 // file yesterday. It returns the log path and yesterday's archive name.
 func staleLog(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	logPath := filepath.Join(dir, "claw.log")
+	logPath := filepath.Join(dir, "agency.log")
 	if err := logger.EnableFileLogging(logPath, false); err != nil {
 		t.Fatal(err)
 	}
@@ -27,10 +27,10 @@ func staleLog(t *testing.T) (string, string) {
 	if err := os.Chtimes(logPath, yesterday, yesterday); err != nil {
 		t.Fatal(err)
 	}
-	return logPath, filepath.Join(dir, yesterday.Format("20060102")+"-claw.log")
+	return logPath, filepath.Join(dir, yesterday.Format("20060102")+"-agency.log")
 }
 
-// TestStartLogRotation_RollsStaleLog: a claw.log last written before today is
+// TestStartLogRotation_RollsStaleLog: a agency.log last written before today is
 // archived under its date at startup.
 func TestStartLogRotation_RollsStaleLog(t *testing.T) {
 	logPath, archived := staleLog(t)

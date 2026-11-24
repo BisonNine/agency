@@ -90,7 +90,7 @@ WS="$HOME_DIR/agents/alice"
 CLS_DIR="$WS/classifiers"
 STUB_LOG="$TMP/stub.log"
 GW_OUT="$TMP/gateway.out"
-AGENCY_LOG="$HOME_DIR/logs/claw.log"
+AGENCY_LOG="$HOME_DIR/logs/agency.log"
 STUB_PID=""
 AGENCY_PID=""
 

@@ -44,7 +44,7 @@ type dispatcher struct {
 
 // hostModel maps Maestro's llm_model_id hint to a host model request. Maestro's
 // own placeholders ("default", the "host" label its runner records, and the
-// synthetic "claw" model) all mean "the agent's worker chain": its worker
+// synthetic "agency" model) all mean "the agent's worker chain": its worker
 // models, else its own.
 func hostModel(llmID string) string {
 	m := strings.TrimSpace(llmID)

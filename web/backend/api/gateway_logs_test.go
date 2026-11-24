@@ -10,7 +10,7 @@ import (
 func writeLog(t *testing.T, lines int) string {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "claw.log")
+	path := filepath.Join(dir, "agency.log")
 	var b strings.Builder
 	for range lines {
 		b.WriteString("line-")
@@ -54,7 +54,7 @@ func TestTailLines_MoreRequestedThanFile(t *testing.T) {
 
 func TestTailLines_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "claw.log")
+	path := filepath.Join(dir, "agency.log")
 	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}

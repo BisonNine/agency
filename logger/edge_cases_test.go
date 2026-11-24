@@ -162,7 +162,7 @@ func TestDisableConsole(t *testing.T) {
 }
 
 func TestGetLogFilePath(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "claw.log")
+	path := filepath.Join(t.TempDir(), "agency.log")
 	if err := EnableFileLogging(path, true); err != nil {
 		t.Fatal(err)
 	}
@@ -190,26 +190,26 @@ func TestEnableFileLogging_Errors(t *testing.T) {
 				t.Error(err)
 			}
 		})
-		if err := EnableFileLogging(filepath.Join(ro, "logs", "claw.log"), false); err == nil || !strings.Contains(err.Error(), "failed to create log directory") {
+		if err := EnableFileLogging(filepath.Join(ro, "logs", "agency.log"), false); err == nil || !strings.Contains(err.Error(), "failed to create log directory") {
 			t.Errorf("log dir under a read-only dir: %v", err)
 		}
 	}
 
-	// claw.log is a directory.
+	// agency.log is a directory.
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "claw.log"), 0o700); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, "agency.log"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := EnableFileLogging(filepath.Join(dir, "claw.log"), false); err == nil || !strings.Contains(err.Error(), "failed to open log file") {
-		t.Errorf("claw.log is a dir: %v", err)
+	if err := EnableFileLogging(filepath.Join(dir, "agency.log"), false); err == nil || !strings.Contains(err.Error(), "failed to open log file") {
+		t.Errorf("agency.log is a dir: %v", err)
 	}
 
-	// error.log is a directory: claw.log opens, error.log fails.
+	// error.log is a directory: agency.log opens, error.log fails.
 	dir2 := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir2, errorLogName), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err := EnableFileLogging(filepath.Join(dir2, "claw.log"), false)
+	err := EnableFileLogging(filepath.Join(dir2, "agency.log"), false)
 	defer DisableFileLogging()
 	if err == nil || !strings.Contains(err.Error(), "failed to open error log file") {
 		t.Errorf("error.log is a dir: %v", err)
@@ -219,7 +219,7 @@ func TestEnableFileLogging_Errors(t *testing.T) {
 // Re-enabling file logging replaces both open files.
 func TestEnableFileLogging_Reopen(t *testing.T) {
 	dir := t.TempDir()
-	first, second := filepath.Join(dir, "a", "claw.log"), filepath.Join(dir, "b", "claw.log")
+	first, second := filepath.Join(dir, "a", "agency.log"), filepath.Join(dir, "b", "agency.log")
 	if err := EnableFileLogging(first, false); err != nil {
 		t.Fatal(err)
 	}
@@ -231,10 +231,10 @@ func TestEnableFileLogging_Reopen(t *testing.T) {
 	SetErrorLogLevel(WARN)
 	WarnC("test", "to second")
 	if strings.Contains(string(mustReadFile(t, first)), "to second") {
-		t.Error("line went to the replaced claw.log")
+		t.Error("line went to the replaced agency.log")
 	}
 	if !strings.Contains(string(mustReadFile(t, second)), "to second") {
-		t.Error("line missing from the new claw.log")
+		t.Error("line missing from the new agency.log")
 	}
 	if !strings.Contains(string(mustReadFile(t, filepath.Join(dir, "b", errorLogName))), "to second") {
 		t.Error("line missing from the new error.log")
@@ -244,7 +244,7 @@ func TestEnableFileLogging_Reopen(t *testing.T) {
 // A second roll on the same day appends to the dated archive.
 func TestRollLogFile_SameDayAppends(t *testing.T) {
 	dir := t.TempDir()
-	logPath := filepath.Join(dir, "claw.log")
+	logPath := filepath.Join(dir, "agency.log")
 	if err := EnableFileLogging(logPath, false); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestRollLogFile_SameDayAppends(t *testing.T) {
 			t.Fatalf("RollLogFile: %v", err)
 		}
 	}
-	data := string(mustReadFile(t, filepath.Join(dir, "20260304-claw.log")))
+	data := string(mustReadFile(t, filepath.Join(dir, "20260304-agency.log")))
 	if !strings.Contains(data, "first roll") || !strings.Contains(data, "second roll") {
 		t.Fatalf("archive = %q, want both rolls", data)
 	}

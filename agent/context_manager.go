@@ -275,7 +275,7 @@ func (al *AgentLoop) newCompressModelCaller(agent *AgentInstance, sessionKey str
 		chain = append(chain, primary+" (agent default)")
 	}
 
-	// One clear line (in claw.log) showing the whole compression chain that will
+	// One clear line (in agency.log) showing the whole compression chain that will
 	// be tried in order — the per-client detail above goes to the structured log
 	// too, but this is the at-a-glance summary of what's actually in effect.
 	logger.InfoCF("llmcontext", "compression model chain", map[string]any{

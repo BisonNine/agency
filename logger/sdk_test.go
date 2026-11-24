@@ -208,14 +208,14 @@ func TestSDKLogger_GroupsAndWithAttrs(t *testing.T) {
 // TestSDKLogger_ErrorLog: an SDK error reaches error.log like the host's own.
 func TestSDKLogger_ErrorLog(t *testing.T) {
 	dir := t.TempDir()
-	if err := EnableFileLogging(filepath.Join(dir, "claw.log"), true); err != nil {
+	if err := EnableFileLogging(filepath.Join(dir, "agency.log"), true); err != nil {
 		t.Fatal(err)
 	}
 	defer DisableFileLogging()
 	captureSDK(t, DEBUG, func() {
 		SDK().Error("store failed", "component", "memory", "path", "/x")
 	})
-	for _, name := range []string{"claw.log", errorLogName} {
+	for _, name := range []string{"agency.log", errorLogName} {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)

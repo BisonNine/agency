@@ -59,7 +59,7 @@ func TestPrintProcess_TreatsAStalePidFileAsNotRunning(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "internal", "claw.pid"), []byte("1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "internal", "agency.pid"), []byte("1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -102,7 +102,7 @@ at.
   - `/internal`: an `Argument` endpoint; every published schema gains the
     required `session_token` argument, which is removed before the tool runs.
   - `/mcp`: a `Bearer` endpoint; the `Authorization: Bearer` token is checked on
-    every request and a refused one is a 401 with realm `claw-mcp`.
+    every request and a refused one is a 401 with realm `agency-mcp`.
 - The host supplies who a token is (session and service tokens), each agent's
   view of its own registry (the endpoint's visibility filter; on `/mcp` the ACL
   too), the turn scope a call runs in, the ACL gate on the exact tool that runs,

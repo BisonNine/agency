@@ -146,8 +146,8 @@ func gatewayCmd(debug bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Daily log rotation: roll claw.log/error.log at local midnight (and on
-	// startup if claw.log predates today), pruning archives past retention.
+	// Daily log rotation: roll agency.log/error.log at local midnight (and on
+	// startup if agency.log predates today), pruning archives past retention.
 	startLogRotation(ctx, logPath, cfg.Logging.RetentionDays, agentLoop.Alerter())
 
 	go func() {
@@ -235,7 +235,7 @@ func startGatewayRun(
 }
 
 // startFileLogging enables file logging as early as possible, so startup,
-// config load, prune warnings and any fatal error are captured in claw.log,
+// config load, prune warnings and any fatal error are captured in agency.log,
 // not just on the console or journal. It returns the log file's path; the configured
 // format and level are applied once the config is loaded
 // (applyLoggingConfig).

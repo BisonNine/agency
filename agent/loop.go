@@ -348,7 +348,7 @@ type loopOptions struct {
 }
 
 // OwnsDataDir marks the loop as the data directory's owner: the process that
-// holds claw.lock (the gateway). Only the owner restores the saved temporary
+// holds agency.lock (the gateway). Only the owner restores the saved temporary
 // agents at start, removes stale temporary-agent directories and writes
 // internal/temp_agents.json. Without it (`claw agent` running beside the
 // service) the loop's temporary agents are kept in memory only and the

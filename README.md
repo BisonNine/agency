@@ -142,11 +142,11 @@ Everything claw keeps is in one data directory, `~/.agency` unless `AGENCY_HOME`
 | `bin/` | You | Your scripts and programs; files here keep their execute bits, which every other folder's files lose at start. |
 | `internal/` | claw | claw's own state: service and message tokens, the device pairing database and Fusion's OAuth tokens. |
 | `internal/audit.db` | claw | The audit log of tool calls, configuration changes and logins. |
-| `internal/claw.pid`, `internal/claw.lock` | claw | Mark the running instance, so a second one refuses to start. |
+| `internal/agency.pid`, `internal/agency.lock` | claw | Mark the running instance, so a second one refuses to start. |
 | `internal/temp/<uuid>/`, `internal/temp_agents.json` | claw | Temporary agents (sub-agent runs): each one's conversation and memory, and the list of those kept across restarts. Deleted when the run ends or after a day idle; not backed up. |
 | `fusion/` | You | Fusion's REST-API service definitions, its env file and `fusion.log`. |
 | `tls/` | claw | The self-signed HTTPS certificate and key (`gateway.tls.cert_file` uses your own instead). |
-| `logs/` | claw | `claw.log`, `error.log`, `alerts.log`, and `dumps/` when diagnostic dumps are on. |
+| `logs/` | claw | `agency.log`, `error.log`, `alerts.log`, and `dumps/` when diagnostic dumps are on. |
 | `media/` | claw | A temporary cache of files sent and received on channels. |
 | `cron/` | claw | `jobs.json`, the scheduled jobs. |
 | `backup/` | claw | The nightly backup archives. |

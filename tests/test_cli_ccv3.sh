@@ -9,7 +9,7 @@
 # back into the gateway, the MCP host's gating of the agent's suite, and the
 # tool itself. This check does. The probe asks main's agent_spawn to run a turn
 # on the agent "cli" (a Claude CLI model whose mcp.json names this gateway's
-# MCP host and whose only allowed tool is mcp__claw__ccv3; "Allow CLI to bypass
+# MCP host and whose only allowed tool is mcp__agency__ccv3; "Allow CLI to bypass
 # restrictions" off), telling it to create a card. It passes when the card file
 # exists in the gateway's library and the gateway logged the tool's write; the
 # spawn's reply alone is not evidence (the model may say it did something it
@@ -40,7 +40,7 @@ import json, sys
 print(json.dumps({"task": sys.argv[1], "mode": "wait", "agent_id": "cli", "session_token": sys.argv[2]}))
 ' "$TASK" "$SESSION_TOKEN")
 
-echo "CLI tool call over MCP: agent_spawn → cli (Claude CLI) → mcp__claw__ccv3 create $CARD_ID"
+echo "CLI tool call over MCP: agent_spawn → cli (Claude CLI) → mcp__agency__ccv3 create $CARD_ID"
 OUT=$("$PROBE_PATH" -url "$MCP_URL" -transport http -call-timeout 4m -call "agent_spawn" -params "$PARAMS" 2>&1)
 RC=$?
 printf '%s\n' "$OUT" | grep -v '^\s*$' | tail -4 | sed 's/^/    /'

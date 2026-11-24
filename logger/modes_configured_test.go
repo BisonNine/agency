@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// With security.permissions.logs set, the log directory, claw.log, error.log
+// With security.permissions.logs set, the log directory, agency.log, error.log
 // and the archives a roll produces are created with exactly the configured
 // modes, even under a umask that would narrow them.
 func TestFileLogging_ConfiguredModes(t *testing.T) {
@@ -20,7 +20,7 @@ func TestFileLogging_ConfiguredModes(t *testing.T) {
 	defer SetFileModes(0o700, 0o600)
 
 	dir := filepath.Join(t.TempDir(), "logs")
-	logPath := filepath.Join(dir, "claw.log")
+	logPath := filepath.Join(dir, "agency.log")
 	errPath := filepath.Join(dir, "error.log")
 	if err := EnableFileLogging(logPath, false); err != nil {
 		t.Fatalf("EnableFileLogging: %v", err)
@@ -39,10 +39,10 @@ func TestFileLogging_ConfiguredModes(t *testing.T) {
 		t.Fatalf("RollLogFile: %v", err)
 	}
 	for path, want := range map[string]os.FileMode{
-		dir:                                     0o750,
-		logPath:                                 0o640,
-		errPath:                                 0o640,
-		filepath.Join(dir, "20260102-claw.log"): 0o640,
+		dir:     0o750,
+		logPath: 0o640,
+		errPath: 0o640,
+		filepath.Join(dir, "20260102-agency.log"): 0o640,
 	} {
 		fi, err := os.Stat(path)
 		if err != nil {

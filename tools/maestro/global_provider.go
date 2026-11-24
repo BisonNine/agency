@@ -117,7 +117,7 @@ func (globalMaestroProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDe
 			map[string]any{"agent": deps.AgentID, "name": rd.Mount, "path": rd.Path})
 	}
 	// Maestro's operational log goes to the central logger (component "maestro",
-	// tagged with the agent) so it shows in the Web UI and rotates with claw.log.
+	// tagged with the agent) so it shows in the Web UI and rotates with agency.log.
 	// Maestro's per-project logs are audit records and stay in the project.
 	mlog := mlogging.NewWithWriter(&logWriter{agent: deps.AgentID})
 

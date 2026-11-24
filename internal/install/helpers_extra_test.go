@@ -289,7 +289,7 @@ func TestSmallHelpers(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/x/claw", "/Users/alice", "/x", "", false)
-	if !strings.Contains(plist, "/Users/alice/.agency/logs/claw-launchd.log") {
+	if !strings.Contains(plist, "/Users/alice/.agency/logs/agency-launchd.log") {
 		t.Errorf("plist without AGENCY_HOME logs elsewhere:\n%s", plist)
 	}
 	h := fakeHost(t)

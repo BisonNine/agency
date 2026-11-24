@@ -174,8 +174,8 @@ type LoggingConfig struct {
 	Console bool   `json:"console"             env:"AGENCY_LOGGING_CONSOLE"`
 	Level   string `json:"level"               env:"AGENCY_LOGGING_LEVEL"`
 	JSON    bool   `json:"json"                env:"AGENCY_LOGGING_JSON"`
-	// RetentionDays is how many days of rolled daily logs (YYYYMMDD-claw.log) to
-	// keep. The active claw.log is rolled at local midnight (and, if the gateway
+	// RetentionDays is how many days of rolled daily logs (YYYYMMDD-agency.log) to
+	// keep. The active agency.log is rolled at local midnight (and, if the gateway
 	// was down at midnight, as soon as it next starts). 0 keeps logs forever.
 	RetentionDays int `json:"retention_days"      env:"AGENCY_LOGGING_RETENTION_DAYS"`
 	// LogMessageContent controls whether inbound message text and API request/response

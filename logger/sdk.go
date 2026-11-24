@@ -19,7 +19,7 @@ const componentKey = "component"
 var sdkLogger = slog.New(sdkHandler{})
 
 // SDK returns the logger to pass to every SDK package: its records go through
-// this package, to the same console, claw.log and error.log, at the same
+// this package, to the same console, agency.log and error.log, at the same
 // levels and with the same component names as the host's own lines.
 func SDK() *slog.Logger { return sdkLogger }
 

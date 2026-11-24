@@ -221,7 +221,7 @@ type Hooks[T Instance] struct {
 	// clock.Real. Tests set a fake.
 	Clock clock.Clock
 	// Owner marks the process that owns the data directory (the one holding
-	// claw.lock: the gateway). Only the owner restores the saved temporary
+	// agency.lock: the gateway). Only the owner restores the saved temporary
 	// agents, removes unsaved directories under internal/temp and writes
 	// temp_agents.json. Any other process (`claw agent` alongside a running
 	// service) does none of that, so it can never wipe the service's agents.

@@ -9,14 +9,14 @@ import (
 )
 
 // Logs record prompts, tool arguments and errors, so the log directory, the
-// active claw.log / error.log and the dated archives a roll produces are all
+// active agency.log / error.log and the dated archives a roll produces are all
 // owner-only.
 func TestFileLogging_OwnerOnlyModes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")
 	}
 	dir := filepath.Join(t.TempDir(), "logs")
-	logPath := filepath.Join(dir, "claw.log")
+	logPath := filepath.Join(dir, "agency.log")
 	errPath := filepath.Join(dir, "error.log")
 
 	if err := EnableFileLogging(logPath, false); err != nil {
@@ -55,7 +55,7 @@ func TestFileLogging_OwnerOnlyModes(t *testing.T) {
 		}
 		WarnCF("test", "another warning line", nil)
 	}
-	wantMode(filepath.Join(dir, "20260102-claw.log"), 0o600)
+	wantMode(filepath.Join(dir, "20260102-agency.log"), 0o600)
 	wantMode(filepath.Join(dir, "20260102-error.log"), 0o600)
 	wantMode(logPath, 0o600)
 	wantMode(errPath, 0o600)

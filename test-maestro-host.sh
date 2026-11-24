@@ -138,15 +138,15 @@ PROBE="$PROBE" \
 "$TMP/maestro-test.sh"
 RC=$?
 
-echo "== Checking that Maestro's log reached claw.log"
-if grep -q '"component":"maestro"\|\[maestro\]\|maestro' "$HOME_DIR/logs/claw.log" 2>/dev/null; then
-    echo "PASS: maestro log lines present in claw.log"
+echo "== Checking that Maestro's log reached agency.log"
+if grep -q '"component":"maestro"\|\[maestro\]\|maestro' "$HOME_DIR/logs/agency.log" 2>/dev/null; then
+    echo "PASS: maestro log lines present in agency.log"
 else
-    echo "FAIL: no maestro log lines in claw.log" >&2
+    echo "FAIL: no maestro log lines in agency.log" >&2
     RC=1
 fi
 if [ -f "$HOME_DIR/agents/$AGENT/maestro/maestro.log" ]; then
-    echo "FAIL: maestro.log was written although the log is routed to claw.log" >&2
+    echo "FAIL: maestro.log was written although the log is routed to agency.log" >&2
     RC=1
 fi
 

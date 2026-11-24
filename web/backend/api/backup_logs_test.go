@@ -61,7 +61,7 @@ func TestRunBackup(t *testing.T) {
 	}
 }
 
-// GET /api/gateway/logs tails claw.log (lines bounded and defaulted), never
+// GET /api/gateway/logs tails agency.log (lines bounded and defaulted), never
 // cached; with file logging off, or the file gone, it says why instead.
 func TestGatewayLogs(t *testing.T) {
 	h := NewHandler(setupTestEnv(t))
@@ -95,7 +95,7 @@ func TestGatewayLogs(t *testing.T) {
 		}
 	}
 
-	logPath := filepath.Join(t.TempDir(), "logs", "claw.log")
+	logPath := filepath.Join(t.TempDir(), "logs", "agency.log")
 	if err := logger.EnableFileLogging(logPath, false); err != nil {
 		t.Fatal(err)
 	}

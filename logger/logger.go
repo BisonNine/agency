@@ -40,7 +40,7 @@ var (
 	once              sync.Once
 	mu                sync.RWMutex
 
-	// error.log is a high-signal companion to claw.log: it receives only events
+	// error.log is a high-signal companion to agency.log: it receives only events
 	// at errorLogLevel and above, so it can be scanned quickly for problems.
 	errorLogger   zerolog.Logger
 	errorFile     *os.File
@@ -57,7 +57,7 @@ var (
 	logFileMode os.FileMode = 0o600
 )
 
-// errorLogName is the high-signal problem log written beside claw.log.
+// errorLogName is the high-signal problem log written beside agency.log.
 const errorLogName = "error.log"
 
 // osExit is indirected so tests can assert the FATAL path writes to every sink
@@ -138,7 +138,7 @@ func GetLevel() LogLevel {
 	return currentLevel
 }
 
-// GetLogFilePath returns the active claw.log path, or "" when file logging is
+// GetLogFilePath returns the active agency.log path, or "" when file logging is
 // disabled. Used by the WebUI logs endpoint to tail the unified log.
 func GetLogFilePath() string {
 	mu.RLock()
@@ -182,7 +182,7 @@ func EnableFileLogging(filePath string, jsonFormat bool) error {
 	return enableFileLoggingLocked(filePath, jsonFormat)
 }
 
-// enableFileLoggingLocked opens (or reopens) claw.log and its companion
+// enableFileLoggingLocked opens (or reopens) agency.log and its companion
 // error.log. Callers must hold mu.
 func enableFileLoggingLocked(filePath string, jsonFormat bool) error {
 	logDir := filepath.Dir(filePath)
@@ -208,7 +208,7 @@ func enableFileLoggingLocked(filePath string, jsonFormat bool) error {
 	logJSON = jsonFormat
 	fileLogger = buildFileLogger(logFile, jsonFormat)
 
-	// error.log lives beside claw.log and captures errorLogLevel and above.
+	// error.log lives beside agency.log and captures errorLogLevel and above.
 	errorPath := filepath.Join(filepath.Dir(filePath), errorLogName)
 	ef, err := openLogFile(errorPath)
 	if err != nil {
@@ -254,7 +254,7 @@ func buildFileLogger(w io.Writer, jsonFormat bool) zerolog.Logger {
 	return zerolog.New(fileWriter).With().Timestamp().Logger()
 }
 
-// RollLogFile archives the active log files (claw.log and error.log) into
+// RollLogFile archives the active log files (agency.log and error.log) into
 // date-stamped copies named <YYYYMMDD>-<base>, using each file's last-modified
 // date, then reopens fresh active files with the same format. Empty files are
 // left in place. It is a no-op when file logging is disabled.
@@ -293,7 +293,7 @@ func RollLogFile() error {
 		}
 	}
 
-	// Reopen fresh active files (this reopens both claw.log and error.log).
+	// Reopen fresh active files (this reopens both agency.log and error.log).
 	if logFilePath != "" {
 		if err := enableFileLoggingLocked(logFilePath, logJSON); err != nil && firstErr == nil {
 			firstErr = err
@@ -473,7 +473,7 @@ func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
 		return logger.Error()
 	case zerolog.FatalLevel:
 		// WithLevel(FatalLevel) writes at fatal level WITHOUT zerolog's built-in
-		// os.Exit, so every sink (console, claw.log, error.log) receives the line.
+		// os.Exit, so every sink (console, agency.log, error.log) receives the line.
 		// logMessage performs the single os.Exit(1) after all sinks are written.
 		return logger.WithLevel(zerolog.FatalLevel)
 	default:
