@@ -121,6 +121,8 @@ func (s *Store) Update(fn func(cfg *Config) error) error {
 	// fn may have replaced the whole struct (PUT /api/config does); the
 	// runtime-only fields belong to this process, not to the request.
 	next.dataDir = s.cur.dataDir
+	// A path the update typed relative names a place in the data directory.
+	next.resolvePaths()
 	if next.secretRefs == nil {
 		next.secretRefs = s.cur.secretRefs
 	}

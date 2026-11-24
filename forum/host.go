@@ -305,4 +305,8 @@ type Host struct {
 	// is read whenever a forum is created or opened, so a host can follow
 	// its current configuration. Unset or zero means 0700/0600.
 	Modes func(base string) (dir, file os.FileMode)
+	// StoredPath, when set, gives the form a path is written in a run's
+	// records (the snapshot's base directory), so the host can keep its
+	// data directory movable. Unset writes the path as it is.
+	StoredPath func(path string) string
 }

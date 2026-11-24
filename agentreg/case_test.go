@@ -34,7 +34,8 @@ func TestConfigAgents_CapitalisedIDs(t *testing.T) {
 			t.Errorf("Get(%q) workspace = %q, want %q", id, inst.spec.Workspace, want)
 		}
 	}
-	if ws := ConfigWorkspace(&config.AgentConfig{ID: "Main"}, "/base"); ws != filepath.Join("/base", "default") {
+	baseCfg := &config.Config{Agents: config.AgentsConfig{BaseDir: "/base"}}
+	if ws := ConfigWorkspace(baseCfg, &config.AgentConfig{ID: "Main"}); ws != filepath.Join("/base", "default") {
 		t.Errorf("ConfigWorkspace(Main) = %q, want /base/default", ws)
 	}
 	clone := mustClone(t, r, "Bob")

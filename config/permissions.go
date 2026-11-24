@@ -354,7 +354,7 @@ func (c *Config) AgentDirs() []string {
 		if ws == "" {
 			continue
 		}
-		ws = filepath.Clean(ExpandHome(ws))
+		ws = filepath.Clean(ResolvePath(c.dataDir, ws))
 		if !slices.Contains(dirs, ws) {
 			dirs = append(dirs, ws)
 		}
@@ -379,7 +379,7 @@ func (c *Config) AgentModes(path string) Modes {
 // <data dir>/backup.
 func (c *Config) BackupDir() string {
 	if d := strings.TrimSpace(c.Backup.Dest); d != "" {
-		return d
+		return ResolvePath(c.dataDir, d)
 	}
 	return filepath.Join(c.dataDir, "backup")
 }

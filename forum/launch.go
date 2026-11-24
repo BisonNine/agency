@@ -235,6 +235,9 @@ func (s *Service) allocate(ctx context.Context, store *forumStore, plan *launchP
 	if err != nil {
 		return err
 	}
+	if s.host.StoredPath != nil {
+		snap.BaseDirectory = s.host.StoredPath(snap.BaseDirectory)
+	}
 	if err = store.WriteSnapshot(snap); err != nil {
 		return err
 	}

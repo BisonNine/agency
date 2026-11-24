@@ -136,7 +136,7 @@ func bindAddr(host string, port int) string {
 // otherwise <base_dir>/<id> with the routing-default id at <base_dir>/default.
 func resolveWorkspace(cfg *config.Config, a *config.AgentConfig) string {
 	if a != nil && strings.TrimSpace(a.Workspace) != "" {
-		return config.ExpandHome(strings.TrimSpace(a.Workspace))
+		return config.ResolvePath(cfg.DataDir(), strings.TrimSpace(a.Workspace))
 	}
 	id := "default"
 	if a != nil {

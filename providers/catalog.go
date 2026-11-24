@@ -85,7 +85,10 @@ func catalogModels(cfg *config.Config) []modelspec.Model {
 		}
 		if m.Workspace == "" && cfg.DataDir() != "" {
 			m.Workspace = cfg.CLIPath()
+		} else {
+			m.Workspace = config.ResolvePath(cfg.DataDir(), m.Workspace)
 		}
+		m.ResponseLogFile = config.ResolvePath(cfg.DataDir(), m.ResponseLogFile)
 		if m.RequestTimeout == 0 && cfg.Agents.Defaults.RequestTimeout > 0 {
 			m.RequestTimeout = cfg.Agents.Defaults.RequestTimeout
 		}

@@ -167,6 +167,23 @@ Agency is an independent Go project forked from sipeed/picoclaw on 2026-03-20.
   default common dir (`config.ResolveCommonDir()`); relative MCP `env_file` paths resolve
   against `CLAW_HOME`. There is no `agents/default` pseudo-agent. `internal/layout.Prepare`
   creates these directories at every start; it does not migrate an older layout.
+  **Paths inside the data directory are stored relative to it**, so the directory can be
+  moved by hand (`config/datapaths.go`): `config.ToStoredPath(home, p)` (inside → relative
+  with `/`, outside and relative kept) and `config.ResolvePath(home, p)` (`~` expanded,
+  relative joined to home, absolute as is) are the only pair. The path settings are listed
+  once in `Config.eachPath` (`agents.base_dir`, `common_dir`, `list[].workspace`,
+  `models[].workspace`/`response_log_file`, `gateway.tls.cert_file`/`key_file`,
+  `backup.dest`, `tools.mcp.servers[].env_file`; not allowed folders or shared knowledge
+  bases, which are absolute by rule): `LoadConfig` and `Store.Update` resolve them
+  (`resolvePaths`), so the running config, the WebUI and Check Up hold full paths and a
+  typed relative path means one in the data directory; `writeConfig` writes the stored form
+  (`withStoredPaths`), so an old absolute path is rewritten at the next save; every reader
+  resolves through `ResolvePath` (`BaseDir`, `ResolveCommonDir`, `agentreg.ConfigWorkspace`,
+  `tlscert.OptionsFromConfig`, the model catalogue, the MCP env file). The seeded
+  `agents.base_dir` is `agents`. A forum run's `snapshot.json` `base_directory` goes through
+  `forum.Host.StoredPath` (`ForumHost.StoredPath`). `internal/gateway/datadir_move_test.go`
+  builds a data directory, moves it and checks that nothing names the old location (logs/
+  excepted).
 - Version/name/tagline/copyright: `app/app.go` (all unexported — read them through
   `app.Version()` / `app.SemVer()` / `app.Name()` / `app.ShortName()` /
   `app.BinaryName()` / `app.TagLine()` / `app.Copyright()`; see "Product name" below).

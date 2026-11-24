@@ -465,7 +465,7 @@
         "name": "Agency"
       }
     ],
-    "base_dir": "/claw-home/agents",
+    "base_dir": "agents",
     "defaults": {
       "restrict_to_workspace": true,
       "allow_read_outside_workspace": false,

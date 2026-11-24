@@ -252,15 +252,16 @@ func (h *Handler) handleRegenerateTLS(w http.ResponseWriter, _ *http.Request) {
 // changes the HTTPS listener's certificate files or mode, so the WebUI cannot
 // save paths the gateway would refuse to start on. A save that leaves them
 // as they were is not re-checked: an expiring certificate must not block
-// unrelated edits. It returns "" when there is nothing wrong.
-func validateCertificateChange(before, after config.ListenerSettings) string {
+// unrelated edits. A relative path names a file in the data directory, home.
+// It returns "" when there is nothing wrong.
+func validateCertificateChange(before, after config.ListenerSettings, home string) string {
 	if after.CertFile == "" {
 		return ""
 	}
 	if before.CertFile == after.CertFile && before.KeyFile == after.KeyFile && before.TLSMode == after.TLSMode {
 		return ""
 	}
-	if _, err := tlscert.ValidatePair(after.CertFile, after.KeyFile, time.Now()); err != nil {
+	if _, err := tlscert.ValidatePair(config.ResolvePath(home, after.CertFile), config.ResolvePath(home, after.KeyFile), time.Now()); err != nil {
 		return "gateway.tls: " + err.Error()
 	}
 	return ""

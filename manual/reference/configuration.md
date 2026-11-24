@@ -20,6 +20,10 @@ The file holds API keys and tokens. Agency refuses to start if its mode allows m
 - **Restart needed.** Listener settings (ports, where HTTP and HTTPS listen, the certificate files) take effect only after a restart. The **Network** page offers **Restart now**.
 - **Unknown keys.** A key Agency does not know is ignored, with the warning `unknown config key: <key>` in the log.
 
+## Paths
+
+A path inside the data directory is saved relative to it, so the whole directory can be renamed or moved. A relative path you type means a place in the data directory. This applies to `agents.base_dir`, `agents.common_dir`, an agent's `workspace`, a model's `workspace` and `response_log_file`, the certificate files in `gateway.tls`, `backup.dest` and an MCP server's `env_file`. The WebUI shows the full path. Allowed folders and shared knowledge bases take absolute paths.
+
 ## Keeping secrets out of the file
 
 Any credential field (an `api_key`, a `token`, a `…_secret` or `…password` field, MCP server `env` and `headers` values) may hold a reference instead of the value:

@@ -51,10 +51,17 @@ func bootGateway(t *testing.T, extra string) *bootedGateway {
 func bootGatewayWith(t *testing.T, extra string, mutate func(string) string) *bootedGateway {
 	t.Helper()
 	g := newE2EHome(t, extra)
-	cfgPath := filepath.Join(g.home, "config.json")
 	if mutate != nil {
 		g.rewriteConfig(t, mutate)
 	}
+	return bootGatewayIn(t, g)
+}
+
+// bootGatewayIn starts the services on g's CLAW_HOME as it is and runs the
+// main loop in the background.
+func bootGatewayIn(t *testing.T, g *e2eGateway) *bootedGateway {
+	t.Helper()
+	cfgPath := filepath.Join(g.home, "config.json")
 	store, cfg, _, err := openBootConfig(g.home, cfgPath)
 	if err != nil {
 		t.Fatal(err)

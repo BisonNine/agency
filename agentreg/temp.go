@@ -562,12 +562,12 @@ func tempPaths(cfg *config.Config) (root, statePath string) {
 	return filepath.Join(os.TempDir(), "claw-temp-agents"), ""
 }
 
-// ConfigWorkspace is a config agent's workspace: its configured workspace, or
-// <base_dir>/<id>, with the routing-default agent (empty or "main" id) at
-// <base_dir>/default.
-func ConfigWorkspace(ac *config.AgentConfig, baseDir string) string {
+// ConfigWorkspace is a config agent's workspace: its configured workspace
+// (relative to the data directory when not absolute), or <base_dir>/<id>,
+// with the routing-default agent (empty or "main" id) at <base_dir>/default.
+func ConfigWorkspace(cfg *config.Config, ac *config.AgentConfig) string {
 	if ac != nil && strings.TrimSpace(ac.Workspace) != "" {
-		return config.ExpandHome(strings.TrimSpace(ac.Workspace))
+		return config.ResolvePath(cfg.DataDir(), strings.TrimSpace(ac.Workspace))
 	}
 	id := "default"
 	if ac != nil {
@@ -575,5 +575,5 @@ func ConfigWorkspace(ac *config.AgentConfig, baseDir string) string {
 			id = nid
 		}
 	}
-	return filepath.Join(baseDir, id)
+	return filepath.Join(cfg.BaseDir(), id)
 }

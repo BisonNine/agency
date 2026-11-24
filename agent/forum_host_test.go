@@ -961,7 +961,7 @@ func TestForumHost_Ceilings(t *testing.T) {
 	}
 
 	next := forumConfig(t, true, false)
-	next.Agents.BaseDir = cfg.Agents.BaseDir
+	next.Agents.BaseDir = cfg.BaseDir()
 	next.Forum.Limits.MaxCalls = 10
 	if err := reloadForTest(t, r.al, context.Background(), model, next); err != nil {
 		t.Fatalf("reload: %v", err)

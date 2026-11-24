@@ -210,7 +210,7 @@ func NewAgentInstance(
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
 ) (*AgentInstance, error) {
-	workspace := agentreg.ConfigWorkspace(agentCfg, cfg.BaseDir())
+	workspace := agentreg.ConfigWorkspace(cfg, agentCfg)
 	spec := agentreg.Spec{Origin: agentreg.OriginConfig, Workspace: workspace, StateDir: workspace}
 	if agentCfg != nil {
 		spec.ID = routing.NormalizeAgentID(agentCfg.ID)

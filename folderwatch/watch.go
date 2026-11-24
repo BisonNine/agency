@@ -163,7 +163,7 @@ func (w *Watcher) tick() {
 	wanted := map[string]map[string]bool{}
 	for i := range cfg.Agents.List {
 		agent := &cfg.Agents.List[i]
-		ws := agentreg.ConfigWorkspace(agent, cfg.BaseDir())
+		ws := agentreg.ConfigWorkspace(cfg, agent)
 		if wanted[ws] == nil {
 			wanted[ws] = map[string]bool{}
 		}

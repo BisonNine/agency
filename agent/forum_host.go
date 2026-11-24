@@ -91,6 +91,17 @@ func (h *ForumHost) Modes(base string) (dir, file os.FileMode) {
 	return config.DefaultDirMode, config.DefaultFileMode
 }
 
+// StoredPath returns path as a forum run records it: relative to the data
+// directory when inside it (config.ToStoredPath).
+func (h *ForumHost) StoredPath(path string) string {
+	if al := h.loop.Load(); al != nil {
+		if cfg := al.GetConfig(); cfg != nil {
+			return config.ToStoredPath(cfg.DataDir(), path)
+		}
+	}
+	return path
+}
+
 // Ceilings returns the install's forum maximums from the loop's current
 // configuration (forum.limits, defaults for unset fields), so a reload
 // applies to the next validation or launch. Before Bind it returns the

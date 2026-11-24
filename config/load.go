@@ -33,6 +33,7 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // config path chosen by the operator (CLI flag or env)
 	if err != nil {
 		if os.IsNotExist(err) {
+			cfg.resolvePaths()
 			return cfg, nil
 		}
 		return nil, err
@@ -106,6 +107,9 @@ func LoadConfig(path string) (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+	// Paths are kept relative to the data directory in the file; the running
+	// configuration holds the full paths they name.
+	cfg.resolvePaths()
 
 	if errs := cfg.loadProblems(); len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -326,7 +330,7 @@ func writeConfig(path string, cfg *Config) error {
 	cfg.dropOtherProtocolFields()
 	// Secret references go back in place of the values they resolved to, so a
 	// save never copies an env var or key file into config.json.
-	compact, err := MarshalWithSecretRefs(cfg)
+	compact, err := MarshalWithSecretRefs(cfg.withStoredPaths())
 	if err != nil {
 		return err
 	}

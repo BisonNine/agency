@@ -28,14 +28,12 @@ func DefaultConfig() *Config {
 		}
 		homePath = filepath.Join(userHome, global.DefaultDataDir)
 	}
-	agentsBaseDir := filepath.Join(homePath, "agents")
-
 	cfg := &Config{
 		// Marks this as an auto-seeded config the user hasn't saved yet; the first
 		// SaveConfig clears it. SeedDefaultConfig preserves it when written to disk.
 		DefaultConfig: true,
 		Agents: AgentsConfig{
-			BaseDir: agentsBaseDir,
+			BaseDir: "agents", // relative to the data directory
 			Defaults: AgentDefaults{
 				RestrictToWorkspace:  true,
 				WorkspaceWriteSubdir: "files",

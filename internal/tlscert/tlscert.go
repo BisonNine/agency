@@ -103,8 +103,8 @@ func (o Options) secretModes() config.Modes {
 func OptionsFromConfig(cfg *config.Config) Options {
 	o := Options{
 		DataDir:    cfg.DataDir(),
-		CertFile:   strings.TrimSpace(cfg.Gateway.TLS.CertFile),
-		KeyFile:    strings.TrimSpace(cfg.Gateway.TLS.KeyFile),
+		CertFile:   config.ResolvePath(cfg.DataDir(), strings.TrimSpace(cfg.Gateway.TLS.CertFile)),
+		KeyFile:    config.ResolvePath(cfg.DataDir(), strings.TrimSpace(cfg.Gateway.TLS.KeyFile)),
 		ExtraNames: cfg.Gateway.TLS.ExtraNames,
 
 		SecretModes: cfg.PermissionModes(config.AreaSecrets),

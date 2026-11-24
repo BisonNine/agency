@@ -414,7 +414,7 @@ func buildConfigEntries[T Instance](ctx context.Context, cfg *config.Config, bui
 
 // configSpec is the spec of a config agent: its state lives in its workspace.
 func configSpec(cfg *config.Config, ac *config.AgentConfig) Spec {
-	ws := ConfigWorkspace(ac, cfg.BaseDir())
+	ws := ConfigWorkspace(cfg, ac)
 	return Spec{
 		ID:        routing.NormalizeAgentID(ac.ID),
 		Config:    ac,

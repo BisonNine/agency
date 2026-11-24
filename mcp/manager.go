@@ -325,7 +325,7 @@ func resolveServerEnvFile(
 			name,
 		)
 	}
-	cfg.EnvFile = filepath.Join(baseDir, cfg.EnvFile)
+	cfg.EnvFile = config.ResolvePath(baseDir, cfg.EnvFile)
 	return cfg, nil
 }
 

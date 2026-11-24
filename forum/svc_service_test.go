@@ -287,6 +287,33 @@ func TestSvcCeilings(t *testing.T) {
 	}
 }
 
+// A host's StoredPath decides how the snapshot records the base directory,
+// so a host can keep the path relative to its data directory.
+func TestSvcSnapshotStoresBaseDirectoryThroughHost(t *testing.T) {
+	e := svcSetup(t)
+	var asked []string
+	svc := New(Host{
+		Messenger: svcMessenger{}, Agents: e.agents, Notifier: e.notifier, Logger: e.logger,
+		StoredPath: func(p string) string {
+			asked = append(asked, p)
+			return "agents/alice/forums"
+		},
+	})
+	svc.openCtrl = e.ctrls.open
+	t.Cleanup(func() { svcClose(t, svc) })
+	id, err := svcLaunch(t, svc, e.scope, svcSimpleJSON, e.opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := e.store(id).ReadSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.BaseDirectory != "agents/alice/forums" || !slices.Equal(asked, []string{e.scope.BaseDirectory}) {
+		t.Errorf("base directory = %q (asked for %v), want the host's stored form of %s", snap.BaseDirectory, asked, e.scope.BaseDirectory)
+	}
+}
+
 func TestSvcModels(t *testing.T) {
 	e := svcSetup(t)
 	got, err := e.svc.Models(t.Context(), "launcher")

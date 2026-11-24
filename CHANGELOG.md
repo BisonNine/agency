@@ -121,6 +121,11 @@
 
 ### Changed
 
+- **Paths inside the data directory are stored relative to it.** `config.json`
+  and forum run records now keep such paths relative (for example
+  `"base_dir": "agents"`), so the whole data directory can be renamed or moved.
+  An absolute path there is rewritten on the next save, and a relative path
+  you type means a place in the data directory.
 - **Background tasks stop when Agency stops.** They used to run until the
   process exited. A task still running at shutdown is started again after
   restart, as before.

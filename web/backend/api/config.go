@@ -127,10 +127,10 @@ func (h *Handler) saveValidatedConfig(w http.ResponseWriter, r *http.Request, mu
 		before := c.Gateway.Listeners()
 		// mutate may replace the whole struct with the request body, which
 		// carries no data directory: take what depends on it first.
-		cardsBefore, cardsDir := agentCards(c), c.CardsPath()
+		cardsBefore, cardsDir, home := agentCards(c), c.CardsPath(), c.DataDir()
 		mutate(c)
 		errs := validateConfig(c)
-		if msg := validateCertificateChange(before, c.Gateway.Listeners()); msg != "" {
+		if msg := validateCertificateChange(before, c.Gateway.Listeners(), home); msg != "" {
 			errs = append(errs, msg)
 		}
 		errs = append(errs, missingCardsIntroduced(cardsBefore, cardsDir, c)...)
