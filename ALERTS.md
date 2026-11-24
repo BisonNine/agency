@@ -1,6 +1,6 @@
-# ClawEh alerts
+# Agency alerts
 
-Every alert ClawEh raises through `github.com/tenebris-tech/alerter`. The
+Every alert Agency raises through `github.com/tenebris-tech/alerter`. The
 **alert id** is the alerter's `EventID` field: repeats of the same title with
 the same id inside the suppression window (ten minutes) are counted, not
 re-sent, so the id names the thing that failed. Where alerts go, and the record
@@ -22,10 +22,10 @@ alerted twice. Use it for a new alert of this kind rather than
 relying on that window.
 
 **Priority.** The alerter has three levels: Normal, Urgent and Emergency.
-Every ClawEh alert is Normal: written to the log and delivered on the
+Every Agency alert is Normal: written to the log and delivered on the
 configured channels at their normal priority. Urgent and Emergency are for
 something that must reach a person now, any hour of the day; none of
-ClawEh's alerts qualifies today. The Priority column is blank for Normal,
+Agency's alerts qualifies today. The Priority column is blank for Normal,
 `*` for Urgent and `**` for Emergency.
 
 | Alert id (`EventID`) | Priority | Alert | Comments |
@@ -35,10 +35,10 @@ ClawEh's alerts qualifies today. The Priority column is blank for Normal,
 | `<provider>/<model>-up` | | Model working again | A model alerted as failing (either alert above) answered a request. Raised once; a failure after it is a new problem and alerts at once. A model nothing uses any more raises nothing, since only a request shows that it works. Description names the model and since when it had been failing. Source: `providers/cooldown.go`. |
 | `<MCP server name>` | | MCP `<name>` down | A server has been unreachable (its first connect or a reconnect keeps failing) for five minutes (`downAlertAfter` in `mcp/health.go`); raised on the first failed attempt after that, so a server slow to come up after a reboot, or restarted for an upgrade, alerts nobody. Retries wait 30 s, doubling to at most 10 minutes, so the alert lands about 7.5 minutes into an outage. Raised once ("down since HH:MM"), then at most once every 24 hours ("still down since Nov 14 09:02", `alerts.RemindEvery`) while it stays down; other failed retries do not alert. Its tools are missing until it reconnects, or use Reconnect on the MCP servers page. Description is the reason in one line (the stdio server's last stderr line when it wrote one); details carry the full error and the last stderr lines. Source: `mcp/health.go`, `mcp/manager.go`. |
 | `<MCP server name>-up` | | MCP `<name>` up | A server reported down has reconnected. Description gives how long it was down. An outage that ended before its down alert was due raises nothing. Source: `mcp/health.go`. |
-| `mcpserver` | | MCP host server stopped | ClawEh's own MCP server (the one external clients and CLI providers use for host tools) died after startup. ClawEh shuts down and exits with status 3 so the service manager restarts it. Details carry the error. Source: `internal/gateway/fatal.go`. |
-| `http` | | HTTP listener stopped | The loopback HTTP listener (IPv4 or IPv6) or the HTTPS listener died after start (a bind failure at start stops ClawEh with an error instead). ClawEh shuts down and exits with status 3 so the service manager restarts it. Details carry the address and error. Source: `internal/gateway/fatal.go`. |
-| `agent-loop` | | Agent loop stopped | The agent loop returned an error; no inbound message can be processed, so ClawEh shuts down and exits with status 3 for the service manager to restart it. Details carry the error. Source: `internal/gateway/fatal.go`. |
-| `<channel name>` | | Channel failed to start | The channel's Start has failed `StartRetryAlertAfter` (ten, in `channels/tuning.go`) times in a row since ClawEh started or reloaded. Retrying continues indefinitely at the backoff ceiling (`StartRetryMax`, five minutes) until it starts or ClawEh stops; raised once per start. Details carry the latest start error; success is logged as "Channel started after retries". Source: `channels/manager.go`. |
+| `mcpserver` | | MCP host server stopped | Agency's own MCP server (the one external clients and CLI providers use for host tools) died after startup. Agency shuts down and exits with status 3 so the service manager restarts it. Details carry the error. Source: `internal/gateway/fatal.go`. |
+| `http` | | HTTP listener stopped | The loopback HTTP listener (IPv4 or IPv6) or the HTTPS listener died after start (a bind failure at start stops Agency with an error instead). Agency shuts down and exits with status 3 so the service manager restarts it. Details carry the address and error. Source: `internal/gateway/fatal.go`. |
+| `agent-loop` | | Agent loop stopped | The agent loop returned an error; no inbound message can be processed, so Agency shuts down and exits with status 3 for the service manager to restart it. Details carry the error. Source: `internal/gateway/fatal.go`. |
+| `<channel name>` | | Channel failed to start | The channel's Start has failed `StartRetryAlertAfter` (ten, in `channels/tuning.go`) times in a row since Agency started or reloaded. Retrying continues indefinitely at the backoff ceiling (`StartRetryMax`, five minutes) until it starts or Agency stops; raised once per start. Details carry the latest start error; success is logged as "Channel started after retries". Source: `channels/manager.go`. |
 | `<channel name>` | | Channel send failed | An outbound message or file was dropped by a channel that reports itself not running, or after its send retries (or at once for a permanent error such as a rejected request). Never raised for a recipient that is offline or can't be reached (`ErrRecipientOffline`, `ErrRecipientNotFound`, reported by the device, Telegram, Slack, Discord and WebUI channels; logged as a warning), an unknown channel (`ErrUnknownChannel`) or a receive-only account. **Once, then daily** per channel, ended by a message or file the channel delivers; every dropped send is logged ("Send failed"). The description says "a message" or "a file" and, when the send was retried, how many times. Details carry the last send error, including the platform's reason. Source: `channels/manager.go`. |
 | `<channel name>` | | Channel receive loop stopped | The device listener failed. The channel still reports running and re-listens with backoff (`ConnRetryMin` to `ConnRetryMax`, two seconds to one minute), retrying a refused bind the same way; raised once per outage, and recovery is logged as "Device listener restored". Details carry the error. Source: `channels/device`. |
 | `<platform>` | | `<Platform>` down: `<channels>` | Channels of one platform (`telegram`, `slack`, `discord`, `matrix`, `secmsg`) have had no working connection to their service for `ConnDownAlertAfter` (ten minutes, in `channels/tuning.go`) although they kept retrying: Telegram polls failing (5xx, 429, network, 409 from another poller), Slack Socket Mode or Matrix sync not reconnecting, Discord gateway disconnected, SecMsg daemon unreachable. Raised by the first channel of the platform to pass the threshold, counting every channel of the platform then down ("7 bots, no working connection for 10m"; "connection" for Matrix and SecMsg); the title names the channels, up to three and then "+N more" ("Telegram down: telegram-alice"); channels that pass it later join silently, and a channel that stops leaves. Retries continue; each channel's recovery is logged as "Channel connection restored". Details list the affected channels and the latest error, with Telegram bot tokens redacted. For Telegram, each bot named in the alert is checked once before it is sent (getMe and getWebhookInfo with the bot's own token, at most 15 s in all), and details add "Bot check: working" or "Bot check: failing (502)" (the HTTP status, or "no response") and "Waiting messages: N"; with several bots, one line each ("Bot check telegram-alice: failing (502), 3 waiting"). Each check is also logged as "Connection check". Bots that join the outage later are not checked. Source: `channels/connwatch.go`, `channels/telegram`. |
@@ -54,13 +54,13 @@ ClawEh's alerts qualifies today. The Priority column is blank for Normal,
 | `service-tokens` | | Service tokens not loaded | The service-token file could not be read: external MCP clients using `claw token` credentials are rejected (at boot) or keep the previously loaded set (on a later change). Source: `internal/gateway/mcp_host.go`. |
 | `config` | | Config file invalid | The config file on disk changed but could not be loaded or validated, so the edit was not applied. The running configuration is unchanged, but the next restart fails on this file. Source: `internal/gateway/config_watcher.go`. |
 | `model-ref:<site>` | | Agent references a missing model | A model list or model setting (the site, e.g. `agents.list[Alice].models`) names a model that no longer exists, typically one deleted before the delete guard existed. At startup or on a config reload it is removed from `config.json` (and the running copy) and the agent uses the next model in its list; the rest of the config applies. Raised once per removal, so again only if the reference is put back. If `config.json` cannot be written it is skipped in the running copy only, raised once per site and model per process, and cleared by picking an existing model on the Agents page. A model that is defined but unusable (bad provider) stays in the file and its references are only skipped. Details give the site and model. Source: `internal/gateway/model_refs.go`. |
-| `config` | | Config reload failed | A valid config was accepted but applying it failed part way. Services are stopped before a reload, so some may not be running; check the ClawEh log. Details carry the reload error. Source: `internal/gateway/run.go`. |
+| `config` | | Config reload failed | A valid config was accepted but applying it failed part way. Services are stopped before a reload, so some may not be running; check the Agency log. Details carry the reload error. Source: `internal/gateway/run.go`. |
 | `backup` | | Nightly backup failed | The configuration backup did not run and nothing retries before the next night; usually disk or permissions. Source: `internal/gateway/backup.go`. |
 | `<client IP>` | | Device authentication locked out | A client address failed device listener authentication `DeviceAuthFailThreshold` (5) times inside `DeviceAuthFailWindow` (ten minutes, `channels/tuning.go`) and is locked out; connects from it are answered `AUTH_RATE_LIMITED` for one minute, doubling on each further lockout up to an hour. Raised on the first lockout for an address only; later lockouts for the same address are logged at warn. Description gives the address, the count and the lockout length. Source: `channels/device/server.go`. |
 | `auth-lockout-ip` | | WebUI login address locked out | A client address reached `LoginIPFailures` (10) failed logins in ten minutes and is locked for `LoginIPLockout` (5 minutes); every further attempt from it restarts the lock. Raised each time a lock starts, not when an attempt extends one. Description names the address, Details the last username tried. Cleared by `claw admin` or a restart. Source: `web/backend/api/auth.go`. |
 | `auth-lockout-account` | | WebUI login account locked out | A username (as typed, whether or not it exists) reached `LoginUserFailures` (10) failed logins in ten minutes and is locked for `LoginUserLockout` (10 minutes), from every address; every further attempt for it restarts the lock. Raised each time a lock starts, not when an attempt extends one. Description names the username, Details the last client address. Cleared by `claw admin` or a restart. Source: `web/backend/api/auth.go`. |
 | `spend:<yyyy-mm-dd>` | | Daily model spend over threshold | Raised once per UTC day, the first time the day's summed model cost (from the providers' dispatch status) reaches `agents.defaults.daily_spend_alert_usd`; off when that key is 0. Description gives the day, the running total and the threshold. Counts inbound, cron and system-message turns, not sub-agent workers or compaction calls. Source: `agent/dispatch_event.go`. |
-| `backup:<archive path>` | | Database failed integrity check | A SQLite database (session archive, cognitive memory, device or fusion token store) failed `PRAGMA quick_check` during a backup and was left out of the archive; the rest of the backup was written. The store is probably corrupt: stop ClawEh and inspect it, or restore it from an earlier archive. Details carry SQLite's report. Source: `internal/backup/backup.go`. |
+| `backup:<archive path>` | | Database failed integrity check | A SQLite database (session archive, cognitive memory, device or fusion token store) failed `PRAGMA quick_check` during a backup and was left out of the archive; the rest of the backup was written. The store is probably corrupt: stop Agency and inspect it, or restore it from an earlier archive. Details carry SQLite's report. Source: `internal/backup/backup.go`. |
 | `session-retention` | | Session retention failed | The nightly pass could not delete one or more idle session archives or cogmem pre-migration snapshots (permissions, disk); whatever succeeded stays deleted and nothing retries before tomorrow night. Details carry the errors. Source: `agent/retention.go`. |
 | `session-store` | | Session store write failed | A user message, assistant reply, tool call, tool result, or vision message could not be written to the session store, so the turn was abandoned with an error to the user instead of continuing on a history the store did not accept (disk full or unwritable?). **Once, then daily** per agent, counted and ended like "Session not saved". Details carry the store error. Source: `agent/loop_turn.go`. |
 | `<session key>` | | Context compaction breaker tripped | Three consecutive automatic compactions failed for the session, so the engine has suspended normal compaction; only the safety-net pass still runs and the context grows until then. Check the summarization model chain (cooldowns, credentials, refusals). Description gives the failure count and agent. Source: `agent/context_manager.go`. |
@@ -86,7 +86,7 @@ ClawEh's alerts qualifies today. The Priority column is blank for Normal,
 | `device-store` | | Device store unavailable | The paired-device database could not be opened for a WebUI request; device pages and pairing fail until it can be. Source: `web/backend/api/devices.go`. |
 | `logging` | | Log rotation failed | The midnight log roll failed after closing the current files, so file logging may be stopped until a restart. Repeats daily. Source: `internal/gateway/logrotate.go`. |
 
-If the alerts log itself cannot be opened, ClawEh logs an error in its own
+If the alerts log itself cannot be opened, Agency logs an error in its own
 log and runs without alerting; it cannot alert about that.
 
 Known conditions that are **not** alerted yet, because they surface only
@@ -94,17 +94,17 @@ inside shared modules that have no alert hook: session archive open/append
 failures in ctxengine, cognitive-memory consolidation failures in cogmem, and
 Google/Microsoft OAuth refresh failures in MCPFusion. The agreed design is a
 typed error-event hook per module (`WithArchiveErrorHook`, `WithRunErrorHook`,
-`WithAuthEventHook`), with ClawEh writing the alert in the hook body; see
+`WithAuthEventHook`), with Agency writing the alert in the hook body; see
 "Shared modules" below. That is a separate project.
 
 ## Where the alerter comes from
 
-ClawEh builds one alerter and hands it explicitly to what it constructs
+Agency builds one alerter and hands it explicitly to what it constructs
 (agent loop, channels, cron, MCP manager and host server, listeners, backup,
 log rotation, allowed folder watcher, devices, voice, the API handler). Code with no
 owner, such as package singletons, free functions and providers rebuilt per
 tool registry, raises through the process default in the `alerts` package,
-which ClawEh sets once at startup. Tests capture the default with
+which Agency sets once at startup. Tests capture the default with
 `internal/testalerts.Install`. Scripts that start a test gateway source
 `tests/lib/gateway_env.sh`, which exports every `ALERTER_*` channel variable
 empty so the gateway does not take the operator's `~/.alerter` channels.
@@ -121,23 +121,23 @@ free text with no stable code or agent identity, and a level change upstream
 would silently stop an alert.
 
 The agreed design, to be done as its own project, is one typed error-event
-hook per module, on the option type each already has, with ClawEh writing the
+hook per module, on the option type each already has, with Agency writing the
 alert (title, priority, event id) in the hook body so no module depends on
 the alerter or decides operator policy:
 
 - ctxengine: `WithArchiveErrorHook(func(ArchiveError))` with `Op`, `SessionKey`,
-  `Path`, `Seq`, `Err`; called from the archive open and append paths. ClawEh
+  `Path`, `Seq`, `Err`; called from the archive open and append paths. Agency
   raises "Session archive not written" (id `<agent>`).
 - cogmem: `WithRunErrorHook(func(RunError))` on the consolidation manager with
-  `Job`, `Trigger`, `Stage` (factory or run), `Status`, `Err`. ClawEh raises
+  `Job`, `Trigger`, `Stage` (factory or run), `Status`, `Err`. Agency raises
   "Memory consolidation failed" (id `<agent>`; retried on the next trigger,
   repeats collapse).
 - MCPFusion: a typed `RefreshError{StatusCode, Body}` from the strategies so
   a revoked token (400/401) can be told from a transient failure, and
   `WithAuthEventHook(func(AuthEvent))` on the Fusion engine with `Kind`
   (refresh failed, client reported error), `Tenant`, `Service`, `AuthType`,
-  `StatusCode`, `Message`, `Err`. ClawEh raises "OAuth token refresh rejected"
+  `StatusCode`, `Message`, `Err`. Agency raises "OAuth token refresh rejected"
   (id `<agent>/<service>`) and "OAuth client reported error".
 
-Each is a minor version bump of its module, then a `go get` in ClawEh and four
+Each is a minor version bump of its module, then a `go get` in Agency and four
 rows in this file.

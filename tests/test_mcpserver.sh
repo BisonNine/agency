@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ################################################################################
-# ClawEh MCP Server Functional Tests
+# Agency MCP Server Functional Tests
 #
 # Validates the claw MCP server (claw acting as an MCP host) over Streamable
 # HTTP transport using the `probe` binary. Structured in two tiers:
@@ -348,7 +348,7 @@ tier2_fail() {
 
 echo ""
 echo "${BOLD}============================================${NC}"
-echo "${BOLD}   ClawEh MCP Server Tests${NC}"
+echo "${BOLD}   Agency MCP Server Tests${NC}"
 echo "${BOLD}============================================${NC}"
 echo "Server:  $FULL_URL"
 echo "Probe:   $PROBE_PATH"
