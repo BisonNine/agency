@@ -366,6 +366,21 @@ func (s *SessionTokenStore) SetTurnScope(sessionKey string, askChain []string, t
 	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.askChain, rec.taskID, rec.billing = chain, taskID, billing })
 }
 
+// EndTurnBilling removes billing, the inherited billing code of a turn of
+// sessionKey that has ended, from its token, so a later call with the token
+// is not billed to it and cannot change it. A later turn's code, recorded
+// since, is left alone. No-op if the session has no token.
+func (s *SessionTokenStore) EndTurnBilling(sessionKey string, billing *tools.InheritedBilling) {
+	if billing == nil {
+		return
+	}
+	s.updateRecord(sessionKey, func(rec *sessionRecord) {
+		if rec.billing == billing {
+			rec.billing = nil
+		}
+	})
+}
+
 // updateRecord applies update to the conversation token record of
 // sessionKey under the store lock. No-op when the session has no token.
 func (s *SessionTokenStore) updateRecord(sessionKey string, update func(*sessionRecord)) {

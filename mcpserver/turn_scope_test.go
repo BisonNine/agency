@@ -122,3 +122,22 @@ func TestDispatch_CarriesTurnBilling(t *testing.T) {
 		t.Errorf("session-billed turn's call carries %q", got.billing)
 	}
 }
+
+// When its turn ends the token no longer carries the turn's code; a later
+// turn's code is never cleared by an earlier turn's end.
+func TestEndTurnBilling(t *testing.T) {
+	st := newSessionTokenStore()
+	tok := st.Issue("alice", "agent:alice:main", "/ws")
+	first := tools.InheritedBillingOf(tools.WithBilling(context.Background(), "acme"))
+	second := tools.InheritedBillingOf(tools.WithBilling(context.Background(), "garden"))
+	st.SetTurnScope("agent:alice:main", nil, "", first)
+	st.SetTurnScope("agent:alice:main", nil, "", second)
+	st.EndTurnBilling("agent:alice:main", first)
+	if got := dispatchScope(t, st, tok, nil); got.billing != "garden" {
+		t.Fatalf("an earlier turn's end cleared the later turn's code: %q", got.billing)
+	}
+	st.EndTurnBilling("agent:alice:main", second)
+	if got := dispatchScope(t, st, tok, nil); got.billing != "" {
+		t.Errorf("a call after the turn ended is billed to %q", got.billing)
+	}
+}

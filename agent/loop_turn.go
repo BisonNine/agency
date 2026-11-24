@@ -181,11 +181,17 @@ func (al *AgentLoop) scopeSessionToken(ctx context.Context, agent *AgentInstance
 	if sti == nil {
 		return ctx, func() {}
 	}
-	sti.SetTurnScope(opts.SessionKey, tools.AskChain(ctx), hook.TaskID(ctx), tools.InheritedBillingOf(ctx))
+	billing := tools.InheritedBillingOf(ctx)
+	sti.SetTurnScope(opts.SessionKey, tools.AskChain(ctx), hook.TaskID(ctx), billing)
 	// The turn's MCP output (msg_send, msg_send_file, ForUser, breadcrumbs,
 	// background results) goes to the chat this turn replies to, recorded
 	// per turn, never to the chat the session last heard from.
-	return ctx, sti.BeginTurn(opts.SessionKey, opts.Channel, opts.ChatID)
+	endTurn := sti.BeginTurn(opts.SessionKey, opts.Channel, opts.ChatID)
+	return ctx, func() {
+		endTurn()
+		// A call with the token after the turn is not billed to its code.
+		sti.EndTurnBilling(opts.SessionKey, billing)
+	}
 }
 
 // prepareSession readies the session for the turn's message, adjusting

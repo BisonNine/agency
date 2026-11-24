@@ -18,6 +18,9 @@ type recordingSTI struct {
 	depths   []depthCall
 	turns    map[int]sourceCall
 	nextTurn int
+	// billing is the inherited billing code on the token (SetTurnScope),
+	// until its turn ends.
+	billing *tools.InheritedBilling
 }
 
 type depthCall struct {
@@ -45,7 +48,20 @@ func (r *recordingSTI) SetDepth(sessionKey string, depth int) {
 	r.depths = append(r.depths, depthCall{sessionKey: sessionKey, depth: depth})
 }
 
-func (r *recordingSTI) SetTurnScope(string, []string, string, *tools.InheritedBilling) {}
+func (r *recordingSTI) SetTurnScope(_ string, _ []string, _ string, b *tools.InheritedBilling) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.billing = b
+}
+
+// EndTurnBilling clears the recorded billing when it is the turn's.
+func (r *recordingSTI) EndTurnBilling(_ string, b *tools.InheritedBilling) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.billing == b {
+		r.billing = nil
+	}
+}
 
 // BeginTurn records the turn's reply chat (calls) and keeps it while it runs
 // (activeTurns).
@@ -194,5 +210,29 @@ func TestTurnChat_PerTurnKind(t *testing.T) {
 				t.Fatalf("turns on the token during the call = %+v, want only %s/%s", during, tc.channel, tc.chat)
 			}
 		})
+	}
+}
+
+// A turn's inherited billing code is on the session token while the turn
+// runs, and gone from it when the turn ends.
+func TestScopeSessionToken_ClearsTurnBillingAtTheEnd(t *testing.T) {
+	tl := newTestAgentLoop(t)
+	sti := &recordingSTI{}
+	tl.al.SetSessionTokenIssuer(sti)
+	main := mustGetAgent(t, tl.al)
+	ctx := tools.WithBilling(context.Background(), "acme")
+	_, end := tl.al.scopeSessionToken(ctx, main, processOptions{SessionKey: "agent:main:main", Channel: "telegram", ChatID: "c"})
+	sti.mu.Lock()
+	during := sti.billing
+	sti.mu.Unlock()
+	if during == nil || during.Code() != "acme" {
+		t.Fatalf("token billing during the turn = %v", during)
+	}
+	end()
+	sti.mu.Lock()
+	after := sti.billing
+	sti.mu.Unlock()
+	if after != nil {
+		t.Errorf("token still carries %q after the turn", after.Code())
 	}
 }

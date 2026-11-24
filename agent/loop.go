@@ -315,6 +315,9 @@ type SessionTokenIssuer interface {
 	// tool calls made with the session's token carry them. No-op when the
 	// sessionKey is unknown.
 	SetTurnScope(sessionKey string, askChain []string, taskID string, billing *tools.InheritedBilling)
+	// EndTurnBilling removes a turn's inherited billing code from the
+	// session's token when the turn ends, unless a later turn's replaced it.
+	EndTurnBilling(sessionKey string, billing *tools.InheritedBilling)
 	// BeginTurn records a turn of sessionKey whose final reply goes to chatID
 	// on channel until the returned end is called, so MCP tool calls made
 	// with the session's token (CLI providers) send their output for "the
