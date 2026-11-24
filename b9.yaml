@@ -3,7 +3,7 @@
 
 name:   Agency
 module: go.bison9.com/agency
-github: PivotLLM/ClawEh
+github: BisonNine/agency
 
 version:
   file:    app/app.go
@@ -66,7 +66,7 @@ package:
     package:     agency
     maintainer:  'Bison9 <support@bison9.com>'
     description: 'Agency — Personal AI Assistant'
-    homepage:    'https://github.com/PivotLLM/ClawEh'
+    homepage:    'https://github.com/BisonNine/agency'
     depends:     [ca-certificates]
     targets:
       - linux/amd64

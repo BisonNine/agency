@@ -110,10 +110,10 @@ Version 0.6.0 represents a significant evolution toward a more secure business-c
 The one-line installer installs Agency as a background service, asks for the admin account, and opens the setup wizard:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
 ```
 
-Or download an archive from [GitHub Releases](https://github.com/PivotLLM/ClawEh/releases) (Linux and macOS, amd64 and arm64) and run `./claw install` (`sudo ./claw install` for a service that starts at boot). Then open **http://localhost:18790** and sign in.
+Or download an archive from [GitHub Releases](https://github.com/BisonNine/agency/releases) (Linux and macOS, amd64 and arm64) and run `./claw install` (`sudo ./claw install` for a service that starts at boot). Then open **http://localhost:18790** and sign in.
 
 Other options (a bare binary with `claweh.sh`, an unattended install, a headless or remote host) are in the manual: [Installing Agency](manual/getting-started/install.md), then [Quick start](manual/getting-started/quickstart.md).
 
@@ -162,8 +162,8 @@ Prerequisites:
 Do not install Node.js with `apt`; the packaged version is too old. Use the [NodeSource repository](https://github.com/nodesource/distributions) or [nvm](https://github.com/nvm-sh/nvm).
 
 ```bash
-git clone https://github.com/PivotLLM/ClawEh.git
-cd ClawEh
+git clone https://github.com/BisonNine/agency.git
+cd agency
 make install
 ```
 

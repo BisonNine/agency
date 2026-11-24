@@ -230,7 +230,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const docsUrl = useMemo(() => {
     if (!channel) return ""
     if (CHANNELS_WITHOUT_DOCS.has(channel.name)) return ""
-    return "https://github.com/PivotLLM/ClawEh"
+    return "https://github.com/BisonNine/agency"
   }, [channel])
 
   const channelDisplayName = useMemo(() => {

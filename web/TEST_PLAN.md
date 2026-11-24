@@ -31,8 +31,8 @@ Verify all old "PicoClaw" / "picoclaw" references have been replaced.
 
 | # | Test | Expected |
 |---|------|----------|
-| 2.1 | Click the Docs / Help link in the app header | Opens `https://github.com/PivotLLM/ClawEh` in a new tab — not `docs.picoclaw.io` |
-| 2.2 | Open Channels config page → click docs link | Opens `https://github.com/PivotLLM/ClawEh` in a new tab |
+| 2.1 | Click the Docs / Help link in the app header | Opens `https://github.com/BisonNine/agency` in a new tab — not `docs.picoclaw.io` |
+| 2.2 | Open Channels config page → click docs link | Opens `https://github.com/BisonNine/agency` in a new tab |
 | 2.3 | Inspect `<title>` in page source | `<title>Agency</title>` |
 
 ---

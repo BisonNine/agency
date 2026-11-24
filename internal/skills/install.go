@@ -16,7 +16,7 @@ func newInstallCommand(installerFn func() (*skills.SkillInstaller, error)) *cobr
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install skill from GitHub",
-		Example: "\n" + app.BinaryName() + " skills install PivotLLM/ClawEh-skills/weather\n" +
+		Example: "\n" + app.BinaryName() + " skills install your-org/your-skills/weather\n" +
 			app.BinaryName() + " skills install --registry clawhub github\n",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if registry != "" {

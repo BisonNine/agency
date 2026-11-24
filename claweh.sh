@@ -2,7 +2,7 @@
 # Agency installer — downloads the prebuilt `claw` binary (and license) for your
 # platform from GitHub Releases and installs it.
 #
-#   curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claweh.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claweh.sh | sh
 #
 # Environment overrides:
 #   CLAWEH_VERSION       release tag to install (e.g. v0.4.53); default: latest
@@ -19,7 +19,7 @@
 # Supports Linux and macOS on amd64 (x86_64) and arm64 (aarch64 / Apple Silicon).
 set -eu
 
-REPO="PivotLLM/ClawEh"
+REPO="BisonNine/agency"
 BINARY="claw"
 VERSION="${CLAWEH_VERSION:-latest}"
 

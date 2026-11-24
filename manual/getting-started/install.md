@@ -17,7 +17,7 @@ There are four ways to install. All of them finish with `claw install`, which re
 This downloads the latest release, verifies its checksum, and runs `claw install`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
 ```
 
 For a system service, end the line with `sudo bash` instead of `bash`.
@@ -28,7 +28,7 @@ To install a specific release, set `CLAW_VERSION` (for example `CLAW_VERSION=0.6
 
 ## Option 2: a release archive
 
-1. Download the archive for your platform from the [GitHub releases](https://github.com/PivotLLM/ClawEh/releases). The names are `claw-<os>-<arch>.tar.gz`, for example `claw-linux-amd64.tar.gz` or `claw-darwin-arm64.tar.gz`.
+1. Download the archive for your platform from the [GitHub releases](https://github.com/BisonNine/agency/releases). The names are `claw-<os>-<arch>.tar.gz`, for example `claw-linux-amd64.tar.gz` or `claw-darwin-arm64.tar.gz`.
 2. Unpack it and run the installer:
 
    ```bash
@@ -55,8 +55,8 @@ For a user service instead of a system service, run `claw install` without `sudo
 You need Git, Go, Node.js and pnpm.
 
 ```bash
-git clone https://github.com/PivotLLM/ClawEh.git
-cd ClawEh
+git clone https://github.com/BisonNine/agency.git
+cd agency
 make build
 ./build/claw install
 ```
@@ -135,7 +135,7 @@ To reach the WebUI from another machine, allow your network when you install:
 The same options work with the one-line installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash -s -- --allowed-cidrs 192.168.1.0/24
+curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash -s -- --allowed-cidrs 192.168.1.0/24
 ```
 
 You can change network access later on the **Network** page or with `claw network`. See [Network access](../admin/network.md).

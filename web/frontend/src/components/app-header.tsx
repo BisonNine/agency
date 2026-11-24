@@ -26,7 +26,7 @@ export function AppHeader() {
       <div className="text-muted-foreground flex items-center gap-1 text-sm font-medium md:gap-2">
         <Button variant="ghost" size="icon" className="size-8" asChild>
           <a
-            href="https://github.com/PivotLLM/ClawEh"
+            href="https://github.com/BisonNine/agency"
             target="_blank"
             rel="noreferrer"
             aria-label={`${name} on GitHub`}

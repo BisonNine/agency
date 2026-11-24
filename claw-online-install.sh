@@ -2,10 +2,10 @@
 # Agency One-Line Online Installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
 #
 # With optional arguments forwarded to `claw install`:
-#   curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash -s -- --host 0.0.0.0 --allowed-cidrs 192.168.1.0/24
+#   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash -s -- --host 0.0.0.0 --allowed-cidrs 192.168.1.0/24
 #
 # Environment variables:
 #   CLAW_VERSION   Version/tag to install (e.g. 0.5.4); default: latest
@@ -25,7 +25,7 @@
 #   your shell history:
 #     read -r CLAW_ADMIN_USER; read -rs CLAW_ADMIN_PASSWORD
 #     export CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
-#     curl -fsSL https://raw.githubusercontent.com/PivotLLM/ClawEh/main/claw-online-install.sh | bash
+#     curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
 #     unset CLAW_ADMIN_USER CLAW_ADMIN_PASSWORD
 #   With `sudo bash`, keep them across sudo:
 #     … | sudo --preserve-env=CLAW_ADMIN_USER,CLAW_ADMIN_PASSWORD bash
@@ -35,7 +35,7 @@
 #
 set -euo pipefail
 
-REPO="PivotLLM/ClawEh"
+REPO="BisonNine/agency"
 BINARY="claw"
 VERSION="${CLAW_VERSION:-latest}"
 

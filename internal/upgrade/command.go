@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	repoOwner   = "PivotLLM"
+	repoOwner   = "BisonNine"
 	repoName    = global.ReleaseRepoName
 	httpTimeout = 60 * time.Second
 

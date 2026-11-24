@@ -178,7 +178,10 @@
   logs, alerts, reports and messages. Nothing on an install changes: the
   `claw` binary, the `claw` service, the `~/.claw` data directory, the
   `CLAW_*` environment variables and the `mcp__claw__` tool prefix keep their
-  names, and `claw upgrade` still fetches releases from the same place.
+  names.
+- **Releases and the installer now come from `BisonNine/agency`.**
+  `claw upgrade`, the install scripts and the links in the WebUI use the new
+  repository.
 - **BREAKING: the `propose_domains` and `auto_promote` memory settings are
   removed.** They never had any effect; an existing config file that has them
   still loads, and the next save drops them.
@@ -4299,7 +4302,7 @@ on, and breaking one is a deliberate decision rather than a free move.
   entered, and the entry had to be worked around rather than typed. Affects the
   Telegram, Slack and generic channel forms.
 
-[0.6.6]: https://github.com/PivotLLM/ClawEh/compare/0.6.5...0.6.6
+[0.6.6]: https://github.com/BisonNine/agency/compare/0.6.5...0.6.6
 [0.6.5]: https://github.com/PivotLLM/ClawEh/compare/0.6.4...0.6.5
 [0.6.4]: https://github.com/PivotLLM/ClawEh/compare/0.6.3...0.6.4
 [0.6.3]: https://github.com/PivotLLM/ClawEh/compare/0.6.2...0.6.3

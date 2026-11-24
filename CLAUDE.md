@@ -216,7 +216,7 @@ No other file holds the product name as a string. Three accessors:
   parallel tests). There is no test hook in `app`.
 
 What stays fixed (not the product label; renaming would break installs or
-other programs): the release repository (`PivotLLM/ClawEh`), `CLAW_*`
+other programs): the release repository (`BisonNine/agency`), `CLAW_*`
 environment variables, the data directories (`.claw`, `/opt/claw`), file names
 (`claw.log`, `claw.pid`, `claw.lock`, `claw-backup-*`, temp prefixes), cookies
 and localStorage keys, the WebSocket subprotocol `claw-token`, the MCP realm

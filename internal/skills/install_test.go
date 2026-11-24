@@ -37,7 +37,7 @@ func TestInstallCommandArgs(t *testing.T) {
 	}{
 		{
 			name:        "no registry, one arg",
-			args:        []string{"PivotLLM/ClawEh-skills/weather"},
+			args:        []string{"your-org/your-skills/weather"},
 			registry:    "",
 			expectError: false,
 		},

@@ -48,8 +48,8 @@ const (
 	HostMCPRealm = "claw-mcp"
 
 	// ReleaseRepoName is the GitHub repository `upgrade` downloads releases
-	// from (owner PivotLLM).
-	ReleaseRepoName = "ClawEh"
+	// from (owner BisonNine).
+	ReleaseRepoName = "agency"
 
 	// DebPackageName is the Debian/Ubuntu binary package name (`apt install agency`).
 	DebPackageName = "agency"
