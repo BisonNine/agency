@@ -698,6 +698,7 @@ PY
       "common_put",
       "common_delete",
       "time_now",
+      "billing",
       "ccv3",
       "forum_readme",
       "forum_models",
