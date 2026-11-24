@@ -6,15 +6,18 @@
 package billing
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/toolspec"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/logger"
 	"go.bison9.com/agency/tools"
 )
 
@@ -65,6 +68,7 @@ func TestBillingTool(t *testing.T) {
 		{"not a string", map[string]any{"code": 42.0}, nil, invalidText, true, "default"},
 		{"refused by the host", map[string]any{"code": "acme"}, fmt.Errorf("check: %w", accounting.ErrInvalidProject), invalidText, true, "default"},
 		{"store failed", map[string]any{"code": "acme"}, errors.New("disk full"), failedText, true, "default"},
+		{"no session", map[string]any{"code": "acme"}, fmt.Errorf("set: %w", tools.ErrNoBillingSession), unavailText, true, "default"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -128,5 +132,20 @@ func TestProvider(t *testing.T) {
 	res, err = defs[0].Handler(&toolspec.ToolCall{Ctx: context.Background()})
 	if err != nil || res.ForLLM != "Billing code: default" {
 		t.Errorf("default read = %+v, %v", res, err)
+	}
+}
+
+// A set where no conversation is known (a service token) is not available
+// and logs nothing.
+func TestBillingTool_NoSessionIsQuiet(t *testing.T) {
+	var buf bytes.Buffer
+	t.Cleanup(logger.RedirectForTest(&buf))
+	f := &fakeBilling{code: "default", err: tools.ErrNoBillingSession}
+	res := call(definition(f.get, f.set), map[string]any{"code": "acme"})
+	if res.ForLLM != unavailText || !res.IsError {
+		t.Errorf("result = %+v", res)
+	}
+	if strings.Contains(buf.String(), "Billing code not set") {
+		t.Errorf("a set with no session logged a warning: %s", buf.String())
 	}
 }

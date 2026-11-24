@@ -5,6 +5,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 
@@ -46,6 +47,10 @@ func WithAskChainAgent(ctx context.Context, agentID string) context.Context {
 }
 
 type billingKey struct{}
+
+// ErrNoBillingSession refuses a billing code change made where neither an
+// inherited code nor a conversation is known (a call with a service token).
+var ErrNoBillingSession = errors.New("no conversation to set the billing code for")
 
 // InheritedBilling is the billing code of work that runs outside the session
 // that owns a code: a sub-agent, a clone, a scheduled job's run, an asked

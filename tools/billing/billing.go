@@ -97,6 +97,10 @@ func definition(get func(context.Context) string, set func(ctx context.Context, 
 				if errors.Is(err, accounting.ErrInvalidProject) {
 					return &toolspec.Result{ForLLM: invalidText, IsError: true, Err: err}, nil
 				}
+				if errors.Is(err, tools.ErrNoBillingSession) {
+					// A call with no conversation (a service token).
+					return &toolspec.Result{ForLLM: unavailText, IsError: true, Err: err}, nil
+				}
 				logger.WarnCF("billing", "Billing code not set",
 					map[string]any{"agent_id": call.AgentID, "session_key": call.Session, "error": err.Error()})
 				return &toolspec.Result{ForLLM: failedText, IsError: true, Err: err}, nil

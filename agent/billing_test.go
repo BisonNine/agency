@@ -156,8 +156,8 @@ func TestSetBilling(t *testing.T) {
 	if got := al.billingFor(ctx, main, "agent:main:other"); got != "orchard" {
 		t.Errorf("the call's session = %q, want orchard", got)
 	}
-	if err := al.setBilling(ctx, main, "", "orchard"); !errors.Is(err, errNoBillingSession) {
-		t.Errorf("no session: %v, want errNoBillingSession", err)
+	if err := al.setBilling(ctx, main, "", "orchard"); !errors.Is(err, tools.ErrNoBillingSession) {
+		t.Errorf("no session: %v, want tools.ErrNoBillingSession", err)
 	}
 
 	inherited := tools.WithBilling(ctx, "acme")
@@ -212,7 +212,7 @@ func TestSetBilling_StoreFailures(t *testing.T) {
 		t.Error("set on an unwritable state succeeded")
 	}
 	main.Sessions = &recoveryTestStore{}
-	if err := al.setSessionBilling(main, "s3", "acme"); !errors.Is(err, errNoBillingSession) {
+	if err := al.setSessionBilling(main, "s3", "acme"); !errors.Is(err, tools.ErrNoBillingSession) {
 		t.Errorf("store without state: %v", err)
 	}
 	if got := al.sessionBillingCode(main, "s3"); got != "" {

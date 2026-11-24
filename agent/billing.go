@@ -7,7 +7,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 
 	"go.bison9.com/agent/accounting"
 	"go.bison9.com/agent/hook"
@@ -26,10 +25,6 @@ import (
 // scheduled job's run, an asked turn, a Maestro worker, a forum participant,
 // a replayed turn) inherits the code of the work that started it, carried on
 // its context (tools.WithBilling). billingFor is the one rule.
-
-// errNoBillingSession refuses a billing change made where no session and no
-// inherited code is known.
-var errNoBillingSession = errors.New("no conversation to set the billing code for")
 
 // billingFor is the billing code of work for agent in sessionKey: the code
 // the work inherited (on ctx), else the session's own, else DefaultBilling.
@@ -129,7 +124,7 @@ func (al *AgentLoop) forgetSessionBilling(agentID, sessionKey string) {
 func (al *AgentLoop) setSessionBilling(agent *AgentInstance, sessionKey, code string) error {
 	store, ok := agent.Sessions.(compactionStateStore)
 	if !ok {
-		return errNoBillingSession
+		return tools.ErrNoBillingSession
 	}
 	st, err := store.GetCompactionState(sessionKey)
 	if err != nil {
@@ -165,7 +160,7 @@ func (al *AgentLoop) setBilling(ctx context.Context, agent *AgentInstance, sessi
 		sessionKey = sessionKeyOf(ctx)
 	}
 	if sessionKey == "" {
-		return errNoBillingSession
+		return tools.ErrNoBillingSession
 	}
 	return al.setSessionBilling(agent, sessionKey, code)
 }
