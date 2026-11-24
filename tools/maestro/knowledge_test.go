@@ -179,3 +179,29 @@ func TestKnowledgeParameter(t *testing.T) {
 		t.Error("without a store alice still has a knowledge source")
 	}
 }
+
+// Maestro's tasks read only what the agent's own tools may: with kb_get
+// denied there is no knowledge at all, with kb_search denied a query is
+// refused while records can still be included.
+func TestKnowledgeFollowsDeniedTools(t *testing.T) {
+	e := newKnowledgeEnv(t)
+	e.put(t, "notes", "a", kb.Frontmatter{"type": "Note", "title": "A"}, "body")
+	alice := &e.cfg.Agents.List[0]
+
+	alice.DenyTools = []string{"kb_get"}
+	if knowledgeFor(e.cfg, "alice", e.ws) != nil {
+		t.Error("kb_get denied, yet tasks can insert records")
+	}
+
+	alice.DenyTools = []string{"kb_search"}
+	src := knowledgeFor(e.cfg, "alice", e.ws)
+	if src == nil {
+		t.Fatal("kb_search denied removed record insertion too")
+	}
+	if rec, err := src.Get(context.Background(), "notes", "a"); err != nil || rec.Title != "A" {
+		t.Errorf("Get with kb_search denied = %+v, %v", rec, err)
+	}
+	if _, err := src.Search(context.Background(), "notes", "body", 5); err == nil || err.Error() != errSearchDenied.Error() {
+		t.Errorf("Search with kb_search denied = %v, want %q", err, errSearchDenied)
+	}
+}

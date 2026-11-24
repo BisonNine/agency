@@ -78,7 +78,7 @@ An agent with both knowledge bases and [Maestro](../maestro.md) on can have a ta
 - `include` lists concept IDs: each is inserted in full, with the concepts it includes.
 - `query` adds the best-matching passages; `limit` (1 to 20, default 5) caps them.
 
-The records go into the worker's prompt, the review (QA) prompt and the revision prompt. A record that cannot be loaded, or an unknown knowledge base, fails the task at once, without a retry. Without knowledge bases on, the argument is not offered.
+The records go into the worker's prompt, the review (QA) prompt and the revision prompt. A record that cannot be loaded, or an unknown knowledge base, fails the task at once, without a retry. Without knowledge bases on, the argument is not offered. Tasks read only what the agent's own tools may: with `kb_get` in **Denied tools** the argument is not offered, and with `kb_search` denied a task's `query` fails it.
 
 ## Backup
 
