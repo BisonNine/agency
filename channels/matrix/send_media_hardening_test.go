@@ -77,7 +77,7 @@ func newMediaTestChannel(t *testing.T, srv *matrixMediaServer) (*MatrixChannel, 
 	t.Helper()
 	hs := httptest.NewServer(srv.handler(t))
 	t.Cleanup(hs.Close)
-	client, err := mautrix.NewClient(hs.URL, id.UserID("@claw:matrix.test"), "tok")
+	client, err := mautrix.NewClient(hs.URL, id.UserID("@agency:matrix.test"), "tok")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}

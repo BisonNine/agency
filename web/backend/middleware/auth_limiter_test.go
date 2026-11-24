@@ -249,7 +249,7 @@ func TestAuthStore_RefreshGeneration(t *testing.T) {
 		t.Fatalf("generation moved without a file change: %d -> %d", gen, again)
 	}
 
-	// `claw admin` rewrites the file: Refresh reloads it at once, with no
+	// `agency admin` rewrites the file: Refresh reloads it at once, with no
 	// Watch poll, and the generation moves.
 	if err := admin.Write(path, testUser, "a different fine password", admin.DefaultFileMode); err != nil {
 		t.Fatal(err)

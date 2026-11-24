@@ -13,7 +13,7 @@ import (
 
 // underServiceManager reports whether a service manager will start the
 // process again after it exits non-zero. systemd sets INVOCATION_ID for
-// every unit it runs, and the units `claw install` writes use
+// every unit it runs, and the units `agency install` writes use
 // Restart=on-failure.
 func underServiceManager() bool {
 	return os.Getenv("INVOCATION_ID") != ""

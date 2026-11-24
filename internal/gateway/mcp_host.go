@@ -72,7 +72,7 @@ func startMCPServer(cfg *config.Config, agentLoop *agent.AgentLoop, msgBus *bus.
 	// the host never finds a valid token missing.
 	registerTestSessionToken(agentLoop, srv)
 
-	// Load persisted long-lived service tokens (claw token CLI) into the store.
+	// Load persisted long-lived service tokens (agency token CLI) into the store.
 	// Runs at boot and on every config reload (this function rebuilds the server);
 	// the file watcher in the main loop also re-syncs on demand.
 	syncServiceTokensFromDisk(cfg, agentLoop, srv)
@@ -168,7 +168,7 @@ func registerTestSessionToken(agentLoop *agent.AgentLoop, srv *mcpserver.MCPServ
 // reconciles them into the live store (registers present, revokes removed),
 // each bound to its agent's dedicated headless service session. Unknown agents
 // are skipped. Used at boot and by the service-token file watcher, so a
-// `claw token` change activates without a restart. A missing/empty file is
+// `agency token` change activates without a restart. A missing/empty file is
 // normal (it clears any previously-loaded service tokens).
 func syncServiceTokensFromDisk(cfg *config.Config, agentLoop *agent.AgentLoop, srv *mcpserver.MCPServer) {
 	if srv == nil || cfg == nil {

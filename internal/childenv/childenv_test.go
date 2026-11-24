@@ -22,7 +22,7 @@ func lookup(env []string, k string) (string, bool) {
 }
 
 func TestBase_DropsSecretsKeepsBasics(t *testing.T) {
-	t.Setenv("AGENCY_HOME", "/srv/claw")
+	t.Setenv("AGENCY_HOME", "/srv/agency")
 	t.Setenv("AGENCY_GATEWAY_TOKEN", "secret")
 	t.Setenv("ALERTER_PUSHOVER_TOKEN", "secret")
 	t.Setenv("ANTHROPIC_API_KEY", "secret")
@@ -80,7 +80,7 @@ func TestCLI_AddsCLIAuthOnly(t *testing.T) {
 	t.Setenv("ALERTER_SMTP_PASSWORD", "secret")
 	t.Setenv("ANTHROPIC_API_KEY", "k1")
 	t.Setenv("OPENAI_API_KEY", "k2")
-	t.Setenv("CLAUDE_CONFIG_DIR", "/home/alice/.claude-claw")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/home/alice/.claude-agency")
 	t.Setenv("CODEX_HOME", "/home/alice/.codex")
 	t.Setenv("GEMINI_API_KEY", "k3")
 	t.Setenv("GOOGLE_CLOUD_PROJECT", "p")

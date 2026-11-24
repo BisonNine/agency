@@ -33,7 +33,7 @@ func ownerTestConfig(t *testing.T) *config.Config {
 }
 
 // Only the loop that owns the data directory (the gateway) saves, restores
-// and cleans temporary agents. A second loop on the same directory — `claw
+// and cleans temporary agents. A second loop on the same directory — `agency
 // agent` beside the running service — leaves them alone.
 func TestNewAgentLoop_OnlyOwnerManagesTempAgents(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})

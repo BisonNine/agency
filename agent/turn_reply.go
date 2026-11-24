@@ -274,7 +274,7 @@ func decideTurnReply(end turnEnd) (replyAction, string, string) {
 		// Dropped (logged where detected): a person takes only questions from
 		// agents. Someone who wrote to it (a mention, a chat, a device) or a
 		// sender that requires a reply is told so, which also clears the
-		// chat's indicators; claw's own messages are dropped silently.
+		// chat's indicators; agency's own messages are dropped silently.
 		if !end.replyRequired && !end.fromPerson {
 			return replyDrop, "", ""
 		}

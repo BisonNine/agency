@@ -71,7 +71,7 @@ func TestFactoryInputs_CoverWhatTheFactoryReads(t *testing.T) {
 	}{
 		{"channels.device", func(c *config.Config) { c.Channels.Device.Port++ }},
 		{"logging.log_message_content", func(c *config.Config) { c.Logging.LogMessageContent = !c.Logging.LogMessageContent }},
-		{"gateway.external_url", func(c *config.Config) { c.Gateway.ExternalURL = "https://claw.example" }},
+		{"gateway.external_url", func(c *config.Config) { c.Gateway.ExternalURL = "https://agency.example" }},
 		{"gateway.lockout_exempt", func(c *config.Config) { c.Gateway.LockoutExempt = []string{"192.0.2.1"} }},
 		{"gateway.trusted_proxies", func(c *config.Config) { c.Gateway.TrustedProxies = []string{"192.0.2.2"} }},
 		{"gateway.tls.mode", func(c *config.Config) { c.Gateway.TLS.Mode = config.TLSModeOff }},

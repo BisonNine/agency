@@ -302,7 +302,7 @@ interface ResilienceSectionProps {
   onFieldChange: UpdateMCPField
 }
 
-// ResilienceSection edits how claw handles outbound MCP sessions that drop or hang
+// ResilienceSection edits how agency handles outbound MCP sessions that drop or hang
 // (tools.mcp.reconnect_cooldown_seconds / call_timeout_seconds /
 // liveness_probe_seconds). Applies to the external servers above.
 export function ResilienceSection({

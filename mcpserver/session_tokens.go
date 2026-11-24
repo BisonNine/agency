@@ -225,7 +225,7 @@ func (s *SessionTokenStore) Register(token, agentID, sessionKey, archiveDir stri
 // whatever is driving it. Like Register it is pinned (never rotated by Issue)
 // and it is indexed apart from the conversation token, so neither disturbs the
 // other. The caller supplies the exact token (minted/persisted by the
-// `claw token` CLI).
+// `agency token` CLI).
 func (s *SessionTokenStore) RegisterService(token, agentID, archiveDir string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -253,7 +253,7 @@ func (s *SessionTokenStore) RegisterService(token, agentID, archiveDir string) {
 // agents present have their service token (re)registered; service tokens for
 // agents no longer present are revoked. archiveDirFor maps an agentID to its
 // archive dir; agents it returns "" for (unknown) are skipped. This is what lets
-// `claw token` changes take effect without a restart. The values are the
+// `agency token` changes take effect without a restart. The values are the
 // stored form from servicetoken.Load — hashes — so the record is keyed by the
 // hash and Resolve hashes the presented token to find it; a plaintext value
 // (tests) is keyed as-is.

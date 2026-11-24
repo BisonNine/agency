@@ -27,11 +27,11 @@ const FileName = "credentials.json"
 // nothing for group or others.
 const DefaultFileMode fs.FileMode = 0o600
 
-// MinPasswordLength is the shortest password `claw admin` accepts.
+// MinPasswordLength is the shortest password `agency admin` accepts.
 const MinPasswordLength = 12
 
 // ErrNotConfigured means there is no credentials file: no admin account has
-// been created with `claw admin`.
+// been created with `agency admin`.
 var ErrNotConfigured = errors.New("no admin account")
 
 // PermissionError reports a credentials file whose mode grants bits the

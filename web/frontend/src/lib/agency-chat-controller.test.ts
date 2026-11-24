@@ -4,7 +4,7 @@ import {
   chatSocketUrl,
   connectChat,
   disconnectChat,
-} from "./claw-chat-controller"
+} from "./agency-chat-controller"
 
 // Every socket the controller opens, recorded so the test can assert on the URL
 // and the subprotocols it was constructed with.
@@ -97,9 +97,9 @@ describe("connectChat session handling", () => {
   })
 
   it("uses wss: when the page was served over https", () => {
-    stubLocation({ protocol: "https:", host: "claw.example.com" })
+    stubLocation({ protocol: "https:", host: "agency.example.com" })
     expect(chatSocketUrl("abc")).toBe(
-      "wss://claw.example.com/webui/ws?session_id=abc",
+      "wss://agency.example.com/webui/ws?session_id=abc",
     )
   })
 

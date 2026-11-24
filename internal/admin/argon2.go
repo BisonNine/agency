@@ -2,7 +2,7 @@
 // License: MIT
 
 // Package admin owns the operator credentials file (<AGENCY_HOME>/credentials.json)
-// and the `claw admin` command that writes it. The gateway reads the file to
+// and the `agency admin` command that writes it. The gateway reads the file to
 // authenticate WebUI and API logins; nothing in the WebUI can create or change
 // the account.
 package admin

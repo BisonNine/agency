@@ -115,7 +115,7 @@ func TestMediaStagingDirAndModes(t *testing.T) {
 	if d, f := MediaModes(); d != 0o700 || f != 0o600 {
 		t.Errorf("zero modes = %04o/%04o, want 0700/0600", d, f)
 	}
-	if got, want := MediaTempDir(), filepath.Join(os.TempDir(), "claw_media_"); !strings.HasPrefix(got, want) {
+	if got, want := MediaTempDir(), filepath.Join(os.TempDir(), "agency_media_"); !strings.HasPrefix(got, want) {
 		t.Errorf("fallback MediaTempDir = %q, want prefix %q", got, want)
 	}
 	dir := useMediaDir(t, 0o750, 0o640)

@@ -196,7 +196,7 @@ func TestHumanAgent_OnlyAsksReachThePerson(t *testing.T) {
 	defer restore()
 	al, msgBus, model := newHumanLoop(t, 60)
 
-	internal := toAgent("bob", "m1", "hello") // claw's own, not an ask, no reply required
+	internal := toAgent("bob", "m1", "hello") // agency's own, not an ask, no reply required
 	internal.SenderID = "system"
 	internal.Internal = true
 	dispatch(al, internal)
@@ -344,7 +344,7 @@ func TestHumanAgent_ShutdownCancels(t *testing.T) {
 }
 
 // Other agents and chats are unchanged: a message in another chat is an
-// ordinary model turn, and a message bound for the person's chat by claw
+// ordinary model turn, and a message bound for the person's chat by agency
 // itself is not taken for the person's.
 func TestHumanAgent_OtherTrafficUnchanged(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
@@ -853,7 +853,7 @@ func TestHumanAgent_DeliveredRequestKeepsWaiting(t *testing.T) {
 	al.activeRequests.Wait()
 }
 
-// Whether a message is a person's is decided by the internal mark every claw
+// Whether a message is a person's is decided by the internal mark every agency
 // publisher sets, never by its sender id: the forum's completion notice is
 // marked, and a message from a publisher no list knows about, marked
 // internal, is not taken for the person's answer even in the person's chat.

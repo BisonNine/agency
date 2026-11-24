@@ -27,7 +27,7 @@ func startBackupScheduler(getConfig func() *config.Config, configPath string, a 
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				nb.tick(now) //nolint:contextcheck // as `claw backup`: the backup has no context; its quick_check runs on its own busy_timeout-bounded connection
+				nb.tick(now) //nolint:contextcheck // as `agency backup`: the backup has no context; its quick_check runs on its own busy_timeout-bounded connection
 			}
 		}
 	}()
@@ -58,7 +58,7 @@ func (n *nightlyBackup) tick(now time.Time) {
 		return
 	}
 	n.lastRunDay = day
-	res, err := backup.RunForConfig(cfg, n.configPath, now, backup.Options{Alerter: n.alerter}) //nolint:contextcheck,nolintlint // same code path as `claw backup`, which has no context; the quick_check inside runs on its own busy_timeout-bounded connection
+	res, err := backup.RunForConfig(cfg, n.configPath, now, backup.Options{Alerter: n.alerter}) //nolint:contextcheck,nolintlint // same code path as `agency backup`, which has no context; the quick_check inside runs on its own busy_timeout-bounded connection
 	if err != nil {
 		logger.ErrorCF("backup", "nightly backup failed", map[string]any{"error": err.Error()})
 		n.alerter.Send(alerter.Alert{

@@ -156,7 +156,7 @@ func TestGatewayRun_ReloadsAndFatal(t *testing.T) {
 		t.Fatalf("a good reload alerted: %v", b.alerts.titles())
 	}
 
-	// A service token written by `claw token` is live after the change.
+	// A service token written by `agency token` is live after the change.
 	const svcToken = "SVC-main-e2e"
 	if err := servicetoken.Save(servicetoken.Path(b.cfg.DataDir()), map[string]string{"main": svcToken}); err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ func TestGatewayRun_TLSDevicesAndReloadWarnings(t *testing.T) {
 	newCfg.Gateway.ExternalURL = "http://[::1"
 	newCfg.Gateway.LockoutExempt = []string{"not an address"}
 	newCfg.Gateway.Port++
-	newCfg.Gateway.TLS.ExtraNames = []string{"claw.example.test"}
+	newCfg.Gateway.TLS.ExtraNames = []string{"agency.example.test"}
 	newCfg.Tools.MediaCleanup.Enabled = !newCfg.Tools.MediaCleanup.Enabled
 	newCfg.Tools.MediaCleanup.MaxAge = 7
 	newCfg.Tools.MediaCleanup.Interval = 3

@@ -12,7 +12,7 @@ import (
 // The gateway serves one handler chain on two listeners: plain HTTP, placed
 // by gateway.host, and HTTPS, placed by gateway.tls.mode. The helpers below
 // are the single description of where each binds and which URLs reach it, so
-// the gateway, `claw status`, the WebUI API and the report agree.
+// the gateway, `agency status`, the WebUI API and the report agree.
 
 // isWildcardHost reports whether host is an all-interfaces bind address.
 func isWildcardHost(host string) bool {
@@ -43,7 +43,7 @@ func (g GatewayConfig) ReachableOffBox() bool {
 }
 
 // HTTPBindHosts are the addresses the plain-HTTP listener binds on Port.
-// Loopback is always among them, since local tools and `claw status` use
+// Loopback is always among them, since local tools and `agency status` use
 // http://127.0.0.1:<port>: a loopback Host is 127.0.0.1 and ::1; a wildcard
 // Host is the wildcard alone (it covers loopback, and Go binds it dual-stack);
 // any other Host is the loopback pair plus Host.

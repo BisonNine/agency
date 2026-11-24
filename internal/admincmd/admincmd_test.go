@@ -17,9 +17,9 @@ import (
 
 func TestResolveHome_EnvWins(t *testing.T) {
 	stubDetect(t, &install.ExistingInstall{AgencyHome: "/opt/agency"})
-	t.Setenv("AGENCY_HOME", "/tmp/claw-test-home")
+	t.Setenv("AGENCY_HOME", "/tmp/agency-test-home")
 	home, _ := ResolveHome()
-	if home != "/tmp/claw-test-home" {
+	if home != "/tmp/agency-test-home" {
 		t.Fatalf("ResolveHome() = %q", home)
 	}
 }

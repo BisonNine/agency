@@ -128,7 +128,7 @@ func (a namespacedProvider) Describe() []ToolDescriptor {
 	return out
 }
 
-// toGlobalDeps converts Claw's rich ToolDeps into the portable toolspec.Deps,
+// toGlobalDeps converts Agency's rich ToolDeps into the portable toolspec.Deps,
 // passing the full ToolDeps through Host so converted packages can recover their
 // strongly-typed dependencies via deps.Host.(tools.ToolDeps).
 func (a namespacedProvider) toGlobalDeps(deps ToolDeps) toolspec.Deps {

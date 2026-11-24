@@ -625,7 +625,7 @@ export function NetworkPage() {
                   <Input
                     type="text"
                     value={form.externalUrl}
-                    placeholder="https://claw.example.com"
+                    placeholder="https://agency.example.com"
                     data-testid="network-external-url"
                     onChange={(e) => update("externalUrl", e.target.value)}
                   />

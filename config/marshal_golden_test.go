@@ -16,7 +16,7 @@ import (
 // built-in default. Regenerate with UPDATE_GOLDEN=1 only when the shape is
 // meant to change.
 func TestConfigMarshalGolden(t *testing.T) {
-	t.Setenv(global.EnvVarHome, "/claw-home")
+	t.Setenv(global.EnvVarHome, "/agency-home")
 	full := &Config{}
 	fillValue(reflect.ValueOf(full).Elem(), map[reflect.Type]int{})
 

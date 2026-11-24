@@ -11,27 +11,27 @@ import (
 	"go.bison9.com/agency/app"
 )
 
-func TestNewClawCommand(t *testing.T) {
+func TestNewAgencyCommand(t *testing.T) {
 	orig := os.Args
 	t.Cleanup(func() { os.Args = orig })
-	os.Args = []string{"/usr/local/bin/alice-claw"}
+	os.Args = []string{"/usr/local/bin/alice-agency"}
 
-	cmd := NewClawCommand()
+	cmd := NewAgencyCommand()
 
 	require.NotNil(t, cmd)
 
-	assert.Equal(t, "alice-claw", cmd.Use, "the root command is named after the binary as started")
+	assert.Equal(t, "alice-agency", cmd.Use, "the root command is named after the binary as started")
 	assert.Equal(t, app.TagLine(), cmd.Short)
 
 	assert.True(t, cmd.HasSubCommands())
 	assert.True(t, cmd.HasAvailableSubCommands())
 
 	// The merged binary attaches the gateway flags (-d / -T) on the root so
-	// `claw` (no subcommand) launches the server.
+	// `agency` (no subcommand) launches the server.
 	assert.True(t, cmd.HasFlags())
 
 	assert.Nil(t, cmd.Run)
-	// `claw` with no args launches the gateway, so RunE must be set.
+	// `agency` with no args launches the gateway, so RunE must be set.
 	assert.NotNil(t, cmd.RunE)
 
 	assert.Nil(t, cmd.PersistentPreRun)
@@ -73,7 +73,7 @@ func TestNewClawCommand(t *testing.T) {
 }
 
 func TestUpdateAlias(t *testing.T) {
-	cmd := NewClawCommand()
+	cmd := NewAgencyCommand()
 	subcmd, _, err := cmd.Find([]string{"update"})
 	require.NoError(t, err)
 	require.NotNil(t, subcmd)

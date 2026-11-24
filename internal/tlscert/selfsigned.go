@@ -202,7 +202,7 @@ func dirExists(path string) bool {
 }
 
 // generateSelfSigned builds the PEM pair. The subject CN is the first DNS
-// name (the host name) so `claw tls` and browsers show something meaningful.
+// name (the host name) so `agency tls` and browsers show something meaningful.
 func generateSelfSigned(names certNames, now time.Time) (certPEM, keyPEM []byte, err error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

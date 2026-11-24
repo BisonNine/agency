@@ -559,7 +559,7 @@ func tempPaths(cfg *config.Config) (root, statePath string) {
 	if base := cfg.BaseDir(); filepath.IsAbs(base) {
 		return filepath.Join(base, ".temp-agents"), ""
 	}
-	return filepath.Join(os.TempDir(), "claw-temp-agents"), ""
+	return filepath.Join(os.TempDir(), "agency-temp-agents"), ""
 }
 
 // ConfigWorkspace is a config agent's workspace: its configured workspace

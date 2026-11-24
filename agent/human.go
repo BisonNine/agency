@@ -503,7 +503,7 @@ func (al *AgentLoop) humanChatOwner(msg bus.InboundMessage) (humanChat, bool) {
 }
 
 // fromPerson reports whether msg was written by someone, as opposed to
-// published by claw itself (bus.InboundMessage.Internal).
+// published by agency itself (bus.InboundMessage.Internal).
 func fromPerson(msg bus.InboundMessage) bool {
 	return !msg.Internal
 }

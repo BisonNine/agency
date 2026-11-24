@@ -619,13 +619,13 @@ func TestNonStreamedRunUnchanged(t *testing.T) {
 // because these are the keys this gateway actually receives.
 func TestAgentIDFromSessionKey(t *testing.T) {
 	cases := map[string]string{
-		"agent:claw:clawtotalk:primary": "claw",
-		"agent:bob:clawtotalk:primary":  "bob",
-		"agent:main:clawtotalk:primary": "", // no-selection sentinel -> default routing
-		"agent:claw:main":               "claw",
-		"main":                          "", // R1-style key, not agent-scoped
-		"":                              "",
-		"agent:":                        "",
+		"agent:agency:clawtotalk:primary": "agency",
+		"agent:bob:clawtotalk:primary":    "bob",
+		"agent:main:clawtotalk:primary":   "", // no-selection sentinel -> default routing
+		"agent:agency:main":               "agency",
+		"main":                            "", // R1-style key, not agent-scoped
+		"":                                "",
+		"agent:":                          "",
 	}
 	for in, want := range cases {
 		if got := routing.AgentIDFromSessionKey(in); got != want {

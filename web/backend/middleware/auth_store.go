@@ -23,8 +23,8 @@ import (
 // HTTP, so a loopback HTTP install gets the plain name instead. The middleware
 // accepts either; the request's own transport (r.TLS) decides which is set.
 const (
-	SessionCookieSecure   = "__Host-claw_session"
-	SessionCookieInsecure = "claw_session"
+	SessionCookieSecure   = "__Host-agency_session"
+	SessionCookieInsecure = "agency_session"
 )
 
 // Session lifetimes: a session ends after DefaultSessionIdle without a
@@ -35,7 +35,7 @@ const (
 )
 
 // CredentialsPollInterval is how often the gateway re-stats the credentials
-// file to notice `claw admin` having run.
+// file to notice `agency admin` having run.
 const CredentialsPollInterval = 60 * time.Second
 
 type authSession struct {
@@ -128,7 +128,7 @@ func (s *AuthStore) Configured() bool {
 
 // Username returns the admin account's username, or "" when no usable
 // account is loaded. It re-reads the credentials file first if it changed
-// (Refresh), so an account written by `claw admin` is seen at once.
+// (Refresh), so an account written by `agency admin` is seen at once.
 func (s *AuthStore) Username() string {
 	s.Refresh()
 	s.mu.RLock()
@@ -205,7 +205,7 @@ func (s *AuthStore) Watch(ctx context.Context, interval time.Duration) {
 
 // Refresh re-reads the credentials file if its mtime or size changed since
 // the last Reload, and returns the credentials generation. The login handler
-// calls it on every attempt, so an account written by `claw admin` takes
+// calls it on every attempt, so an account written by `agency admin` takes
 // effect at once rather than at the next Watch poll.
 func (s *AuthStore) Refresh() uint64 {
 	if s.fileChanged() {

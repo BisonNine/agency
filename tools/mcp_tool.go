@@ -144,8 +144,8 @@ func (t *MCPTool) Name() string {
 	return base + "_" + suffix
 }
 
-// ExternalName is the name claw's MCP host advertises this upstream tool under to
-// external clients: "<server>_<tool>" — claw's internal "mcp_" namespacing is
+// ExternalName is the name agency's MCP host advertises this upstream tool under to
+// external clients: "<server>_<tool>" — agency's internal "mcp_" namespacing is
 // dropped so clients see e.g. "fusion_trello_search" instead of the doubly-
 // prefixed "mcp__agency__mcp_fusion_trello_search". The internal registry name
 // (Name) is unchanged; only the externally published name differs. Implements

@@ -60,7 +60,7 @@ func statusCmd() {
 // printProcess reports whether the instance for this data directory is running,
 // and what it is costing in RAM.
 //
-// Labelled with the application name: `claw gateway` starts this process, but
+// Labelled with the application name: `agency gateway` starts this process, but
 // there is also a device channel inside it — a listener on its own port, which
 // logs "Device channel stopped" on shutdown — so a label naming one of them
 // would be ambiguous about which is meant. What this line reports is the whole

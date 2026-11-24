@@ -1,5 +1,5 @@
 [Unit]
-Description=Claw AI Agent (agent runtime + WebUI on a single port)
+Description=Agency AI Agent (agent runtime + WebUI on a single port)
 After=network-online.target
 Wants=network-online.target
 

@@ -23,7 +23,7 @@ func startSyncAgainst(t *testing.T, h http.HandlerFunc) (*MatrixChannel, *testal
 
 	c, err := NewMatrixChannel(config.MatrixConfig{
 		Homeserver:  srv.URL,
-		UserID:      "@claw:matrix.test",
+		UserID:      "@agency:matrix.test",
 		AccessToken: "token",
 	}, bus.NewMessageBus())
 	if err != nil {

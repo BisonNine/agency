@@ -11,7 +11,7 @@ import (
 	"go.bison9.com/agency/internal"
 )
 
-// NewNetworkCommand returns the `claw network` subcommand: the way back into
+// NewNetworkCommand returns the `agency network` subcommand: the way back into
 // an install whose listeners or allowlist keep the operator out, without
 // hand-editing config.json.
 func NewNetworkCommand() *cobra.Command {

@@ -12,7 +12,7 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// GetAgencyHome returns the claw home directory.
+// GetAgencyHome returns the agency home directory.
 // Priority:
 // 1. $AGENCY_HOME environment variable
 // 2. Existing service definition (systemd unit or launchd plist)

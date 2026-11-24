@@ -226,7 +226,7 @@ interface SecMsgFormProps {
 }
 
 // DiscoveredAccounts lists the accounts the daemon actually hosts (queried live),
-// each with its own device-linking panel. This is the primary path: point claw
+// each with its own device-linking panel. This is the primary path: point agency
 // at the daemon and it binds one channel per account automatically — no manual
 // account entry required.
 function DiscoveredAccounts({ daemonName }: { daemonName: string }) {

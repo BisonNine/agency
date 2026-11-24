@@ -68,7 +68,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // The merged claw binary serves /api/* and the WebUI WebSocket on the
+      // The merged agency binary serves /api/* and the WebUI WebSocket on the
       // same port as the gateway (cfg.Gateway.Port, default 18790).
       "/api": {
         target: "http://localhost:18790",

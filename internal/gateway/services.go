@@ -271,7 +271,7 @@ func startAgentServices(cfg *config.Config, agentLoop *agent.AgentLoop, msgBus *
 	}
 
 	// Start the MCP server so CLI providers (claude-cli/codex-cli/antigravity-cli/cursor-cli/opencode-cli)
-	// can call claw's host-side tools natively over MCP.
+	// can call agency's host-side tools natively over MCP.
 	if err := startMCPServer(cfg, agentLoop, msgBus, services); err != nil {
 		return err
 	}
@@ -489,7 +489,7 @@ func startHTTPHost(services *gatewayServices, cfg *config.Config, agentLoop *age
 // startWebAuth sets up the WebUI login: one session store shared by the Auth
 // middleware on the listener, the login endpoints and the WebUI channel's
 // WebSocket handshake. Created once, like the listener; its poller picks up
-// `claw admin` changes to the credentials file for the life of the process,
+// `agency admin` changes to the credentials file for the life of the process,
 // checking the file against the secrets file mode of the current config.
 func startWebAuth(services *gatewayServices, cfg *config.Config, al *agent.AgentLoop) error {
 	authStore := middleware.NewAuthStore(admin.Path(cfg.DataDir()),
@@ -846,7 +846,7 @@ func restartCron(runCtx context.Context, al *agent.AgentLoop, services *gatewayS
 
 // reapplyListenerPolicy pushes the reloaded IP allowlist, trusted proxies,
 // Host policy and lockout exemptions onto the live listener and login
-// limiter. This is what makes `claw network` a recovery path: an operator
+// limiter. This is what makes `agency network` a recovery path: an operator
 // locked out by an empty allowlist can widen it and be let in within the
 // reload interval, without a restart. A rejected value leaves the running
 // one in place, so a typo never drops access to loopback.

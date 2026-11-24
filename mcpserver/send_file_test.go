@@ -83,7 +83,7 @@ func TestDispatch_SendFileGoesToTheTurnsChat(t *testing.T) {
 	end()
 }
 
-// A turn on an internal channel (claw agent's cli, a recovery or system
+// A turn on an internal channel (agency agent's cli, a recovery or system
 // replay) keeps its files from the chat the session last heard from.
 func TestDispatch_SendFileInternalTurn(t *testing.T) {
 	for _, channel := range []string{"cli", "recovery", "system"} {

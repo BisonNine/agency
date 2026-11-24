@@ -27,11 +27,11 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// NewACPCommand builds the `claw acp` subcommand: an Agent Client Protocol (ACP)
+// NewACPCommand builds the `agency acp` subcommand: an Agent Client Protocol (ACP)
 // agent that speaks JSON-RPC 2.0 over stdio and bridges to the ALREADY-RUNNING
-// claw over its localhost WebSocket (the device listener on 127.0.0.1:<port>).
+// agency over its localhost WebSocket (the device listener on 127.0.0.1:<port>).
 // It is intended to be spawned by an ACP client (e.g. rabbit-agent for the Rabbit
-// R1). The bridge holds no agent loop of its own — the one running claw does
+// R1). The bridge holds no agent loop of its own — the one running agency does
 // the work, so there is exactly one Agency instance.
 func NewACPCommand() *cobra.Command {
 	var debug bool

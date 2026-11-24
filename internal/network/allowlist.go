@@ -1,4 +1,4 @@
-// Package network implements the `claw network` CLI: read and set the IP
+// Package network implements the `agency network` CLI: read and set the IP
 // allowlist that guards the shared HTTP port (WebUI, /api/*, health). It edits
 // config.json and exits, so it is safe to run against a running gateway — the
 // reload watcher applies the new allowlist to the live listener within a few
@@ -53,7 +53,7 @@ func CurrentAllowlist() ([]string, error) {
 
 // ApplyAllowlist validates cidrs and writes them to gateway.allowed_cidrs,
 // returning the config path written. The caller reports the outcome; this does
-// no printing so `claw install` and `claw network` can word it differently.
+// no printing so `agency install` and `agency network` can word it differently.
 func ApplyAllowlist(cidrs []string) (string, error) {
 	path := internal.GetConfigPath()
 	cfg, err := config.LoadConfig(path)

@@ -118,7 +118,7 @@ print_section() {
 
 # probe_call <tool> <params-json>
 # Echoes raw output, returns probe's exit code.
-# Claw-native tools are published under their bare namespaced names
+# Agency-native tools are published under their bare namespaced names
 # (file_read_lines, cogmem_status, …); upstream MCP tools are "<server>_*". The old
 # reserved "local_" prefix was dropped in #32 — do not reintroduce it, or every call
 # resolves to a non-existent tool and the probes report "tool not found" instead of

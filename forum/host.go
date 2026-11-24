@@ -269,7 +269,7 @@ func (systemClock) After(d time.Duration) <-chan time.Time { return time.After(d
 // OnStuck, Cooldown and Clock may be nil; the others are required.
 type Host struct {
 	// ProductName is the host's name as the guide calls it in running prose
-	// ("Claw runs for you"). Empty: "the host".
+	// ("Agency runs for you"). Empty: "the host".
 	ProductName string
 	Messenger   Messenger
 	Agents      Agents

@@ -488,7 +488,7 @@ func extractBinariesFromTarGz(archivePath, agencyDst, agencyAuthDst string) (has
 	defer utils.CloseQuietly(gz)
 
 	tr := tar.NewReader(gz)
-	foundClaw := false
+	foundAgency := false
 
 	for {
 		hdr, err := tr.Next()
@@ -512,7 +512,7 @@ func extractBinariesFromTarGz(archivePath, agencyDst, agencyAuthDst string) (has
 			if closeErr := out.Close(); closeErr != nil {
 				return false, closeErr
 			}
-			foundClaw = true
+			foundAgency = true
 		} else if cleanName == global.AuthHelperBinaryName && (hdr.Typeflag == tar.TypeReg) {
 			out, err := os.OpenFile(agencyAuthDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // installed binary must be executable
 			if err != nil {
@@ -529,7 +529,7 @@ func extractBinariesFromTarGz(archivePath, agencyDst, agencyAuthDst string) (has
 		}
 	}
 
-	if !foundClaw {
+	if !foundAgency {
 		return false, fmt.Errorf("`%s` binary was not found inside archive %s", global.InstalledBinaryName, archivePath)
 	}
 	return hasAuth, nil

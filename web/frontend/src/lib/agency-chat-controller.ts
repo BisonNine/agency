@@ -2,7 +2,7 @@ import { LOGIN_PATH, loginHref } from "@/lib/auth-redirect"
 import {
   generateSessionId,
   normalizeUnixTimestamp,
-} from "@/lib/claw-chat-state"
+} from "@/lib/agency-chat-state"
 import { getChatState, updateChatStore } from "@/store/chat"
 
 interface WebUIMessage {

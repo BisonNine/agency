@@ -222,11 +222,11 @@ func (h *maestroHarness) waitTerminal(project, path string) map[string]any {
 	return nil
 }
 
-// TestIntegration_TaskRunThroughClawEhWrappers drives the representative
+// TestIntegration_TaskRunThroughAgencyWrappers drives the representative
 // sequence through the namespaced wrappers: orientation, project, file, task
 // set, task, run, result with usage, report; plus a wiring sample of other
 // domains. It asserts the seam between Agency and Maestro, not Maestro itself.
-func TestIntegration_TaskRunThroughClawEhWrappers(t *testing.T) {
+func TestIntegration_TaskRunThroughAgencyWrappers(t *testing.T) {
 	h := newMaestroHarness(t)
 
 	// Every tool is namespaced and none carries the standalone callback_url.

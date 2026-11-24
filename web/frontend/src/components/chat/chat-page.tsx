@@ -10,7 +10,7 @@ import { UserMessage } from "@/components/chat/user-message"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { useChatModels } from "@/hooks/use-chat-models"
-import { useClawChat } from "@/hooks/use-claw-chat"
+import { useAgencyChat } from "@/hooks/use-agency-chat"
 
 export function ChatPage() {
   const { t } = useTranslation()
@@ -19,7 +19,7 @@ export function ChatPage() {
   const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
 
-  const { messages, isTyping, sendMessage, newChat } = useClawChat()
+  const { messages, isTyping, sendMessage, newChat } = useAgencyChat()
 
   const { hasConfiguredModels, defaultModelName } = useChatModels()
 

@@ -217,7 +217,7 @@ func (systemClock) After(d time.Duration) <-chan time.Time { return time.After(d
 // are required; the others may be nil.
 type Host struct {
 	// ProductName is the host's name as the guide calls it in running prose
-	// ("Claw runs for you"). Empty: "the host".
+	// ("Agency runs for you"). Empty: "the host".
 	ProductName string
 	Tools       ToolRunner
 	Model       ModelCaller

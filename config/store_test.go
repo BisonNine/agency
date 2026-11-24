@@ -102,7 +102,7 @@ func writeRawConfig(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// SaveConfig itself (the path CLI commands such as `claw model` take, not
+// SaveConfig itself (the path CLI commands such as `agency model` take, not
 // only Store.Update) drops the fields a provider's protocol does not use.
 func TestSaveConfig_DropsOtherProtocolFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -255,7 +255,7 @@ func TestStore_UpdateRejectsWhatLoadConfigRefuses(t *testing.T) {
 		mutate func(*Config)
 		want   string
 	}{
-		{"tls one of two", func(c *Config) { c.Gateway.TLS.CertFile = "/etc/claw/cert.pem" }, "gateway.tls.cert_file and gateway.tls.key_file"},
+		{"tls one of two", func(c *Config) { c.Gateway.TLS.CertFile = "/etc/agency/cert.pem" }, "gateway.tls.cert_file and gateway.tls.key_file"},
 		{"mcp host off-box", func(c *Config) { c.MCPHost.Listen = "0.0.0.0:5911" }, "loopback"},
 	}
 	for _, tc := range cases {

@@ -4,10 +4,10 @@
 // Package servicetoken owns the on-disk state for long-lived, per-agent MCP
 // service tokens (see docs/service-tokens.md). It is intentionally free of any
 // MCP-server dependency so both the gateway (which loads tokens at boot) and the
-// `claw token` CLI (which mints/revokes them) can use it.
+// `agency token` CLI (which mints/revokes them) can use it.
 //
 // The file holds SHA-256 hashes of the tokens, never the tokens themselves: a
-// service token is shown once by `claw token issue` and from then on only ever
+// service token is shown once by `agency token issue` and from then on only ever
 // presented by a client, so the gateway needs nothing but the hash to verify
 // it. A file written by a release that stored plaintext is rewritten in its
 // hashed form the first time it is loaded.

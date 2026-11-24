@@ -223,7 +223,7 @@ type Hooks[T Instance] struct {
 	// Owner marks the process that owns the data directory (the one holding
 	// agency.lock: the gateway). Only the owner restores the saved temporary
 	// agents, removes unsaved directories under internal/temp and writes
-	// temp_agents.json. Any other process (`claw agent` alongside a running
+	// temp_agents.json. Any other process (`agency agent` alongside a running
 	// service) does none of that, so it can never wipe the service's agents.
 	Owner bool
 }
@@ -319,7 +319,7 @@ func (r *Registry[T]) root() (string, error) {
 	if r.tempRoot != "" {
 		return r.tempRoot, nil
 	}
-	dir, err := os.MkdirTemp("", "claw-temp-agents-")
+	dir, err := os.MkdirTemp("", "agency-temp-agents-")
 	if err != nil {
 		return "", fmt.Errorf("agentreg: create a private temp root: %w", err)
 	}

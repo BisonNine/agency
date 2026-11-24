@@ -84,14 +84,14 @@ func (e *authEnv) status(cookie *http.Cookie) map[string]any {
 }
 
 func TestAuthStatus_NoAdminAccount(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	env := newAuthEnv(t, false)
 	st := env.status(nil)
 	if st["configured"] != false || st["authenticated"] != false {
 		t.Fatalf("status = %v", st)
 	}
 	rec := env.login(authTestUser, authTestPass, "127.0.0.1")
-	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "run: alice-claw admin") {
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "run: alice-agency admin") {
 		t.Fatalf("login with no account: %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -325,7 +325,7 @@ func TestAuthLogin_SuccessClearsCounters(t *testing.T) {
 	}
 }
 
-// Running `claw admin` rewrites credentials.json; the next login attempt sees
+// Running `agency admin` rewrites credentials.json; the next login attempt sees
 // the change and clears every lock, so the new password works immediately.
 func TestAuthLogin_CredentialsChangeClearsAllLocks(t *testing.T) {
 	env := newAuthEnv(t, true)
@@ -347,7 +347,7 @@ func TestAuthLogin_CredentialsChangeClearsAllLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rec := env.login(authTestUser, newPass, ip); rec.Code != http.StatusNoContent {
-		t.Fatalf("login with the new password after claw admin = %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("login with the new password after agency admin = %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := env.login("other", "x", "192.0.2.1"); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("account lock survived the credentials change: %d", rec.Code)

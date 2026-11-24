@@ -104,10 +104,10 @@ func TestExtractBinariesFromTarGz(t *testing.T) {
 		t.Fatal(closeErr)
 	}
 
-	destClaw := filepath.Join(dir, "extracted-agency")
+	destAgency := filepath.Join(dir, "extracted-agency")
 	destAuth := filepath.Join(dir, "extracted-auth")
 
-	hasAuth, err := extractBinariesFromTarGz(archivePath, destClaw, destAuth)
+	hasAuth, err := extractBinariesFromTarGz(archivePath, destAgency, destAuth)
 	if err != nil {
 		t.Fatalf("extractBinariesFromTarGz error = %v", err)
 	}
@@ -115,9 +115,9 @@ func TestExtractBinariesFromTarGz(t *testing.T) {
 		t.Error("expected hasAuth to be true")
 	}
 
-	extractedClawData, err := os.ReadFile(destClaw)
-	if err != nil || string(extractedClawData) != string(agencyContent) {
-		t.Errorf("extracted agency mismatch: got %q, want %q", string(extractedClawData), string(agencyContent))
+	extractedAgencyData, err := os.ReadFile(destAgency)
+	if err != nil || string(extractedAgencyData) != string(agencyContent) {
+		t.Errorf("extracted agency mismatch: got %q, want %q", string(extractedAgencyData), string(agencyContent))
 	}
 
 	extractedAuthData, err := os.ReadFile(destAuth)

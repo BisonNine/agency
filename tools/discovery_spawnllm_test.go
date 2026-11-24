@@ -65,7 +65,7 @@ func searchReferences(t *testing.T, search metaTool) []string {
 // For a provider without native deferred tools, spawnllm's request builder
 // turns Agency's flagged list into the core tools plus the referenced hidden
 // tool, with no other hidden tool; without references, only the core tools.
-func TestSpawnllmRequestTools_ClawEhDefinitions(t *testing.T) {
+func TestSpawnllmRequestTools_AgencyDefinitions(t *testing.T) {
 	r, search := spawnllmRegistry()
 	defs := loop.ToolDefs(r.Snapshot(), nil).Send
 	refs := searchReferences(t, search)
@@ -95,7 +95,7 @@ func TestSpawnllmRequestTools_ClawEhDefinitions(t *testing.T) {
 
 // The same through spawnllm's Chat Completions provider against a local
 // server: the request body's tool list and the search result's text.
-func TestSpawnllmOpenAICompat_ClawEhDefinitions(t *testing.T) {
+func TestSpawnllmOpenAICompat_AgencyDefinitions(t *testing.T) {
 	// chatBody is the part of a Chat Completions request these checks read.
 	type chatBody struct {
 		Tools []struct {

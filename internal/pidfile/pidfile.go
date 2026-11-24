@@ -84,15 +84,15 @@ func Read(dataDir string) (pid int, running bool) {
 	if err != nil || pid <= 0 {
 		return 0, false
 	}
-	return pid, isClaw(pid)
+	return pid, isAgency(pid)
 }
 
-// isClaw reports whether pid is alive and is an Agency process.
+// isAgency reports whether pid is alive and is an Agency process.
 //
 // Signal 0 tests for existence without delivering anything; it succeeds only
 // for a process this user may signal. isOurExecutable then rejects a recycled
 // pid now belonging to something else.
-func isClaw(pid int) bool {
+func isAgency(pid int) bool {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return false

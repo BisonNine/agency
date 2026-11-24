@@ -72,7 +72,7 @@ func TestBuildSetupPayloadScheme(t *testing.T) {
 	if err != nil || secure.Protocol != "wss" || secure.Port != 18791 {
 		t.Fatalf("tls: protocol = %q port = %d, err = %v, want wss on 18791", secure.Protocol, secure.Port, err)
 	}
-	ext, err := BuildSetupPayload("https://claw.example.com:42330", "", nil, 18791, "tok", false)
+	ext, err := BuildSetupPayload("https://agency.example.com:42330", "", nil, 18791, "tok", false)
 	if err != nil || ext.Protocol != "wss" {
 		t.Fatalf("external https: protocol = %q, err = %v, want wss", ext.Protocol, err)
 	}
@@ -81,17 +81,17 @@ func TestBuildSetupPayloadScheme(t *testing.T) {
 // Without an external URL the QR lists gateway.external_url's hostname first,
 // then the LAN IPs, so a device tries the operator's name before the addresses.
 func TestBuildSetupPayloadGatewayHostnameFirst(t *testing.T) {
-	p, err := BuildSetupPayload("", "https://claw.example.com:18443", []string{"10.0.0.5", "192.168.1.9"}, 18791, "tok", false)
+	p, err := BuildSetupPayload("", "https://agency.example.com:18443", []string{"10.0.0.5", "192.168.1.9"}, 18791, "tok", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := strings.Join(p.IPs, ","), "claw.example.com,10.0.0.5,192.168.1.9"; got != want {
+	if got, want := strings.Join(p.IPs, ","), "agency.example.com,10.0.0.5,192.168.1.9"; got != want {
 		t.Fatalf("ips = %q, want %q", got, want)
 	}
 	if p.Port != 18791 || p.Protocol != "ws" {
 		t.Fatalf("port %d protocol %q, want the device listener on ws", p.Port, p.Protocol)
 	}
-	ext, err := BuildSetupPayload("https://ops.example.com:42330", "https://claw.example.com", []string{"10.0.0.5"}, 18791, "tok", false)
+	ext, err := BuildSetupPayload("https://ops.example.com:42330", "https://agency.example.com", []string{"10.0.0.5"}, 18791, "tok", false)
 	if err != nil || strings.Join(ext.IPs, ",") != "ops.example.com" {
 		t.Fatalf("external url set: ips = %v, err = %v, want only the external host", ext.IPs, err)
 	}
@@ -114,8 +114,8 @@ func TestConnectURL(t *testing.T) {
 		{"external http without port", config.DeviceChannelConfig{ExternalURL: "http://ops42.example.com"}, "", lan, "ws://ops42.example.com:80"},
 		{"external ws with port", config.DeviceChannelConfig{ExternalURL: "ws://ops42.example.com:42330", TLS: true}, "", lan, "ws://ops42.example.com:42330"},
 		{"external invalid falls back", config.DeviceChannelConfig{ExternalURL: "not a url", Port: 42330}, "", lan, "ws://10.0.0.5:42330"},
-		{"empty with gateway hostname", config.DeviceChannelConfig{Port: 42330}, "https://claw.example.com:18443", lan, "ws://claw.example.com:42330"},
-		{"empty with gateway hostname and tls", config.DeviceChannelConfig{Port: 42330, TLS: true}, "https://claw.example.com", lan, "wss://claw.example.com:42330"},
+		{"empty with gateway hostname", config.DeviceChannelConfig{Port: 42330}, "https://agency.example.com:18443", lan, "ws://agency.example.com:42330"},
+		{"empty with gateway hostname and tls", config.DeviceChannelConfig{Port: 42330, TLS: true}, "https://agency.example.com", lan, "wss://agency.example.com:42330"},
 		{"empty with LAN IP only", config.DeviceChannelConfig{}, "", lan, "ws://10.0.0.5:18791"},
 		{"empty with LAN IP only and tls", config.DeviceChannelConfig{TLS: true}, "", lan, "wss://10.0.0.5:18791"},
 		{"empty with nothing", config.DeviceChannelConfig{}, "", nil, "ws://127.0.0.1:18791"},

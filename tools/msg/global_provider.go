@@ -25,7 +25,7 @@ func (globalMsgProvider) Description() string { return "Message sending to users
 func (globalMsgProvider) Available(cfg any) (bool, string) { return true, "" }
 
 func (globalMsgProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
-	// Recover the real config and Claw host deps. Enumeration (Describe) passes a
+	// Recover the real config and Agency host deps. Enumeration (Describe) passes a
 	// zero Deps; handlers are never called then, so nil recovery is safe.
 	var c *config.Config
 	if v, ok := deps.Cfg.(*config.Config); ok {

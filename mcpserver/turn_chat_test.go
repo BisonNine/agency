@@ -146,7 +146,7 @@ func TestDispatch_MsgSendConcurrentAskAndChatTurn(t *testing.T) {
 	h.expectOutbound(t, "telegram", "42")
 }
 
-// A claw agent (cli) turn over the MCP host: msg_send is refused and
+// A agency agent (cli) turn over the MCP host: msg_send is refused and
 // user-facing output is dropped, never sent to the chat an earlier turn
 // answered.
 func TestDispatch_MsgSendCLITurn(t *testing.T) {

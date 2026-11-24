@@ -201,7 +201,7 @@ func hitGET(t *testing.T, mux *http.ServeMux, path string) *httptest.ResponseRec
 }
 
 // TestRebuildSharedHTTPServer_MergedBinaryRoutesSurviveReload exercises the
-// reload seam end-to-end for the merged claw binary: it primes a
+// reload seam end-to-end for the merged agency binary: it primes a
 // gatewayServices with a real webserver.Server, calls rebuildSharedHTTPServer
 // (the same path that handleConfigReload → restartServices takes on a
 // config reload), and asserts that every route the merged binary needs to

@@ -35,11 +35,11 @@ const config = {
     host: "0.0.0.0",
     port: 18790,
     tls_port: 18443,
-    external_url: "https://claw.example.com",
+    external_url: "https://agency.example.com",
     allowed_cidrs: ["192.168.1.0/24"],
     lockout_exempt: ["192.168.1.10"],
     trusted_proxies: ["10.0.0.2"],
-    tls: { mode: "all", extra_names: ["claw.home.arpa"] },
+    tls: { mode: "all", extra_names: ["agency.home.arpa"] },
   },
   channels: {
     device: {
@@ -57,20 +57,20 @@ const tls: TLSStatus = {
   source: "self-signed",
   cert_file: "",
   key_file: "",
-  extra_names: ["claw.home.arpa"],
+  extra_names: ["agency.home.arpa"],
   tls_port: 18443,
   http_host: "0.0.0.0",
   http_port: 18790,
-  external_url: "https://claw.example.com",
+  external_url: "https://agency.example.com",
   urls: {
     localhost: "http://127.0.0.1:18790/",
     http: [],
-    https: ["https://claw.example.com:18443/"],
+    https: ["https://agency.example.com:18443/"],
   },
   certificate: {
     present: true,
-    subject: "CN=claw",
-    names: ["claw", "claw.example.com"],
+    subject: "CN=agency",
+    names: ["agency", "agency.example.com"],
     not_after: "2027-09-01T00:00:00Z",
     fingerprint: "AA:BB:CC:DD",
     self_signed: true,
@@ -192,7 +192,7 @@ describe("NetworkPage", () => {
     await screen.findByTestId("cert-fingerprint")
     expect(value("network-http-port")).toBe("18790")
     expect(value("network-tls-port")).toBe("18443")
-    expect(value("network-external-url")).toBe("https://claw.example.com")
+    expect(value("network-external-url")).toBe("https://agency.example.com")
     expect(value("network-allowed-cidrs")).toBe("192.168.1.0/24")
     expect(value("network-lockout-exempt")).toBe("192.168.1.10")
     expect(value("network-trusted-proxies")).toBe("10.0.0.2")
@@ -204,7 +204,7 @@ describe("NetworkPage", () => {
     )
     expect(
       screen.getByTestId("network-extra-names-tags").textContent,
-    ).toContain("claw.home.arpa")
+    ).toContain("agency.home.arpa")
     // gateway.host = 0.0.0.0 is the "Network" scope; gateway.tls.mode is "all".
     expect(
       screen
@@ -226,7 +226,7 @@ describe("NetworkPage", () => {
       "AA:BB:CC:DD",
     )
     expect(screen.getByTestId("network-urls").textContent).toContain(
-      "https://claw.example.com:18443/",
+      "https://agency.example.com:18443/",
     )
     expect(screen.queryByTestId("network-restart-banner")).toBe(null)
     // No Save button: fields autosave like the rest of the WebUI.
@@ -244,7 +244,7 @@ describe("NetworkPage", () => {
     renderPage(qc)
 
     await screen.findByTestId("cert-fingerprint")
-    expect(value("network-external-url")).toBe("https://claw.example.com")
+    expect(value("network-external-url")).toBe("https://agency.example.com")
     expect(value("network-allowed-cidrs")).toBe("192.168.1.0/24")
     expect(
       screen
@@ -356,10 +356,10 @@ describe("NetworkPage", () => {
       screen.getByRole("radio", { name: "pages.network.certificate.external" }),
     )
     fireEvent.change(screen.getByTestId("cert-file"), {
-      target: { value: "/etc/ssl/claw.pem" },
+      target: { value: "/etc/ssl/agency.pem" },
     })
     fireEvent.change(screen.getByTestId("cert-key-file"), {
-      target: { value: "/etc/ssl/claw.key" },
+      target: { value: "/etc/ssl/agency.key" },
     })
     fireEvent.click(screen.getByTestId("cert-save"))
 
@@ -370,7 +370,7 @@ describe("NetworkPage", () => {
     ])
     expect(calls[1].body).toEqual({
       gateway: {
-        tls: { cert_file: "/etc/ssl/claw.pem", key_file: "/etc/ssl/claw.key" },
+        tls: { cert_file: "/etc/ssl/agency.pem", key_file: "/etc/ssl/agency.key" },
       },
     })
   })
@@ -554,11 +554,11 @@ describe("NetworkPage", () => {
     await screen.findByTestId("cert-fingerprint")
 
     fireEvent.change(screen.getByTestId("network-device-external-url"), {
-      target: { value: "claw.example.com:42333" },
+      target: { value: "agency.example.com:42333" },
     })
     await waitForPatch(calls)
     expect(patches(calls)[0]).toEqual({
-      channels: { device: { external_url: "https://claw.example.com:42333" } },
+      channels: { device: { external_url: "https://agency.example.com:42333" } },
     })
     expect(screen.queryByTestId("network-restart-banner")).toBe(null)
   })
@@ -569,7 +569,7 @@ describe("NetworkPage", () => {
     await screen.findByTestId("cert-fingerprint")
 
     fireEvent.change(screen.getByTestId("network-device-external-url"), {
-      target: { value: "wss://claw.example.com:42333" },
+      target: { value: "wss://agency.example.com:42333" },
     })
     await screen.findByText(
       "Enter a host name or IP address, with an optional :port.",
@@ -583,7 +583,7 @@ describe("NetworkPage", () => {
 
     // A corrected value clears the error and saves.
     fireEvent.change(screen.getByTestId("network-device-external-url"), {
-      target: { value: "claw.example.com:42333" },
+      target: { value: "agency.example.com:42333" },
     })
     await waitForPatch(calls)
     expect(

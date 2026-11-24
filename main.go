@@ -31,10 +31,10 @@ import (
 	"go.bison9.com/agency/internal/version"
 )
 
-func NewClawCommand() *cobra.Command {
+func NewAgencyCommand() *cobra.Command {
 	// Default subcommand: run the merged gateway + WebUI + session API on the
-	// single port from cfg.Gateway. `claw` with no arguments is the supported
-	// way to launch the server; the `claw gateway` alias is preserved for
+	// single port from cfg.Gateway. `agency` with no arguments is the supported
+	// way to launch the server; the `agency gateway` alias is preserved for
 	// existing systemd units and muscle memory during the transition.
 	defaultCmd := gateway.NewGatewayCommand()
 	cmd := &cobra.Command{
@@ -75,7 +75,7 @@ func NewClawCommand() *cobra.Command {
 }
 
 func main() {
-	cmd := NewClawCommand()
+	cmd := NewAgencyCommand()
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}

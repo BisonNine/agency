@@ -161,7 +161,7 @@ func numArg(args map[string]any, key string) (float64, bool) {
 	}
 }
 
-// hostDeps recovers Claw's ToolDeps from deps (the zero value during
+// hostDeps recovers Agency's ToolDeps from deps (the zero value during
 // deps-free enumeration).
 func hostDeps(deps toolspec.Deps) tools.ToolDeps {
 	if host, ok := deps.Host.(tools.ToolDeps); ok {

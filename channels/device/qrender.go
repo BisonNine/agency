@@ -18,7 +18,7 @@ func RenderQRCodePNGDataURL(content string) (string, error) {
 }
 
 // RenderQRCodeASCII renders content as a compact half-block ASCII QR code for
-// terminals (the headless `claw devices pair` path).
+// terminals (the headless `agency devices pair` path).
 func RenderQRCodeASCII(content string) (string, error) {
 	q, err := qrcode.New(content, qrcode.Medium)
 	if err != nil {

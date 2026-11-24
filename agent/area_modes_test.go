@@ -67,7 +67,7 @@ func TestAgentsAreaModes(t *testing.T) {
 func TestAgentModes_TemporaryStatePrivate(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.Security.Permissions.Agents = config.AreaPermissions{DirMode: "0750", FileMode: "0640"}
-	got := agentModes(cfg, filepath.Join(t.TempDir(), "claw-temp-agents-1", "uuid"))
+	got := agentModes(cfg, filepath.Join(t.TempDir(), "agency-temp-agents-1", "uuid"))
 	if want := (config.Modes{Dir: 0o700, File: 0o600}); got != want {
 		t.Errorf("temporary agent modes = %v, want %v", got, want)
 	}

@@ -29,7 +29,7 @@ var loopbackOnly = CompileHostAllowlist(nil)
 
 // CompileHostAllowlist builds a HostAllowlist from names plus the loopback
 // names. Entries are normalised the way request Hosts are (lower-cased, port and
-// IPv6 brackets stripped), so "Claw.Example.COM:8443" and "[::1]:18790" match
+// IPv6 brackets stripped), so "Agency.Example.COM:8443" and "[::1]:18790" match
 // their bare forms. Empty entries are ignored.
 func CompileHostAllowlist(names []string) *HostAllowlist {
 	list := &HostAllowlist{hosts: make(map[string]struct{}, len(names)+len(loopbackHosts))}

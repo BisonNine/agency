@@ -1,9 +1,9 @@
 // Agency
 // License: MIT
 
-// Package mcpserver exposes claw host-side tools to MCP-compatible clients
+// Package mcpserver exposes agency host-side tools to MCP-compatible clients
 // over a Streamable HTTP transport. It lets CLI providers (claude-cli,
-// codex-cli, antigravity-cli, cursor-cli, opencode-cli) natively call claw tools via MCP — the correct
+// codex-cli, antigravity-cli, cursor-cli, opencode-cli) natively call agency tools via MCP — the correct
 // alternative to having the CLI emit tool-call JSON in its prose (which
 // created infinite outer loops, since CLIs are themselves agentic).
 //
@@ -64,7 +64,7 @@ const DefaultEndpointPath = "/mcp"
 // endpoint Agency's own CLI providers point at.
 const InternalEndpointPath = "/internal"
 
-// MCPServer serves claw tools on two mcphost endpoints. tools/list on
+// MCPServer serves agency tools on two mcphost endpoints. tools/list on
 // /internal is the union of every agent registry, since tool names/schemas
 // are not sensitive; on /mcp it is the bearer's agent's own tools. A
 // tools/call resolves its token to an agent identity, the per-agent ACL gates

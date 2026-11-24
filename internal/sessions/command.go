@@ -1,7 +1,7 @@
 // Agency - Session store CLI
 // License: MIT
 
-// Package sessions provides the `claw sessions` maintenance subcommands.
+// Package sessions provides the `agency sessions` maintenance subcommands.
 package sessions
 
 import (
@@ -19,7 +19,7 @@ import (
 	"go.bison9.com/agency/logger"
 )
 
-// NewSessionsCommand builds the `claw sessions` command group.
+// NewSessionsCommand builds the `agency sessions` command group.
 func NewSessionsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sessions",

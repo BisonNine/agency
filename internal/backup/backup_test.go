@@ -95,7 +95,7 @@ func fixture(t *testing.T) Source {
 	writeFileT(t, filepath.Join(home, "internal", "agency.lock"), "123\n", 0o600)
 	writeFileT(t, filepath.Join(home, "media", "cache.bin"), "media", 0o644)
 	writeFileT(t, filepath.Join(home, "logs", "agency.log"), "log", 0o644)
-	writeFileT(t, filepath.Join(home, "backup", "claw-backup-20200101-000000.tar.gz"), "old", 0o600)
+	writeFileT(t, filepath.Join(home, "backup", "agency-backup-20200101-000000.tar.gz"), "old", 0o600)
 	writeFileT(t, filepath.Join(home, "agents", "main", "tmp", "scratch.db"), "not a db", 0o644)
 	writeFileT(t, filepath.Join(home, "agents", "main", "files", "notes.txt"), "not archived", 0o644)
 	openWAL(t, filepath.Join(home, "internal", "gateway.db"), 5)
@@ -174,7 +174,7 @@ func TestRunArchivesLiveWALDatabases(t *testing.T) {
 	if len(res.Skipped) != 0 {
 		t.Fatalf("skipped = %+v, want none", res.Skipped)
 	}
-	if want := filepath.Join(dest, "claw-backup-20260619-030000.tar.gz"); res.Archive != want {
+	if want := filepath.Join(dest, "agency-backup-20260619-030000.tar.gz"); res.Archive != want {
 		t.Fatalf("archive = %s, want %s", res.Archive, want)
 	}
 	if fi, err := os.Stat(res.Archive); err != nil || fi.Mode().Perm() != 0o600 || fi.Size() != res.Bytes || res.Bytes == 0 {
@@ -200,7 +200,7 @@ func TestRunArchivesLiveWALDatabases(t *testing.T) {
 		t.Fatalf("manifest = %+v", m)
 	}
 	for _, excluded := range []string{
-		"media/cache.bin", "logs/agency.log", "backup/claw-backup-20200101-000000.tar.gz",
+		"media/cache.bin", "logs/agency.log", "backup/agency-backup-20200101-000000.tar.gz",
 		"agents/main/tmp/scratch.db", "agents/main/files/notes.txt",
 		"internal/gateway.db-wal", "internal/gateway.db-shm",
 		"internal/agency.pid", "internal/agency.lock",
@@ -345,11 +345,11 @@ func TestPruneRemovesOldArchivesAndLegacyFolders(t *testing.T) {
 		}
 	}
 	for _, name := range []string{
-		"claw-backup-20260619-030000.tar.gz", // today
-		"claw-backup-20260520-030000.tar.gz", // exactly 30 days: kept
-		"claw-backup-20260519-235959.tar.gz", // 31 days: pruned
-		"claw-backup-garbage.tar.gz",         // unparseable: kept
-		"unrelated.tar.gz",                   // kept
+		"agency-backup-20260619-030000.tar.gz", // today
+		"agency-backup-20260520-030000.tar.gz", // exactly 30 days: kept
+		"agency-backup-20260519-235959.tar.gz", // 31 days: pruned
+		"agency-backup-garbage.tar.gz",         // unparseable: kept
+		"unrelated.tar.gz",                     // kept
 	} {
 		writeFileT(t, filepath.Join(root, name), "x", 0o600)
 	}
@@ -360,14 +360,14 @@ func TestPruneRemovesOldArchivesAndLegacyFolders(t *testing.T) {
 	if removed != 2 {
 		t.Fatalf("removed = %d, want 2", removed)
 	}
-	for _, gone := range []string{"20260510", "claw-backup-20260519-235959.tar.gz"} {
+	for _, gone := range []string{"20260510", "agency-backup-20260519-235959.tar.gz"} {
 		if _, err := os.Stat(filepath.Join(root, gone)); !os.IsNotExist(err) {
 			t.Errorf("%s should be pruned", gone)
 		}
 	}
 	for _, keep := range []string{
-		"20260619", "20260614", "notes", "claw-backup-20260619-030000.tar.gz",
-		"claw-backup-20260520-030000.tar.gz", "claw-backup-garbage.tar.gz", "unrelated.tar.gz",
+		"20260619", "20260614", "notes", "agency-backup-20260619-030000.tar.gz",
+		"agency-backup-20260520-030000.tar.gz", "agency-backup-garbage.tar.gz", "unrelated.tar.gz",
 	} {
 		if _, err := os.Stat(filepath.Join(root, keep)); err != nil {
 			t.Errorf("%s should be kept: %v", keep, err)

@@ -78,7 +78,7 @@ export function SetupWizard() {
 
   // Network step. Defaults are safe: loopback-only bind, standard port, and the
   // address the user is already reaching the WebUI on as the advertised external
-  // URL (inherently reachable from their machine, where claw-auth runs).
+  // URL (inherently reachable from their machine, where agency-auth runs).
   const externalUrlDefault = `${window.location.protocol}//${window.location.host}`
   const [networkAccess, setNetworkAccess] = useState(false)
   const [gatewayPort, setGatewayPort] = useState("18790")

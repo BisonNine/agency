@@ -118,9 +118,9 @@ type WebUIChannel struct {
 // reaches the server without going in the URL, where it would be captured by
 // access logs, Referer headers and browser history.
 //
-// The client offers ["claw-token", "<token>"]; the server echoes only
-// "claw-token", never the token.
-const TokenSubprotocol = "claw-token"
+// The client offers ["agency-token", "<token>"]; the server echoes only
+// "agency-token", never the token.
+const TokenSubprotocol = "agency-token"
 
 // maxMessageBytes caps one inbound WebSocket message. The socket carries chat
 // text and control messages only; a larger frame closes the connection. The
@@ -438,7 +438,7 @@ func (c *WebUIChannel) authenticate(r *http.Request) (username string, ok bool) 
 		}
 	}
 
-	// Subprotocol form: ["claw-token", "<token>"].
+	// Subprotocol form: ["agency-token", "<token>"].
 	for _, proto := range websocket.Subprotocols(r) {
 		if proto == TokenSubprotocol {
 			continue

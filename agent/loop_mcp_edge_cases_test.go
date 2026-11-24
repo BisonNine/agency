@@ -21,7 +21,7 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/logger"
-	clawmcp "go.bison9.com/agency/mcp"
+	agencymcp "go.bison9.com/agency/mcp"
 )
 
 // mcpEdgeServer serves an in-process MCP server with the named no-op tools.
@@ -304,7 +304,7 @@ func TestLoopMCP_StaleManagerIgnored(t *testing.T) {
 	host := &mcpEdgeHost{refreshed: make(chan struct{}, 1)}
 	al.SetMCPHost(host)
 
-	al.refreshMCPServerTools(clawmcp.NewManager(), "svc")
+	al.refreshMCPServerTools(agencymcp.NewManager(), "svc")
 
 	assertHasTool(t, agentToolNames(t, al), "mcp_svc_ping")
 	select {

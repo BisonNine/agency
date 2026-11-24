@@ -97,7 +97,7 @@ func TestConfigStore_APISaveIsVisibleToGateway(t *testing.T) {
 		t.Fatalf("on disk logging.level = %q, want debug", onDisk.Logging.Level)
 	}
 
-	// Something else (claw CLI, an editor) writes the file: Reload picks it up
+	// Something else (agency CLI, an editor) writes the file: Reload picks it up
 	// and the runtime copy is a clone, not the shared snapshot.
 	external, err := store.Current().Clone()
 	if err != nil {

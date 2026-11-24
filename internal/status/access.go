@@ -99,7 +99,7 @@ func certificateLines(b *strings.Builder, cfg *config.Config) {
 }
 
 // adminLine reports whether a login exists, since without one the WebUI shows
-// only the "run claw admin" page.
+// only the "run agency admin" page.
 func adminLine(b *strings.Builder, cfg *config.Config) {
 	path := admin.Path(cfg.DataDir())
 	creds, err := admin.Load(path, cfg.PermissionModes(config.AreaSecrets).File)

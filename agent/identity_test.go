@@ -326,7 +326,7 @@ func (r *codeRecorder) count() int {
 // results (mcpserver), scheduled jobs (tools/schedule), the classifier
 // (TestClassifierHost_CompleteBilling), forum participants
 // (TestForumHost_AskBilling), voice notes (TestPrepareInbound_VoiceBillingCode),
-// `claw cron add` (internal/cron) and `claw test` (internal/test).
+// `agency cron add` (internal/cron) and `agency test` (internal/test).
 func TestBilling_EveryCallSiteNamesACode(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()

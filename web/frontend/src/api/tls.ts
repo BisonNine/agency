@@ -7,7 +7,7 @@ export interface TLSCertificate {
   names: string[]
   /** RFC 3339 expiry. */
   not_after: string
-  /** SHA-256 fingerprint as `claw tls` prints it. */
+  /** SHA-256 fingerprint as `agency tls` prints it. */
   fingerprint: string
   self_signed: boolean
   /** Why an existing certificate file could not be read (present is false). */

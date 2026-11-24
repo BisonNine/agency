@@ -349,7 +349,7 @@ func TestTempPaths_WithoutDataDir(t *testing.T) {
 	}
 	cfg.Agents.BaseDir = "relative"
 	root, state = tempPaths(cfg)
-	if root != filepath.Join(os.TempDir(), "claw-temp-agents") || state != "" {
+	if root != filepath.Join(os.TempDir(), "agency-temp-agents") || state != "" {
 		t.Errorf("tempPaths(relative base) = %q, %q", root, state)
 	}
 }

@@ -57,7 +57,7 @@ func sharedEngine(c *config.Config) *mcpfusion.Fusion {
 			mcpfusion.WithLogger(newFusionLogAdapter()),
 			mcpfusion.WithDataStore(ds),
 			mcpfusion.WithConfigDir(c.FusionPath()),
-			// External URL + command name are advertised to the claw-auth OAuth
+			// External URL + command name are advertised to the agency-auth OAuth
 			// utility so it can reach this gateway's mounted OAuth API.
 			mcpfusion.WithExternalURL(c.Gateway.EffectiveExternalURL()),
 			mcpfusion.WithAuthCommandName(global.AuthHelperBinaryName),

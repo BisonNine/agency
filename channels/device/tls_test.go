@@ -33,7 +33,7 @@ func testTLSConfig(t *testing.T) *tls.Config {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "claw-test"},
+		Subject:      pkix.Name{CommonName: "agency-test"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
@@ -116,7 +116,7 @@ func TestDeviceListenerTLS(t *testing.T) {
 		t.Fatalf("tls dial: %v", err)
 	}
 	state := conn.ConnectionState()
-	if len(state.PeerCertificates) == 0 || state.PeerCertificates[0].Subject.CommonName != "claw-test" {
+	if len(state.PeerCertificates) == 0 || state.PeerCertificates[0].Subject.CommonName != "agency-test" {
 		t.Errorf("served certificate = %+v, want the lent one", state.PeerCertificates)
 	}
 	if state.NegotiatedProtocol == "h2" {

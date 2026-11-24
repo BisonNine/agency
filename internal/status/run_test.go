@@ -128,7 +128,7 @@ func TestPrintAccess_Certificate(t *testing.T) {
 
 func TestPrintAccess_AdminProblems(t *testing.T) {
 	t.Run("file too open", func(t *testing.T) {
-		testbinary.Set(t, "alice-claw")
+		testbinary.Set(t, "alice-agency")
 		cfg := accessConfig(t, "127.0.0.1", config.TLSModeOff)
 		path := admin.Path(cfg.DataDir())
 		require.NoError(t, admin.Write(path, "alice", "correct horse battery", admin.DefaultFileMode))

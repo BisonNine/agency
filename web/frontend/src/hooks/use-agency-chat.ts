@@ -1,7 +1,7 @@
 import dayjs from "dayjs"
 import { useAtomValue } from "jotai"
 
-import { newChatSession, sendChatMessage } from "@/lib/claw-chat-controller"
+import { newChatSession, sendChatMessage } from "@/lib/agency-chat-controller"
 import { chatAtom } from "@/store/chat"
 
 const UNIX_MS_THRESHOLD = 1e12
@@ -52,7 +52,7 @@ export function formatMessageTime(dateRaw: number | string | Date): string {
   return date.format("ll LT")
 }
 
-export function useClawChat() {
+export function useAgencyChat() {
   const { messages, connectionState, isTyping, activeSessionId } =
     useAtomValue(chatAtom)
 

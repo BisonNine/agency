@@ -114,10 +114,10 @@ func TestGetTLS_RestartRequired(t *testing.T) {
 	if get().RestartRequired {
 		t.Fatal("restart_required right after boot")
 	}
-	if code := serveJSON(t, mux, http.MethodPatch, "/api/config", `{"gateway":{"tls":{"extra_names":["claw.lan"]}}}`, nil); code != http.StatusOK {
+	if code := serveJSON(t, mux, http.MethodPatch, "/api/config", `{"gateway":{"tls":{"extra_names":["agency.lan"]}}}`, nil); code != http.StatusOK {
 		t.Fatalf("patch extra_names: %d", code)
 	}
-	if got := get(); got.RestartRequired || !slices.Equal(got.ExtraNames, []string{"claw.lan"}) {
+	if got := get(); got.RestartRequired || !slices.Equal(got.ExtraNames, []string{"agency.lan"}) {
 		t.Errorf("extra_names change: %+v (applied by regenerate, not a restart)", got)
 	}
 	if code := serveJSON(t, mux, http.MethodPatch, "/api/config", `{"gateway":{"tls_port":19443}}`, nil); code != http.StatusOK {
@@ -178,7 +178,7 @@ func TestPatchConfig_TLSListenerValidation(t *testing.T) {
 		{"unknown mode", `{"gateway":{"tls":{"mode":"lan"}}}`, "gateway.tls.mode"},
 		{"ports clash", `{"gateway":{"tls_port":18790}}`, "must differ"},
 		{"half pair", `{"gateway":{"tls":{"cert_file":"` + certPath + `"}}}`, "set together"},
-		{"unreadable key", `{"gateway":{"tls":{"cert_file":"` + certPath + `","key_file":"/nonexistent/claw.key"}}}`, "key_file /nonexistent/claw.key cannot be read"},
+		{"unreadable key", `{"gateway":{"tls":{"cert_file":"` + certPath + `","key_file":"/nonexistent/agency.key"}}}`, "key_file /nonexistent/agency.key cannot be read"},
 	} {
 		var resp struct {
 			Status string   `json:"status"`
@@ -276,7 +276,7 @@ func TestRegenerateTLS(t *testing.T) {
 	}
 	h.SetTLSManager(m)
 	before := m.Info().Fingerprint
-	if code := serveJSON(t, mux, http.MethodPatch, "/api/config", `{"gateway":{"tls":{"extra_names":["claw.lan"]}}}`, nil); code != http.StatusOK {
+	if code := serveJSON(t, mux, http.MethodPatch, "/api/config", `{"gateway":{"tls":{"extra_names":["agency.lan"]}}}`, nil); code != http.StatusOK {
 		t.Fatalf("patch: %d", code)
 	}
 	var got tlsCertificateJSON
@@ -286,7 +286,7 @@ func TestRegenerateTLS(t *testing.T) {
 	if !got.Present || got.Fingerprint == before || got.Fingerprint != m.Info().Fingerprint {
 		t.Errorf("fingerprint %+v, was %s", got, before)
 	}
-	if !slices.Contains(got.Names, "claw.lan") {
+	if !slices.Contains(got.Names, "agency.lan") {
 		t.Errorf("names %v lack the saved extra name", got.Names)
 	}
 

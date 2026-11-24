@@ -52,7 +52,7 @@ func DownloadToFile(ctx context.Context, client *http.Client, req *http.Request,
 	}
 
 	// Create temp file.
-	tmpFile, err := os.CreateTemp("", "claw-dl-*")
+	tmpFile, err := os.CreateTemp("", "agency-dl-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}

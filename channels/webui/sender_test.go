@@ -35,14 +35,14 @@ func TestHandleMessageSend_NamesLoginAccount(t *testing.T) {
 		SetSessionValidator(nil)
 	})
 	SetSessionValidator(func(r *http.Request) (string, bool) {
-		ck, cookieErr := r.Cookie("claw_session")
+		ck, cookieErr := r.Cookie("agency_session")
 		return "alice", cookieErr == nil && ck.Value == "live"
 	})
 
 	srv := httptest.NewServer(c)
 	t.Cleanup(srv.Close)
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/webui/ws?session_id=s1"
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Cookie": {"claw_session=live"}})
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{"Cookie": {"agency_session=live"}})
 	if resp != nil {
 		if closeErr := resp.Body.Close(); closeErr != nil {
 			t.Errorf("close dial response body: %v", closeErr)

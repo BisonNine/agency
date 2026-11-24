@@ -18,7 +18,7 @@ import (
 	"go.bison9.com/agency/internal/install"
 )
 
-// NewAdminCommand returns `claw admin [username]`: create or replace the one
+// NewAdminCommand returns `agency admin [username]`: create or replace the one
 // operator account the WebUI and API accept.
 func NewAdminCommand() *cobra.Command {
 	return &cobra.Command{

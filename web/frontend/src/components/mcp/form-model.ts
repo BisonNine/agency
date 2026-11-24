@@ -22,7 +22,7 @@ export interface MCPHostForm {
   reconnectCooldownSeconds: number
   callTimeoutSeconds: number
   livenessProbeSeconds: number
-  // External (upstream) MCP servers claw connects out to (tools.mcp.servers),
+  // External (upstream) MCP servers agency connects out to (tools.mcp.servers),
   // structured for add/edit/delete in the UI.
   servers: MCPServerForm[]
 }

@@ -8,7 +8,7 @@
 // own knowledge bases (okf/), and every SQLite
 // database under AGENCY_HOME (session archives, cognitive memory, the fusion
 // OAuth store) — and restores one. It is driven on a nightly schedule by the
-// gateway, on demand from the WebUI, and by `claw backup` / `claw restore`.
+// gateway, on demand from the WebUI, and by `agency backup` / `agency restore`.
 //
 // SQLite files are never copied with plain file I/O: a live WAL database is
 // two files plus a lock, and a byte copy of the main file can miss committed
@@ -44,8 +44,8 @@ import (
 
 const (
 	// ArchivePrefix and ArchiveSuffix frame the archive name:
-	// claw-backup-YYYYMMDD-HHMMSS.tar.gz.
-	ArchivePrefix = "claw-backup-"
+	// agency-backup-YYYYMMDD-HHMMSS.tar.gz.
+	ArchivePrefix = "agency-backup-"
 	ArchiveSuffix = ".tar.gz"
 
 	// ManifestName is the first entry in every archive: what was backed up,
@@ -137,8 +137,8 @@ type Options struct {
 type Manifest struct {
 	Version   int       `json:"version"`
 	CreatedAt time.Time `json:"created_at"`
-	Home      string    `json:"claw_home"`
-	AgentsDir string    `json:"agents_dir,omitempty"` // set only when outside claw_home
+	Home      string    `json:"agency_home"`
+	AgentsDir string    `json:"agents_dir,omitempty"` // set only when outside agency_home
 	Files     []string  `json:"files"`                // archive paths, in archive order
 	// Plain lists the archive paths with a database extension that were
 	// copied byte for byte (forum files), so a restore does not check them
@@ -167,7 +167,7 @@ type entry struct {
 	db   bool   // copy with VACUUM INTO rather than plain read
 }
 
-// Run writes <dest>/claw-backup-<stamp>.tar.gz from src. dest is created and
+// Run writes <dest>/agency-backup-<stamp>.tar.gz from src. dest is created and
 // set to src.Modes.Dir (default 0700); the archive is src.Modes.File (default
 // 0600). Databases that fail quick_check are
 // skipped (recorded in Result.Skipped and alerted), never fatal: one bad file
@@ -713,7 +713,7 @@ func DestFor(cfg *config.Config, override string) string {
 // RunForConfig backs up the install described by cfg (config.json at
 // configPath) into the resolved destination and prunes archives past the
 // retention window. Used by the nightly scheduler, the WebUI trigger and
-// `claw backup`.
+// `agency backup`.
 func RunForConfig(cfg *config.Config, configPath string, now time.Time, opts Options) (*Result, error) {
 	dest := DestFor(cfg, opts.Dest)
 	src := Source{
@@ -733,7 +733,7 @@ func RunForConfig(cfg *config.Config, configPath string, now time.Time, opts Opt
 	return res, nil
 }
 
-// Prune removes archives (claw-backup-<stamp>.tar.gz) and legacy day-folders
+// Prune removes archives (agency-backup-<stamp>.tar.gz) and legacy day-folders
 // (YYYYMMDD) under dest whose date is older than retainDays. retainDays <= 0
 // disables pruning. Anything else in the directory is left alone. Returns the
 // number of items removed.

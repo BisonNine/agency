@@ -19,7 +19,7 @@ import (
 	"go.bison9.com/agency/internal/perms"
 )
 
-// NewBackupCommand returns `claw backup [--dest DIR]`: the nightly backup, on
+// NewBackupCommand returns `agency backup [--dest DIR]`: the nightly backup, on
 // demand. The gateway may be running; databases are snapshotted with VACUUM
 // INTO, which does not disturb a live store.
 func NewBackupCommand() *cobra.Command {
@@ -27,7 +27,7 @@ func NewBackupCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backup",
 		Short: "Write a backup archive of the " + app.ShortName() + " install",
-		Long: "Writes claw-backup-<timestamp>.tar.gz containing config.json, the cron jobs\n" +
+		Long: "Writes agency-backup-<timestamp>.tar.gz containing config.json, the cron jobs\n" +
 			"file, internal/ (tokens and the device pairing database), credentials.json,\n" +
 			"tls/ and cards/ when present, and every SQLite database under AGENCY_HOME (session archives,\n" +
 			"cognitive memory, the fusion OAuth store), each checked with quick_check and\n" +
@@ -70,13 +70,13 @@ func runBackup(cmd *cobra.Command, dest string) error {
 	return fmt.Errorf("%d database(s) failed quick_check and were left out of the archive", len(res.Skipped))
 }
 
-// NewRestoreCommand returns `claw restore <archive> [--yes]`.
+// NewRestoreCommand returns `agency restore <archive> [--yes]`.
 func NewRestoreCommand() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "restore <archive>",
 		Short: "Restore a backup archive into AGENCY_HOME",
-		Long: "Restores a claw-backup-*.tar.gz written by `" + app.BinaryName() + " backup` or the nightly backup.\n" +
+		Long: "Restores a agency-backup-*.tar.gz written by `" + app.BinaryName() + " backup` or the nightly backup.\n" +
 			app.ShortName() + " must be stopped. Every file the archive will replace is listed and,\n" +
 			"after confirmation, moved to $AGENCY_HOME/restore-backup-<timestamp>/ before the\n" +
 			"archived copy is put in place. Restored databases are checked with quick_check\n" +

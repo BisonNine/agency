@@ -59,10 +59,10 @@ func fakeTerminal(t *testing.T, username string, passwords []string, closeErr er
 const goodPassword = "a long enough password"
 
 func TestResolveHome_InstalledServiceHome(t *testing.T) {
-	stubDetect(t, &install.ExistingInstall{AgencyHome: "/srv/claw", User: "alice"})
+	stubDetect(t, &install.ExistingInstall{AgencyHome: "/srv/agency", User: "alice"})
 	t.Setenv("AGENCY_HOME", "")
 	home, inst := ResolveHome()
-	if home != "/srv/claw" || inst == nil || inst.User != "alice" {
+	if home != "/srv/agency" || inst == nil || inst.User != "alice" {
 		t.Fatalf("ResolveHome() = %q, %+v; want the installed service's home", home, inst)
 	}
 }
@@ -70,7 +70,7 @@ func TestResolveHome_InstalledServiceHome(t *testing.T) {
 func TestResolveHome_DefaultUnderUserHome(t *testing.T) {
 	for name, inst := range map[string]*install.ExistingInstall{
 		"no install":           nil,
-		"install without home": {BinaryPath: "/usr/local/bin/claw"},
+		"install without home": {BinaryPath: "/usr/local/bin/agency"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			stubDetect(t, inst)

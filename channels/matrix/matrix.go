@@ -40,7 +40,7 @@ const (
 	roomKindCacheCleanupPeriod = 1 * time.Minute
 	roomKindCacheMaxEntries    = 2048
 
-	matrixMediaTempDirName = "claw_media"
+	matrixMediaTempDirName = "agency_media"
 
 	// syncStopWait bounds how long Stop waits for the sync to end.
 	syncStopWait = 10 * time.Second
@@ -1289,8 +1289,8 @@ func localpartMentionRegexp(localpart string) *regexp.Regexp {
 	}
 
 	// Match Matrix mentions in plain text while avoiding false positives:
-	//   "@claw" and "@claw:matrix.org" should match,
-	//   "test@example.com" and "helloclawworld" should not.
+	//   "@agency" and "@agency:matrix.org" should match,
+	//   "test@example.com" and "helloagencyworld" should not.
 	pattern := `(?i)(^|[^[:alnum:]_])@` + regexp.QuoteMeta(localpart) + `(?::[A-Za-z0-9._:-]+)?([^[:alnum:]_]|$)`
 	return regexp.MustCompile(pattern)
 }

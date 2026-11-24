@@ -50,15 +50,15 @@ func runCmd(t *testing.T, args []string, stdin string) (string, string, error) {
 	return out.String(), errOut.String(), err
 }
 
-var wroteRE = regexp.MustCompile(`^Wrote (\S+claw-backup-\d{8}-\d{6}\.tar\.gz) \(\d+(\.\d)? (B|KiB|MiB)\, (\d+) files\)\n$`)
+var wroteRE = regexp.MustCompile(`^Wrote (\S+agency-backup-\d{8}-\d{6}\.tar\.gz) \(\d+(\.\d)? (B|KiB|MiB)\, (\d+) files\)\n$`)
 
-// TestBackupCommand: `claw backup --dest` writes the archive there and says
+// TestBackupCommand: `agency backup --dest` writes the archive there and says
 // where, how big and how many files.
 func TestBackupCommand(t *testing.T) {
 	cliHome(t)
 	dest := filepath.Join(t.TempDir(), "out")
 	// An archive past retention is pruned by the same run.
-	writeFileT(t, filepath.Join(dest, "claw-backup-20000101-000000.tar.gz"), "old", 0o600)
+	writeFileT(t, filepath.Join(dest, "agency-backup-20000101-000000.tar.gz"), "old", 0o600)
 	out, errOut, err := runCmd(t, []string{"--dest", dest}, "")
 	if err != nil {
 		t.Fatalf("backup: %v (%s)", err, errOut)
@@ -74,7 +74,7 @@ func TestBackupCommand(t *testing.T) {
 	if _, ok := entries["agents/main/sessions/s1.archive.db"]; !ok {
 		t.Errorf("database missing from the archive: %v", manifest.Files)
 	}
-	if _, serr := os.Stat(filepath.Join(dest, "claw-backup-20000101-000000.tar.gz")); !errors.Is(serr, os.ErrNotExist) {
+	if _, serr := os.Stat(filepath.Join(dest, "agency-backup-20000101-000000.tar.gz")); !errors.Is(serr, os.ErrNotExist) {
 		t.Errorf("archive past retention not pruned: %v", serr)
 	}
 }
@@ -87,7 +87,7 @@ func TestBackupCommand_DefaultDest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, filepath.Join(home, "backup", "claw-backup-")) {
+	if !strings.Contains(out, filepath.Join(home, "backup", "agency-backup-")) {
 		t.Errorf("output = %q, want an archive under the home's backup folder", out)
 	}
 }

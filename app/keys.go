@@ -5,7 +5,7 @@
 
 package app
 
-// The minisign public keys an Agency release may be signed with. `claw upgrade`
+// The minisign public keys an Agency release may be signed with. `agency upgrade`
 // refuses to install anything whose checksums.txt is not signed by one of
 // them, so they are the root of trust for upgrades, and they live here beside
 // the version because both are properties of a release, not of the machine

@@ -14,7 +14,7 @@ func TestParseSystemdUnit(t *testing.T) {
 	h := fakeHost(t)
 	unitFile := "/etc/systemd/system/agency.service"
 	unitContent := `[Unit]
-Description=ClawEh — Personal AI Assistant
+Description=Agency — Personal AI Assistant
 After=network-online.target
 
 [Service]
@@ -50,7 +50,7 @@ func TestParseSystemdUnit_QuotedAndInferred(t *testing.T) {
 	// 1. Quoted Environment="AGENCY_HOME=/opt/agency"
 	unit1 := "/units/quoted.service"
 	content1 := `[Unit]
-Description=ClawEh
+Description=Agency
 
 [Service]
 ExecStart=/opt/agency/agency
@@ -65,7 +65,7 @@ Environment="AGENCY_HOME=/opt/agency"
 	// 2. No AGENCY_HOME env var, but ExecStart=/opt/agency/agency
 	unit2 := "/units/inferred.service"
 	content2 := `[Unit]
-Description=ClawEh
+Description=Agency
 
 [Service]
 ExecStart=/opt/agency/agency

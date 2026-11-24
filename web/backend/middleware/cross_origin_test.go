@@ -14,7 +14,7 @@ import (
 // its own authentication (bypass pattern) and a trusted origin are let through.
 func TestCrossOrigin_Policy(t *testing.T) {
 	policy, err := NewCrossOriginProtection(
-		[]string{"https://claw.example.com"},
+		[]string{"https://agency.example.com"},
 		[]string{"POST /api/message/{token}", "/webhook/example"},
 	)
 	if err != nil {
@@ -44,8 +44,8 @@ func TestCrossOrigin_Policy(t *testing.T) {
 		// Old browser without Sec-Fetch-Site: Origin is compared with Host.
 		{"foreign Origin, no Sec-Fetch-Site", http.MethodPost, "/api/config", map[string]string{"Origin": "http://attacker.example"}, http.StatusForbidden},
 		{"matching Origin, no Sec-Fetch-Site", http.MethodPost, "/api/config", map[string]string{"Origin": "http://example.com"}, http.StatusOK},
-		{"trusted Origin cross-site", http.MethodPost, "/api/config", map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "https://claw.example.com"}, http.StatusOK},
-		{"trusted host, other scheme", http.MethodPost, "/api/config", map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "http://claw.example.com"}, http.StatusForbidden},
+		{"trusted Origin cross-site", http.MethodPost, "/api/config", map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "https://agency.example.com"}, http.StatusOK},
+		{"trusted host, other scheme", http.MethodPost, "/api/config", map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "http://agency.example.com"}, http.StatusForbidden},
 		{"exempt message route", http.MethodPost, "/api/message/abc123", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusOK},
 		{"exempt webhook", http.MethodPost, "/webhook/example", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusOK},
 		{"exempt pattern does not widen", http.MethodPost, "/api/message", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
@@ -146,7 +146,7 @@ func TestCrossOrigin_HotSwap(t *testing.T) {
 }
 
 func TestNewCrossOriginProtection_InvalidOrigin(t *testing.T) {
-	for _, origin := range []string{"claw.example.com", "https://claw.example.com/path", ""} {
+	for _, origin := range []string{"agency.example.com", "https://agency.example.com/path", ""} {
 		if _, err := NewCrossOriginProtection([]string{origin}, nil); err == nil {
 			t.Errorf("NewCrossOriginProtection(%q) accepted an invalid origin", origin)
 		}

@@ -24,7 +24,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// LockFileName is the process's PID/lock file in AGENCY_HOME/internal. claw holds
+// LockFileName is the process's PID/lock file in AGENCY_HOME/internal. agency holds
 // an exclusive flock on it while it runs (internal/gateway/lockfile.go); the
 // restore refuses to touch a home whose lock is held.
 const LockFileName = global.LockFileName

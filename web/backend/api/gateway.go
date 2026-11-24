@@ -1,6 +1,6 @@
 // Package api: in-process gateway log endpoints.
 //
-// In the merged claw binary the gateway runs inside the same process as the
+// In the merged agency binary the gateway runs inside the same process as the
 // WebUI HTTP handlers, so there is no subprocess to spawn, stop, or
 // supervise. Lifecycle endpoints (start/stop/restart/status/events) were
 // removed along with the WebUI controls that backed them. The logs endpoint

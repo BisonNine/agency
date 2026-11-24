@@ -175,16 +175,16 @@ func TestDeviceSettings_SavesAndReloadsOnChange(t *testing.T) {
 	}
 
 	rec = serve(mux, http.MethodPost, "/api/devices/settings",
-		`{"listen_lan":true,"external_url":"  wss://claw.example.com  ","enabled":true}`)
+		`{"listen_lan":true,"external_url":"  wss://agency.example.com  ","enabled":true}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
 	}
 	d := savedDevice(t, h)
-	if d.Host != "0.0.0.0" || d.ExternalURL != "wss://claw.example.com" || !d.Enabled {
+	if d.Host != "0.0.0.0" || d.ExternalURL != "wss://agency.example.com" || !d.Enabled {
 		t.Fatalf("saved = host %q url %q enabled %v", d.Host, d.ExternalURL, d.Enabled)
 	}
 	out := decodeMap(t, rec)
-	if out["listen_lan"] != true || out["external_url"] != "wss://claw.example.com" {
+	if out["listen_lan"] != true || out["external_url"] != "wss://agency.example.com" {
 		t.Fatalf("response listen_lan/external_url = %v/%v", out["listen_lan"], out["external_url"])
 	}
 	if *reloads != 2 {
@@ -193,7 +193,7 @@ func TestDeviceSettings_SavesAndReloadsOnChange(t *testing.T) {
 
 	// The same values again change nothing and do not reload.
 	rec = serve(mux, http.MethodPost, "/api/devices/settings",
-		`{"listen_lan":true,"external_url":"wss://claw.example.com","enabled":true}`)
+		`{"listen_lan":true,"external_url":"wss://agency.example.com","enabled":true}`)
 	if rec.Code != http.StatusOK || *reloads != 2 {
 		t.Fatalf("no-op save: status %d reloads %d, want 200 and 2", rec.Code, *reloads)
 	}

@@ -63,7 +63,7 @@ var (
 func Name() string { return name }
 
 // ShortName returns the informal product name, for running prose: log lines,
-// alerts, messages and prompts ("Claw is shutting down").
+// alerts, messages and prompts ("Agency is shutting down").
 func ShortName() string { return shortName }
 
 // BinaryName returns the name this program was started as: the last element

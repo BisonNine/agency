@@ -36,20 +36,20 @@ func TestRollLogFile(t *testing.T) {
 	}
 
 	// Both active logs are archived under the mtime date.
-	clawArchive := filepath.Join(dir, "20260102-agency.log")
+	agencyArchive := filepath.Join(dir, "20260102-agency.log")
 	errArchive := filepath.Join(dir, "20260102-error.log")
-	if _, err := os.Stat(clawArchive); err != nil {
-		t.Fatalf("expected dated claw archive: %v", err)
+	if _, err := os.Stat(agencyArchive); err != nil {
+		t.Fatalf("expected dated agency archive: %v", err)
 	}
 	if _, err := os.Stat(errArchive); err != nil {
 		t.Fatalf("expected dated error archive: %v", err)
 	}
 
-	// The warning is in both claw and error archives; the info only in claw.
-	clawData := mustReadFile(t, clawArchive)
+	// The warning is in both agency and error archives; the info only in agency.
+	agencyData := mustReadFile(t, agencyArchive)
 	errData := mustReadFile(t, errArchive)
-	if !strings.Contains(string(clawData), "an info line") {
-		t.Fatalf("claw archive missing info line: %q", clawData)
+	if !strings.Contains(string(agencyData), "an info line") {
+		t.Fatalf("agency archive missing info line: %q", agencyData)
 	}
 	if !strings.Contains(string(errData), "a warning line") {
 		t.Fatalf("error archive missing warning line: %q", errData)
@@ -97,10 +97,10 @@ func TestFatalWritesToAllSinksBeforeExit(t *testing.T) {
 	if exitCode != 1 {
 		t.Fatalf("expected exit code 1, got %d", exitCode)
 	}
-	clawData := mustReadFile(t, logPath)
+	agencyData := mustReadFile(t, logPath)
 	errData := mustReadFile(t, filepath.Join(dir, "error.log"))
-	if !strings.Contains(string(clawData), "fatal boom") {
-		t.Fatalf("agency.log missing fatal line: %q", clawData)
+	if !strings.Contains(string(agencyData), "fatal boom") {
+		t.Fatalf("agency.log missing fatal line: %q", agencyData)
 	}
 	if !strings.Contains(string(errData), "fatal boom") {
 		t.Fatalf("error.log missing fatal line: %q", errData)

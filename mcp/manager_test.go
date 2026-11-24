@@ -222,12 +222,12 @@ func TestLoadFromMCPConfig_EmptyDataDirWithRelativeEnvFile(t *testing.T) {
 // kept as written.
 func TestResolveServerEnvFile(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
-		{"fusion.env", "/claw-home/fusion.env"},
-		{"secrets/x.env", "/claw-home/secrets/x.env"},
+		{"fusion.env", "/agency-home/fusion.env"},
+		{"secrets/x.env", "/agency-home/secrets/x.env"},
 		{"/etc/x.env", "/etc/x.env"},
 		{"", ""},
 	} {
-		got, err := resolveServerEnvFile("s", config.MCPServerConfig{EnvFile: tc.in}, "/claw-home")
+		got, err := resolveServerEnvFile("s", config.MCPServerConfig{EnvFile: tc.in}, "/agency-home")
 		if err != nil {
 			t.Fatalf("resolveServerEnvFile(%q): %v", tc.in, err)
 		}

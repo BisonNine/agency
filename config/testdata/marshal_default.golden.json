@@ -460,7 +460,7 @@
   "agents": {
     "list": [
       {
-        "id": "claw",
+        "id": "agency",
         "default": true,
         "name": "Agency"
       }

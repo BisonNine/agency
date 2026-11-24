@@ -103,7 +103,7 @@ func injectDeviceAgentQuerier(ch channels.Channel, al *agent.AgentLoop) {
 // person speaking on a device: operator.name from the agent loop's current
 // config, else the admin account's username from the credentials file at
 // credentialsPath. Both are read on every call, so a config reload or a
-// `claw admin` change is seen at once. Neither gives "".
+// `agency admin` change is seen at once. Neither gives "".
 func injectDeviceDefaultUser(ch channels.Channel, al *agent.AgentLoop, credentialsPath string) {
 	if setter, ok := ch.(interface{ SetDefaultUser(fn func() string) }); ok {
 		setter.SetDefaultUser(func() string {

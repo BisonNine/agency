@@ -11,9 +11,9 @@ import (
 func TestSet(t *testing.T) {
 	orig := slices.Clone(os.Args)
 	t.Run("set", func(t *testing.T) {
-		Set(t, "alice-claw")
-		if got := app.BinaryName(); got != "alice-claw" {
-			t.Errorf("BinaryName = %q, want alice-claw", got)
+		Set(t, "alice-agency")
+		if got := app.BinaryName(); got != "alice-agency" {
+			t.Errorf("BinaryName = %q, want alice-agency", got)
 		}
 		if !slices.Equal(os.Args[1:], orig[1:]) {
 			t.Errorf("arguments changed: %v", os.Args)

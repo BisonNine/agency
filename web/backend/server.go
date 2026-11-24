@@ -15,7 +15,7 @@ type Options struct {
 	// the gateway runs on. When nil, a store is opened on ConfigPath instead.
 	Store *config.Store
 
-	// ConfigPath is the absolute path of the active claw config.json, used only
+	// ConfigPath is the absolute path of the active agency config.json, used only
 	// when Store is nil.
 	ConfigPath string
 
@@ -33,7 +33,7 @@ type Options struct {
 // Server bundles the API handler with its mount-time configuration so callers
 // can register both the JSON API and the embedded frontend on a single mux.
 //
-// The merged claw binary instantiates one Server and calls RegisterRoutes
+// The merged agency binary instantiates one Server and calls RegisterRoutes
 // against the same http.ServeMux that backs the gateway's HTTP server, so
 // /api/*, /webui/* (WebSocket), /health, /ready and the frontend SPA all
 // share port 18790. The SPA fallback at "/" is registered last and Go's

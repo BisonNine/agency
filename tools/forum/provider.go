@@ -73,7 +73,7 @@ func (globalForumProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 	}
 	svc := service.Load()
 	if svc == nil {
-		// Only the gateway runs forums (`claw agent` has no service).
+		// Only the gateway runs forums (`agency agent` has no service).
 		logger.DebugCF("forum", "no forum service in this process; no forum tools",
 			map[string]any{"agent": deps.AgentID})
 		return nil

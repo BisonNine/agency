@@ -109,7 +109,7 @@ func MediaTempDir() string {
 	if dir != "" {
 		return dir
 	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("claw_media_%d", os.Getuid()))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("agency_media_%d", os.Getuid()))
 }
 
 // DownloadFile downloads a file from URL to a local temp directory.

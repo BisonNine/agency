@@ -272,8 +272,8 @@ func TestDestFor(t *testing.T) {
 	if got := DestFor(cfg, "/mnt/override"); got != "/mnt/override" {
 		t.Errorf("override: %s", got)
 	}
-	cfg.Backup.Dest = "/mnt/nas/claw"
-	if got := DestFor(cfg, ""); got != "/mnt/nas/claw" {
+	cfg.Backup.Dest = "/mnt/nas/agency"
+	if got := DestFor(cfg, ""); got != "/mnt/nas/agency" {
 		t.Errorf("config dest: %s", got)
 	}
 	cfg.Backup.Dest = ""

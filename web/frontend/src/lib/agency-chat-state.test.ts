@@ -5,9 +5,9 @@ import {
   getInitialActiveSessionId,
   normalizeUnixTimestamp,
   writeStoredSessionId,
-} from "./claw-chat-state"
+} from "./agency-chat-state"
 
-const KEY = "claw:last-session-id"
+const KEY = "agency:last-session-id"
 
 afterEach(() => {
   localStorage.clear()

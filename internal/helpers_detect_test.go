@@ -86,16 +86,16 @@ func TestSeedConfig_UnwritableDirectory(t *testing.T) {
 	assert.NoFileExists(t, path)
 }
 
-// Only the current names count: an old CLAW_HOME and an old ~/.claw are not
-// looked at, and the system install location is /opt/agency.
+// Only the current names count: the old home variable and data directory
+// are not looked at, and the system install location is /opt/agency.
 func TestGetAgencyHome_OldNamesIgnored(t *testing.T) {
 	withoutInstallRoot(t)
 	home := t.TempDir()
-	old := filepath.Join(home, ".claw")
+	old := filepath.Join(home, ".claw") // rename-guard:old-name
 	require.NoError(t, os.MkdirAll(old, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(old, "config.json"), []byte("{}"), 0o600))
 	t.Setenv("HOME", home)
-	t.Setenv("CLAW_HOME", old)
+	t.Setenv("CLAW_HOME", old) // rename-guard:old-name
 
 	t.Run("default", func(t *testing.T) {
 		t.Setenv("AGENCY_HOME", "")

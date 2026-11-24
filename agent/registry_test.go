@@ -30,7 +30,7 @@ func (m *mockRegistryProvider) GetDefaultModel() string {
 }
 
 // testRegistryBaseDir is the agents directory the registry tests write to:
-// /tmp/<user>-claw-test-registry, so two accounts on one machine never share
+// /tmp/<user>-agency-test-registry, so two accounts on one machine never share
 // (and cannot lock each other out of) the same directory.
 func testRegistryBaseDir() string {
 	user := os.Getenv("USER")
@@ -42,7 +42,7 @@ func testRegistryBaseDir() string {
 	if user == "" {
 		user = "unknown"
 	}
-	return filepath.Join(os.TempDir(), user+"-claw-test-registry")
+	return filepath.Join(os.TempDir(), user+"-agency-test-registry")
 }
 
 func testCfg(agents []config.AgentConfig) *config.Config {

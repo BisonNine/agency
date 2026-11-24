@@ -336,7 +336,7 @@ func mergeMessages(batch []bus.InboundMessage) bus.InboundMessage {
 			merged.Merged = append(merged.Merged, m.MessageID)
 		}
 	}
-	// Someone's message merged with claw's own is someone's.
+	// Someone's message merged with agency's own is someone's.
 	merged.Internal = !slices.ContainsFunc(batch, func(m bus.InboundMessage) bool { return !m.Internal })
 	return merged
 }

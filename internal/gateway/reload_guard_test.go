@@ -83,7 +83,7 @@ func dottedName(e ast.Expr) string {
 	}
 }
 
-// TestReloadReAppliesTheAllowlist is the regression guard for `claw network`
+// TestReloadReAppliesTheAllowlist is the regression guard for `agency network`
 // against a running gateway. The listener is deliberately never recreated on
 // reload (that is what keeps WebUI WebSockets alive), so the allowlist only
 // changes if the reload path pushes it. Drop the call and the command reports

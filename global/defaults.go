@@ -9,7 +9,7 @@ package global
 // The full path is filepath.Join(os.UserHomeDir(), DefaultDataDir) → ~/.agency
 const DefaultDataDir = ".agency"
 
-// InternalDir is the directory under the data directory that holds claw's own
+// InternalDir is the directory under the data directory that holds agency's own
 // state: token stores and the device database. Nobody edits it.
 const InternalDir = "internal"
 

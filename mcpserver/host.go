@@ -671,7 +671,7 @@ func publishMCPForUser(
 		return
 	}
 	if constants.IsInternalChannel(channel) {
-		// An internal turn (an asked one's, claw agent's): its output goes to
+		// An internal turn (an asked one's, agency agent's): its output goes to
 		// the asker or nowhere, never a chat.
 		logger.InfoCF("mcpserver", "mcp.foruser.dropped",
 			map[string]any{

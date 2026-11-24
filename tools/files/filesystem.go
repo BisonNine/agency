@@ -656,7 +656,7 @@ func (t *ListDirTool) listRecursive(start string) *toolkit.Result {
 func formatDirEntries(entries []os.DirEntry) *toolkit.Result {
 	var result strings.Builder
 	for _, entry := range entries {
-		// Hide the claw-internal new-file marker from agents.
+		// Hide the agency-internal new-file marker from agents.
 		if entry.Name() == global.FolderMarkerFile {
 			continue
 		}

@@ -96,7 +96,7 @@ linters:
         - G104
         # G301/G302/G306 want 0750/0600 on every directory and file. Agency's
         # modes are deliberate: workspaces, config, logs and media are read by
-        # the user, editors and other tools, and the pid file by `claw status`
+        # the user, editors and other tools, and the pid file by `agency status`
         # possibly under another account. Private material (tokens, secrets)
         # is already written 0600. Decision, not a deferral.
         - G301

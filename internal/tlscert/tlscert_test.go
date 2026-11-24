@@ -66,7 +66,7 @@ func TestLoad_SelfSignedSecretModes(t *testing.T) {
 
 func TestLoad_SelfSignedGeneratesAndReuses(t *testing.T) {
 	dir := t.TempDir()
-	opts := Options{DataDir: dir, ExtraNames: []string{"alias.example", "203.0.113.7"}, ExternalHost: "claw.example.com"}
+	opts := Options{DataDir: dir, ExtraNames: []string{"alias.example", "203.0.113.7"}, ExternalHost: "agency.example.com"}
 
 	m, err := Load(opts)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestLoad_SelfSignedGeneratesAndReuses(t *testing.T) {
 	if hn, hostErr := os.Hostname(); hostErr == nil && hn != "" && !slices.Contains(names, strings.ToLower(hn)) {
 		t.Errorf("names %v lack the host name %q", names, hn)
 	}
-	for _, want := range []string{"alias.example", "203.0.113.7", "claw.example.com"} {
+	for _, want := range []string{"alias.example", "203.0.113.7", "agency.example.com"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("names %v lack %q", names, want)
 		}

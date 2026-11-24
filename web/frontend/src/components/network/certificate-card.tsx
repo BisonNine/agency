@@ -185,7 +185,7 @@ export function CertificateCard({
             <Input
               data-testid="cert-file"
               value={certFile}
-              placeholder="/etc/letsencrypt/live/claw.example.com/fullchain.pem"
+              placeholder="/etc/letsencrypt/live/agency.example.com/fullchain.pem"
               onChange={(e) => setCertFile(e.target.value)}
             />
           </Field>
@@ -197,7 +197,7 @@ export function CertificateCard({
             <Input
               data-testid="cert-key-file"
               value={keyFile}
-              placeholder="/etc/letsencrypt/live/claw.example.com/privkey.pem"
+              placeholder="/etc/letsencrypt/live/agency.example.com/privkey.pem"
               onChange={(e) => setKeyFile(e.target.value)}
             />
           </Field>

@@ -284,7 +284,7 @@ func TestSendFiles_RequiresReadGrant(t *testing.T) {
 }
 
 // In a turn the loop runs, the model's msg_send_file sends to the turn's
-// own chat; on claw agent's cli channel it is refused.
+// own chat; on agency agent's cli channel it is refused.
 func TestSendFiles_InLoopTurnChat(t *testing.T) {
 	for _, tt := range []struct {
 		channel, chatID string

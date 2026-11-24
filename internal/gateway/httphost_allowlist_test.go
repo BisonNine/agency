@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestHTTPHostSetAllowlist covers what makes `claw network` work against a
+// TestHTTPHostSetAllowlist covers what makes `agency network` work against a
 // running gateway: the reload path swaps the allowlist on the live listener,
 // and a rejected list leaves the running one in place rather than failing open
 // or silently dropping to loopback.

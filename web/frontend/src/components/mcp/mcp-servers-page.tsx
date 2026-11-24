@@ -59,7 +59,7 @@ function lastErrorLine(live: MCPServerStatus): string {
   return `${live.last_error}${when}`
 }
 
-// MCPServersPage edits the external (upstream) MCP servers claw connects out to
+// MCPServersPage edits the external (upstream) MCP servers agency connects out to
 // (tools.mcp.servers). Two-column list/detail — a rail of servers on the left,
 // the selected server's fields on the right — so many servers stay manageable,
 // mirroring the Agents page. It patches only tools.mcp.servers.

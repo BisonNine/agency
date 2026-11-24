@@ -16,7 +16,7 @@ import (
 
 // The ccv3 package imports no Agency package but the stdlib-only
 // internal/mergepatch, so every part of Agency can use it.
-func TestCCv3ImportsNoClawEhPackage(t *testing.T) {
+func TestCCv3ImportsNoAgencyPackage(t *testing.T) {
 	const module = "go.bison9.com/agency/"
 	allowed := map[string]bool{module + "internal/mergepatch": true}
 	files, err := filepath.Glob("*.go")

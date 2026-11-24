@@ -83,17 +83,17 @@ func TestMessageTokens_NoLoop(t *testing.T) {
 // The endpoint base is https when the request came over TLS or a proxy says
 // it did.
 func TestMessageEndpointBase(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "http://claw.example:18790/x", nil)
-	if got := messageEndpointBase(r); got != "http://claw.example:18790/api/message/" {
+	r := httptest.NewRequest(http.MethodGet, "http://agency.example:18790/x", nil)
+	if got := messageEndpointBase(r); got != "http://agency.example:18790/api/message/" {
 		t.Fatalf("plain = %q", got)
 	}
 	r.Header.Set("X-Forwarded-Proto", "HTTPS")
-	if got := messageEndpointBase(r); got != "https://claw.example:18790/api/message/" {
+	if got := messageEndpointBase(r); got != "https://agency.example:18790/api/message/" {
 		t.Fatalf("forwarded = %q", got)
 	}
-	r = httptest.NewRequest(http.MethodGet, "http://claw.example:18443/x", nil)
+	r = httptest.NewRequest(http.MethodGet, "http://agency.example:18443/x", nil)
 	r.TLS = &tls.ConnectionState{}
-	if got := messageEndpointBase(r); got != "https://claw.example:18443/api/message/" {
+	if got := messageEndpointBase(r); got != "https://agency.example:18443/api/message/" {
 		t.Fatalf("tls = %q", got)
 	}
 }

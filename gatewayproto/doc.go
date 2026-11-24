@@ -5,5 +5,5 @@
 //
 // This lets external OpenClaw-compatible devices (e.g. the Rabbit R1) connect to
 // Agency. The protocol is reproduced from the OpenClaw reference implementation;
-// see the Claw-Rabbit-R1 spec for field-level provenance. Protocol version 4.
+// see the Agency-Rabbit-R1 spec for field-level provenance. Protocol version 4.
 package gatewayproto

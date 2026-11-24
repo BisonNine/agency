@@ -53,14 +53,14 @@ func rebuildSharedHTTPServer(services *gatewayServices, host string, port int, c
 }
 
 // RegisterFusionOAuthRoutes mounts the fusion OAuth API on the shared HTTP
-// server so the claw-auth OAuth flow can deliver tokens. Like RegisterMessageRoute
+// server so the agency-auth OAuth flow can deliver tokens. Like RegisterMessageRoute
 // it must run on every rebuild (boot + config reload) or the routes silently
 // disappear after a reload. When the fusion engine can't be built the handler is
 // nil and nothing is mounted.
 //
 // The handler carries its own internal mux matching the full request path, so a
 // Go 1.22 subtree prefix ("/api/v1/") suffices. "/ping" is mounted separately
-// because claw-auth pings <external-url>/ping to verify connectivity, and it
+// because agency-auth pings <external-url>/ping to verify connectivity, and it
 // does not collide with the health server's /health and /ready routes.
 func RegisterFusionOAuthRoutes(server *health.Server, c *config.Config) {
 	h := fusion.OAuthHandler(c)

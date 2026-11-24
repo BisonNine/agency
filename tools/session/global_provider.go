@@ -42,7 +42,7 @@ func (globalSessionProvider) Description() string { return "Session history and 
 func (globalSessionProvider) Available(cfg any) (bool, string) { return true, "" }
 
 func (globalSessionProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
-	// Recover Claw's rich, strongly-typed dependencies. A deps-free enumeration
+	// Recover Agency's rich, strongly-typed dependencies. A deps-free enumeration
 	// (Describe) passes a zero Deps, so cd is the zero ToolDeps: the sessions
 	// directory is empty and the closures are nil, and every handler reports
 	// itself unavailable instead of touching disk or the agent loop.

@@ -217,7 +217,7 @@ func TestPutBack_AfterCloseTellsHost(t *testing.T) {
 }
 
 // Only the owner of the data directory restores, cleans up and saves; any
-// other process sharing it (`claw agent` beside the service) leaves the
+// other process sharing it (`agency agent` beside the service) leaves the
 // service's temporary agents and their list alone.
 func TestOwner_OnlyOwnerTouchesSharedState(t *testing.T) {
 	cfg := testConfig(t)

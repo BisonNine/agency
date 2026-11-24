@@ -105,7 +105,7 @@ func TestWriteAndLoad(t *testing.T) {
 		t.Fatal("Verify accepted empty credentials")
 	}
 
-	// Running `claw admin` again replaces the account.
+	// Running `agency admin` again replaces the account.
 	if err = Write(path, "bob", "another long password", DefaultFileMode); err != nil {
 		t.Fatal(err)
 	}

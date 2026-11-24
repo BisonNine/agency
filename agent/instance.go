@@ -674,7 +674,7 @@ func initSessionStore(dir string, modes config.Modes) (session.SessionStore, err
 // (a `<key>.meta.json` that has not been renamed to `.migrated`). Starting on
 // such a directory would be silently destructive: the first message (a cron
 // fire is enough) mints a fresh window at seq 1 in the archive DB, after which
-// `claw sessions migrate` sees a populated session, skips it, and the old
+// `agency sessions migrate` sees a populated session, skips it, and the old
 // history is stranded. Failing loudly makes the ordering mistake visible.
 func refuseUnmigratedSessions(dir string) error {
 	entries, err := os.ReadDir(dir)

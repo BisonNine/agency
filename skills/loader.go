@@ -154,7 +154,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 	// 1. load from workspace skills first (project-level)
 	if sl.workspaceSkills != "" {
 		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")
-		if content, err := os.ReadFile(skillFile); err == nil { //nolint:gosec // skill name is the operator's CLI argument (claw skills show)
+		if content, err := os.ReadFile(skillFile); err == nil { //nolint:gosec // skill name is the operator's CLI argument (agency skills show)
 			return sl.stripFrontmatter(string(content)), true
 		}
 	}
@@ -162,7 +162,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 	// 2. then load from global skills (~/.agency/skills)
 	if sl.globalSkills != "" {
 		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
-		if content, err := os.ReadFile(skillFile); err == nil { //nolint:gosec // skill name is the operator's CLI argument (claw skills show)
+		if content, err := os.ReadFile(skillFile); err == nil { //nolint:gosec // skill name is the operator's CLI argument (agency skills show)
 			return sl.stripFrontmatter(string(content)), true
 		}
 	}

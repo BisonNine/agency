@@ -165,7 +165,7 @@ func storedBridgeToken(t *testing.T, dataDir string) string {
 	return st.LoadDeviceToken()
 }
 
-// TestACPBridgeAgainstDeviceChannel drives the `claw acp` connect path against
+// TestACPBridgeAgainstDeviceChannel drives the `agency acp` connect path against
 // a real device channel, over ws:// and over wss:// with the pinned gateway
 // certificate: the first connect is rejected as not paired, the bridge
 // approves its own pairing and reconnects, a chat round trip reaches the
@@ -242,13 +242,13 @@ func TestACPBridgeAgainstDeviceChannel(t *testing.T) {
 			if in.Channel != "device" || in.Content != "hello from acp" || in.Sender.PlatformID != deviceID {
 				t.Fatalf("inbound = %+v", in)
 			}
-			if sendErr := g.channel.Send(ctx, bus.OutboundMessage{Channel: "device", ChatID: in.ChatID, Content: "hello from claw"}); sendErr != nil {
+			if sendErr := g.channel.Send(ctx, bus.OutboundMessage{Channel: "device", ChatID: in.ChatID, Content: "hello from agency"}); sendErr != nil {
 				t.Fatalf("channel Send: %v", sendErr)
 			}
 			deadline := time.Now().Add(10 * time.Second)
 			for {
 				if text, ok := events.chatFinal(runID); ok {
-					if text != "hello from claw" {
+					if text != "hello from agency" {
 						t.Fatalf("reply text %q", text)
 					}
 					break

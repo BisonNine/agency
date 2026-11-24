@@ -71,7 +71,7 @@ func acpHome(t *testing.T, g *acpTestGateway, extra string) {
 	}
 }
 
-// TestACPCmd_ServesStdio: `claw acp` pairs itself with the running gateway,
+// TestACPCmd_ServesStdio: `agency acp` pairs itself with the running gateway,
 // answers an ACP initialize on stdout and exits cleanly when stdin closes.
 func TestACPCmd_ServesStdio(t *testing.T) {
 	for _, useTLS := range []bool{false, true} {

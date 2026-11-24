@@ -73,7 +73,7 @@ func slashEvent(command, text, channelID string) socketmode.Event {
 	}
 }
 
-func TestHandleSlashCommand_RunsClawCommand(t *testing.T) {
+func TestHandleSlashCommand_RunsAgencyCommand(t *testing.T) {
 	tests := []struct {
 		name        string
 		command     string
@@ -82,18 +82,18 @@ func TestHandleSlashCommand_RunsClawCommand(t *testing.T) {
 		wantContent string
 		wantPeer    bus.Peer
 	}{
-		{"command in a channel", "/claw", "model", "C1", "/model", bus.Peer{Kind: "channel", ID: "C1"}},
-		{"command with arguments", "/claw", "model gpt-5", "C1", "/model gpt-5", bus.Peer{Kind: "channel", ID: "C1"}},
-		{"empty is help", "/claw", "  ", "C1", "/help", bus.Peer{Kind: "channel", ID: "C1"}},
-		{"command in a DM", "/claw", "model", "D1", "/model", bus.Peer{Kind: "direct", ID: "U1"}},
-		{"prefix already typed", "/claw", "/model", "C1", "/model", bus.Peer{Kind: "channel", ID: "C1"}},
-		{"bang prefix already typed", "/claw", "!model", "C1", "/model", bus.Peer{Kind: "channel", ID: "C1"}},
+		{"command in a channel", "/agency", "model", "C1", "/model", bus.Peer{Kind: "channel", ID: "C1"}},
+		{"command with arguments", "/agency", "model gpt-5", "C1", "/model gpt-5", bus.Peer{Kind: "channel", ID: "C1"}},
+		{"empty is help", "/agency", "  ", "C1", "/help", bus.Peer{Kind: "channel", ID: "C1"}},
+		{"command in a DM", "/agency", "model", "D1", "/model", bus.Peer{Kind: "direct", ID: "U1"}},
+		{"prefix already typed", "/agency", "/model", "C1", "/model", bus.Peer{Kind: "channel", ID: "C1"}},
+		{"bang prefix already typed", "/agency", "!model", "C1", "/model", bus.Peer{Kind: "channel", ID: "C1"}},
 		{"another launcher name", "/alice", "status", "C1", "/status", bus.Peer{Kind: "channel", ID: "C1"}},
 		{"command registered by its own name", "/model", "0", "C1", "/model 0", bus.Peer{Kind: "channel", ID: "C1"}},
 		{"own-name command without arguments", "/status", "", "C1", "/status", bus.Peer{Kind: "channel", ID: "C1"}},
 		{"own-name command in a DM", "/model", "gpt-5", "D1", "/model gpt-5", bus.Peer{Kind: "direct", ID: "U1"}},
 		{"alias registered by its own name", "/reset", "", "C1", "/reset", bus.Peer{Kind: "channel", ID: "C1"}},
-		{"launcher with a message, not a command", "/claw", "hello there", "C1", "hello there", bus.Peer{Kind: "channel", ID: "C1"}},
+		{"launcher with a message, not a command", "/agency", "hello there", "C1", "hello there", bus.Peer{Kind: "channel", ID: "C1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -175,7 +175,7 @@ func TestSend_NotInChannelUsesResponseURL(t *testing.T) {
 	rec := &responseURLRecorder{}
 	srv := rec.serve(t)
 
-	ev := slashEvent("/claw", "model", "C1")
+	ev := slashEvent("/agency", "model", "C1")
 	cmd, ok := ev.Data.(slack.SlashCommand)
 	if !ok {
 		t.Fatal("slash event carries no SlashCommand")
@@ -239,7 +239,7 @@ func TestReactToMessage_SkipsSlashCommand(t *testing.T) {
 // returns the inbound message it produced.
 func slashCommandTo(t *testing.T, c *SlackChannel, mb *bus.MessageBus, url string) bus.InboundMessage {
 	t.Helper()
-	ev := slashEvent("/claw", "model", "C1")
+	ev := slashEvent("/agency", "model", "C1")
 	cmd, ok := ev.Data.(slack.SlashCommand)
 	if !ok {
 		t.Fatal("slash event carries no SlashCommand")

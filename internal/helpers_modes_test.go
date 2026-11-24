@@ -12,7 +12,7 @@ func TestLoadConfig_CreatesOwnerOnlyHome(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")
 	}
-	home := filepath.Join(t.TempDir(), "claw-home")
+	home := filepath.Join(t.TempDir(), "agency-home")
 	t.Setenv("AGENCY_HOME", home)
 
 	if _, err := LoadConfig(); err != nil {

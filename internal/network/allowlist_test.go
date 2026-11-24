@@ -6,8 +6,8 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// TestParseAllowlist covers the aliases shared by `claw network` and
-// `claw install --allowed-cidrs`. They exist so the headless case does not
+// TestParseAllowlist covers the aliases shared by `agency network` and
+// `agency install --allowed-cidrs`. They exist so the headless case does not
 // require remembering three RFC1918 prefixes, which is where operators
 // otherwise reach for 0.0.0.0/0 — an IPv4 prefix that refuses IPv6 clients.
 func TestParseAllowlist(t *testing.T) {
@@ -49,7 +49,7 @@ func TestParseAllowlist(t *testing.T) {
 	}
 }
 
-// TestParseAllowlistBareDefault pins the recovery path: `claw network` with no
+// TestParseAllowlistBareDefault pins the recovery path: `agency network` with no
 // argument must open the private LAN ranges, since that is the whole point of
 // the command — an operator locked out of the WebUI has no other way back in
 // without editing config.json.

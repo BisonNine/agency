@@ -296,7 +296,7 @@ type DeviceChannelConfig struct {
 	// allows any (the gateway is authenticated); loopback is always allowed.
 	AllowedCIDRs []string `json:"allowed_cidrs,omitempty"`
 	// ExternalURL is the endpoint advertised to devices in the QR. Empty defaults to
-	// http://<lan-ip>:<port>. Set to e.g. https://claw.example.com behind a reverse
+	// http://<lan-ip>:<port>. Set to e.g. https://agency.example.com behind a reverse
 	// proxy / Cloudflare (https maps to wss).
 	ExternalURL string `json:"external_url,omitempty"`
 	// AutoApprove skips operator approval for fresh device pairings; default

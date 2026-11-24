@@ -66,12 +66,12 @@ func TestEffectiveExternalURL(t *testing.T) {
 	})
 
 	t.Run("explicit override returned verbatim", func(t *testing.T) {
-		g := GatewayConfig{Host: "0.0.0.0", Port: 8080, ExternalURL: "http://claw.local:1234"}
-		if got, want := g.EffectiveExternalURL(), "http://claw.local:1234"; got != want {
+		g := GatewayConfig{Host: "0.0.0.0", Port: 8080, ExternalURL: "http://agency.local:1234"}
+		if got, want := g.EffectiveExternalURL(), "http://agency.local:1234"; got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
-		g = GatewayConfig{Host: "127.0.0.1", Port: 8080, ExternalURL: "https://claw.example.com", TLS: TLSConfig{Mode: TLSModeOff}}
-		if got, want := g.EffectiveExternalURL(), "https://claw.example.com"; got != want {
+		g = GatewayConfig{Host: "127.0.0.1", Port: 8080, ExternalURL: "https://agency.example.com", TLS: TLSConfig{Mode: TLSModeOff}}
+		if got, want := g.EffectiveExternalURL(), "https://agency.example.com"; got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
 	})
@@ -249,7 +249,7 @@ func TestValidateMCPHostListen(t *testing.T) {
 			t.Errorf("%q: unexpected error %v", ok, err)
 		}
 	}
-	for _, bad := range []string{"0.0.0.0:5911", "192.168.1.5:5911", "[::]:5911", "5911", "claw.lan:5911"} {
+	for _, bad := range []string{"0.0.0.0:5911", "192.168.1.5:5911", "[::]:5911", "5911", "agency.lan:5911"} {
 		if err := ValidateMCPHostListen(bad); err == nil {
 			t.Errorf("%q: must be rejected", bad)
 		}

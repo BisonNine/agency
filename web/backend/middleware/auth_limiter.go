@@ -134,7 +134,7 @@ func NewLoginLimiter(now func() time.Time) *LoginLimiter {
 
 // SyncCredentials clears every lock and failure count when gen differs from
 // the credentials generation seen by the previous call, so writing the
-// credentials file (`claw admin`) lets the operator straight back in. It
+// credentials file (`agency admin`) lets the operator straight back in. It
 // reports whether it cleared anything.
 func (l *LoginLimiter) SyncCredentials(gen uint64) bool {
 	l.mu.Lock()

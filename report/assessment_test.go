@@ -113,7 +113,7 @@ func TestAssessment_ListenerRows(t *testing.T) {
 	// No listener row names the process "gateway", mentions a proxy, the
 	// tls command or a wildcard address: those are for the Network section.
 	for _, r := range rows[:len(want)] {
-		for _, banned := range []string{"gateway ", "proxy", "claw tls", "0.0.0.0", "18443"} {
+		for _, banned := range []string{"gateway ", "proxy", "agency tls", "0.0.0.0", "18443"} {
 			if strings.Contains(r[2], banned) {
 				t.Errorf("row %q mentions %q: %q", r[1], banned, r[2])
 			}
@@ -768,12 +768,12 @@ func TestAssessment_BehindProxy(t *testing.T) {
 
 	// An https external URL Agency does not serve itself is a proxy too.
 	cfg.Gateway.TrustedProxies = nil
-	cfg.Gateway.ExternalURL = "https://claw.example.com"
+	cfg.Gateway.ExternalURL = "https://agency.example.com"
 	s = collectAssessment(t.Context(), cfg, env)
 	if r := assessmentRow(t, s, "WebUI/API HTTP"); r[0] != "" {
 		t.Errorf("https external URL: HTTP row = %q, want unmarked", r)
 	}
-	if r := assessmentRow(t, s, itemProxy); r[2] != "Behind a proxy: https://claw.example.com." {
+	if r := assessmentRow(t, s, itemProxy); r[2] != "Behind a proxy: https://agency.example.com." {
 		t.Errorf("proxy row = %q", r)
 	}
 }

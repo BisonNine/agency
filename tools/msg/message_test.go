@@ -246,7 +246,7 @@ func TestMessageTool_Destination(t *testing.T) {
 		{"more than one turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true}), "Messages can't be sent now: this agent is answering more than one conversation."},
 		{"asked turn", turnCtx(constants.AgentMessageChannel, "ask-1"), "Messages can't be sent to another agent: your final reply goes to it."},
 		{"sub-agent turn", turnCtx(constants.SubagentChannel, "agent:alice:task"), "Messages can't be sent to another agent: your final reply goes to it."},
-		{"claw agent (cli) turn", turnCtx("cli", "direct"), "This chat can't receive messages."},
+		{"agency agent (cli) turn", turnCtx("cli", "direct"), "This chat can't receive messages."},
 		{"recovery turn", turnCtx("recovery", "x"), "This chat can't receive messages."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

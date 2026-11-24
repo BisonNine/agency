@@ -344,7 +344,7 @@ func (c *ClawHubRegistry) downloadToTempFileWithRetry(ctx context.Context, urlSt
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(errBody[:n]))
 	}
 
-	tmpFile, err := os.CreateTemp("", "claw-dl-*")
+	tmpFile, err := os.CreateTemp("", "agency-dl-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}

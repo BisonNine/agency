@@ -65,7 +65,7 @@ func serve(h http.Handler, method, path string, cookie *http.Cookie) *httptest.R
 }
 
 func TestAuthStore_NoFileIsUnconfigured(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	s := NewAuthStore(admin.Path(t.TempDir()))
 	if s.Configured() {
 		t.Fatal("Configured() = true with no credentials file")
@@ -78,7 +78,7 @@ func TestAuthStore_NoFileIsUnconfigured(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, `"no admin account"`) || !strings.Contains(body, `"run: alice-claw admin"`) {
+	if body := rec.Body.String(); !strings.Contains(body, `"no admin account"`) || !strings.Contains(body, `"run: alice-agency admin"`) {
 		t.Fatalf("body = %s", body)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {

@@ -9,7 +9,7 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// runCommand executes `claw network` with args against the temp AGENCY_HOME set
+// runCommand executes `agency network` with args against the temp AGENCY_HOME set
 // up by the caller, returning combined output. It drives the real cobra command
 // so the argument parsing, the flag, and the default-when-bare behaviour are all
 // covered rather than just the helpers underneath.
@@ -41,7 +41,7 @@ func runCommand(t *testing.T, args ...string) (string, error) {
 }
 
 // TestCommandBareSetsPrivateRanges is the headline behaviour: an operator who
-// has locked themselves out types `claw network` and nothing else. If this ever
+// has locked themselves out types `agency network` and nothing else. If this ever
 // becomes a no-op or a help dump, the recovery path is gone.
 func TestCommandBareSetsPrivateRanges(t *testing.T) {
 	seedConfig(t)

@@ -1,7 +1,7 @@
 // Agency
 // License: MIT
 
-// Package devicegw implements the `claw devices` CLI: provision + print a pairing
+// Package devicegw implements the `agency devices` CLI: provision + print a pairing
 // QR for external OpenClaw-protocol devices (e.g. the Rabbit R1) and approve or
 // reject pending device pairings. A running gateway picks up the config/token
 // change automatically within a few seconds.
@@ -24,7 +24,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// NewDevicesCommand returns the `claw devices` command group.
+// NewDevicesCommand returns the `agency devices` command group.
 func NewDevicesCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "devices",

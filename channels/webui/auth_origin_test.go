@@ -25,13 +25,13 @@ func TestOriginAllowed_SameOrigin(t *testing.T) {
 	}{
 		{"same origin, localhost", "localhost:18790", "http://localhost:18790", true},
 		{"same origin, LAN address", "192.168.1.5:18790", "http://192.168.1.5:18790", true},
-		{"same origin, proxied hostname", "claw.example.com", "https://claw.example.com", true},
-		{"same host, case differs", "Claw.Example.com", "https://claw.example.com", true},
+		{"same origin, proxied hostname", "agency.example.com", "https://agency.example.com", true},
+		{"same host, case differs", "Agency.Example.com", "https://agency.example.com", true},
 		{"no Origin header is not a browser", "localhost:18790", "", true},
 
 		{"hostile page", "localhost:18790", "https://evil.example.com", false},
 		{"different port on the same host", "localhost:18790", "http://localhost:5173", false},
-		{"subdomain is not the same host", "claw.example.com", "https://evil.claw.example.com", false},
+		{"subdomain is not the same host", "agency.example.com", "https://evil.agency.example.com", false},
 		{"unparsable origin", "localhost:18790", "://not a url", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,7 +129,7 @@ func TestAuthenticate_LoginSession(t *testing.T) {
 	t.Cleanup(func() { SetSessionValidator(nil) })
 
 	withCookie := httptest.NewRequest(http.MethodGet, "/webui/ws", nil)
-	withCookie.AddCookie(&http.Cookie{Name: "claw_session", Value: "live"})
+	withCookie.AddCookie(&http.Cookie{Name: "agency_session", Value: "live"})
 	bare := httptest.NewRequest(http.MethodGet, "/webui/ws", nil)
 
 	if admitted(c, withCookie) {
@@ -137,7 +137,7 @@ func TestAuthenticate_LoginSession(t *testing.T) {
 	}
 
 	SetSessionValidator(func(r *http.Request) (string, bool) {
-		ck, err := r.Cookie("claw_session")
+		ck, err := r.Cookie("agency_session")
 		return "alice", err == nil && ck.Value == "live"
 	})
 	if !admitted(c, withCookie) {
@@ -173,7 +173,7 @@ func TestHandleWebSocket_RequiresSession(t *testing.T) {
 		SetSessionValidator(nil)
 	})
 	SetSessionValidator(func(r *http.Request) (string, bool) {
-		ck, err := r.Cookie("claw_session")
+		ck, err := r.Cookie("agency_session")
 		return "alice", err == nil && ck.Value == "live"
 	})
 
@@ -184,7 +184,7 @@ func TestHandleWebSocket_RequiresSession(t *testing.T) {
 	dial := func(cookie string) (*websocket.Conn, *http.Response, error) {
 		h := http.Header{}
 		if cookie != "" {
-			h.Set("Cookie", "claw_session="+cookie)
+			h.Set("Cookie", "agency_session="+cookie)
 		}
 		return websocket.DefaultDialer.Dial(wsURL, h)
 	}

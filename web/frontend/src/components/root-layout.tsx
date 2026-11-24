@@ -4,7 +4,7 @@ import { useEffect } from "react"
 
 import { AppLayout } from "@/components/app-layout"
 import { LOGIN_PATH } from "@/lib/auth-redirect"
-import { initializeChatStore } from "@/lib/claw-chat-controller"
+import { initializeChatStore } from "@/lib/agency-chat-controller"
 
 export const RootLayout = () => {
   // The chat socket needs a session: opening it from the login page would

@@ -79,12 +79,12 @@ func TestHTTPHostAuth_APINeedsSession(t *testing.T) {
 }
 
 // TestHTTPHostAuth_NoStoreFailsClosed: before SetAuth every protected request
-// is refused with the `claw admin` hint.
+// is refused with the `agency admin` hint.
 func TestHTTPHostAuth_NoStoreFailsClosed(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	h := newPolicyHost(t, config.GatewayConfig{Host: "127.0.0.1", Port: 18790})
 	rec := authGet(h, "/api/config", nil)
-	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "run: alice-claw admin") {
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "run: alice-agency admin") {
 		t.Fatalf("status = %d, body = %q", rec.Code, rec.Body.String())
 	}
 }

@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	stubUser = "@claw:matrix.test"
+	stubUser = "@agency:matrix.test"
 	stubRoom = "!room:matrix.test"
 )
 
@@ -665,7 +665,7 @@ func TestHandleMessageEvent_GroupRoom(t *testing.T) {
 	ctx := context.Background()
 
 	c.handleMessageEvent(ctx, msgEvent(textMsg("chatter")))
-	mention := textMsg("@claw what time is it")
+	mention := textMsg("@agency what time is it")
 	mention.Mentions = &event.Mentions{UserIDs: []id.UserID{stubUser}}
 	c.handleMessageEvent(ctx, msgEvent(mention))
 
@@ -1016,9 +1016,9 @@ func TestMentionDetection_EdgeCases(t *testing.T) {
 		want bool
 	}{
 		{`<a href="https://matrix.to/#/` + stubUser + `">x</a>`, true},
-		{`<a href="https://matrix.to/#/%2540claw%253Amatrix.test">x</a>`, true},
-		{`<a href="https://matrix.to/#/%25252540claw%2525253Amatrix.test">x</a>`, true},
-		{`<a href="https://matrix.to/#/%2525252540claw%252525253Amatrix.test">x</a>`, true},
+		{`<a href="https://matrix.to/#/%2540agency%253Amatrix.test">x</a>`, true},
+		{`<a href="https://matrix.to/#/%25252540agency%2525253Amatrix.test">x</a>`, true},
+		{`<a href="https://matrix.to/#/%2525252540agency%252525253Amatrix.test">x</a>`, true},
 		{`<a href="%zz">x</a>`, false},
 		{`<a href="https://matrix.to/#/@bob:matrix.test">x</a>`, false},
 	}
@@ -1036,11 +1036,11 @@ func TestMentionDetection_EdgeCases(t *testing.T) {
 		t.Error("nil message mentioned the bot")
 	}
 	// Without a precompiled localpart pattern one is built.
-	if !c.isBotMentioned(&event.MessageEventContent{Body: "hi @claw"}) {
+	if !c.isBotMentioned(&event.MessageEventContent{Body: "hi @agency"}) {
 		t.Error("localpart mention missed")
 	}
 	anon := &MatrixChannel{client: &mautrix.Client{}}
-	if anon.isBotMentioned(&event.MessageEventContent{Body: "hi @claw"}) {
+	if anon.isBotMentioned(&event.MessageEventContent{Body: "hi @agency"}) {
 		t.Error("a bot with no user id was mentioned")
 	}
 }

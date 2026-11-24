@@ -227,7 +227,7 @@ func (c *Config) ResolveCommonDir() string {
 	return filepath.Join(c.dataDir, global.CommonDir)
 }
 
-// InternalPath returns the directory for claw's own state that nobody edits
+// InternalPath returns the directory for agency's own state that nobody edits
 // by hand (<data_dir>/internal): token stores, the device database.
 func (c *Config) InternalPath() string {
 	return filepath.Join(c.dataDir, global.InternalDir)

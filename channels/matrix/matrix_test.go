@@ -18,16 +18,16 @@ import (
 )
 
 func TestMatrixLocalpartMentionRegexp(t *testing.T) {
-	re := localpartMentionRegexp("claw")
+	re := localpartMentionRegexp("agency")
 
 	cases := []struct {
 		text string
 		want bool
 	}{
-		{text: "@claw hello", want: true},
-		{text: "hi @claw:matrix.org", want: true},
+		{text: "@agency hello", want: true},
+		{text: "hi @agency:matrix.org", want: true},
 		{
-			text: "\u6b22\u8fce\u4e00\u4e0bclaw\u5c0f\u9f99\u867e",
+			text: "\u6b22\u8fce\u4e00\u4e0bagency\u5c0f\u9f99\u867e",
 			want: false, // historical false-positive case in PR #356
 		},
 		{text: "mail test@example.com", want: false},
@@ -41,14 +41,14 @@ func TestMatrixLocalpartMentionRegexp(t *testing.T) {
 }
 
 func TestStripUserMention(t *testing.T) {
-	userID := id.UserID("@claw:matrix.org")
+	userID := id.UserID("@agency:matrix.org")
 
 	cases := []struct {
 		in   string
 		want string
 	}{
-		{in: "@claw:matrix.org hello", want: "hello"},
-		{in: "@claw, hello", want: "hello"},
+		{in: "@agency:matrix.org hello", want: "hello"},
+		{in: "@agency, hello", want: "hello"},
 		{in: "no mention here", want: "no mention here"},
 	}
 
@@ -62,7 +62,7 @@ func TestStripUserMention(t *testing.T) {
 func TestIsBotMentioned(t *testing.T) {
 	ch := &MatrixChannel{
 		client: &mautrix.Client{
-			UserID: id.UserID("@claw:matrix.org"),
+			UserID: id.UserID("@agency:matrix.org"),
 		},
 	}
 
@@ -76,7 +76,7 @@ func TestIsBotMentioned(t *testing.T) {
 			msg: event.MessageEventContent{
 				Body: "hello",
 				Mentions: &event.Mentions{
-					UserIDs: []id.UserID{id.UserID("@claw:matrix.org")},
+					UserIDs: []id.UserID{id.UserID("@agency:matrix.org")},
 				},
 			},
 			want: true,
@@ -84,21 +84,21 @@ func TestIsBotMentioned(t *testing.T) {
 		{
 			name: "full user id in body",
 			msg: event.MessageEventContent{
-				Body: "@claw:matrix.org hello",
+				Body: "@agency:matrix.org hello",
 			},
 			want: true,
 		},
 		{
 			name: "localpart with at sign",
 			msg: event.MessageEventContent{
-				Body: "@claw hello",
+				Body: "@agency hello",
 			},
 			want: true,
 		},
 		{
 			name: "localpart without at sign should not match",
 			msg: event.MessageEventContent{
-				Body: "\u6b22\u8fce\u4e00\u4e0bclaw\u5c0f\u9f99\u867e",
+				Body: "\u6b22\u8fce\u4e00\u4e0bagency\u5c0f\u9f99\u867e",
 			},
 			want: false,
 		},
@@ -106,7 +106,7 @@ func TestIsBotMentioned(t *testing.T) {
 			name: "formatted mention href matrix.to plain",
 			msg: event.MessageEventContent{
 				Body:          "hello bot",
-				FormattedBody: `<a href="https://matrix.to/#/@claw:matrix.org">ClawEh</a> hello`,
+				FormattedBody: `<a href="https://matrix.to/#/@agency:matrix.org">Agency</a> hello`,
 			},
 			want: true,
 		},
@@ -114,7 +114,7 @@ func TestIsBotMentioned(t *testing.T) {
 			name: "formatted mention href matrix.to encoded",
 			msg: event.MessageEventContent{
 				Body:          "hello bot",
-				FormattedBody: `<a href="https://matrix.to/#/%40claw%3Amatrix.org">ClawEh</a> hello`,
+				FormattedBody: `<a href="https://matrix.to/#/%40agency%3Amatrix.org">Agency</a> hello`,
 			},
 			want: true,
 		},
@@ -214,7 +214,7 @@ func TestDownloadMedia_WritesResponseToTempFile(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := mautrix.NewClient(server.URL, id.UserID("@claw:matrix.test"), "")
+	client, err := mautrix.NewClient(server.URL, id.UserID("@agency:matrix.test"), "")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}

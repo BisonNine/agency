@@ -13,7 +13,7 @@ import (
 // without a port, and 421 for everything else — including the empty Host of a
 // bare HTTP/1.0 request and a rebinding name that merely contains "localhost".
 func TestHostCheck_AllowedAndRejected(t *testing.T) {
-	names := []string{"192.168.1.10", "Claw.Example.COM:8443", ""}
+	names := []string{"192.168.1.10", "Agency.Example.COM:8443", ""}
 	for _, tc := range []struct {
 		name string
 		host string
@@ -28,12 +28,12 @@ func TestHostCheck_AllowedAndRejected(t *testing.T) {
 		{"IPv6 loopback bare", "::1", http.StatusOK},
 		{"bind host", "192.168.1.10", http.StatusOK},
 		{"bind host with port", "192.168.1.10:18790", http.StatusOK},
-		{"external host", "claw.example.com", http.StatusOK},
-		{"external host other port", "claw.example.com:443", http.StatusOK},
+		{"external host", "agency.example.com", http.StatusOK},
+		{"external host other port", "agency.example.com:443", http.StatusOK},
 		{"other loopback address", "127.0.0.2", http.StatusMisdirectedRequest},
 		{"rebinding name", "attacker.example", http.StatusMisdirectedRequest},
 		{"localhost as a label", "localhost.attacker.example", http.StatusMisdirectedRequest},
-		{"external as a label", "claw.example.com.attacker.example", http.StatusMisdirectedRequest},
+		{"external as a label", "agency.example.com.attacker.example", http.StatusMisdirectedRequest},
 		{"empty", "", http.StatusMisdirectedRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

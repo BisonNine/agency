@@ -116,7 +116,7 @@ func gatewayCmd(debug bool) error {
 		return err
 	}
 
-	// Record the pid so `claw status` can find THIS instance. Scoped to the data
+	// Record the pid so `agency status` can find THIS instance. Scoped to the data
 	// directory because one binary runs several gateways on a host, and a CLI
 	// command already resolves AGENCY_HOME to find the config. Written before the
 	// services start, so an instance that is accepting connections is always
@@ -224,7 +224,7 @@ func startGatewayRun(
 		time.Duration(global.ConfigReloadDebounceSeconds)*time.Second, debug, agentLoop.Alerter(), refAlerts)
 	run.forceReloads = setReloadTrigger(services)
 
-	// Watch the service-token state file so `claw token` changes activate live
+	// Watch the service-token state file so `agency token` changes activate live
 	// (writes are atomic, so no debounce is needed).
 	var stopSvcWatch func()
 	run.serviceTokenChanges, stopSvcWatch = setupFileChangeWatcher(clock.Real, servicetoken.Path(cfg.DataDir()), reloadInterval)

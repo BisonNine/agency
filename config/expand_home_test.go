@@ -8,7 +8,7 @@ func TestExpandHome(t *testing.T) {
 		name, in, want string
 	}{
 		{"empty", "", ""},
-		{"absolute", "/srv/claw", "/srv/claw"},
+		{"absolute", "/srv/agency", "/srv/agency"},
 		{"relative", "agents/bob", "agents/bob"},
 		{"tilde only", "~", "/home/alice"},
 		{"tilde slash", "~/agents/bob", "/home/alice/agents/bob"},

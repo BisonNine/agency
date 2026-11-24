@@ -14,9 +14,9 @@ import { atom, getDefaultStore, useAtomValue } from "jotai"
 export interface ProductNames {
   /** Identifies the product: title, footer, report header. */
   name: string
-  /** Used in running prose: "Claw is reachable from this host only." */
+  /** Used in running prose: "Agency is reachable from this host only." */
   shortName: string
-  /** What the operator types: "claw admin". */
+  /** What the operator types: "agency admin". */
   binaryName: string
 }
 

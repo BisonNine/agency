@@ -135,7 +135,7 @@ func (hs *fakeHomeserver) channel(t *testing.T, mb *bus.MessageBus) *MatrixChann
 	t.Helper()
 	c, err := NewMatrixChannel(config.MatrixConfig{
 		Homeserver:  hs.url,
-		UserID:      "@claw:matrix.test",
+		UserID:      "@agency:matrix.test",
 		AccessToken: "token",
 		AllowFrom:   config.FlexibleStringSlice{"*"},
 	}, mb)

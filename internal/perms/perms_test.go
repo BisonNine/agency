@@ -136,7 +136,7 @@ var tree = []struct {
 	{"common/", 0o700, 0o775, "common folder"},
 	{"common/shared.txt", 0o600, 0o664, "common file"},
 	{"backup/", 0o755, 0o700, "backup folder"},
-	{"backup/claw-backup.tar.gz", 0o600, 0o640, "backup file"},
+	{"backup/agency-backup.tar.gz", 0o600, 0o640, "backup file"},
 	{"skills/", 0o755, 0o710, "default folder"},
 	{"skills/demo/run.sh", 0o755, 0o604, "default file loses exec"},
 	{"cards/x.db", 0o644, 0o600, "a database outside the agents is a secret"},
@@ -208,8 +208,8 @@ func TestEnforceLeavesRunningExecutable(t *testing.T) {
 		rel      string
 		wantWarn bool
 	}{
-		{"claw", true},
-		{"bin/claw", false},
+		{"agency", true},
+		{"bin/agency", false},
 	} {
 		t.Run(c.rel, func(t *testing.T) {
 			home := t.TempDir()
@@ -248,7 +248,7 @@ func TestEnforceCreatesDataDir(t *testing.T) {
 	noExecutable(t)
 	old := syscall.Umask(0o077)
 	defer syscall.Umask(old)
-	home := filepath.Join(t.TempDir(), "claw")
+	home := filepath.Join(t.TempDir(), "agency")
 	cfg := operatorConfig(t, home)
 	if err := Enforce(home, PolicyFor(cfg), Logger{}); err != nil {
 		t.Fatalf("Enforce: %v", err)
@@ -413,7 +413,7 @@ func TestEnforceSymlinkedDataDir(t *testing.T) {
 	if err := os.Chmod(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	home := filepath.Join(t.TempDir(), "claw")
+	home := filepath.Join(t.TempDir(), "agency")
 	if err := os.Symlink(target, home); err != nil {
 		t.Fatal(err)
 	}

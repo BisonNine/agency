@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { getChatState, updateChatStore } from "@/store/chat"
 
-import { useClawChat } from "./use-claw-chat"
+import { useAgencyChat } from "./use-agency-chat"
 
 const initialState = getChatState()
 
@@ -13,7 +13,7 @@ afterEach(() => {
 })
 
 function MessageList() {
-  const { messages, connectionState } = useClawChat()
+  const { messages, connectionState } = useAgencyChat()
   return (
     <div data-testid="chat">
       {connectionState}:{messages.map((m) => m.content).join(",")}
@@ -28,7 +28,7 @@ const message = (id: string, content: string) => ({
   timestamp: 0,
 })
 
-describe("useClawChat", () => {
+describe("useAgencyChat", () => {
   it("re-renders when a message arrives", () => {
     render(<MessageList />)
     expect(screen.getByTestId("chat").textContent).toBe("disconnected:")

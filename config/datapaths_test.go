@@ -16,16 +16,16 @@ import (
 )
 
 func TestToStoredPath(t *testing.T) {
-	home := filepath.FromSlash("/srv/claw")
+	home := filepath.FromSlash("/srv/agency")
 	cases := []struct {
 		name, path, want string
 	}{
-		{"inside", "/srv/claw/agents", "agents"},
-		{"nested", "/srv/claw/tls/my.crt", "tls/my.crt"},
-		{"not clean", "/srv/claw/./agents/../agents/alice/", "agents/alice"},
-		{"the data dir itself", "/srv/claw", "."},
+		{"inside", "/srv/agency/agents", "agents"},
+		{"nested", "/srv/agency/tls/my.crt", "tls/my.crt"},
+		{"not clean", "/srv/agency/./agents/../agents/alice/", "agents/alice"},
+		{"the data dir itself", "/srv/agency", "."},
 		{"outside", "/srv/other/agents", "/srv/other/agents"},
-		{"sibling with the same prefix", "/srv/claw-old/agents", "/srv/claw-old/agents"},
+		{"sibling with the same prefix", "/srv/agency-old/agents", "/srv/agency-old/agents"},
 		{"parent", "/srv", "/srv"},
 		{"relative kept", "agents/alice", "agents/alice"},
 		{"tilde kept", "~/notes", "~/notes"},
@@ -38,23 +38,23 @@ func TestToStoredPath(t *testing.T) {
 			}
 		})
 	}
-	if got := ToStoredPath("", "/srv/claw/agents"); got != "/srv/claw/agents" {
+	if got := ToStoredPath("", "/srv/agency/agents"); got != "/srv/agency/agents" {
 		t.Errorf("without a data dir = %q, want the path as it is", got)
 	}
 }
 
 func TestResolvePath(t *testing.T) {
 	t.Setenv("HOME", "/home/alice")
-	home := "/srv/claw"
+	home := "/srv/agency"
 	cases := []struct {
 		name, path, want string
 	}{
-		{"relative", "agents", "/srv/claw/agents"},
-		{"relative with slashes", "tls/my.crt", "/srv/claw/tls/my.crt"},
+		{"relative", "agents", "/srv/agency/agents"},
+		{"relative with slashes", "tls/my.crt", "/srv/agency/tls/my.crt"},
 		{"absolute", "/srv/other/agents", "/srv/other/agents"},
-		{"absolute inside", "/srv/claw/agents", "/srv/claw/agents"},
+		{"absolute inside", "/srv/agency/agents", "/srv/agency/agents"},
 		{"tilde", "~/notes", "/home/alice/notes"},
-		{"dot", ".", "/srv/claw"},
+		{"dot", ".", "/srv/agency"},
 		{"empty", "", ""},
 	}
 	for _, tc := range cases {
@@ -65,7 +65,7 @@ func TestResolvePath(t *testing.T) {
 		})
 	}
 	// Every stored form resolves to the path it was made from.
-	for _, p := range []string{"/srv/claw/agents/alice", "/srv/claw", "/srv/other"} {
+	for _, p := range []string{"/srv/agency/agents/alice", "/srv/agency", "/srv/other"} {
 		if got := ResolvePath(home, ToStoredPath(home, p)); got != p {
 			t.Errorf("round trip of %q = %q", p, got)
 		}

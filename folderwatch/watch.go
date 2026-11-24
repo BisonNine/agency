@@ -252,7 +252,7 @@ func (w *Watcher) scanFolder(cfg *config.Config, agent *config.AgentConfig, fold
 //
 // "New" is by path, not mtime: appending to or editing an already-seen file does
 // NOT fire — only a file whose path we haven't seen before. The seen-set lives
-// on disk, so detection survives restarts (a file added while claw was
+// on disk, so detection survives restarts (a file added while agency was
 // stopped is new on the next scan; an edited one is not).
 func (w *Watcher) detectNewFiles(agentID, agentName, folder, marker string, fresh bool) []string {
 	var seen map[string]bool

@@ -26,41 +26,41 @@ func TestParseGitHubRef(t *testing.T) {
 	}{
 		{
 			name:         "simple owner/repo",
-			repo:         "PivotLLM/ClawEh",
+			repo:         "PivotLLM/Agency",
 			wantOwner:    "PivotLLM",
-			wantRepoName: "ClawEh",
+			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "",
 		},
 		{
 			name:         "owner/repo with subpath",
-			repo:         "PivotLLM/ClawEh/skills/test",
+			repo:         "PivotLLM/Agency/skills/test",
 			wantOwner:    "PivotLLM",
-			wantRepoName: "ClawEh",
+			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "skills/test",
 		},
 		{
 			name:         "full URL with tree",
-			repo:         "https://github.com/PivotLLM/ClawEh/tree/dev/skills/test",
+			repo:         "https://github.com/PivotLLM/Agency/tree/dev/skills/test",
 			wantOwner:    "PivotLLM",
-			wantRepoName: "ClawEh",
+			wantRepoName: "Agency",
 			wantRef:      "dev",
 			wantSubPath:  "skills/test",
 		},
 		{
 			name:         "full URL with blob",
-			repo:         "https://github.com/PivotLLM/ClawEh/blob/main/README.md",
+			repo:         "https://github.com/PivotLLM/Agency/blob/main/README.md",
 			wantOwner:    "PivotLLM",
-			wantRepoName: "ClawEh",
+			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "README.md",
 		},
 		{
 			name:         "full URL without ref",
-			repo:         "https://github.com/PivotLLM/ClawEh",
+			repo:         "https://github.com/PivotLLM/Agency",
 			wantOwner:    "PivotLLM",
-			wantRepoName: "ClawEh",
+			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "",
 		},
@@ -84,9 +84,9 @@ func TestParseGitHubRef(t *testing.T) {
 		},
 		{
 			name:         "with whitespace",
-			repo:         "  PivotLLM/ClawEh  ",
+			repo:         "  PivotLLM/Agency  ",
 			wantOwner:    "PivotLLM",
-			wantRepoName: "ClawEh",
+			wantRepoName: "Agency",
 			wantRef:      "main",
 			wantSubPath:  "",
 		},
@@ -459,7 +459,7 @@ func TestSkillInstaller_InstallFromGitHub_SkillAlreadyExists(t *testing.T) {
 	}
 
 	// Create an existing skill directory
-	existingSkill := filepath.Join(skillsDir, "ClawEh")
+	existingSkill := filepath.Join(skillsDir, "Agency")
 	if mkErr := os.MkdirAll(existingSkill, 0o755); mkErr != nil {
 		t.Fatalf("mkdir: %v", mkErr)
 	}
@@ -468,7 +468,7 @@ func TestSkillInstaller_InstallFromGitHub_SkillAlreadyExists(t *testing.T) {
 	}
 
 	// Try to install the same skill - should fail
-	err = installer.InstallFromGitHub(context.Background(), "PivotLLM/ClawEh")
+	err = installer.InstallFromGitHub(context.Background(), "PivotLLM/Agency")
 	if err == nil {
 		t.Error("InstallFromGitHub() expected error for existing skill, got nil")
 	}

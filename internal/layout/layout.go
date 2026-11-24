@@ -4,11 +4,11 @@
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
 // Package layout prepares the data directory (AGENCY_HOME) at start by creating
-// the directories claw owns.
+// the directories agency owns.
 //
 // The layout, by purpose:
 //
-//	internal/  claw's own state nobody edits (token stores, the device database, audit.db, agency.pid, agency.lock)
+//	internal/  agency's own state nobody edits (token stores, the device database, audit.db, agency.pid, agency.lock)
 //	cli/       working directory for CLI providers whose model sets no workspace
 //	skills/    shared skills every agent can use
 //	common/    shared directory for the common_* tools (unless agents.common_dir is set)

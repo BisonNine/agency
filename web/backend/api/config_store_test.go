@@ -228,7 +228,7 @@ func TestPutConfig_RejectsWhatLoadConfigRefuses(t *testing.T) {
 		want   string
 	}{
 		{"tls cert without key", func(doc map[string]any) {
-			objectAt(t, doc, "gateway")["tls"] = map[string]any{"cert_file": "/etc/claw/cert.pem"}
+			objectAt(t, doc, "gateway")["tls"] = map[string]any{"cert_file": "/etc/agency/cert.pem"}
 		}, "gateway.tls.key_file"},
 		{"mcp host off-box", func(doc map[string]any) {
 			doc["mcp_host"] = map[string]any{"listen": "0.0.0.0:5911"}

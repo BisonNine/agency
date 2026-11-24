@@ -36,7 +36,7 @@ func backupCfg(t *testing.T, enabled bool, dest string) (*config.Config, string)
 
 func archives(t *testing.T, dest string) int {
 	t.Helper()
-	m, err := filepath.Glob(filepath.Join(dest, "claw-backup-*.tar.gz"))
+	m, err := filepath.Glob(filepath.Join(dest, "agency-backup-*.tar.gz"))
 	if err != nil {
 		t.Fatal(err)
 	}

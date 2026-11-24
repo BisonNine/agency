@@ -16,7 +16,7 @@ import (
 	"go.bison9.com/agency/internal"
 )
 
-// NewTLSCommand returns `claw tls`: it prints the certificate the HTTPS
+// NewTLSCommand returns `agency tls`: it prints the certificate the HTTPS
 // listener presents so an operator can check the fingerprint their browser
 // shows before accepting a self-signed certificate, and --regenerate replaces
 // the self-signed pair.

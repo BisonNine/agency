@@ -461,10 +461,10 @@
         "port": "HTTPS port",
         "port_hint": "Port of the HTTPS listener (default 18443), different from the HTTP port.",
         "external_url": "Hostname / external URL",
-        "external_url_hint": "The address used to reach this server, e.g. https://claw.example.com; its host name is added to the self-signed certificate.",
+        "external_url_hint": "The address used to reach this server, e.g. https://agency.example.com; its host name is added to the self-signed certificate.",
         "extra_names": "Extra certificate names",
         "extra_names_hint": "Additional DNS names or IP addresses for the self-signed certificate, Enter after each.",
-        "extra_names_placeholder": "claw.home.arpa"
+        "extra_names_placeholder": "agency.home.arpa"
       },
       "certificate": {
         "title": "Certificate",
@@ -520,7 +520,7 @@
         "port_hint": "Port of the device listener (default 18791).",
         "external_address": "External address",
         "external_address_hint": "Where devices connect from outside, for example through a reverse proxy.",
-        "external_address_placeholder": "claw.example.com:8443",
+        "external_address_placeholder": "agency.example.com:8443",
         "cidrs": "Allowed network CIDRs",
         "cidrs_hint": "Networks that may reach the device listener; empty allows any, localhost is always allowed.",
         "auto_approve": "Auto-approve pairings",
@@ -651,9 +651,9 @@
       "unsaved_changes": "You have unsaved changes.",
       "log_retention_days": "Log retention (days)",
       "log_retention_days_hint": "Days of rolled daily logs (YYYYMMDD-agency.log / -error.log) to keep. agency.log rolls at local midnight. 0 = keep forever.",
-      "backup_desc": "Nightly backup: config.json, the cron jobs file, credentials, TLS material, state and every SQLite database (sessions, memory) written as one claw-backup-<timestamp>.tar.gz archive. Agent workspace files are not included. On by default.",
+      "backup_desc": "Nightly backup: config.json, the cron jobs file, credentials, TLS material, state and every SQLite database (sessions, memory) written as one agency-backup-<timestamp>.tar.gz archive. Agent workspace files are not included. On by default.",
       "backup_enabled": "Nightly backup",
-      "backup_enabled_hint": "When on, write a claw-backup-<timestamp>.tar.gz archive to the destination directory once a day.",
+      "backup_enabled_hint": "When on, write a agency-backup-<timestamp>.tar.gz archive to the destination directory once a day.",
       "backup_at": "Backup time",
       "backup_at_hint": "Local time of day to run the nightly backup (default 03:00).",
       "backup_retain_days": "Keep backups (days)",

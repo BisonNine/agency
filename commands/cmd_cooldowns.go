@@ -83,7 +83,7 @@ func renderCooldownList(rt *Runtime) string {
 //	openai/gpt-4 — billing — since 12:34:56 (Xm ago); until 12:39:56 (Xm)
 //
 // Times are rendered in the local clock zone — operators read /status on the
-// host they run claw on, not in UTC.
+// host they run agency on, not in UTC.
 func formatCooldownLine(e CooldownEntry, now time.Time) string {
 	reason := e.Reason
 	if reason == "" {

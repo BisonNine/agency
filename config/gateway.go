@@ -28,9 +28,9 @@ type GatewayConfig struct {
 	// certificate generated under <AGENCY_HOME>/tls.
 	TLS TLSConfig `json:"tls,omitempty"`
 	// ExternalURL is the base URL advertised to external clients (e.g. the
-	// claw-auth OAuth utility) for reaching this gateway's HTTP API, and the
+	// agency-auth OAuth utility) for reaching this gateway's HTTP API, and the
 	// name the operator browses to. Empty derives it from the listeners (see
-	// EffectiveExternalURL); set it to e.g. https://claw.example.com:18443 to
+	// EffectiveExternalURL); set it to e.g. https://agency.example.com:18443 to
 	// reach the WebUI by a host name, or to a reverse proxy's URL. Its host is
 	// added to the self-signed certificate and to the accepted Host names.
 	ExternalURL string `json:"external_url,omitempty" env:"AGENCY_GATEWAY_EXTERNAL_URL"`
@@ -114,7 +114,7 @@ func (t TLSConfig) Validate() error {
 	return nil
 }
 
-// DefaultGatewayPort is the default port for the merged claw HTTP server
+// DefaultGatewayPort is the default port for the merged agency HTTP server
 // (gateway + WebUI on a single mux). It matches DefaultConfig's Gateway.Port.
 const DefaultGatewayPort = 18790
 
@@ -221,7 +221,7 @@ func (c *Config) validateListeners() error {
 const AllowAnyAddress = "*"
 
 // PrivateNetworkCIDRs is the RFC1918 private range set, offered as a
-// ready-made allowlist for a LAN install (`claw install --allowed-cidrs`, or
+// ready-made allowlist for a LAN install (`agency install --allowed-cidrs`, or
 // the WebUI). It is NOT a default: an empty Gateway.AllowedCIDRs means loopback
 // only. See EffectiveAllowedCIDRs.
 var PrivateNetworkCIDRs = []string{

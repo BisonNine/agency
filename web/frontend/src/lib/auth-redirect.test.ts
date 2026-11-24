@@ -62,7 +62,7 @@ describe("wrapFetch", () => {
   it("calls onUnauthorized for a protected 401 and still returns the response", async () => {
     vi.stubGlobal("location", {
       ...window.location,
-      origin: "http://claw.local",
+      origin: "http://agency.local",
       pathname: "/config",
       search: "",
     })
@@ -91,7 +91,7 @@ describe("wrapFetch", () => {
   it("marks the gateway unreachable on a network error and reachable on the next response", async () => {
     vi.stubGlobal("location", {
       ...window.location,
-      origin: "http://claw.local",
+      origin: "http://agency.local",
       pathname: "/network",
       search: "",
     })
@@ -110,7 +110,7 @@ describe("wrapFetch", () => {
   it("leaves reachability alone for a cross-origin request", async () => {
     vi.stubGlobal("location", {
       ...window.location,
-      origin: "http://claw.local",
+      origin: "http://agency.local",
       pathname: "/",
       search: "",
     })
@@ -128,7 +128,7 @@ describe("installAuthRedirect", () => {
     const assign = vi.fn()
     vi.stubGlobal("location", {
       ...window.location,
-      origin: "http://claw.local",
+      origin: "http://agency.local",
       pathname: "/models",
       search: "?tab=2",
       assign,

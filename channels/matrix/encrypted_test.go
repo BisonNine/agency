@@ -69,7 +69,7 @@ func TestHandleEncryptedEvent_WarnsOncePerRoom(t *testing.T) {
 
 	c, err := NewMatrixChannel(config.MatrixConfig{
 		Homeserver:  "http://127.0.0.1:1",
-		UserID:      "@claw:example.org",
+		UserID:      "@agency:example.org",
 		AccessToken: "token",
 	}, bus.NewMessageBus())
 	if err != nil {

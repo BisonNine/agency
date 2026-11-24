@@ -1,6 +1,6 @@
 import { defineConfig } from "vitepress"
 
-// The manual is embedded in the claw binary and served at /manual/ behind the
+// The manual is embedded in the agency binary and served at /manual/ behind the
 // WebUI login (web/backend/manual.go). The same build will later back the
 // public website.
 export default defineConfig({

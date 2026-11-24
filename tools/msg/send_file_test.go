@@ -153,7 +153,7 @@ func TestSendFile_Destination(t *testing.T) {
 	}{
 		{"asked turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: constants.AgentMessageChannel}), "Files can't be sent to another agent."},
 		{"sub-agent turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: constants.SubagentChannel, ChatID: "agent:alice:task"}), "Files can't be sent to another agent."},
-		{"claw agent (cli) turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: "cli", ChatID: "direct"}), "This chat can't receive files."},
+		{"agency agent (cli) turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: "cli", ChatID: "direct"}), "This chat can't receive files."},
 		{"recovery turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Channel: "recovery", ChatID: "x"}), "This chat can't receive files."},
 		{"more than one turn", tools.WithReplyChat(context.Background(), tools.ReplyChat{Ambiguous: true}), "answering more than one conversation"},
 		{"no turn (service token)", context.Background(), "There is no chat to send files to."},

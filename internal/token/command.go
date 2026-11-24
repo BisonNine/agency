@@ -1,7 +1,7 @@
 // Agency
 // License: MIT
 
-// Package token implements the `claw token` CLI: mint, rotate, revoke, and list
+// Package token implements the `agency token` CLI: mint, rotate, revoke, and list
 // long-lived per-agent MCP service tokens (see docs/service-tokens.md).
 package token
 
@@ -18,7 +18,7 @@ import (
 	"go.bison9.com/agency/servicetoken"
 )
 
-// NewTokenCommand returns the `claw token` command group.
+// NewTokenCommand returns the `agency token` command group.
 func NewTokenCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "token",

@@ -136,7 +136,7 @@ func TestEventLoop_RoutesEvents(t *testing.T) {
 			Data: &slackevents.AppMentionEvent{User: "U1", Channel: "C1", Text: "<@UBOT> there", TimeStamp: "1.0002"},
 		}},
 	}
-	events <- slashEvent("/claw", "launch", "C1")
+	events <- slashEvent("/agency", "launch", "C1")
 	events <- socketmode.Event{Type: socketmode.EventTypeInteractive, Request: &socketmode.Request{EnvelopeID: "e2"}}
 	events <- socketmode.Event{Type: socketmode.EventTypeInteractive}
 	close(events)
@@ -338,7 +338,7 @@ func TestHandleSlashCommand_Filtering(t *testing.T) {
 	c, mb, _ := newEventChannel(t, config.SlackConfig{}, []string{"U1"}, nil)
 
 	c.handleSlashCommand(socketmode.Event{Data: "not a command"})
-	ev := slashEvent("/claw", "hello", "C1")
+	ev := slashEvent("/agency", "hello", "C1")
 	cmd, ok := ev.Data.(slack.SlashCommand)
 	if !ok {
 		t.Fatal("slashEvent carries no command")

@@ -5,7 +5,7 @@ import remarkBreaks from "remark-breaks"
 import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
-import { formatMessageTime } from "@/hooks/use-claw-chat"
+import { formatMessageTime } from "@/hooks/use-agency-chat"
 import { useProductNames } from "@/store/product"
 
 interface AssistantMessageProps {

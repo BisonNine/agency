@@ -3,7 +3,7 @@ import { atom, getDefaultStore } from "jotai"
 import {
   getInitialActiveSessionId,
   writeStoredSessionId,
-} from "@/lib/claw-chat-state"
+} from "@/lib/agency-chat-state"
 
 export interface ChatMessage {
   id: string

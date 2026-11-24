@@ -134,7 +134,7 @@ func TestGeneratedImages_TooLargeToSend(t *testing.T) {
 	}
 }
 
-// A chat whose channel can't receive files gets the path; so does claw
+// A chat whose channel can't receive files gets the path; so does agency
 // agent's cli channel.
 func TestGeneratedImages_ChannelWithoutFiles(t *testing.T) {
 	for _, channel := range []string{"webui", "cli"} {

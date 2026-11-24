@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestIPAllowlist_HotSwap is the recovery path `claw network` depends on: the
+// TestIPAllowlist_HotSwap is the recovery path `agency network` depends on: the
 // middleware reads the allowlist per request, so widening it on a live listener
 // lets a previously refused client in without recreating the listener (which
 // would drop every WebUI WebSocket connection).
@@ -44,7 +44,7 @@ func TestIPAllowlist_HotSwap(t *testing.T) {
 		t.Fatalf("after widening: status = %d, want %d — a swapped allowlist must apply to the next request", got, http.StatusOK)
 	}
 
-	// Narrowing must take effect just as promptly, or `claw network none` would
+	// Narrowing must take effect just as promptly, or `agency network none` would
 	// report success while still serving the network.
 	store(nil)
 	if got := call(); got != http.StatusForbidden {

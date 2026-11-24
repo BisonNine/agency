@@ -16,7 +16,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// TestOpenStoreKeepsSecretsMode: `claw devicegw` opens the pairing database
+// TestOpenStoreKeepsSecretsMode: `agency devicegw` opens the pairing database
 // with security.permissions.secrets from the config, not the built-in 0600,
 // so it does not undo the mode the gateway set.
 func TestOpenStoreKeepsSecretsMode(t *testing.T) {

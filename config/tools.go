@@ -217,7 +217,7 @@ type MCPConfig struct {
 	LivenessProbeSeconds int `json:"liveness_probe_seconds"`
 }
 
-// MCPClientEffectivelyEnabled reports whether claw should connect out to
+// MCPClientEffectivelyEnabled reports whether agency should connect out to
 // external MCP servers: true iff at least one configured server is enabled.
 func (t *ToolsConfig) MCPClientEffectivelyEnabled() bool {
 	for _, s := range t.MCP.Servers {
@@ -228,9 +228,9 @@ func (t *ToolsConfig) MCPClientEffectivelyEnabled() bool {
 	return false
 }
 
-// MCPHostConfig defines configuration for the MCP server claw exposes
-// (claw acting as an MCP server), used by CLI providers (claude-cli,
-// codex-cli, antigravity-cli, cursor-cli, opencode-cli) so they can call claw's host-side tools natively
+// MCPHostConfig defines configuration for the MCP server agency exposes
+// (agency acting as an MCP server), used by CLI providers (claude-cli,
+// codex-cli, antigravity-cli, cursor-cli, opencode-cli) so they can call agency's host-side tools natively
 // instead of emitting tool-call JSON in their prose. The allowlist is
 // global — applied once for all CLI clients, not per-LLM.
 type MCPHostConfig struct {
@@ -238,7 +238,7 @@ type MCPHostConfig struct {
 	// AutoEnable, when true, starts the MCP host automatically whenever any
 	// enabled model in ModelList uses a *-cli protocol (claude-cli, codex-cli,
 	// antigravity-cli,
-	// gemini-cli). Those CLIs depend on MCP to call claw's host-side tools.
+	// gemini-cli). Those CLIs depend on MCP to call agency's host-side tools.
 	// Explicit Enabled=true always wins.
 	AutoEnable   bool   `json:"auto_enable"             env:"AGENCY_MCP_HOST_AUTO_ENABLE"`
 	Listen       string `json:"listen,omitempty"        env:"AGENCY_MCP_HOST_LISTEN"`

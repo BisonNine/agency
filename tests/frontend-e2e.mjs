@@ -10,7 +10,7 @@
 //
 // The WebUI and /api/* sit behind the admin login, so the suite signs in first
 // and every page and API probe carries that session. Create the account on the
-// dev instance with `claw admin` and export AGENCY_E2E_USER / AGENCY_E2E_PASSWORD.
+// dev instance with `agency admin` and export AGENCY_E2E_USER / AGENCY_E2E_PASSWORD.
 //
 // Requires Playwright and a Chromium build. Both come with the playwright-mcp
 // install: Playwright is looked up in the npx cache under the home directory
@@ -41,7 +41,7 @@ const ONLY = arg("--only", "")
 if (BASE.includes(":18790") && !args.includes("--allow-prod")) {
   console.error(
     `Refusing to run against ${BASE}: that is the production port.\n` +
-      `This suite writes configuration. Point it at claw-dev, or pass --allow-prod.`,
+      `This suite writes configuration. Point it at agency-dev, or pass --allow-prod.`,
   )
   process.exit(2)
 }
@@ -84,7 +84,7 @@ const PASSWORD = process.env.AGENCY_E2E_PASSWORD ?? ""
 if (!USER || !PASSWORD) {
   console.error(
     "AGENCY_E2E_USER and AGENCY_E2E_PASSWORD are not set.\n" +
-      "The WebUI requires an admin login. On the dev instance run `claw admin` to create\n" +
+      "The WebUI requires an admin login. On the dev instance run `agency admin` to create\n" +
       "the account, then export AGENCY_E2E_USER and AGENCY_E2E_PASSWORD before running this suite.",
   )
   process.exit(2)
@@ -193,9 +193,9 @@ async function signIn() {
   if (r.status === 204) return
   const hint =
     r.json?.error === "no admin account"
-      ? "The dev instance has no admin account. Run `claw admin` on it, then export AGENCY_E2E_USER / AGENCY_E2E_PASSWORD."
+      ? "The dev instance has no admin account. Run `agency admin` on it, then export AGENCY_E2E_USER / AGENCY_E2E_PASSWORD."
       : r.status === 401
-        ? `The gateway refused AGENCY_E2E_USER=${JSON.stringify(USER)}. Run \`claw admin\` on the dev instance and export the credentials it creates.`
+        ? `The gateway refused AGENCY_E2E_USER=${JSON.stringify(USER)}. Run \`agency admin\` on the dev instance and export the credentials it creates.`
         : r.status === 429
           ? `Login is locked out (${r.json?.error ?? "too many failures"}). Wait, then retry.`
           : r.text.slice(0, 200)
@@ -725,8 +725,8 @@ if (useGroup("F", "Agents — autosave and list realignment")) {
     // show that agent's own values, not its neighbour's.
     const c = await config()
     // The rail renders `agent.name || agent.id`, so an agent with a display
-    // name is NOT clickable by its id — selecting "claw" misses the button
-    // labelled "Claw".
+    // name is NOT clickable by its id — selecting "agency" misses the button
+    // labelled "Agency".
     const rail = (c.agents.list ?? []).map((a) => a.name || a.id)
     assert(rail.length >= 2, "need at least two agents for this check")
     const { close, page } = await open("/agents")

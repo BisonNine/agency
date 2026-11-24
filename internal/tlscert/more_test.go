@@ -167,7 +167,7 @@ func TestOptionsFromConfig(t *testing.T) {
 	cfg.Gateway.TLS.CertFile = " /a.crt "
 	cfg.Gateway.TLS.KeyFile = " /a.key "
 	cfg.Gateway.TLS.ExtraNames = []string{"alias.example"}
-	cfg.Gateway.ExternalURL = "https://alice.example.com:8443/claw"
+	cfg.Gateway.ExternalURL = "https://alice.example.com:8443/agency"
 	o := OptionsFromConfig(cfg)
 	assert.Equal(t, cfg.DataDir(), o.DataDir)
 	assert.Equal(t, "/a.crt", o.CertFile)

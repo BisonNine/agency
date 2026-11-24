@@ -33,18 +33,18 @@ func TestHTTPHostHostCheck(t *testing.T) {
 	h := newPolicyHost(t, config.GatewayConfig{
 		Host:        "192.168.1.10",
 		Port:        18790,
-		ExternalURL: "https://claw.example.com:8443",
+		ExternalURL: "https://agency.example.com:8443",
 	})
 	cookie := loginCookie(t, h)
 	for host, want := range map[string]int{
-		"localhost:18790":        http.StatusOK,
-		"127.0.0.1:18790":        http.StatusOK,
-		"[::1]:18790":            http.StatusOK,
-		"192.168.1.10:18790":     http.StatusOK,
-		"claw.example.com:8443":  http.StatusOK,
-		"claw.example.com":       http.StatusOK,
-		"attacker.example:18790": http.StatusMisdirectedRequest,
-		"192.168.1.11:18790":     http.StatusMisdirectedRequest,
+		"localhost:18790":         http.StatusOK,
+		"127.0.0.1:18790":         http.StatusOK,
+		"[::1]:18790":             http.StatusOK,
+		"192.168.1.10:18790":      http.StatusOK,
+		"agency.example.com:8443": http.StatusOK,
+		"agency.example.com":      http.StatusOK,
+		"attacker.example:18790":  http.StatusMisdirectedRequest,
+		"192.168.1.11:18790":      http.StatusMisdirectedRequest,
 	} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/config", nil)

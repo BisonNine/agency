@@ -239,7 +239,7 @@ func (h *Handler) handleRegenerateTLS(w http.ResponseWriter, _ *http.Request) {
 	}
 	mgr.UpdateNames(cfg.Gateway.TLS.ExtraNames, externalHost)
 	// The FQDN lookup inside Regenerate is bounded by its own timeout; it is
-	// also reached from `claw tls`, which has no context.
+	// also reached from `agency tls`, which has no context.
 	if err := mgr.Regenerate(); err != nil { //nolint:contextcheck // see above
 		logger.ErrorCF("tls", "Self-signed certificate regeneration from the WebUI failed", map[string]any{"error": err.Error()})
 		writeJSONError(w, http.StatusInternalServerError, "regenerate failed: "+err.Error())

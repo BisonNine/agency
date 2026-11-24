@@ -79,7 +79,7 @@ func (a *Allowlist) Allows(ip net.IP) bool {
 // IPAllowlist gates next on the client's source address. The allowlist is read
 // through current on every request rather than captured, so a config reload can
 // change the policy on a live listener — the recovery path for an operator who
-// has locked themselves out (`claw network`).
+// has locked themselves out (`agency network`).
 //
 // It matches the TCP peer (RemoteAddr), so behind a reverse proxy the access
 // control belongs at the proxy instead.

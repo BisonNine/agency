@@ -79,12 +79,12 @@ func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 // the title and the meta tags the frontend reads — on every SPA path, and is
 // revalidated on each load.
 func TestIndex_CarriesProductNames(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	h := spaHandler(templatedFS())
 	want := `<title>` + app.Name() + `</title>` +
 		`<meta name="product-name" content="` + app.Name() + `">` +
 		`<meta name="product-short-name" content="` + app.ShortName() + `">` +
-		`<meta name="product-binary-name" content="alice-claw">`
+		`<meta name="product-binary-name" content="alice-agency">`
 	for _, p := range []string{"/", "/agents", "/index.html", "/login?next=%2Fagents"} {
 		rr := get(t, h, p)
 		if rr.Code != http.StatusOK || rr.Body.String() != want {

@@ -67,7 +67,7 @@ func ValidateModel(m *modelspec.Model) error {
 
 // HasCLIProvider reports whether any enabled model in ModelList uses a
 // *-cli protocol (claude-cli, codex-cli, gemini-cli). Those CLIs rely on
-// the MCP host to call claw's tools natively.
+// the MCP host to call agency's tools natively.
 func (c *Config) HasCLIProvider() bool {
 	for i := range c.Models {
 		if !c.Models[i].Enabled {

@@ -26,7 +26,7 @@ func TestHandleListSkills(t *testing.T) {
 	base := t.TempDir()
 	cfg.Agents.BaseDir = base
 	// A per-agent skill is not part of the shared view.
-	workspace := filepath.Join(base, "claw")
+	workspace := filepath.Join(base, "agency")
 	err = config.SaveConfig(configPath, cfg)
 	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)

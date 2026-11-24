@@ -172,7 +172,7 @@ func TestDetectNewFiles_UpgradeBaselinesSilently(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	old := "# claw allowed folder v1\na.md\n"
+	old := "# agency allowed folder v1\na.md\n"
 	oldMarker := filepath.Join(dir, global.FolderMarkerFile)
 	if err := os.WriteFile(oldMarker, []byte(old), 0o600); err != nil {
 		t.Fatal(err)

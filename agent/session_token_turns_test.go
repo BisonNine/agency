@@ -178,7 +178,7 @@ func turnsDuringModelCall(t *testing.T, run func(al *AgentLoop) error) []sourceC
 }
 
 // TestTurnChat_PerTurnKind: the chat a CLI provider's MCP output goes to is
-// the chat of the turn it runs in: a claw agent (cli) turn has only its
+// the chat of the turn it runs in: a agency agent (cli) turn has only its
 // internal channel (so msg_send and msg_send_file refuse), never the chat the
 // session last heard from; a tool result's (system) turn answers the chat in
 // its origin; a scheduled job's turn answers the chat it was sent to.
@@ -188,7 +188,7 @@ func TestTurnChat_PerTurnKind(t *testing.T) {
 		run           func(al *AgentLoop) error
 		channel, chat string
 	}{
-		{"claw agent (cli)", func(al *AgentLoop) error {
+		{"agency agent (cli)", func(al *AgentLoop) error {
 			_, err := al.ProcessDirect(context.Background(), "hi", "agent:main:main")
 			return err
 		}, "cli", "direct"},

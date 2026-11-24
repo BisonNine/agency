@@ -69,7 +69,7 @@ func TestDecideTurnReply(t *testing.T) {
 			wantOutcome: bus.OutcomeError,
 		},
 		{
-			name:       "human not asked from claw is dropped",
+			name:       "human not asked from agency is dropped",
 			end:        turnEnd{err: notAsked},
 			wantAction: replyDrop,
 		},

@@ -124,7 +124,7 @@ func TestProxyNotTrusted(t *testing.T) {
 		want     bool
 	}{
 		{name: "nothing seen"},
-		{name: "external URL alone is not a proxy", external: "https://claw.example.com"},
+		{name: "external URL alone is not a proxy", external: "https://agency.example.com"},
 		{name: "forwarded request seen", seenPeer: "127.0.0.1", want: true},
 		{name: "forwarded request seen, other proxy trusted", seenPeer: "127.0.0.1", trusted: []string{"10.0.0.5"}, want: true},
 		{name: "forwarded request seen, peer trusted", seenPeer: "127.0.0.1", trusted: []string{"127.0.0.0/8"}},
@@ -154,12 +154,12 @@ func TestBehindProxy(t *testing.T) {
 	}{
 		{name: "nothing set"},
 		{name: "trusted proxy", trusted: []string{"10.0.0.5", " 10.0.1.0/24 "}, want: []string{"10.0.0.5", "10.0.1.0/24"}},
-		{name: "https external URL on another port", external: "https://claw.example.com", want: []string{"https://claw.example.com"}},
-		{name: "https external URL served by Agency", external: "https://claw.lan:18443"},
-		{name: "https external URL with HTTPS off", external: "https://claw.lan:18443", tlsMode: TLSModeOff, want: []string{"https://claw.lan:18443"}},
-		{name: "http external URL", external: "http://claw.lan:18790"},
+		{name: "https external URL on another port", external: "https://agency.example.com", want: []string{"https://agency.example.com"}},
+		{name: "https external URL served by Agency", external: "https://agency.lan:18443"},
+		{name: "https external URL with HTTPS off", external: "https://agency.lan:18443", tlsMode: TLSModeOff, want: []string{"https://agency.lan:18443"}},
+		{name: "http external URL", external: "http://agency.lan:18790"},
 		{name: "wss device URL, device plain", devEnabled: true, devExternal: "wss://dev.example.com", want: []string{"wss://dev.example.com"}},
-		{name: "wss device URL served by the device listener", devEnabled: true, devTLS: true, devExternal: "wss://claw.lan:18791"},
+		{name: "wss device URL served by the device listener", devEnabled: true, devTLS: true, devExternal: "wss://agency.lan:18791"},
 		{name: "device URL, device off", devExternal: "wss://dev.example.com"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

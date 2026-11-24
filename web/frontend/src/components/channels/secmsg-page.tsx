@@ -73,7 +73,7 @@ function DaemonCard({
   const name = asString(daemon.name)
   const displayName = name === "" ? "secmsg" : name
 
-  // Account count comes from the daemon live (not config): claw discovers the
+  // Account count comes from the daemon live (not config): agency discovers the
   // daemon's linked accounts, so the card reflects what the daemon actually
   // hosts. null = still loading; "error" = daemon unreachable.
   const [liveCount, setLiveCount] = useState<number | "error" | null>(null)

@@ -34,14 +34,14 @@ func wantLines(t *testing.T, got string, want ...string) {
 // Everything on localhost: the operator is told the WebUI is not served on
 // the network and how to change that, and that there is no admin account yet.
 func TestPrintAccess_LocalhostOnlyNoAdmin(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	got := accessReport(accessConfig(t, "127.0.0.1", config.TLSModeLocalhost))
 	wantLines(t, got,
 		"WebUI (localhost):  http://127.0.0.1:18790/",
 		"WebUI (localhost):  https://127.0.0.1:18443/",
 		"WebUI (network):    not served",
 		"HTTPS is\n                      on localhost only",
-		"Admin account:      none — run: alice-claw admin",
+		"Admin account:      none — run: alice-agency admin",
 	)
 	if strings.Contains(got, "this host") {
 		t.Errorf("the old label must be gone:\n%s", got)

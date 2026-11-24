@@ -54,7 +54,7 @@ var consolidateTrigger func(agentID, sessionKey string)
 func SetConsolidateTrigger(fn func(agentID, sessionKey string)) { consolidateTrigger = fn }
 
 func (globalCogmemProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefinition {
-	// Recover Claw's rich, strongly-typed dependencies. A deps-free enumeration
+	// Recover Agency's rich, strongly-typed dependencies. A deps-free enumeration
 	// (Describe) passes a zero Deps, so cd is the zero ToolDeps and workspace is
 	// empty — handlers guard on an empty session/workspace and never touch disk
 	// during cataloguing.

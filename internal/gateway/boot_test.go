@@ -245,7 +245,7 @@ func TestOpenAuditLog_CreatesDatabase(t *testing.T) {
 // TestAcquireLock_PrivateModes: the lock file and a freshly created AGENCY_HOME
 // are owner-only.
 func TestAcquireLock_PrivateModes(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "claw-home")
+	home := filepath.Join(t.TempDir(), "agency-home")
 	f, err := acquireLock(home)
 	if err != nil {
 		t.Fatalf("acquireLock: %v", err)

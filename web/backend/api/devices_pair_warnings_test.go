@@ -22,13 +22,13 @@ func TestBuildPairResponse_Warnings(t *testing.T) {
 		lanIPs      []string
 		want        []string
 	}{
-		{"localhost only", "127.0.0.1", "https://claw.example.com:8443", lan, []string{"Devices on your network can't connect."}},
+		{"localhost only", "127.0.0.1", "https://agency.example.com:8443", lan, []string{"Devices on your network can't connect."}},
 		{"invalid external address", "0.0.0.0", "ftp://", lan, []string{"The external address is not valid."}},
 		{"localhost and invalid external address", "127.0.0.1", "ftp://", lan, []string{
 			"Devices on your network can't connect.",
 			"The external address is not valid.",
 		}},
-		{"working setup", "0.0.0.0", "wss://claw.example.com", lan, []string{}},
+		{"working setup", "0.0.0.0", "wss://agency.example.com", lan, []string{}},
 		{"working setup on the LAN", "0.0.0.0", "", lan, []string{}},
 		{"no network address", "0.0.0.0", "", nil, []string{"No network address found; set an external address."}},
 	} {

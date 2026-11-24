@@ -8,7 +8,7 @@ import (
 
 // TestAuth_WebUIChannelTokenPassesToChannel pins the non-browser WebUI-channel
 // path: a request under /webui/ that presents the channel token (Bearer header
-// or the claw-token subprotocol) reaches the channel, which validates the token
+// or the agency-token subprotocol) reaches the channel, which validates the token
 // itself; the same request without a token is refused by the login.
 func TestAuth_WebUIChannelTokenPassesToChannel(t *testing.T) {
 	store := NewAuthStore(t.TempDir() + "/credentials.json")
@@ -23,7 +23,7 @@ func TestAuth_WebUIChannelTokenPassesToChannel(t *testing.T) {
 		wantPass bool
 	}{
 		{"bearer token", "/webui/ws", map[string]string{"Authorization": "Bearer abc"}, true},
-		{"claw-token subprotocol", "/webui/ws", map[string]string{"Sec-WebSocket-Protocol": "claw-token, claw-token.abc"}, true},
+		{"agency-token subprotocol", "/webui/ws", map[string]string{"Sec-WebSocket-Protocol": "agency-token, agency-token.abc"}, true},
 		{"no token", "/webui/ws", nil, false},
 		{"other subprotocol", "/webui/ws", map[string]string{"Sec-WebSocket-Protocol": "graphql-ws"}, false},
 		{"bearer outside webui", "/api/config", map[string]string{"Authorization": "Bearer abc"}, false},

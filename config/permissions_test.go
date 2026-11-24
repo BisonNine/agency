@@ -415,10 +415,10 @@ func TestAgentModes(t *testing.T) {
 	cfg.Security.Permissions.Secrets = AreaPermissions{DirMode: "0710", FileMode: "0600"}
 	private := Modes{Dir: 0o710, File: DefaultFileMode}
 	for path, want := range map[string]Modes{
-		filepath.Join(home, "agents", "bob"):           area,
-		filepath.Join(ws, "sessions"):                  area,
-		filepath.Join(home, "internal", "temp", "x"):   private, // the secrets area's
-		filepath.Join(os.TempDir(), "claw-temp-agent"): private,
+		filepath.Join(home, "agents", "bob"):             area,
+		filepath.Join(ws, "sessions"):                    area,
+		filepath.Join(home, "internal", "temp", "x"):     private, // the secrets area's
+		filepath.Join(os.TempDir(), "agency-temp-agent"): private,
 	} {
 		if got := cfg.AgentModes(path); got != want {
 			t.Errorf("AgentModes(%s) = %v, want %v", path, got, want)

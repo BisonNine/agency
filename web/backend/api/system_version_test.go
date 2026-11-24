@@ -27,7 +27,7 @@ func getNamesJSON(t *testing.T, mux *http.ServeMux, path string) map[string]any 
 // TestVersion_CarriesProductNames pins the names the WebUI renders instead of
 // holding the product name itself, and the version it always returned.
 func TestVersion_CarriesProductNames(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	h := &Handler{}
 	mux := http.NewServeMux()
 	h.registerVersionRoutes(mux)
@@ -37,7 +37,7 @@ func TestVersion_CarriesProductNames(t *testing.T) {
 		"version":     app.Version(),
 		"name":        app.Name(),
 		"short_name":  app.ShortName(),
-		"binary_name": "alice-claw",
+		"binary_name": "alice-agency",
 	}
 	for k, v := range want {
 		if got[k] != v {
@@ -49,7 +49,7 @@ func TestVersion_CarriesProductNames(t *testing.T) {
 // TestAuthStatus_CarriesProductNames: the login page needs the names, and the
 // binary name for its "run … admin" hint, before there is a session.
 func TestAuthStatus_CarriesProductNames(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	h := &Handler{}
 	mux := http.NewServeMux()
 	h.registerAuthRoutes(mux)
@@ -58,7 +58,7 @@ func TestAuthStatus_CarriesProductNames(t *testing.T) {
 	for k, v := range map[string]any{
 		"name":        app.Name(),
 		"short_name":  app.ShortName(),
-		"binary_name": "alice-claw",
+		"binary_name": "alice-agency",
 	} {
 		if got[k] != v {
 			t.Errorf("%s = %v, want %v", k, got[k], v)

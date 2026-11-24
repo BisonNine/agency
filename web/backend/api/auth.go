@@ -80,7 +80,7 @@ func (h *Handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 // attempts count toward the per-address and per-username lockout
 // (middleware.LoginLimiter); an attempt while either is locked gets 429 with
 // Retry-After before the password is checked, and restarts the lock. A change
-// to the credentials file (`claw admin`) clears every lock first.
+// to the credentials file (`agency admin`) clears every lock first.
 func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	store := h.authStore()
 	if store == nil {

@@ -166,7 +166,7 @@ func TestBuildInfo_FallsBackForToolchainOnly(t *testing.T) {
 
 // TestVersion_CarriesTheBuildNumber is the point of the whole thing: the number
 // has to be visible wherever the version is, because the surfaces that matter
-// (the startup log, `claw version`, the WebUI footer) all render Version() and
+// (the startup log, `agency version`, the WebUI footer) all render Version() and
 // nothing else.
 func TestVersion_CarriesTheBuildNumber(t *testing.T) {
 	og, ob := gitCommit, buildNumber

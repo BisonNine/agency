@@ -234,7 +234,7 @@ func (al *AgentLoop) setExposeReasoning(agent *AgentInstance, sessionKey string,
 }
 
 // ToolActivityLine renders the one-line "/tools on" breadcrumb for a tool call
-// dispatched over the MCP path (a CLI provider hitting claw's MCP server), or ""
+// dispatched over the MCP path (a CLI provider hitting agency's MCP server), or ""
 // when the session has tool activity off, the agent is unknown, or the tool
 // produces no summary. Wired into the MCP server as a ToolActivityNotifier so
 // CLI-routed tool calls surface to the user the same way loop-dispatched ones do.

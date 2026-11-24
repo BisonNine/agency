@@ -200,7 +200,7 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]any) *toolkit.Re
 
 	// Jobs are addressed to an agent. By default that's the caller; an authorized
 	// (global_cron) agent may target another agent via the `agent` arg. Operators
-	// see everything via the `claw cron` CLI.
+	// see everything via the `agency cron` CLI.
 	callerID := callerAgentID(ctx)
 	if callerID != "" && t.homeAgent != nil {
 		callerID = t.homeAgent(callerID)

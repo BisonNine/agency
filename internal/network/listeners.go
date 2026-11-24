@@ -14,7 +14,7 @@ const (
 	ScopeNetwork   = "network"
 )
 
-// Listeners are the listener settings `claw network` can set, each empty
+// Listeners are the listener settings `agency network` can set, each empty
 // when left alone. They are the settings a bad save from the Network page
 // can flip, and the ones that lock an operator out when they are wrong.
 type Listeners struct {

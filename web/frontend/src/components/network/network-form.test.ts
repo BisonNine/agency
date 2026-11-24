@@ -18,11 +18,11 @@ const loaded: NetworkForm = buildNetworkFormFromConfig({
     host: "0.0.0.0",
     port: 18790,
     tls_port: 18443,
-    external_url: "https://claw.example.com",
+    external_url: "https://agency.example.com",
     allowed_cidrs: ["10.0.0.0/8", "192.168.1.0/24", "172.16.0.0/12"],
     lockout_exempt: ["192.168.1.10"],
     trusted_proxies: ["10.0.0.2"],
-    tls: { mode: "all", extra_names: ["claw.home.arpa"] },
+    tls: { mode: "all", extra_names: ["agency.home.arpa"] },
   },
   channels: {
     device: {
@@ -136,11 +136,11 @@ describe("buildNetworkPatch", () => {
   it("stores the device external address as https://host[:port]", () => {
     expect(
       buildNetworkPatch(
-        { ...loaded, deviceExternalHost: "claw.example.com:42333" },
+        { ...loaded, deviceExternalHost: "agency.example.com:42333" },
         loaded,
       ),
     ).toEqual({
-      channels: { device: { external_url: "https://claw.example.com:42333" } },
+      channels: { device: { external_url: "https://agency.example.com:42333" } },
     })
     expect(
       buildNetworkPatch({ ...loaded, deviceExternalHost: "  " }, loaded),
@@ -149,9 +149,9 @@ describe("buildNetworkPatch", () => {
 
   it("refuses a device external address with a scheme or a path, as a field error", () => {
     for (const bad of [
-      "wss://claw.example.com",
-      "https://claw.example.com:42333",
-      "claw.example.com/ws",
+      "wss://agency.example.com",
+      "https://agency.example.com:42333",
+      "agency.example.com/ws",
     ]) {
       let caught: unknown
       try {
@@ -169,20 +169,20 @@ describe("buildNetworkPatch", () => {
   // the operator edits the field; then it is saved back as https://.
   it("rewrites a stored http:// or ws:// device URL only once the field is edited", () => {
     const base = buildNetworkFormFromConfig({
-      channels: { device: { external_url: "ws://claw.example.com:18791/" } },
+      channels: { device: { external_url: "ws://agency.example.com:18791/" } },
     })
-    expect(base.deviceExternalHost).toBe("claw.example.com:18791")
+    expect(base.deviceExternalHost).toBe("agency.example.com:18791")
     expect(buildNetworkPatch(base, base)).toEqual({})
     expect(
       buildNetworkPatch({ ...base, deviceAutoApprove: true }, base),
     ).toEqual({ channels: { device: { auto_approve: true } } })
     expect(
       buildNetworkPatch(
-        { ...base, deviceExternalHost: "claw.example.com:18792" },
+        { ...base, deviceExternalHost: "agency.example.com:18792" },
         base,
       ),
     ).toEqual({
-      channels: { device: { external_url: "https://claw.example.com:18792" } },
+      channels: { device: { external_url: "https://agency.example.com:18792" } },
     })
   })
 
@@ -212,21 +212,21 @@ describe("buildNetworkFormFromConfig", () => {
 
 describe("device external address mapping", () => {
   it("strips https, http, wss and ws schemes and a trailing slash", () => {
-    expect(deviceHostFromURL("https://claw.example.com:42333")).toBe(
-      "claw.example.com:42333",
+    expect(deviceHostFromURL("https://agency.example.com:42333")).toBe(
+      "agency.example.com:42333",
     )
     expect(deviceHostFromURL("http://10.0.0.5:18791/")).toBe("10.0.0.5:18791")
-    expect(deviceHostFromURL("wss://claw.example.com/")).toBe(
-      "claw.example.com",
+    expect(deviceHostFromURL("wss://agency.example.com/")).toBe(
+      "agency.example.com",
     )
-    expect(deviceHostFromURL("WS://claw.example.com")).toBe("claw.example.com")
-    expect(deviceHostFromURL("claw.example.com")).toBe("claw.example.com")
+    expect(deviceHostFromURL("WS://agency.example.com")).toBe("agency.example.com")
+    expect(deviceHostFromURL("agency.example.com")).toBe("agency.example.com")
     expect(deviceHostFromURL("")).toBe("")
   })
 
   it("adds https:// to a typed host and leaves blank blank", () => {
-    expect(deviceURLFromHost("claw.example.com:42333")).toBe(
-      "https://claw.example.com:42333",
+    expect(deviceURLFromHost("agency.example.com:42333")).toBe(
+      "https://agency.example.com:42333",
     )
     expect(deviceURLFromHost(" 10.0.0.5 ")).toBe("https://10.0.0.5")
     expect(deviceURLFromHost("")).toBe("")

@@ -16,7 +16,7 @@ import (
 
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/config"
-	clawmcp "go.bison9.com/agency/mcp"
+	agencymcp "go.bison9.com/agency/mcp"
 )
 
 // newRefreshTestServer serves an in-process streamable-HTTP MCP server with one
@@ -179,7 +179,7 @@ func TestRefreshMCPServer_UnknownServer(t *testing.T) {
 	_, ts := newRefreshTestServer(t)
 	al := newMCPAgentLoop(t, ts.URL)
 
-	if err := al.RefreshMCPServer(context.Background(), "nope"); !errors.Is(err, clawmcp.ErrUnknownServer) {
+	if err := al.RefreshMCPServer(context.Background(), "nope"); !errors.Is(err, agencymcp.ErrUnknownServer) {
 		t.Fatalf("RefreshMCPServer(unknown) = %v, want ErrUnknownServer", err)
 	}
 }
@@ -189,7 +189,7 @@ func TestRefreshMCPServer_NoManager(t *testing.T) {
 	al := mustNewAgentLoop(t, toolRegTestConfig(t), bus.NewMessageBus(), &mockProvider{}, nil)
 	t.Cleanup(func() { al.Close(context.Background()) })
 
-	if err := al.RefreshMCPServer(context.Background(), "svc"); !errors.Is(err, clawmcp.ErrUnknownServer) {
+	if err := al.RefreshMCPServer(context.Background(), "svc"); !errors.Is(err, agencymcp.ErrUnknownServer) {
 		t.Fatalf("RefreshMCPServer without a manager = %v, want ErrUnknownServer", err)
 	}
 }

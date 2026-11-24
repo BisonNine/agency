@@ -65,7 +65,7 @@ func deliveryText(p cron.CronPayload) string {
 	return s
 }
 
-// cronRows reads the job store (the file `claw cron list` and the gateway
+// cronRows reads the job store (the file `agency cron list` and the gateway
 // read) without starting the scheduler.
 func cronRows(path string) [][]string {
 	if _, err := os.Stat(path); err != nil {

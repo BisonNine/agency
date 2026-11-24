@@ -35,7 +35,7 @@
 // untrusted content for the model; a classifier must read them as JSON.
 //
 // With -admin-credentials <AGENCY_HOME> it instead writes the WebUI admin
-// account from AGENCY_ADMIN_USER and AGENCY_ADMIN_PASSWORD (what `claw install`
+// account from AGENCY_ADMIN_USER and AGENCY_ADMIN_PASSWORD (what `agency install`
 // does without a terminal) and exits, so the test can log in to the API.
 package main
 

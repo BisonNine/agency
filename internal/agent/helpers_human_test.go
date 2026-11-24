@@ -11,9 +11,9 @@ import (
 	"go.bison9.com/agency/config"
 )
 
-// `claw agent` applies the same human-agent rules as the gateway: an agent
+// `agency agent` applies the same human-agent rules as the gateway: an agent
 // breaking them is not run, and a valid one is.
-func TestPruneHumanProblems_ClawAgent(t *testing.T) {
+func TestPruneHumanProblems_AgencyAgent(t *testing.T) {
 	build := func(models []string) *config.Config {
 		cfg := config.DefaultConfig()
 		cfg.Providers = []modelspec.Provider{

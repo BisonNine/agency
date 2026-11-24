@@ -177,14 +177,14 @@ func TestPair_AlreadyProvisioned(t *testing.T) {
 // TestPair_ExternalURL: the external URL is what the QR advertises, so no LAN
 // warning is printed even without a LAN address.
 func TestPair_ExternalURL(t *testing.T) {
-	newHome(t, `{"channels":{"device":{"enabled":true,"token":"tok","word_token":"a b c d e","host":"0.0.0.0","external_url":"https://claw.example.com"}}}`)
+	newHome(t, `{"channels":{"device":{"enabled":true,"token":"tok","word_token":"a b c d e","host":"0.0.0.0","external_url":"https://agency.example.com"}}}`)
 	stubLANIPs(t)
 	var err error
 	out := captureStdout(t, func() { err = pair() })
 	if err != nil {
 		t.Fatalf("pair: %v", err)
 	}
-	if !strings.Contains(out, "wss://claw.example.com:443") {
+	if !strings.Contains(out, "wss://agency.example.com:443") {
 		t.Errorf("connect URL missing:\n%s", out)
 	}
 	if strings.Contains(out, "no routable LAN") {

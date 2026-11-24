@@ -71,7 +71,7 @@ func (globalClassifierProvider) RegisterTools(deps toolspec.Deps) []toolspec.Too
 	}
 	svc := service.Load()
 	if svc == nil {
-		// Only the gateway runs classifiers (`claw agent` has no service).
+		// Only the gateway runs classifiers (`agency agent` has no service).
 		logger.DebugCF("classifier", "no classifier service in this process; no classifier tools",
 			map[string]any{"agent": deps.AgentID})
 		return nil

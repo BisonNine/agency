@@ -35,7 +35,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(out)
 }
 
-// `claw status` reads configuration from disk and used to describe an
+// `agency status` reads configuration from disk and used to describe an
 // installation rather than a running system — it could not say whether Agency
 // was up. The process line is the answer, so its two states are worth pinning.
 func TestPrintProcess_ReportsNotRunningWithoutAPidFile(t *testing.T) {
@@ -54,7 +54,7 @@ func TestPrintProcess_ReportsNotRunningWithoutAPidFile(t *testing.T) {
 // worse than saying nothing.
 func TestPrintProcess_TreatsAStalePidFileAsNotRunning(t *testing.T) {
 	dir := t.TempDir()
-	// Pid 1 exists on every Linux host and is emphatically not claw, which is
+	// Pid 1 exists on every Linux host and is emphatically not agency, which is
 	// the case the comm check exists to reject.
 	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0o700); err != nil {
 		t.Fatal(err)
@@ -66,14 +66,14 @@ func TestPrintProcess_TreatsAStalePidFileAsNotRunning(t *testing.T) {
 	got := captureStdout(t, func() { printProcess(dir) })
 
 	if !strings.Contains(got, "not running") {
-		t.Errorf("output = %q, want not running for a pid that is not claw", got)
+		t.Errorf("output = %q, want not running for a pid that is not agency", got)
 	}
 	if strings.Contains(got, "RAM") {
 		t.Errorf("output = %q, want no memory figure for a process that is not ours", got)
 	}
 }
 
-// The figure people quote is "my claw uses N MB", so the units are the whole
+// The figure people quote is "my agency uses N MB", so the units are the whole
 // point of this line. A regression to raw bytes, or to the wrong divisor, is
 // invisible unless something asserts the rendering.
 func TestHumanBytes(t *testing.T) {

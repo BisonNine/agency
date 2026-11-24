@@ -21,7 +21,7 @@ import (
 	"go.bison9.com/agency/utils"
 )
 
-// cliSessionKey is the session key `claw agent` sends with each message. The
+// cliSessionKey is the session key `agency agent` sends with each message. The
 // loop routes every message to the agent's one conversation (agent:<id>:main)
 // whatever key it carries.
 const cliSessionKey = "cli:default"
@@ -119,7 +119,7 @@ func interactiveMode(agentLoop *agent.AgentLoop) {
 
 	rl, err := newLineReader(&readline.Config{
 		Prompt:          prompt,
-		HistoryFile:     filepath.Join(os.TempDir(), ".claw_history"),
+		HistoryFile:     filepath.Join(os.TempDir(), ".agency_history"),
 		HistoryLimit:    100,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",

@@ -139,7 +139,7 @@ func (o Options) now() time.Time {
 	return time.Now()
 }
 
-// Info describes a loaded certificate, for logs, the report and `claw tls`.
+// Info describes a loaded certificate, for logs, the report and `agency tls`.
 type Info struct {
 	Source            Source
 	CertFile, KeyFile string
@@ -389,7 +389,7 @@ func (m *Manager) Watch(ctx context.Context, interval time.Duration) {
 		interval = DefaultPollInterval
 	}
 	go func() {
-		m.CheckExpiry() //nolint:contextcheck // the FQDN lookup inside is bounded by its own timeout; CheckExpiry is also reached from Load and `claw tls`, which have no context
+		m.CheckExpiry() //nolint:contextcheck // the FQDN lookup inside is bounded by its own timeout; CheckExpiry is also reached from Load and `agency tls`, which have no context
 		poll := time.NewTicker(interval)
 		defer poll.Stop()
 		daily := time.NewTicker(expiryCheckInterval)

@@ -139,10 +139,10 @@ func TestConfig_NoAgentsListInheritsDefault(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// A config that omits agents.list should still have the default "claw"
+	// A config that omits agents.list should still have the default "agency"
 	// agent baked in by DefaultConfig(), so the gateway can start cleanly.
-	if len(cfg.Agents.List) != 1 || cfg.Agents.List[0].ID != "claw" {
-		t.Errorf("expected default claw agent to be preserved, got %+v", cfg.Agents.List)
+	if len(cfg.Agents.List) != 1 || cfg.Agents.List[0].ID != "agency" {
+		t.Errorf("expected default agency agent to be preserved, got %+v", cfg.Agents.List)
 	}
 	if len(cfg.Bindings) != 0 {
 		t.Errorf("bindings should be empty, got %d", len(cfg.Bindings))
@@ -418,9 +418,9 @@ func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 }
 
 // The data-directory paths all hang off AGENCY_HOME: the shared common
-// directory, claw's internal state and the CLI working directory.
+// directory, agency's internal state and the CLI working directory.
 func TestDefaultConfig_DataDirPaths(t *testing.T) {
-	t.Setenv("AGENCY_HOME", "/custom/claw/home")
+	t.Setenv("AGENCY_HOME", "/custom/agency/home")
 
 	cfg := DefaultConfig()
 	for name, got := range map[string]string{
@@ -431,11 +431,11 @@ func TestDefaultConfig_DataDirPaths(t *testing.T) {
 		"FusionTokensPath": cfg.FusionTokensPath(),
 	} {
 		want := map[string]string{
-			"ResolveCommonDir": "/custom/claw/home/common",
-			"InternalPath":     "/custom/claw/home/internal",
-			"CLIPath":          "/custom/claw/home/cli",
-			"SkillsPath":       "/custom/claw/home/skills",
-			"FusionTokensPath": "/custom/claw/home/internal/fusion-tokens.db",
+			"ResolveCommonDir": "/custom/agency/home/common",
+			"InternalPath":     "/custom/agency/home/internal",
+			"CLIPath":          "/custom/agency/home/cli",
+			"SkillsPath":       "/custom/agency/home/skills",
+			"FusionTokensPath": "/custom/agency/home/internal/fusion-tokens.db",
 		}[name]
 		if got != want {
 			t.Errorf("%s = %q, want %q", name, got, want)
@@ -448,10 +448,10 @@ func TestDefaultConfig_DataDirPaths(t *testing.T) {
 	}
 }
 
-// The seeded agent has no explicit workspace, so it lives under agents/claw,
+// The seeded agent has no explicit workspace, so it lives under agents/agency,
 // and loading the default config creates nothing on disk.
 func TestDefaultConfig_SeedAgentWorkspace(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "claw-home")
+	home := filepath.Join(t.TempDir(), "agency-home")
 	t.Setenv("AGENCY_HOME", home)
 
 	cfg := DefaultConfig()

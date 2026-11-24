@@ -36,7 +36,7 @@ vi.mock("@/api/system", () => ({
 vi.mock("@/hooks/use-sidebar-channels", () => ({
   useSidebarChannels: () => ({ channelItems: [] }),
 }))
-vi.mock("@/lib/claw-chat-controller", () => ({ teardownChatStore: vi.fn() }))
+vi.mock("@/lib/agency-chat-controller", () => ({ teardownChatStore: vi.fn() }))
 
 async function renderSidebar() {
   // The product name comes from the server; the sidebar holds none of its own.

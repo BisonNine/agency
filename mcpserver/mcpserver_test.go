@@ -229,7 +229,7 @@ func TestAddTools_NilParametersStillRegisters(t *testing.T) {
 	}
 }
 
-// TestAddTools_ExternalNaming pins the published-name scheme: claw-native tools
+// TestAddTools_ExternalNaming pins the published-name scheme: agency-native tools
 // are advertised under their own registry name (no prefix), while upstream MCP
 // tools (ExternalNamer) publish under "<server>_<tool>" rather than their
 // internal "mcp_" name.

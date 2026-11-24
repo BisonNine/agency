@@ -18,7 +18,7 @@ import (
 // and the stdlib-only leaves internal/mergepatch and internal/dotpath, and
 // classifierfs imports nothing, so config can name the classifier folder
 // without depending on the engine and the agent loop can host it.
-func TestClassifierImportsNoClawEhPackage(t *testing.T) {
+func TestClassifierImportsNoAgencyPackage(t *testing.T) {
 	const module = "go.bison9.com/agency/"
 	for dir, allowed := range map[string]map[string]bool{
 		".": {

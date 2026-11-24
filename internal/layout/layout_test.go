@@ -17,7 +17,7 @@ import (
 // newConfig returns the default config with AGENCY_HOME at a fresh temp dir.
 func newConfig(t *testing.T) (*config.Config, string) {
 	t.Helper()
-	home := filepath.Join(t.TempDir(), "claw-home")
+	home := filepath.Join(t.TempDir(), "agency-home")
 	t.Setenv("AGENCY_HOME", home)
 	return config.DefaultConfig(), home
 }

@@ -1,7 +1,7 @@
 // Agency - Cognitive Memory CLI
 // License: MIT
 
-// Package memory provides the `claw memory` maintenance subcommands.
+// Package memory provides the `agency memory` maintenance subcommands.
 package memory
 
 import (
@@ -17,7 +17,7 @@ import (
 	"go.bison9.com/agency/internal"
 )
 
-// NewMemoryCommand builds the `claw memory` command group.
+// NewMemoryCommand builds the `agency memory` command group.
 func NewMemoryCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "memory",

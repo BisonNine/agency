@@ -15,7 +15,7 @@ import (
 // nothing away:
 //
 //   - /health, /ready — liveness and readiness probes.
-//   - /ping, /api/v1/ — the MCPFusion OAuth API that claw-auth drives; it
+//   - /ping, /api/v1/ — the MCPFusion OAuth API that agency-auth drives; it
 //     authenticates its own requests.
 //   - POST /api/message/{token} — the token-in-path message API.
 //   - the auth endpoints themselves, or nobody could log in.
@@ -56,7 +56,7 @@ func IsAuthExempt(r *http.Request) bool {
 // unauthenticated visitor on it.
 //
 // Without an admin account (no usable credentials file) every protected
-// request is refused with 401 and the hint to run `claw admin`. The store is
+// request is refused with 401 and the hint to run `agency admin`. The store is
 // read per request through a current-value func; a nil store fails closed.
 func Auth(store func() *AuthStore, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +86,7 @@ func Auth(store func() *AuthStore, next http.Handler) http.Handler {
 
 // channelTokenPresented reports whether r is a WebUI-channel request from a
 // non-browser client carrying the channel token (`Authorization: Bearer` or
-// the `claw-token` WebSocket subprotocol). Those requests pass to the channel,
+// the `agency-token` WebSocket subprotocol). Those requests pass to the channel,
 // which validates the token itself; without a token the login applies.
 func channelTokenPresented(r *http.Request) bool {
 	if !strings.HasPrefix(r.URL.Path, "/webui/") {
@@ -96,7 +96,7 @@ func channelTokenPresented(r *http.Request) bool {
 		return true
 	}
 	for p := range strings.SplitSeq(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
-		if strings.HasPrefix(strings.TrimSpace(p), "claw-token") {
+		if strings.HasPrefix(strings.TrimSpace(p), "agency-token") {
 			return true
 		}
 	}

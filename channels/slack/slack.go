@@ -785,7 +785,7 @@ type slashResponse struct {
 }
 
 // builtinCommands is Agency's command registry, used to tell a Slack slash
-// command that is an Agency command ("/model") from a launcher ("/claw").
+// command that is an Agency command ("/model") from a launcher ("/agency").
 var builtinCommands = commands.NewRegistry(commands.BuiltinDefinitions())
 
 // isBuiltinCommand reports whether name ("model", "/model") is an Agency
@@ -797,8 +797,8 @@ func isBuiltinCommand(name string) bool {
 
 // slashCommandText turns a Slack slash command into the text Agency handles.
 // A command named after an Agency command runs it with its text as arguments:
-// "/model 0" is "/model 0". Any other name ("/claw") is a launcher: its first
-// word is the command ("/claw model 0" is "/model 0", with or without a "/"
+// "/model 0" is "/model 0". Any other name ("/agency") is a launcher: its first
+// word is the command ("/agency model 0" is "/model 0", with or without a "/"
 // or "!" typed before it), a bare launcher is "/help", and text that does not
 // start with a command reaches the agent as an ordinary message.
 func slashCommandText(command, text string) string {

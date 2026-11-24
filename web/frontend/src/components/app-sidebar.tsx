@@ -49,7 +49,7 @@ import {
 } from "@/components/ui/sidebar"
 import { useSidebarChannels } from "@/hooks/use-sidebar-channels"
 import { LOGIN_PATH } from "@/lib/auth-redirect"
-import { teardownChatStore } from "@/lib/claw-chat-controller"
+import { teardownChatStore } from "@/lib/agency-chat-controller"
 import { useProductNames } from "@/store/product"
 
 interface NavSubItem {
@@ -439,7 +439,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          {/* The manual is a separate site served by claw, so it opens in a
+          {/* The manual is a separate site served by agency, so it opens in a
               new tab and leaves the WebUI where it was. */}
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip={t("navigation.manual")}>
