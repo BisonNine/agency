@@ -12,15 +12,15 @@ import (
 
 func TestParseSystemdUnit(t *testing.T) {
 	h := fakeHost(t)
-	unitFile := "/etc/systemd/system/claw.service"
+	unitFile := "/etc/systemd/system/agency.service"
 	unitContent := `[Unit]
 Description=ClawEh — Personal AI Assistant
 After=network-online.target
 
 [Service]
 Type=simple
-User=clawuser
-ExecStart=/opt/agency/claw --some-flag
+User=agencyuser
+ExecStart=/opt/agency/agency --some-flag
 Environment=AGENCY_HOME=/opt/agency
 Restart=on-failure
 
@@ -30,11 +30,11 @@ WantedBy=multi-user.target
 	writeHostFile(t, h, unitFile, unitContent, 0o644)
 
 	inst := h.parseSystemdUnit(unitFile, "systemd-system")
-	if inst.BinaryPath != "/opt/agency/claw" {
-		t.Errorf("BinaryPath = %q, want /opt/agency/claw", inst.BinaryPath)
+	if inst.BinaryPath != "/opt/agency/agency" {
+		t.Errorf("BinaryPath = %q, want /opt/agency/agency", inst.BinaryPath)
 	}
-	if inst.User != "clawuser" {
-		t.Errorf("User = %q, want clawuser", inst.User)
+	if inst.User != "agencyuser" {
+		t.Errorf("User = %q, want agencyuser", inst.User)
 	}
 	if inst.AgencyHome != "/opt/agency" {
 		t.Errorf("AgencyHome = %q, want /opt/agency", inst.AgencyHome)
@@ -53,7 +53,7 @@ func TestParseSystemdUnit_QuotedAndInferred(t *testing.T) {
 Description=ClawEh
 
 [Service]
-ExecStart=/opt/agency/claw
+ExecStart=/opt/agency/agency
 Environment="AGENCY_HOME=/opt/agency"
 `
 	writeHostFile(t, h, unit1, content1, 0o644)
@@ -62,13 +62,13 @@ Environment="AGENCY_HOME=/opt/agency"
 		t.Errorf("quoted AGENCY_HOME: got %q, want /opt/agency", inst1.AgencyHome)
 	}
 
-	// 2. No AGENCY_HOME env var, but ExecStart=/opt/agency/claw
+	// 2. No AGENCY_HOME env var, but ExecStart=/opt/agency/agency
 	unit2 := "/units/inferred.service"
 	content2 := `[Unit]
 Description=ClawEh
 
 [Service]
-ExecStart=/opt/agency/claw
+ExecStart=/opt/agency/agency
 Environment=PATH=/opt/agency:/usr/bin
 `
 	writeHostFile(t, h, unit2, content2, 0o644)
@@ -85,12 +85,12 @@ func TestParseLaunchdPlist(t *testing.T) {
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.pivotllm.claweh</string>
+	<string>com.pivotllm.agency</string>
 	<key>UserName</key>
-	<string>macclaw</string>
+	<string>macagency</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/agency/bin/claw</string>
+		<string>/opt/agency/bin/agency</string>
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>
@@ -103,11 +103,11 @@ func TestParseLaunchdPlist(t *testing.T) {
 	writeHostFile(t, h, plistFile, plistContent, 0o644)
 
 	inst := h.parseLaunchdPlist(plistFile, "launchd-daemon")
-	if inst.BinaryPath != "/opt/agency/bin/claw" {
-		t.Errorf("BinaryPath = %q, want /opt/agency/bin/claw", inst.BinaryPath)
+	if inst.BinaryPath != "/opt/agency/bin/agency" {
+		t.Errorf("BinaryPath = %q, want /opt/agency/bin/agency", inst.BinaryPath)
 	}
-	if inst.User != "macclaw" {
-		t.Errorf("User = %q, want macclaw", inst.User)
+	if inst.User != "macagency" {
+		t.Errorf("User = %q, want macagency", inst.User)
 	}
 	if inst.AgencyHome != "/opt/agency" {
 		t.Errorf("AgencyHome = %q, want /opt/agency", inst.AgencyHome)
@@ -119,15 +119,15 @@ func TestIsBuildOrTempPath(t *testing.T) {
 		path string
 		want bool
 	}{
-		{"/home/user/claw/build/claw", true},
-		{"/tmp/claw", true},
-		{"/tmp/claw-upgrade-123/claw", true},
-		{"/var/tmp/claw", true},
-		{"/opt/agency/claw", false},
+		{"/home/user/agency/build/agency", true},
+		{"/tmp/agency", true},
+		{"/tmp/agency-upgrade-123/agency", true},
+		{"/var/tmp/agency", true},
+		{"/opt/agency/agency", false},
 		{"/opt/agency", false},
-		{"/usr/local/bin/claw", false},
-		{"/home/user/.local/bin/claw", false},
-		{"/home/user/bin/claw", false},
+		{"/usr/local/bin/agency", false},
+		{"/home/user/.local/bin/agency", false},
+		{"/home/user/bin/agency", false},
 	}
 
 	for _, tc := range cases {
@@ -140,7 +140,7 @@ func TestIsBuildOrTempPath(t *testing.T) {
 
 // fakeHost is a host rooted in a temp dir whose commands all fail, so a test
 // never reads the real /opt/agency, /etc/systemd or home directory, nor finds
-// the test binary or a claw on PATH.
+// the test binary or a agency on PATH.
 func fakeHost(t *testing.T) *host {
 	t.Helper()
 	return &host{
@@ -178,17 +178,15 @@ func currentOwner(t *testing.T) string {
 }
 
 // An /opt/agency install is found by its data directory; its binary is
-// /opt/agency/bin/claw, else the older /opt/agency/claw, and the folder's owner is
-// the account the service runs as.
+// /opt/agency/bin/agency, and the folder's owner is the account the service runs
+// as.
 func TestDetectLinuxInstall_OptAgency(t *testing.T) {
 	cases := []struct {
 		name    string
 		files   []string
 		wantBin string
 	}{
-		{"bin only", []string{"/opt/agency/bin/claw"}, "/opt/agency/bin/claw"},
-		{"old location only", []string{"/opt/agency/claw"}, "/opt/agency/claw"},
-		{"both", []string{"/opt/agency/claw", "/opt/agency/bin/claw"}, "/opt/agency/bin/claw"},
+		{"bin only", []string{"/opt/agency/bin/agency"}, "/opt/agency/bin/agency"},
 		{"no binary", []string{"/opt/agency/config.json"}, ""},
 	}
 	for _, tc := range cases {
@@ -221,8 +219,8 @@ func TestDetectLinuxInstall_OptAgency(t *testing.T) {
 // data directory; whether it is active comes from systemctl.
 func TestDetectLinuxInstall_SystemUnit(t *testing.T) {
 	h := fakeHost(t)
-	writeHostFile(t, h, systemUnitPath, "[Service]\nUser=alice\nExecStart=/opt/agency/bin/claw\n", 0o644)
-	writeHostFile(t, h, "/opt/agency/claw", "x", 0o700)
+	writeHostFile(t, h, systemUnitPath, "[Service]\nUser=alice\nExecStart=/opt/agency/bin/agency\n", 0o644)
+	writeHostFile(t, h, "/opt/agency/agency", "x", 0o700)
 	var asked []string
 	h.commandOK = func(name string, args ...string) bool {
 		asked = append([]string{name}, args...)
@@ -236,13 +234,13 @@ func TestDetectLinuxInstall_SystemUnit(t *testing.T) {
 	if inst.ServiceType != "systemd-system" || inst.ServicePath != systemUnitPath {
 		t.Errorf("service = %q at %q, want systemd-system at %s", inst.ServiceType, inst.ServicePath, systemUnitPath)
 	}
-	if inst.BinaryPath != "/opt/agency/bin/claw" {
-		t.Errorf("BinaryPath = %q, want the unit's ExecStart /opt/agency/bin/claw", inst.BinaryPath)
+	if inst.BinaryPath != "/opt/agency/bin/agency" {
+		t.Errorf("BinaryPath = %q, want the unit's ExecStart /opt/agency/bin/agency", inst.BinaryPath)
 	}
 	if inst.User != "alice" || inst.AgencyHome != "/opt/agency" {
 		t.Errorf("User, AgencyHome = %q, %q, want alice, /opt/agency", inst.User, inst.AgencyHome)
 	}
-	if !inst.IsActive || strings.Join(asked, " ") != "systemctl is-active --quiet claw" {
+	if !inst.IsActive || strings.Join(asked, " ") != "systemctl is-active --quiet agency" {
 		t.Errorf("IsActive = %v from %q, want true from systemctl is-active", inst.IsActive, asked)
 	}
 }
@@ -251,14 +249,14 @@ func TestDetectLinuxInstall_SystemUnit(t *testing.T) {
 // data directory is inferred from the binary.
 func TestDetectLinuxInstall_UserUnit(t *testing.T) {
 	h := fakeHost(t)
-	writeHostFile(t, h, userUnitPath("/home/alice"), "[Service]\nExecStart=/opt/agency/bin/claw\n", 0o644)
+	writeHostFile(t, h, userUnitPath("/home/alice"), "[Service]\nExecStart=/opt/agency/bin/agency\n", 0o644)
 
 	inst := h.detectLinuxInstall("/home/alice")
 	if inst == nil || inst.ServiceType != "systemd-user" {
 		t.Fatalf("detectLinuxInstall() = %+v, want the user service", inst)
 	}
-	if inst.BinaryPath != "/opt/agency/bin/claw" || inst.AgencyHome != "/opt/agency" {
-		t.Errorf("BinaryPath, AgencyHome = %q, %q, want /opt/agency/bin/claw, /opt/agency", inst.BinaryPath, inst.AgencyHome)
+	if inst.BinaryPath != "/opt/agency/bin/agency" || inst.AgencyHome != "/opt/agency" {
+		t.Errorf("BinaryPath, AgencyHome = %q, %q, want /opt/agency/bin/agency, /opt/agency", inst.BinaryPath, inst.AgencyHome)
 	}
 	if inst.IsActive {
 		t.Error("IsActive = true, want false (systemctl reports it inactive)")

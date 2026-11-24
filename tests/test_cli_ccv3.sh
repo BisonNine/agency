@@ -4,7 +4,7 @@
 #
 # The probe suite calls the ccv3 tool itself (tests/test_mcpserver.sh, 4h), and
 # the CLI smoke (tests/test_cli_provider.sh) runs a real CLI turn with the CLI's
-# own tools. Neither shows a *model* reaching one of claw's tools over MCP from
+# own tools. Neither shows a *model* reaching one of agency's tools over MCP from
 # a CLI provider: the system prompt's session token, the CLI's MCP connection
 # back into the gateway, the MCP host's gating of the agent's suite, and the
 # tool itself. This check does. The probe asks main's agent_spawn to run a turn

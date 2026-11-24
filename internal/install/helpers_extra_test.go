@@ -16,8 +16,8 @@ import (
 
 func TestDetectInstall_ByPlatform(t *testing.T) {
 	h := fakeHost(t)
-	writeHostFile(t, h, systemUnitPath, "[Service]\nExecStart=/usr/local/bin/claw\nUser=alice\n", 0o644)
-	writeHostFile(t, h, systemLaunchdPath, "<key>ProgramArguments</key><array><string>/usr/local/bin/claw</string></array>", 0o644)
+	writeHostFile(t, h, systemUnitPath, "[Service]\nExecStart=/usr/local/bin/agency\nUser=alice\n", 0o644)
+	writeHostFile(t, h, systemLaunchdPath, "<key>ProgramArguments</key><array><string>/usr/local/bin/agency</string></array>", 0o644)
 	for goos, wantType := range map[string]string{"linux": "systemd-system", "darwin": "launchd-daemon"} {
 		h.goos = goos
 		inst := h.detectInstall("/home/alice")
@@ -75,15 +75,15 @@ func TestEnsureUserEnv(t *testing.T) {
 	t.Run("only AGENCY_HOME", func(t *testing.T) {
 		t.Setenv("SHELL", "/bin/bash")
 		tu := tuFor(t)
-		note := ensureUserEnv(tu, "/usr/local/bin", "/srv/claw")
+		note := ensureUserEnv(tu, "/usr/local/bin", "/srv/agency")
 		rc, err := os.ReadFile(filepath.Join(tu.HomeDir, ".bashrc"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(rc), "PATH") || !strings.Contains(string(rc), `export AGENCY_HOME="/srv/claw"`) {
+		if strings.Contains(string(rc), "PATH") || !strings.Contains(string(rc), `export AGENCY_HOME="/srv/agency"`) {
 			t.Errorf(".bashrc:\n%s", rc)
 		}
-		if !strings.HasPrefix(note, "Exported AGENCY_HOME=/srv/claw in ") || !strings.HasSuffix(note, "or open a new terminal.") {
+		if !strings.HasPrefix(note, "Exported AGENCY_HOME=/srv/agency in ") || !strings.HasSuffix(note, "or open a new terminal.") {
 			t.Errorf("note = %q", note)
 		}
 	})
@@ -191,7 +191,7 @@ func TestProvisionAndRegister_Errors(t *testing.T) {
 		if err := os.WriteFile(f, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := provisionAndRegister(&TargetUser{}, "/x/claw", "/x", filepath.Join(f, "home"), false); err == nil || !strings.Contains(err.Error(), "creating ") {
+		if _, err := provisionAndRegister(&TargetUser{}, "/x/agency", "/x", filepath.Join(f, "home"), false); err == nil || !strings.Contains(err.Error(), "creating ") {
 			t.Fatalf("err = %v", err)
 		}
 	})
@@ -201,7 +201,7 @@ func TestProvisionAndRegister_Errors(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(home, "config.json"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := provisionAndRegister(&TargetUser{}, "/x/claw", "/x", home, true); err == nil || !strings.Contains(err.Error(), "reading security.permissions") {
+		if _, err := provisionAndRegister(&TargetUser{}, "/x/agency", "/x", home, true); err == nil || !strings.Contains(err.Error(), "reading security.permissions") {
 			t.Fatalf("err = %v", err)
 		}
 	})
@@ -209,7 +209,7 @@ func TestProvisionAndRegister_Errors(t *testing.T) {
 		stubInstallSeams(t, noTerminal)
 		registerService = func(*TargetUser, string, string, string) error { return errors.New("systemctl missing") }
 		var err error
-		captureStdout(t, func() { _, err = provisionAndRegister(&TargetUser{}, "/x/claw", "/x", t.TempDir(), true) })
+		captureStdout(t, func() { _, err = provisionAndRegister(&TargetUser{}, "/x/agency", "/x", t.TempDir(), true) })
 		if err == nil || err.Error() != "systemctl missing" {
 			t.Fatalf("err = %v", err)
 		}
@@ -266,7 +266,7 @@ func TestServicePATH_Branches(t *testing.T) {
 
 func TestSmallHelpers(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, "claw")
+	p := filepath.Join(dir, "agency")
 	if err := copyBinary(p, p); err != nil {
 		t.Errorf("copy onto itself: %v", err)
 	}
@@ -276,19 +276,19 @@ func TestSmallHelpers(t *testing.T) {
 	if ownedByUID(filepath.Join(dir, "missing"), "0") {
 		t.Error("a missing path is owned by someone")
 	}
-	t.Setenv(global.EnvVarHome, "/srv/claw")
-	if got := dataDir("/home/alice"); got != "/srv/claw" {
+	t.Setenv(global.EnvVarHome, "/srv/agency")
+	if got := dataDir("/home/alice"); got != "/srv/agency" {
 		t.Errorf("dataDir with AGENCY_HOME = %q", got)
 	}
 	if got := serviceManagerName("darwin"); got != "launchd" {
 		t.Errorf("serviceManagerName(darwin) = %q", got)
 	}
 	// A user service without a known account still says how to proceed.
-	err := checkExistingMode(&ExistingInstall{ServiceType: "systemd-user", ServicePath: "/home/x/.config/systemd/user/claw.service"}, true)
+	err := checkExistingMode(&ExistingInstall{ServiceType: "systemd-user", ServicePath: "/home/x/.config/systemd/user/agency.service"}, true)
 	if err == nil || !strings.Contains(err.Error(), "as the user it belongs to") {
 		t.Errorf("err = %v", err)
 	}
-	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/x/claw", "/Users/alice", "/x", "", false)
+	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/x/agency", "/Users/alice", "/x", "", false)
 	if !strings.Contains(plist, "/Users/alice/.agency/logs/agency-launchd.log") {
 		t.Errorf("plist without AGENCY_HOME logs elsewhere:\n%s", plist)
 	}

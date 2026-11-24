@@ -32,7 +32,7 @@
 #     folder a CLI text model runs in, removed afterwards, is checked by
 #     agent's TestTaskModelHost_CLIIsolated; no CLI runs here).
 #
-# Usage: tests/test_task_models.sh <claw-binary>
+# Usage: tests/test_task_models.sh <agency-binary>
 # Environment: PROBE_PATH (default probe), KEEP=1 keeps the temporary folder.
 set -uo pipefail
 
@@ -44,7 +44,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENCY_BIN="${1:-}"
 PROBE="${PROBE_PATH:-probe}"
 if [ -z "$AGENCY_BIN" ] || [ ! -x "$AGENCY_BIN" ]; then
-    echo "FAIL: usage: $0 <claw-binary>" >&2
+    echo "FAIL: usage: $0 <agency-binary>" >&2
     exit 2
 fi
 if ! command -v "$PROBE" >/dev/null 2>&1; then
@@ -57,7 +57,7 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-TMP="$(mktemp -d -t claw-taskmodels.XXXXXX)"
+TMP="$(mktemp -d -t agency-taskmodels.XXXXXX)"
 HOME_DIR="$TMP/home"
 WS="$HOME_DIR/agents/alice"
 STUB_LOG="$TMP/stub.log"

@@ -105,7 +105,7 @@ func userUnitPath(homeDir string) string {
 // installSystemd writes the systemd unit file and enables/starts the service.
 func (h *host) installSystemd(tu *TargetUser, targetBin, binDir, agencyHome string) error {
 	if tu.IsRoot {
-		// System Mode: writes to /etc/systemd/system/claw.service
+		// System Mode: writes to /etc/systemd/system/agency.service
 		unit := buildSystemUnit(tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, agencyHome)
 		if err := os.WriteFile(h.path(systemUnitPath), []byte(unit), 0o644); err != nil {
 			return fmt.Errorf("writing systemd unit %s: %w", systemUnitPath, err)
@@ -124,7 +124,7 @@ func (h *host) installSystemd(tu *TargetUser, targetBin, binDir, agencyHome stri
 			return fmt.Errorf("systemctl restart %s: %s (%w)", serviceName, string(out), err)
 		}
 	} else {
-		// User Mode: writes to ~/.config/systemd/user/claw.service
+		// User Mode: writes to ~/.config/systemd/user/agency.service
 		unit := buildUserUnit(targetBin, tu.HomeDir, binDir, agencyHome)
 		destPath := userUnitPath(tu.HomeDir)
 		if err := os.MkdirAll(h.path(filepath.Dir(destPath)), 0o755); err != nil {

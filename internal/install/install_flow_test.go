@@ -40,7 +40,7 @@ func newInstallEnv(t *testing.T, goos string, asRoot bool) *installEnv {
 	h, log := svcHost(t, goos)
 	h.root = "" // install works on real temp paths; nothing below leaves them
 	e := &installEnv{h: h, log: log}
-	e.exe = filepath.Join(t.TempDir(), "claw-build")
+	e.exe = filepath.Join(t.TempDir(), "agency-build")
 	if err := os.WriteFile(e.exe, []byte("new binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -106,11 +106,11 @@ func TestInstall_UserModeLinux(t *testing.T) {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 	binDir := filepath.Join(e.tu.HomeDir, ".local", "bin")
-	target := filepath.Join(binDir, "claw")
+	target := filepath.Join(binDir, "agency")
 	if b, rerr := os.ReadFile(target); rerr != nil || string(b) != "new binary" {
 		t.Fatalf("installed binary = %q, %v", b, rerr)
 	}
-	if link, lerr := os.Readlink(filepath.Join(binDir, openClawAlias)); lerr != nil || link != "claw" {
+	if link, lerr := os.Readlink(filepath.Join(binDir, openClawAlias)); lerr != nil || link != "agency" {
 		t.Errorf("alias = %q, %v", link, lerr)
 	}
 	rc, rerr := os.ReadFile(filepath.Join(e.tu.HomeDir, ".bashrc"))
@@ -143,13 +143,13 @@ func TestInstall_UserModeLinux(t *testing.T) {
 		"Mode:            User Mode (user space, no sudo required)",
 		"Platform:        linux (systemd)",
 		"Installed binary: " + target,
-		"Installed alias:  " + filepath.Join(binDir, openClawAlias) + " -> claw",
+		"Installed alias:  " + filepath.Join(binDir, openClawAlias) + " -> agency",
 		"Added " + binDir + " to PATH in ",
 		"Created admin account \"bob\"",
 		"Installed and running.",
 		"WebUI on the network:",
 		"Admin account: bob (",
-		"Check status: systemctl --user status claw",
+		"Check status: systemctl --user status agency",
 		"Uninstall:    " + target + " uninstall",
 	} {
 		if !strings.Contains(out, want) {
@@ -162,7 +162,7 @@ func TestInstall_UserModeLinux(t *testing.T) {
 // existing user service account is kept, and the hints use sudo.
 func TestInstall_SystemModeLinux(t *testing.T) {
 	e := newInstallEnv(t, "linux", true)
-	e.existing = &ExistingInstall{ServiceType: "systemd-system", ServicePath: systemUnitPath, User: "carol", BinaryPath: "/nonexistent/claw"}
+	e.existing = &ExistingInstall{ServiceType: "systemd-system", ServicePath: systemUnitPath, User: "carol", BinaryPath: "/nonexistent/agency"}
 	binDir := t.TempDir()
 	out, err := e.install(t, "", 0, "", "", binDir)
 	if err != nil {
@@ -173,12 +173,12 @@ func TestInstall_SystemModeLinux(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Existing Service: " + systemUnitPath + " (systemd-system)",
-		"Existing Binary:  /nonexistent/claw",
+		"Existing Binary:  /nonexistent/agency",
 		"Mode:            System Mode (starts at system boot)",
 		"Run As User:     carol",
 		"Service File:    " + systemUnitPath,
-		"Check status: systemctl status claw",
-		"Uninstall:    sudo " + filepath.Join(binDir, "claw") + " uninstall",
+		"Check status: systemctl status agency",
+		"Uninstall:    sudo " + filepath.Join(binDir, "agency") + " uninstall",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -220,7 +220,7 @@ func TestInstall_Cancelled(t *testing.T) {
 	if err != nil || !strings.Contains(out, "Installation cancelled.") {
 		t.Fatalf("install = %v\n%s", err, out)
 	}
-	if _, serr := os.Stat(filepath.Join(binDir, "claw")); !errors.Is(serr, os.ErrNotExist) {
+	if _, serr := os.Stat(filepath.Join(binDir, "agency")); !errors.Is(serr, os.ErrNotExist) {
 		t.Errorf("binary installed although cancelled: %v", serr)
 	}
 	if len(e.register) != 0 {
@@ -412,13 +412,13 @@ func TestUninstall_Paths(t *testing.T) {
 	})
 	t.Run("existing service account and data dir", func(t *testing.T) {
 		h, _ := newUninstallHost(t, "linux")
-		h.detect = func(string) *ExistingInstall { return &ExistingInstall{User: "carol", AgencyHome: "/srv/claw"} }
+		h.detect = func(string) *ExistingInstall { return &ExistingInstall{User: "carol", AgencyHome: "/srv/agency"} }
 		var err error
 		out := captureStdout(t, func() { err = h.uninstall("", true) })
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out, "data in /srv/claw will NOT be deleted") {
+		if !strings.Contains(out, "data in /srv/agency will NOT be deleted") {
 			t.Errorf("output:\n%s", out)
 		}
 	})
@@ -455,10 +455,10 @@ func TestCommands_Flags(t *testing.T) {
 	}
 }
 
-// TestInstall_LinuxAptBinaryInPlace: when invoked as /usr/bin/claw on Linux
+// TestInstall_LinuxAptBinaryInPlace: when invoked as /usr/bin/agency on Linux
 // (installed via apt), neither system mode nor user mode copies a duplicate
 // binary into /usr/local/bin or ~/.local/bin; both point the service unit at
-// /usr/bin/claw so `apt upgrade` updates the running binary.
+// /usr/bin/agency so `apt upgrade` updates the running binary.
 func TestInstall_LinuxAptBinaryInPlace(t *testing.T) {
 	for _, asRoot := range []bool{false, true} {
 		mode := "user"
@@ -467,17 +467,17 @@ func TestInstall_LinuxAptBinaryInPlace(t *testing.T) {
 		}
 		t.Run(mode, func(t *testing.T) {
 			e := newInstallEnv(t, "linux", asRoot)
-			e.exe = "/usr/bin/claw"
+			e.exe = "/usr/bin/agency"
 			e.existing = nil
 
 			out, err := e.install(t, "", 0, "", "", "")
 			if err != nil {
 				t.Fatalf("install: %v\n%s", err, out)
 			}
-			if len(e.register) != 1 || e.register[0] != "/usr/bin/claw" {
-				t.Fatalf("registered binary = %v, want [/usr/bin/claw]", e.register)
+			if len(e.register) != 1 || e.register[0] != "/usr/bin/agency" {
+				t.Fatalf("registered binary = %v, want [/usr/bin/agency]", e.register)
 			}
-			localCopy := filepath.Join(e.tu.HomeDir, ".local", "bin", "claw")
+			localCopy := filepath.Join(e.tu.HomeDir, ".local", "bin", "agency")
 			if _, serr := os.Stat(localCopy); !errors.Is(serr, os.ErrNotExist) {
 				t.Errorf("unexpected copy written to %s", localCopy)
 			}

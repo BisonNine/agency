@@ -6,7 +6,7 @@
 package config
 
 // GetServiceConfigs returns default service configurations.
-// These are fallback defaults only — claw-auth fetches the actual OAuth config
+// These are fallback defaults only — agency-auth fetches the actual OAuth config
 // (client ID, secret, scopes) from the MCPFusion server at runtime.
 func GetServiceConfigs() map[string]*ServiceConfig {
 	return map[string]*ServiceConfig{

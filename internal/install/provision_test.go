@@ -34,18 +34,18 @@ func noTerminal(io.Writer) (*admin.Terminal, error) {
 }
 
 func TestProvisionAndRegister_NoAccountNoTerminalStopsBeforeService(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
+	testbinary.Set(t, "alice-agency")
 	t.Setenv(admin.EnvUser, "")
 	t.Setenv(admin.EnvPassword, "")
 	calls := stubInstallSeams(t, noTerminal)
-	agencyHome := filepath.Join(t.TempDir(), "claw")
+	agencyHome := filepath.Join(t.TempDir(), "agency")
 	tu := &TargetUser{Username: "tester"}
 
-	_, err := provisionAndRegister(tu, "/nonexistent/claw", "/nonexistent", agencyHome, false)
+	_, err := provisionAndRegister(tu, "/nonexistent/agency", "/nonexistent", agencyHome, false)
 	if !errors.Is(err, admin.ErrNoAccountNoTerminal) {
 		t.Fatalf("provisionAndRegister = %v; want ErrNoAccountNoTerminal", err)
 	}
-	for _, want := range []string{"export AGENCY_ADMIN_USER and AGENCY_ADMIN_PASSWORD", "`alice-claw admin`", "was not registered or started"} {
+	for _, want := range []string{"export AGENCY_ADMIN_USER and AGENCY_ADMIN_PASSWORD", "`alice-agency admin`", "was not registered or started"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error lacks %q:\n%v", want, err)
 		}
@@ -65,9 +65,9 @@ func TestProvisionAndRegister_EnvAccountThenService(t *testing.T) {
 		t.Error("terminal opened although the environment supplies the account")
 		return noTerminal(nil)
 	})
-	agencyHome := filepath.Join(t.TempDir(), "claw")
+	agencyHome := filepath.Join(t.TempDir(), "agency")
 
-	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/claw", "/nonexistent", agencyHome, false)
+	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/agency", "/nonexistent", agencyHome, false)
 	if err != nil || user != "jane" {
 		t.Fatalf("provisionAndRegister = %q, %v; want jane, nil", user, err)
 	}
@@ -93,7 +93,7 @@ func TestProvisionAndRegister_ExistingAccountKept(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/claw", "/nonexistent", agencyHome, true)
+	user, err := provisionAndRegister(&TargetUser{Username: "tester"}, "/nonexistent/agency", "/nonexistent", agencyHome, true)
 	if err != nil || user != "kim" || *calls != 1 {
 		t.Fatalf("provisionAndRegister = %q, %v, registrations %d; want kim, nil, 1", user, err, *calls)
 	}
@@ -106,10 +106,10 @@ func TestProvisionAndRegister_RootChownsToServiceAccount(t *testing.T) {
 	t.Setenv(admin.EnvUser, "lee")
 	t.Setenv(admin.EnvPassword, "lee's long password")
 	stubInstallSeams(t, noTerminal)
-	agencyHome := filepath.Join(t.TempDir(), "claw")
+	agencyHome := filepath.Join(t.TempDir(), "agency")
 	tu := &TargetUser{Username: "nobody", UID: "65534", GID: "65534", IsRoot: true}
 
-	if _, err := provisionAndRegister(tu, "/nonexistent/claw", "/nonexistent", agencyHome, false); err != nil {
+	if _, err := provisionAndRegister(tu, "/nonexistent/agency", "/nonexistent", agencyHome, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{agencyHome, admin.Path(agencyHome)} {

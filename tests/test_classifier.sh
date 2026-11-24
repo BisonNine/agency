@@ -59,7 +59,7 @@
 #   - the classifier folder, the definition files and state.db have exactly
 #     the agents area's modes.
 #
-# Usage: tests/test_classifier.sh <claw-binary>
+# Usage: tests/test_classifier.sh <agency-binary>
 # Environment: PROBE_PATH (default probe), KEEP=1 keeps the temporary folder.
 set -uo pipefail
 
@@ -71,7 +71,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENCY_BIN="${1:-}"
 PROBE="${PROBE_PATH:-probe}"
 if [ -z "$AGENCY_BIN" ] || [ ! -x "$AGENCY_BIN" ]; then
-    echo "FAIL: usage: $0 <claw-binary>" >&2
+    echo "FAIL: usage: $0 <agency-binary>" >&2
     exit 2
 fi
 if ! command -v "$PROBE" >/dev/null 2>&1; then
@@ -84,7 +84,7 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-TMP="$(mktemp -d -t claw-classifier.XXXXXX)"
+TMP="$(mktemp -d -t agency-classifier.XXXXXX)"
 HOME_DIR="$TMP/home"
 WS="$HOME_DIR/agents/alice"
 CLS_DIR="$WS/classifiers"

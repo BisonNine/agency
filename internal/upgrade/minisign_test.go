@@ -109,7 +109,7 @@ func TestVerifyMinisign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := []byte("abc123  claw-linux-amd64.tar.gz\n")
+	msg := []byte("abc123  agency-linux-amd64.tar.gz\n")
 	good := s.sign(msg, "timestamp:1700000000\tfile:checksums.txt\thashed")
 
 	if err := verifyMinisign([]*minisignPublicKey{pk}, msg, good); err != nil {
@@ -131,7 +131,7 @@ func TestVerifyMinisign(t *testing.T) {
 		msg  []byte
 		sig  []byte
 	}{
-		{"tampered message", []byte("deadbeef  claw-linux-amd64.tar.gz\n"), good},
+		{"tampered message", []byte("deadbeef  agency-linux-amd64.tar.gz\n"), good},
 		{"wrong key", msg, other.sign(msg, "x")},
 		{"key id mismatch", msg, s.signWith(otherID, "ED", msg, "x")},
 		{"legacy raw-message algorithm", msg, s.signWith(s.keyID, "Ed", msg, "x")},
@@ -153,14 +153,14 @@ func TestVerifyMinisign(t *testing.T) {
 }
 
 func TestLookupChecksum(t *testing.T) {
-	list := []byte("aaaa  claw-linux-amd64.tar.gz\nbbbb *claw-darwin-arm64.tar.gz\n\ncccc\n")
+	list := []byte("aaaa  agency-linux-amd64.tar.gz\nbbbb *agency-darwin-arm64.tar.gz\n\ncccc\n")
 	cases := []struct {
 		name, want string
 		wantErr    bool
 	}{
-		{"claw-linux-amd64.tar.gz", "aaaa", false},
-		{"claw-darwin-arm64.tar.gz", "bbbb", false},
-		{"claw-windows-amd64.tar.gz", "", true},
+		{"agency-linux-amd64.tar.gz", "aaaa", false},
+		{"agency-darwin-arm64.tar.gz", "bbbb", false},
+		{"agency-windows-amd64.tar.gz", "", true},
 		{"cccc", "", true},
 	}
 	for _, tc := range cases {
@@ -177,28 +177,28 @@ func TestLookupChecksum(t *testing.T) {
 func TestVerifySignedArchive(t *testing.T) {
 	s := newTestSigner(t)
 	dir := t.TempDir()
-	archive := filepath.Join(dir, "claw-linux-amd64.tar.gz")
+	archive := filepath.Join(dir, "agency-linux-amd64.tar.gz")
 	content := []byte("pretend this is a tarball")
 	if err := os.WriteFile(archive, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(content)
-	checksums := []byte(hex.EncodeToString(sum[:]) + "  claw-linux-amd64.tar.gz\n" +
-		strings.Repeat("0", 64) + "  claw-darwin-arm64.tar.gz\n")
+	checksums := []byte(hex.EncodeToString(sum[:]) + "  agency-linux-amd64.tar.gz\n" +
+		strings.Repeat("0", 64) + "  agency-darwin-arm64.tar.gz\n")
 	sig := s.sign(checksums, "Agency v0.6.0")
 
-	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, sig, "claw-linux-amd64.tar.gz", archive); err != nil {
+	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, sig, "agency-linux-amd64.tar.gz", archive); err != nil {
 		t.Fatalf("valid release rejected: %v", err)
 	}
 
 	// Attacker edits a checksum line after signing.
 	tampered := []byte(strings.Replace(string(checksums), hex.EncodeToString(sum[:]), strings.Repeat("f", 64), 1))
-	if err := verifySignedArchive([]string{s.publicKeyLine()}, tampered, sig, "claw-linux-amd64.tar.gz", archive); err == nil {
+	if err := verifySignedArchive([]string{s.publicKeyLine()}, tampered, sig, "agency-linux-amd64.tar.gz", archive); err == nil {
 		t.Error("tampered checksums.txt accepted")
 	}
 
 	// Attacker re-signs the tampered list with their own key.
-	if err := verifySignedArchive([]string{s.publicKeyLine()}, tampered, newTestSigner(t).sign(tampered, ""), "claw-linux-amd64.tar.gz", archive); err == nil {
+	if err := verifySignedArchive([]string{s.publicKeyLine()}, tampered, newTestSigner(t).sign(tampered, ""), "agency-linux-amd64.tar.gz", archive); err == nil {
 		t.Error("checksums.txt signed by a foreign key accepted")
 	}
 
@@ -206,20 +206,20 @@ func TestVerifySignedArchive(t *testing.T) {
 	if err := os.WriteFile(archive, []byte("something else"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, sig, "claw-linux-amd64.tar.gz", archive); err == nil {
+	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, sig, "agency-linux-amd64.tar.gz", archive); err == nil {
 		t.Error("archive that does not match its signed checksum accepted")
 	}
 
 	// Archive not listed.
-	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, sig, "claw-netbsd-amd64.tar.gz", archive); err == nil {
+	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, sig, "agency-netbsd-amd64.tar.gz", archive); err == nil {
 		t.Error("unlisted archive accepted")
 	}
 
 	// Missing signature / no embedded key: both fatal.
-	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, nil, "claw-linux-amd64.tar.gz", archive); err == nil {
+	if err := verifySignedArchive([]string{s.publicKeyLine()}, checksums, nil, "agency-linux-amd64.tar.gz", archive); err == nil {
 		t.Error("missing signature accepted")
 	}
-	if err := verifySignedArchive([]string{"", ""}, checksums, sig, "claw-linux-amd64.tar.gz", archive); err == nil {
+	if err := verifySignedArchive([]string{"", ""}, checksums, sig, "agency-linux-amd64.tar.gz", archive); err == nil {
 		t.Error("verification without an embedded key succeeded")
 	}
 }
@@ -229,31 +229,31 @@ func TestVerifySignedArchive(t *testing.T) {
 func TestVerifySignedArchive_TwoKeys(t *testing.T) {
 	current, next, stranger := newTestSigner(t), newTestSigner(t), newTestSigner(t)
 	dir := t.TempDir()
-	archive := filepath.Join(dir, "claw-linux-amd64.tar.gz")
+	archive := filepath.Join(dir, "agency-linux-amd64.tar.gz")
 	content := []byte("pretend this is a tarball")
 	if err := os.WriteFile(archive, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(content)
-	checksums := []byte(hex.EncodeToString(sum[:]) + "  claw-linux-amd64.tar.gz\n")
+	checksums := []byte(hex.EncodeToString(sum[:]) + "  agency-linux-amd64.tar.gz\n")
 	keys := []string{current.publicKeyLine(), next.publicKeyFile()}
 
-	if err := verifySignedArchive(keys, checksums, current.sign(checksums, "v1"), "claw-linux-amd64.tar.gz", archive); err != nil {
+	if err := verifySignedArchive(keys, checksums, current.sign(checksums, "v1"), "agency-linux-amd64.tar.gz", archive); err != nil {
 		t.Errorf("signature from the current key rejected: %v", err)
 	}
-	if err := verifySignedArchive(keys, checksums, next.sign(checksums, "v2"), "claw-linux-amd64.tar.gz", archive); err != nil {
+	if err := verifySignedArchive(keys, checksums, next.sign(checksums, "v2"), "agency-linux-amd64.tar.gz", archive); err != nil {
 		t.Errorf("signature from the next key rejected: %v", err)
 	}
-	err := verifySignedArchive(keys, checksums, stranger.sign(checksums, "v3"), "claw-linux-amd64.tar.gz", archive)
+	err := verifySignedArchive(keys, checksums, stranger.sign(checksums, "v3"), "agency-linux-amd64.tar.gz", archive)
 	if !errors.Is(err, errUntrustedKey) {
 		t.Errorf("signature from a third key: error = %v, want errUntrustedKey", err)
 	}
 	// Only one slot filled (the usual state between rotations).
-	if err := verifySignedArchive([]string{"", next.publicKeyLine()}, checksums, next.sign(checksums, "v2"), "claw-linux-amd64.tar.gz", archive); err != nil {
+	if err := verifySignedArchive([]string{"", next.publicKeyLine()}, checksums, next.sign(checksums, "v2"), "agency-linux-amd64.tar.gz", archive); err != nil {
 		t.Errorf("single filled slot rejected: %v", err)
 	}
 	// A malformed slot is a build error, not something to skip past.
-	if err := verifySignedArchive([]string{current.publicKeyLine(), "not a key"}, checksums, current.sign(checksums, "v1"), "claw-linux-amd64.tar.gz", archive); err == nil {
+	if err := verifySignedArchive([]string{current.publicKeyLine(), "not a key"}, checksums, current.sign(checksums, "v1"), "agency-linux-amd64.tar.gz", archive); err == nil {
 		t.Error("malformed embedded key ignored")
 	}
 }
@@ -280,8 +280,8 @@ func TestReleasePublicKeys(t *testing.T) {
 
 func TestFindReleaseAssets(t *testing.T) {
 	full := []GitHubAsset{
-		{Name: "claw-linux-amd64.tar.gz"},
-		{Name: "claw-linux-amd64.tar.gz.sha256"},
+		{Name: "agency-linux-amd64.tar.gz"},
+		{Name: "agency-linux-amd64.tar.gz.sha256"},
 		{Name: "checksums.txt"},
 		{Name: "checksums.txt.minisig"},
 	}
@@ -295,16 +295,16 @@ func TestFindReleaseAssets(t *testing.T) {
 		return out
 	}
 
-	assets, err := findReleaseAssets(&GitHubRelease{Assets: full}, "claw-linux-amd64.tar.gz")
+	assets, err := findReleaseAssets(&GitHubRelease{Assets: full}, "agency-linux-amd64.tar.gz")
 	if err != nil {
 		t.Fatalf("complete release: %v", err)
 	}
-	if assets.archive.Name != "claw-linux-amd64.tar.gz" || assets.checksums.Name != "checksums.txt" || assets.signature.Name != "checksums.txt.minisig" {
+	if assets.archive.Name != "agency-linux-amd64.tar.gz" || assets.checksums.Name != "checksums.txt" || assets.signature.Name != "checksums.txt.minisig" {
 		t.Errorf("wrong assets picked: %+v", assets)
 	}
 
-	for _, missing := range []string{"claw-linux-amd64.tar.gz", "checksums.txt", "checksums.txt.minisig"} {
-		if _, err := findReleaseAssets(&GitHubRelease{Assets: without(missing)}, "claw-linux-amd64.tar.gz"); err == nil {
+	for _, missing := range []string{"agency-linux-amd64.tar.gz", "checksums.txt", "checksums.txt.minisig"} {
+		if _, err := findReleaseAssets(&GitHubRelease{Assets: without(missing)}, "agency-linux-amd64.tar.gz"); err == nil {
 			t.Errorf("release without %s accepted", missing)
 		}
 	}

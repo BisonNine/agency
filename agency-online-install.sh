@@ -2,10 +2,10 @@
 # Agency One-Line Online Installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency-online-install.sh | bash
 #
-# With optional arguments forwarded to `claw install`:
-#   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash -s -- --host 0.0.0.0 --allowed-cidrs 192.168.1.0/24
+# With optional arguments forwarded to `agency install`:
+#   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency-online-install.sh | bash -s -- --host 0.0.0.0 --allowed-cidrs 192.168.1.0/24
 #
 # Environment variables:
 #   AGENCY_VERSION   Version/tag to install (e.g. 0.5.4); default: latest
@@ -14,7 +14,7 @@
 # Admin account:
 #   The WebUI requires an admin login, and the installer will not start the
 #   service without one. When <AGENCY_HOME>/credentials.json does not exist yet,
-#   `claw install` asks for a username and a password (twice, not echoed, at
+#   `agency install` asks for a username and a password (twice, not echoed, at
 #   least 12 characters). Under `curl … | bash` stdin is this script, so the
 #   prompt is read from the terminal (/dev/tty) instead. An existing account is
 #   kept as it is.
@@ -25,7 +25,7 @@
 #   your shell history:
 #     read -r AGENCY_ADMIN_USER; read -rs AGENCY_ADMIN_PASSWORD
 #     export AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
-#     curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/claw-online-install.sh | bash
+#     curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency-online-install.sh | bash
 #     unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 #   With `sudo bash`, keep them across sudo:
 #     … | sudo --preserve-env=AGENCY_ADMIN_USER,AGENCY_ADMIN_PASSWORD bash
@@ -36,7 +36,7 @@
 set -euo pipefail
 
 REPO="BisonNine/agency"
-BINARY="claw"
+BINARY="agency"
 VERSION="${AGENCY_VERSION:-latest}"
 
 # --- detect OS ---
@@ -79,7 +79,7 @@ else
     exit 1
 fi
 
-asset="claw-${os}-${arch}.tar.gz"
+asset="agency-${os}-${arch}.tar.gz"
 checksum_asset="${asset}.sha256"
 
 if [ "$VERSION" = "latest" ]; then
@@ -92,7 +92,7 @@ else
 fi
 
 # --- setup temporary workspace ---
-tmpdir="$(mktemp -d 2>/dev/null || mktemp -d -t claw-install)" || {
+tmpdir="$(mktemp -d 2>/dev/null || mktemp -d -t agency-install)" || {
     echo "Error: Failed to create temporary directory." >&2
     exit 1
 }
@@ -138,8 +138,8 @@ tar -xzf "$tmpdir/$asset" -C "$tmpdir/extracted" || {
     exit 1
 }
 
-# Locate claw binary in extracted directory
-bin="$(find "$tmpdir/extracted" -type f \( -name "$BINARY" -o -name "${BINARY}-${os}-${arch}" \) ! -name "claw-auth" 2>/dev/null | head -n 1)"
+# Locate agency binary in extracted directory
+bin="$(find "$tmpdir/extracted" -type f \( -name "$BINARY" -o -name "${BINARY}-${os}-${arch}" \) ! -name "agency-auth" 2>/dev/null | head -n 1)"
 if [ -z "$bin" ] || [ ! -f "$bin" ]; then
     echo "Error: '${BINARY}' binary not found inside extracted archive." >&2
     exit 1
@@ -155,11 +155,11 @@ elif "$bin" install --help 2>&1 | grep -q -- "--yes"; then
 fi
 
 # --- run installation ---
-# stdin is left alone: `claw install` never reads it for the admin account
+# stdin is left alone: `agency install` never reads it for the admin account
 # prompt when it is not a terminal (here it is this script), and opens
 # /dev/tty instead. stdout goes through tee only to capture the URLs below;
 # the prompts are written to the terminal. AGENCY_ADMIN_USER and
-# AGENCY_ADMIN_PASSWORD, when exported, reach `claw install` through the
+# AGENCY_ADMIN_PASSWORD, when exported, reach `agency install` through the
 # environment.
 echo "==> Installing Agency service..."
 install_log="$tmpdir/install.log"
@@ -171,7 +171,7 @@ fi
 unset AGENCY_ADMIN_USER AGENCY_ADMIN_PASSWORD
 
 # --- resolve web UI URLs ---
-# `claw install` ends with the same listener summary `claw status` prints,
+# `agency install` ends with the same listener summary `agency status` prints,
 # derived from the installed config: the loopback HTTP URL, the network HTTP
 # URLs when --host is not loopback, and the HTTPS URLs (every interface by
 # default). Take them from there rather than guessing a port.
@@ -207,7 +207,7 @@ open_browser() {
 echo ""
 echo "==> Setup Wizard"
 if [ -z "$web_url" ]; then
-    echo "Run \`claw status\` to see the WebUI URLs, then sign in with the admin account."
+    echo "Run \`agency status\` to see the WebUI URLs, then sign in with the admin account."
 elif open_browser "$web_url"; then
     echo "Opened setup wizard in your browser: ${web_url}"
     echo "Sign in with the admin account created above."

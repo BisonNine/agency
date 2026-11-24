@@ -2,7 +2,7 @@
 # test-maestro-host.sh — run Maestro's MCP regression suite against a live
 # Agency gateway (Maestro embedded, host mode).
 #
-# It builds claw and a deterministic stub model server, starts a gateway in a
+# It builds agency and a deterministic stub model server, starts a gateway in a
 # temporary AGENCY_HOME with one Maestro-enabled agent, issues a service token,
 # runs Maestro's test.sh (from the pinned Maestro module) with MODE=host over
 # the /mcp endpoint, then stops everything and cleans up.
@@ -32,7 +32,7 @@ for bin in "$PROBE" jq zip go; do
     fi
 done
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/claw-maestro-host.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/agency-maestro-host.XXXXXX")"
 HOME_DIR="$TMP/home"
 AGENT="maestro-test"
 AGENCY_PID=""
@@ -53,8 +53,8 @@ free_port() {
     python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])'
 }
 
-echo "== Building claw and the stub model server"
-(cd "$ROOT" && go build -o "$TMP/claw" . && go build -o "$TMP/stubllm" ./tools/maestro/testdata/stubllm) || exit 1
+echo "== Building agency and the stub model server"
+(cd "$ROOT" && go build -o "$TMP/agency" . && go build -o "$TMP/stubllm" ./tools/maestro/testdata/stubllm) || exit 1
 
 STUB_PORT="$(free_port)"
 GW_PORT="$(free_port)"
@@ -89,14 +89,14 @@ EOF
 # Issue the service token before the gateway starts: it loads the token file
 # at startup and only re-reads it on its reload interval.
 echo "== Issuing a service token for $AGENT"
-TOKEN="$(AGENCY_HOME="$HOME_DIR" "$TMP/claw" token issue "$AGENT" | awk '/^  [^ ]+$/ {print $1; exit}')"
+TOKEN="$(AGENCY_HOME="$HOME_DIR" "$TMP/agency" token issue "$AGENT" | awk '/^  [^ ]+$/ {print $1; exit}')"
 if [ -z "$TOKEN" ]; then
     echo "ERROR: could not obtain a service token" >&2
     exit 1
 fi
 
-echo "== Starting claw (AGENCY_HOME=$HOME_DIR, gateway :$GW_PORT, mcp :$MCP_PORT)"
-AGENCY_HOME="$HOME_DIR" "$TMP/claw" > "$TMP/claw.out" 2>&1 &
+echo "== Starting agency (AGENCY_HOME=$HOME_DIR, gateway :$GW_PORT, mcp :$MCP_PORT)"
+AGENCY_HOME="$HOME_DIR" "$TMP/agency" > "$TMP/agency.out" 2>&1 &
 AGENCY_PID=$!
 
 for i in $(seq 1 60); do
@@ -104,15 +104,15 @@ for i in $(seq 1 60); do
         break
     fi
     if ! kill -0 "$AGENCY_PID" 2>/dev/null; then
-        echo "ERROR: claw exited early; output:" >&2
-        cat "$TMP/claw.out" >&2
+        echo "ERROR: agency exited early; output:" >&2
+        cat "$TMP/agency.out" >&2
         exit 1
     fi
     sleep 1
 done
 if ! curl -s -o /dev/null "http://127.0.0.1:$MCP_PORT/mcp"; then
     echo "ERROR: MCP host did not come up on :$MCP_PORT" >&2
-    cat "$TMP/claw.out" >&2
+    cat "$TMP/agency.out" >&2
     exit 1
 fi
 

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"go.bison9.com/agency/cmd/claw-auth/debug"
-	"go.bison9.com/agency/cmd/claw-auth/providers"
+	"go.bison9.com/agency/cmd/agency-auth/debug"
+	"go.bison9.com/agency/cmd/agency-auth/providers"
 )
 
 // Provider implements OAuth for Google services

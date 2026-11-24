@@ -1,4 +1,4 @@
-# claw-auth
+# agency-auth
 
 A generic authentication helper for Agency that supports multiple providers through a modular architecture.
 
@@ -21,36 +21,36 @@ This is intended for services that do not allow or limit device authentication f
 
 ```bash
 # From the Agency project root
-make claw-auth
+make agency-auth
 ```
 
-The binary is written to `build/claw-auth`. To build it by hand instead:
+The binary is written to `build/agency-auth`. To build it by hand instead:
 
 ```bash
-go build -o claw-auth ./cmd/claw-auth
+go build -o agency-auth ./cmd/agency-auth
 ```
 
 ## Quick Start
 
 1. **List available providers:**
 ```bash
-claw-auth -list
+agency-auth -list
 ```
 
 2. **Authenticate with Google:**
 ```bash
-claw-auth -service google -fusion http://10.0.0.1:8080 -token <your-mcp-token>
+agency-auth -service google -fusion http://10.0.0.1:8080 -token <your-mcp-token>
 ```
 
 3. **Authenticate with GitHub:**
 ```bash
-claw-auth -service github -fusion https://mcp.example.com -token <your-mcp-token>
+agency-auth -service github -fusion https://mcp.example.com -token <your-mcp-token>
 ```
 
 ## Command Line Options
 
 ```bash
-Usage: claw-auth [OPTIONS]
+Usage: agency-auth [OPTIONS]
 
 Options:
   -service string        OAuth service provider (e.g., google, github, dropbox)
@@ -64,17 +64,17 @@ Options:
 
 ## Configuration
 
-`claw-auth` takes **no configuration file and reads no environment variables**. The
+`agency-auth` takes **no configuration file and reads no environment variables**. The
 OAuth application credentials (client ID, client secret, scopes, and any tenant ID)
 are held by the MCPFusion server and fetched over the API at run time, so the only
 things you supply are the server URL and an API token:
 
 ```bash
-claw-auth -service google -fusion http://10.0.0.1:8080 -token <your-mcp-token>
+agency-auth -service google -fusion http://10.0.0.1:8080 -token <your-mcp-token>
 ```
 
 The server decides how a service authenticates. If it returns a `user_credentials`
-auth config for the service, `claw-auth` runs that flow; otherwise it falls back to
+auth config for the service, `agency-auth` runs that flow; otherwise it falls back to
 the registered local OAuth provider (see [OAuth Flows](#oauth-flows) below), using
 the client ID and secret the server supplied.
 
@@ -106,14 +106,14 @@ To add a new OAuth provider:
 
 1. **Create provider package:**
 ```bash
-mkdir cmd/claw-auth/providers/newservice
+mkdir cmd/agency-auth/providers/newservice
 ```
 
 2. **Implement provider interface:**
 ```go
 package newservice
 
-import "go.bison9.com/agency/cmd/claw-auth/providers"
+import "go.bison9.com/agency/cmd/agency-auth/providers"
 
 type Provider struct {
     // Provider-specific fields
@@ -183,7 +183,7 @@ The tool integrates with MCPFusion through several API endpoints:
 
 Enable verbose logging for detailed information:
 ```bash
-claw-auth -verbose -service google -fusion http://10.0.0.1:8080 -token <token>
+agency-auth -verbose -service google -fusion http://10.0.0.1:8080 -token <token>
 ```
 
 ## Development
@@ -205,12 +205,12 @@ go test -integration ./...
 
 ```bash
 # Build for current platform
-go build -o claw-auth ./cmd/claw-auth
+go build -o agency-auth ./cmd/agency-auth
 
 # Build for multiple platforms
-GOOS=linux GOARCH=amd64 go build -o claw-auth-linux-amd64 ./cmd/claw-auth
-GOOS=windows GOARCH=amd64 go build -o claw-auth-windows-amd64.exe ./cmd/claw-auth
-GOOS=darwin GOARCH=amd64 go build -o claw-auth-darwin-amd64 ./cmd/claw-auth
+GOOS=linux GOARCH=amd64 go build -o agency-auth-linux-amd64 ./cmd/agency-auth
+GOOS=windows GOARCH=amd64 go build -o agency-auth-windows-amd64.exe ./cmd/agency-auth
+GOOS=darwin GOARCH=amd64 go build -o agency-auth-darwin-amd64 ./cmd/agency-auth
 ```
 
 ## License

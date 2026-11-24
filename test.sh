@@ -361,9 +361,9 @@ fi
 #===============================================================================
 # Optional: MCP Server Integration Tests
 #
-# Fully self-contained: builds claw, starts a fresh gateway in a temporary
+# Fully self-contained: builds agency, starts a fresh gateway in a temporary
 # AGENCY_HOME with mcp_host enabled, runs the probe-driven test, then tears
-# everything down. No assumptions about an already-running claw.
+# everything down. No assumptions about an already-running agency.
 #===============================================================================
 
 INTEGRATION_RAN=false
@@ -474,7 +474,7 @@ if ! $SKIP_INTEGRATION; then
         else
             INTEGRATION_RAN=true
 
-            # ---- Pick free ports so we don't collide with a running claw. ----
+            # ---- Pick free ports so we don't collide with a running agency. ----
             pick_free_port() {
                 python3 - <<'PY'
 import socket
@@ -489,9 +489,9 @@ PY
             GATEWAY_PORT=$(pick_free_port)
 
             # ---- Workspace + binary in a per-run tempdir. ----
-            INTEG_TMP=$(mktemp -d -t claw-integ.XXXXXX)
+            INTEG_TMP=$(mktemp -d -t agency-integ.XXXXXX)
             INTEG_HOME="$INTEG_TMP/home"
-            INTEG_BIN="$INTEG_TMP/claw"
+            INTEG_BIN="$INTEG_TMP/agency"
             INTEG_LOG="$INTEG_TMP/gateway.log"
             mkdir -p "$INTEG_HOME"
 
@@ -522,10 +522,10 @@ PY
             }
             trap cleanup_integration EXIT
 
-            echo "${DIM}Building claw binary...${NC}"
+            echo "${DIM}Building agency binary...${NC}"
             if ! go build -o "$INTEG_BIN" . 2>&1; then
-                echo "${RED}ERROR: failed to build claw${NC}"
-                integ_fail "claw binary failed to build"
+                echo "${RED}ERROR: failed to build agency${NC}"
+                integ_fail "agency binary failed to build"
             else
                 # Generate a random session token for Tier 2 integration tests.
                 # Passed only via environment — never written to a config file.
@@ -777,7 +777,7 @@ EOF
 
                     # ---- PID file: written at startup ----
                     #
-                    # `claw status` finds a running instance through this file,
+                    # `agency status` finds a running instance through this file,
                     # so if it is absent or wrong the command silently reports
                     # "not running" on a healthy system.
                     echo "${BOLD}--- PID file ---${NC}"

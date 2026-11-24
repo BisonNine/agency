@@ -31,11 +31,11 @@ func TestResolveBinDir_CreationFailures(t *testing.T) {
 		{name: "system", block: "/usr/local", tu: alice(true), wantIn: "/usr/local/bin"},
 		{name: "user", block: "/home/alice/.local", tu: alice(false), wantIn: "/home/alice/.local/bin"},
 		{
-			name: "opt claw from old binary", block: "/opt/agency/bin", tu: alice(true),
-			existing: &ExistingInstall{BinaryPath: "/opt/agency/claw"}, wantIn: "/opt/agency/bin",
+			name: "opt agency from old binary", block: "/opt/agency/bin", tu: alice(true),
+			existing: &ExistingInstall{BinaryPath: "/opt/agency/agency"}, wantIn: "/opt/agency/bin",
 		},
 		{
-			name: "opt claw home", block: "/opt/agency/bin", tu: alice(true),
+			name: "opt agency home", block: "/opt/agency/bin", tu: alice(true),
 			existing: &ExistingInstall{AgencyHome: "/opt/agency"}, wantIn: "/opt/agency/bin",
 		},
 	}
@@ -59,7 +59,7 @@ func TestResolveBinDir_CreationFailures(t *testing.T) {
 func TestResolveBinDir_ExistingFolderGone(t *testing.T) {
 	h := fakeHost(t)
 	got, err := h.resolveBinDir(&TargetUser{HomeDir: "/home/alice", IsRoot: true}, "",
-		&ExistingInstall{BinaryPath: "/usr/local/sbin/claw"})
+		&ExistingInstall{BinaryPath: "/usr/local/sbin/agency"})
 	if err != nil || got != "/usr/local/bin" {
 		t.Fatalf("resolveBinDir() = %q, %v, want /usr/local/bin", got, err)
 	}
@@ -73,7 +73,7 @@ func TestResolveBinDir_SiblingOfOptAgency(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := h.resolveBinDir(&TargetUser{HomeDir: "/home/alice", IsRoot: true}, "",
-		&ExistingInstall{BinaryPath: "/opt/agency-old/claw"})
+		&ExistingInstall{BinaryPath: "/opt/agency-old/agency"})
 	if err != nil || got != "/opt/agency-old" {
 		t.Fatalf("resolveBinDir() = %q, %v, want /opt/agency-old", got, err)
 	}
@@ -82,12 +82,12 @@ func TestResolveBinDir_SiblingOfOptAgency(t *testing.T) {
 // ensureOptAgencyBinDir leaves an existing /opt/agency/bin in place.
 func TestEnsureOptAgencyBinDir_Existing(t *testing.T) {
 	h := fakeHost(t)
-	writeHostFile(t, h, "/opt/agency/bin/claw", "x", 0o700)
+	writeHostFile(t, h, "/opt/agency/bin/agency", "x", 0o700)
 	got, err := h.ensureOptAgencyBinDir()
 	if err != nil || got != optAgencyBinDir {
 		t.Fatalf("ensureOptAgencyBinDir() = %q, %v", got, err)
 	}
-	if !h.fileExists("/opt/agency/bin/claw") {
+	if !h.fileExists("/opt/agency/bin/agency") {
 		t.Error("the binary in /opt/agency/bin was removed")
 	}
 }
@@ -103,7 +103,7 @@ func TestResolveAgencyHome_Fallbacks(t *testing.T) {
 	if got := h.resolveAgencyHome(tu, "/home/alice/bin", nil); got != home {
 		t.Errorf("no install, no /opt/agency = %q, want %q", got, home)
 	}
-	if got := h.resolveAgencyHome(tu, "/home/alice/bin", &ExistingInstall{BinaryPath: "/opt/agency-old/claw"}); got != home {
+	if got := h.resolveAgencyHome(tu, "/home/alice/bin", &ExistingInstall{BinaryPath: "/opt/agency-old/agency"}); got != home {
 		t.Errorf("binary next to /opt/agency = %q, want %q", got, home)
 	}
 	if got := h.resolveAgencyHome(tu, "/home/alice/bin", &ExistingInstall{}); got != home {

@@ -17,9 +17,9 @@ import (
 	"sync"
 	"testing"
 
-	"go.bison9.com/agency/cmd/claw-auth/config"
-	"go.bison9.com/agency/cmd/claw-auth/mcp"
-	"go.bison9.com/agency/cmd/claw-auth/providers"
+	"go.bison9.com/agency/cmd/agency-auth/config"
+	"go.bison9.com/agency/cmd/agency-auth/mcp"
+	"go.bison9.com/agency/cmd/agency-auth/providers"
 )
 
 // stubProvider is an OAuthProvider whose endpoints and behaviour a test sets.
@@ -690,8 +690,8 @@ func withArgs(t *testing.T, args ...string) cliFlags {
 	t.Helper()
 	origArgs, origSet := os.Args, flag.CommandLine
 	t.Cleanup(func() { os.Args, flag.CommandLine = origArgs, origSet })
-	os.Args = append([]string{"claw-auth"}, args...)
-	flag.CommandLine = flag.NewFlagSet("claw-auth", flag.ContinueOnError)
+	os.Args = append([]string{"agency-auth"}, args...)
+	flag.CommandLine = flag.NewFlagSet("agency-auth", flag.ContinueOnError)
 	var f cliFlags
 	parseFlags(&f)
 	return f
@@ -724,7 +724,7 @@ func TestParseFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "Usage: claw-auth <auth-code-blob>") {
+	if !strings.Contains(string(out), "Usage: agency-auth <auth-code-blob>") {
 		t.Fatalf("usage = %q", out)
 	}
 }

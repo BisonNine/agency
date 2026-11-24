@@ -80,10 +80,10 @@ func TestRSSBytesParsing(t *testing.T) {
 		want   int64
 		ok     bool
 	}{
-		{"resident set", "Name:\tclaw\nVmSize:\t900000 kB\nVmRSS:\t  2048 kB\n", 2048 * 1024, true},
+		{"resident set", "Name:\tagency\nVmSize:\t900000 kB\nVmRSS:\t  2048 kB\n", 2048 * 1024, true},
 		{"no value", "VmRSS:\n", 0, false},
 		{"not a number", "VmRSS:\tlots kB\n", 0, false},
-		{"no VmRSS line", "Name:\tclaw\n", 0, false},
+		{"no VmRSS line", "Name:\tagency\n", 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

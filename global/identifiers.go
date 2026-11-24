@@ -14,14 +14,14 @@ const (
 	// InstalledBinaryName is the file name of the installed binary and of the
 	// binary inside a release archive. It is not what the user typed; that is
 	// app.BinaryName.
-	InstalledBinaryName = "claw"
+	InstalledBinaryName = "agency"
 
 	// AuthHelperBinaryName is the companion OAuth helper shipped beside the
 	// main binary.
-	AuthHelperBinaryName = "claw-auth"
+	AuthHelperBinaryName = "agency-auth"
 
 	// ServiceName is the systemd unit name `install` registers.
-	ServiceName = "claw"
+	ServiceName = "agency"
 
 	// SystemdUnitFile is the unit file name for ServiceName.
 	SystemdUnitFile = ServiceName + ".service"

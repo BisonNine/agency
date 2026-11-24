@@ -5,8 +5,8 @@
 # it out of the box: "Allow CLI to bypass restrictions" off, so whether the CLI's tool
 # calls run depends on the CLI's own permission settings. The turn asks for a
 # tool call that needs the CLI's permission. Two outcomes pass: the tool ran
-# (the CLI allowed it), or the turn ended with claw's "declined to use tools"
-# error naming the setting (the CLI refused and claw said so). Anything else —
+# (the CLI allowed it), or the turn ended with agency's "declined to use tools"
+# error naming the setting (the CLI refused and agency said so). Anything else —
 # silence, an apology with no cause, a timeout — fails, because that is the
 # failure mode this test exists to keep out (an agent's job failing with only
 # the model's prose as evidence, 2026-09-28).
@@ -14,7 +14,7 @@
 # Costs one model call on the operator's CLI account, hence opt-in.
 #
 #   AGENCY_TEST_CLI=1 ./test.sh                # as part of the gate
-#   tests/test_cli_provider.sh build/claw    # standalone, with a claw binary
+#   tests/test_cli_provider.sh build/agency    # standalone, with a agency binary
 #
 # Environment:
 #   AGENCY_TEST_CLI_COMMAND  the CLI binary (default: claude)
@@ -26,7 +26,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/gateway_env.sh"
 
 AGENCY_BIN="${1:-}"
 if [ -z "$AGENCY_BIN" ] || [ ! -x "$AGENCY_BIN" ]; then
-    echo "usage: $0 <claw binary>" >&2
+    echo "usage: $0 <agency binary>" >&2
     exit 2
 fi
 CLI_CMD="${AGENCY_TEST_CLI_COMMAND:-claude}"
@@ -35,7 +35,7 @@ if ! command -v "$CLI_CMD" >/dev/null 2>&1; then
     exit 1
 fi
 
-HOME_DIR=$(mktemp -d -t claw-cli-smoke.XXXXXX)
+HOME_DIR=$(mktemp -d -t agency-cli-smoke.XXXXXX)
 trap 'rm -rf "$HOME_DIR"' EXIT
 cat > "$HOME_DIR/config.json" <<CFG
 {
@@ -64,7 +64,7 @@ if [ $RC -eq 124 ]; then
     exit 1
 fi
 if printf '%s' "$OUT" | grep -q "declined to use tools"; then
-    echo "PASS: the CLI refused the tool call and claw reported it, naming the setting"
+    echo "PASS: the CLI refused the tool call and agency reported it, naming the setting"
     exit 0
 fi
 if printf '%s' "$OUT" | grep -qi "wrote probe.txt" && [ -f "$HOME_DIR/cli/probe.txt" ]; then

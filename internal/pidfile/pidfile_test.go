@@ -35,7 +35,7 @@ func TestWriteReadRoundTrip(t *testing.T) {
 }
 
 // A pid file left behind by a kill -9 must not read as a running gateway.
-// Without this, `claw status` would report the memory of whatever unrelated
+// Without this, `agency status` would report the memory of whatever unrelated
 // process later inherited the number.
 func TestReadRejectsADeadProcess(t *testing.T) {
 	dir := t.TempDir()

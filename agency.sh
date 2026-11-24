@@ -1,5 +1,5 @@
 #!/bin/sh
-# Agency installer — downloads the prebuilt `claw` binary (and license) for your
+# Agency installer — downloads the prebuilt `agency` binary (and license) for your
 # platform from GitHub Releases and installs it.
 #
 #   curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency.sh | sh
@@ -9,18 +9,18 @@
 #   AGENCY_INSTALL_DIR   directory to install the binary into; default:
 #                        /usr/local/bin (falls back to ~/.local/bin if unwritable)
 #
-# Only the `claw` binary (and license notices) is installed — the data directory
+# Only the `agency` binary (and license notices) is installed — the data directory
 # (~/.agency) is never touched. To try a build without disturbing an existing
 # install, point it at a throwaway dir and check the version:
 #
-#   AGENCY_INSTALL_DIR="$HOME/claw-test/bin" sh -c "$(curl -fsSL .../agency.sh)"
-#   ~/claw-test/bin/claw version
+#   AGENCY_INSTALL_DIR="$HOME/agency-test/bin" sh -c "$(curl -fsSL .../agency.sh)"
+#   ~/agency-test/bin/agency version
 #
 # Supports Linux and macOS on amd64 (x86_64) and arm64 (aarch64 / Apple Silicon).
 set -eu
 
 REPO="BisonNine/agency"
-BINARY="claw"
+BINARY="agency"
 
 VERSION="${AGENCY_VERSION:-latest}"
 
@@ -67,15 +67,15 @@ fi
 tmpdir="$(mktemp -d 2>/dev/null || mktemp -d -t agency)" || die "cannot create temp dir"
 trap 'rm -rf "$tmpdir"' EXIT INT TERM
 
-printf 'Downloading claw for %s/%s (%s)...\n' "$os" "$arch" "$VERSION"
+printf 'Downloading agency for %s/%s (%s)...\n' "$os" "$arch" "$VERSION"
 download "$(rel_url "$platform_asset")" "$tmpdir/pkg.tar.gz" ||
 	die "could not download a release package for ${os}/${arch}; see https://github.com/${REPO}/releases"
 
 mkdir -p "$tmpdir/x"
 tar -xzf "$tmpdir/pkg.tar.gz" -C "$tmpdir/x" || die "could not extract $platform_asset"
 
-# Locate the claw binary inside the archive — named 'claw' or 'claw-<os>-<arch>'
-# (never claw-auth). Search so the archive layout (flat or nested) doesn't matter.
+# Locate the agency binary inside the archive — named 'agency' or 'agency-<os>-<arch>'
+# (never agency-auth). Search so the archive layout (flat or nested) doesn't matter.
 bin="$(find "$tmpdir/x" -type f \( -name "$BINARY" -o -name "${BINARY}-${os}-${arch}" \) 2>/dev/null | head -n 1)"
 [ -n "$bin" ] || die "no '$BINARY' binary found inside $platform_asset"
 chmod +x "$bin"
@@ -122,7 +122,7 @@ fi
 if "$dest" version >/dev/null 2>&1; then
 	printf 'Installed: %s\n' "$("$dest" version 2>/dev/null | head -n 1)"
 else
-	printf 'Installed claw -> %s\n' "$dest"
+	printf 'Installed agency -> %s\n' "$dest"
 fi
 
 case ":$PATH:" in
@@ -142,6 +142,6 @@ else
 	printf 'License and third-party notices: in the release archive and at https://github.com/%s\n' "$REPO"
 fi
 
-printf '\nDone. Next: run `claw install` to set up the service and create the WebUI admin\n'
-printf 'account (Linux), or `claw --help`. Running `claw` without the service? Create the\n'
-printf 'account with `claw admin` first; the WebUI requires it.\n'
+printf '\nDone. Next: run `agency install` to set up the service and create the WebUI admin\n'
+printf 'account (Linux), or `agency --help`. Running `agency` without the service? Create the\n'
+printf 'account with `agency admin` first; the WebUI requires it.\n'

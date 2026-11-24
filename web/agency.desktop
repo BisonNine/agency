@@ -1,9 +1,9 @@
 [Desktop Entry]
 Name=Agency
 Comment=Personal AI Assistant
-Exec=claw
-Icon=claw
+Exec=agency
+Icon=agency
 Terminal=true
 Type=Application
 Categories=Utility;Network;
-Keywords=claw;ai;agent;bot;
+Keywords=agency;ai;agent;bot;

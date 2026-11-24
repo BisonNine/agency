@@ -1,7 +1,7 @@
-.PHONY: all build claw-auth install uninstall uninstall-all clean help require-golangci-lint govulncheck test test-race test-coverage test-cover-html test-regression test-maestro-host generate vet fmt fmt-check lint fix deps update-deps check run frontend frontend-deps manual manual-deps manual-check frontend-typecheck frontend-lint frontend-test build-linux-arm build-linux-arm64 build-linux-mipsle build-pi-zero build-all release-checksums release-sign sbom
+.PHONY: all build agency-auth install uninstall uninstall-all clean help require-golangci-lint govulncheck test test-race test-coverage test-cover-html test-regression test-maestro-host generate vet fmt fmt-check lint fix deps update-deps check run frontend frontend-deps manual manual-deps manual-check frontend-typecheck frontend-lint frontend-test build-linux-arm build-linux-arm64 build-linux-mipsle build-pi-zero build-all release-checksums release-sign sbom
 
 # Binary names
-BINARY_NAME=claw
+BINARY_NAME=agency
 BUILD_DIR=build
 CMD_DIR=.
 MAIN_GO=main.go
@@ -10,7 +10,7 @@ MAIN_GO=main.go
 # app/app.go and is a property of the source, not of the machine that
 # compiled it. Only the commit, timestamp and toolchain are stamped in, and
 # FormatVersion appends them. Injecting a git-describe string here is what used
-# to make `claw version` report the last tag plus a commit count while the rest
+# to make `agency version` report the last tag plus a commit count while the rest
 # of the app reported the constant.
 GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "unknown")
 GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
@@ -159,7 +159,7 @@ BUILD_ENV=GOOS=$(PLATFORM) GOARCH=$(ARCH)$(if $(GOARM), GOARM=$(GOARM))$(if $(GO
 EXE=$(if $(filter windows,$(PLATFORM)),.exe)
 
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
-AGENCY_AUTH_NAME=claw-auth
+AGENCY_AUTH_NAME=agency-auth
 AGENCY_AUTH_PATH=$(BUILD_DIR)/$(AGENCY_AUTH_NAME)-$(PLATFORM)-$(ARCH)$(EXE)
 
 # Frontend / embedded SPA
@@ -189,7 +189,7 @@ MANUAL_SOURCES=$(shell find $(MANUAL_DIR) \( -path $(MANUAL_NODE_MODULES) -o -pa
 ## all: the default — run the full test gate, then build (binaries only if tests pass).
 all: test build
 
-## build: Build the claw and claw-auth binaries (frontend SPA embedded) for current platform.
+## build: Build the agency and agency-auth binaries (frontend SPA embedded) for current platform.
 build: $(EMBED_INDEX) $(MANUAL_INDEX) generate
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
@@ -197,15 +197,15 @@ build: $(EMBED_INDEX) $(MANUAL_INDEX) generate
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(notdir $(BINARY_PATH)) $(BUILD_DIR)/$(BINARY_NAME)$(EXE)
 	@echo "Building $(AGENCY_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
-	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(AGENCY_AUTH_PATH) ./cmd/claw-auth
+	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(AGENCY_AUTH_PATH) ./cmd/agency-auth
 	@echo "Build complete: $(AGENCY_AUTH_PATH)"
 	@ln -sf $(notdir $(AGENCY_AUTH_PATH)) $(BUILD_DIR)/$(AGENCY_AUTH_NAME)$(EXE)
 
-## claw-auth: Build the standalone claw-auth OAuth helper CLI (runs on the user's own computer).
-claw-auth:
+## agency-auth: Build the standalone agency-auth OAuth helper CLI (runs on the user's own computer).
+agency-auth:
 	@echo "Building $(AGENCY_AUTH_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(AGENCY_AUTH_PATH) ./cmd/claw-auth
+	@$(BUILD_ENV) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(AGENCY_AUTH_PATH) ./cmd/agency-auth
 	@echo "Build complete: $(AGENCY_AUTH_PATH)"
 	@ln -sf $(notdir $(AGENCY_AUTH_PATH)) $(BUILD_DIR)/$(AGENCY_AUTH_NAME)$(EXE)
 
@@ -247,11 +247,11 @@ manual-check:
 	@echo "Building manual into $(MANUAL_EMBED_DIR)..."
 	@cd $(MANUAL_DIR) && pnpm run build || { rm -f $(CURDIR)/$(MANUAL_INDEX); exit 1; }
 
-## install: Build and install claw (runs 'claw install -y')
+## install: Build and install agency (runs 'agency install -y')
 install: build
 	@$(BUILD_DIR)/$(BINARY_NAME) install -y
 
-## uninstall: Remove claw service and binary from system
+## uninstall: Remove agency service and binary from system
 uninstall:
 	@if [ -x $(INSTALL_BIN_DIR)/$(BINARY_NAME) ]; then \
 		$(INSTALL_BIN_DIR)/$(BINARY_NAME) uninstall -y || true; \
@@ -266,7 +266,7 @@ uninstall:
 	@echo "Removed binaries"
 	@echo "Note: Data directory $(AGENCY_HOME) was not removed. Run 'make uninstall-all' to remove everything."
 
-## uninstall-all: Remove claw and all data
+## uninstall-all: Remove agency and all data
 uninstall-all:
 	@echo "Removing binaries..."
 	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)
@@ -310,7 +310,7 @@ build-linux-mipsle: $(EMBED_INDEX) $(MANUAL_INDEX) generate
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
 
-## build-all: Build claw for all platforms
+## build-all: Build agency for all platforms
 build-all: $(EMBED_INDEX) $(MANUAL_INDEX) generate
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
@@ -338,7 +338,7 @@ release-checksums:
 	@echo "Wrote $(BUILD_DIR)/checksums.txt:"
 	@cat $(BUILD_DIR)/checksums.txt
 
-## release-sign: Sign build/checksums.txt with minisign (secret key: ~/.minisign/minisign.key, or MINISIGN_KEY=path) -> checksums.txt.minisig, which `claw upgrade` requires.
+## release-sign: Sign build/checksums.txt with minisign (secret key: ~/.minisign/minisign.key, or MINISIGN_KEY=path) -> checksums.txt.minisig, which `agency upgrade` requires.
 release-sign: release-checksums
 	@test -f "$(MINISIGN_KEY)" || { echo "ERROR: minisign secret key $(MINISIGN_KEY) not found (generate once with: minisign -G; or set MINISIGN_KEY=/path/to/key)"; exit 1; }
 	@command -v $(MINISIGN) >/dev/null 2>&1 || { echo "ERROR: $(MINISIGN) not found (brew install minisign / apt install minisign)"; exit 1; }
@@ -346,7 +346,7 @@ release-sign: release-checksums
 	@$(MINISIGN) -S -s $(MINISIGN_KEY) -m $(BUILD_DIR)/checksums.txt -t "Agency v$(VERSION) $(GIT_COMMIT)"
 	@echo "Signed: $(BUILD_DIR)/checksums.txt.minisig"
 
-## sbom: Write a CycloneDX SBOM of the claw binary's Go modules to build/sbom.json (cyclonedx-gomod, pinned; installed into bin/ when missing).
+## sbom: Write a CycloneDX SBOM of the agency binary's Go modules to build/sbom.json (cyclonedx-gomod, pinned; installed into bin/ when missing).
 sbom:
 	@command -v "$(CYCLONEDX_GOMOD)" >/dev/null 2>&1 || { \
 	  echo "Installing cyclonedx-gomod $(CYCLONEDX_GOMOD_VERSION) into $(TOOLS_BIN)..."; \
@@ -518,7 +518,7 @@ check: test
 check-webui:
 	@node tests/frontend-e2e.mjs
 
-## run: Build and run claw
+## run: Build and run agency
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
@@ -534,7 +534,7 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make                    # Same as 'make build'"
-	@echo "  make build              # Build claw (frontend SPA embedded) for current platform"
+	@echo "  make build              # Build agency (frontend SPA embedded) for current platform"
 	@echo "  make install            # Build and install to $(INSTALL_BIN_DIR)"
 	@echo "  make clean              # Remove all build artifacts (keeps node_modules)"
 	@echo "  make uninstall          # Remove binaries"

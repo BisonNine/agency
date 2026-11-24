@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"go.bison9.com/agency/cmd/claw-auth/providers"
+	"go.bison9.com/agency/cmd/agency-auth/providers"
 )
 
 // roundTrip answers every request from fn, so the provider's fixed Google

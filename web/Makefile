@@ -1,24 +1,24 @@
 .PHONY: dev dev-frontend dev-backend build test lint clean
 
 # This Makefile is a thin convenience wrapper around the frontend dev loop.
-# Since the WebUI is now embedded into the single `claw` binary, the
-# "backend" main lives at the repo root — there is no separate claw-web binary.
+# Since the WebUI is now embedded into the single `agency` binary, the
+# "backend" main lives at the repo root — there is no separate agency-web binary.
 
-# Run frontend dev server alongside the merged claw binary.
+# Run frontend dev server alongside the merged agency binary.
 dev:
-	@echo "Starting claw (merged gateway+WebUI) and the Vite frontend dev server..."
+	@echo "Starting agency (merged gateway+WebUI) and the Vite frontend dev server..."
 	@$(MAKE) dev-backend & $(MAKE) dev-frontend
 
-# Start the frontend dev server (Vite, proxies /api and /webui to claw).
+# Start the frontend dev server (Vite, proxies /api and /webui to agency).
 dev-frontend:
 	cd frontend && pnpm dev
 
-# Start the merged claw binary in dev mode.
+# Start the merged agency binary in dev mode.
 dev-backend:
 	cd .. && go run .
 
 # Build the frontend bundle into web/backend/dist so that the Go embed in the
-# merged claw binary picks it up on the next `go build`.
+# merged agency binary picks it up on the next `go build`.
 build:
 	cd frontend && pnpm build:backend
 

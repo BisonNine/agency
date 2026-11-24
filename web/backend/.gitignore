@@ -5,7 +5,7 @@
 *.dylib
 *.test
 *.out
-claw-web
+agency-web
 
 # Frontend build artifacts (embedded by Go)
 dist/*

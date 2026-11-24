@@ -113,31 +113,13 @@ func (h *host) ownerName(p string) string {
 	return u.Username
 }
 
-// optAgencyBinary is the binary of an /opt/agency install: bin/claw, else the
-// older /opt/agency/claw, else "".
+// optAgencyBinary is the binary of an /opt/agency install, bin/agency, or ""
+// when there is none.
 func (h *host) optAgencyBinary() string {
-	for _, p := range []string{TargetBinaryPath(optAgencyBinDir), filepath.Join(optAgencyHome, global.InstalledBinaryName)} {
-		if h.fileExists(p) {
-			return p
-		}
+	if p := TargetBinaryPath(optAgencyBinDir); h.fileExists(p) {
+		return p
 	}
 	return ""
-}
-
-// leftoverOptAgencyFiles lists the binary and alias an older /opt/agency install
-// kept directly in the data directory, which are no longer used once binDir
-// is optAgencyBinDir.
-func (h *host) leftoverOptAgencyFiles(binDir string) []string {
-	if binDir != optAgencyBinDir {
-		return nil
-	}
-	var out []string
-	for _, name := range []string{global.InstalledBinaryName, openClawAlias} {
-		if p := filepath.Join(optAgencyHome, name); h.exists(p) {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // DetectExistingInstall searches for an existing Agency installation on the system.
@@ -158,14 +140,14 @@ func (h *host) detectInstall(homeDir string) *ExistingInstall {
 }
 
 func (h *host) detectLinuxInstall(homeDir string) *ExistingInstall {
-	// 1. Check systemd system service (/etc/systemd/system/claw.service)
+	// 1. Check systemd system service (/etc/systemd/system/agency.service)
 	if h.fileExists(systemUnitPath) {
 		inst := h.parseSystemdUnit(systemUnitPath, "systemd-system")
 		inst.IsActive = h.commandOK("systemctl", "is-active", "--quiet", serviceName)
 		return inst
 	}
 
-	// 2. Check systemd user service (~/.config/systemd/user/claw.service)
+	// 2. Check systemd user service (~/.config/systemd/user/agency.service)
 	userPath := userUnitPath(homeDir)
 	if h.fileExists(userPath) {
 		inst := h.parseSystemdUnit(userPath, "systemd-user")
@@ -213,7 +195,7 @@ func (h *host) detectDarwinInstall(homeDir string) *ExistingInstall {
 	return h.detectFromBinary()
 }
 
-// detectFromBinary finds an install by the running executable, else by claw
+// detectFromBinary finds an install by the running executable, else by agency
 // on PATH, ignoring build and temporary locations.
 func (h *host) detectFromBinary() *ExistingInstall {
 	candidates := []func() (string, error){
@@ -380,7 +362,7 @@ func isBuildOrTempPath(p string) bool {
 	clean := filepath.Clean(p)
 	parts := strings.SplitSeq(clean, string(filepath.Separator))
 	for part := range parts {
-		if part == "build" || part == "tmp" || part == "temp" || strings.HasPrefix(part, "claw-upgrade-") {
+		if part == "build" || part == "tmp" || part == "temp" || strings.HasPrefix(part, "agency-upgrade-") {
 			return true
 		}
 	}

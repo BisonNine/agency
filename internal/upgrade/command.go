@@ -1,4 +1,4 @@
-// Package upgrade provides the `claw upgrade` subcommand, which downloads
+// Package upgrade provides the `agency upgrade` subcommand, which downloads
 // the latest release binary from GitHub, verifies it against the release's
 // minisign-signed checksum list (keys in app/keys.go), atomically updates the
 // running executable, and restarts any active background service.
@@ -77,7 +77,7 @@ type GitHubAsset struct {
 	Size               int64  `json:"size"`
 }
 
-// NewUpgradeCommand returns the `claw upgrade` subcommand.
+// NewUpgradeCommand returns the `agency upgrade` subcommand.
 func NewUpgradeCommand() *cobra.Command {
 	var (
 		checkOnly     bool
@@ -255,7 +255,7 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 	}
 
 	// Create temp directory for download
-	tmpDir, err := os.MkdirTemp("", "claw-upgrade-*")
+	tmpDir, err := os.MkdirTemp("", "agency-upgrade-*")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
 	}
@@ -291,8 +291,8 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 
 	// Extract binary from tar.gz
 	fmt.Println("Extracting binary...")
-	extractedBinPath := filepath.Join(tmpDir, "extracted-claw")
-	extractedAuthPath := filepath.Join(tmpDir, "extracted-claw-auth")
+	extractedBinPath := filepath.Join(tmpDir, "extracted-agency")
+	extractedAuthPath := filepath.Join(tmpDir, "extracted-agency-auth")
 	hasAuth, err := extractBinariesFromTarGz(archivePath, extractedBinPath, extractedAuthPath)
 	if err != nil {
 		return fmt.Errorf("extracting binary from archive: %w", err)
@@ -304,7 +304,7 @@ func runUpgrade(checkOnly, force bool, targetVersion string, autoYes bool) error
 		return fmt.Errorf("replacing binary at %s: %w", exePath, err)
 	}
 
-	// If claw-auth was in the archive and exists alongside claw, update it too
+	// If agency-auth was in the archive and exists alongside agency, update it too
 	authDest := filepath.Join(binDir, global.AuthHelperBinaryName)
 	if hasAuth && fileExists(authDest) {
 		if err := atomicReplace(extractedAuthPath, authDest); err == nil {
@@ -474,7 +474,7 @@ func computeSHA256(filePath string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func extractBinariesFromTarGz(archivePath, clawDst, clawAuthDst string) (hasAuth bool, err error) {
+func extractBinariesFromTarGz(archivePath, agencyDst, agencyAuthDst string) (hasAuth bool, err error) {
 	f, err := os.Open(archivePath) //nolint:gosec // file inside the upgrader's own temp dir
 	if err != nil {
 		return false, err
@@ -501,7 +501,7 @@ func extractBinariesFromTarGz(archivePath, clawDst, clawAuthDst string) (hasAuth
 
 		cleanName := filepath.Base(hdr.Name)
 		if cleanName == global.InstalledBinaryName && (hdr.Typeflag == tar.TypeReg) {
-			out, err := os.OpenFile(clawDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // installed binary must be executable
+			out, err := os.OpenFile(agencyDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // installed binary must be executable
 			if err != nil {
 				return false, err
 			}
@@ -514,7 +514,7 @@ func extractBinariesFromTarGz(archivePath, clawDst, clawAuthDst string) (hasAuth
 			}
 			foundClaw = true
 		} else if cleanName == global.AuthHelperBinaryName && (hdr.Typeflag == tar.TypeReg) {
-			out, err := os.OpenFile(clawAuthDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // installed binary must be executable
+			out, err := os.OpenFile(agencyAuthDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // installed binary must be executable
 			if err != nil {
 				return false, err
 			}
@@ -593,7 +593,7 @@ func isBuildOrTempDir(path string) bool {
 	clean := filepath.Clean(path)
 	parts := strings.SplitSeq(clean, string(filepath.Separator))
 	for p := range parts {
-		if p == "build" || p == "tmp" || p == "temp" || strings.HasPrefix(p, "claw-upgrade-") {
+		if p == "build" || p == "tmp" || p == "temp" || strings.HasPrefix(p, "agency-upgrade-") {
 			return true
 		}
 	}

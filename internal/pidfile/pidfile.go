@@ -4,7 +4,7 @@
 // Copyright (c) 2026 Tenebris Technologies Inc.
 
 // Package pidfile records the running Agency process id in its data
-// directory, so a separate `claw` invocation can find the instance it belongs
+// directory, so a separate `agency` invocation can find the instance it belongs
 // to and report on it.
 //
 // The data directory is the right scope. One binary runs several instances —

@@ -15,8 +15,8 @@ private/
 *.dylib
 *.test
 *.out
-/claw
-/claw-test
+/agency
+/agency-test
 internal/onboard/workspace/
 test.out
 

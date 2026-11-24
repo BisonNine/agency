@@ -28,11 +28,11 @@ import (
 	"time"
 
 	"go.bison9.com/agency/app"
-	"go.bison9.com/agency/cmd/claw-auth/config"
-	"go.bison9.com/agency/cmd/claw-auth/debug"
-	"go.bison9.com/agency/cmd/claw-auth/mcp"
-	"go.bison9.com/agency/cmd/claw-auth/providers"
-	"go.bison9.com/agency/cmd/claw-auth/providers/google"
+	"go.bison9.com/agency/cmd/agency-auth/config"
+	"go.bison9.com/agency/cmd/agency-auth/debug"
+	"go.bison9.com/agency/cmd/agency-auth/mcp"
+	"go.bison9.com/agency/cmd/agency-auth/providers"
+	"go.bison9.com/agency/cmd/agency-auth/providers/google"
 )
 
 // authCodeBlob represents the JSON payload inside a base64url-encoded auth code blob
@@ -65,7 +65,7 @@ func main() {
 	debug.Debug = flags.debug
 
 	if flags.version {
-		fmt.Printf("claw-auth version %s\n", version)
+		fmt.Printf("agency-auth version %s\n", version)
 		return
 	}
 
@@ -115,7 +115,7 @@ func parseFlags(flags *cliFlags) {
 	flag.Usage = func() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage: %s <auth-code-blob>\n", os.Args[0])
 		_, _ = fmt.Fprintf(os.Stderr, "   or: %s -service <name> -fusion <url> -token <token>\n\n", os.Args[0])
-		_, _ = fmt.Fprintf(os.Stderr, "claw-auth is a generic authentication helper for %s.\n\n", app.Name())
+		_, _ = fmt.Fprintf(os.Stderr, "agency-auth is a generic authentication helper for %s.\n\n", app.Name())
 		_, _ = fmt.Fprintf(os.Stderr, "Auth Code Mode (recommended):\n")
 		_, _ = fmt.Fprintf(os.Stderr, "  Generate an auth code on the server: mcpfusion -auth-code google -auth-url http://host:port\n")
 		_, _ = fmt.Fprintf(os.Stderr, "  Then run: %s <auth-code-blob>\n\n", os.Args[0])

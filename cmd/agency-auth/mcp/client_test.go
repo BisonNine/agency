@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"go.bison9.com/agency/cmd/claw-auth/providers"
+	"go.bison9.com/agency/cmd/agency-auth/providers"
 )
 
 // recorded is one request the fake MCPFusion server received.

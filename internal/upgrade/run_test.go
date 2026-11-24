@@ -155,7 +155,7 @@ func (f *fakeGitHub) requested() []string {
 }
 
 // upgradeEnv is a fake machine for runUpgrade: the running binary (and its
-// claw-auth companion) in a temp bin dir, no installed service unless set,
+// agency-auth companion) in a temp bin dir, no installed service unless set,
 // and a recording service manager on which nothing is active.
 type upgradeEnv struct {
 	gh       *fakeGitHub
@@ -166,7 +166,7 @@ type upgradeEnv struct {
 	commands []string
 }
 
-const newBinary = "#!/bin/sh\necho new claw\n"
+const newBinary = "#!/bin/sh\necho new agency\n"
 
 func newUpgradeEnv(t *testing.T, tag string) *upgradeEnv {
 	t.Helper()
@@ -182,12 +182,12 @@ func newUpgradeEnv(t *testing.T, tag string) *upgradeEnv {
 		t.Fatal(err)
 	}
 	e := &upgradeEnv{
-		gh:     newFakeGitHub(t, tag, makeTarGz(t, map[string]string{"claw": newBinary, "claw-auth": "new auth"})),
+		gh:     newFakeGitHub(t, tag, makeTarGz(t, map[string]string{"agency": newBinary, "agency-auth": "new auth"})),
 		binDir: binDir,
 		active: map[string]bool{},
 	}
-	e.exe = filepath.Join(e.binDir, "claw")
-	if err := os.WriteFile(e.exe, []byte("old claw"), 0o755); err != nil {
+	e.exe = filepath.Join(e.binDir, "agency")
+	if err := os.WriteFile(e.exe, []byte("old agency"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -315,7 +315,7 @@ func TestRunUpgrade_CheckOnly(t *testing.T) {
 					t.Errorf("--check downloaded %s", p)
 				}
 			}
-			if readFile(t, e.exe) != "old claw" {
+			if readFile(t, e.exe) != "old agency" {
 				t.Error("--check replaced the binary")
 			}
 		})
@@ -334,13 +334,13 @@ func TestRunUpgrade_UpToDate(t *testing.T) {
 	if !strings.Contains(out, "upgrade --force") {
 		t.Errorf("output lacks the --force hint:\n%s", out)
 	}
-	if readFile(t, e.exe) != "old claw" {
+	if readFile(t, e.exe) != "old agency" {
 		t.Error("an up-to-date binary was replaced")
 	}
 }
 
 // TestRunUpgrade_InstallsVerifiedRelease: the signed archive replaces the
-// running binary and its claw-auth companion, keeps it executable, removes
+// running binary and its agency-auth companion, keeps it executable, removes
 // the download directory and restarts the active user service.
 func TestRunUpgrade_InstallsVerifiedRelease(t *testing.T) {
 	e := newUpgradeEnv(t, newerTag)
@@ -363,7 +363,7 @@ func TestRunUpgrade_InstallsVerifiedRelease(t *testing.T) {
 		t.Errorf("binary mode = %v (%v), want 0755", fi.Mode().Perm(), serr)
 	}
 	if got := readFile(t, auth); got != "new auth" {
-		t.Errorf("claw-auth = %q, want the release's", got)
+		t.Errorf("agency-auth = %q, want the release's", got)
 	}
 	for _, want := range []string{
 		"Signature and checksum verified.",
@@ -380,7 +380,7 @@ func TestRunUpgrade_InstallsVerifiedRelease(t *testing.T) {
 		t.Fatal(rerr)
 	}
 	for _, ent := range entries {
-		if strings.HasPrefix(ent.Name(), "claw-upgrade-") {
+		if strings.HasPrefix(ent.Name(), "agency-upgrade-") {
 			t.Errorf("download directory %s left behind", ent.Name())
 		}
 	}
@@ -393,7 +393,7 @@ func TestRunUpgrade_InstallsVerifiedRelease(t *testing.T) {
 	}
 }
 
-// TestRunUpgrade_NoCompanionInstalled: a claw-auth in the archive is not
+// TestRunUpgrade_NoCompanionInstalled: a agency-auth in the archive is not
 // installed where there was none.
 func TestRunUpgrade_NoCompanionInstalled(t *testing.T) {
 	e := newUpgradeEnv(t, newerTag)
@@ -403,7 +403,7 @@ func TestRunUpgrade_NoCompanionInstalled(t *testing.T) {
 		t.Fatalf("runUpgrade: %v", err)
 	}
 	if _, serr := os.Stat(filepath.Join(e.binDir, global.AuthHelperBinaryName)); !errors.Is(serr, os.ErrNotExist) {
-		t.Errorf("claw-auth installed although none was there: %v", serr)
+		t.Errorf("agency-auth installed although none was there: %v", serr)
 	}
 	if strings.Contains(out, "Updated companion tool") {
 		t.Errorf("companion reported updated:\n%s", out)
@@ -498,14 +498,14 @@ func TestRunUpgrade_ForceReinstall(t *testing.T) {
 func TestRunUpgrade_ExistingInstall(t *testing.T) {
 	e := newUpgradeEnv(t, newerTag)
 	installedDir := t.TempDir()
-	installed := filepath.Join(installedDir, "claw")
-	if err := os.WriteFile(installed, []byte("installed claw"), 0o755); err != nil {
+	installed := filepath.Join(installedDir, "agency")
+	if err := os.WriteFile(installed, []byte("installed agency"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	dataDir := t.TempDir()
 	for _, active := range []bool{true, false} {
 		e.install = &install.ExistingInstall{
-			BinaryPath: installed, AgencyHome: dataDir, ServicePath: "/etc/systemd/system/claw.service",
+			BinaryPath: installed, AgencyHome: dataDir, ServicePath: "/etc/systemd/system/agency.service",
 			ServiceType: "systemd-system", IsActive: active,
 		}
 		var err error
@@ -521,7 +521,7 @@ func TestRunUpgrade_ExistingInstall(t *testing.T) {
 			"Detected installed " + app.ShortName() + " at: " + installed,
 			"Target Binary:   " + installed,
 			"Data Directory:  " + dataDir,
-			"Existing Service: /etc/systemd/system/claw.service (systemd-system, " + state + ")",
+			"Existing Service: /etc/systemd/system/agency.service (systemd-system, " + state + ")",
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output lacks %q:\n%s", want, out)
@@ -533,11 +533,11 @@ func TestRunUpgrade_ExistingInstall(t *testing.T) {
 		if os.Getenv("AGENCY_HOME") != dataDir || os.Getenv(global.EnvVarHome) != dataDir {
 			t.Errorf("AGENCY_HOME = %q, want %q", os.Getenv("AGENCY_HOME"), dataDir)
 		}
-		if err := os.WriteFile(installed, []byte("installed claw"), 0o755); err != nil {
+		if err := os.WriteFile(installed, []byte("installed agency"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if readFile(t, e.exe) != "old claw" {
+	if readFile(t, e.exe) != "old agency" {
 		t.Error("the temporary build was replaced instead of the installed binary")
 	}
 }
@@ -573,7 +573,7 @@ func TestRunUpgrade_Errors(t *testing.T) {
 		}, "determining home directory"},
 		{"install directory not writable", func(t *testing.T, e *upgradeEnv) {
 			t.Helper()
-			e.exe = filepath.Join(t.TempDir(), "missing", "claw")
+			e.exe = filepath.Join(t.TempDir(), "missing", "agency")
 		}, "permission denied writing to"},
 		{"archive download fails", func(_ *testing.T, e *upgradeEnv) {
 			e.gh.status["/assets/"+archiveName] = http.StatusBadGateway
@@ -589,7 +589,7 @@ func TestRunUpgrade_Errors(t *testing.T) {
 			stranger := newTestSigner(t)
 			releaseKeys = func() []string { return []string{stranger.publicKeyLine()} }
 		}, "release verification failed"},
-		{"archive without claw", func(t *testing.T, e *upgradeEnv) {
+		{"archive without agency", func(t *testing.T, e *upgradeEnv) {
 			t.Helper()
 			e.gh.setArchive(makeTarGz(t, map[string]string{"README": "hi"}))
 		}, "extracting binary from archive"},
@@ -603,7 +603,7 @@ func TestRunUpgrade_Errors(t *testing.T) {
 		}, "downloading " + archiveName},
 		{"target is a directory", func(t *testing.T, e *upgradeEnv) {
 			t.Helper()
-			e.exe = filepath.Join(t.TempDir(), "claw")
+			e.exe = filepath.Join(t.TempDir(), "agency")
 			if err := os.Mkdir(e.exe, 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -618,7 +618,7 @@ func TestRunUpgrade_Errors(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("runUpgrade = %v, want it to contain %q", err, tc.want)
 			}
-			if fi, serr := os.Stat(e.exe); serr == nil && !fi.IsDir() && readFile(t, e.exe) != "old claw" {
+			if fi, serr := os.Stat(e.exe); serr == nil && !fi.IsDir() && readFile(t, e.exe) != "old agency" {
 				t.Error("binary replaced by a failed upgrade")
 			}
 			if len(e.commands) != 0 {
@@ -666,10 +666,10 @@ func TestDownloadHelpers_Errors(t *testing.T) {
 
 func TestAtomicReplace_MissingSource(t *testing.T) {
 	dir := t.TempDir()
-	if err := atomicReplace(filepath.Join(dir, "nope"), filepath.Join(dir, "claw")); err == nil {
+	if err := atomicReplace(filepath.Join(dir, "nope"), filepath.Join(dir, "agency")); err == nil {
 		t.Fatal("atomicReplace of a missing source succeeded")
 	}
-	if err := atomicReplace(filepath.Join(dir, "nope"), filepath.Join(dir, "missing", "claw")); err == nil {
+	if err := atomicReplace(filepath.Join(dir, "nope"), filepath.Join(dir, "missing", "agency")); err == nil {
 		t.Fatal("atomicReplace into a missing directory succeeded")
 	}
 }
@@ -682,7 +682,7 @@ func TestAtomicReplace_NewFile(t *testing.T) {
 	if err := os.WriteFile(src, []byte("bin"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	dst := filepath.Join(dir, "claw")
+	dst := filepath.Join(dir, "agency")
 	if err := atomicReplace(src, dst); err != nil {
 		t.Fatal(err)
 	}
@@ -693,13 +693,13 @@ func TestAtomicReplace_NewFile(t *testing.T) {
 
 func TestIsBuildOrTempDir(t *testing.T) {
 	for p, want := range map[string]bool{
-		"/home/alice/src/build/claw": true,
-		"/tmp/claw":                  true,
-		"/var/temp/claw":             true,
-		"/x/claw-upgrade-123/claw":   true,
-		"/usr/local/bin/claw":        false,
-		"/opt/agency/bin/claw":       false,
-		"/home/alice/buildings/claw": false,
+		"/home/alice/src/build/agency": true,
+		"/tmp/agency":                  true,
+		"/var/temp/agency":             true,
+		"/x/agency-upgrade-123/agency": true,
+		"/usr/local/bin/agency":        false,
+		"/opt/agency/bin/agency":       false,
+		"/home/alice/buildings/agency": false,
 	} {
 		if got := isBuildOrTempDir(p); got != want {
 			t.Errorf("isBuildOrTempDir(%q) = %v, want %v", p, got, want)
@@ -735,21 +735,21 @@ func TestExtractBinariesFromTarGz_Errors(t *testing.T) {
 		t.Error("corrupt tar accepted")
 	}
 	good := filepath.Join(dir, "good.tar.gz")
-	if err := os.WriteFile(good, makeTarGz(t, map[string]string{"claw": "c", "claw-auth": "a"}), 0o600); err != nil {
+	if err := os.WriteFile(good, makeTarGz(t, map[string]string{"agency": "c", "agency-auth": "a"}), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := extractBinariesFromTarGz(good, filepath.Join(dir, "missing", "c"), filepath.Join(dir, "a")); err == nil {
-		t.Error("unwritable claw destination accepted")
+		t.Error("unwritable agency destination accepted")
 	}
 	onlyAuth := filepath.Join(dir, "auth.tar.gz")
-	if err := os.WriteFile(onlyAuth, makeTarGz(t, map[string]string{"claw-auth": "a"}), 0o600); err != nil {
+	if err := os.WriteFile(onlyAuth, makeTarGz(t, map[string]string{"agency-auth": "a"}), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := extractBinariesFromTarGz(onlyAuth, filepath.Join(dir, "c"), filepath.Join(dir, "missing", "a")); err == nil {
-		t.Error("unwritable claw-auth destination accepted")
+		t.Error("unwritable agency-auth destination accepted")
 	}
 	// A truncated member fails while copying it out.
-	full := makeTarGz(t, map[string]string{"claw": strings.Repeat("x", 4096)})
+	full := makeTarGz(t, map[string]string{"agency": strings.Repeat("x", 4096)})
 	raw, err := gzip.NewReader(bytes.NewReader(full))
 	if err != nil {
 		t.Fatal(err)
@@ -771,9 +771,9 @@ func TestExtractBinariesFromTarGz_Errors(t *testing.T) {
 		t.Fatal(ierr)
 	}
 	if _, ierr := extractBinariesFromTarGz(truncPath, filepath.Join(dir, "c2"), filepath.Join(dir, "a2")); ierr == nil {
-		t.Error("truncated claw member accepted")
+		t.Error("truncated agency member accepted")
 	}
-	authFull := makeTarGz(t, map[string]string{"claw-auth": strings.Repeat("x", 4096)})
+	authFull := makeTarGz(t, map[string]string{"agency-auth": strings.Repeat("x", 4096)})
 	raw, err = gzip.NewReader(bytes.NewReader(authFull))
 	if err != nil {
 		t.Fatal(err)
@@ -794,7 +794,7 @@ func TestExtractBinariesFromTarGz_Errors(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := extractBinariesFromTarGz(truncPath, filepath.Join(dir, "c3"), filepath.Join(dir, "a3")); err == nil {
-		t.Error("truncated claw-auth member accepted")
+		t.Error("truncated agency-auth member accepted")
 	}
 }
 
@@ -931,7 +931,7 @@ func TestNewUpgradeCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upgrade --check: %v", err)
 	}
-	if !strings.Contains(out, "A newer version") || readFile(t, e.exe) != "old claw" {
+	if !strings.Contains(out, "A newer version") || readFile(t, e.exe) != "old agency" {
 		t.Errorf("--check output %q", out)
 	}
 	cmd = NewUpgradeCommand()
@@ -946,13 +946,13 @@ func TestNewUpgradeCommand(t *testing.T) {
 }
 
 // TestRunUpgrade_PackageManagedLinux: a binary in /usr/bin on Linux is owned by
-// dpkg/apt, so `claw upgrade` refuses to overwrite it and directs the operator
-// to apt, while `claw upgrade --check` still checks GitHub and prints the apt
+// dpkg/apt, so `agency upgrade` refuses to overwrite it and directs the operator
+// to apt, while `agency upgrade --check` still checks GitHub and prints the apt
 // command.
 func TestRunUpgrade_PackageManagedLinux(t *testing.T) {
-	t.Run("direct /usr/bin/claw refuses before hitting GitHub", func(t *testing.T) {
+	t.Run("direct /usr/bin/agency refuses before hitting GitHub", func(t *testing.T) {
 		e := newUpgradeEnv(t, newerTag)
-		executable = func() (string, error) { return "/usr/bin/claw", nil }
+		executable = func() (string, error) { return "/usr/bin/agency", nil }
 
 		var err error
 		captureStdout(t, func() { err = runUpgrade(false, false, "", true) })
@@ -966,7 +966,7 @@ func TestRunUpgrade_PackageManagedLinux(t *testing.T) {
 
 	t.Run("--check prints apt hint", func(t *testing.T) {
 		_ = newUpgradeEnv(t, newerTag)
-		executable = func() (string, error) { return "/usr/bin/claw", nil }
+		executable = func() (string, error) { return "/usr/bin/agency", nil }
 
 		var err error
 		out := captureStdout(t, func() { err = runUpgrade(true, false, "", false) })
@@ -979,9 +979,9 @@ func TestRunUpgrade_PackageManagedLinux(t *testing.T) {
 		}
 	})
 
-	t.Run("build binary targeting detected /usr/bin/claw refuses", func(t *testing.T) {
+	t.Run("build binary targeting detected /usr/bin/agency refuses", func(t *testing.T) {
 		e := newUpgradeEnv(t, newerTag)
-		buildExe := filepath.Join(t.TempDir(), "build", "claw")
+		buildExe := filepath.Join(t.TempDir(), "build", "agency")
 		if err := os.MkdirAll(filepath.Dir(buildExe), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -989,7 +989,7 @@ func TestRunUpgrade_PackageManagedLinux(t *testing.T) {
 			t.Fatal(err)
 		}
 		executable = func() (string, error) { return buildExe, nil }
-		e.install = &install.ExistingInstall{BinaryPath: "/usr/bin/claw"}
+		e.install = &install.ExistingInstall{BinaryPath: "/usr/bin/agency"}
 
 		var err error
 		captureStdout(t, func() { err = runUpgrade(false, false, "", true) })
@@ -997,4 +997,25 @@ func TestRunUpgrade_PackageManagedLinux(t *testing.T) {
 			t.Fatalf("err = %v, want apt upgrade hint", err)
 		}
 	})
+}
+
+// upgrade asks for the agency archive and nothing else: a release that
+// carries only an archive under the old name has no binary for it.
+func TestRunUpgrade_AsksForAgencyArchive(t *testing.T) {
+	want := "agency-" + runtime.GOOS + "-" + runtime.GOARCH + ".tar.gz"
+	if archiveName != want {
+		t.Fatalf("archive name = %q, want %q", archiveName, want)
+	}
+	e := newUpgradeEnv(t, newerTag)
+	old := "claw-" + runtime.GOOS + "-" + runtime.GOARCH + ".tar.gz" // rename-guard:old-name
+	e.gh.assets[old] = e.gh.assets[archiveName]
+	delete(e.gh.assets, archiveName)
+	var err error
+	captureStdout(t, func() { err = runUpgrade(false, false, "", true) })
+	if err == nil || !strings.Contains(err.Error(), "("+want+")") {
+		t.Fatalf("runUpgrade = %v, want no release binary found naming %s", err, want)
+	}
+	if readFile(t, e.exe) != "old agency" {
+		t.Error("the binary was replaced")
+	}
 }

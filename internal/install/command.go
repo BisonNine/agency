@@ -1,4 +1,4 @@
-// Package install provides the `claw install` / `claw uninstall` subcommands,
+// Package install provides the `agency install` / `agency uninstall` subcommands,
 // which deploy the running binary and register a system boot or user session service
 // on Linux (systemd) and macOS (launchd).
 package install
@@ -49,7 +49,7 @@ type TargetUser struct {
 	IsRoot    bool
 }
 
-// NewInstallCommand returns the `claw install` subcommand.
+// NewInstallCommand returns the `agency install` subcommand.
 func NewInstallCommand() *cobra.Command {
 	var (
 		host         string
@@ -65,12 +65,12 @@ func NewInstallCommand() *cobra.Command {
 		Long: "Copies the running binary, ensures it is on your PATH, and sets up a background\n" +
 			"service to run " + app.ShortName() + " automatically:\n\n" +
 			"  - Run as regular user: Installs in User Mode (user space, no sudo required).\n" +
-			"    • Linux: registers a systemd user service (~/.config/systemd/user/claw.service)\n" +
+			"    • Linux: registers a systemd user service (~/.config/systemd/user/agency.service)\n" +
 			"    • macOS: registers a launchd LaunchAgent (~/Library/LaunchAgents/" + global.LaunchdLabel + ".plist)\n" +
 			"    • Binary copied to ~/bin (if exists) or ~/.local/bin\n\n" +
 			"  - Run with sudo: Installs in System Mode (system boot service).\n" +
 			"    • Detects invoking user ($SUDO_USER) so " + app.ShortName() + " never executes as root\n" +
-			"    • Linux: registers a systemd system service (/etc/systemd/system/claw.service)\n" +
+			"    • Linux: registers a systemd system service (/etc/systemd/system/agency.service)\n" +
 			"    • macOS: registers a launchd LaunchDaemon (/Library/LaunchDaemons/" + global.LaunchdLabel + ".plist)\n" +
 			"    • Binary copied to /usr/local/bin\n\n" +
 			"The WebUI requires an admin login. If <AGENCY_HOME>/credentials.json does not exist, the\n" +
@@ -99,7 +99,7 @@ func NewInstallCommand() *cobra.Command {
 	return cmd
 }
 
-// NewUninstallCommand returns the `claw uninstall` subcommand.
+// NewUninstallCommand returns the `agency uninstall` subcommand.
 func NewUninstallCommand() *cobra.Command {
 	var (
 		targetUser string
@@ -177,7 +177,7 @@ func resolveTargetUser(explicitUser string) (*TargetUser, error) {
 
 // checkExistingMode refuses to install alongside a service of the other kind.
 // The mode is otherwise decided by whether the installer runs as root, and an
-// existing service must win over that: re-running `claw install` as the
+// existing service must win over that: re-running `agency install` as the
 // service account against a system service would have written a second,
 // user-level unit for the same data directory and ports.
 func checkExistingMode(existing *ExistingInstall, isRoot bool) error {
@@ -287,7 +287,7 @@ func runInstall(host string, port int, allowedCIDRs, targetUser, customBinDir st
 	return realHost().install(host, port, allowedCIDRs, targetUser, customBinDir, autoYes)
 }
 
-// install is `claw install` on h.
+// install is `agency install` on h.
 func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBinDir string, autoYes bool) error {
 	if h.goos != "linux" && h.goos != "darwin" {
 		return fmt.Errorf("`%s install` is only supported on Linux and macOS; this is %s", app.BinaryName(), h.goos)
@@ -392,7 +392,7 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	}
 	fmt.Printf("\nInstalled binary: %s\n", targetBin)
 
-	// 2b. Symlink openclaw -> claw (for Rabbit R1 ACP connection)
+	// 2b. Symlink openclaw -> agency (for Rabbit R1 ACP connection)
 	if err := linkOpenClawAlias(binDir, global.InstalledBinaryName); err != nil {
 		fmt.Printf("Warning: could not create the openclaw alias (%v).\n"+
 			"  The Rabbit R1 spawns `openclaw acp`; without this link it cannot connect.\n", err)
@@ -402,9 +402,6 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		}
 		fmt.Printf("Installed alias:  %s -> %s (for the Rabbit R1's `openclaw acp`)\n",
 			filepath.Join(binDir, openClawAlias), global.InstalledBinaryName)
-	}
-	for _, old := range h.leftoverOptAgencyFiles(binDir) {
-		fmt.Printf("%s is no longer used and can be removed.\n", old)
 	}
 
 	// 3. Ensure binDir is on PATH and AGENCY_HOME is exported in shell rc
@@ -563,7 +560,7 @@ func runUninstall(targetUser string, autoYes bool) error {
 	return realHost().uninstall(targetUser, autoYes)
 }
 
-// uninstall is `claw uninstall` on h.
+// uninstall is `agency uninstall` on h.
 func (h *host) uninstall(targetUser string, autoYes bool) error {
 	if h.goos != "linux" && h.goos != "darwin" {
 		return fmt.Errorf("`%s uninstall` is only supported on Linux and macOS; this is %s", app.BinaryName(), h.goos)

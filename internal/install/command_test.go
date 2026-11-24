@@ -17,12 +17,12 @@ import (
 // privilege level is refused instead of writing a second unit of the other
 // kind for the same install.
 func TestCheckExistingMode(t *testing.T) {
-	testbinary.Set(t, "alice-claw")
-	system := &ExistingInstall{ServiceType: "systemd-system", ServicePath: "/etc/systemd/system/claw.service", User: "alice"}
-	userSvc := &ExistingInstall{ServiceType: "systemd-user", ServicePath: "/home/alice/.config/systemd/user/claw.service", User: "alice"}
+	testbinary.Set(t, "alice-agency")
+	system := &ExistingInstall{ServiceType: "systemd-system", ServicePath: "/etc/systemd/system/agency.service", User: "alice"}
+	userSvc := &ExistingInstall{ServiceType: "systemd-user", ServicePath: "/home/alice/.config/systemd/user/agency.service", User: "alice"}
 	daemon := &ExistingInstall{ServiceType: "launchd-daemon", ServicePath: "/Library/LaunchDaemons/" + launchdPlistName}
 	agent := &ExistingInstall{ServiceType: "launchd-agent", ServicePath: "/Users/alice/Library/LaunchAgents/" + launchdPlistName, User: "alice"}
-	binaryOnly := &ExistingInstall{BinaryPath: "/opt/agency/claw"}
+	binaryOnly := &ExistingInstall{BinaryPath: "/opt/agency/agency"}
 
 	cases := []struct {
 		name     string
@@ -30,11 +30,11 @@ func TestCheckExistingMode(t *testing.T) {
 		isRoot   bool
 		wantErr  string
 	}{
-		{"system service without sudo", system, false, "run `sudo alice-claw install`"},
+		{"system service without sudo", system, false, "run `sudo alice-agency install`"},
 		{"system service with sudo", system, true, ""},
 		{"user service with sudo", userSvc, true, "as alice, without sudo"},
 		{"user service without sudo", userSvc, false, ""},
-		{"launchd daemon without sudo", daemon, false, "run `sudo alice-claw install`"},
+		{"launchd daemon without sudo", daemon, false, "run `sudo alice-agency install`"},
 		{"launchd agent with sudo", agent, true, "without sudo"},
 		{"binary only, either way", binaryOnly, false, ""},
 		{"nothing installed", nil, true, ""},
@@ -53,12 +53,12 @@ func TestCheckExistingMode(t *testing.T) {
 func TestBuildUnit_RunsAsUserAndStartsAtBoot(t *testing.T) {
 	t.Setenv(global.EnvVarHome, "") // defaults to user's .agency
 	t.Setenv("PATH", "/home/alice/.local/bin:/home/alice/.nvm/versions/node/v24/bin:/usr/bin")
-	unit := buildUnit("alice", "alice", "/home/alice/bin/claw", "/home/alice/bin")
+	unit := buildUnit("alice", "alice", "/home/alice/bin/agency", "/home/alice/bin")
 
 	wants := []string{
 		"User=alice",
 		"Group=alice",
-		"ExecStart=/home/alice/bin/claw",
+		"ExecStart=/home/alice/bin/agency",
 		"WantedBy=multi-user.target",
 		"KillMode=mixed",
 		"TimeoutStopSec=60",
@@ -75,10 +75,10 @@ func TestBuildUnit_RunsAsUserAndStartsAtBoot(t *testing.T) {
 }
 
 func TestBuildUnit_IncludesAgencyHomeWhenSet(t *testing.T) {
-	t.Setenv(global.EnvVarHome, "/srv/claw-data")
-	unit := buildUnit("bob", "staff", "/home/bob/.local/bin/claw", "/home/bob/.local/bin")
+	t.Setenv(global.EnvVarHome, "/srv/agency-data")
+	unit := buildUnit("bob", "staff", "/home/bob/.local/bin/agency", "/home/bob/.local/bin")
 
-	if !strings.Contains(unit, "Environment="+global.EnvVarHome+"=/srv/claw-data") {
+	if !strings.Contains(unit, "Environment="+global.EnvVarHome+"=/srv/agency-data") {
 		t.Errorf("unit should carry AGENCY_HOME when set:\n%s", unit)
 	}
 }
@@ -175,9 +175,9 @@ func TestPrintListenerSummary(t *testing.T) {
 	}
 
 	b.Reset()
-	printListenerSummary(&b, config.GatewayConfig{TLSPort: 9443, TLS: config.TLSConfig{Mode: config.TLSModeLocalhost, CertFile: "/etc/claw/my.crt"}})
+	printListenerSummary(&b, config.GatewayConfig{TLSPort: 9443, TLS: config.TLSConfig{Mode: config.TLSModeLocalhost, CertFile: "/etc/agency/my.crt"}})
 	got = b.String()
-	if !strings.Contains(got, "HTTPS on this machine:  https://127.0.0.1:9443/") || !strings.Contains(got, "Certificate:            /etc/claw/my.crt") {
+	if !strings.Contains(got, "HTTPS on this machine:  https://127.0.0.1:9443/") || !strings.Contains(got, "Certificate:            /etc/agency/my.crt") {
 		t.Errorf("localhost HTTPS summary:\n%s", got)
 	}
 	if strings.Contains(got, "Allowed networks") {
@@ -187,10 +187,10 @@ func TestPrintListenerSummary(t *testing.T) {
 
 func TestShellQuote(t *testing.T) {
 	cases := map[string]string{
-		"":              "''",
-		"/etc/claw":     "'/etc/claw'",
-		"it's":          `'it'"'"'s'`,
-		"/tmp/a b/claw": "'/tmp/a b/claw'",
+		"":                "''",
+		"/etc/agency":     "'/etc/agency'",
+		"it's":            `'it'"'"'s'`,
+		"/tmp/a b/agency": "'/tmp/a b/agency'",
 	}
 	for in, want := range cases {
 		if got := shellQuote(in); got != want {
@@ -219,10 +219,10 @@ func TestIsNetworkBind(t *testing.T) {
 // connect even though everything else works.
 func TestLinkOpenClawAlias(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "claw"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agency"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := linkOpenClawAlias(dir, "claw"); err != nil {
+	if err := linkOpenClawAlias(dir, "agency"); err != nil {
 		t.Fatalf("linkOpenClawAlias() error = %v", err)
 	}
 	link := filepath.Join(dir, "openclaw")
@@ -230,17 +230,17 @@ func TestLinkOpenClawAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openclaw is not a symlink: %v", err)
 	}
-	if target != "claw" {
-		t.Fatalf("openclaw -> %q, want %q (relative, so moving the dir keeps it valid)", target, "claw")
+	if target != "agency" {
+		t.Fatalf("openclaw -> %q, want %q (relative, so moving the dir keeps it valid)", target, "agency")
 	}
 
 	// Re-running install must keep or replace an existing link rather than failing.
-	if err := linkOpenClawAlias(dir, "claw"); err != nil {
+	if err := linkOpenClawAlias(dir, "agency"); err != nil {
 		t.Fatalf("second linkOpenClawAlias() error = %v", err)
 	}
 
 	// A read-only directory (such as /usr/bin for a non-root user after `apt install`)
-	// whose openclaw link already points at claw must succeed without unlinking.
+	// whose openclaw link already points at agency must succeed without unlinking.
 	if err := os.Chmod(dir, 0o555); err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestLinkOpenClawAlias(t *testing.T) {
 			t.Log(cerr)
 		}
 	})
-	if err := linkOpenClawAlias(dir, "claw"); err != nil {
+	if err := linkOpenClawAlias(dir, "agency"); err != nil {
 		t.Fatalf("linkOpenClawAlias() on read-only dir with matching link = %v, want nil", err)
 	}
 	if err := os.Chmod(dir, 0o755); err != nil {
@@ -257,11 +257,11 @@ func TestLinkOpenClawAlias(t *testing.T) {
 	}
 
 	// A link pointing elsewhere in a writable directory is replaced.
-	if err := linkOpenClawAlias(dir, "claw-other"); err != nil {
+	if err := linkOpenClawAlias(dir, "agency-other"); err != nil {
 		t.Fatalf("linkOpenClawAlias() replacing target error = %v", err)
 	}
-	if got, err := os.Readlink(link); err != nil || got != "claw-other" {
-		t.Fatalf("openclaw -> %q, %v, want claw-other", got, err)
+	if got, err := os.Readlink(link); err != nil || got != "agency-other" {
+		t.Fatalf("openclaw -> %q, %v, want agency-other", got, err)
 	}
 }
 
@@ -275,7 +275,7 @@ func TestIsPackageManagedBinDir(t *testing.T) {
 }
 
 func TestBuildUserUnit(t *testing.T) {
-	unit := buildUserUnit("/home/alice/.local/bin/claw", "/home/alice", "/home/alice/.local/bin", "/home/alice/.agency")
+	unit := buildUserUnit("/home/alice/.local/bin/agency", "/home/alice", "/home/alice/.local/bin", "/home/alice/.agency")
 	if strings.Contains(unit, "User=") {
 		t.Errorf("user unit must NOT contain User= directive:\n%s", unit)
 	}
@@ -285,7 +285,7 @@ func TestBuildUserUnit(t *testing.T) {
 	if !strings.Contains(unit, "WantedBy=default.target") {
 		t.Errorf("user unit must specify WantedBy=default.target:\n%s", unit)
 	}
-	if !strings.Contains(unit, "ExecStart=/home/alice/.local/bin/claw") {
+	if !strings.Contains(unit, "ExecStart=/home/alice/.local/bin/agency") {
 		t.Errorf("user unit missing ExecStart:\n%s", unit)
 	}
 	if !strings.Contains(unit, "WorkingDirectory=/home/alice") {
@@ -309,14 +309,14 @@ func TestBuildUserUnit(t *testing.T) {
 }
 
 func TestBuildLaunchdPlist_UserMode(t *testing.T) {
-	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/Users/alice/.local/bin/claw", "/Users/alice", "/Users/alice/.local/bin", "/Users/alice/.agency", false)
+	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/Users/alice/.local/bin/agency", "/Users/alice", "/Users/alice/.local/bin", "/Users/alice/.agency", false)
 	if strings.Contains(plist, "<key>UserName</key>") {
 		t.Errorf("LaunchAgent plist in user mode must NOT contain UserName:\n%s", plist)
 	}
 	if strings.Contains(plist, "<key>GroupName</key>") {
 		t.Errorf("LaunchAgent plist in user mode must NOT contain GroupName:\n%s", plist)
 	}
-	if !strings.Contains(plist, "<string>/Users/alice/.local/bin/claw</string>") {
+	if !strings.Contains(plist, "<string>/Users/alice/.local/bin/agency</string>") {
 		t.Errorf("LaunchAgent missing binary path:\n%s", plist)
 	}
 	if !strings.Contains(plist, "<key>RunAtLoad</key>\n\t<true/>") {
@@ -331,14 +331,14 @@ func TestBuildLaunchdPlist_UserMode(t *testing.T) {
 }
 
 func TestBuildLaunchdPlist_SystemMode(t *testing.T) {
-	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/usr/local/bin/claw", "/Users/alice", "/usr/local/bin", "/opt/agency", true)
+	plist := buildLaunchdPlist(launchdLabel, "alice", "staff", "/usr/local/bin/agency", "/Users/alice", "/usr/local/bin", "/opt/agency", true)
 	if !strings.Contains(plist, "<key>UserName</key>\n\t<string>alice</string>") {
 		t.Errorf("LaunchDaemon plist in system mode missing UserName:\n%s", plist)
 	}
 	if !strings.Contains(plist, "<key>GroupName</key>\n\t<string>staff</string>") {
 		t.Errorf("LaunchDaemon plist in system mode missing GroupName:\n%s", plist)
 	}
-	if !strings.Contains(plist, "<string>/usr/local/bin/claw</string>") {
+	if !strings.Contains(plist, "<string>/usr/local/bin/agency</string>") {
 		t.Errorf("LaunchDaemon missing binary path:\n%s", plist)
 	}
 	if !strings.Contains(plist, "<string>/opt/agency</string>") {
@@ -360,22 +360,22 @@ func TestResolveBinDir(t *testing.T) {
 		{name: "custom dir", tu: alice(false), custom: "/srv/tools", want: "/srv/tools"},
 		{
 			name: "existing binary dir kept", dirs: []string{"/usr/local/sbin"}, tu: alice(true),
-			existing: &ExistingInstall{BinaryPath: "/usr/local/sbin/claw"}, want: "/usr/local/sbin",
+			existing: &ExistingInstall{BinaryPath: "/usr/local/sbin/agency"}, want: "/usr/local/sbin",
 		},
 		{
-			name: "opt claw with bin binary", files: []string{"/opt/agency/bin/claw"}, tu: alice(true),
-			existing: &ExistingInstall{AgencyHome: "/opt/agency", BinaryPath: "/opt/agency/bin/claw"}, want: "/opt/agency/bin",
+			name: "opt agency with bin binary", files: []string{"/opt/agency/bin/agency"}, tu: alice(true),
+			existing: &ExistingInstall{AgencyHome: "/opt/agency", BinaryPath: "/opt/agency/bin/agency"}, want: "/opt/agency/bin",
 		},
 		{
-			name: "opt claw with old binary moves to bin", files: []string{"/opt/agency/claw"}, tu: alice(true),
-			existing: &ExistingInstall{AgencyHome: "/opt/agency", BinaryPath: "/opt/agency/claw"}, want: "/opt/agency/bin",
+			name: "opt agency with old binary moves to bin", files: []string{"/opt/agency/agency"}, tu: alice(true),
+			existing: &ExistingInstall{AgencyHome: "/opt/agency", BinaryPath: "/opt/agency/agency"}, want: "/opt/agency/bin",
 		},
 		{
-			name: "opt claw unit naming the old binary", tu: alice(true),
-			existing: &ExistingInstall{BinaryPath: "/opt/agency/claw"}, want: "/opt/agency/bin",
+			name: "opt agency unit naming the old binary", tu: alice(true),
+			existing: &ExistingInstall{BinaryPath: "/opt/agency/agency"}, want: "/opt/agency/bin",
 		},
 		{
-			name: "opt claw without a binary", dirs: []string{"/opt/agency"}, tu: alice(true),
+			name: "opt agency without a binary", dirs: []string{"/opt/agency"}, tu: alice(true),
 			existing: &ExistingInstall{AgencyHome: "/opt/agency"}, want: "/opt/agency/bin",
 		},
 		{name: "system mode", tu: alice(true), want: "/usr/local/bin"},
@@ -404,15 +404,11 @@ func TestResolveBinDir(t *testing.T) {
 	}
 }
 
-// An /opt/agency install puts the binary and the openclaw alias in /opt/agency/bin,
-// and points at an older binary and alias in /opt/agency without removing them.
-func TestOptAgencyInstall_AliasInBinAndLeftovers(t *testing.T) {
+// An /opt/agency install puts the binary and the openclaw alias in /opt/agency/bin.
+func TestOptAgencyInstall_AliasInBin(t *testing.T) {
 	h := fakeHost(t)
-	writeHostFile(t, h, "/opt/agency/claw", "x", 0o700)
-	if err := os.Symlink("claw", h.path("/opt/agency/openclaw")); err != nil {
-		t.Fatal(err)
-	}
-	existing := &ExistingInstall{AgencyHome: "/opt/agency", BinaryPath: "/opt/agency/claw"}
+	writeHostFile(t, h, "/opt/agency/config.json", "{}", 0o600)
+	existing := &ExistingInstall{AgencyHome: "/opt/agency", BinaryPath: "/opt/agency/bin/agency"}
 
 	binDir, err := h.resolveBinDir(&TargetUser{HomeDir: "/home/alice", IsRoot: true}, "", existing)
 	if err != nil || binDir != "/opt/agency/bin" {
@@ -425,24 +421,11 @@ func TestOptAgencyInstall_AliasInBinAndLeftovers(t *testing.T) {
 	if err := linkOpenClawAlias(h.path(binDir), serviceName); err != nil {
 		t.Fatal(err)
 	}
-	if target, err := os.Readlink(h.path("/opt/agency/bin/openclaw")); err != nil || target != "claw" {
-		t.Errorf("/opt/agency/bin/openclaw -> %q, %v, want claw", target, err)
+	if target, err := os.Readlink(h.path("/opt/agency/bin/openclaw")); err != nil || target != "agency" {
+		t.Errorf("/opt/agency/bin/openclaw -> %q, %v, want agency", target, err)
 	}
-	if unit := buildSystemUnit("alice", "alice", filepath.Join(binDir, serviceName), "/home/alice", binDir, "/opt/agency"); !strings.Contains(unit, "ExecStart=/opt/agency/bin/claw") {
-		t.Errorf("unit does not start /opt/agency/bin/claw:\n%s", unit)
-	}
-
-	leftovers := h.leftoverOptAgencyFiles(binDir)
-	if strings.Join(leftovers, " ") != "/opt/agency/claw /opt/agency/openclaw" {
-		t.Errorf("leftoverOptAgencyFiles() = %q, want the old binary and alias", leftovers)
-	}
-	for _, p := range leftovers {
-		if !h.exists(p) {
-			t.Errorf("%s was removed, want it left in place", p)
-		}
-	}
-	if got := h.leftoverOptAgencyFiles("/usr/local/bin"); got != nil {
-		t.Errorf("leftoverOptAgencyFiles(/usr/local/bin) = %q, want none", got)
+	if unit := buildSystemUnit("alice", "alice", filepath.Join(binDir, serviceName), "/home/alice", binDir, "/opt/agency"); !strings.Contains(unit, "ExecStart=/opt/agency/bin/agency") {
+		t.Errorf("unit does not start /opt/agency/bin/agency:\n%s", unit)
 	}
 }
 
@@ -451,10 +434,10 @@ func TestResolveAgencyHome(t *testing.T) {
 	tu := &TargetUser{HomeDir: tempHome}
 
 	// 1. Explicit AGENCY_HOME in env
-	t.Setenv(global.EnvVarHome, "/custom/claw/home")
+	t.Setenv(global.EnvVarHome, "/custom/agency/home")
 	got := fakeHost(t).resolveAgencyHome(tu, "/usr/local/bin", nil)
-	if got != "/custom/claw/home" {
-		t.Errorf("resolveAgencyHome with env = %q, want /custom/claw/home", got)
+	if got != "/custom/agency/home" {
+		t.Errorf("resolveAgencyHome with env = %q, want /custom/agency/home", got)
 	}
 	t.Setenv(global.EnvVarHome, "")
 
@@ -466,7 +449,7 @@ func TestResolveAgencyHome(t *testing.T) {
 	}
 
 	// 3. Existing install with BinaryPath in /opt/agency
-	existing = &ExistingInstall{BinaryPath: "/opt/agency/claw"}
+	existing = &ExistingInstall{BinaryPath: "/opt/agency/agency"}
 	got = fakeHost(t).resolveAgencyHome(tu, "/usr/local/bin", existing)
 	if got != "/opt/agency" {
 		t.Errorf("resolveAgencyHome with existing.BinaryPath in /opt/agency = %q, want /opt/agency", got)

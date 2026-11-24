@@ -37,7 +37,7 @@ func TestCompareSemVer(t *testing.T) {
 func TestComputeSHA256(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "data.bin")
-	data := []byte("hello world claw upgrade")
+	data := []byte("hello world agency upgrade")
 	if err := os.WriteFile(file, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestExtractBinariesFromTarGz(t *testing.T) {
 	dir := t.TempDir()
 	archivePath := filepath.Join(dir, "test.tar.gz")
 
-	// Create test tar.gz with `claw` and `claw-auth`
+	// Create test tar.gz with `agency` and `agency-auth`
 	f, err := os.Create(archivePath)
 	if err != nil {
 		t.Fatal(err)
@@ -66,23 +66,23 @@ func TestExtractBinariesFromTarGz(t *testing.T) {
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
 
-	clawContent := []byte("#!/bin/sh\necho claw\n")
+	agencyContent := []byte("#!/bin/sh\necho agency\n")
 	hdr := &tar.Header{
-		Name:     "claw",
+		Name:     "agency",
 		Mode:     0o755,
-		Size:     int64(len(clawContent)),
+		Size:     int64(len(agencyContent)),
 		Typeflag: tar.TypeReg,
 	}
 	if hdrErr := tw.WriteHeader(hdr); hdrErr != nil {
 		t.Fatal(hdrErr)
 	}
-	if _, wErr := tw.Write(clawContent); wErr != nil {
+	if _, wErr := tw.Write(agencyContent); wErr != nil {
 		t.Fatal(wErr)
 	}
 
 	authContent := []byte("#!/bin/sh\necho auth\n")
 	hdrAuth := &tar.Header{
-		Name:     "claw-auth",
+		Name:     "agency-auth",
 		Mode:     0o755,
 		Size:     int64(len(authContent)),
 		Typeflag: tar.TypeReg,
@@ -104,7 +104,7 @@ func TestExtractBinariesFromTarGz(t *testing.T) {
 		t.Fatal(closeErr)
 	}
 
-	destClaw := filepath.Join(dir, "extracted-claw")
+	destClaw := filepath.Join(dir, "extracted-agency")
 	destAuth := filepath.Join(dir, "extracted-auth")
 
 	hasAuth, err := extractBinariesFromTarGz(archivePath, destClaw, destAuth)
@@ -116,8 +116,8 @@ func TestExtractBinariesFromTarGz(t *testing.T) {
 	}
 
 	extractedClawData, err := os.ReadFile(destClaw)
-	if err != nil || string(extractedClawData) != string(clawContent) {
-		t.Errorf("extracted claw mismatch: got %q, want %q", string(extractedClawData), string(clawContent))
+	if err != nil || string(extractedClawData) != string(agencyContent) {
+		t.Errorf("extracted agency mismatch: got %q, want %q", string(extractedClawData), string(agencyContent))
 	}
 
 	extractedAuthData, err := os.ReadFile(destAuth)

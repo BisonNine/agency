@@ -4,11 +4,11 @@ set -e
 # Stop and remove the system service unit only on package removal (`apt remove`
 # or `apt purge`), never on `upgrade` (`old-prerm upgrade <new-version>`).
 if [ "$1" = "remove" ]; then
-    if [ -f /etc/systemd/system/claw.service ]; then
+    if [ -f /etc/systemd/system/agency.service ]; then
         if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-            systemctl disable --now claw.service >/dev/null 2>&1 || true
+            systemctl disable --now agency.service >/dev/null 2>&1 || true
         fi
-        rm -f /etc/systemd/system/claw.service
+        rm -f /etc/systemd/system/agency.service
         if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
             systemctl daemon-reload >/dev/null 2>&1 || true
         fi

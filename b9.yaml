@@ -42,11 +42,11 @@ signing:
     public_key: RWS4LMzQBg4PUnmdFHlaHFkUt+mm9PLPGvkE812t8Ew4YK5fL8zWqbuN
 
 artifacts:
-  - name: claw
-    from: 'build/claw-{os}-{arch}'
+  - name: agency
+    from: 'build/agency-{os}-{arch}'
     macos_bundle_id: com.bison9.agency
-  - name: claw-auth
-    from: 'build/claw-auth-{os}-{arch}'
+  - name: agency-auth
+    from: 'build/agency-auth-{os}-{arch}'
     macos_bundle_id: com.bison9.agency
 
 package:
@@ -56,7 +56,7 @@ package:
   per_platform:
     enabled: true
     # CONTRACT: the install script fetches exactly these names.
-    asset: 'claw-{os}-{arch}.tar.gz'
+    asset: 'agency-{os}-{arch}.tar.gz'
   bundle:
     enabled: false
   deb:
@@ -72,7 +72,7 @@ package:
       - linux/amd64
       - linux/arm64
     symlinks:
-      - {link: /usr/bin/openclaw, target: claw}
+      - {link: /usr/bin/openclaw, target: agency}
     scripts:     packaging/deb
 
 release:

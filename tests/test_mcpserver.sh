@@ -2,7 +2,7 @@
 ################################################################################
 # Agency MCP Server Functional Tests
 #
-# Validates the claw MCP server (claw acting as an MCP host) over Streamable
+# Validates the agency MCP server (agency acting as an MCP host) over Streamable
 # HTTP transport using the `probe` binary. Structured in two tiers:
 #
 # Tier 1 — Discovery and auth validation (always runs, no session_token needed):
@@ -15,7 +15,7 @@
 #   Section 4: Session tool smoke tests
 #
 # REQUIREMENTS:
-#   - A running claw gateway with mcp_host.enabled=true (default port 5911)
+#   - A running agency gateway with mcp_host.enabled=true (default port 5911)
 #   - The 'probe' binary on PATH (override with PROBE_PATH env var)
 #   - The configured workspace must be writable by the test
 #
@@ -25,7 +25,7 @@
 #   BEARER_ENDPOINT Optional bearer endpoint path (e.g. /mcp); when set with
 #                   SESSION_TOKEN, Tier 3 exercises Authorization: Bearer auth
 #   PROBE_PATH      Path to probe binary (default: probe)
-#   SESSION_TOKEN   SST<64hex> token from an active claw session's system prompt
+#   SESSION_TOKEN   SST<64hex> token from an active agency session's system prompt
 #
 # Exit codes:
 #   0   All tests passed
@@ -77,7 +77,7 @@ EXPECTED_NAMESPACES="file_ web_ session_ msg_ shell_ skill_ cron_ cogmem_ common
 # Unique scratch file inside the agent workspace so repeated runs do not collide.
 # Writes are confined to <workspace>/files by the read-only-workspace default
 # (WorkspaceWriteSubdir), so the scratch file must live under files/.
-SCRATCH_REL="files/claw_mcp_test_$$.txt"
+SCRATCH_REL="files/agency_mcp_test_$$.txt"
 
 # Colors
 # ANSI-C quoting ($'..') puts the escape byte in the variable so plain echo
@@ -378,7 +378,7 @@ if [ $? -ne 0 ]; then
     echo "${RED}FAIL: probe could not connect to $FULL_URL${NC}"
     echo "$LIST_OUT"
     echo ""
-    echo "${YELLOW}Hint: ensure claw gateway is running and mcp_host.enabled=true.${NC}"
+    echo "${YELLOW}Hint: ensure agency gateway is running and mcp_host.enabled=true.${NC}"
     exit 1
 fi
 echo "$LIST_OUT" | sed 's/^/      /'
@@ -519,7 +519,7 @@ if [ -z "$SESSION_TOKEN" ]; then
     echo "${YELLOW}TIER 2 SKIPPED: SESSION_TOKEN is not set.${NC}"
     echo ""
     echo "To run Tier 2, set SESSION_TOKEN to the SST<64hex> token found in"
-    echo "an active claw session's system prompt, then re-run this script:"
+    echo "an active agency session's system prompt, then re-run this script:"
     echo ""
     echo "  SESSION_TOKEN=SST<64hex> $0"
     echo ""
@@ -566,10 +566,10 @@ else
         "file_search_bytes" "{\"query\":\"$APPENDED\",\"path\":\"files\"}" "bytes "
 
     run_test_ok_auth "3.5e file_glob finds the scratch file by name pattern" \
-        "file_glob" "{\"pattern\":\"**/claw_mcp_test_$$.txt\",\"path\":\"files\"}" "$SCRATCH_REL"
+        "file_glob" "{\"pattern\":\"**/agency_mcp_test_$$.txt\",\"path\":\"files\"}" "$SCRATCH_REL"
 
     run_test_ok_auth "3.5f file_search_lines output=files with include lists the file" \
-        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\",\"include\":\"claw_mcp_test_$$.txt\",\"output\":\"files\"}" "$SCRATCH_REL"
+        "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\",\"include\":\"agency_mcp_test_$$.txt\",\"output\":\"files\"}" "$SCRATCH_REL"
 
     run_test_ok_auth "3.5g file_search_lines output=count counts the matching lines" \
         "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"files\",\"output\":\"count\"}" "$SCRATCH_REL: 1"
@@ -577,7 +577,7 @@ else
     run_test_ok_auth "3.5h file_search_lines context shows the line before the match" \
         "file_search_lines" "{\"query\":\"$APPENDED\",\"path\":\"$SCRATCH_REL\",\"context\":1}" "$SCRATCH_REL-1- $PAYLOAD"
 
-    IGN_REL="files/claw_mcp_ign_$$"
+    IGN_REL="files/agency_mcp_ign_$$"
     run_test_ok_auth "3.5i file_write seeds a .gitignore" \
         "file_write" "{\"path\":\"$IGN_REL/.gitignore\",\"content\":\"*.log\"}"
 
@@ -600,7 +600,7 @@ else
         "file_copy" "{\"source_path\":\"$SCRATCH_REL\",\"destination_path\":\"${SCRATCH_REL}.copy\"}"
 
     # Range edit family on a dedicated multi-line scratch file.
-    LINEFILE="files/claw_mcp_lines_$$.txt"
+    LINEFILE="files/agency_mcp_lines_$$.txt"
     run_test_ok_auth "3.8a file_write seeds a multi-line file" \
         "file_write" "{\"path\":\"$LINEFILE\",\"content\":\"L1\nL2\nL3\"}"
 
@@ -631,7 +631,7 @@ else
         "file_edit_bytes" "{\"path\":\"$LINEFILE\",\"start\":0,\"end\":0,\"replace\":\"Z\"}" "Replaced"
 
     # Folder tools: make a folder, move it with its file, then remove it.
-    DIR_REL="files/claw_mcp_dir_$$"
+    DIR_REL="files/agency_mcp_dir_$$"
     run_test_ok_auth "3.8h file_mkdir creates a folder" \
         "file_mkdir" "{\"path\":\"$DIR_REL/sub\"}"
 
@@ -868,7 +868,7 @@ else
     # A memory may carry a pointer to a markdown file whose full contents are
     # injected into context with it. The path must be readable through the file
     # tools, so seed one in files/ first.
-    COGMEM_DOC_REL="files/claw_mcp_voice_$$.md"
+    COGMEM_DOC_REL="files/agency_mcp_voice_$$.md"
     run_test_ok_auth "4c.2a file_write seeds a markdown doc for the attachment probe" \
         "file_write" "{\"path\":\"$COGMEM_DOC_REL\",\"content\":\"# Voice\nShort sentences.\"}"
 
