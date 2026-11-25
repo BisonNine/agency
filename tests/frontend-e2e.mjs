@@ -498,7 +498,7 @@ if (useGroup("P", "Authentication")) {
   })
 
   // The login page has no theme switch of its own: only the script in the
-  // page's <head> can have set the theme there. "theme" is the key in
+  // page's <head> can have set the theme there. "agency:theme" is the key in
   // web/frontend/src/lib/theme.ts.
   const loginTheme = async (page) => {
     await page.locator("[data-testid=login-form]").waitFor({ state: "visible", timeout: 10000 })
@@ -506,7 +506,7 @@ if (useGroup("P", "Authentication")) {
     const logos = await page
       .locator('img[src^="/logo-"]:visible')
       .evaluateAll((els) => els.map((e) => e.getAttribute("src")))
-    const saved = await page.evaluate(() => localStorage.getItem("theme"))
+    const saved = await page.evaluate(() => localStorage.getItem("agency:theme"))
     return { dark, logos, saved }
   }
   const assertLoginTheme = (what, theme, { dark, logos }) => {
@@ -522,7 +522,7 @@ if (useGroup("P", "Authentication")) {
     const { close, page, problems } = await open("/login", { context: other })
     const seen = {}
     for (const theme of ["light", "dark"]) {
-      await page.evaluate((t) => localStorage.setItem("theme", t), theme)
+      await page.evaluate((t) => localStorage.setItem("agency:theme", t), theme)
       // The system says the opposite of what is saved.
       await page.emulateMedia({ colorScheme: theme === "dark" ? "light" : "dark" })
       await page.reload({ waitUntil: "networkidle", timeout: 20000 })

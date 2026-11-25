@@ -1,7 +1,7 @@
 export type Theme = "light" | "dark"
 
 /** The localStorage key the chosen theme is saved under. */
-export const THEME_STORAGE_KEY = "theme"
+export const THEME_STORAGE_KEY = "agency:theme"
 
 /** The media query that says the system is set to dark. */
 export const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)"
