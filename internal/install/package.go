@@ -140,6 +140,19 @@ func foreignInstall(existing *ExistingInstall, account string) string {
 	return ""
 }
 
+// runningBinary is the running executable with links resolved, or "" when
+// it cannot be found.
+func (h *host) runningBinary() string {
+	p, err := h.executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, rerr := filepath.EvalSymlinks(p); rerr == nil {
+		return resolved
+	}
+	return p
+}
+
 // uninstallPackage is `uninstall --package`, run by the Debian package's
 // prerm on removal: it stops, disables and removes the system unit when the
 // package wrote it, or when it runs the package's binary, which the removal
@@ -152,16 +165,8 @@ func (h *host) uninstallPackage() error {
 	if existing == nil || existing.ServicePath != systemUnitPath {
 		return nil
 	}
-	if !existing.Package {
-		exePath, err := h.executable()
-		if err == nil {
-			if resolved, rerr := filepath.EvalSymlinks(exePath); rerr == nil {
-				exePath = resolved
-			}
-		}
-		if err != nil || existing.BinaryPath != exePath {
-			return nil
-		}
+	if !existing.Package && (existing.BinaryPath == "" || existing.BinaryPath != h.runningBinary()) {
+		return nil
 	}
 	return h.uninstallSystemd(&TargetUser{Username: "root", UID: "0", GID: "0", IsRoot: true})
 }

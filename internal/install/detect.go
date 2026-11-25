@@ -391,6 +391,6 @@ func underTempDir(p string) bool {
 }
 
 func fileExists(p string) bool {
-	info, err := os.Stat(p)
+	info, err := os.Stat(p) // #nosec G703 -- install paths: the machine's own and AGENCY_HOME chosen by the operator
 	return err == nil && !info.IsDir()
 }
