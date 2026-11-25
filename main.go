@@ -78,11 +78,24 @@ func NewAgencyCommand() *cobra.Command {
 
 func main() {
 	cmd := NewAgencyCommand()
-	if _, err := runas.Drop(topLevelCommand(cmd, os.Args[1:])); err != nil {
+	acct, err := runas.Drop(topLevelCommand(cmd, os.Args[1:]))
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	if acct != nil {
+		// The error is printed here, so a path the account cannot reach
+		// is named in the operator's words (runas.Explain).
+		cmd.SilenceErrors = true
+	}
 	if err := cmd.Execute(); err != nil {
+		if acct != nil {
+			if explained := runas.Explain(err, acct); explained != err { //nolint:errorlint // identity: was it rewritten
+				fmt.Fprintln(os.Stderr, explained)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			}
+		}
 		os.Exit(1)
 	}
 }

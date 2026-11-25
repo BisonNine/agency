@@ -147,7 +147,8 @@
   service's data directory and run as its owner, so the files they write
   stay that account's. Before, they could write root-owned files there, or
   use root's own `~/.agency`. `install`, `uninstall` and `upgrade` still run
-  as root.
+  as root. A file the account cannot reach is named in one line, for
+  example "The agency account cannot read /home/alice/backup.tar.gz."
 - **`agency install` and `agency uninstall` refuse an install set up by the
   package**, and say to use `apt`.
 - **Paths inside the data directory are stored relative to it.** `config.json`,
