@@ -4,14 +4,14 @@ go 1.27.4
 
 require (
 	github.com/a3tai/openclaw-go v1.20260325.0
-	github.com/adhocore/gronx v1.20.8
+	github.com/adhocore/gronx v1.20.9
 	github.com/bmatcuk/doublestar/v4 v4.10.7
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.4.2
 	github.com/ergochat/readline v0.1.3
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-pdf/fpdf v0.9.0
-	github.com/gomarkdown/markdown v0.0.0-20261123200727-167101872811
+	github.com/gomarkdown/markdown v0.0.0-20261124143954-1814b856890d
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/h2non/filetype v1.1.3
@@ -27,8 +27,8 @@ require (
 	github.com/tenebris-tech/mlogger v0.0.5
 	github.com/tenebris-tech/secmsg v0.1.2
 	go.bison9.com/agent v0.2.1
-	go.bison9.com/maestro v0.5.12
-	go.bison9.com/mcpfusion v0.4.13
+	go.bison9.com/maestro v0.5.13
+	go.bison9.com/mcpfusion v0.4.14
 	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
 	golang.org/x/sys v0.50.0
