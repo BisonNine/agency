@@ -18,25 +18,28 @@ import (
 
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/servicetoken"
+	"go.bison9.com/agency/tools/shell"
 )
 
 // TestDataDir_MovedByHand builds a data directory through the normal code
 // paths (agents, a conversation, a cron job, the self-signed certificate
-// pair, a sub-agent task record, an own knowledge base, Maestro data and a
-// WebUI config save), stops, renames the directory to another name in
+// pair, a sub-agent task record, an own knowledge base, Maestro data, a
+// background shell job and a WebUI config save), stops, renames the directory to another name in
 // another place, and starts against the new location: everything is found
 // and works, and no file in the directory names the old location.
 //
 // The one exception is logs/: log lines record what happened where, at the
 // time, and nothing reads a path back from them.
 func TestDataDir_MovedByHand(t *testing.T) {
+	// Each start here is a new process for the shell jobs.
+	shell.Host.Reopen()
 	tlsPort := freeLoopbackPort(t)
 	mcpAddr := freeAddr(t)
 	extra := fmt.Sprintf(`, "mcp_host": {"enabled": true, "listen": %q, "external_tools": ["*"]}`, mcpAddr)
 	b := bootGatewayWith(t, extra, func(s string) string {
 		s = strings.Replace(s, `"tls": {"mode": "off"}`, fmt.Sprintf(`"tls": {"mode": "localhost"}, "tls_port": %d`, tlsPort), 1)
 		s = strings.Replace(s, `"list": [{"id": "main", "default": true}]`,
-			`"list": [{"id": "main", "default": true, "tools": ["cron_schedule", "agent_spawn", "agent_status", "file_write", "file_read_lines"], "knowledge": {"enabled": true}, "maestro": {"enabled": true}}]`, 1)
+			`"list": [{"id": "main", "default": true, "tools": ["cron_schedule", "agent_spawn", "agent_status", "file_write", "file_read_lines", "shell_exec"], "knowledge": {"enabled": true}, "maestro": {"enabled": true}}]`, 1)
 		// A cron job needs the agent's default chat.
 		return strings.Replace(s, `"agents": {`, `"bindings": [{"agent_id": "main", "default": true, "match": {"channel": "webui"}, "deliver_to": "alice"}], "agents": {`, 1)
 	})
@@ -78,6 +81,14 @@ func TestDataDir_MovedByHand(t *testing.T) {
 		t.Fatalf("no task uuid in %q", spawned)
 	}
 	call("file_write", map[string]any{"path": "files/a.txt", "content": "kept"})
+	jobID := regexp.MustCompile(`job (j[0-9a-f]{8})`).FindStringSubmatch(
+		call("shell_exec", map[string]any{"command": "echo job-done", "background": true, "notify": false, "working_dir": "files"}))
+	if jobID == nil {
+		t.Fatal("no shell job id")
+	}
+	if got := call("shell_ctrl", map[string]any{"action": "wait", "id": jobID[1]}); !strings.Contains(got, "exited with code 0") {
+		t.Fatalf("shell job: %s", got)
+	}
 	if _, err := b.al.ProcessDirect(t.Context(), "Remember the marigolds.", "agent:main:main"); err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +111,7 @@ func TestDataDir_MovedByHand(t *testing.T) {
 	}
 	t.Setenv(global.EnvVarHome, newHome)
 	b.g.home = newHome
+	shell.Host.Reopen()
 	b = bootGatewayIn(t, b.g)
 	b.g.waitReady(t)
 
@@ -127,6 +139,9 @@ func TestDataDir_MovedByHand(t *testing.T) {
 	}
 	if got := call("file_read_lines", map[string]any{"path": "files/a.txt"}); !strings.Contains(got, "kept") {
 		t.Errorf("workspace file after the move: %s", got)
+	}
+	if got := call("shell_ctrl", map[string]any{"action": "list"}); !strings.Contains(got, jobID[1]+" exited") {
+		t.Errorf("shell job record after the move: %s", got)
 	}
 	// The conversation is found: the model sees the earlier message, and
 	// the workspace the prompt names is the new one.

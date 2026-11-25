@@ -1063,7 +1063,8 @@ shortcoming in the module, never here.
   current ones with `Tools.Update`, from the next call on) and the agents-area modes (`cfg.AgentModes`); jobs found running
   there are marked `lost` then, and jobs the previous shutdown stopped are
   announced once. The host supplies: the guard, `childenv.Base()`,
-  the workspace, the owner (`ToolDeps.AgentID`, a clone's source), `CtrlAvailable`
+  the workspace (also `Jobs.Root`: a record names a directory in it relative to it,
+  so records survive a moved data directory), the owner (`ToolDeps.AgentID`, a clone's source), `CtrlAvailable`
   (the agent's `IsToolAllowed("shell_ctrl")`; without it a foreground timeout
   kills and `background` is refused), `Unattended` (`tools.IsUnattended`, set by
   `ToolRegistry.ExecuteUnattended`: classifiers and watch probes get no jobs and no
@@ -1082,7 +1083,8 @@ shortcoming in the module, never here.
   held) and `shutdownGateway` calls `closeShellJobs` (`Host.Close`: every job
   terminated, then killed after 5 s) before the loop stops; it delivers no notice (the SDK
   announces those jobs at the next start) and closes the mount for good: no
-  tools are built afterwards. Restart notices are delivered one at a time in
+  tools are built afterwards (`Host.Reopen` undoes it, for tests that start the
+  service twice in one process). Restart notices are delivered one at a time in
   order once bound. A workspace whose agent has no shell tools built (grant
   removed, path changed) is not read, so its jobs are announced only when an
   agent with `shell_exec` uses it again. A failed `Tools.Update` keeps the

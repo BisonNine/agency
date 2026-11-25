@@ -403,6 +403,33 @@ func TestModesOnDisk(t *testing.T) {
 	checkMode(t, filepath.Join(dir, id+".json"), 0o640)
 }
 
+// A job's record names a working directory in the workspace relative to
+// it, so the records survive a moved data directory.
+func TestRecordDirRelativeToWorkspace(t *testing.T) {
+	m := testMount(t)
+	ws := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(ws, "files", "src"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+
+	res := alice.run("shell_exec", map[string]any{"command": "true", "background": true, "notify": false, "working_dir": "files/src"}, nil)
+	id := jobID(t, res.ForLLM)
+	if res := alice.run("shell_ctrl", map[string]any{"action": "wait", "id": id}, nil); !strings.Contains(res.ForLLM, "exited with code 0") {
+		t.Fatalf("wait = %q", res.ForLLM)
+	}
+	var rec struct {
+		Dir string `json:"dir"`
+	}
+	data, err := os.ReadFile(filepath.Join(ws, config.ShellJobsDir, id+".json"))
+	if err == nil {
+		err = json.Unmarshal(data, &rec)
+	}
+	if err != nil || rec.Dir != "files/src" {
+		t.Errorf("record dir = %q (%v), want files/src", rec.Dir, err)
+	}
+}
+
 func checkMode(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
 	st, err := os.Stat(path)
@@ -623,6 +650,32 @@ func TestClosedMountBuildsNothing(t *testing.T) {
 	}
 	if a := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("bob"), Workspace: t.TempDir()}); len(a.names) != 0 {
 		t.Errorf("tools %v built for a new workspace after Close", a.names)
+	}
+}
+
+// Reopen after Close builds the tools again over the records on disk, as
+// the next process would.
+func TestReopenAfterClose(t *testing.T) {
+	m := testMount(t)
+	ws := t.TempDir()
+	alice := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+	id := jobID(t, alice.run("shell_exec", map[string]any{"command": "true", "background": true, "notify": false}, nil).ForLLM)
+	if res := alice.run("shell_ctrl", map[string]any{"action": "wait", "id": id}, nil); !strings.Contains(res.ForLLM, "exited with code 0") {
+		t.Fatalf("wait = %q", res.ForLLM)
+	}
+	m.Reopen() // not closed: nothing changes
+	if res := alice.run("shell_ctrl", map[string]any{"action": "list"}, nil); !strings.Contains(res.ForLLM, id) {
+		t.Errorf("list after a Reopen of an open mount = %q", res.ForLLM)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := m.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	m.Reopen()
+	again := build(t, m, config.DefaultConfig(), tools.ToolDeps{AgentCfg: shellAgent("alice"), Workspace: ws})
+	if res := again.run("shell_ctrl", map[string]any{"action": "list"}, nil); !strings.Contains(res.ForLLM, id+" exited") {
+		t.Errorf("list after Reopen = %q", res.ForLLM)
 	}
 }
 

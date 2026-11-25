@@ -183,6 +183,7 @@ func (m *Mount) toolsFor(cfg *config.Config, workspace string) (*sdkshell.Tools,
 	t, err := sdkshell.New(sdkshell.Config{
 		Jobs: proc.Options{
 			Dir:    dir,
+			Root:   workspace, // records name directories in it relative to it
 			Limits: set.Limits,
 			Modes:  fsmode.Modes{Dir: modes.Dir, File: modes.File},
 		},
@@ -432,4 +433,22 @@ func (m *Mount) Close(ctx context.Context) error {
 	}
 	wg.Wait()
 	return errors.Join(errs...)
+}
+
+// Reopen undoes Close as a new process would start: no workspace's tools are
+// kept, so the next build reads every workspace's records afresh, and
+// notices wait for the next Bind. For tests that start the service again in
+// the same process; a mount that is not closed is left as it is.
+func (m *Mount) Reopen() {
+	m.mu.Lock()
+	if !m.closing {
+		m.mu.Unlock()
+		return
+	}
+	m.closing = false
+	clear(m.byDir)
+	m.mu.Unlock()
+	m.nmu.Lock()
+	m.hooks, m.bound = Hooks{}, false
+	m.nmu.Unlock()
 }

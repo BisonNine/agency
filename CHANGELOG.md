@@ -132,8 +132,8 @@
 
 ### Changed
 
-- **Paths inside the data directory are stored relative to it.** `config.json`
-  and forum run records now keep such paths relative (for example
+- **Paths inside the data directory are stored relative to it.** `config.json`,
+  forum run records and background shell job records now keep such paths relative (for example
   `"base_dir": "agents"`), so the whole data directory can be renamed or moved.
   An absolute path there is rewritten on the next save, and a relative path
   you type means a place in the data directory.
