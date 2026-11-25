@@ -1,0 +1,48 @@
+#!/bin/sh
+# Stub systemctl for the container harness: runs the one unit
+# /etc/systemd/system/agency.service as a background process, as the User=
+# and with the Environment= lines and WorkingDirectory= it names.
+UNIT=/etc/systemd/system/agency.service
+PIDF=/run/agency-stub.pid
+echo "systemctl $*" >>/run/systemctl.log
+
+active() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+
+stop() {
+    if active; then
+        pid=$(cat "$PIDF")
+        kill "$pid"
+        i=0
+        while kill -0 "$pid" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+    fi
+    rm -f "$PIDF"
+}
+
+start() {
+    [ -f "$UNIT" ] || { echo "Unit agency.service not found." >&2; return 5; }
+    if [ -e /run/fail-restart ]; then echo "stub: restart fails" >&2; return 1; fi
+    user=$(sed -n 's/^User=//p' "$UNIT")
+    group=$(sed -n 's/^Group=//p' "$UNIT")
+    wd=$(sed -n 's/^WorkingDirectory=//p' "$UNIT")
+    exe=$(sed -n 's/^ExecStart=//p' "$UNIT")
+    envs=$(sed -n 's/^Environment=//p' "$UNIT")
+    # shellcheck disable=SC2086
+    (cd "${wd:-/}" && env -i $envs setpriv --reuid="$user" --regid="$group" --init-groups \
+        --no-new-privs $exe >>/run/agency-service.out 2>&1 &
+        echo $! >"$PIDF")
+}
+
+case "$1" in
+    daemon-reload) ;;
+    enable) touch /run/agency-stub.enabled ;;
+    disable)
+        rm -f /run/agency-stub.enabled
+        [ "$2" = "--now" ] && stop
+        ;;
+    start) active || start ;;
+    stop) stop ;;
+    restart) stop; start ;;
+    try-restart) if active; then stop; start; fi ;;
+    is-active) active ;;
+    *) echo "stub systemctl: $*" >&2 ;;
+esac

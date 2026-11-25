@@ -1,4 +1,4 @@
-.PHONY: all build agency-auth install uninstall uninstall-all clean help require-golangci-lint govulncheck test test-race test-coverage test-cover-html test-regression test-maestro-host generate vet fmt fmt-check lint fix deps update-deps check run frontend frontend-deps manual manual-deps manual-check frontend-typecheck frontend-lint frontend-test build-linux-arm build-linux-arm64 build-linux-mipsle build-pi-zero build-all release-checksums release-sign sbom
+.PHONY: all build agency-auth install uninstall uninstall-all clean help require-golangci-lint govulncheck test test-race test-coverage test-cover-html test-regression test-maestro-host test-deb generate vet fmt fmt-check lint fix deps update-deps check run frontend frontend-deps manual manual-deps manual-check frontend-typecheck frontend-lint frontend-test build-linux-arm build-linux-arm64 build-linux-mipsle build-pi-zero build-all release-checksums release-sign sbom
 
 # Binary names
 BINARY_NAME=agency
@@ -382,6 +382,16 @@ vet: generate
 ## gate and the Go test of /manual/ has it to serve.
 test: manual-check generate fmt-check vet lint govulncheck
 	@./test.sh
+
+## test-deb: Install the Debian package built from this tree with apt in disposable Debian and Ubuntu containers and check its maintainer scripts and root-run commands. Needs Docker or Podman; not part of `make test`. TEST_DEB_IMAGES picks the images.
+TEST_DEB_IMAGES?=debian:trixie-slim ubuntu:24.04
+TEST_DEB_DIR=$(BUILD_DIR)/test-deb
+TEST_DEB_ARCH=$(shell go env GOARCH)
+test-deb: $(EMBED_INDEX) $(MANUAL_INDEX) generate
+	@mkdir -p $(TEST_DEB_DIR)
+	@GOOS=linux GOARCH=$(TEST_DEB_ARCH) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(TEST_DEB_DIR)/agency ./$(CMD_DIR)
+	@GOOS=linux GOARCH=$(TEST_DEB_ARCH) $(GO) build $(BUILD_FLAGS) $(GOFLAGS) $(LDFLAGS) -o $(TEST_DEB_DIR)/agency-auth ./cmd/agency-auth
+	@sh tests/deb/run.sh $(TEST_DEB_DIR) $(TEST_DEB_IMAGES)
 
 ## govulncheck: Fail on a known vulnerability the code calls, unless b9.yaml lists it under govulncheck.ignore with a reason and it is still in date. Needs govulncheck on the PATH (go install golang.org/x/vuln/cmd/govulncheck@latest) and network access.
 govulncheck:

@@ -318,6 +318,10 @@ go test ./...    # the fast Go-only loop while iterating
 make test-maestro-host   # Maestro's MCP suite against a live Agency (own
                          # target: binds ports; needs probe, jq, zip)
 make check-webui         # the browser suite against a running dev instance
+make test-deb            # the Debian package (tests/deb): built from this tree,
+                         # installed with apt in throwaway Debian and Ubuntu
+                         # containers; needs Docker or Podman, never touches
+                         # the host; not part of make test
 ```
 **User manual:** Markdown under `manual/` (a VitePress project with its own
 `package.json` and lockfile; config `manual/.vitepress/config.ts`, sidebar
