@@ -36,7 +36,7 @@ func (r *alertRecorder) Close(context.Context) error         { return nil }
 // keyed by the job id; a successful one raises none.
 func TestExecuteJobByID_AlertsOnFailure(t *testing.T) {
 	fail := false
-	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) {
+	cs := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) {
 		if fail {
 			return "", errors.New("handler failure")
 		}
@@ -64,7 +64,7 @@ func TestExecuteJobByID_AlertsOnFailure(t *testing.T) {
 // once.
 func TestExecuteJobByID_FailingJobAlertsOnceThenDaily(t *testing.T) {
 	fail := true
-	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) {
+	cs := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) {
 		if fail {
 			return "", errors.New("handler failure")
 		}
@@ -102,7 +102,7 @@ func TestExecuteJobByID_FailingJobAlertsOnceThenDaily(t *testing.T) {
 // TestRemoveJob_EndsItsFailureAlert: a removed job leaves nothing behind, so
 // a job that later gets the same id alerts on its first failure.
 func TestRemoveJob_EndsItsFailureAlert(t *testing.T) {
-	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) {
+	cs := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) {
 		return "", errors.New("handler failure")
 	})
 	rec := &alertRecorder{}
@@ -129,7 +129,7 @@ func TestCronStore_SaveAlert(t *testing.T) {
 
 	// A job runs and its state cannot be saved because the store path has
 	// become unwritable (its parent is now a file).
-	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) { return "ok", nil })
+	cs := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) { return "ok", nil })
 	rec := &alertRecorder{}
 	cs.SetAlerter(rec)
 	job := addEnabledJob(t, cs, "every", new(int64(60_000)))

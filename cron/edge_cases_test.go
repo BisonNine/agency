@@ -4,6 +4,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -62,7 +63,7 @@ func TestLoadAndSetOnJob(t *testing.T) {
 	}
 
 	var ran []string
-	cs.SetOnJob(func(j *CronJob) (string, error) { ran = append(ran, j.ID); return "", nil })
+	cs.SetOnJob(func(_ context.Context, j *CronJob) (string, error) { ran = append(ran, j.ID); return "", nil })
 	cs.executeJobByID("c")
 	if len(ran) != 1 || ran[0] != "c" {
 		t.Errorf("handler set by SetOnJob ran %v", ran)
@@ -98,7 +99,7 @@ func TestStart_Errors(t *testing.T) {
 // Due jobs whose reset cannot be saved still run, and the operator is told.
 func TestCheckJobs_SaveFailureAlerts(t *testing.T) {
 	ran := make(chan string, 1)
-	cs := newTestServiceWithHandler(t, func(j *CronJob) (string, error) { ran <- j.ID; return "", nil })
+	cs := newTestServiceWithHandler(t, func(_ context.Context, j *CronJob) (string, error) { ran <- j.ID; return "", nil })
 	rec := &alertRecorder{}
 	cs.SetAlerter(rec)
 	cs.store.Jobs = []CronJob{makeEnabledJobWithNextRun("due", time.Now().Add(-time.Minute).UnixMilli())}
@@ -118,7 +119,7 @@ func TestCheckJobs_SaveFailureAlerts(t *testing.T) {
 // A job removed while its handler runs is not recreated by the state update.
 func TestExecuteJobByID_JobRemovedDuringRun(t *testing.T) {
 	var cs *CronService
-	cs = newTestServiceWithHandler(t, func(j *CronJob) (string, error) {
+	cs = newTestServiceWithHandler(t, func(_ context.Context, j *CronJob) (string, error) {
 		if _, err := cs.RemoveJob(j.ID); err != nil {
 			t.Errorf("RemoveJob: %v", err)
 		}
@@ -135,7 +136,7 @@ func TestExecuteJobByID_AtJobOutcomes(t *testing.T) {
 	future := time.Now().Add(time.Hour).UnixMilli()
 
 	// An "at" job kept after its run is disabled.
-	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) { return "", nil })
+	cs := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) { return "", nil })
 	job, err := cs.AddJob("once", CronSchedule{Kind: "at", AtMS: &future}, "m", "", "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +157,7 @@ func TestExecuteJobByID_AtJobOutcomes(t *testing.T) {
 
 	// An "at" job that cannot be removed after its run stays, and the save
 	// failure is reported.
-	cs2 := newTestServiceWithHandler(t, func(*CronJob) (string, error) { return "", nil })
+	cs2 := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) { return "", nil })
 	rec := &alertRecorder{}
 	cs2.SetAlerter(rec)
 	job2, err := cs2.AddJob("once", CronSchedule{Kind: "at", AtMS: &future}, "m", "", "", "", "", "")
@@ -173,7 +174,7 @@ func TestExecuteJobByID_AtJobOutcomes(t *testing.T) {
 // A recurring job with no next run (an empty cron expression) runs once and
 // has no next run.
 func TestExecuteJobByID_NoNextRun(t *testing.T) {
-	cs := newTestServiceWithHandler(t, func(*CronJob) (string, error) { return "", nil })
+	cs := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) { return "", nil })
 	job, err := cs.AddJob("x", CronSchedule{Kind: "cron"}, "m", "agent", "cli", "direct", "channel", "")
 	if err != nil {
 		t.Fatal(err)

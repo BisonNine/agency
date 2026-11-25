@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -142,7 +143,9 @@ type CronStore struct {
 	Jobs    []CronJob `json:"jobs"`
 }
 
-type JobHandler func(job *CronJob) (string, error)
+// JobHandler runs one due job. Its context ends when the service is stopped:
+// a handler that is waiting should then return.
+type JobHandler func(ctx context.Context, job *CronJob) (string, error)
 
 // UpdateWatchState persists the outcome of a watch probe. It is called from the
 // job handler, which runs without the service lock held, and only touches the
@@ -164,12 +167,17 @@ func (cs *CronService) UpdateWatchState(jobID, digest string, failures int) erro
 }
 
 type CronService struct {
-	storePath   string
-	store       *CronStore
-	onJob       JobHandler
-	mu          sync.RWMutex
-	running     bool
-	stopChan    chan struct{}
+	storePath string
+	store     *CronStore
+	onJob     JobHandler
+	mu        sync.RWMutex
+	running   bool
+	stopChan  chan struct{}
+	loopDone  chan struct{} // closed when the job loop started by Start has ended
+	// runCtx is the context jobs run on, ended by Stop (cancelRun); nil before
+	// the first Start.
+	runCtx      context.Context
+	cancelRun   context.CancelFunc
 	gronx       *gronx.Gronx
 	fileModTime time.Time // mtime of store file at last load or save
 	alerter     alerter.Alerter
@@ -225,26 +233,37 @@ func (cs *CronService) Start() error {
 		}
 	}
 
-	cs.stopChan = make(chan struct{})
+	stop, done := make(chan struct{}), make(chan struct{})
+	cs.stopChan, cs.loopDone = stop, done
+	cs.runCtx, cs.cancelRun = context.WithCancel(context.Background())
 	cs.running = true
-	go cs.runLoop(cs.stopChan)
+	go func() {
+		defer close(done)
+		cs.runLoop(stop)
+	}()
 
 	return nil
 }
 
+// Stop ends the job loop and returns once it has ended: the context of a job
+// that was running is ended, the job has returned and its state is saved, so
+// nothing is run or written afterwards.
 func (cs *CronService) Stop() {
 	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
 	if !cs.running {
+		cs.mu.Unlock()
 		return
 	}
-
 	cs.running = false
+	done := cs.loopDone
+	cs.cancelRun()
 	if cs.stopChan != nil {
 		close(cs.stopChan)
 		cs.stopChan = nil
 	}
+	// Unlocked before waiting: a running job needs the lock to finish.
+	cs.mu.Unlock()
+	<-done
 }
 
 func (cs *CronService) runLoop(stopChan chan struct{}) {
@@ -323,6 +342,7 @@ func (cs *CronService) executeJobByID(jobID string) {
 	startTime := time.Now().UnixMilli()
 
 	cs.mu.RLock()
+	ctx := cs.runCtx
 	var callbackJob *CronJob
 	for i := range cs.store.Jobs {
 		job := &cs.store.Jobs[i]
@@ -349,7 +369,10 @@ func (cs *CronService) executeJobByID(jobID string) {
 
 	var err error
 	if cs.onJob != nil {
-		_, err = cs.onJob(callbackJob)
+		if ctx == nil {
+			ctx = context.Background() // run without Start
+		}
+		_, err = cs.onJob(ctx, callbackJob)
 	}
 
 	execDuration := time.Now().UnixMilli() - startTime

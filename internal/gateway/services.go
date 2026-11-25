@@ -829,11 +829,11 @@ func restartMCPHost(cfg *config.Config, al *agent.AgentLoop, msgBus *bus.Message
 // the registry is rebuilt.
 func restartCron(runCtx context.Context, al *agent.AgentLoop, services *gatewayServices, msgBus *bus.MessageBus, cfg *config.Config) error {
 	var cronTool *toolschedule.CronTool
-	services.CronService, cronTool = setupCronTool(al, msgBus, cfg) //nolint:contextcheck // cron jobs are fired by the scheduler, not by the reload; ExecuteJob runs on a detached context by design, as on the initial setup path
+	services.CronService, cronTool = setupCronTool(al, msgBus, cfg)
 	if cronTool != nil {
 		al.RegisterTool(cronTool)
 	}
-	if err := services.CronService.Start(); err != nil {
+	if err := services.CronService.Start(); err != nil { //nolint:contextcheck // jobs run on the scheduler's own context, ended by its Stop, not on the reload's
 		return fmt.Errorf("error restarting cron service: %w", err)
 	}
 	logger.InfoC("cron", "Cron service restarted")
@@ -926,8 +926,8 @@ func setupCronTool(
 
 	// Set onJob handler
 	if cronTool != nil {
-		cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
-			return cronTool.ExecuteJob(context.Background(), job)
+		cronService.SetOnJob(func(ctx context.Context, job *cron.CronJob) (string, error) {
+			return cronTool.ExecuteJob(ctx, job)
 		})
 	}
 

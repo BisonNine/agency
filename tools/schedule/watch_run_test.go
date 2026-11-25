@@ -259,3 +259,48 @@ func TestWatch_AddWithoutFields(t *testing.T) {
 		t.Errorf("add: %s", res.ForLLM)
 	}
 }
+
+// A probe cut short because the scheduler stopped is not a failed probe: the
+// failure count and the remembered state stay as they were.
+func TestWatch_ProbeStoppedByScheduler(t *testing.T) {
+	f := newWatchFixture(t)
+	if out := f.fire(); out != "no change" {
+		t.Fatalf("baseline: %q", out)
+	}
+	before := f.state()
+	f.probe.result = toolkit.ErrorResult("interrupted")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var job cron.CronJob
+	for _, j := range f.tool.cronService.ListJobs(true) {
+		job = j
+	}
+	if out, err := f.tool.ExecuteJob(ctx, &job); err != nil || out != "no change" {
+		t.Fatalf("stopped probe: %q %v", out, err)
+	}
+	if after := f.state(); after.WatchFailures != 0 || after.WatchDigest != before.WatchDigest {
+		t.Errorf("state changed by a stopped probe: %+v, was %+v", after, before)
+	}
+
+	// The same failure while the scheduler runs is counted.
+	if out := f.fire(); out != "no change" || f.state().WatchFailures != 1 {
+		t.Errorf("failed probe: %q %+v", out, f.state())
+	}
+}
+
+// A job due as the scheduler stops still queues its message.
+func TestExecuteJob_DeliversWhenSchedulerStopped(t *testing.T) {
+	tool := newTestCronTool(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	job := &cron.CronJob{ID: "j1", AgentID: "alice", Payload: cron.CronPayload{Message: "report"}}
+	if out, err := tool.ExecuteJob(ctx, job); err != nil || out != "ok" {
+		t.Fatalf("ExecuteJob: %q %v", out, err)
+	}
+	recv, done := context.WithTimeout(context.Background(), 10*time.Second)
+	defer done()
+	if msg, ok := tool.msgBus.ConsumeInbound(recv); !ok || !strings.Contains(msg.Content, "report") {
+		t.Errorf("not delivered: %+v %v", msg, ok)
+	}
+}

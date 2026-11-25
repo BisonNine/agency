@@ -6,14 +6,19 @@
 
 - **Debian and Ubuntu `.deb` packages (`agency`).** Releases now include
   `agency_<version>_amd64.deb` and `agency_<version>_arm64.deb` alongside the
-  `.tar.gz` archives, installing `/usr/bin/agency`, `/usr/bin/agency-auth`, the
-  `/usr/bin/openclaw` symlink, and licence notices under
-  `/usr/share/doc/agency/`. After `apt install agency`, run `sudo agency install`
-  (system service) or `agency install` (user service) once to create the WebUI
-  admin account and register the service against `/usr/bin/agency`; subsequent
-  `apt upgrade` runs restart an active `agency.service` automatically, and
-  `agency upgrade` directs `apt`-managed installs to `apt` instead of overwriting
-  `/usr/bin/agency`.
+  `.tar.gz` archives. `sudo apt install agency` sets up a complete system
+  install: it installs `/usr/bin/agency`, `/usr/bin/agency-auth`, the
+  `/usr/bin/openclaw` symlink and licence notices under
+  `/usr/share/doc/agency/`, creates the `agency` system account (no password)
+  and `/opt/agency` owned by it, and starts the service as that account. The
+  service starts without an admin account; run `sudo agency admin` to create
+  one. `apt upgrade` restarts the service, and `agency upgrade` directs an
+  `apt`-managed install to `apt`. `apt remove` removes the service and keeps
+  the data and the account; `apt purge` also deletes them, if the package
+  created them. An existing Agency system service, or an `/opt/agency` that
+  belongs to another account, is left unchanged. `agency install` and
+  `agency uninstall` refuse an install set up by the package, and say to use
+  `apt`.
 - **Agents can cancel their own sub-agents with the new `agent_cancel` tool.**
   `{"uuid": "<task id>"}` cancels one task, `{"all": true}` every running one;
   the tasks a cancelled task started are cancelled with it. Task-model calls
@@ -136,15 +141,6 @@
   show the new Agency logo, and the sign-in page now follows the saved theme.
 - **The WebUI follows the system theme.** It is light or dark as the system is,
   until a theme is chosen with the theme button.
-- **`apt install agency` sets up a complete system install.** The package
-  creates the `agency` system account (no password), creates `/opt/agency`
-  owned by it, and starts the service as that account. There is no
-  `agency install` step any more. The service starts without an admin
-  account; run `sudo agency admin` to create one. `apt remove` removes the
-  service and keeps the data and the account; `apt purge` also deletes
-  them, if the package created them. An existing Agency system service, or
-  an `/opt/agency` that belongs to another account, is left unchanged. The
-  package now depends on `adduser`.
 - **Commands run with `sudo` act as the account that owns the data
   directory.** `sudo agency admin`, `status`, `network`, `backup`, `restore`,
   `token`, `cron` and the other data commands now find the installed
@@ -153,8 +149,6 @@
   use root's own `~/.agency`. `install`, `uninstall` and `upgrade` still run
   as root. A file the account cannot reach is named in one line, for
   example "The agency account cannot read /home/alice/backup.tar.gz."
-- **`agency install` and `agency uninstall` refuse an install set up by the
-  package**, and say to use `apt`.
 - **Paths inside the data directory are stored relative to it.** `config.json`,
   forum run records and background shell job records now keep such paths relative (for example
   `"base_dir": "agents"`), so the whole data directory can be renamed or moved.
@@ -284,6 +278,11 @@
   out the RAM figure on macOS, and after a crash `agency status` could report
   an unrelated program that had taken over the process id as the running
   service.
+- **Scheduled jobs stop cleanly at shutdown and on a configuration reload.**
+  Before, a job could still be running, and saving the job list, after the
+  scheduler had been stopped. Now a watch probe that is running is stopped
+  (it is not counted as a failed probe, and the next one still sees any
+  change).
 - **`set-mcp.sh` registers Antigravity again.** It passed the server type after the name, which the CLI rejects.
 - **The device channel's WebSocket library is updated past GO-2026-6278**
   (weak random numbers for the frame mask key).

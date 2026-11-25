@@ -520,6 +520,10 @@ func (t *CronTool) enableJob(args map[string]any, enable bool, agentID string) *
 }
 
 // ExecuteJob executes a cron job through the agent
+//
+// ctx ends when the scheduler is stopped. That stops a watch probe, which is
+// then not counted as failed; a message is still queued, so a job due at that
+// moment is not lost.
 func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) (string, error) {
 	// A listen job has no scheduled fire: its loop delivers on its own.
 	if job.Schedule.Kind == cron.KindListen {
@@ -537,7 +541,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) (string, e
 		}
 		message = outcome.Message
 	}
-	return t.deliver(ctx, job, cronmsg.Build(job.Fingerprint, time.Now(), message))
+	return t.deliver(context.WithoutCancel(ctx), job, cronmsg.Build(job.Fingerprint, time.Now(), message))
 }
 
 // deliver injects content inbound to the job's destination — the same routing

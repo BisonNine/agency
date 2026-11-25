@@ -26,7 +26,7 @@ require (
 	github.com/tenebris-tech/alerter v0.1.7
 	github.com/tenebris-tech/mlogger v0.0.5
 	github.com/tenebris-tech/secmsg v0.1.2
-	go.bison9.com/agent v0.2.1
+	go.bison9.com/agent v0.2.2
 	go.bison9.com/maestro v0.5.13
 	go.bison9.com/mcpfusion v0.4.14
 	golang.org/x/crypto v0.59.0

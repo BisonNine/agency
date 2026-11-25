@@ -143,6 +143,12 @@ func (t *CronTool) runWatch(ctx context.Context, job *cron.CronJob) watchOutcome
 	// model work, such as a Maestro dispatch).
 	result, err := t.probe(tools.WithBilling(ctx, jobBilling(job)), job.AgentID, w)
 	if err != nil {
+		if ctx.Err() != nil {
+			// The scheduler stopped while the probe ran: nothing is known and
+			// nothing failed. The next probe decides.
+			logger.InfoCF("cron", "watch probe stopped", map[string]any{"id": job.ID, "tool": w.Tool})
+			return watchOutcome{}
+		}
 		failures := state.WatchFailures + 1
 		// The digest is deliberately left untouched: a failed probe knows nothing
 		// about the watched state, and advancing it would silently swallow the

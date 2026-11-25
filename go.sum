@@ -168,6 +168,8 @@ github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zI
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 go.bison9.com/agent v0.2.1 h1:AYUFejSqK5ij33GgmJPbIyEPaVWwbvq+i3EVmRudhM4=
 go.bison9.com/agent v0.2.1/go.mod h1:YTinf4So7wXdu1IuQGNlro3YH7IToftFzQLN3C8ISnk=
+go.bison9.com/agent v0.2.2 h1:NjSdwiytvemG9dHm87MSsChOSErO28XNX1cduvkJhw4=
+go.bison9.com/agent v0.2.2/go.mod h1:JKiN5OOheWCi0RybHkH9emMt/2DIbXS3GCYOGGdMI/s=
 go.bison9.com/maestro v0.5.12 h1:UKVYyyDtQ2L1D62S9CU59gOPn0oR7UdAjcMgd6q7pNE=
 go.bison9.com/maestro v0.5.12/go.mod h1:bAQEhujZuNaOjU9ru9+xsFkrZiT9IlvwvrWdCH+b+SM=
 go.bison9.com/maestro v0.5.13 h1:vvoW8dFmE7x69zwvAl8i3hy5uzftWyEj+R20I7ieaVc=

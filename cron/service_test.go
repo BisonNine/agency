@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -358,7 +359,7 @@ func TestGetNextWakeMS_MultipleJobs(t *testing.T) {
 
 func TestExecuteJobByID_Success(t *testing.T) {
 	var called []string
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		called = append(called, job.ID)
 		return "ok", nil
 	}
@@ -390,7 +391,7 @@ func TestExecuteJobByID_Success(t *testing.T) {
 
 func TestExecuteJobByID_HandlerError(t *testing.T) {
 	handlerErr := errors.New("handler failure")
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		return "", handlerErr
 	}
 
@@ -413,7 +414,7 @@ func TestExecuteJobByID_HandlerError(t *testing.T) {
 
 func TestExecuteJobByID_DeleteAfterRun(t *testing.T) {
 	var called []string
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		called = append(called, job.ID)
 		return "ok", nil
 	}
@@ -443,7 +444,7 @@ func TestExecuteJobByID_DeleteAfterRun(t *testing.T) {
 
 func TestExecuteJobByID_JobNotFound(t *testing.T) {
 	var called []string
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		called = append(called, job.ID)
 		return "ok", nil
 	}
@@ -464,7 +465,7 @@ func TestExecuteJobByID_JobNotFound(t *testing.T) {
 
 func TestCheckJobs_DueJobExecuted(t *testing.T) {
 	var called []string
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		called = append(called, job.ID)
 		return "ok", nil
 	}
@@ -496,7 +497,7 @@ func TestCheckJobs_DueJobExecuted(t *testing.T) {
 
 func TestCheckJobs_NotDueJobSkipped(t *testing.T) {
 	var called []string
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		called = append(called, job.ID)
 		return "ok", nil
 	}
@@ -522,7 +523,7 @@ func TestCheckJobs_NotDueJobSkipped(t *testing.T) {
 
 func TestCheckJobs_DisabledJobSkipped(t *testing.T) {
 	var called []string
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		called = append(called, job.ID)
 		return "ok", nil
 	}
@@ -555,7 +556,7 @@ func TestCheckJobs_DisabledJobSkipped(t *testing.T) {
 
 func TestCheckJobs_NotRunningBailsEarly(t *testing.T) {
 	var called []string
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		called = append(called, job.ID)
 		return "ok", nil
 	}
@@ -669,7 +670,7 @@ func TestStop_IdempotentWhenNotRunning(t *testing.T) {
 
 func TestStartStop_JobExecutedDuringRun(t *testing.T) {
 	executed := make(chan string, 1)
-	handler := func(job *CronJob) (string, error) {
+	handler := func(_ context.Context, job *CronJob) (string, error) {
 		executed <- job.ID
 		return "ok", nil
 	}
@@ -1009,5 +1010,91 @@ func TestLoadStore_BackfillsFingerprint(t *testing.T) {
 	}
 	if jobs[0].Fingerprint == "" {
 		t.Error("loadStore did not backfill fingerprint for legacy job")
+	}
+}
+
+// Stop returns only once a job that was running has finished and its state is
+// recorded, so nothing is run or written after it.
+func TestStop_WaitsForRunningJob(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	cs := newTestServiceWithHandler(t, func(_ context.Context, _ *CronJob) (string, error) {
+		close(started)
+		<-release
+		return "ok", nil
+	})
+	job := addEnabledJob(t, cs, "every", new(int64(60_000)))
+	if err := cs.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(cs.Stop)
+	cs.mu.Lock()
+	pastMS := time.Now().UnixMilli() - 500
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID == job.ID {
+			cs.store.Jobs[i].State.NextRunAtMS = &pastMS
+		}
+	}
+	cs.mu.Unlock()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the job did not start")
+	}
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		releaseOnce.Do(func() { close(release) })
+	}()
+	cs.Stop()
+
+	jobs := cs.ListJobs(true)
+	if len(jobs) != 1 || jobs[0].State.LastStatus != "ok" {
+		t.Fatalf("Stop returned before the running job had finished: %+v", jobs)
+	}
+}
+
+// Stop ends the context of a running job, so a job that is waiting returns
+// and Stop is not held for it.
+func TestStop_EndsRunningJobContext(t *testing.T) {
+	started := make(chan struct{})
+	cs := newTestServiceWithHandler(t, func(ctx context.Context, _ *CronJob) (string, error) {
+		close(started)
+		<-ctx.Done()
+		return "stopped", nil
+	})
+	job := addEnabledJob(t, cs, "every", new(int64(60_000)))
+	if err := cs.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(cs.Stop)
+	cs.mu.Lock()
+	pastMS := time.Now().UnixMilli() - 500
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID == job.ID {
+			cs.store.Jobs[i].State.NextRunAtMS = &pastMS
+		}
+	}
+	cs.mu.Unlock()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the job did not start")
+	}
+	stopped := make(chan struct{})
+	go func() {
+		cs.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Stop waited for a job whose context it should have ended")
+	}
+	if jobs := cs.ListJobs(true); len(jobs) != 1 || jobs[0].State.LastStatus != "ok" {
+		t.Fatalf("the job's run was not recorded: %+v", jobs)
 	}
 }
