@@ -98,7 +98,7 @@ func LoadConfig() (*config.Config, error) {
 func SeedConfig(path string) {
 	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
 		if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o700); mkdirErr == nil {
-			defaultCfg := config.DefaultConfig()
+			defaultCfg := config.NewInstallConfig()
 			// Keeps the default_config marker.
 			if seedErr := config.SeedDefaultConfig(path, defaultCfg); seedErr != nil {
 				logger.WarnCF("config", "failed to seed default config", map[string]any{"path": path, "error": seedErr.Error()})

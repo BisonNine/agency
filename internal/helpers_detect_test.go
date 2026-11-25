@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 )
 
@@ -106,4 +107,21 @@ func TestGetAgencyHome_OldNamesIgnored(t *testing.T) {
 		assert.Equal(t, "/srv/alice", GetAgencyHome())
 	})
 	assert.Equal(t, "/opt/agency", global.SystemDataDir)
+}
+
+// TestSeedConfig_NewInstallHasWebUIChat: the seeded config of a new install
+// has the WebUI chat channel on, with a token, in a file only the owner can
+// read.
+func TestSeedConfig_NewInstallHasWebUIChat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	SeedConfig(path)
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	cfg, err := config.LoadConfig(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Channels.WebUI.Enabled)
+	assert.Len(t, cfg.Channels.WebUI.Token, 32)
+	assert.Equal(t, []string{"*"}, []string(cfg.Channels.WebUI.AllowFrom))
+	assert.True(t, cfg.DefaultConfig, "still marked as never saved, for the setup wizard")
 }

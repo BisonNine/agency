@@ -33,6 +33,10 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // config path chosen by the operator (CLI flag or env)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// No file yet: a new install. Whatever first writes it (the
+			// seed, `agency install --host`, `agency network`, ...) writes
+			// a new install's config.
+			cfg = NewInstallConfig()
 			cfg.resolvePaths()
 			return cfg, nil
 		}

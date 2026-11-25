@@ -40,8 +40,9 @@ was said before, here or on any other channel.
 
 ## Setup
 
-Agency turns the WebUI chat on by itself at startup, with a channel token and
-**Allow From** set to `*`, so there is nothing to configure. The settings are
+A new install has the WebUI chat on, with its own channel token and
+**Allow From** set to `*`, and Agency turns it on the same way at startup if it
+is off, so there is nothing to configure. The settings are
 under **Channels → Web**.
 
 Your browser uses your WebUI login. The channel token on that page is only for

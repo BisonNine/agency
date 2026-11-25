@@ -180,7 +180,11 @@ Agency is an independent Go project forked from sipeed/picoclaw on 2026-03-20.
   (`withStoredPaths`), so an old absolute path is rewritten at the next save; every reader
   resolves through `ResolvePath` (`BaseDir`, `ResolveCommonDir`, `agentreg.ConfigWorkspace`,
   `tlscert.OptionsFromConfig`, the model catalogue, the MCP env file). The seeded
-  `agents.base_dir` is `agents`. A forum run's `snapshot.json` `base_directory` goes through
+  `agents.base_dir` is `agents`. A missing `config.json` loads, and is seeded, as
+  `config.NewInstallConfig()`: `DefaultConfig()` (unchanged, the base every existing
+  file loads over; the marshal golden) plus `channels.webui` enabled, `allow_from`
+  `["*"]` and a crypto/rand token, so a new install's first start has a channel
+  (the gateway still refuses to start with every channel off). A forum run's `snapshot.json` `base_directory` goes through
   `forum.Host.StoredPath` (`ForumHost.StoredPath`). `internal/gateway/datadir_move_test.go`
   builds a data directory, moves it and checks that nothing names the old location (logs/
   excepted).
