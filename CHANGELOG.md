@@ -134,6 +134,8 @@
 
 - **New logo and icons.** The WebUI, the browser tab and the Windows program
   show the new Agency logo, and the sign-in page now follows the saved theme.
+- **The WebUI follows the system theme.** It is light or dark as the system is,
+  until a theme is chosen with the theme button.
 - **`apt install agency` sets up a complete system install.** The package
   creates the `agency` system account (no password), creates `/opt/agency`
   owned by it, and starts the service as that account. There is no

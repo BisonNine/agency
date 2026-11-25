@@ -3,7 +3,7 @@
 Regression coverage for the Agency web interface. Every step below has an ID, a
 process, and an expected result, so it can be followed by hand — and every one is
 also automated in `tests/frontend-e2e.mjs`, which prints the same IDs. There are
-186 checks in all; the runner prints the same tally at the end.
+187 checks in all; the runner prints the same tally at the end.
 
 The WebUI holds no product name of its own: it shows the names the server
 fills into the page it serves (title and `product-*` meta tags) and returns
@@ -328,7 +328,7 @@ deletes it again. Nothing outside those domains is touched.
 
 ## P. Authentication
 
-The login page, the refusals, the session, and sign-out. P1, P2, P5, P6, P7 and P8
+The login page, the refusals, the session, and sign-out. P1, P2, P5, P6, P7, P8 and P9
 run in browser contexts of their own so the suite's session is untouched; P2
 records one failed login, which the limiter forgets on the next success (P5).
 
@@ -350,7 +350,8 @@ dev instance without stopping it; it is covered by unit tests only
 | P5 | Sign in in a second browser, open `/agents`, click **Sign out** in the sidebar footer | The browser lands on `/login` with the form showing. From that browser `GET /api/auth/status` is `authenticated: false` and `GET /api/config` is `401`: the session ended on the server, not just in the browser |
 | P6 | Sign in in a second browser, open `/agents`, delete the session cookie (DevTools → Application → Cookies, or `context.clearCookies()`), then open the **Models** group in the sidebar and click **Models** | The browser lands on `/login?next=%2Fmodels` with the login form showing; no error state (`data-testid=route-error`) is rendered and the only console entry is the browser's own note about the refused (401) request. Signing in returns to `/models` |
 | P7 | Sign in in a second browser, open `/` (chat), wait for the socket to open, delete the session cookie as in P6, then close the socket (from the console: the page's WebSocket, or restart Agency) | The page goes to `/login` within a few seconds and stays there: at most one further `/webui/ws` attempt after the redirect, no retry storm, no console errors |
-| P8 | In a fresh browser (no session), load `/login`, set `localStorage.theme` to `light` (DevTools → Application → Local storage) and reload; then set it to `dark` and reload | With `light` the page is light (`<html>` has no `dark` class) and shows the logo for light backgrounds (`/logo-light.png`); with `dark` the page is dark (`<html class="dark">`) and shows the logo for dark backgrounds (`/logo-dark.png`). The saved theme is applied by a script in the page's `<head>`, before the app loads, so the login page (which has no theme switch) follows it too; no console errors |
+| P8 | In a fresh browser (no session), load `/login`, set `localStorage.theme` to `light` (DevTools → Application → Local storage), set the system colour scheme to dark (DevTools → Rendering → Emulate CSS media feature `prefers-color-scheme`, or Playwright `emulateMedia({ colorScheme })`) and reload; then set `localStorage.theme` to `dark`, the system colour scheme to light, and reload | With `light` saved the page is light (`<html>` has no `dark` class) and shows the logo for light backgrounds (`/logo-light.png`); with `dark` saved the page is dark (`<html class="dark">`) and shows the logo for dark backgrounds (`/logo-dark.png`). A saved theme is used whatever the system says. It is applied by a script in the page's `<head>`, before the app loads, so the login page (which has no theme switch) follows it too; no console errors |
+| P9 | In a fresh browser (no session, nothing in local storage) whose system colour scheme is dark (Playwright `colorScheme: 'dark'`), load `/login`; repeat in another fresh browser whose system colour scheme is light | With a dark system the page is dark (`<html class="dark">`) and shows `/logo-dark.png`; with a light system it is light and shows `/logo-light.png`. With nothing saved the page follows the system, and loading it saves nothing: `localStorage.theme` is still unset; no console errors |
 
 ## Q. Audit page
 
