@@ -1,0 +1,35 @@
+#!/bin/sh
+# On purge, deletes /opt/agency and the agency account and group, each only
+# if the package created it (recorded by postinst in /var/lib/agency).
+set -e
+
+ACCOUNT=agency
+DATA_DIR=/opt/agency
+STATE_DIR=/var/lib/agency
+
+case "$1" in
+    purge)
+        if [ -e "$STATE_DIR/created-home" ]; then
+            rm -rf "$DATA_DIR"
+        fi
+        if [ -e "$STATE_DIR/created-account" ] && getent passwd "$ACCOUNT" >/dev/null; then
+            if command -v deluser >/dev/null 2>&1; then
+                deluser --system "$ACCOUNT" >/dev/null 2>&1 ||
+                    echo "Could not delete the $ACCOUNT account."
+            else
+                userdel "$ACCOUNT" || echo "Could not delete the $ACCOUNT account."
+            fi
+        fi
+        if [ -e "$STATE_DIR/created-group" ] && getent group "$ACCOUNT" >/dev/null; then
+            if command -v delgroup >/dev/null 2>&1; then
+                delgroup --system "$ACCOUNT" >/dev/null 2>&1 ||
+                    echo "Could not delete the $ACCOUNT group."
+            else
+                groupdel "$ACCOUNT" || echo "Could not delete the $ACCOUNT group."
+            fi
+        fi
+        rm -rf "$STATE_DIR"
+        ;;
+esac
+
+exit 0

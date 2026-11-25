@@ -20,6 +20,11 @@ const (
 // AGENCY_HOME so that Agency executes strictly as the target user, and hardens the
 // service with NoNewPrivileges= and PrivateTmp=.
 func buildSystemUnit(username, group, execPath, homeDir, binDir, agencyHome string) string {
+	return renderSystemUnit(username, group, execPath, homeDir, servicePATH(homeDir, binDir), agencyHome)
+}
+
+// renderSystemUnit is buildSystemUnit with the unit's PATH given.
+func renderSystemUnit(username, group, execPath, homeDir, pathEnv, agencyHome string) string {
 	var b strings.Builder
 	b.WriteString("[Unit]\n")
 	b.WriteString("Description=" + app.Name() + " — " + app.TagLine() + "\n")
@@ -50,7 +55,7 @@ func buildSystemUnit(username, group, execPath, homeDir, binDir, agencyHome stri
 	if homeDir != "" {
 		b.WriteString("Environment=HOME=" + homeDir + "\n")
 	}
-	b.WriteString("Environment=PATH=" + servicePATH(homeDir, binDir) + "\n")
+	b.WriteString("Environment=PATH=" + pathEnv + "\n")
 	if agencyHome != "" {
 		b.WriteString("Environment=" + global.EnvVarHome + "=" + agencyHome + "\n")
 	}

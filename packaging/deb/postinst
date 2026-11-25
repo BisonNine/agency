@@ -1,21 +1,79 @@
 #!/bin/sh
+# Sets up the system-wide install: the agency account, /opt/agency owned by
+# it, and the service (written and started by `agency install --package`).
+# An install the package did not make is left exactly as it is.
 set -e
 
-if [ "$1" = "configure" ]; then
-    if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-        systemctl daemon-reload >/dev/null 2>&1 || true
-        if systemctl is-active --quiet agency.service; then
-            systemctl try-restart agency.service >/dev/null 2>&1 || true
-        elif [ -z "${2:-}" ] && [ ! -f /etc/systemd/system/agency.service ]; then
-            echo "Agency installed (/usr/bin/agency, /usr/bin/agency-auth)."
-            echo "Next: run 'sudo agency install' (system service) or 'agency install' (user service)"
-            echo "to create the WebUI admin account and start the service."
+ACCOUNT=agency
+DATA_DIR=/opt/agency
+UNIT=/etc/systemd/system/agency.service
+STATE_DIR=/var/lib/agency
+MARKER='# Managed by the agency Debian package'
+
+systemd_running() {
+    command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
+}
+
+# foreign_install prints where an install the package did not make is: a
+# unit without the package's marker, or a data directory the package did
+# not create that belongs to another account.
+foreign_install() {
+    if [ -f "$UNIT" ]; then
+        if [ "$(head -n 1 "$UNIT")" != "$MARKER" ]; then
+            echo "$UNIT"
         fi
-    elif [ -z "${2:-}" ] && [ ! -f /etc/systemd/system/agency.service ]; then
-        echo "Agency installed (/usr/bin/agency, /usr/bin/agency-auth)."
-        echo "Next: run 'sudo agency install' (system service) or 'agency install' (user service)"
-        echo "to create the WebUI admin account and start the service."
+        return 0
     fi
-fi
+    if [ -d "$DATA_DIR" ] && [ ! -e "$STATE_DIR/created-home" ] &&
+        [ "$(stat -c %U "$DATA_DIR")" != "$ACCOUNT" ]; then
+        echo "$DATA_DIR"
+    fi
+}
+
+# create_account creates the system account and its group unless they
+# exist, recording what it created so purge removes only that.
+create_account() {
+    if getent passwd "$ACCOUNT" >/dev/null; then
+        return 0
+    fi
+    mkdir -p "$STATE_DIR"
+    if getent group "$ACCOUNT" >/dev/null; then
+        adduser --system --ingroup "$ACCOUNT" --home "$DATA_DIR" \
+            --no-create-home --shell /bin/bash "$ACCOUNT" >/dev/null
+    else
+        adduser --system --group --home "$DATA_DIR" \
+            --no-create-home --shell /bin/bash "$ACCOUNT" >/dev/null
+        touch "$STATE_DIR/created-group"
+    fi
+    touch "$STATE_DIR/created-account"
+}
+
+# create_data_dir creates /opt/agency owned by the account unless it exists.
+create_data_dir() {
+    if [ -d "$DATA_DIR" ]; then
+        return 0
+    fi
+    mkdir -p "$STATE_DIR"
+    install -d -m 0700 -o "$ACCOUNT" -g "$(id -gn "$ACCOUNT")" "$DATA_DIR"
+    touch "$STATE_DIR/created-home"
+}
+
+case "$1" in
+    configure | abort-upgrade | abort-remove | abort-deconfigure)
+        where=$(foreign_install)
+        if [ -n "$where" ]; then
+            # A unit running this package's binary picks up the new version.
+            if [ -f "$UNIT" ] && grep -q '^ExecStart=/usr/bin/agency\( .*\)\{0,1\}$' "$UNIT" &&
+                systemd_running && systemctl is-active --quiet agency.service; then
+                systemctl try-restart agency.service >/dev/null 2>&1 || true
+            fi
+            echo "An existing Agency install was found and left unchanged ($where)."
+            exit 0
+        fi
+        create_account
+        create_data_dir
+        AGENCY_HOME="$DATA_DIR" /usr/bin/agency install --package
+        ;;
+esac
 
 exit 0

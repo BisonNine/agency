@@ -132,6 +132,24 @@
 
 ### Changed
 
+- **`apt install agency` sets up a complete system install.** The package
+  creates the `agency` system account (no password), creates `/opt/agency`
+  owned by it, and starts the service as that account. There is no
+  `agency install` step any more. The service starts without an admin
+  account; run `sudo agency admin` to create one. `apt remove` removes the
+  service and keeps the data and the account; `apt purge` also deletes
+  them, if the package created them. An existing Agency system service, or
+  an `/opt/agency` that belongs to another account, is left unchanged. The
+  package now depends on `adduser`.
+- **Commands run with `sudo` act as the account that owns the data
+  directory.** `sudo agency admin`, `status`, `network`, `backup`, `restore`,
+  `token`, `cron` and the other data commands now find the installed
+  service's data directory and run as its owner, so the files they write
+  stay that account's. Before, they could write root-owned files there, or
+  use root's own `~/.agency`. `install`, `uninstall` and `upgrade` still run
+  as root.
+- **`agency install` and `agency uninstall` refuse an install set up by the
+  package**, and say to use `apt`.
 - **Paths inside the data directory are stored relative to it.** `config.json`,
   forum run records and background shell job records now keep such paths relative (for example
   `"base_dir": "agents"`), so the whole data directory can be renamed or moved.

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -78,4 +79,25 @@ func TestUpdateAlias(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, subcmd)
 	assert.Equal(t, "upgrade", subcmd.Name())
+}
+
+// TestTopLevelCommand: the privilege switch is decided by the top-level
+// command a command line runs ("" for the service itself).
+func TestTopLevelCommand(t *testing.T) {
+	root := NewAgencyCommand()
+	for args, want := range map[string]string{
+		"":                    "",
+		"--debug":             "",
+		"admin alice":         "admin",
+		"cron list":           "cron",
+		"install --package":   "install",
+		"uninstall --package": "uninstall",
+		"upgrade --check":     "upgrade",
+		"help admin":          "help",
+		"completion bash":     "completion",
+	} {
+		if got := topLevelCommand(root, strings.Fields(args)); got != want {
+			t.Errorf("%q: %q, want %q", args, got, want)
+		}
+	}
 }

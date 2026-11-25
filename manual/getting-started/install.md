@@ -2,7 +2,7 @@
 
 This page installs Agency as a background service and creates the admin account you sign in with.
 
-There are four ways to install. All of them finish with `agency install`, which registers the service, creates the admin account and starts Agency.
+There are four ways to install. The Debian package sets up and starts the service itself; the others finish with `agency install`, which registers the service, creates the admin account and starts Agency.
 
 ## Before you start
 
@@ -40,15 +40,33 @@ To install a specific release, set `AGENCY_VERSION` (for example `AGENCY_VERSION
 
 ## Option 3: Debian or Ubuntu package (`apt`)
 
-On Debian and Ubuntu (`amd64` and `arm64`), install the `agency` package from the APT repository (or from a downloaded `agency_<version>_<arch>.deb` file with `sudo apt install ./agency_<version>_<arch>.deb`):
+On Debian and Ubuntu (`amd64` and `arm64`), install the `agency` package from the APT repository (or from a downloaded `agency_<version>_<arch>.deb` file with `sudo apt install ./agency_<version>_<arch>.deb`), then create the admin account:
 
 ```bash
 sudo apt update
 sudo apt install agency
-sudo agency install
+sudo agency admin
 ```
 
-For a user service instead of a system service, run `agency install` without `sudo`. The package places `/usr/bin/agency`, `/usr/bin/agency-auth` and `/usr/bin/openclaw`, and `agency install` points the service directly at `/usr/bin/agency` so future `sudo apt upgrade` runs update it in place.
+The package sets up a system service and starts it, so there is no `agency install` step. Until `sudo agency admin` has run, nobody can sign in.
+
+| | |
+|---|---|
+| Programs | `/usr/bin/agency`, `/usr/bin/agency-auth`, `/usr/bin/openclaw` |
+| Service account | `agency`, a system account with no password |
+| Data directory | `/opt/agency`, owned by `agency` |
+| Service | `/etc/systemd/system/agency.service`, running as `agency` |
+
+Commands you run with `sudo` (`sudo agency status`, `sudo agency network`, `sudo agency backup`, …) act as the `agency` account, so what they write in `/opt/agency` stays its own.
+
+To sign a CLI provider in for the service (see [CLI providers](../providers/cli-providers.md)), open a shell as the service account with `sudo -u agency -i` and sign in there. CLIs installed in `/opt/agency/.local/bin` or `/opt/agency/bin` are on the service's `PATH`.
+
+If the machine already has an Agency system service, or an `/opt/agency` that belongs to another account, the package leaves it unchanged and says so. The package does not see a user service (`~/.config/systemd/user/agency.service`), so stop that one first.
+
+To remove the package:
+
+- `sudo apt remove agency` stops and removes the service, and keeps `/opt/agency` and the `agency` account.
+- `sudo apt purge agency` also deletes `/opt/agency` and the `agency` account and group, each only if the package created it.
 
 ## Option 4: build from source
 

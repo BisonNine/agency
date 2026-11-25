@@ -11,7 +11,7 @@ sudo apt update
 sudo apt install --only-upgrade agency
 ```
 
-If `agency.service` is running as a system service, the package restarts it automatically. If you run a user service instead, restart it afterwards with `systemctl --user restart agency`.
+The package rewrites the service it set up and restarts it. A system service you set up with `sudo agency install` on `/usr/bin/agency` is restarted too. If you run a user service instead, restart it afterwards with `systemctl --user restart agency`.
 
 ## Upgrade with `agency upgrade`
 
@@ -41,7 +41,7 @@ Useful options:
 
 ## Refresh the service file
 
-Some releases change the service file that `agency install` writes. `agency upgrade` does not rewrite it. After upgrading, run `agency install` again with the same privilege as the first time (`sudo` for a system service). It keeps your data and your admin account.
+Some releases change the service file that `agency install` writes. `agency upgrade` does not rewrite it. (An install set up by the `apt` package needs nothing here: `apt` rewrites its service file on every upgrade.) After upgrading, run `agency install` again with the same privilege as the first time (`sudo` for a system service). It keeps your data and your admin account.
 
 ## Moving an install from the old name
 

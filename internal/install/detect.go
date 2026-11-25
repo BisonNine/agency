@@ -25,6 +25,9 @@ type ExistingInstall struct {
 	User        string
 	AgencyHome  string
 	IsActive    bool
+	// Package reports a systemd unit written for the Debian package (its
+	// first line is global.PackageUnitMarker): apt manages that install.
+	Package bool
 }
 
 // optAgencyHome is the data directory of the standard system install. Its
@@ -236,7 +239,9 @@ func (h *host) parseSystemdUnit(path, serviceType string) *ExistingInstall {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if after, ok := strings.CutPrefix(line, "ExecStart="); ok {
+		if line == global.PackageUnitMarker {
+			inst.Package = true
+		} else if after, ok := strings.CutPrefix(line, "ExecStart="); ok {
 			val := after
 			parts := strings.Fields(val)
 			if len(parts) > 0 {

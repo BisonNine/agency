@@ -64,6 +64,16 @@ const (
 	// DebPackageName is the Debian/Ubuntu binary package name (`apt install agency`).
 	DebPackageName = "agency"
 
+	// ServiceAccount is the system user and group the Debian package creates
+	// and runs the service as; its home directory is SystemDataDir.
+	ServiceAccount = "agency"
+
+	// PackageUnitMarker is the first line of the systemd unit the Debian
+	// package has the binary write (`install --package`). The package's
+	// maintainer scripts match it too: a unit without it is someone else's
+	// install, which the package leaves alone.
+	PackageUnitMarker = "# Managed by the agency Debian package"
+
 	// MaestroHostModel is the model label Maestro records for a task the host
 	// ran without naming a model; Maestro stores it and hands it back as a
 	// task's llm_model_id.

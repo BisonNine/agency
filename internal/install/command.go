@@ -58,6 +58,7 @@ func NewInstallCommand() *cobra.Command {
 		targetUser   string
 		customBinDir string
 		yes          bool
+		pkg          bool
 	)
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -83,6 +84,9 @@ func NewInstallCommand() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if pkg {
+				return realHost().installPackage()
+			}
 			return runInstall(host, port, allowedCIDRs, targetUser, customBinDir, yes)
 		},
 	}
@@ -96,7 +100,17 @@ func NewInstallCommand() *cobra.Command {
 	cmd.Flags().StringVar(&targetUser, "user", "", "Target user account for service execution when running with sudo (defaults to $SUDO_USER).")
 	cmd.Flags().StringVar(&customBinDir, "bin-dir", "", "Custom directory to install the binary to (defaults to ~/bin or ~/.local/bin in user mode, /usr/local/bin in system mode).")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip interactive confirmation prompt.")
+	addPackageFlag(cmd, &pkg, "Set up the service for the Debian package (run by its postinst).")
 	return cmd
+}
+
+// addPackageFlag adds the hidden --package flag the Debian package's
+// maintainer scripts pass; operators never type it.
+func addPackageFlag(cmd *cobra.Command, pkg *bool, usage string) {
+	cmd.Flags().BoolVar(pkg, "package", false, usage)
+	if err := cmd.Flags().MarkHidden("package"); err != nil {
+		panic(err) // the flag was added on the line above
+	}
 }
 
 // NewUninstallCommand returns the `agency uninstall` subcommand.
@@ -104,6 +118,7 @@ func NewUninstallCommand() *cobra.Command {
 	var (
 		targetUser string
 		yes        bool
+		pkg        bool
 	)
 	cmd := &cobra.Command{
 		Use:          "uninstall",
@@ -111,11 +126,15 @@ func NewUninstallCommand() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if pkg {
+				return realHost().uninstallPackage()
+			}
 			return runUninstall(targetUser, yes)
 		},
 	}
 	cmd.Flags().StringVar(&targetUser, "user", "", "Target user account when running with sudo (defaults to $SUDO_USER).")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip interactive confirmation prompt.")
+	addPackageFlag(cmd, &pkg, "Remove the Debian package's service (run by its prerm).")
 	return cmd
 }
 
@@ -300,6 +319,9 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 
 	// Detect any pre-existing installation or service
 	existing := h.detect(tu.HomeDir)
+	if existing != nil && existing.Package {
+		return packageManagedErr(existing)
+	}
 	if err = checkExistingMode(existing, tu.IsRoot); err != nil {
 		return err
 	}
@@ -572,6 +594,9 @@ func (h *host) uninstall(targetUser string, autoYes bool) error {
 	}
 
 	existing := h.detect(tu.HomeDir)
+	if existing != nil && existing.Package {
+		return packageManagedErr(existing)
+	}
 	if existing != nil && existing.User != "" && targetUser == "" && tu.IsRoot {
 		if preservedUser, pErr := h.targetUser(existing.User); pErr == nil {
 			tu = preservedUser

@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -21,6 +22,7 @@ import (
 	"go.bison9.com/agency/internal/memory"
 	"go.bison9.com/agency/internal/model"
 	"go.bison9.com/agency/internal/network"
+	"go.bison9.com/agency/internal/runas"
 	"go.bison9.com/agency/internal/sessions"
 	"go.bison9.com/agency/internal/skills"
 	"go.bison9.com/agency/internal/status"
@@ -76,7 +78,32 @@ func NewAgencyCommand() *cobra.Command {
 
 func main() {
 	cmd := NewAgencyCommand()
+	if _, err := runas.Drop(topLevelCommand(cmd, os.Args[1:])); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// topLevelCommand is the name of the root's subcommand args run ("" for the
+// root itself, the service), so a root process can switch to the service
+// account before any command touches the data directory.
+func topLevelCommand(root *cobra.Command, args []string) string {
+	// Execute adds these itself; Find only sees them once they are there.
+	root.InitDefaultHelpCmd()
+	root.InitDefaultCompletionCmd(args...)
+	c, _, err := root.Find(args)
+	if err != nil {
+		// An unknown command fails in Execute, so it never runs.
+		return "help"
+	}
+	for c.HasParent() && c.Parent() != root {
+		c = c.Parent()
+	}
+	if c == root {
+		return ""
+	}
+	return c.Name()
 }

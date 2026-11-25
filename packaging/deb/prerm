@@ -1,18 +1,15 @@
 #!/bin/sh
+# Stops and removes the service on removal (`apt remove`, `apt purge`),
+# never on an upgrade (`upgrade`, `failed-upgrade`): the new postinst
+# restarts it. The data directory and the account stay until purge.
 set -e
 
-# Stop and remove the system service unit only on package removal (`apt remove`
-# or `apt purge`), never on `upgrade` (`old-prerm upgrade <new-version>`).
-if [ "$1" = "remove" ]; then
-    if [ -f /etc/systemd/system/agency.service ]; then
-        if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-            systemctl disable --now agency.service >/dev/null 2>&1 || true
+case "$1" in
+    remove | deconfigure)
+        if [ -x /usr/bin/agency ]; then
+            /usr/bin/agency uninstall --package
         fi
-        rm -f /etc/systemd/system/agency.service
-        if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-            systemctl daemon-reload >/dev/null 2>&1 || true
-        fi
-    fi
-fi
+        ;;
+esac
 
 exit 0
