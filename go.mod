@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/a3tai/openclaw-go v1.20260325.0
-	github.com/adhocore/gronx v1.20.9
+	github.com/adhocore/gronx v1.20.10
 	github.com/bmatcuk/doublestar/v4 v4.10.7
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.4.2

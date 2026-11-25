@@ -15,14 +15,18 @@
 package pidfile
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"go.bison9.com/agency/fileutil"
 	"go.bison9.com/agency/global"
@@ -103,11 +107,43 @@ func isAgency(pid int) bool {
 	return isOurExecutable(pid)
 }
 
-// procRoot and selfExecutable are replaced in tests.
+// procRoot, selfExecutable and psOutput are replaced in tests.
 var (
 	procRoot       = "/proc"
 	selfExecutable = os.Executable
+	psOutput       = runPS
 )
+
+// psTimeout bounds one ps call.
+const psTimeout = 5 * time.Second
+
+// psCommand is the ps to run: on macOS the system's own, by its full path, so
+// the PATH the process was started with does not matter.
+func psCommand() string {
+	if runtime.GOOS == "darwin" {
+		return "/bin/ps"
+	}
+	return "ps"
+}
+
+// runPS returns one field of one process as ps prints it, without a header.
+// It is how a process is inspected on a system without /proc (macOS). A pid
+// that no longer exists is an *exec.ExitError.
+func runPS(pid int, field string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), psTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, psCommand(), "-o", field+"=", "-p", strconv.Itoa(pid)).Output() //nolint:gosec // fixed command, a field name and a pid
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// hasProcfs reports whether this system has /proc at all.
+func hasProcfs() bool {
+	_, err := os.Stat(procRoot)
+	return err == nil
+}
 
 // deletedSuffix is what Linux appends to /proc/<pid>/exe once the file has
 // been replaced, as `upgrade` does to a running binary.
@@ -121,8 +157,8 @@ const deletedSuffix = " (deleted)"
 // it is the file this process runs, or a file with the installed binary's
 // name (another build of it, such as the installed one seen from a
 // development copy). Where exe cannot be read (another user's process), the
-// command name is compared instead. On a system without /proc (macOS),
-// existence is the best available answer.
+// command name is compared instead. On a system without /proc (macOS), the
+// executable is taken from ps.
 func isOurExecutable(pid int) bool {
 	dir := filepath.Join(procRoot, strconv.Itoa(pid))
 	self := ""
@@ -138,10 +174,39 @@ func isOurExecutable(pid int) bool {
 	}
 	comm, err := os.ReadFile(filepath.Join(dir, "comm")) //nolint:gosec // a /proc entry named by a pid
 	if err != nil {
-		return true // no procfs: existence is the best available answer
+		if !hasProcfs() {
+			return isOurExecutablePS(pid, self)
+		}
+		return true // the entry cannot be read: existence is the best available answer
 	}
 	name := strings.TrimSpace(string(comm))
 	return name == global.InstalledBinaryName || (self != "" && name == commName(filepath.Base(self)))
+}
+
+// isOurExecutablePS is isOurExecutable for a system without /proc. ps prints
+// the path the process was started by: it matches when it resolves to the
+// file this process runs, or its name is the installed binary's or this
+// binary's. When ps itself cannot be run, existence is the best available
+// answer.
+func isOurExecutablePS(pid int, self string) bool {
+	path, err := psOutput(pid, "comm")
+	if err != nil {
+		var exit *exec.ExitError
+		return !errors.As(err, &exit) // ps ran and found no such process
+	}
+	if path == "" {
+		return false
+	}
+	if filepath.IsAbs(path) {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			path = resolved
+		}
+		if path == self {
+			return true
+		}
+	}
+	name := filepath.Base(path)
+	return name == global.InstalledBinaryName || (self != "" && name == filepath.Base(self))
 }
 
 // commName is name as /proc/<pid>/comm shows it: at most 15 bytes.
@@ -153,12 +218,16 @@ func commName(name string) string {
 }
 
 // RSSBytes returns a process's resident set size — the physical RAM it
-// occupies — from /proc/<pid>/status.
+// occupies — from /proc/<pid>/status, or from ps on a system without /proc
+// (macOS).
 //
 // VmRSS is the same figure ps reports as RSS; they are not different metrics.
 // Deliberately NOT VmSize, which for a Go process includes over a gigabyte of
 // reserved address space and would suggest Agency is enormous when it is not.
 func RSSBytes(pid int) (int64, bool) {
+	if !hasProcfs() {
+		return rssBytesPS(pid)
+	}
 	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "status"))
 	if err != nil {
 		return 0, false
@@ -178,4 +247,18 @@ func RSSBytes(pid int) (int64, bool) {
 		return kb * 1024, true
 	}
 	return 0, false
+}
+
+// rssBytesPS is RSSBytes for a system without /proc: ps prints the resident
+// set size in kilobytes.
+func rssBytesPS(pid int) (int64, bool) {
+	out, err := psOutput(pid, "rss")
+	if err != nil {
+		return 0, false
+	}
+	kb, err := strconv.ParseInt(out, 10, 64)
+	if err != nil || kb <= 0 {
+		return 0, false
+	}
+	return kb * 1024, true
 }

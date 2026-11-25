@@ -279,6 +279,11 @@
   the WebUI chat channel on, with a token generated for it. Before, the
   first start stopped with "no channels enabled" and only the next start
   worked. An existing configuration is not changed.
+- **macOS: status shows memory use again, and a stale PID file no longer
+  reads as running.** `agency status`, `/status` and the WebUI status left
+  out the RAM figure on macOS, and after a crash `agency status` could report
+  an unrelated program that had taken over the process id as the running
+  service.
 - **`set-mcp.sh` registers Antigravity again.** It passed the server type after the name, which the CLI rejects.
 - **The device channel's WebSocket library is updated past GO-2026-6278**
   (weak random numbers for the frame mask key).

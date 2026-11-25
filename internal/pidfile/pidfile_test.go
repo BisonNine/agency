@@ -91,12 +91,13 @@ func TestWriteCreatesTheDirectory(t *testing.T) {
 	}
 }
 
-// RSS is read from VmRSS, which is the same figure ps reports — not VmSize,
+// RSS is read from VmRSS (from ps where there is no /proc), which is the same
+// figure ps reports — not VmSize,
 // which for a Go process counts over a gigabyte of reserved address space.
 func TestRSSBytesIsResidentNotVirtual(t *testing.T) {
 	rss, ok := RSSBytes(os.Getpid())
 	if !ok {
-		t.Skip("no /proc on this platform")
+		t.Fatal("no resident set size for this process")
 	}
 	if rss <= 0 {
 		t.Fatalf("RSS = %d, want a positive size", rss)

@@ -6,6 +6,8 @@ github.com/adhocore/gronx v1.20.8 h1:eJsn6gOqleelmI8orCCuwI9OYbuQUTaFflCFoxMaJlk
 github.com/adhocore/gronx v1.20.8/go.mod h1:7oUY1WAU8rEJWmAxXR2DN0JaO4gi9khSgKjiRypqteg=
 github.com/adhocore/gronx v1.20.9 h1:R+SBcckNLNpDwCaiQZxpB5QO/CZ9AE48oGRKbl1tKR0=
 github.com/adhocore/gronx v1.20.9/go.mod h1:7oUY1WAU8rEJWmAxXR2DN0JaO4gi9khSgKjiRypqteg=
+github.com/adhocore/gronx v1.20.10 h1:PGVp4UCnVYXMbjBuJ2/vjNWwcQzEKUwRtyWHgQqQOCs=
+github.com/adhocore/gronx v1.20.10/go.mod h1:7oUY1WAU8rEJWmAxXR2DN0JaO4gi9khSgKjiRypqteg=
 github.com/alecthomas/chroma/v2 v2.24.0 h1:zrg+k0tAaVbM8whaT2hR5DOUqAdopsDaH998EGi6Llk=
 github.com/alecthomas/chroma/v2 v2.24.0/go.mod h1:l+ohZ9xRXIbGe7cIW+YZgOGbvuVLjMps/FYN/CwuabI=
 github.com/bmatcuk/doublestar/v4 v4.10.7 h1:zcFCzVP2tosKRCXLXISX2dQ9YWXAvB3u7bhc1CDLc64=
