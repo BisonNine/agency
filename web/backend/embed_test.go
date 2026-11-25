@@ -45,7 +45,7 @@ func TestCacheControl(t *testing.T) {
 	cases := []struct{ path, want string }{
 		{"", "no-cache"},
 		{"agents", "no-cache"},
-		{"favicon.svg", "no-cache"},
+		{"favicon.ico", "no-cache"},
 		{"assets/index-abc123.js", "public, max-age=31536000, immutable"},
 	}
 	for _, tc := range cases {
@@ -64,7 +64,7 @@ func templatedFS() fstest.MapFS {
 			`<meta name="product-short-name" content="{{PRODUCT_SHORT_NAME}}">` +
 			`<meta name="product-binary-name" content="{{PRODUCT_BINARY_NAME}}">`)},
 		"site.webmanifest": {Data: []byte(`{"name": "{{PRODUCT_NAME}}", "short_name": "{{PRODUCT_SHORT_NAME}}"}`)},
-		"favicon.svg":      {Data: []byte(`<svg/>`)},
+		"favicon.ico":      {Data: []byte(`ico`)},
 	}
 }
 
@@ -137,8 +137,8 @@ func TestJSONStringContent(t *testing.T) {
 // TestSPA_PlainFilesUnchanged: files without placeholders are served as they
 // are.
 func TestSPA_PlainFilesUnchanged(t *testing.T) {
-	rr := get(t, spaHandler(templatedFS()), "/favicon.svg")
-	if rr.Code != http.StatusOK || rr.Body.String() != `<svg/>` {
-		t.Errorf("GET /favicon.svg = %d %q", rr.Code, rr.Body.String())
+	rr := get(t, spaHandler(templatedFS()), "/favicon.ico")
+	if rr.Code != http.StatusOK || rr.Body.String() != `ico` {
+		t.Errorf("GET /favicon.ico = %d %q", rr.Code, rr.Body.String())
 	}
 }

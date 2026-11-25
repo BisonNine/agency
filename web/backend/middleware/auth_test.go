@@ -286,7 +286,7 @@ func TestAuth_ExemptPathsPassWithoutSession(t *testing.T) {
 		{http.MethodGet, "/"},
 		{http.MethodGet, "/login"},
 		{http.MethodGet, "/assets/index-abc123.js"},
-		{http.MethodHead, "/logo.png"},
+		{http.MethodHead, "/logo-light.png"},
 	} {
 		if rec := serve(h, tc.method, tc.path, nil); rec.Code != http.StatusOK {
 			t.Errorf("%s %s = %d, want 200 (exempt)", tc.method, tc.path, rec.Code)

@@ -1,6 +1,7 @@
 import { IconBook, IconMenu2, IconMoon, IconSun } from "@tabler/icons-react"
 import { Link } from "@tanstack/react-router"
 
+import { Logo } from "@/components/logo"
 import { Button } from "@/components/ui/button.tsx"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useTheme } from "@/hooks/use-theme.ts"
@@ -18,7 +19,7 @@ export function AppHeader() {
         </SidebarTrigger>
         <div className="hidden shrink-0 items-center sm:flex">
           <Link to="/">
-            <img className="max-h-10 w-auto" src="/logo.png" alt="Logo" />
+            <Logo className="h-10" alt={name} />
           </Link>
         </div>
       </div>

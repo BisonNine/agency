@@ -32,7 +32,7 @@ describe("shouldRedirectToLogin", () => {
   })
 
   it("ignores non-API and cross-origin requests", () => {
-    expect(shouldRedirectToLogin(401, "/logo.png", "/")).toBe(false)
+    expect(shouldRedirectToLogin(401, "/logo-light.png", "/")).toBe(false)
     expect(shouldRedirectToLogin(401, null, "/")).toBe(false)
   })
 
