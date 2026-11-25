@@ -62,7 +62,7 @@ package:
   deb:
     enabled:     true
     # CONTRACT: uploaded to the APT repository and GitHub releases.
-    asset:       'agency_{deb_version}_{deb_arch}.deb'
+    asset:       'agency_{tag}_{deb_arch}.deb'
     package:     agency
     maintainer:  'Bison9 <support@bison9.com>'
     description: 'Agency — Personal AI Assistant'
