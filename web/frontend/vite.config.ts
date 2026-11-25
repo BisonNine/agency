@@ -8,6 +8,8 @@ import react from "@vitejs/plugin-react"
 // that block as an unknown property.
 import { defineConfig } from "vitest/config"
 
+import { themeInitScript } from "./src/lib/theme"
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -17,6 +19,18 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
+    // The theme is set by a script in <head>, before the first paint. Its
+    // text comes from src/lib/theme.ts, the same rule the app uses.
+    {
+      name: "theme-init",
+      transformIndexHtml: () => [
+        {
+          tag: "script",
+          children: themeInitScript(),
+          injectTo: "head-prepend",
+        },
+      ],
+    },
   ],
   resolve: {
     alias: {

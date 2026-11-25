@@ -19,7 +19,7 @@ export function AppHeader() {
         </SidebarTrigger>
         <div className="hidden shrink-0 items-center sm:flex">
           <Link to="/">
-            <Logo className="h-10" alt={name} />
+            <Logo variant="mark" className="h-10" alt={name} />
           </Link>
         </div>
       </div>

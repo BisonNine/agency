@@ -3,7 +3,7 @@
 Regression coverage for the Agency web interface. Every step below has an ID, a
 process, and an expected result, so it can be followed by hand — and every one is
 also automated in `tests/frontend-e2e.mjs`, which prints the same IDs. There are
-185 checks in all; the runner prints the same tally at the end.
+186 checks in all; the runner prints the same tally at the end.
 
 The WebUI holds no product name of its own: it shows the names the server
 fills into the page it serves (title and `product-*` meta tags) and returns
@@ -328,7 +328,7 @@ deletes it again. Nothing outside those domains is touched.
 
 ## P. Authentication
 
-The login page, the refusals, the session, and sign-out. P1, P2, P5, P6 and P7
+The login page, the refusals, the session, and sign-out. P1, P2, P5, P6, P7 and P8
 run in browser contexts of their own so the suite's session is untouched; P2
 records one failed login, which the limiter forgets on the next success (P5).
 
@@ -343,13 +343,14 @@ dev instance without stopping it; it is covered by unit tests only
 
 | ID | Process | Expected |
 |---|---|---|
-| P1 | In a fresh browser (no session), load `/agents` | Redirected to `/login?next=%2Fagents`. The card is headed by the product name (not "Sign in"), and the browser tab shows it as the title, shows the **Username** and **Password** fields and a **Sign in** button, and does **not** carry the line *Use the admin account created on the server*; no console errors. The frontend gate remembers where the visitor was going, so a bookmark still works after signing in. (With no admin account the same page instead reads **No admin account** and tells you to run `<binary_name> admin` on the server) |
+| P1 | In a fresh browser (no session), load `/agents` | Redirected to `/login?next=%2Fagents`. The card shows the logo, its heading (read by screen readers, not shown) is the product name (not "Sign in"), and the browser tab shows it as the title; the card shows the **Username** and **Password** fields and a **Sign in** button, and does **not** carry the line *Use the admin account created on the server*; no console errors. The frontend gate remembers where the visitor was going, so a bookmark still works after signing in. (With no admin account the same page instead reads **No admin account** and tells you to run `<binary_name> admin` on the server) |
 | P2 | On `/login`, enter the right username with a wrong password, **Sign in** | The form stays on `/login` and shows **Invalid username or password.** — one message for a bad username and a bad password alike, so the form never confirms which half was right. `GET /api/auth/status` from that browser still says `authenticated: false` |
 | P3 | **anonymous** `curl -i $BASE/api/config` | `401` with a JSON `error` (`authentication required`, or `no admin account` with a `<binary_name> admin` hint) and **no configuration in the body** |
 | P4 | `curl -b jar $BASE/api/auth/status` | `{"configured":true,"authenticated":true,"username":"<admin>"}` — the username is the one that signed in |
 | P5 | Sign in in a second browser, open `/agents`, click **Sign out** in the sidebar footer | The browser lands on `/login` with the form showing. From that browser `GET /api/auth/status` is `authenticated: false` and `GET /api/config` is `401`: the session ended on the server, not just in the browser |
 | P6 | Sign in in a second browser, open `/agents`, delete the session cookie (DevTools → Application → Cookies, or `context.clearCookies()`), then open the **Models** group in the sidebar and click **Models** | The browser lands on `/login?next=%2Fmodels` with the login form showing; no error state (`data-testid=route-error`) is rendered and the only console entry is the browser's own note about the refused (401) request. Signing in returns to `/models` |
 | P7 | Sign in in a second browser, open `/` (chat), wait for the socket to open, delete the session cookie as in P6, then close the socket (from the console: the page's WebSocket, or restart Agency) | The page goes to `/login` within a few seconds and stays there: at most one further `/webui/ws` attempt after the redirect, no retry storm, no console errors |
+| P8 | In a fresh browser (no session), load `/login`, set `localStorage.theme` to `light` (DevTools → Application → Local storage) and reload; then set it to `dark` and reload | With `light` the page is light (`<html>` has no `dark` class) and shows the logo for light backgrounds (`/logo-light.png`); with `dark` the page is dark (`<html class="dark">`) and shows the logo for dark backgrounds (`/logo-dark.png`). The saved theme is applied by a script in the page's `<head>`, before the app loads, so the login page (which has no theme switch) follows it too; no console errors |
 
 ## Q. Audit page
 

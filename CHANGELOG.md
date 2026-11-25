@@ -133,7 +133,7 @@
 ### Changed
 
 - **New logo and icons.** The WebUI, the browser tab and the Windows program
-  show the new Agency logo.
+  show the new Agency logo, and the sign-in page now follows the saved theme.
 - **`apt install agency` sets up a complete system install.** The package
   creates the `agency` system account (no password), creates `/opt/agency`
   owned by it, and starts the service as that account. There is no

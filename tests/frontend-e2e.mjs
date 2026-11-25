@@ -497,6 +497,36 @@ if (useGroup("P", "Authentication")) {
     return `${after} socket attempt(s) in all`
   })
 
+  // The login page has no theme switch of its own: only the script in the
+  // page's <head> can have set the theme there. "theme" is the key in
+  // web/frontend/src/lib/theme.ts.
+  await check(8, "the login page and its logo follow the saved theme", async () => {
+    const other = await browser.newContext()
+    const { close, page, problems } = await open("/login", { context: other })
+    const seen = {}
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((t) => localStorage.setItem("theme", t), theme)
+      await page.reload({ waitUntil: "networkidle", timeout: 20000 })
+      await page.locator("[data-testid=login-form]").waitFor({ state: "visible", timeout: 10000 })
+      const dark = await page.evaluate(() => document.documentElement.classList.contains("dark"))
+      const logos = await page
+        .locator('img[src^="/logo-"]:visible')
+        .evaluateAll((els) => els.map((e) => e.getAttribute("src")))
+      seen[theme] = { dark, logos }
+    }
+    await close()
+    await other.close()
+    assert(problems.length === 0, `console: ${problems[0]}`)
+    for (const theme of ["light", "dark"]) {
+      const { dark, logos } = seen[theme]
+      assert(dark === (theme === "dark"), `saved theme ${theme}: the page is ${dark ? "dark" : "light"}`)
+      assert(
+        logos.length === 1 && logos[0] === `/logo-${theme}.png`,
+        `saved theme ${theme}: logo shown is ${JSON.stringify(logos)}, want /logo-${theme}.png`,
+      )
+    }
+  })
+
   await anon.close()
 }
 
