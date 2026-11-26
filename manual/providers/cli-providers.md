@@ -26,7 +26,7 @@ A CLI can also authenticate with an API key from the service's environment. Agen
 
 Open **Providers**. The **Local CLI agents** section lists every supported CLI:
 
-- A CLI whose program was found shows its path and a switch. One that was not found is greyed out with "`<program>` not found on PATH", and its switch is disabled.
+- A CLI whose program was found shows its path and a switch. One that was not found is greyed out with "`<program>` not found on PATH", and its switch is disabled. When the CLI's provider has a **Command**, that program is the one looked for (and the one **Register tool server** runs); a missing one shows "`<command>` not found".
 - The **Args** line shows the full command line Agency runs.
 
 Turning the switch on creates whatever is missing: a provider for the CLI and a model named after it, enabled, with a request timeout of 3600 seconds. Turning it off disables every model that runs through that CLI. Nothing is deleted, so switching it back on restores what was there.

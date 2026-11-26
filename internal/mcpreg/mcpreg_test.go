@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -171,7 +172,7 @@ func (g *rig) cursorFile() string   { return filepath.Join(g.home, ".cursor", "m
 
 func check(t *testing.T, r *Registrar, protocol, url string) Status {
 	t.Helper()
-	st, err := r.Check(t.Context(), protocol, url)
+	st, err := r.Check(t.Context(), protocol, "", url)
 	if err != nil {
 		t.Fatalf("Check(%s): %v", protocol, err)
 	}
@@ -253,7 +254,7 @@ func TestCheckAndRegister_EveryCLI(t *testing.T) {
 			if st := check(t, r, a.Protocol, ours); st.State != NotRegistered || st.Label != a.Label || st.Protocol != a.Protocol {
 				t.Fatalf("fresh: %+v", st)
 			}
-			st, err := r.Register(ctx, a.Protocol, ours, false)
+			st, err := r.Register(ctx, a.Protocol, "", ours, false)
 			if err != nil || st.State != Registered {
 				t.Fatalf("register: %+v %v\n%s", st, err, g.calls())
 			}
@@ -262,14 +263,14 @@ func TestCheckAndRegister_EveryCLI(t *testing.T) {
 			}
 			// The same CLI, registered elsewhere: named, and not replaced
 			// without replace.
-			st, err = r.Register(ctx, a.Protocol, other, false)
+			st, err = r.Register(ctx, a.Protocol, "", other, false)
 			if !errors.Is(err, ErrReplaceRequired) || st.State != OtherAddress || st.Address != ours {
 				t.Fatalf("replace not required: %+v %v", st, err)
 			}
 			if got := check(t, r, a.Protocol, ours); got.State != Registered {
 				t.Fatalf("refused replace changed the entry: %+v", got)
 			}
-			st, err = r.Register(ctx, a.Protocol, other, true)
+			st, err = r.Register(ctx, a.Protocol, "", other, true)
 			if err != nil || st.State != Registered {
 				t.Fatalf("replace: %+v %v\n%s", st, err, g.calls())
 			}
@@ -279,7 +280,7 @@ func TestCheckAndRegister_EveryCLI(t *testing.T) {
 			if got := check(t, r, a.Protocol, ""); got.State != HostOff {
 				t.Errorf("host off: %+v", got)
 			}
-			if _, err := r.Register(ctx, a.Protocol, "", false); !errors.Is(err, ErrHostOff) {
+			if _, err := r.Register(ctx, a.Protocol, "", "", false); !errors.Is(err, ErrHostOff) {
 				t.Errorf("register with host off: %v", err)
 			}
 		})
@@ -290,7 +291,7 @@ func TestRegister_Commands(t *testing.T) {
 	g := newRig(t, "")
 	r := g.registrar()
 	for _, a := range modelspec.CLIAgents {
-		if _, err := r.Register(context.Background(), a.Protocol, ours, false); err != nil {
+		if _, err := r.Register(context.Background(), a.Protocol, "", ours, false); err != nil {
 			t.Fatalf("%s: %v", a.Protocol, err)
 		}
 	}
@@ -320,11 +321,11 @@ func TestCheck_NotInstalled(t *testing.T) {
 		}
 	}
 	r := g.registrar()
-	for _, st := range r.CheckAll(context.Background(), ours) {
+	for _, st := range r.CheckAll(context.Background(), nil, ours) {
 		if st.State != NotInstalled {
 			t.Errorf("%+v", st)
 		}
-		if _, err := r.Register(context.Background(), st.Protocol, ours, true); !errors.Is(err, ErrNotInstalled) {
+		if _, err := r.Register(context.Background(), st.Protocol, "", ours, true); !errors.Is(err, ErrNotInstalled) {
 			t.Errorf("%s register: %v", st.Protocol, err)
 		}
 	}
@@ -335,10 +336,10 @@ func TestCheck_NotInstalled(t *testing.T) {
 
 func TestUnknownCLI(t *testing.T) {
 	r := newRig(t, "").registrar()
-	if _, err := r.Check(context.Background(), "openai-chat", ours); !errors.Is(err, ErrUnknownCLI) {
+	if _, err := r.Check(context.Background(), "openai-chat", "", ours); !errors.Is(err, ErrUnknownCLI) {
 		t.Errorf("check: %v", err)
 	}
-	if _, err := r.Register(context.Background(), "nope; rm -rf /", ours, true); !errors.Is(err, ErrUnknownCLI) {
+	if _, err := r.Register(context.Background(), "nope; rm -rf /", "", ours, true); !errors.Is(err, ErrUnknownCLI) {
 		t.Errorf("register: %v", err)
 	}
 }
@@ -370,12 +371,12 @@ func TestCommandFailure(t *testing.T) {
 		if st := check(t, r, p, ours); st.State != NotChecked {
 			t.Errorf("%s: %+v", p, st)
 		}
-		_, err := r.Register(context.Background(), p, ours, true)
+		_, err := r.Register(context.Background(), p, "", ours, true)
 		if err == nil || !strings.Contains(err.Error(), "mcp add") || !strings.Contains(err.Error(), "boom") {
 			t.Errorf("%s register: %v", p, err)
 		}
 	}
-	_, err := r.Register(context.Background(), "opencode-cli", ours, false)
+	_, err := r.Register(context.Background(), "opencode-cli", "", ours, false)
 	if err == nil || !strings.Contains(err.Error(), "opencode mcp add") {
 		t.Errorf("opencode register: %v", err)
 	}
@@ -398,7 +399,7 @@ func TestTimeout(t *testing.T) {
 	if st := check(t, r, "claude-cli", ours); st.State != NotChecked {
 		t.Errorf("%+v", st)
 	}
-	_, err := r.Register(context.Background(), "codex-cli", ours, false)
+	_, err := r.Register(context.Background(), "codex-cli", "", ours, false)
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Errorf("register: %v", err)
 	}
@@ -485,7 +486,7 @@ func TestOpenCode_CodeModeOff(t *testing.T) {
 	g := newRig(t, "")
 	r := g.registrar()
 	ctx := t.Context()
-	if _, err := r.Register(ctx, "opencode-cli", ours, false); err != nil {
+	if _, err := r.Register(ctx, "opencode-cli", "", ours, false); err != nil {
 		t.Fatal(err)
 	}
 	assertCodeMode := func() {
@@ -513,7 +514,7 @@ func TestOpenCode_CodeModeOff(t *testing.T) {
 	assertCodeMode()
 	// The add replaces the whole entry, Code Mode on again; registering again
 	// turns it off again.
-	st, err := r.Register(ctx, "opencode-cli", other, true)
+	st, err := r.Register(ctx, "opencode-cli", "", other, true)
 	if err != nil || st.State != Registered {
 		t.Fatalf("%+v %v", st, err)
 	}
@@ -523,7 +524,7 @@ func TestOpenCode_CodeModeOff(t *testing.T) {
 // Without the line naming the file, the global file is edited.
 func TestOpenCode_NoFileLine(t *testing.T) {
 	g := newRig(t, "", "OPENCODE_SILENT=1")
-	if _, err := g.registrar().Register(context.Background(), "opencode-cli", ours, false); err != nil {
+	if _, err := g.registrar().Register(context.Background(), "opencode-cli", "", ours, false); err != nil {
 		t.Fatal(err)
 	}
 	if data := readFile(t, g.openCodeFile()); !strings.Contains(data, `"codemode": false`) {
@@ -541,7 +542,7 @@ func TestOpenCode_HomeConfig(t *testing.T) {
 		}
 	}
 	r := g.registrar(WithEnv(env))
-	if _, err := r.Register(context.Background(), "opencode-cli", ours, false); err != nil {
+	if _, err := r.Register(context.Background(), "opencode-cli", "", ours, false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(g.home, ".config", "opencode", "opencode.json"))
@@ -554,7 +555,7 @@ func TestOpenCode_HomeConfig(t *testing.T) {
 func TestOpenCode_EntryMissingAfterAdd(t *testing.T) {
 	g := newRig(t, "", "OPENCODE_KEEP=1")
 	writeFile(t, g.openCodeFile(), `{"mcp":{"servers":{}}}`)
-	_, err := g.registrar().Register(context.Background(), "opencode-cli", ours, false)
+	_, err := g.registrar().Register(context.Background(), "opencode-cli", "", ours, false)
 	if err == nil || !strings.Contains(err.Error(), "Code Mode") {
 		t.Errorf("got %v", err)
 	}
@@ -596,7 +597,7 @@ func TestOpenCode_Unreadable(t *testing.T) {
 func TestCursor_File(t *testing.T) {
 	t.Run("created", func(t *testing.T) {
 		g := newRig(t, "")
-		if _, err := g.registrar().Register(t.Context(), "cursor-cli", ours, false); err != nil {
+		if _, err := g.registrar().Register(t.Context(), "cursor-cli", "", ours, false); err != nil {
 			t.Fatal(err)
 		}
 		if m := mode(t, g.cursorFile()); m != 0o600 {
@@ -622,7 +623,7 @@ func TestCursor_File(t *testing.T) {
 		if st := check(t, r, "cursor-cli", ours); st.State != OtherAddress || st.Address != other {
 			t.Fatalf("%+v", st)
 		}
-		st, err := r.Register(t.Context(), "cursor-cli", ours, true)
+		st, err := r.Register(t.Context(), "cursor-cli", "", ours, true)
 		if err != nil || st.State != Registered {
 			t.Fatalf("%+v %v", st, err)
 		}
@@ -646,7 +647,7 @@ func TestCursor_File(t *testing.T) {
 	t.Run("no mcpServers yet", func(t *testing.T) {
 		g := newRig(t, "")
 		writeFile(t, g.cursorFile(), `{"theme":"dark"}`)
-		if _, err := g.registrar().Register(t.Context(), "cursor-cli", ours, false); err != nil {
+		if _, err := g.registrar().Register(t.Context(), "cursor-cli", "", ours, false); err != nil {
 			t.Fatal(err)
 		}
 		if data := readFile(t, g.cursorFile()); !strings.Contains(data, `"theme": "dark"`) || !strings.Contains(data, ours) {
@@ -672,7 +673,7 @@ func TestCursor_File(t *testing.T) {
 		if err := os.Symlink(linked, g.cursorFile()); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := g.registrar().Register(t.Context(), "cursor-cli", ours, false); err != nil {
+		if _, err := g.registrar().Register(t.Context(), "cursor-cli", "", ours, false); err != nil {
 			t.Fatal(err)
 		}
 		if fi, err := os.Lstat(g.cursorFile()); err != nil || fi.Mode()&os.ModeSymlink == 0 {
@@ -696,7 +697,7 @@ func TestCursor_File(t *testing.T) {
 			if st := check(t, r, "cursor-cli", ours); st.State != NotChecked {
 				t.Errorf("state %+v", st)
 			}
-			if _, err := r.Register(t.Context(), "cursor-cli", ours, true); err == nil {
+			if _, err := r.Register(t.Context(), "cursor-cli", "", ours, true); err == nil {
 				t.Error("registered into a file that does not parse")
 			}
 			if data := readFile(t, g.cursorFile()); data != content {
@@ -710,7 +711,7 @@ func TestCursor_File(t *testing.T) {
 		if err := os.MkdirAll(g.cursorFile(), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := g.registrar().Register(t.Context(), "cursor-cli", ours, false); err == nil {
+		if _, err := g.registrar().Register(t.Context(), "cursor-cli", "", ours, false); err == nil {
 			t.Error("no error")
 		}
 	})
@@ -791,7 +792,7 @@ func TestRegister_Serialised(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 4 {
 		wg.Go(func() {
-			if _, err := r.Register(context.Background(), "antigravity-cli", ours, false); err != nil {
+			if _, err := r.Register(context.Background(), "antigravity-cli", "", ours, false); err != nil {
 				t.Error(err)
 			}
 		})
@@ -809,7 +810,7 @@ func TestCheckAll_Order(t *testing.T) {
 	g := newRig(t, "")
 	g.setURL("claude", ours)
 	g.setURL("codex", other)
-	sts := g.registrar().CheckAll(context.Background(), ours)
+	sts := g.registrar().CheckAll(context.Background(), nil, ours)
 	if len(sts) != len(modelspec.CLIAgents) {
 		t.Fatal(sts)
 	}
@@ -834,7 +835,7 @@ func TestNoHome(t *testing.T) {
 	if st := check(t, r, "cursor-cli", ours); st.State != NotChecked {
 		t.Errorf("%+v", st)
 	}
-	if _, err := r.Register(t.Context(), "cursor-cli", ours, false); err == nil {
+	if _, err := r.Register(t.Context(), "cursor-cli", "", ours, false); err == nil {
 		t.Error("registered with no home")
 	}
 	if g.calls() != "" {
@@ -848,7 +849,7 @@ func TestCheckAll_EntryMissingFromTable(t *testing.T) {
 	delete(clis, "cursor-cli")
 	t.Cleanup(func() { clis["cursor-cli"] = saved })
 	g := newRig(t, "")
-	for _, st := range g.registrar().CheckAll(t.Context(), ours) {
+	for _, st := range g.registrar().CheckAll(t.Context(), nil, ours) {
 		if st.Protocol == "cursor-cli" && (st.State != NotChecked || st.Label != "Cursor CLI") {
 			t.Errorf("%+v", st)
 		}
@@ -873,7 +874,7 @@ func TestRegister_RemoveFails(t *testing.T) {
 			bin := t.TempDir()
 			writeFile(t, filepath.Join(bin, c.bin), "")
 			r := New(WithHome(t.TempDir()), WithEnv([]string{}), WithRunner(run), WithLookPath(lookIn(bin)))
-			_, err := r.Register(t.Context(), c.protocol, ours, true)
+			_, err := r.Register(t.Context(), c.protocol, "", ours, true)
 			if err == nil || !strings.Contains(err.Error(), "locked") {
 				t.Errorf("got %v", err)
 			}
@@ -955,5 +956,35 @@ func TestReadOpenCode_Forms(t *testing.T) {
 				t.Errorf("%+v", st)
 			}
 		})
+	}
+}
+
+// A CLI is looked for by the command its provider names, and by the
+// catalogue's binary when it names none.
+func TestCheck_LooksForConfiguredCommand(t *testing.T) {
+	var mu sync.Mutex
+	var asked []string
+	r := New(WithHome(t.TempDir()), WithEnv([]string{}), WithLookPath(func(name string) (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		asked = append(asked, name)
+		return "", errors.New("not found")
+	}))
+	for _, command := range []string{"/srv/tools/opencode", ""} {
+		st, err := r.Check(t.Context(), "opencode-cli", command, ours)
+		if err != nil || st.State != NotInstalled {
+			t.Fatalf("Check(%q) = %+v, %v, want not installed", command, st, err)
+		}
+		if _, err := r.Register(t.Context(), "opencode-cli", command, ours, false); !errors.Is(err, ErrNotInstalled) {
+			t.Fatalf("Register(%q) error = %v, want ErrNotInstalled", command, err)
+		}
+	}
+	r.CheckAll(t.Context(), map[string]string{"opencode-cli": "/srv/tools/opencode"}, "")
+	want := []string{"/srv/tools/opencode", "/srv/tools/opencode", "opencode", "opencode"}
+	if !slices.Equal(asked[:4], want) {
+		t.Errorf("looked for %q, want %q", asked[:4], want)
+	}
+	if !slices.Contains(asked[4:], "/srv/tools/opencode") || slices.Contains(asked[4:], "opencode") {
+		t.Errorf("CheckAll looked for %q, want the configured command for OpenCode", asked[4:])
 	}
 }

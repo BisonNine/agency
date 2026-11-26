@@ -1,11 +1,12 @@
 #!/bin/sh
-# Sets up the system-wide install: the agency account, /opt/agency owned by
-# it, and the service (written and started by `agency install --package`).
+# Sets up the system-wide install: the agency account with its home
+# /home/agency, the data directory /opt/agency owned by it, and the service (written and started by `agency install --package`).
 # An install the package did not make is left exactly as it is.
 set -e
 
 ACCOUNT=agency
 DATA_DIR=/opt/agency
+ACCOUNT_HOME=/home/agency
 UNIT=/etc/systemd/system/agency.service
 STATE_DIR=/var/lib/agency
 MARKER='# Managed by the agency Debian package'
@@ -32,19 +33,23 @@ foreign_install() {
     fi
 }
 
-# create_account creates the system account and its group unless they
-# exist, recording what it created so purge removes only that.
+# create_account creates the system account, its home and its group unless
+# they exist, recording what it created so purge removes only that. An
+# account that exists keeps the home it has.
 create_account() {
     if getent passwd "$ACCOUNT" >/dev/null; then
         return 0
     fi
     mkdir -p "$STATE_DIR"
+    if [ ! -e "$ACCOUNT_HOME" ]; then
+        touch "$STATE_DIR/created-account-home"
+    fi
     if getent group "$ACCOUNT" >/dev/null; then
-        adduser --system --ingroup "$ACCOUNT" --home "$DATA_DIR" \
-            --no-create-home --shell /bin/bash "$ACCOUNT" >/dev/null
+        adduser --system --ingroup "$ACCOUNT" --home "$ACCOUNT_HOME" \
+            --shell /bin/bash "$ACCOUNT" >/dev/null
     else
-        adduser --system --group --home "$DATA_DIR" \
-            --no-create-home --shell /bin/bash "$ACCOUNT" >/dev/null
+        adduser --system --group --home "$ACCOUNT_HOME" \
+            --shell /bin/bash "$ACCOUNT" >/dev/null
         touch "$STATE_DIR/created-group"
     fi
     touch "$STATE_DIR/created-account"

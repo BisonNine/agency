@@ -15,6 +15,8 @@ export interface CLIInfo {
   binary: string
   installed: boolean
   path?: string
+  /** The provider's configured command, when it names one: looked for instead of `binary`. */
+  command?: string
   version?: string
   /** Whether any model reaching this CLI is enabled — what the switch shows. */
   enabled: boolean

@@ -168,25 +168,28 @@ func New(opts ...Option) *Registrar {
 }
 
 // Check reads one CLI's registration against url (InternalURL; "" when the
-// MCP host is off).
-func (r *Registrar) Check(ctx context.Context, protocol, url string) (Status, error) {
+// MCP host is off). command is the CLI provider's configured command, a name
+// or a path; "" is the catalogue's binary.
+func (r *Registrar) Check(ctx context.Context, protocol, command, url string) (Status, error) {
 	agent, c, err := lookup(protocol)
 	if err != nil {
 		return Status{}, err
 	}
 	unlock := r.lock(agent.Protocol)
 	defer unlock()
-	st, _ := r.check(ctx, agent, c, url)
+	st, _ := r.check(ctx, agent, c, command, url)
 	return st, nil
 }
 
 // CheckAll reads every CLI of the catalogue in parallel, in catalogue order.
-func (r *Registrar) CheckAll(ctx context.Context, url string) []Status {
+// commands holds each CLI's configured command by catalogue protocol; a CLI
+// without one is found by the catalogue's binary.
+func (r *Registrar) CheckAll(ctx context.Context, commands map[string]string, url string) []Status {
 	out := make([]Status, len(modelspec.CLIAgents))
 	var wg sync.WaitGroup
 	for i := range modelspec.CLIAgents {
 		wg.Go(func() {
-			st, err := r.Check(ctx, modelspec.CLIAgents[i].Protocol, url)
+			st, err := r.Check(ctx, modelspec.CLIAgents[i].Protocol, commands[modelspec.CLIAgents[i].Protocol], url)
 			if err != nil { // a catalogue CLI missing from the table
 				st = Status{Protocol: modelspec.CLIAgents[i].Protocol, Label: modelspec.CLIAgents[i].Label, State: NotChecked}
 			}
@@ -200,8 +203,9 @@ func (r *Registrar) CheckAll(ctx context.Context, url string) []Status {
 // Register adds or updates the host's entry in one CLI so it points at url,
 // then reads it back. The current entry is read first, under the CLI's lock:
 // one that points at another address is replaced only with replace set
-// (ErrReplaceRequired otherwise, with that address in the Status).
-func (r *Registrar) Register(ctx context.Context, protocol, url string, replace bool) (Status, error) {
+// (ErrReplaceRequired otherwise, with that address in the Status). command
+// is as for Check.
+func (r *Registrar) Register(ctx context.Context, protocol, command, url string, replace bool) (Status, error) {
 	agent, c, err := lookup(protocol)
 	if err != nil {
 		return Status{}, err
@@ -209,7 +213,7 @@ func (r *Registrar) Register(ctx context.Context, protocol, url string, replace 
 	unlock := r.lock(agent.Protocol)
 	defer unlock()
 
-	st, bin := r.check(ctx, agent, c, url)
+	st, bin := r.check(ctx, agent, c, command, url)
 	switch {
 	case st.State == NotInstalled:
 		return st, ErrNotInstalled
@@ -224,14 +228,17 @@ func (r *Registrar) Register(ctx context.Context, protocol, url string, replace 
 	if err := c.register(ctx, r, bin, url, existing); err != nil {
 		return st, err
 	}
-	after, _ := r.check(ctx, agent, c, url)
+	after, _ := r.check(ctx, agent, c, command, url)
 	return after, nil
 }
 
 // check is Check under the caller's lock; it also returns the binary found.
-func (r *Registrar) check(ctx context.Context, agent *modelspec.CLIAgent, c cli, url string) (Status, string) {
+func (r *Registrar) check(ctx context.Context, agent *modelspec.CLIAgent, c cli, command, url string) (Status, string) {
 	st := Status{Protocol: agent.Protocol, Label: agent.Label}
-	bin, err := r.lookPath(agent.Binary)
+	if command == "" {
+		command = agent.Binary
+	}
+	bin, err := r.lookPath(command)
 	if err != nil {
 		st.State = NotInstalled
 		return st, ""

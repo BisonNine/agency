@@ -274,7 +274,9 @@ function CLIRow({
         <div className="text-muted-foreground truncate font-mono text-xs">
           {cli.installed
             ? (cli.path ?? cli.binary)
-            : t("providers.cli.notFound", { binary: cli.binary })}
+            : cli.command
+              ? t("providers.cli.commandNotFound", { command: cli.command })
+              : t("providers.cli.notFound", { binary: cli.binary })}
         </div>
         {/* Some of these auto-approve tool use. Someone deciding whether to run
             a CLI unattended is entitled to read the command line here rather

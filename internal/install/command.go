@@ -217,10 +217,10 @@ func (h *host) isServiceAccount(tu *TargetUser) bool {
 }
 
 // createServiceAccount creates the system account global.ServiceAccount, and
-// its group unless one exists, with SystemDataDir as its home (not created
-// here) and a locked password, and returns it.
+// its group unless one exists, with ServiceAccountHome as its home (created)
+// and a locked password, and returns it.
 func (h *host) createServiceAccount() (*TargetUser, error) {
-	args := []string{"--system", "--home-dir", global.SystemDataDir, "--no-create-home", "--shell", "/bin/bash"}
+	args := []string{"--system", "--home-dir", global.ServiceAccountHome, "--create-home", "--shell", "/bin/bash"}
 	if h.commandOK("getent", "group", global.ServiceAccount) {
 		args = append(args, "--gid", global.ServiceAccount)
 	} else {
@@ -398,7 +398,7 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 			createAccount = true
 			tu = &TargetUser{
 				Username: global.ServiceAccount, GroupName: global.ServiceAccount,
-				HomeDir: global.SystemDataDir, IsRoot: true,
+				HomeDir: global.ServiceAccountHome, IsRoot: true,
 			}
 		}
 	}

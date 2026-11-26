@@ -29,7 +29,7 @@ func accountLookup(e *installEnv, exists bool) {
 		tu := *e.tu
 		if explicit != "" {
 			tu.Username = explicit
-			tu.HomeDir = global.SystemDataDir
+			tu.HomeDir = global.ServiceAccountHome
 		}
 		return &tu, nil
 	}
@@ -49,14 +49,14 @@ func TestInstall_LinuxSystemCreatesServiceAccount(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Run As User:     agency (system account, will be created)",
-		"Home Directory:  /opt/agency",
+		"Home Directory:  /home/agency",
 		"Created system account: agency",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
-	const useradd = "useradd --system --home-dir /opt/agency --no-create-home --shell /bin/bash --user-group agency"
+	const useradd = "useradd --system --home-dir /home/agency --create-home --shell /bin/bash --user-group agency"
 	if got := e.log.lines(); len(got) != 1 || got[0] != useradd {
 		t.Errorf("commands = %q, want only %q", got, useradd)
 	}
@@ -99,7 +99,7 @@ func TestInstall_LinuxSystemExistingAccount(t *testing.T) {
 		if out, err := e.install(t, "", 0, "", "", t.TempDir()); err != nil {
 			t.Fatalf("install: %v\n%s", err, out)
 		}
-		const useradd = "useradd --system --home-dir /opt/agency --no-create-home --shell /bin/bash --gid agency agency"
+		const useradd = "useradd --system --home-dir /home/agency --create-home --shell /bin/bash --gid agency agency"
 		if got := e.log.lines(); len(got) != 1 || got[0] != useradd {
 			t.Errorf("commands = %q, want only %q", got, useradd)
 		}

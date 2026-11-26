@@ -65,8 +65,13 @@ const (
 	DebPackageName = "agency"
 
 	// ServiceAccount is the system user and group the Debian package creates
-	// and runs the service as; its home directory is SystemDataDir.
+	// and runs the service as.
 	ServiceAccount = "agency"
+
+	// ServiceAccountHome is the home directory a new ServiceAccount gets. It
+	// is not the data directory: file modes there are set at every start,
+	// which would take the execute bits off programs installed in a home.
+	ServiceAccountHome = "/home/agency"
 
 	// PackageUnitMarker is the first line of the systemd unit the Debian
 	// package has the binary write (`install --package`). The package's

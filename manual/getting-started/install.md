@@ -63,20 +63,20 @@ The change applies at once.
 | | |
 |---|---|
 | Programs | `/usr/bin/agency`, `/usr/bin/agency-auth`, `/usr/bin/openclaw` |
-| Service account | `agency`, a system account with no password |
+| Service account | `agency`, a system account with no password; its home is `/home/agency` |
 | Data directory | `/opt/agency`, owned by `agency` |
 | Service | `/etc/systemd/system/agency.service`, running as `agency` |
 
 Commands you run with `sudo` (`sudo agency status`, `sudo agency network`, `sudo agency backup`, …) act as the `agency` account, so what they write in `/opt/agency` stays its own.
 
-To sign a CLI provider in for the service (see [CLI providers](../providers/cli-providers.md)), open a shell as the service account with `sudo -u agency -i` and sign in there. CLIs installed in `/opt/agency/.local/bin` or `/opt/agency/bin` are on the service's `PATH`.
+To sign a CLI provider in for the service (see [CLI providers](../providers/cli-providers.md)), open a shell as the service account with `sudo -u agency -i` and sign in there. CLIs installed in `/home/agency/.local/bin` or `/home/agency/bin` are on the service's `PATH`. Do not install programs in `/opt/agency`: Agency sets the file permissions there at every start, and a program outside `/opt/agency/bin` loses its execute permission.
 
 If the machine already has an Agency system service, or an `/opt/agency` that belongs to another account, the package leaves it unchanged and says so. The package does not see a user service (`~/.config/systemd/user/agency.service`), so stop that one first.
 
 To remove the package:
 
 - `sudo apt remove agency` stops and removes the service, and keeps `/opt/agency` and the `agency` account.
-- `sudo apt purge agency` also deletes `/opt/agency` and the `agency` account and group, each only if the package created it.
+- `sudo apt purge agency` also deletes `/opt/agency`, `/home/agency` and the `agency` account and group, each only if the package created it.
 
 ## Option 4: build from source
 
@@ -124,7 +124,7 @@ If there is no account, no terminal and no variables, the installer stops withou
 | | User service | System service (`sudo`) |
 |---|---|---|
 | Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, else `/usr/local/bin` (an existing install keeps its place) |
-| Runs as | you | Linux: the system account `agency`, created if missing. macOS: the user who ran `sudo` |
+| Runs as | you | Linux: the system account `agency`, created if missing with the home `/home/agency`. macOS: the user who ran `sudo` |
 | Data directory | `~/.agency` | Linux: `/opt/agency`. macOS: `~/.agency` of the user who ran `sudo` |
 | Linux service | `~/.config/systemd/user/agency.service` | `/etc/systemd/system/agency.service` |
 | macOS service | `~/Library/LaunchAgents/com.bison9.agency.plist` | `/Library/LaunchDaemons/com.bison9.agency.plist` |
@@ -183,7 +183,7 @@ To remove the rest of a Linux system service, data included:
 
 ```bash
 sudo rm -rf /opt/agency /usr/local/bin/agency /usr/local/bin/openclaw
-sudo userdel agency
+sudo userdel --remove agency
 ```
 
 ## Next step

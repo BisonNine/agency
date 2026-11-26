@@ -920,6 +920,7 @@
       "title": "Local CLI agents",
       "description": "Coding agents installed on this machine. Switching one on sets up everything it needs; switching it off disables every model that runs through it.",
       "notFound": "{{binary}} not found on PATH",
+      "commandNotFound": "{{command}} not found",
       "args": "Args: {{args}}",
       "modelCount": "{{enabled}} of {{count}} model on",
       "modelCount_other": "{{enabled}} of {{count}} models on",

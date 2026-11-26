@@ -37,7 +37,10 @@ type cliInfo struct {
 	// thing from one it does not support, and hiding it looks like the latter.
 	Installed bool   `json:"installed"`
 	Path      string `json:"path,omitempty"`
-	Version   string `json:"version,omitempty"`
+	// Command is the CLI provider's configured command, when it names one:
+	// the binary looked for in place of Binary.
+	Command string `json:"command,omitempty"`
+	Version string `json:"version,omitempty"`
 	// Enabled is whether any model reaching this CLI is enabled — what the
 	// switch shows. There is no per-provider enabled flag in the config; a
 	// model's `enabled` is what dispatch actually honours.
@@ -101,10 +104,13 @@ func (h *Handler) handleListCLIs(w http.ResponseWriter, r *http.Request) {
 			BypassArgs:    c.BypassArgs,
 			TrailingArgs:  c.TrailingArgs,
 		}
-		if p, err := exec.LookPath(c.Binary); err == nil {
+		// A provider's own command, a name or a path, is the binary its
+		// models run, so it is the one looked for.
+		info.Command = cliCommand(cfg, c.Protocol)
+		if p, ok := resolveCLIBinary(c.Protocol, info.Command); ok {
 			info.Installed = true
 			info.Path = p
-			info.Version = cliVersion(r.Context(), c.Binary)
+			info.Version = cliVersion(r.Context(), p)
 		}
 		// Seeded with the catalogue's arguments: a model that lists a flag the
 		// protocol already supplies is not adding anything, and reporting it
@@ -294,6 +300,27 @@ func cliProviderIndex(cfg *config.Config, protocol string) int {
 		}
 	}
 	return -1
+}
+
+// cliCommand returns the configured command of the CLI's provider, "" when
+// there is no provider or it names none.
+func cliCommand(cfg *config.Config, protocol string) string {
+	if idx := cliProviderIndex(cfg, protocol); idx >= 0 {
+		return strings.TrimSpace(cfg.Providers[idx].Command)
+	}
+	return ""
+}
+
+// cliCommands returns cliCommand for every CLI of the catalogue that has
+// one, by catalogue protocol.
+func cliCommands(cfg *config.Config) map[string]string {
+	out := map[string]string{}
+	for _, c := range modelspec.CLIAgents {
+		if cmd := cliCommand(cfg, c.Protocol); cmd != "" {
+			out[c.Protocol] = cmd
+		}
+	}
+	return out
 }
 
 // cliModels returns every model reaching this CLI protocol, through any

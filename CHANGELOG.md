@@ -142,13 +142,29 @@
 
 - **`sudo agency install` on Linux sets up the same install as the `apt`
   package.** A system install runs as the system account `agency` (created
-  if missing, no password) with its data in `/opt/agency` and the binary in
-  `/usr/local/bin`, owned by root. `--user` is not used with `sudo` on
+  if missing, no password, home `/home/agency`) with its data in
+  `/opt/agency` and the binary in `/usr/local/bin`, owned by root. `--user` is not used with `sudo` on
   Linux, and `sudo agency install` works from a root shell. A re-run keeps
   the account and data directory an install already has. `agency install`
   without `sudo` is a user service under your own account. CLI providers
   run as `agency`, so sign them in from `sudo -u agency -i`. macOS is
   unchanged.
+- **The `agency` account's home is `/home/agency`, not the data directory.**
+  The `apt` package and `sudo agency install` create the account with its
+  own home, and the service's `PATH` names `/home/agency/.local/bin` and
+  `/home/agency/bin`. Before, the home was `/opt/agency`, where Agency sets
+  file permissions at every start, so a CLI installed there (Claude Code,
+  Codex, …) lost its execute permission. An account that already exists
+  keeps the home it has. To move it:
+
+  ```bash
+  sudo systemctl stop agency
+  sudo install -d -m 0700 -o agency -g agency /home/agency
+  sudo usermod -d /home/agency agency
+  sudo apt reinstall agency      # or: sudo agency install
+  ```
+
+  Then install and sign in the CLIs again from `sudo -u agency -i`.
 - **`agency network` accepts a single address.** `agency network
   192.168.1.50` allows that one computer (it is stored as `192.168.1.50/32`);
   before, an address without a prefix length was refused.
@@ -287,6 +303,13 @@
 
 ### Fixed
 
+- **A CLI with its path set in Command is found.** The **Local CLI agents**
+  list on the Providers page, its switch, **Register tool server** and the
+  Check Up "Tool server" row looked for the CLI's default program name on
+  the service's `PATH` and ignored the **Command** set on its provider, so a
+  CLI given by full path read "not found on PATH" with its switch disabled.
+  They now look for the provider's command when it has one; a missing one
+  reads "`<command>` not found".
 - **OpenRouter "latest" models in the catalogue work.** Five catalogue
   models had an identifier OpenRouter refuses: Fable Latest, Kimi Latest,
   Gemini Flash Latest, GPT Terra Latest and GLM Latest. Each now has the

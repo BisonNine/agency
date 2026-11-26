@@ -79,7 +79,7 @@ func (h *Handler) enabledCLIRegistrations(ctx context.Context, cfg *config.Confi
 	var wg sync.WaitGroup
 	for i, proto := range protocols {
 		wg.Go(func() {
-			st, err := h.cliRegistrar().Check(ctx, proto, url)
+			st, err := h.cliRegistrar().Check(ctx, proto, cliCommand(cfg, proto), url)
 			if err != nil { // a catalogue CLI the registrar does not know
 				st = mcpreg.Status{Protocol: proto, State: mcpreg.NotChecked}
 			}

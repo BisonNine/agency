@@ -104,7 +104,9 @@ chmod 0750 /home/alice
 echo "=== fresh install"
 out=$(apt_out apt-get install -y -qq /tmp/agency_0.0.1.deb); msg=$(echo "$out" | script_out)
 echo "$msg" | sed 's/^/  | /'
-check "account agency, home /opt/agency, shell /bin/bash" [ "$(getent passwd agency | cut -d: -f6,7)" = "/opt/agency:/bin/bash" ]
+check "account agency, home /home/agency, shell /bin/bash" [ "$(getent passwd agency | cut -d: -f6,7)" = "/home/agency:/bin/bash" ]
+check "/home/agency belongs to agency" [ "$(stat -c '%U' /home/agency)" = agency ]
+check "unit PATH names the account's home" grep -q '^Environment=PATH=/home/agency/.local/bin:/home/agency/bin:' "$UNIT"
 check "group agency" getent group agency >/dev/null
 pw=$(getent shadow agency | cut -d: -f2)
 case "$pw" in '!'* | '*'*) pass "no usable password ($pw)" ;; *) fail "password field is $pw" ;; esac
@@ -113,7 +115,7 @@ check "/opt/agency agency:agency 0700" [ "$(stat -c '%U:%G %a' /opt/agency)" = "
 check "unit is the package's" [ "$(unit_line)" = "$MARKER" ]
 check "unit runs as agency" grep -q '^User=agency$' "$UNIT"
 check "unit sets AGENCY_HOME=/opt/agency" grep -q '^Environment=AGENCY_HOME=/opt/agency$' "$UNIT"
-check "markers" [ -e /var/lib/agency/created-account ] && [ -e /var/lib/agency/created-group ] && [ -e /var/lib/agency/created-home ]
+check "markers" [ -e /var/lib/agency/created-account ] && [ -e /var/lib/agency/created-group ] && [ -e /var/lib/agency/created-home ] && [ -e /var/lib/agency/created-account-home ]
 check "message: installed and running" grep -qx "Agency is installed and running." <<<"$msg"
 check "message: account created" grep -qx "Service account:        agency (created)" <<<"$msg"
 check "message: where the files are" grep -qx "Data and settings:      /opt/agency" <<<"$msg"
@@ -223,6 +225,7 @@ check "no admin hint while the account exists" bash -c "! grep -q 'sudo agency a
 echo "=== purge deletes what the package created"
 check "purge" bash -c 'apt-get purge -y -qq agency >/dev/null 2>&1'
 check "/opt/agency deleted" [ ! -e /opt/agency ]
+check "/home/agency deleted" [ ! -e /home/agency ]
 check "account deleted" bash -c '! getent passwd agency'
 check "group deleted" bash -c '! getent group agency'
 check "/var/lib/agency deleted" [ ! -e /var/lib/agency ]
@@ -232,7 +235,9 @@ adduser --system --group --home /opt/agency --no-create-home agency >/dev/null 2
 install -d -m 0700 -o agency -g agency /opt/agency
 check "install on a pre-existing account" bash -c 'apt-get install -y -qq /tmp/agency_0.0.2.deb >/dev/null 2>&1'
 check "service ready" wait_ready
-check "no markers" [ ! -e /var/lib/agency/created-account ] && [ ! -e /var/lib/agency/created-home ]
+check "no markers" [ ! -e /var/lib/agency/created-account ] && [ ! -e /var/lib/agency/created-home ] && [ ! -e /var/lib/agency/created-account-home ]
+check "an existing account keeps its home" [ "$(getent passwd agency | cut -d: -f6)" = /opt/agency ]
+check "unit PATH follows the existing home" grep -q '^Environment=PATH=/opt/agency/.local/bin:/opt/agency/bin:' "$UNIT"
 apt-get purge -y -qq agency >/dev/null 2>&1
 check "/opt/agency kept" [ -d /opt/agency ]
 check "account kept" getent passwd agency >/dev/null

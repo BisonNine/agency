@@ -113,7 +113,7 @@ The one-line installer installs Agency as a background service, asks for the adm
 curl -fsSL https://raw.githubusercontent.com/BisonNine/agency/main/agency-online-install.sh | bash
 ```
 
-Or download an archive from [GitHub Releases](https://github.com/BisonNine/agency/releases) (Linux and macOS, amd64 and arm64) and run `./agency install` (`sudo ./agency install` for a service that starts at boot; on Linux it runs as its own `agency` account with data in `/opt/agency`). Then open **http://localhost:18790** and sign in.
+Or download an archive from [GitHub Releases](https://github.com/BisonNine/agency/releases) (Linux and macOS, amd64 and arm64) and run `./agency install` (`sudo ./agency install` for a service that starts at boot; on Linux it runs as its own `agency` account (home `/home/agency`) with data in `/opt/agency`). Then open **http://localhost:18790** and sign in.
 
 Other options (a bare binary with `agency.sh`, an unattended install, a headless or remote host) are in the manual: [Installing Agency](manual/getting-started/install.md), then [Quick start](manual/getting-started/quickstart.md).
 

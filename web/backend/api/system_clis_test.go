@@ -4,9 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"go.bison9.com/agent/modelspec"
+
+	"go.bison9.com/agency/config"
 )
 
 func TestHandleListCLIs(t *testing.T) {
@@ -39,5 +43,49 @@ func TestHandleListCLIs(t *testing.T) {
 		if !c.Installed && c.Path != "" {
 			t.Errorf("entry %d not installed but has path %q", i, c.Path)
 		}
+	}
+}
+
+// A provider's configured command is the binary the list looks for: a CLI
+// that is not on the PATH but has its path set is installed, and a set path
+// that does not exist is not, whatever the PATH holds.
+func TestHandleListCLIs_UsesProviderCommand(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "opencode-here")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 1.2.3\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+
+	list := func(command string) cliInfo {
+		t.Helper()
+		cfg := config.DefaultConfig()
+		cfg.Providers = []modelspec.Provider{{Name: "OpenCode", Protocol: "opencode-cli", Command: command}}
+		cfg.Models = nil
+		h, _ := writeConfig(t, cfg)
+		rec := httptest.NewRecorder()
+		h.handleListCLIs(rec, httptest.NewRequest(http.MethodGet, "/api/system/clis", nil))
+		var got []cliInfo
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		for _, c := range got {
+			if c.Protocol == "opencode-cli" {
+				return c
+			}
+		}
+		t.Fatal("no opencode-cli entry")
+		return cliInfo{}
+	}
+
+	if c := list(bin); !c.Installed || c.Path != bin || c.Command != bin {
+		t.Errorf("with the path set: installed, path, command = %v, %q, %q, want true, %q, %q", c.Installed, c.Path, c.Command, bin, bin)
+	}
+	missing := filepath.Join(dir, "nothing")
+	if c := list(missing); c.Installed || c.Path != "" || c.Command != missing {
+		t.Errorf("with a missing path set: installed, path, command = %v, %q, %q, want false, \"\", %q", c.Installed, c.Path, c.Command, missing)
+	}
+	if c := list(""); c.Installed || c.Command != "" {
+		t.Errorf("with no command and an empty PATH: installed, command = %v, %q, want false, \"\"", c.Installed, c.Command)
 	}
 }

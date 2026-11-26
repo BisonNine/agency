@@ -64,7 +64,7 @@ func (h *Handler) handleCLIRegistrations(w http.ResponseWriter, r *http.Request)
 	}
 	url := mcpreg.InternalURL(cfg)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, cliRegistrations{URL: url, CLIs: h.cliRegistrar().CheckAll(r.Context(), url)})
+	writeJSON(w, http.StatusOK, cliRegistrations{URL: url, CLIs: h.cliRegistrar().CheckAll(r.Context(), cliCommands(cfg), url)})
 }
 
 // handleCLIRegister registers the tool server in one CLI, and answers with
@@ -95,7 +95,7 @@ func (h *Handler) handleCLIRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	url := mcpreg.InternalURL(cfg)
 
-	st, err := h.cliRegistrar().Register(r.Context(), agent.Protocol, url, body.Replace)
+	st, err := h.cliRegistrar().Register(r.Context(), agent.Protocol, cliCommand(cfg, agent.Protocol), url, body.Replace)
 	switch {
 	case err == nil:
 		logger.InfoCF("api", "Tool server registered in CLI", map[string]any{
