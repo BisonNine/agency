@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -71,10 +72,12 @@ func NewInstallCommand() *cobra.Command {
 			"    • macOS: registers a launchd LaunchAgent (~/Library/LaunchAgents/" + global.LaunchdLabel + ".plist)\n" +
 			"    • Binary copied to ~/bin (if exists) or ~/.local/bin\n\n" +
 			"  - Run with sudo: Installs in System Mode (system boot service).\n" +
-			"    • Detects invoking user ($SUDO_USER) so " + app.ShortName() + " never executes as root\n" +
-			"    • Linux: registers a systemd system service (/etc/systemd/system/agency.service)\n" +
-			"    • macOS: registers a launchd LaunchDaemon (/Library/LaunchDaemons/" + global.LaunchdLabel + ".plist)\n" +
-			"    • Binary copied to /usr/local/bin\n\n" +
+			"    • Linux: runs as the system account " + global.ServiceAccount + ", created if missing, with its data in\n" +
+			"      " + global.SystemDataDir + "; registers a systemd system service (/etc/systemd/system/agency.service)\n" +
+			"    • macOS: runs as the invoking user ($SUDO_USER), never as root; registers a launchd\n" +
+			"      LaunchDaemon (/Library/LaunchDaemons/" + global.LaunchdLabel + ".plist)\n" +
+			"    • Binary copied to /usr/local/bin\n" +
+			"    • An existing install keeps its account and data directory\n\n" +
 			"The WebUI requires an admin login. If <AGENCY_HOME>/credentials.json does not exist, the\n" +
 			"installer creates the account before starting the service: from AGENCY_ADMIN_USER and\n" +
 			"AGENCY_ADMIN_PASSWORD when both are exported, else by prompting on the terminal (/dev/tty\n" +
@@ -98,7 +101,7 @@ func NewInstallCommand() *cobra.Command {
 			"Empty means loopback only. Give explicit CIDRs (192.168.1.0/24), or a shorthand: "+
 			"'private' for the RFC1918 ranges, 'any' for any address. "+
 			"Required when --host is not loopback.")
-	cmd.Flags().StringVar(&targetUser, "user", "", "Target user account for service execution when running with sudo (defaults to $SUDO_USER).")
+	cmd.Flags().StringVar(&targetUser, "user", "", "macOS: target user account for service execution when running with sudo (defaults to $SUDO_USER). Not used on Linux.")
 	cmd.Flags().StringVar(&customBinDir, "bin-dir", "", "Custom directory to install the binary to (defaults to ~/bin or ~/.local/bin in user mode, /usr/local/bin in system mode).")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip interactive confirmation prompt.")
 	addPackageFlag(cmd, &pkg, "Set up the service for the Debian package (run by its postinst).")
@@ -146,6 +149,9 @@ func NewUninstallCommand() *cobra.Command {
 // geteuid is os.Geteuid; replaced in tests.
 var geteuid = os.Geteuid
 
+// hostOS is runtime.GOOS; replaced in tests.
+var hostOS = runtime.GOOS
+
 // resolveTargetUser identifies the user account that will own and execute Agency.
 // When running with sudo/root, it reads $SUDO_USER or explicitUser to guarantee
 // that the service never runs as root.
@@ -159,6 +165,11 @@ func resolveTargetUser(explicitUser string) (*TargetUser, error) {
 		username := explicitUser
 		if username == "" {
 			username = os.Getenv("SUDO_USER")
+		}
+		if (username == "" || username == "root") && explicitUser == "" && hostOS == "linux" {
+			// A system install on Linux runs as the service account, so
+			// root needs no invoking user.
+			return &TargetUser{Username: "root", UID: "0", GID: "0", GroupName: "root", IsRoot: true}, nil
 		}
 		if username == "" || username == "root" {
 			return nil, fmt.Errorf(
@@ -197,6 +208,33 @@ func resolveTargetUser(explicitUser string) (*TargetUser, error) {
 		HomeDir:   u.HomeDir,
 		IsRoot:    isRoot,
 	}, nil
+}
+
+// isServiceAccount reports whether tu is the account of a system install on
+// Linux, global.ServiceAccount, set up as the Debian package sets it up.
+func (h *host) isServiceAccount(tu *TargetUser) bool {
+	return h.goos == "linux" && tu.IsRoot && tu.Username == global.ServiceAccount
+}
+
+// createServiceAccount creates the system account global.ServiceAccount, and
+// its group unless one exists, with SystemDataDir as its home (not created
+// here) and a locked password, and returns it.
+func (h *host) createServiceAccount() (*TargetUser, error) {
+	args := []string{"--system", "--home-dir", global.SystemDataDir, "--no-create-home", "--shell", "/bin/bash"}
+	if h.commandOK("getent", "group", global.ServiceAccount) {
+		args = append(args, "--gid", global.ServiceAccount)
+	} else {
+		args = append(args, "--user-group")
+	}
+	args = append(args, global.ServiceAccount)
+	if out, err := h.run("useradd", args...); err != nil {
+		return nil, fmt.Errorf("creating the %s account: useradd: %s (%w)", global.ServiceAccount, strings.TrimSpace(string(out)), err)
+	}
+	tu, err := h.targetUser(global.ServiceAccount)
+	if err != nil {
+		return nil, fmt.Errorf("the %s account was created but cannot be read: %w", global.ServiceAccount, err)
+	}
+	return tu, nil
 }
 
 // checkExistingMode refuses to install alongside a service of the other kind.
@@ -240,7 +278,12 @@ func (h *host) resolveBinDir(tu *TargetUser, customDir string, existing *Existin
 
 	// If an existing installation binary was detected, preserve that exact
 	// directory, except the data directory itself of an /opt/agency install.
-	if existing != nil && existing.BinaryPath != "" {
+	// The service account cannot run a binary that was only found where the
+	// installer was started (a download folder in someone's home), so for it
+	// only a registered service's binary or one in /opt/agency counts.
+	found := existing != nil && existing.BinaryPath != "" &&
+		(!h.isServiceAccount(tu) || existing.ServicePath != "" || inOptAgency(existing.BinaryPath))
+	if found {
 		existingDir := filepath.Dir(existing.BinaryPath)
 		if existingDir == optAgencyHome {
 			return h.ensureOptAgencyBinDir()
@@ -250,8 +293,10 @@ func (h *host) resolveBinDir(tu *TargetUser, customDir string, existing *Existin
 		}
 	}
 
-	// An existing /opt/agency install gets its binary in /opt/agency/bin.
-	if existing != nil && existing.AgencyHome == optAgencyHome {
+	// An existing /opt/agency install gets its binary in /opt/agency/bin,
+	// except the service account's: its data directory is closed to other
+	// accounts, so the binary goes where everyone can run it.
+	if existing != nil && existing.AgencyHome == optAgencyHome && !h.isServiceAccount(tu) {
 		return h.ensureOptAgencyBinDir()
 	}
 
@@ -317,6 +362,11 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		return fmt.Errorf("`%s install` is only supported on Linux and macOS; this is %s", app.BinaryName(), h.goos)
 	}
 
+	if h.goos == "linux" && targetUser != "" {
+		if invoker, ierr := h.targetUser(""); ierr == nil && invoker.IsRoot {
+			return fmt.Errorf("--user is not used on Linux: a system install runs as the %s account", global.ServiceAccount)
+		}
+	}
 	tu, err := h.targetUser(targetUser)
 	if err != nil {
 		return err
@@ -330,12 +380,29 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	if err = checkExistingMode(existing, tu.IsRoot); err != nil {
 		return err
 	}
-	if existing != nil && existing.User != "" && targetUser == "" && tu.IsRoot {
+	kept := false
+	if existing != nil && existing.User != "" && existing.User != "root" && targetUser == "" && tu.IsRoot {
 		// Preserve user from existing service
 		if preservedUser, pErr := h.targetUser(existing.User); pErr == nil {
 			tu = preservedUser
+			kept = true
 		}
 	}
+	// A new system install on Linux runs as the service account, like the
+	// Debian package's; the account is created after the confirmation.
+	createAccount := false
+	if h.goos == "linux" && tu.IsRoot && !kept {
+		if acct, aErr := h.targetUser(global.ServiceAccount); aErr == nil {
+			tu = acct
+		} else {
+			createAccount = true
+			tu = &TargetUser{
+				Username: global.ServiceAccount, GroupName: global.ServiceAccount,
+				HomeDir: global.SystemDataDir, IsRoot: true,
+			}
+		}
+	}
+	svcAccount := h.isServiceAccount(tu)
 
 	exePath, err := h.executable()
 	if err != nil {
@@ -378,6 +445,16 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 
 	agencyHome := h.resolveAgencyHome(tu, binDir, existing)
 	homeExisted := dirExists(agencyHome)
+	// The service account must own its data directory: a folder left by
+	// someone else (root, a removed account) is not taken over silently.
+	if svcAccount && homeExisted && (createAccount || !ownedByUID(agencyHome, tu.UID)) {
+		fix := "Move it away or remove it"
+		if !createAccount {
+			fix = fmt.Sprintf("Move it away, or give it to that account (sudo chown -R %s: %s)", tu.Username, shellQuote(agencyHome))
+		}
+		return fmt.Errorf("%s exists and does not belong to the %s account, which the service runs as.\n%s, then run the installer again",
+			agencyHome, tu.Username, fix)
+	}
 
 	// Explicitly set AGENCY_HOME in process environment so any config access or helper uses agencyHome
 	if envErr := os.Setenv(global.EnvVarHome, agencyHome); envErr != nil {
@@ -396,7 +473,11 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	}
 	fmt.Printf("  Platform:        %s (%s)\n", h.goos, serviceManagerName(h.goos))
 	fmt.Printf("  Mode:            %s\n", modeName)
-	fmt.Printf("  Run As User:     %s (UID: %s, GID: %s)\n", tu.Username, tu.UID, tu.GID)
+	if createAccount {
+		fmt.Printf("  Run As User:     %s (system account, will be created)\n", tu.Username)
+	} else {
+		fmt.Printf("  Run As User:     %s (UID: %s, GID: %s)\n", tu.Username, tu.UID, tu.GID)
+	}
 	fmt.Printf("  Home Directory:  %s\n", tu.HomeDir)
 	fmt.Printf("  Data Directory:  %s\n", agencyHome)
 	fmt.Printf("  Target Binary:   %s\n", targetBin)
@@ -410,11 +491,21 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		return nil //nolint:nilerr // a declined or unreadable prompt cancels, which is not an error
 	}
 
+	if createAccount {
+		if tu, err = h.createServiceAccount(); err != nil {
+			return err
+		}
+		fmt.Printf("\nCreated system account: %s\n", tu.Username)
+	}
+
 	// 2. Copy binary into target location (atomic write prevents "text file busy")
 	if err := copyBinary(exePath, targetBin); err != nil {
 		return fmt.Errorf("copying binary to %s: %w", targetBin, err)
 	}
-	if !pkgManagedBin {
+	// The service account's binary stays root's: the account runs agents,
+	// and root runs this binary (`sudo agency admin`).
+	ownBin := !pkgManagedBin && (!svcAccount || binDir == optAgencyBinDir)
+	if ownBin {
 		fixOwnership(targetBin, tu)
 	}
 	fmt.Printf("\nInstalled binary: %s\n", targetBin)
@@ -424,7 +515,7 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 		fmt.Printf("Warning: could not create the openclaw alias (%v).\n"+
 			"  The Rabbit R1 spawns `openclaw acp`; without this link it cannot connect.\n", err)
 	} else {
-		if !pkgManagedBin {
+		if ownBin {
 			fixOwnership(filepath.Join(binDir, openClawAlias), tu)
 		}
 		fmt.Printf("Installed alias:  %s -> %s (for the Rabbit R1's `openclaw acp`)\n",
@@ -432,8 +523,11 @@ func (h *host) install(host string, port int, allowedCIDRs, targetUser, customBi
 	}
 
 	// 3. Ensure binDir is on PATH and AGENCY_HOME is exported in shell rc
-	if note := ensureUserEnv(tu, binDir, agencyHome); note != "" {
-		fmt.Println(note)
+	// The service account has no login shell to set up.
+	if !svcAccount {
+		if note := ensureUserEnv(tu, binDir, agencyHome); note != "" {
+			fmt.Println(note)
+		}
 	}
 
 	// 3b. Apply bind settings if provided
@@ -673,7 +767,7 @@ func (h *host) resolveAgencyHome(tu *TargetUser, binDir string, existing *Existi
 	if binDir == optAgencyBinDir || (existing != nil && inOptAgency(existing.BinaryPath)) {
 		return global.SystemDataDir
 	}
-	if h.dirExists(optAgencyHome) {
+	if h.dirExists(optAgencyHome) || h.isServiceAccount(tu) {
 		return optAgencyHome
 	}
 	return filepath.Join(tu.HomeDir, global.DefaultDataDir)

@@ -140,6 +140,15 @@
 
 ### Changed
 
+- **`sudo agency install` on Linux sets up the same install as the `apt`
+  package.** A system install runs as the system account `agency` (created
+  if missing, no password) with its data in `/opt/agency` and the binary in
+  `/usr/local/bin`, owned by root. `--user` is not used with `sudo` on
+  Linux, and `sudo agency install` works from a root shell. A re-run keeps
+  the account and data directory an install already has. `agency install`
+  without `sudo` is a user service under your own account. CLI providers
+  run as `agency`, so sign them in from `sudo -u agency -i`. macOS is
+  unchanged.
 - **`agency network` accepts a single address.** `agency network
   192.168.1.50` allows that one computer (it is stored as `192.168.1.50/32`);
   before, an address without a prefix length was refused.

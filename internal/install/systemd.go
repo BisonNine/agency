@@ -112,6 +112,10 @@ func (h *host) installSystemd(tu *TargetUser, targetBin, binDir, agencyHome stri
 	if tu.IsRoot {
 		// System Mode: writes to /etc/systemd/system/agency.service
 		unit := buildSystemUnit(tu.Username, tu.GroupName, targetBin, tu.HomeDir, binDir, agencyHome)
+		if h.isServiceAccount(tu) {
+			// The installer's own PATH means nothing to the service account.
+			unit = renderSystemUnit(tu.Username, tu.GroupName, targetBin, tu.HomeDir, packagePATH(tu.HomeDir, binDir), agencyHome)
+		}
 		if err := os.WriteFile(h.path(systemUnitPath), []byte(unit), 0o644); err != nil {
 			return fmt.Errorf("writing systemd unit %s: %w", systemUnitPath, err)
 		}

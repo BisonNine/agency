@@ -33,7 +33,7 @@ Options:
 - `--host <address>` — where plain HTTP listens. Default `127.0.0.1`. `0.0.0.0` serves unencrypted HTTP on the network and needs `--allowed-cidrs`.
 - `--port <n>` — the plain-HTTP port.
 - `--bin-dir <dir>` — where to put the binary.
-- `--user <name>` — the account a system service runs as. Default: the user who ran `sudo`.
+- `--user <name>` — macOS only: the account a system service runs as. Default: the user who ran `sudo`. On Linux a system service runs as `agency`.
 - `-y`, `--yes` — skip the confirmation question. The admin account is still required.
 
 `agency uninstall` options: `--user`, `-y`.

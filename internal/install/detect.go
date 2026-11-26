@@ -152,7 +152,7 @@ func (h *host) detectLinuxInstall(homeDir string) *ExistingInstall {
 
 	// 2. Check systemd user service (~/.config/systemd/user/agency.service)
 	userPath := userUnitPath(homeDir)
-	if h.fileExists(userPath) {
+	if homeDir != "" && h.fileExists(userPath) {
 		inst := h.parseSystemdUnit(userPath, "systemd-user")
 		inst.IsActive = h.commandOK("systemctl", "--user", "is-active", "--quiet", serviceName)
 		return inst

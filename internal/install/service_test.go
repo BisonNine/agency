@@ -504,10 +504,23 @@ func TestResolveTargetUser(t *testing.T) {
 		if _, err := resolveTargetUser("no-such-user-x"); err == nil || !strings.Contains(err.Error(), `lookup user "no-such-user-x"`) {
 			t.Fatalf("err = %v", err)
 		}
+		setOS := func(goos string) {
+			orig := hostOS
+			t.Cleanup(func() { hostOS = orig })
+			hostOS = goos
+		}
+		// macOS runs the service as the invoking user, so root needs one;
+		// Linux runs it as the service account, so root is enough.
 		for _, sudoUser := range []string{"", "root"} {
 			t.Setenv("SUDO_USER", sudoUser)
+			setOS("darwin")
 			if _, err := resolveTargetUser(""); err == nil || !strings.Contains(err.Error(), "must run as a regular user, not root") {
-				t.Fatalf("SUDO_USER %q: err = %v", sudoUser, err)
+				t.Fatalf("darwin, SUDO_USER %q: err = %v", sudoUser, err)
+			}
+			setOS("linux")
+			tu, err := resolveTargetUser("")
+			if err != nil || tu.Username != "root" || !tu.IsRoot || tu.HomeDir != "" {
+				t.Fatalf("linux, SUDO_USER %q: %+v, %v", sudoUser, tu, err)
 			}
 		}
 	})

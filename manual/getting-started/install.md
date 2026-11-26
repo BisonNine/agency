@@ -36,7 +36,7 @@ To install a specific release, set `AGENCY_VERSION` (for example `AGENCY_VERSION
    ./agency install
    ```
 
-   For a system service, run `sudo ./agency install`.
+   For a system service, run `sudo ./agency install`. On Linux it runs as its own account, `agency`, with its data in `/opt/agency`, like the `apt` package.
 
 ## Option 3: Debian or Ubuntu package (`apt`)
 
@@ -123,20 +123,24 @@ If there is no account, no terminal and no variables, the installer stops withou
 
 | | User service | System service (`sudo`) |
 |---|---|---|
-| Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, `/opt/agency/bin` when the data directory is `/opt/agency`, else `/usr/local/bin` |
+| Binary | `/usr/bin` when installed by `apt`, else `~/bin` if it exists, else `~/.local/bin` | `/usr/bin` when installed by `apt`, else `/usr/local/bin` (an existing install keeps its place) |
+| Runs as | you | Linux: the system account `agency`, created if missing. macOS: the user who ran `sudo` |
+| Data directory | `~/.agency` | Linux: `/opt/agency`. macOS: `~/.agency` of the user who ran `sudo` |
 | Linux service | `~/.config/systemd/user/agency.service` | `/etc/systemd/system/agency.service` |
 | macOS service | `~/Library/LaunchAgents/com.bison9.agency.plist` | `/Library/LaunchDaemons/com.bison9.agency.plist` |
 
 It also:
 
-- creates the data directory, `~/.agency` by default (`AGENCY_HOME` overrides it; an existing `/opt/agency` is used if present);
+- creates the data directory (`AGENCY_HOME` overrides it; an existing `/opt/agency` is used if present);
 - writes a complete `config.json` there on first start;
 - creates an `openclaw` link next to `agency`, which the Rabbit R1 needs (see [Devices](../channels/devices.md));
 - prints the addresses where the WebUI can be opened.
 
-`--bin-dir` installs the binary somewhere else. `--user` picks the account the system service runs as (default: the user who ran `sudo`). `-y` skips the confirmation question but never the admin account.
+`--bin-dir` installs the binary somewhere else. On macOS, `--user` picks the account the system service runs as (default: the user who ran `sudo`); on Linux a system service always runs as `agency`. `-y` skips the confirmation question but never the admin account.
 
-Re-run `agency install` with the same privilege as the first time: `sudo` for a system service, none for a user service. The installer refuses the other one.
+Re-run `agency install` with the same privilege as the first time: `sudo` for a system service, none for a user service. The installer refuses the other one. An existing install keeps the account and data directory it has.
+
+On Linux, the `agency` account has no password and nobody signs in as it. Commands such as `sudo agency admin` and `sudo agency network` act on its data. To sign a CLI provider in for it, open a shell as the account: `sudo -u agency -i`.
 
 ## Opening the WebUI
 
@@ -173,7 +177,14 @@ You can also run `agency` in a terminal. It starts Agency in the foreground unti
 
 ## Removing the service
 
-`agency uninstall` stops and removes the service. The binary and the data directory are left in place. Use `sudo` if the service was installed with `sudo`.
+`agency uninstall` stops and removes the service. The binary and the data directory are left in place, and so is the `agency` account of a Linux system service. Use `sudo` if the service was installed with `sudo`.
+
+To remove the rest of a Linux system service, data included:
+
+```bash
+sudo rm -rf /opt/agency /usr/local/bin/agency /usr/local/bin/openclaw
+sudo userdel agency
+```
 
 ## Next step
 
