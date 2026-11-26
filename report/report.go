@@ -44,6 +44,9 @@ type Environment struct {
 	// an enabled model runs on (internal/mcpreg); a CLI missing here is
 	// reported as not checked.
 	CLIRegistrations []mcpreg.Status
+	// HomeDir is the running process's home directory ($HOME), the one the
+	// CLIs it starts see; "" when unknown.
+	HomeDir string
 }
 
 // Report is the collected report: identity, then one Section per area.

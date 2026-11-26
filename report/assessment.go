@@ -221,6 +221,9 @@ func collectAssessment(ctx context.Context, cfg *config.Config, env Environment)
 	if other := cfg.Security.Permissions.OtherAccess(); len(other) > 0 {
 		add(true, itemOtherAccess, "Other users of this machine get access: "+strings.Join(other, ", ")+".")
 	}
+	if r, ok := homeDirRow(env.HomeDir, dd); ok {
+		add(r.action, r.item, r.status)
+	}
 
 	wu := cfg.Channels.WebUI
 	add(wu.Enabled && wu.Token == "", "WebUI chat token",

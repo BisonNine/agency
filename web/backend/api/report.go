@@ -116,6 +116,9 @@ func reportEnvironment(configPath, dataDir string, now time.Time) report.Environ
 		Now:        now,
 	}
 	env.BuildTime, env.GoVersion = app.BuildInfo()
+	if home, err := os.UserHomeDir(); err == nil {
+		env.HomeDir = home
+	}
 	if exe, err := os.Executable(); err == nil {
 		env.Executable = exe
 	} else {

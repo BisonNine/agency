@@ -142,7 +142,7 @@ func TestInstall_LinuxSystemRefusesUser(t *testing.T) {
 // binary, and the PATH its unit gets.
 func TestServiceAccountPlaces(t *testing.T) {
 	t.Setenv(global.EnvVarHome, "")
-	acct := &TargetUser{Username: "agency", UID: "999", GID: "999", GroupName: "agency", HomeDir: "/opt/agency", IsRoot: true}
+	acct := &TargetUser{Username: "agency", UID: "999", GID: "999", GroupName: "agency", HomeDir: global.ServiceAccountHome, IsRoot: true}
 	h, _ := svcHost(t, "linux")
 
 	if got := h.resolveAgencyHome(acct, "/usr/local/bin", nil); got != "/opt/agency" {
@@ -181,8 +181,8 @@ func TestServiceAccountPlaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"User=agency\n", "Group=agency\n",
-		"Environment=PATH=/opt/agency/.local/bin:/opt/agency/bin:/usr/local/bin:/usr/bin:/bin\n",
+		"User=agency\n", "Group=agency\n", "WorkingDirectory=/home/agency\n", "Environment=HOME=/home/agency\n",
+		"Environment=PATH=/home/agency/.local/bin:/home/agency/bin:/usr/local/bin:/usr/bin:/bin\n",
 		"Environment=AGENCY_HOME=/opt/agency\n",
 	} {
 		if !strings.Contains(string(unit), want) {
@@ -207,7 +207,7 @@ func TestDetect_NoInvokingHome(t *testing.T) {
 // installer was started (an unpacked download in someone's home) is copied
 // to the system bin folder, since the service account cannot run it there.
 func TestInstall_LinuxSystemBinaryNotLeftInHome(t *testing.T) {
-	acct := &TargetUser{Username: "agency", UID: "999", GID: "999", GroupName: "agency", HomeDir: "/opt/agency", IsRoot: true}
+	acct := &TargetUser{Username: "agency", UID: "999", GID: "999", GroupName: "agency", HomeDir: global.ServiceAccountHome, IsRoot: true}
 	h, _ := svcHost(t, "linux")
 	writeHostFile(t, h, "/home/carol/agency", "binary", 0o755)
 	fromDownload := &ExistingInstall{BinaryPath: "/home/carol/agency"}

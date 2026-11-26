@@ -14,7 +14,7 @@ import (
 
 // serviceAccount is the account the package creates, as resolveTargetUser
 // reports it when run as root.
-var serviceAccount = &TargetUser{Username: "agency", UID: "998", GID: "998", GroupName: "agency", HomeDir: "/opt/agency", IsRoot: true}
+var serviceAccount = &TargetUser{Username: "agency", UID: "998", GID: "998", GroupName: "agency", HomeDir: "/home/agency", IsRoot: true}
 
 // packageHost is a Linux machine as the package's postinst sees it: running
 // as root, /usr/bin/agency installed, systemd running when withSystemd.
@@ -70,10 +70,10 @@ func TestInstallPackage_Fresh(t *testing.T) {
 		t.Errorf("unit does not start with the marker:\n%s", unit)
 	}
 	for _, want := range []string{
-		"User=agency\n", "Group=agency\n", "WorkingDirectory=/opt/agency\n",
+		"User=agency\n", "Group=agency\n", "WorkingDirectory=/home/agency\n",
 		"ExecStart=/usr/bin/agency\n", "Restart=on-failure\n", "KillMode=mixed\n",
-		"NoNewPrivileges=yes\n", "PrivateTmp=yes\n", "Environment=HOME=/opt/agency\n",
-		"Environment=PATH=/opt/agency/.local/bin:/opt/agency/bin:/usr/local/bin:/usr/bin:/bin\n",
+		"NoNewPrivileges=yes\n", "PrivateTmp=yes\n", "Environment=HOME=/home/agency\n",
+		"Environment=PATH=/home/agency/.local/bin:/home/agency/bin:/usr/local/bin:/usr/bin:/bin\n",
 		"Environment=AGENCY_HOME=/opt/agency\n", "WantedBy=multi-user.target\n",
 	} {
 		if !strings.Contains(unit, want) {

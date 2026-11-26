@@ -142,6 +142,21 @@ Re-run `agency install` with the same privilege as the first time: `sudo` for a 
 
 On Linux, the `agency` account has no password and nobody signs in as it. Commands such as `sudo agency admin` and `sudo agency network` act on its data. To sign a CLI provider in for it, open a shell as the account: `sudo -u agency -i`.
 
+### Home directory in the data directory
+
+An `agency` account made by an earlier release may have `/opt/agency` as its home, where CLI providers can't run. [Check Up](../admin/checkup.md) then shows a **Home directory** row. To give the account its own home:
+
+```bash
+sudo systemctl stop agency
+sudo usermod --home /home/agency agency
+sudo mkdir -p /home/agency
+sudo chown agency: /home/agency
+sudo chmod 700 /home/agency
+sudo agency install
+```
+
+With the `apt` package, run `sudo apt install --reinstall agency` instead of the last line. If the account's home is already `/home/agency`, only that last step is needed: it rewrites the service. Then sign the CLI providers in again as the account (`sudo -u agency -i`). Do not add `--move-home` to `usermod`: it would move the data directory.
+
 ## Opening the WebUI
 
 By default Agency listens on:

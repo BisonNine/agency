@@ -137,6 +137,12 @@
   `GET /api/system/clis/registration` and
   `POST /api/system/clis/{protocol}/register`; each registration is an audit
   row of kind `cli_register`.
+- **Check Up marks a home directory inside the data directory.** A Linux
+  `agency` account made by an earlier release may have `/opt/agency` as its
+  home, or its service may still set `HOME=/opt/agency`; CLI providers
+  installed or signed in there may not run. Check Up now shows a **Home
+  directory** row, marked for action, in that state. The fix is in the install
+  guide under "Home directory in the data directory".
 
 ### Changed
 

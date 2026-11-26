@@ -38,6 +38,7 @@ var assessmentLinks = map[string]string{
 	itemEncryptedMatrix: "/manual/channels/matrix.html#encryption",
 	itemSTT:             taskModelsLink,
 	itemVision:          taskModelsLink,
+	itemHomeDir:         homeDirLink,
 }
 
 // rowLink is the WebUI location of a row: assessmentLinks, else the tool
