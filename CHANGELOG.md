@@ -309,6 +309,14 @@
 
 ### Fixed
 
+- **Register tool server now approves the entry in Cursor.** The button wrote
+  `~/.cursor/mcp.json` but Cursor does not load a server from that file until
+  it is approved, so its agents had none of Agency's tools. It now also runs
+  `cursor-agent mcp enable agency`. On an install registered earlier, click
+  the button again or run that command as the service user.
+- **`set-mcp.sh` registers Cursor too**, writing and approving its entry, and
+  no longer turns off Code Mode for OpenCode: add `"codemode": false` by hand
+  or use the **Register tool server** button.
 - **A CLI with its path set in Command is found.** The **Local CLI agents**
   list on the Providers page, its switch, **Register tool server** and the
   Check Up "Tool server" row looked for the CLI's default program name on

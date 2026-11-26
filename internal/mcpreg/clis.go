@@ -302,7 +302,7 @@ func (r *Registrar) cursorFile() string {
 }
 
 // readCursor reads mcpServers.agency from ~/.cursor/mcp.json (Cursor has no
-// mcp command). A missing file has no entry.
+// command that adds or prints an entry). A missing file has no entry.
 func readCursor(_ context.Context, r *Registrar, _ string) (entry, error) {
 	var doc struct {
 		Servers map[string]json.RawMessage `json:"mcpServers"`
@@ -315,14 +315,21 @@ func readCursor(_ context.Context, r *Registrar, _ string) (entry, error) {
 }
 
 // registerCursor sets mcpServers.agency to {"url": url} in ~/.cursor/mcp.json,
-// keeping everything else in the file. A missing file (and folder) is created
-// for the service user only; a file that does not parse is left alone.
-func registerCursor(_ context.Context, r *Registrar, _, url string, _ bool) error {
+// keeping everything else in the file, then approves the entry with
+// `cursor-agent mcp enable agency`: Cursor does not load a server from that
+// file until it is approved ("not loaded (needs approval)"). A missing file
+// (and folder) is created for the service user only; a file that does not
+// parse is left alone.
+func registerCursor(ctx context.Context, r *Registrar, bin, url string, _ bool) error {
 	quoted, err := json.Marshal(url)
 	if err != nil {
 		return err
 	}
-	return editJSONFile(r.cursorFile(), []string{"mcpServers", Key}, json.RawMessage(`{"url":`+string(quoted)+`}`), true)
+	if err = editJSONFile(r.cursorFile(), []string{"mcpServers", Key}, json.RawMessage(`{"url":`+string(quoted)+`}`), true); err != nil {
+		return err
+	}
+	_, err = runChecked(ctx, r, bin, "mcp", "enable", Key)
+	return err
 }
 
 // --- OpenCode -----------------------------------------------------------

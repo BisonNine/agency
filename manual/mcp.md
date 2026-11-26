@@ -47,8 +47,9 @@ Without this the CLI still answers, but has none of Agency's tools.
   is off** and the button is disabled; see
   [CLI providers](providers/cli-providers.md#tools-agency-s-mcp-server).
 - **All at once from the command line:** run `./set-mcp.sh` from the Agency source folder. It
-  registers Agency in Antigravity, Codex CLI, Claude Code and OpenCode,
-  whichever are installed, and turns off Code Mode for OpenCode. If you changed the port, run
+  registers Agency in Codex CLI, Claude Code, Antigravity, OpenCode and
+  Cursor CLI, whichever are installed. It does not turn off Code Mode for
+  OpenCode; do that by hand as below, or use the button. If you changed the port, run
   `AGENCY_MCP_URL=http://127.0.0.1:<port>/internal ./set-mcp.sh`.
 - **Claude Code:**
   `claude mcp add --transport http agency --scope user http://127.0.0.1:5911/internal`
@@ -61,7 +62,9 @@ Without this the CLI still answers, but has none of Agency's tools.
   `~/.config/opencode/opencode.json` (see
   [CLI providers](providers/cli-providers.md#tools-agency-s-mcp-server)).
 - **Cursor CLI:** add `"agency": {"url": "http://127.0.0.1:5911/internal"}`
-  under `mcpServers` in `~/.cursor/mcp.json`.
+  under `mcpServers` in `~/.cursor/mcp.json`, then run
+  `cursor-agent mcp enable agency`. Cursor does not load the server until it
+  is approved.
 
 Run these as the user the Agency service runs as.
 

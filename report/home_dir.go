@@ -26,8 +26,10 @@ func homeDirRow(homeDir, dataDir string) (row assessRow, ok bool) {
 	if !pathWithin(resolvedPath(homeDir), resolvedPath(dataDir)) {
 		return assessRow{}, false
 	}
-	return assessRow{true, itemHomeDir,
-		"Home directory is inside the data directory (" + dataDir + "); CLI providers may not run."}, true
+	return assessRow{
+		true, itemHomeDir,
+		"Home directory is inside the data directory (" + dataDir + "); CLI providers may not run.",
+	}, true
 }
 
 // resolvedPath is p cleaned, with its links resolved when that is possible.

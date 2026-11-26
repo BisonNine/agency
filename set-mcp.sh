@@ -18,7 +18,7 @@
 #   update AGENCY_MCP_URL here, or export it before running:
 #       AGENCY_MCP_URL=http://127.0.0.1:6000/internal ./set-mcp.sh
 
-AGENCY_MCP_URL="${CLAW_MCP_URL:-http://127.0.0.1:5911/internal}"
+AGENCY_MCP_URL="${AGENCY_MCP_URL:-http://127.0.0.1:5911/internal}"
 
 set -u
 

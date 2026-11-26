@@ -84,6 +84,7 @@ case "$name $1 $2" in
 		printf '{"$schema":"https://opencode.ai/config.json","model":"m","mcp":{"servers":{"agency":{"type":"remote","url":"%s","codemode":true}}}}\n' "$5" > "$cfg"
 	fi
 	[ -n "$OPENCODE_SILENT" ] || echo "MCP server \"agency\" added to $cfg" ;;
+"cursor-agent mcp enable") [ "$3" = "agency" ] || exit 2; echo "Enabled and approved MCP server: agency" ;;
 *) echo "unexpected: $name $*" >&2; exit 9 ;;
 esac
 `
@@ -300,13 +301,14 @@ func TestRegister_Commands(t *testing.T) {
 		"codex mcp add agency --url " + ours,
 		"agy mcp add --type http agency " + ours,
 		"opencode mcp add agency --url " + ours + " --global",
+		"cursor-agent mcp enable agency",
 	} {
 		if !strings.Contains(g.calls(), want+"\n") {
 			t.Errorf("no call %q in:\n%s", want, g.calls())
 		}
 	}
-	if strings.Contains(g.calls(), "cursor-agent") {
-		t.Errorf("Cursor's binary was run:\n%s", g.calls())
+	if n := strings.Count(g.calls(), "cursor-agent "); n != 1 {
+		t.Errorf("Cursor's binary was run %d times, want once (mcp enable):\n%s", n, g.calls())
 	}
 	if strings.Contains(g.calls(), "opencode mcp list") {
 		t.Errorf("opencode mcp list was run:\n%s", g.calls())
@@ -821,6 +823,16 @@ func TestCheckAll_Order(t *testing.T) {
 	}
 	if sts[0].State != Registered || sts[1].State != OtherAddress || sts[1].Address != other {
 		t.Errorf("%+v", sts)
+	}
+}
+
+// A failed approval is the registration's error: Cursor would not load the
+// entry the file now holds.
+func TestCursor_EnableFails(t *testing.T) {
+	g := newRig(t, "fail")
+	_, err := g.registrar().Register(t.Context(), "cursor-cli", "", ours, false)
+	if err == nil || !strings.Contains(err.Error(), "cursor-agent mcp enable agency") {
+		t.Fatalf("err = %v, want the failed enable command", err)
 	}
 }
 

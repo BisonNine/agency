@@ -99,7 +99,7 @@ Each CLI has to be told about this server once, as the service user, under the n
 
 The [Check Up](../admin/checkup.md) page has a **Tool server** row for each CLI in use, with the same state, linked to this section. Each registration is recorded in the [audit log](../admin/audit.md).
 
-Agency reads Claude, Codex and Antigravity through their own `mcp` commands, and OpenCode and Cursor from their settings files (`~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`). It writes Cursor's file itself, keeping everything else in it, and leaves a file that does not parse alone.
+Agency reads Claude, Codex and Antigravity through their own `mcp` commands, and OpenCode and Cursor from their settings files (`~/.config/opencode/opencode.json`, `~/.cursor/mcp.json`). It writes Cursor's file itself, keeping everything else in it, then approves the entry with `cursor-agent mcp enable agency`; it leaves a file that does not parse alone.
 
 **From the command line.** The same commands, as the service user:
 
@@ -116,10 +116,16 @@ codex mcp add agency --url http://127.0.0.1:5911/internal
 agy mcp add --type http agency http://127.0.0.1:5911/internal
 ```
 
-Cursor has no such command. Add this to `~/.cursor/mcp.json` of the service user, under `"mcpServers"`:
+Cursor has no command that adds a server. Add this to `~/.cursor/mcp.json` of the service user, under `"mcpServers"`:
 
 ```json
 "agency": { "url": "http://127.0.0.1:5911/internal" }
+```
+
+Then approve it, or Cursor does not load it:
+
+```bash
+cursor-agent mcp enable agency
 ```
 
 OpenCode:
@@ -138,7 +144,7 @@ The **Register tool server** button does this for OpenCode too.
 
 If OpenCode has no web search provider set up, also add `"permission":{"websearch":"deny"}` to that file: otherwise a run that tries its built-in web search fails.
 
-`./set-mcp.sh` in the Agency source folder runs these commands for every CLI that is installed, and turns off Code Mode for OpenCode.
+`./set-mcp.sh` in the Agency source folder runs these commands for every CLI that is installed, and writes and approves Cursor's entry. It does not turn off Code Mode for OpenCode.
 
 If you change **Listen Address**, each row then reads **Registered to a different address**: click **Replace**, or use the new port in these commands. [MCP](../mcp.md) covers the server in full. Without this step the CLI still answers, but it has none of Agency's tools.
 
