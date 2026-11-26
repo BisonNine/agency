@@ -77,7 +77,7 @@ func TestApplyAllowlistRejectsInvalidWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, bad := range []string{"192.168.1.0", "not-a-cidr", "192.168.1.0/33", "10.0.0.0/8,garbage"} {
+	for _, bad := range []string{"192.168.1.300", "not-a-cidr", "192.168.1.0/33", "10.0.0.0/8,garbage"} {
 		if _, applyErr := ApplyAllowlist(ParseAllowlist(bad)); applyErr == nil {
 			t.Fatalf("ApplyAllowlist(%q) accepted an invalid list", bad)
 		}

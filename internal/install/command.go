@@ -59,6 +59,7 @@ func NewInstallCommand() *cobra.Command {
 		customBinDir string
 		yes          bool
 		pkg          bool
+		pkgAccount   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -85,7 +86,7 @@ func NewInstallCommand() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if pkg {
-				return realHost().installPackage()
+				return realHost().installPackage(pkgAccount)
 			}
 			return runInstall(host, port, allowedCIDRs, targetUser, customBinDir, yes)
 		},
@@ -101,6 +102,10 @@ func NewInstallCommand() *cobra.Command {
 	cmd.Flags().StringVar(&customBinDir, "bin-dir", "", "Custom directory to install the binary to (defaults to ~/bin or ~/.local/bin in user mode, /usr/local/bin in system mode).")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip interactive confirmation prompt.")
 	addPackageFlag(cmd, &pkg, "Set up the service for the Debian package (run by its postinst).")
+	cmd.Flags().BoolVar(&pkgAccount, "account-created", false, "With --package: the postinst created the service account in this run.")
+	if err := cmd.Flags().MarkHidden("account-created"); err != nil {
+		panic(err) // the flag was added on the line above
+	}
 	return cmd
 }
 
@@ -758,6 +763,12 @@ func printListenerSummary(w io.Writer, gw config.GatewayConfig) {
 // printInstalledURLs prints the listener summary for the installed config,
 // or for the defaults when it cannot be read.
 func printInstalledURLs(agencyHome string) {
+	printListenerSummary(os.Stdout, installedGateway(agencyHome))
+}
+
+// installedGateway is the gateway section of the installed config, or the
+// defaults when it cannot be read.
+func installedGateway(agencyHome string) config.GatewayConfig {
 	gw := config.DefaultConfig().Gateway
 	cfgPath := internal.GetConfigPath()
 	if agencyHome != "" {
@@ -766,7 +777,7 @@ func printInstalledURLs(agencyHome string) {
 	if cfg, err := config.LoadConfig(cfgPath); err == nil {
 		gw = cfg.Gateway
 	}
-	printListenerSummary(os.Stdout, gw)
+	return gw
 }
 
 // linkOpenClawAlias points <binDir>/openclaw at the installed binary. The link is

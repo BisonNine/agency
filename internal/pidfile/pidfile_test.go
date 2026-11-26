@@ -5,9 +5,12 @@ package pidfile
 
 import (
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestWriteReadRoundTrip(t *testing.T) {
@@ -117,5 +120,48 @@ func mkInternal(t *testing.T, dataDir string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(Path(dataDir)), 0o700); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// RequestReload asks only a running process that has said it takes the
+// request: SIGHUP ends one that does not handle it.
+func TestRequestReload(t *testing.T) {
+	if running, signalled := RequestReload(t.TempDir()); running || signalled {
+		t.Errorf("no PID file: running=%v signalled=%v", running, signalled)
+	}
+	if running, signalled := RequestReload(""); running || signalled {
+		t.Errorf("no data directory: running=%v signalled=%v", running, signalled)
+	}
+
+	// Running, written by Write alone: not asked.
+	dir := t.TempDir()
+	if err := Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	if running, signalled := RequestReload(dir); !running || signalled {
+		t.Errorf("unmarked: running=%v signalled=%v, want true/false", running, signalled)
+	}
+
+	// Marked: this process gets SIGHUP.
+	got := make(chan os.Signal, 1)
+	signal.Notify(got, syscall.SIGHUP)
+	t.Cleanup(func() { signal.Stop(got) })
+	if err := MarkReloadable(dir); err != nil {
+		t.Fatal(err)
+	}
+	if pid, running := Read(dir); pid != os.Getpid() || !running {
+		t.Errorf("Read of a marked file: pid=%d running=%v", pid, running)
+	}
+	if running, signalled := RequestReload(dir); !running || !signalled {
+		t.Fatalf("marked: running=%v signalled=%v, want true/true", running, signalled)
+	}
+	select {
+	case <-got:
+	case <-time.After(10 * time.Second):
+		t.Fatal("SIGHUP did not arrive")
+	}
+
+	if err := MarkReloadable(""); err == nil {
+		t.Error("MarkReloadable without a data directory succeeded")
 	}
 }

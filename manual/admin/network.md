@@ -25,12 +25,13 @@ Prefer the narrowest network that works. Use `*` rather than `0.0.0.0/0` for "an
 
 ### From the server
 
-`agency network` changes the same setting without the WebUI, which helps when the allowlist is what keeps you out. It is safe to run while Agency is running; the change applies within about 15 seconds.
+`agency network` changes the same setting without the WebUI, which helps when the allowlist is what keeps you out. It is safe to run while Agency is running; the change applies at once, with no restart.
 
 ```
 agency network --show             # what is allowed now
 agency network                    # allow the private LAN ranges
 agency network 192.168.1.0/24     # allow one subnet (comma-separate several)
+agency network 192.168.1.50       # allow one computer
 agency network any                # any address
 agency network none               # back to localhost only
 ```
@@ -98,7 +99,7 @@ Run these on the server, as the user Agency runs as (on a system install, `sudo 
 
 | What you see | Fix |
 |---|---|
-| "Forbidden" (403) from another machine | `agency network`, or `agency network 192.168.1.0/24`. Applies within about 15 seconds. |
+| "Forbidden" (403) from another machine | `agency network`, or `agency network 192.168.1.0/24`. Applies at once. |
 | Connection refused from another machine | `agency network --https all` (or `--http network`, `--device network`), then restart the service. |
 | Wrong or forgotten password | `agency admin`. |
 | "Too many failed sign-ins" | Wait without trying, or run `agency admin`, or restart the service. |

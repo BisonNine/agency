@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.bison9.com/agency/app"
+	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/global"
 	"go.bison9.com/agency/internal/admin"
 )
@@ -70,9 +71,11 @@ func (h *host) systemdRunning() bool {
 // for the running binary (/usr/bin/agency) running as global.ServiceAccount
 // with AGENCY_HOME (default /opt/agency), enables and (re)starts it. Unlike
 // an interactive install it never asks anything and starts the service
-// without an admin account; it prints the one command that creates it. A
+// without an admin account. While there is none (a new install) it says which
+// account runs the service (accountCreated: the postinst created it just
+// now), where the files are, where the WebUI is, and last what to do next. A
 // system unit it did not write is someone else's install, left unchanged.
-func (h *host) installPackage() error {
+func (h *host) installPackage(accountCreated bool) error {
 	if h.goos != "linux" {
 		return fmt.Errorf("`%s install --package` is only for the Debian package on Linux", app.BinaryName())
 	}
@@ -116,10 +119,54 @@ func (h *host) installPackage() error {
 		fmt.Printf("%s is installed; systemd is not running, so the service was not started.\n", app.ShortName())
 	}
 	if !h.fileExists(admin.Path(agencyHome)) {
-		fmt.Printf("Create the admin account: sudo %s admin\n", app.BinaryName())
-		printInstalledURLs(h.path(agencyHome))
+		gw := installedGateway(h.path(agencyHome))
+		var b strings.Builder
+		b.WriteString(packageLocations(tu.Username, accountCreated, exePath, agencyHome))
+		printListenerSummary(&b, gw)
+		b.WriteString(packageNextSteps(gw))
+		fmt.Print(b.String())
 	}
 	return nil
+}
+
+// packageLocations says which account runs the service and where the package
+// put things.
+func packageLocations(account string, created bool, exePath, agencyHome string) string {
+	state := "already existed"
+	if created {
+		state = "created"
+	}
+	var b strings.Builder
+	line := func(label, value string) { fmt.Fprintf(&b, "%-24s%s\n", label, value) }
+	b.WriteString("\n")
+	line("Service account:", account+" ("+state+")")
+	line("Program:", exePath)
+	line("Data and settings:", agencyHome)
+	line("Service:", systemUnitPath)
+	return b.String()
+}
+
+// packageNextSteps is what a new install still needs, printed last, with a
+// blank line around the heading, between the steps and at the end: the admin
+// account, and, while the WebUI is served on the network but only localhost
+// is allowed in, the command that allows a network.
+func packageNextSteps(gw config.GatewayConfig) string {
+	bin := app.BinaryName()
+	var b strings.Builder
+	b.WriteString("\nNext steps:\n\n")
+	fmt.Fprintf(&b, "  1. Create the admin account:\n       sudo %s admin\n", bin)
+	if (gw.HTTPOnNetwork() || gw.HTTPSOnNetwork()) && len(gw.EffectiveAllowedCIDRs()) == 0 {
+		b.WriteString("\n  2. To use the WebUI from another computer, allow it, for example:\n")
+		for _, c := range [][2]string{
+			{"192.168.1.0/24", "one network"},
+			{"192.168.1.50", "one computer"},
+			{"", "all private networks"},
+		} {
+			fmt.Fprintf(&b, "       %-38s(%s)\n", strings.TrimSpace("sudo "+bin+" network "+c[0]), c[1])
+		}
+	}
+	b.WriteString("\n") // set apart from what the package manager prints next
+	return b.String()
 }
 
 // foreignInstall names an install the package did not make, or returns "":

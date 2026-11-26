@@ -11,8 +11,11 @@
   `/usr/bin/openclaw` symlink and licence notices under
   `/usr/share/doc/agency/`, creates the `agency` system account (no password)
   and `/opt/agency` owned by it, and starts the service as that account. The
-  service starts without an admin account; run `sudo agency admin` to create
-  one. `apt upgrade` restarts the service, and `agency upgrade` directs an
+  service starts without an admin account; a new install says which account
+  it uses, where its files are, and ends with the next steps: `sudo agency
+  admin` to create the admin account, and `sudo agency network` with examples
+  (one network, one computer, all private networks) to allow the WebUI from
+  another computer. `apt upgrade` restarts the service, and `agency upgrade` directs an
   `apt`-managed install to `apt`. `apt remove` removes the service and keeps
   the data and the account; `apt purge` also deletes them, if the package
   created them. An existing Agency system service, or an `/opt/agency` that
@@ -137,6 +140,12 @@
 
 ### Changed
 
+- **`agency network` accepts a single address.** `agency network
+  192.168.1.50` allows that one computer (it is stored as `192.168.1.50/32`);
+  before, an address without a prefix length was refused.
+- **`SIGHUP` reloads the configuration.** A running Agency now re-reads
+  `config.json` at once when it receives `SIGHUP` (`agency network` sends
+  it). Before, that signal stopped the service.
 - **New logo and icons.** The WebUI, the browser tab and the Windows program
   show the new Agency logo, and the sign-in page now follows the saved theme.
 - **The WebUI follows the system theme.** It is light or dark as the system is,
@@ -283,6 +292,8 @@
   scheduler had been stopped. Now a watch probe that is running is stopped
   (it is not counted as a failed probe, and the next one still sees any
   change).
+- **`agency network` takes effect at once.** A running Agency now applies a
+  changed allowlist immediately instead of within about 15 seconds.
 - **`set-mcp.sh` registers Antigravity again.** It passed the server type after the name, which the CLI rejects.
 - **The device channel's WebSocket library is updated past GO-2026-6278**
   (weak random numbers for the frame mask key).

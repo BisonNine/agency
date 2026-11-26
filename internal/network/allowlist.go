@@ -7,6 +7,7 @@ package network
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"go.bison9.com/agency/config"
@@ -26,8 +27,9 @@ var Aliases = map[string][]string{
 }
 
 // ParseAllowlist turns a comma-separated CIDR list into a slice, expanding an
-// alias if one was given. The result is not validated; call ApplyAllowlist or
-// config.ValidateAllowedCIDRs.
+// alias if one was given. A single address (192.168.1.50) is that one
+// computer: it becomes its /32, or /128 for IPv6. The result is not validated;
+// call ApplyAllowlist or config.ValidateAllowedCIDRs.
 func ParseAllowlist(csv string) []string {
 	if expanded, ok := Aliases[strings.ToLower(strings.TrimSpace(csv))]; ok {
 		return append([]string(nil), expanded...)
@@ -36,6 +38,9 @@ func ParseAllowlist(csv string) []string {
 	cidrs := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if t := strings.TrimSpace(p); t != "" {
+			if addr, err := netip.ParseAddr(t); err == nil && addr.Zone() == "" {
+				t = netip.PrefixFrom(addr, addr.BitLen()).String()
+			}
 			cidrs = append(cidrs, t)
 		}
 	}

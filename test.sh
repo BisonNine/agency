@@ -789,7 +789,7 @@ EOF
                         sleep 0.25
                     done
                     if [ -f "$INTEG_HOME/internal/agency.pid" ]; then
-                        PIDFILE_CONTENT=$(cat "$INTEG_HOME/internal/agency.pid" 2>/dev/null | tr -d ' \n')
+                        PIDFILE_CONTENT=$(head -n 1 "$INTEG_HOME/internal/agency.pid" 2>/dev/null | tr -d ' \n')
                         if [ "$PIDFILE_CONTENT" = "$INTEG_PID" ]; then
                             echo "  ${GREEN}PASS${NC}: agency.pid written at startup (pid $PIDFILE_CONTENT)"
                             INTEGRATION_PASS_COUNT=$((INTEGRATION_PASS_COUNT + 1))

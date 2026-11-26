@@ -9,6 +9,8 @@ DATA_DIR=/opt/agency
 UNIT=/etc/systemd/system/agency.service
 STATE_DIR=/var/lib/agency
 MARKER='# Managed by the agency Debian package'
+# Set by create_account when it creates the account, for the install message.
+ACCOUNT_FLAG=
 
 systemd_running() {
     command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
@@ -46,6 +48,7 @@ create_account() {
         touch "$STATE_DIR/created-group"
     fi
     touch "$STATE_DIR/created-account"
+    ACCOUNT_FLAG=--account-created
 }
 
 # create_data_dir creates /opt/agency owned by the account unless it exists.
@@ -72,7 +75,7 @@ case "$1" in
         fi
         create_account
         create_data_dir
-        AGENCY_HOME="$DATA_DIR" /usr/bin/agency install --package
+        AGENCY_HOME="$DATA_DIR" /usr/bin/agency install --package $ACCOUNT_FLAG
         ;;
 esac
 

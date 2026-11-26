@@ -3,10 +3,12 @@ package network
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/testbinary"
 )
 
 // runCommand executes `agency network` with args against the temp AGENCY_HOME set
@@ -158,8 +160,8 @@ func TestCommandWildcardWarns(t *testing.T) {
 
 func TestCommandRejectsInvalidInput(t *testing.T) {
 	seedConfig(t)
-	if _, err := runCommand(t, "192.168.1.0"); err == nil {
-		t.Fatal("`network 192.168.1.0` (no prefix length) should fail")
+	if _, err := runCommand(t, "192.168.1.0/33"); err == nil {
+		t.Fatal("`network 192.168.1.0/33` (no such prefix length) should fail")
 	}
 	got, err := CurrentAllowlist()
 	if err != nil {
@@ -183,5 +185,46 @@ func TestCommandRejectsExtraArguments(t *testing.T) {
 func TestCommandName(t *testing.T) {
 	if got := NewNetworkCommand().Name(); got != "network" {
 		t.Fatalf("command name = %q, want %q", got, "network")
+	}
+}
+
+// The command says when the change takes effect: at once when the running
+// instance took the request, within the watcher's interval when it runs but
+// does not take requests, at the next start when nothing runs.
+func TestCommandSaysWhenTheChangeApplies(t *testing.T) {
+	testbinary.Set(t, "agency")
+	home := filepath.Dir(seedConfig(t))
+	orig := requestReload
+	t.Cleanup(func() { requestReload = orig })
+	for _, tc := range []struct {
+		name               string
+		running, signalled bool
+		want               string
+	}{
+		{"asked", true, true, "Agency is applying this now; no restart needed.\n"},
+		{"running, not asked", true, false, "Agency applies this within about 15 seconds; no restart needed.\n"},
+		{"not running", false, false, "Agency is not running; this applies when it starts.\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var asked string
+			requestReload = func(dataDir string) (bool, bool) {
+				asked = dataDir
+				return tc.running, tc.signalled
+			}
+			out, err := runCommand(t, "192.168.1.50")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasSuffix(out, tc.want) {
+				t.Errorf("output = %q, want it to end %q", out, tc.want)
+			}
+			if asked != home {
+				t.Errorf("asked the instance in %q, want %q", asked, home)
+			}
+			got, err := CurrentAllowlist()
+			if err != nil || len(got) != 1 || got[0] != "192.168.1.50/32" {
+				t.Errorf("allowlist = %v %v", got, err)
+			}
+		})
 	}
 }

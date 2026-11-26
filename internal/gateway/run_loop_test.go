@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"go.bison9.com/agency/bus"
 	"go.bison9.com/agency/cogmemhost"
 	"go.bison9.com/agency/config"
+	"go.bison9.com/agency/internal/pidfile"
 	"go.bison9.com/agency/internal/test/stubprovider"
 	"go.bison9.com/agency/servicetoken"
 )
@@ -37,6 +40,8 @@ type bootedGateway struct {
 	alerts   *alertRecorder
 	tokens   chan struct{}
 	done     chan error
+	// signals is the main loop's signal channel.
+	signals chan<- os.Signal
 }
 
 // bootGateway starts the services on a temp AGENCY_HOME (extra is spliced into
@@ -94,7 +99,7 @@ func bootGatewayIn(t *testing.T, g *e2eGateway) *bootedGateway {
 	b.run.serviceTokenChanges = b.tokens
 	go func() { b.done <- b.run.loop(t.Context()) }()
 	// The loop subscribes to signals first; once it has, it is running.
-	<-g.signals
+	b.signals = <-g.signals
 	return b
 }
 
@@ -348,5 +353,36 @@ func TestGatewayRun_CogmemConsolidateTool(t *testing.T) {
 	b.fatal.requestRestart()
 	if err := b.stop(t); exitCode(err) != exitCodeServiceDied {
 		t.Fatalf("loop = %v", err)
+	}
+}
+
+// TestGatewayRun_SIGHUPReloadsNow: SIGHUP applies the config file at once,
+// without waiting for the watcher (which here never looks), and the PID file
+// says the process takes the request.
+func TestGatewayRun_SIGHUPReloadsNow(t *testing.T) {
+	b := bootGateway(t, `, "config_reload_interval_seconds": 3600`)
+	waitFor(t, "the PID file to say reloads are taken", func() bool {
+		data, err := os.ReadFile(pidfile.Path(b.cfg.DataDir()))
+		return err == nil && string(data) == strconv.Itoa(os.Getpid())+"\nreload\n"
+	})
+
+	b.g.rewriteConfig(t, func(s string) string {
+		return strings.Replace(s, `"gateway": {`, `"gateway": {"allowed_cidrs": ["10.9.0.0/16"], `, 1)
+	})
+	b.signals <- syscall.SIGHUP
+	waitFor(t, "the allowlist from the file", func() bool {
+		got := b.al.GetConfig().Gateway.AllowedCIDRs
+		return len(got) == 1 && got[0] == "10.9.0.0/16"
+	})
+
+	// A file that cannot be loaded is refused and the gateway keeps running.
+	b.g.rewriteConfig(t, func(string) string { return "{bad" })
+	b.signals <- syscall.SIGHUP
+	b.signals <- os.Interrupt
+	if err := b.stop(t); err != nil {
+		t.Fatalf("loop = %v, want a clean stop", err)
+	}
+	if got := b.al.GetConfig().Gateway.AllowedCIDRs; len(got) != 1 || got[0] != "10.9.0.0/16" {
+		t.Errorf("allowlist after a bad file = %v", got)
 	}
 }

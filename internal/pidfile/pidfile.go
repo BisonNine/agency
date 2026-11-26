@@ -69,6 +69,50 @@ func Remove(dataDir string) {
 	}
 }
 
+// reloadMark is the PID file's second line once the process reloads its
+// configuration on SIGHUP.
+const reloadMark = "reload"
+
+// MarkReloadable rewrites the PID file to say that this process reloads its
+// configuration on SIGHUP. Call it only once the signal is handled: SIGHUP
+// ends a process that does not handle it, so RequestReload signals only a
+// process that has said it does.
+func MarkReloadable(dataDir string) error {
+	if dataDir == "" {
+		return errors.New("pidfile: no data directory")
+	}
+	p := Path(dataDir)
+	content := strconv.Itoa(os.Getpid()) + "\n" + reloadMark + "\n"
+	if err := fileutil.WriteFileAtomic(p, []byte(content), perms.SecretModes().File); err != nil {
+		return fmt.Errorf("pidfile: write %s: %w", p, err)
+	}
+	return nil
+}
+
+// RequestReload asks the running instance of a data directory to reload its
+// configuration now. running says whether there is one; signalled whether it
+// was asked (it is not when it runs a release that does not take the
+// request, or the signal could not be sent).
+func RequestReload(dataDir string) (running, signalled bool) {
+	pid, running := Read(dataDir)
+	if !running {
+		return false, false
+	}
+	b, err := os.ReadFile(Path(dataDir))
+	if err != nil {
+		return true, false
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[1]) != reloadMark {
+		return true, false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return true, false
+	}
+	return true, proc.Signal(syscall.SIGHUP) == nil
+}
+
 // Read returns the pid recorded for a data directory and whether that process
 // is a LIVE Agency process.
 //
@@ -84,7 +128,8 @@ func Read(dataDir string) (pid int, running bool) {
 	if err != nil {
 		return 0, false
 	}
-	pid, err = strconv.Atoi(strings.TrimSpace(string(b)))
+	first, _, _ := strings.Cut(strings.TrimSpace(string(b)), "\n") // a second line is reloadMark
+	pid, err = strconv.Atoi(strings.TrimSpace(first))
 	if err != nil || pid <= 0 {
 		return 0, false
 	}

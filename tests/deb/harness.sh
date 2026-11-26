@@ -115,7 +115,12 @@ check "unit runs as agency" grep -q '^User=agency$' "$UNIT"
 check "unit sets AGENCY_HOME=/opt/agency" grep -q '^Environment=AGENCY_HOME=/opt/agency$' "$UNIT"
 check "markers" [ -e /var/lib/agency/created-account ] && [ -e /var/lib/agency/created-group ] && [ -e /var/lib/agency/created-home ]
 check "message: installed and running" grep -qx "Agency is installed and running." <<<"$msg"
-check "message: sudo agency admin" grep -qx "Create the admin account: sudo agency admin" <<<"$msg"
+check "message: account created" grep -qx "Service account:        agency (created)" <<<"$msg"
+check "message: where the files are" grep -qx "Data and settings:      /opt/agency" <<<"$msg"
+check "message: sudo agency admin" grep -qx "       sudo agency admin" <<<"$msg"
+check "message: allow a network" grep -qx "       sudo agency network 192.168.1.0/24    (one network)" <<<"$msg"
+check "message: allow one computer" grep -qx "       sudo agency network 192.168.1.50      (one computer)" <<<"$msg"
+check "message: the next steps are last" [ "$(tail -n 1 <<<"$msg")" = "       sudo agency network                   (all private networks)" ]
 check "message: WebUI address" grep -q "^WebUI on this machine:  http://127.0.0.1:18790/" <<<"$msg"
 check "service ready" wait_ready
 pid=$(svc_pid)

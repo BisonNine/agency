@@ -27,6 +27,10 @@ func TestParseAllowlist(t *testing.T) {
 		{"single cidr", "192.168.1.0/24", []string{"192.168.1.0/24"}},
 		{"comma separated", "10.0.0.0/8, 192.168.1.0/24", []string{"10.0.0.0/8", "192.168.1.0/24"}},
 		{"wildcard passes through", "*", []string{"*"}},
+		{"one address is one computer", "192.168.1.50", []string{"192.168.1.50/32"}},
+		{"one IPv6 address", "fd00::5", []string{"fd00::5/128"}},
+		{"addresses and networks", "192.168.1.50, 10.0.0.0/8", []string{"192.168.1.50/32", "10.0.0.0/8"}},
+		{"not an address is left for validation", "office", []string{"office"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ParseAllowlist(tc.in)

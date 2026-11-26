@@ -50,6 +50,16 @@ sudo agency admin
 
 The package sets up a system service and starts it, so there is no `agency install` step. Until `sudo agency admin` has run, nobody can sign in.
 
+The WebUI is reachable only from the machine itself until you allow a network. On a server without a desktop, allow yours to open the WebUI from another computer (see [Network access](../admin/network.md)):
+
+```bash
+sudo agency network 192.168.1.0/24    # one network
+sudo agency network 192.168.1.50      # one computer
+sudo agency network                   # all private networks
+```
+
+The change applies at once.
+
 | | |
 |---|---|
 | Programs | `/usr/bin/agency`, `/usr/bin/agency-auth`, `/usr/bin/openclaw` |

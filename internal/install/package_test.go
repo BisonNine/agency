@@ -3,6 +3,7 @@ package install
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -50,7 +51,7 @@ func packageHost(t *testing.T, withSystemd bool) (*host, *cmdLog) {
 func runPackageInstall(t *testing.T, h *host) (string, error) {
 	t.Helper()
 	var err error
-	out := captureStdout(t, func() { err = h.installPackage() })
+	out := captureStdout(t, func() { err = h.installPackage(true) })
 	return out, err
 }
 
@@ -85,13 +86,62 @@ func TestInstallPackage_Fresh(t *testing.T) {
 	if got, want := joinLines(log.lines()), "systemctl daemon-reload\nsystemctl enable agency\nsystemctl restart agency"; got != want {
 		t.Errorf("commands:\n%s\nwant:\n%s", got, want)
 	}
-	for _, want := range []string{"Agency is installed and running.\n", "Create the admin account: sudo agency admin\n", "WebUI on this machine:"} {
+	// The message, in order: what happened, the account and the files, where
+	// the WebUI is, and last what to do next.
+	at := 0
+	for _, want := range []string{
+		"Agency is installed and running.\n\n",
+		"Service account:        agency (created)\n",
+		"Program:                /usr/bin/agency\n",
+		"Data and settings:      /opt/agency\n",
+		"Service:                /etc/systemd/system/agency.service\n",
+		"WebUI on this machine:  http://127.0.0.1:18790/\n",
+		"Allowed networks:       localhost only\n",
+		"\nNext steps:\n\n  1. Create the admin account:\n       sudo agency admin\n\n" +
+			"  2. To use the WebUI from another computer, allow it, for example:\n" +
+			"       sudo agency network 192.168.1.0/24    (one network)\n" +
+			"       sudo agency network 192.168.1.50      (one computer)\n" +
+			"       sudo agency network                   (all private networks)\n\n",
+	} {
+		i := strings.Index(out[at:], want)
+		if i < 0 {
+			t.Fatalf("output lacks %q after offset %d:\n%s", want, at, out)
+		}
+		at += i + len(want)
+	}
+	if at != len(out) {
+		t.Errorf("the next steps are not last:\n%s", out)
+	}
+	if _, serr := os.Stat(h.path(admin.Path(global.SystemDataDir))); !errors.Is(serr, os.ErrNotExist) {
+		t.Errorf("an admin account was created: %v", serr)
+	}
+}
+
+// TestInstallPackage_ExistingAccountAndNetwork: an account the package found
+// is reported as such, and with a network already allowed the only step left
+// is the admin account.
+func TestInstallPackage_ExistingAccountAndNetwork(t *testing.T) {
+	h, _ := packageHost(t, true)
+	if _, err := runPackageInstall(t, h); err != nil { // the unit marks the install as the package's
+		t.Fatal(err)
+	}
+	writeHostFile(t, h, filepath.Join(global.SystemDataDir, "config.json"),
+		`{"gateway":{"allowed_cidrs":["192.168.1.0/24"]}}`, 0o600)
+	var err error
+	out := captureStdout(t, func() { err = h.installPackage(false) })
+	if err != nil {
+		t.Fatalf("install --package: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"Service account:        agency (already existed)\n",
+		"Allowed networks:       192.168.1.0/24\n",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
-	if _, serr := os.Stat(h.path(admin.Path(global.SystemDataDir))); !errors.Is(serr, os.ErrNotExist) {
-		t.Errorf("an admin account was created: %v", serr)
+	if !strings.HasSuffix(out, "\n\nNext steps:\n\n  1. Create the admin account:\n       sudo agency admin\n\n") {
+		t.Errorf("the admin account is not the last and only step:\n%s", out)
 	}
 }
 

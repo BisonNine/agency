@@ -2,6 +2,7 @@ package network
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -9,6 +10,7 @@ import (
 	"go.bison9.com/agency/app"
 	"go.bison9.com/agency/config"
 	"go.bison9.com/agency/internal"
+	"go.bison9.com/agency/internal/pidfile"
 )
 
 // NewNetworkCommand returns the `agency network` subcommand: the way back into
@@ -29,7 +31,8 @@ func NewNetworkCommand() *cobra.Command {
 			"\"Forbidden\", from another machine. Logging in is required either way.\n\n" +
 			"The argument sets the allowlist. With no argument, it allows the private LAN\n" +
 			"ranges (" + fmt.Sprintf("%v", config.PrivateNetworkCIDRs) + "). Otherwise pass a\n" +
-			"comma-separated CIDR list, or one of:\n" +
+			"comma-separated list of networks (192.168.1.0/24) and single addresses\n" +
+			"(192.168.1.50), or one of:\n" +
 			"  private    the RFC1918 ranges (same as no argument)\n" +
 			"  any        any address, IPv4 and IPv6\n" +
 			"  none       loopback only\n\n" +
@@ -40,8 +43,8 @@ func NewNetworkCommand() *cobra.Command {
 			"  --https all|localhost|off    HTTPS (gateway.tls.mode)\n" +
 			"  --device localhost|network   the device listener (channels.device.host)\n\n" +
 			"This edits the config and exits, so it is safe to run while " + app.ShortName() + " is running.\n" +
-			"A running " + app.ShortName() + " applies a new allowlist on its next config reload (about 15\n" +
-			"seconds) with no restart; the listener flags take effect after a restart.\n\n" +
+			"A running " + app.ShortName() + " applies a new allowlist at once, with no restart; the listener\n" +
+			"flags take effect after a restart.\n\n" +
 			"Examples:\n" +
 			"  " + app.BinaryName() + " network --show\n" +
 			"  " + app.BinaryName() + " network                          # allow the private LAN ranges\n" +
@@ -117,8 +120,30 @@ func runSet(spec string) error {
 	if len(cidrs) == 1 && cidrs[0] == config.AllowAnyAddress {
 		fmt.Println("WARNING: any address may now reach the login page.")
 	}
-	fmt.Printf("A running %s applies this on its next config reload (about 15s); no restart needed.\n", app.ShortName())
+	fmt.Println(appliedNote(path))
 	return nil
+}
+
+// requestReload asks the running instance to apply the config now; replaced
+// in tests.
+var requestReload = pidfile.RequestReload
+
+// appliedNote asks the running instance to apply the config file just
+// written and says when the change takes effect.
+func appliedNote(configPath string) string {
+	dataDir := filepath.Dir(configPath)
+	if cfg, err := config.LoadConfig(configPath); err == nil {
+		dataDir = cfg.DataDir()
+	}
+	running, signalled := requestReload(dataDir)
+	switch {
+	case signalled:
+		return app.ShortName() + " is applying this now; no restart needed."
+	case running:
+		return app.ShortName() + " applies this within about 15 seconds; no restart needed."
+	default:
+		return app.ShortName() + " is not running; this applies when it starts."
+	}
 }
 
 func runListeners(l Listeners) error {

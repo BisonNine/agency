@@ -381,12 +381,24 @@ var notifySignals = signal.Notify
 func (r *gatewayRun) loop(ctx context.Context) error {
 	// SIGTERM as well as SIGINT: systemd stops a unit with SIGTERM, whose
 	// default disposition kills the process without the clean shutdown below.
+	// SIGHUP reloads the configuration now (`network` sends it); the PID file
+	// says so only once the signal is handled, since unhandled it ends the
+	// process.
 	sigChan := make(chan os.Signal, 1)
-	notifySignals(sigChan, os.Interrupt, syscall.SIGTERM)
+	notifySignals(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	if err := pidfile.MarkReloadable(r.agentLoop.GetConfig().DataDir()); err != nil {
+		logger.WarnCF("gateway", "PID file not updated; a command-line change applies at the next config check", map[string]any{"error": err.Error()})
+	}
 
 	for {
 		select {
-		case <-sigChan:
+		case sig := <-sigChan:
+			if sig == syscall.SIGHUP {
+				if err := r.forceReload(ctx, "by signal"); err != nil {
+					logger.Errorf("Config reload failed: %v", err)
+				}
+				continue
+			}
 			logger.Info("Shutting down...")
 			shutdownGateway(r.services, r.agentLoop, true) //nolint:contextcheck // shutdown runs on its own bounded contexts, so it completes whatever the run context does
 			return nil
@@ -410,7 +422,7 @@ func (r *gatewayRun) loop(ctx context.Context) error {
 			r.reload(ctx, newCfg)
 
 		case done := <-r.forceReloads:
-			done <- r.forceReload(ctx)
+			done <- r.forceReload(ctx, "via API")
 
 		case <-r.serviceTokenChanges:
 			logger.Info("🔑 Service-token file changed, reloading service tokens...")
@@ -434,9 +446,10 @@ func (r *gatewayRun) reload(ctx context.Context, newCfg *config.Config) {
 	})
 }
 
-// forceReload applies the config file now, for the reload API.
-func (r *gatewayRun) forceReload(ctx context.Context) error {
-	logger.Info("Forced config reload requested via API")
+// forceReload applies the config file now, for the reload API and SIGHUP; by
+// says which ("via API", "by signal").
+func (r *gatewayRun) forceReload(ctx context.Context, by string) error {
+	logger.Info("Forced config reload requested " + by)
 	// Taken before reading, so a change written while this reload runs is
 	// newer than what the watcher is told was applied.
 	applied := configFileStateOf(r.store.Path())
