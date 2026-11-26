@@ -255,8 +255,7 @@ name), the self-signed certificate's fallback CN — are defined once in
 `global/identifiers.go`. Anything written to disk or matched later uses one
 of these, never `ShortName()` or `BinaryName()`. Until 0.6.6 these carried the
 product's old name; the rename was a clean break: no old name is read,
-detected or accepted, and an install under the old names is moved by hand
-(`manual/getting-started/upgrading.md`). Do not add compatibility for them.
+detected or accepted. Do not add compatibility for them.
 
 Templates and embedded guides name the product through placeholders filled at
 use: `{{SHORT_NAME}}` in `templates/` (seeding, `internal/workspace`), and
@@ -284,8 +283,7 @@ tree:
   third-party names that contain it (`thirdPartyNames`: OpenClaw and the
   `openclaw` link, PicoClaw, ClawHub, `clawdbot-gateway`, the Claw to Talk
   app), the files in `skipFiles` (the two guards, the BIP39 word list,
-  `refactor/` history), the CHANGELOG sections already released, the
-  manual's "Moving an install from the old name" section, and a line
+  `refactor/` history), the CHANGELOG sections already released, and a line
   marked `rename-guard:old-name` (a test checking that an old name is
   ignored).
 - `web/frontend/src/product-name-guard.test.ts` does the same for every

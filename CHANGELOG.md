@@ -286,12 +286,8 @@
   are `agency` and `agency-auth`, with the `openclaw` link. The service is
   `agency.service`. The data directory is `~/.agency` or `/opt/agency`.
   The variables are `AGENCY_*`, such as `AGENCY_HOME`. CLI agents see the
-  tools as `mcp__agency__<tool>` (`agency_<tool>` in OpenCode): run
-  `set-mcp.sh` again, and change any CLI allow-list that names the old
-  prefix. Release archives are `agency-<os>-<arch>.tar.gz`. The old names
-  are not read, and an existing install is not moved automatically: follow
-  "Moving an install from the old name" on the manual's Upgrading page.
-  Sign in to the WebUI again afterwards.
+  tools as `mcp__agency__<tool>` (`agency_<tool>` in OpenCode). Release
+  archives are `agency-<os>-<arch>.tar.gz`.
 - **The product is now named Agency** in the WebUI, logs, alerts, reports
   and messages.
 - **Releases and the installer now come from `BisonNine/agency`.**

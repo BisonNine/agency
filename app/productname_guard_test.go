@@ -58,11 +58,6 @@ const oldNameMarker = "rename-guard:old-name"
 var allowedSections = map[string]struct{ start, end *regexp.Regexp }{
 	// Every release section but the topmost, which is still in development.
 	"CHANGELOG.md": {start: regexp.MustCompile(`^## \[`)},
-	// The steps that move an install from the old names.
-	"manual/getting-started/upgrading.md": {
-		start: regexp.MustCompile(`^## Moving an install from the old name$`),
-		end:   regexp.MustCompile(`^## `),
-	},
 }
 
 // TestOldName_Nowhere enforces that the product's old name appears nowhere
@@ -227,17 +222,16 @@ func TestNamesOldName(t *testing.T) {
 }
 
 // TestOldNameSections pins the allowed sections: released CHANGELOG history
-// and the manual's moving steps are allowed, the release in development and
-// the rest of the manual page are not, and a marked line is allowed anywhere.
+// is allowed, the release in development and the manual are not, and a
+// marked line is allowed anywhere.
 func TestOldNameSections(t *testing.T) {
 	changelog := "# Changelog\n## [0.6.6]\n- claw in development\n## [0.6.5]\n- claw released\n## [0.6.4]\n- claw older\n"
 	if got := oldNameLines("CHANGELOG.md", []byte(changelog)); len(got) != 1 || !strings.Contains(got[0], "CHANGELOG.md:3:") {
 		t.Errorf("CHANGELOG hits = %q, want only line 3", got)
 	}
-	manual := "# Upgrading\nclaw\n## Moving an install from the old name\nclaw\n## After\nclaw\n"
-	if got := oldNameLines("manual/getting-started/upgrading.md", []byte(manual)); len(got) != 2 ||
-		!strings.Contains(got[0], ":2:") || !strings.Contains(got[1], ":6:") {
-		t.Errorf("manual hits = %q, want lines 2 and 6", got)
+	manual := "# Upgrading\nclaw\n## After\nclaw\n"
+	if got := oldNameLines("manual/getting-started/upgrading.md", []byte(manual)); len(got) != 2 {
+		t.Errorf("manual hits = %q, want both lines", got)
 	}
 	if got := oldNameLines("x_test.go", []byte("a := \"claw\" // "+oldNameMarker+"\nb := \"claw\"\n")); len(got) != 1 {
 		t.Errorf("marked hits = %q, want only the unmarked line", got)
