@@ -31,11 +31,11 @@ Several catalogue models use OpenRouter names that follow a vendor's newest rele
 
 | Model | Model Identifier |
 |---|---|
-| OpenRouter Fable Latest | `anthropic/claude-fable-latest` |
-| OpenRouter Kimi Latest | `moonshotai/kimi-latest` |
-| OpenRouter Gemini Flash Latest | `google/gemini-flash-latest` |
-| OpenRouter GPT Terra Latest | `openai/gpt-terra-latest` |
-| OpenRouter GLM Latest | `z-ai/glm-latest` |
+| OpenRouter Fable Latest | `~anthropic/claude-fable-latest` |
+| OpenRouter Kimi Latest | `~moonshotai/kimi-latest` |
+| OpenRouter Gemini Flash Latest | `~google/gemini-flash-latest` |
+| OpenRouter GPT Terra Latest | `~openai/gpt-terra-latest` |
+| OpenRouter GLM Latest | `~z-ai/glm-latest` |
 | OpenRouter DeepSeek Flash Latest | `~deepseek/deepseek-flash-latest` |
 | OpenRouter DeepSeek Pro Latest | `~deepseek/deepseek-pro-latest` |
 

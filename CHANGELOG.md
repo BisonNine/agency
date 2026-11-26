@@ -278,6 +278,12 @@
 
 ### Fixed
 
+- **OpenRouter "latest" models in the catalogue work.** Five catalogue
+  models had an identifier OpenRouter refuses: Fable Latest, Kimi Latest,
+  Gemini Flash Latest, GPT Terra Latest and GLM Latest. Each now has the
+  leading `~` OpenRouter requires, for example
+  `~google/gemini-flash-latest`. An existing `config.json` is not changed:
+  add the `~` to the model's **Model Identifier** on the Models page.
 - **A new install starts and stays up.** Its first `config.json` now has
   the WebUI chat channel on, with a token generated for it. Before, the
   first start stopped with "no channels enabled" and only the next start

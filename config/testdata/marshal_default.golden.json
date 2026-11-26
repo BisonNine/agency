@@ -342,28 +342,28 @@
     },
     {
       "model_name": "OpenRouter Fable Latest",
-      "model": "anthropic/claude-fable-latest",
+      "model": "~anthropic/claude-fable-latest",
       "provider": "OpenRouter Chat",
       "context_window": 1000000,
       "enabled": false
     },
     {
       "model_name": "OpenRouter Kimi Latest",
-      "model": "moonshotai/kimi-latest",
+      "model": "~moonshotai/kimi-latest",
       "provider": "OpenRouter Chat",
       "context_window": 1000000,
       "enabled": false
     },
     {
       "model_name": "OpenRouter Gemini Flash Latest",
-      "model": "google/gemini-flash-latest",
+      "model": "~google/gemini-flash-latest",
       "provider": "OpenRouter Chat",
       "context_window": 1000000,
       "enabled": false
     },
     {
       "model_name": "OpenRouter GPT Terra Latest",
-      "model": "openai/gpt-terra-latest",
+      "model": "~openai/gpt-terra-latest",
       "provider": "OpenRouter Responses",
       "context_window": 750000,
       "vision": "tool_response",
@@ -392,7 +392,7 @@
     },
     {
       "model_name": "OpenRouter GLM Latest",
-      "model": "z-ai/glm-latest",
+      "model": "~z-ai/glm-latest",
       "provider": "OpenRouter Responses",
       "context_window": 750000,
       "enabled": false
