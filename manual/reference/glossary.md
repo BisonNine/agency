@@ -6,7 +6,7 @@ This page explains the terms used in Agency and this manual.
 
 **Agent** — An assistant. It has an id, a display name, a list of models, the tools and skills it is granted, a workspace and a memory. See [Agents](../agents/index.md).
 
-**Agent id** — The agent's permanent name in the configuration: 1 to 64 letters, digits, `-` and `_`, starting with a letter or digit. Case-insensitive: `Alice` and `alice` are the same agent. See [Agent ids](../agents/creating.md#agent-ids).
+**Agent id** — The agent's permanent name in the configuration: 1 to 32 letters, digits, `-` and `_`, starting with a letter or digit, and not `temp`. Case-insensitive: `Alice` and `alice` are the same agent. See [Agent ids](../agents/creating.md#agent-ids).
 
 **Allowed folder** — A folder outside the workspace that one agent's file tools may use, by its real path. Write access follows file permissions. Set per agent on the Agents page. See [Allowed folders](../agents/allowed-folders.md#allowed-folders).
 

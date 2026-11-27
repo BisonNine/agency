@@ -17,8 +17,9 @@ The new agent appears in the list on the left and is selected. Every change you 
 
 The id is how Agency, bindings, other agents and scheduled jobs refer to the agent. It cannot be changed on the Agents page once the agent exists.
 
-- 1 to 64 characters: letters, digits, `-` and `_`.
+- 1 to 32 characters: letters, digits, `-` and `_`.
 - It must start with a letter or a digit.
+- `temp` is reserved, in any case.
 - Ids ignore case: `Bob`, `bob` and `BOB` are the same agent. The agent's folder, conversation, jobs and tokens use the lower-case form.
 - No two agents may share an id. Adding `Bob` when `bob` exists is refused: `Agent ids "bob" and "Bob" name the same agent; give each agent its own id.`
 

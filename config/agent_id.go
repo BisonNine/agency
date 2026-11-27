@@ -17,8 +17,18 @@ import (
 // (routing.DefaultAgentID).
 const defaultAgentID = "main"
 
-// maxAgentIDLength is the longest agent id.
+// maxAgentIDLength is the longest agent id at run time. Temporary agents
+// (agentreg clones and fresh agents) have a UUID as their id, 36 characters,
+// so the runtime rule (ValidAgentID, NormalizeAgentID) keeps this limit.
 const maxAgentIDLength = 64
+
+// maxConfiguredAgentIDLength is the longest id an agent in agents.list may
+// have (validConfiguredAgentID).
+const maxConfiguredAgentIDLength = 32
+
+// reservedAgentID names fresh temporary agents in the accounting log, so no
+// configured agent may have it (in any case).
+const reservedAgentID = "temp"
 
 // asciiSpace is the whitespace trimmed before deciding an id is empty. It is
 // ASCII only so the WebUI (agent-model.ts) trims exactly the same characters.
@@ -28,7 +38,10 @@ var agentIDInvalidCharsRe = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
 
 // The agent id rule. An agent id is 1 to 64 characters of ASCII letters
 // (either case), 0-9, '-' and '_', and starts with a letter or digit.
-// ValidAgentID checks it. Ids are case-insensitive: an agent's identity is
+// ValidAgentID checks it; it is what any agent, temporary agents included,
+// may be called at run time. An id the operator configures is held to more:
+// at most 32 characters and not "temp" (validConfiguredAgentID), which the
+// config check (agentIDError) and the WebUI's agentIdProblem enforce. Ids are case-insensitive: an agent's identity is
 // its id in lower case, NormalizeAgentID, which is what the runtime uses for
 // folders, sessions, jobs, devices and tokens, and what SameAgentID compares.
 // The config keeps an id as the operator wrote it. The WebUI implements the
@@ -62,7 +75,7 @@ func NormalizeAgentID(id string) string {
 	if ValidAgentID(id) {
 		return asciiLower(id)
 	}
-	if repaired := repairAgentID(id); repaired != "" {
+	if repaired := repairAgentID(id, maxAgentIDLength); repaired != "" {
 		return asciiLower(repaired)
 	}
 	return defaultAgentID
@@ -80,14 +93,26 @@ func SameAgentID(a, b string) bool {
 
 // repairAgentID is the valid id suggested for id, keeping its case: every run
 // of characters outside letters, digits, '-' and '_' becomes one '-', leading
-// and trailing '-' and '_' are removed, and the result is cut to 64
+// and trailing '-' and '_' are removed, and the result is cut to maxLen
 // characters without a trailing '-' or '_'. It is "" when nothing is left.
-func repairAgentID(id string) string {
+func repairAgentID(id string, maxLen int) string {
 	result := strings.Trim(agentIDInvalidCharsRe.ReplaceAllString(id, "-"), "-_")
-	if len(result) > maxAgentIDLength {
-		result = strings.TrimRight(result[:maxAgentIDLength], "-_")
+	if len(result) > maxLen {
+		result = strings.TrimRight(result[:maxLen], "-_")
 	}
 	return result
+}
+
+// validConfiguredAgentID reports whether id may be the id of an agent in
+// agents.list, or a reference to one: a valid id (ValidAgentID) of at most
+// 32 characters that is not the reserved "temp".
+func validConfiguredAgentID(id string) bool {
+	return ValidAgentID(id) && len(id) <= maxConfiguredAgentIDLength && !reservedAgentIDIs(id)
+}
+
+// reservedAgentIDIs reports whether id is the reserved "temp", ignoring case.
+func reservedAgentIDIs(id string) bool {
+	return asciiLower(id) == reservedAgentID
 }
 
 // asciiLower lower-cases A-Z only. Unicode case mapping differs between Go
@@ -153,18 +178,18 @@ func quoteAgentID(s string) string {
 	return b.String()
 }
 
-// agentIDError says why id, an agent id or a reference to one, does not
-// satisfy the agent id rule (ValidAgentID), or returns nil when it does. where names the
+// agentIDError says why id, an agent id or a reference to one, cannot be
+// configured (validConfiguredAgentID), or returns nil when it can. where names the
 // place a reference was found (" in bindings"); it is empty for
 // agents.list[].id. taken, when not nil, reports an id another agent already
 // has: the suggested id is then one no other agent has (freeAgentID), so
 // following it does not lead to a second refusal. It is nil for references,
-// whose suggestion should name an existing agent. Agency never rewrites an
-// id: the operator fixes it.
+// whose suggestion should name an existing agent. The suggestion is never
+// "temp". Agency never rewrites an id: the operator fixes it.
 func agentIDError(id, where string, taken func(string) bool) error {
 	// The messages are sentences an operator reads (WebUI, startup), built by
 	// concatenation like the other config refusals (mount_names.go).
-	if ValidAgentID(id) {
+	if validConfiguredAgentID(id) {
 		return nil
 	}
 	trimmed := strings.Trim(id, asciiSpace)
@@ -174,14 +199,18 @@ func agentIDError(id, where string, taken func(string) bool) error {
 		}
 		return errors.New("An agent id" + where + " is empty; name the agent, such as " + quoteAgentID("alice") + ".")
 	}
-	suggestion := repairAgentID(id)
-	if suggestion != "" && taken != nil {
-		suggestion = freeAgentID(suggestion, taken)
+	suggestion := repairAgentID(id, maxConfiguredAgentIDLength)
+	if suggestion != "" {
+		suggestion = freeAgentID(suggestion, func(s string) bool {
+			return reservedAgentIDIs(s) || (taken != nil && taken(s))
+		})
 	}
 	var problem string
 	switch {
-	case len(trimmed) > maxAgentIDLength && !agentIDInvalidCharsRe.MatchString(trimmed):
-		problem = "is longer than " + strconv.Itoa(maxAgentIDLength) + " characters"
+	case len(trimmed) > maxConfiguredAgentIDLength && !agentIDInvalidCharsRe.MatchString(trimmed):
+		problem = "is longer than " + strconv.Itoa(maxConfiguredAgentIDLength) + " characters"
+	case ValidAgentID(id) && reservedAgentIDIs(id):
+		problem = "is reserved"
 	case (trimmed[0] == '-' || trimmed[0] == '_') && !agentIDInvalidCharsRe.MatchString(trimmed):
 		problem = "must start with a letter or digit"
 	default:
@@ -196,7 +225,7 @@ func agentIDError(id, where string, taken func(string) bool) error {
 }
 
 // freeAgentID is id, or when taken reports it as another agent's, id with
-// "-2", "-3", ... appended (id shortened to keep 64 characters) until it is
+// "-2", "-3", ... appended (id shortened to keep 32 characters) until it is
 // free. The WebUI's copy is freeAgentId.
 func freeAgentID(id string, taken func(string) bool) string {
 	if !taken(id) {
@@ -205,8 +234,8 @@ func freeAgentID(id string, taken func(string) bool) string {
 	for n := 2; ; n++ {
 		suffix := "-" + strconv.Itoa(n)
 		base := id
-		if len(base)+len(suffix) > maxAgentIDLength {
-			base = strings.TrimRight(base[:maxAgentIDLength-len(suffix)], "-_")
+		if len(base)+len(suffix) > maxConfiguredAgentIDLength {
+			base = strings.TrimRight(base[:maxConfiguredAgentIDLength-len(suffix)], "-_")
 		}
 		if candidate := base + suffix; !taken(candidate) {
 			return candidate
@@ -243,7 +272,7 @@ func duplicateAgentIDError(spellings []string) error {
 }
 
 // AgentIDErrors returns one error for each agent id, or reference to one, that
-// does not satisfy the agent id rule (ValidAgentID): agents.list[].id,
+// cannot be configured (validConfiguredAgentID): agents.list[].id,
 // bindings[].agent_id and agent_mentions, and subagents.allow_agents ("*"
 // allowed), and one for each agent that more than one agents.list[].id names
 // (ids are compared ignoring case, SameAgentID).
@@ -266,7 +295,7 @@ func (c *Config) AgentIDErrors() []error {
 	for i := range c.Agents.List {
 		a := &c.Agents.List[i]
 		add(agentIDError(a.ID, "", otherAgentHas(c.Agents.List, i)))
-		if ValidAgentID(a.ID) {
+		if validConfiguredAgentID(a.ID) {
 			key := NormalizeAgentID(a.ID)
 			u := uses[key]
 			if u == nil {

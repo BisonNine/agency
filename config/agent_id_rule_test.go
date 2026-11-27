@@ -13,7 +13,9 @@ import (
 )
 
 // agentIDCase is one row of testdata/agent_id_cases.json, the table the WebUI
-// (agent-id-field.test.tsx) checks its copy of the rule against.
+// (agent-id-field.test.tsx) checks its copy of the rule against. Valid is the
+// runtime rule (ValidAgentID); Problem is nil only for an id that can be
+// configured (agentIDError).
 type agentIDCase struct {
 	Input      string  `json:"input"`
 	Normalized string  `json:"normalized"`
@@ -80,14 +82,19 @@ func checkAgentIDRule(t *testing.T, x string) {
 	if ValidAgentID(x) && n != strings.ToLower(x) {
 		t.Errorf("valid id %q normalized to %q", x, n)
 	}
-	if ValidAgentID(x) != (agentIDError(x, "", nil) == nil) {
-		t.Errorf("ValidAgentID(%q) = %v disagrees with agentIDError", x, ValidAgentID(x))
+	if validConfiguredAgentID(x) != (agentIDError(x, "", nil) == nil) {
+		t.Errorf("validConfiguredAgentID(%q) = %v disagrees with agentIDError", x, validConfiguredAgentID(x))
+	}
+	if s := repairAgentID(x, maxConfiguredAgentIDLength); s != "" {
+		if free := freeAgentID(s, reservedAgentIDIs); !validConfiguredAgentID(free) {
+			t.Errorf("suggestion %q for %q cannot be configured", free, x)
+		}
 	}
 }
 
 // The rule and the normalizer agree on random inputs drawn from characters
 // that matter at the edges (separators, upper case, non-ASCII) and at lengths
-// around the 64-character cap.
+// around the 32- and 64-character caps.
 func TestAgentIDNormalizeProperties(t *testing.T) {
 	for _, tc := range loadAgentIDCases(t) {
 		checkAgentIDRule(t, tc.Input)
@@ -111,6 +118,25 @@ func FuzzAgentIDRule(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string) {
 		checkAgentIDRule(t, s)
 	})
+}
+
+// A temporary agent's id is a UUID (36 characters): the runtime rule takes it
+// as it is, in either case, while a configured agent may not have it.
+func TestAgentIDRule_TemporaryAgentUUID(t *testing.T) {
+	const id = "0b6f2c1e-4a5d-4e8f-9a1b-2c3d4e5f6a7b"
+	if !ValidAgentID(id) {
+		t.Fatalf("ValidAgentID(%q) = false", id)
+	}
+	if got := NormalizeAgentID(id); got != id {
+		t.Errorf("NormalizeAgentID(%q) = %q", id, got)
+	}
+	if !SameAgentID(id, strings.ToUpper(id)) {
+		t.Errorf("SameAgentID(%q, upper case) = false", id)
+	}
+	want := `Agent id "` + id + `" is longer than 32 characters; use "0b6f2c1e-4a5d-4e8f-9a1b-2c3d4e5f".`
+	if err := agentIDError(id, "", nil); err == nil || err.Error() != want {
+		t.Errorf("agentIDError(%q) = %v, want %q", id, err, want)
+	}
 }
 
 // The refusal of an invalid agents.list id suggests an id no other agent has;

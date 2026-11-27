@@ -35,6 +35,7 @@ func quoteJSON(s string) string {
 // it and, where one exists, the fix, keeping the operator's case.
 func TestLoadConfig_RefusesInvalidAgentID(t *testing.T) {
 	long := strings.Repeat("a", 65)
+	over := strings.Repeat("b", 33)
 	for _, tc := range []struct {
 		id   string
 		want string
@@ -44,7 +45,11 @@ func TestLoadConfig_RefusesInvalidAgentID(t *testing.T) {
 		{"Alice Smith", `Agent id "Alice Smith" may use only letters, digits, - and _; use "Alice-Smith".`},
 		{"-alice", `Agent id "-alice" must start with a letter or digit; use "alice".`},
 		{"_Bob", `Agent id "_Bob" must start with a letter or digit; use "Bob".`},
-		{long, `Agent id "` + long + `" is longer than 64 characters; use "` + long[:64] + `".`},
+		{long, `Agent id "` + long + `" is longer than 32 characters; use "` + long[:32] + `".`},
+		{over, `Agent id "` + over + `" is longer than 32 characters; use "` + over[:32] + `".`},
+		{"temp", `Agent id "temp" is reserved; use "temp-2".`},
+		{"Temp", `Agent id "Temp" is reserved; use "Temp-2".`},
+		{"TEMP", `Agent id "TEMP" is reserved; use "TEMP-2".`},
 		{"!!!", `Agent id "!!!" may use only letters, digits, - and _.`},
 		{"", `An agent has no id; give it one, such as "alice".`},
 	} {
@@ -59,7 +64,7 @@ func TestLoadConfig_RefusesInvalidAgentID(t *testing.T) {
 
 // Valid ids, upper case included, load as written.
 func TestLoadConfig_AcceptsValidAgentID(t *testing.T) {
-	for _, id := range []string{"alice", "Bob", "bOB", "bob-2", "a_b", "main", "MAIN", "9lives", strings.Repeat("b", 64)} {
+	for _, id := range []string{"alice", "Bob", "bOB", "bob-2", "a_b", "main", "MAIN", "9lives", strings.Repeat("b", 32), "temp2", "template", "Temp_Bob"} {
 		cfg, err := LoadConfig(writeConfigFile(t, agentListJSON(id)))
 		if err != nil {
 			t.Fatalf("LoadConfig(id %q) = %v", id, err)
@@ -143,6 +148,14 @@ func TestStoreUpdate_RefusesInvalidAgentID(t *testing.T) {
 			c.Agents.List[0].Subagents = &SubagentsConfig{AllowAgents: []string{"Bob.B"}}
 		}, `Agent id "Bob.B" in alice's subagents.allow_agents may use only letters, digits, - and _; use "Bob-B".`},
 		{
+			"too long", func(c *Config) { c.Agents.List = append(c.Agents.List, AgentConfig{ID: strings.Repeat("b", 33)}) },
+			`Agent id "` + strings.Repeat("b", 33) + `" is longer than 32 characters; use "` + strings.Repeat("b", 32) + `".`,
+		},
+		{
+			"reserved", func(c *Config) { c.Agents.List = append(c.Agents.List, AgentConfig{ID: "Temp"}) },
+			`Agent id "Temp" is reserved; use "Temp-2".`,
+		},
+		{
 			"same agent in another case", func(c *Config) { c.Agents.List = append(c.Agents.List, AgentConfig{ID: "ALICE"}) },
 			`Agent ids "alice" and "ALICE" name the same agent; give each agent its own id.`,
 		},
@@ -159,7 +172,7 @@ func TestStoreUpdate_RefusesInvalidAgentID(t *testing.T) {
 		})
 	}
 	if err := s.Update(func(c *Config) error {
-		c.Agents.List = append(c.Agents.List, AgentConfig{ID: "Bob"})
+		c.Agents.List = append(c.Agents.List, AgentConfig{ID: "Bob"}, AgentConfig{ID: strings.Repeat("c", 32)})
 		return nil
 	}); err != nil {
 		t.Fatalf("valid id refused: %v", err)

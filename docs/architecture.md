@@ -770,7 +770,12 @@ that matches only it, with a comment saying what it names, to
 - **Agents**: named agents with separate workspaces; bindings route channels to agents.
   The agent id rule is defined once in `config/agent_id.go`: 1–64 characters of
   ASCII letters (either case), 0–9, `-` and `_`, starting with a letter or digit
-  (`config.ValidAgentID`). Ids are **case-insensitive**: an agent's identity is
+  (`config.ValidAgentID`), the runtime rule, which temporary agents' UUID ids
+  (36 characters) also satisfy. An id the operator configures is held to more
+  (`validConfiguredAgentID`): at most 32 characters, and not `temp` in any case
+  (it names fresh temporary agents in the accounting log); only the config check
+  (`agentIDError`) and the WebUI's `agentIdProblem` apply it, never the runtime
+  helpers, and their suggestions keep to it. Ids are **case-insensitive**: an agent's identity is
   `config.NormalizeAgentID` (any input → a valid id in lower case: invalid runs →
   `-`, leading/trailing `-`/`_` trimmed, cut to 64, empty → `main`; a valid id →
   its lower case), which is what the runtime uses for registry ids, folders,

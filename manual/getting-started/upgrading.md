@@ -94,7 +94,7 @@ The agent's Fusion switch no longer grants every Fusion service. Tick the servic
 
 ### Agent ids must be valid
 
-An agent id may use only letters, digits, `-` and `_`, starts with a letter or digit, and is at most 64 characters. Ids are case-insensitive: `Bob` and `bob` are the same agent. A `config.json` with an invalid id does not start; the error names the id and suggests a fix. See [Agent ids](../agents/creating.md#agent-ids) and [Troubleshooting](../reference/troubleshooting.md#the-service-does-not-start).
+An agent id may use only letters, digits, `-` and `_`, starts with a letter or digit, and is at most 32 characters; `temp` is reserved. Ids are case-insensitive: `Bob` and `bob` are the same agent. A `config.json` with an invalid id does not start; the error names the id and suggests a fix. See [Agent ids](../agents/creating.md#agent-ids) and [Troubleshooting](../reference/troubleshooting.md#the-service-does-not-start).
 
 ### One conversation per agent
 

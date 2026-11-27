@@ -9,16 +9,23 @@ describe("uniqueAgentId", () => {
     expect(uniqueAgentId("Alice Smith", new Set())).toBe("Alice-Smith")
     expect(uniqueAgentId("_Bob_", new Set())).toBe("Bob")
     expect(uniqueAgentId("!!!", new Set())).toBe("agent")
-    expect(uniqueAgentId("b".repeat(70), new Set())).toBe("b".repeat(64))
+    expect(uniqueAgentId("b".repeat(70), new Set())).toBe("b".repeat(32))
+    expect(uniqueAgentId("b".repeat(32), new Set())).toBe("b".repeat(32))
   })
 
-  it("appends a number when the id is taken, within 64 characters", () => {
+  it("never suggests the reserved id", () => {
+    expect(uniqueAgentId("Temp", new Set())).toBe("Temp-2")
+    expect(uniqueAgentId("temp", new Set(["temp-2"]))).toBe("temp-3")
+    expect(uniqueAgentId("Template", new Set())).toBe("Template")
+  })
+
+  it("appends a number when the id is taken, within 32 characters", () => {
     expect(uniqueAgentId("Alice", new Set(["alice", "ALICE-2"]))).toBe(
       "Alice-3",
     )
-    const long = "b".repeat(64)
+    const long = "b".repeat(32)
     const id = uniqueAgentId(long, new Set([long]))
-    expect(id).toBe(`${"b".repeat(62)}-2`)
+    expect(id).toBe(`${"b".repeat(30)}-2`)
     expect(isValidAgentId(id)).toBe(true)
   })
 })

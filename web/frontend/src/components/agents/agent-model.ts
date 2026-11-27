@@ -1006,12 +1006,16 @@ export function agentsPayload(cfg: AgentsConfig): Record<string, unknown> {
 
 // The agent id rule, identical to config/agent_id.go (both are checked against
 // config/testdata/agent_id_cases.json): 1 to 64 characters of ASCII letters
-// (either case), 0-9, '-' and '_', starting with a letter or digit. Ids are
-// case-insensitive: an agent's identity is its id in lower case
-// (normalizeAgentId), and sameAgentId compares identities. The server refuses
-// any other id with the same sentence agentIdProblem gives, quoting the id as
-// quoteAgentId does.
+// (either case), 0-9, '-' and '_', starting with a letter or digit, which any
+// agent, temporary agents (UUID ids) included, may be called at run time. Ids
+// are case-insensitive: an agent's identity is its id in lower case
+// (normalizeAgentId), and sameAgentId compares identities. An id the operator
+// configures is held to more: at most AGENT_ID_CONFIGURED_MAX characters and
+// not RESERVED_AGENT_ID, in any case. The server refuses any other id with the
+// same sentence agentIdProblem gives, quoting the id as quoteAgentId does.
 const AGENT_ID_MAX = 64
+export const AGENT_ID_CONFIGURED_MAX = 32
+const RESERVED_AGENT_ID = "temp"
 const AGENT_ID_VALID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 const AGENT_ID_INVALID_CHARS = /[^A-Za-z0-9_-]+/
 const ASCII_SPACE_EDGES = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g
@@ -1027,15 +1031,30 @@ export function isValidAgentId(id: string): boolean {
 }
 
 // repairAgentId mirrors config.repairAgentID: the valid id suggested for id,
-// keeping its case, or "" when nothing usable is left.
-export function repairAgentId(id: string): string {
+// keeping its case and cut to maxLen characters, or "" when nothing usable is
+// left.
+export function repairAgentId(id: string, maxLen: number): string {
   let result = id
     .replace(new RegExp(AGENT_ID_INVALID_CHARS.source, "g"), "-")
     .replace(/^[-_]+|[-_]+$/g, "")
-  if (result.length > AGENT_ID_MAX) {
-    result = result.slice(0, AGENT_ID_MAX).replace(/[-_]+$/, "")
+  if (result.length > maxLen) {
+    result = result.slice(0, maxLen).replace(/[-_]+$/, "")
   }
   return result
+}
+
+// isReservedAgentId mirrors config.reservedAgentIDIs: id is "temp" in any case.
+function isReservedAgentId(id: string): boolean {
+  return asciiLower(id) === RESERVED_AGENT_ID
+}
+
+// isConfigurableAgentId mirrors config.validConfiguredAgentID.
+function isConfigurableAgentId(id: string): boolean {
+  return (
+    isValidAgentId(id) &&
+    id.length <= AGENT_ID_CONFIGURED_MAX &&
+    !isReservedAgentId(id)
+  )
 }
 
 // normalizeAgentId mirrors config.NormalizeAgentID: an agent's identity, any
@@ -1043,7 +1062,7 @@ export function repairAgentId(id: string): string {
 // "main") when nothing usable is left.
 export function normalizeAgentId(id: string, fallback = "main"): string {
   if (isValidAgentId(id)) return asciiLower(id)
-  const repaired = repairAgentId(id)
+  const repaired = repairAgentId(id, AGENT_ID_MAX)
   return repaired === "" ? fallback : asciiLower(repaired)
 }
 
@@ -1081,37 +1100,43 @@ export function quoteAgentId(s: string): string {
   return `${out}"`
 }
 
-// freeAgentId mirrors config.freeAgentID: id, or when another agent has it,
-// id with "-2", "-3", ... appended (shortened to keep 64 characters) until it
-// is free.
+// freeAgentId mirrors config.freeAgentID with "temp" counted as taken: id, or
+// when another agent has it or it is reserved, id with "-2", "-3", ...
+// appended (shortened to keep 32 characters) until it is free.
 export function freeAgentId(id: string, taken: readonly string[]): string {
-  const isTaken = (c: string) => taken.some((t) => sameAgentId(t, c))
+  const isTaken = (c: string) =>
+    isReservedAgentId(c) || taken.some((t) => sameAgentId(t, c))
   if (!isTaken(id)) return id
   for (let n = 2; ; n++) {
     const suffix = `-${n}`
     let base = id
-    if (base.length + suffix.length > AGENT_ID_MAX) {
-      base = base.slice(0, AGENT_ID_MAX - suffix.length).replace(/[-_]+$/, "")
+    if (base.length + suffix.length > AGENT_ID_CONFIGURED_MAX) {
+      base = base
+        .slice(0, AGENT_ID_CONFIGURED_MAX - suffix.length)
+        .replace(/[-_]+$/, "")
     }
     if (!isTaken(base + suffix)) return base + suffix
   }
 }
 
-// agentIdProblem returns why id cannot be an agent id, or null when it can.
+// agentIdProblem returns why id cannot be a configured agent's id, or null
+// when it can.
 // taken are the ids other agents have: the suggested id is none of them.
 export function agentIdProblem(
   id: string,
   taken: readonly string[] = [],
 ): string | null {
-  if (isValidAgentId(id)) return null
+  if (isConfigurableAgentId(id)) return null
   const trimmed = id.replace(ASCII_SPACE_EDGES, "")
   if (trimmed === "") return 'An agent has no id; give it one, such as "alice".'
-  const repaired = repairAgentId(id)
+  const repaired = repairAgentId(id, AGENT_ID_CONFIGURED_MAX)
   const suggestion = repaired === "" ? "" : freeAgentId(repaired, taken)
   const validChars = !AGENT_ID_INVALID_CHARS.test(trimmed)
   let problem = "may use only letters, digits, - and _"
-  if (trimmed.length > AGENT_ID_MAX && validChars) {
-    problem = `is longer than ${AGENT_ID_MAX} characters`
+  if (trimmed.length > AGENT_ID_CONFIGURED_MAX && validChars) {
+    problem = `is longer than ${AGENT_ID_CONFIGURED_MAX} characters`
+  } else if (isValidAgentId(id) && isReservedAgentId(id)) {
+    problem = "is reserved"
   } else if ((trimmed[0] === "-" || trimmed[0] === "_") && validChars) {
     problem = "must start with a letter or digit"
   }

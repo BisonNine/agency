@@ -76,7 +76,7 @@ Many settings can also be set with a `AGENCY_…` environment variable, for exam
 
 ## Agent ids
 
-An agent id is 1 to 64 characters of letters, digits, `-` and `_`, and starts with a letter or digit. Ids are case-insensitive: `Alice` and `alice` are the same agent. See [Agent ids](../agents/creating.md#agent-ids). The same rule applies wherever an agent is named: `bindings`, `agent_mentions` and other agents' `allow_agents`.
+An agent id is 1 to 32 characters of letters, digits, `-` and `_`, starts with a letter or digit, and is not `temp`. Ids are case-insensitive: `Alice` and `alice` are the same agent. See [Agent ids](../agents/creating.md#agent-ids). The same rule applies wherever an agent is named: `bindings`, `agent_mentions` and other agents' `allow_agents`.
 
 ## Related pages
 

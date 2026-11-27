@@ -48,7 +48,9 @@ describe("agentIdProblem", () => {
       "a_b",
       "main",
       "MAIN",
-      "b".repeat(64),
+      "b".repeat(32),
+      "temp2",
+      "template",
     ]) {
       expect(agentIdProblem(id)).toBeNull()
     }
@@ -66,7 +68,19 @@ describe("agentIdProblem", () => {
       'Agent id "-alice" must start with a letter or digit; use "alice".',
     )
     expect(agentIdProblem(long)).toBe(
-      `Agent id "${long}" is longer than 64 characters; use "${"a".repeat(64)}".`,
+      `Agent id "${long}" is longer than 32 characters; use "${"a".repeat(32)}".`,
+    )
+    expect(agentIdProblem("b".repeat(33))).toBe(
+      `Agent id "${"b".repeat(33)}" is longer than 32 characters; use "${"b".repeat(32)}".`,
+    )
+    expect(agentIdProblem("temp")).toBe(
+      'Agent id "temp" is reserved; use "temp-2".',
+    )
+    expect(agentIdProblem("Temp")).toBe(
+      'Agent id "Temp" is reserved; use "Temp-2".',
+    )
+    expect(agentIdProblem("TEMP")).toBe(
+      'Agent id "TEMP" is reserved; use "TEMP-2".',
     )
     expect(agentIdProblem("!!!")).toBe(
       'Agent id "!!!" may use only letters, digits, - and _.',
@@ -82,6 +96,13 @@ describe("agentIdProblem", () => {
     expect(normalizeAgentId("")).toBe("main")
     expect(normalizeAgentId("_x")).toBe("x")
     expect(normalizeAgentId("", "agent")).toBe("agent")
+  })
+
+  it("keeps a temporary agent's UUID id as it is", () => {
+    const uuid = "0b6f2c1e-4a5d-4e8f-9a1b-2c3d4e5f6a7b"
+    expect(isValidAgentId(uuid)).toBe(true)
+    expect(normalizeAgentId(uuid)).toBe(uuid)
+    expect(sameAgentId(uuid, uuid.toUpperCase())).toBe(true)
   })
 })
 

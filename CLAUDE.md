@@ -18,6 +18,10 @@ Config schemas, tool names, API shapes and the device protocol are depended on.
 - **Ask first** before adding compatibility code (old keys, aliases, old
   protocol versions). Never add it on your own initiative.
 - Version lives in `app/app.go`. Bumping it is a normal change; tagging is not.
+- **During the refactor** nothing from the `refactor` branch has shipped.
+  Still ask before a breaking change, but write no **BREAKING** changelog
+  entry, migration or compatibility code for it: breaking changes are noted
+  when the new version is released.
 
 ## Changelog
 
