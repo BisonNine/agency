@@ -82,7 +82,7 @@ func TestSetDepth_SessionWithoutTokenIsNoOp(t *testing.T) {
 
 	st.SetDepth("", 3)
 	st.SetDepth("other", 3)
-	st.SetTurnScope("other", []string{"bob"}, "task", nil)
+	st.SetTurnScope("other", []string{"bob"}, "task", nil, nil)
 
 	rec, ok := st.Resolve(tok)
 	if !ok || rec.depth != 0 || rec.askChain != nil || rec.taskID != "" {

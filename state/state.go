@@ -29,14 +29,17 @@ type PendingTurn struct {
 	Channel  string `json:"channel"`
 	ChatID   string `json:"chat_id"`
 	Attempts int    `json:"attempts,omitempty"` // recovery replays so far
-	// MessageID, ReplyRequired, SpawnDepth and Billing are carried back onto
-	// the replayed message (see bus.MetaReplyRequired, bus.MetaSpawnDepth,
-	// bus.MetaBilling). Billing is the turn's inherited billing code, as
-	// the turn last set it; empty when it billed to its session's code.
+	// MessageID, ReplyRequired, SpawnDepth, Billing and Origin are carried
+	// back onto the replayed message (see bus.MetaReplyRequired,
+	// bus.MetaSpawnDepth, bus.MetaBilling, bus.MetaOrigin). Billing is the
+	// turn's inherited billing code, as the turn last set it; empty when it
+	// billed to its session's code. Origin is the turn's inherited origin;
+	// empty when it had none.
 	MessageID     string `json:"message_id,omitempty"`
 	ReplyRequired bool   `json:"reply_required,omitempty"`
 	SpawnDepth    int    `json:"spawn_depth,omitempty"`
 	Billing       string `json:"billing,omitempty"`
+	Origin        string `json:"origin_agent,omitempty"`
 }
 
 // Manager manages persistent state with atomic saves.

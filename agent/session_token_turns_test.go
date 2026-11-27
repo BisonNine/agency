@@ -21,6 +21,9 @@ type recordingSTI struct {
 	// billing is the inherited billing code on the token (SetTurnScope),
 	// until its turn ends.
 	billing *tools.InheritedBilling
+	// origin is the inherited origin on the token (SetTurnScope), until its
+	// turn ends.
+	origin *string
 }
 
 type depthCall struct {
@@ -48,19 +51,33 @@ func (r *recordingSTI) SetDepth(sessionKey string, depth int) {
 	r.depths = append(r.depths, depthCall{sessionKey: sessionKey, depth: depth})
 }
 
-func (r *recordingSTI) SetTurnScope(_ string, _ []string, _ string, b *tools.InheritedBilling) {
+func (r *recordingSTI) SetTurnScope(_ string, _ []string, _ string, b *tools.InheritedBilling, origin *string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.billing = b
+	r.billing, r.origin = b, origin
 }
 
-// EndTurnBilling clears the recorded billing when it is the turn's.
-func (r *recordingSTI) EndTurnBilling(_ string, b *tools.InheritedBilling) {
+// EndTurnScope clears the recorded billing and origin when they are the
+// turn's.
+func (r *recordingSTI) EndTurnScope(_ string, b *tools.InheritedBilling, origin *string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.billing == b {
 		r.billing = nil
 	}
+	if r.origin == origin {
+		r.origin = nil
+	}
+}
+
+// tokenOrigin is the origin on the token, "" for none.
+func (r *recordingSTI) tokenOrigin() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.origin == nil {
+		return ""
+	}
+	return *r.origin
 }
 
 // BeginTurn records the turn's reply chat (calls) and keeps it while it runs
@@ -234,5 +251,34 @@ func TestScopeSessionToken_ClearsTurnBillingAtTheEnd(t *testing.T) {
 	sti.mu.Unlock()
 	if after != nil {
 		t.Errorf("token still carries %q after the turn", after.Code())
+	}
+}
+
+// The turn's origin (tools.Origin) is on the session token while the turn
+// runs, and gone from it when the turn ends; a turn with none puts none.
+func TestScopeSessionToken_TurnOrigin(t *testing.T) {
+	tl := newTestAgentLoop(t)
+	sti := &recordingSTI{}
+	tl.al.SetSessionTokenIssuer(sti)
+	main := mustGetAgent(t, tl.al)
+	opts := processOptions{SessionKey: "agent:main:main", Channel: "telegram", ChatID: "c"}
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{"inherited origin", tools.WithOrigin(context.Background(), "alice"), "alice"},
+		{"no origin", context.Background(), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, end := tl.al.scopeSessionToken(tc.ctx, main, opts)
+			if got := sti.tokenOrigin(); got != tc.want {
+				t.Errorf("token origin during the turn = %q, want %q", got, tc.want)
+			}
+			end()
+			if got := sti.tokenOrigin(); got != "" {
+				t.Errorf("token still carries origin %q after the turn", got)
+			}
+		})
 	}
 }

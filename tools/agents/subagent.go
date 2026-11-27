@@ -55,6 +55,9 @@ type SubagentManager struct {
 	// host's resolver); nil: the inherited code on the context, else the
 	// default.
 	billing func(ctx context.Context) string
+	// origin is the origin of the work spawning on a context (the host's
+	// resolver); nil: the inherited origin on the context.
+	origin func(ctx context.Context) string
 }
 
 // SubagentManagerConfig holds all configuration for constructing a SubagentManager.
@@ -98,6 +101,9 @@ type SubagentManagerConfig struct {
 	// which a task it starts is billed to unless the spawn names one. Nil:
 	// the inherited code on the context, else the default.
 	Billing func(ctx context.Context) string
+	// Origin returns the origin of the work spawning on a context, which a
+	// task it starts keeps. Nil: the inherited origin on the context.
+	Origin func(ctx context.Context) string
 }
 
 // parentCancelled reports that rec was started in a task whose record, in
@@ -159,6 +165,7 @@ func NewSubagentManager(cfg SubagentManagerConfig) *SubagentManager {
 		runFull:           cfg.RunFull,
 		taskRunner:        cfg.TaskRunner,
 		billing:           cfg.Billing,
+		origin:            cfg.Origin,
 	}
 }
 
@@ -276,14 +283,17 @@ func (sm *SubagentManager) SpawnCallback(
 
 // spawnOrigin is what a task takes from the turn that starts it: its
 // sub-agent depth, its ask chain, the task the turn runs in, if any, the
-// billing code the task is billed to, and the turn's inherited code, if it
-// has one, which the task's background result carries back.
+// billing code the task is billed to and its origin, and the turn's
+// inherited code and origin, if it has them, which the task's background
+// result carries back.
 type spawnOrigin struct {
 	depth        int
 	askChain     []string
 	parent       string
 	billing      string
 	replyBilling string
+	origin       string
+	replyOrigin  string
 }
 
 // explicitBillingKey carries the billing code a spawn names (agent_spawn's
@@ -297,10 +307,15 @@ func withSpawnBilling(ctx context.Context, code string) context.Context {
 }
 
 // originOf is the spawn origin of a call on ctx: the billing code the spawn
-// names, else the spawning work's.
+// names, else the spawning work's, and the spawning work's origin.
 func (sm *SubagentManager) originOf(ctx context.Context) spawnOrigin {
 	o := spawnOrigin{depth: SpawnDepth(ctx), askChain: tools.AskChain(ctx), parent: hook.TaskID(ctx)}
 	o.replyBilling, _ = tools.Billing(ctx)
+	o.replyOrigin = tools.Origin(ctx)
+	o.origin = o.replyOrigin
+	if sm.origin != nil {
+		o.origin = sm.origin(ctx)
+	}
 	if code, ok := ctx.Value(explicitBillingKey{}).(string); ok && code != "" {
 		o.billing = code
 	} else {
@@ -353,6 +368,8 @@ func (sm *SubagentManager) spawnCallback(
 		Parent:        origin.parent,
 		Billing:       origin.billing,
 		ReplyBilling:  origin.replyBilling,
+		Origin:        origin.origin,
+		ReplyOrigin:   origin.replyOrigin,
 	}
 	dir := sm.tasksDir()
 	if err := writeStatus(dir, rec); err != nil {
@@ -686,6 +703,8 @@ func (sm *SubagentManager) Run(
 		Parent:        origin.parent,
 		Billing:       origin.billing,
 		ReplyBilling:  origin.replyBilling,
+		Origin:        origin.origin,
+		ReplyOrigin:   origin.replyOrigin,
 	}
 
 	if sm.runFull == nil {

@@ -18,13 +18,16 @@ import (
 	"go.bison9.com/agency/tools"
 )
 
-// scopeTool records the ask chain, task and inherited billing code it ran
-// with; set, when given, is the code it changes the run's to.
+// scopeTool records the ask chain, task, inherited billing code and origin
+// it ran with (the origin on the context and in the scope); set, when
+// given, is the code it changes the run's to.
 type scopeTool struct {
-	chain   []string
-	task    string
-	billing string
-	set     string
+	chain       []string
+	task        string
+	billing     string
+	origin      string
+	scopeOrigin string
+	set         string
 }
 
 func (s *scopeTool) Name() string               { return "probe" }
@@ -34,6 +37,9 @@ func (s *scopeTool) Execute(ctx context.Context, _ map[string]any) *toolkit.Resu
 	s.chain = tools.AskChain(ctx)
 	s.task = hook.TaskID(ctx)
 	s.billing, _ = tools.Billing(ctx)
+	s.origin = tools.Origin(ctx)
+	scope, _ := hook.ScopeOf(ctx)
+	s.scopeOrigin = scope.Origin
 	if b := tools.InheritedBillingOf(ctx); b != nil && s.set != "" {
 		b.Set(s.set)
 	}
@@ -63,14 +69,14 @@ func TestDispatch_CarriesTurnScope(t *testing.T) {
 	st := newSessionTokenStore()
 	st.Issue("alice", "agent:alice:main", "/ws")
 
-	st.SetTurnScope("agent:alice:main", []string{"bob", "alice"}, "task-1", nil)
+	st.SetTurnScope("agent:alice:main", []string{"bob", "alice"}, "task-1", nil, nil)
 	tok := st.Issue("alice", "agent:alice:main", "/ws") // rotation keeps the scope
 	got := dispatchScope(t, st, tok, nil)
 	if !slices.Equal(got.chain, []string{"bob", "alice"}) || got.task != "task-1" {
 		t.Fatalf("scope = %v in %q, want [bob alice] in task-1", got.chain, got.task)
 	}
 
-	st.SetTurnScope("agent:alice:main", []string{"alice"}, "", nil)
+	st.SetTurnScope("agent:alice:main", []string{"alice"}, "", nil, nil)
 	got = dispatchScope(t, st, tok, nil)
 	if !slices.Equal(got.chain, []string{"alice"}) || got.task != "" {
 		t.Fatalf("scope after a later turn = %v in %q, want [alice] in no task", got.chain, got.task)
@@ -109,7 +115,7 @@ func TestDispatch_CarriesTurnBilling(t *testing.T) {
 	st := newSessionTokenStore()
 	tok := st.Issue("alice", "agent:alice:main", "/ws")
 	run := tools.InheritedBillingOf(tools.WithBilling(context.Background(), "acme"))
-	st.SetTurnScope("agent:alice:main", nil, "", run)
+	st.SetTurnScope("agent:alice:main", nil, "", run, nil)
 	got := dispatchScopeTool(t, st, tok, nil, &scopeTool{set: "acme-2"})
 	if got.billing != "acme" {
 		t.Fatalf("call billed %q, want acme", got.billing)
@@ -117,7 +123,7 @@ func TestDispatch_CarriesTurnBilling(t *testing.T) {
 	if run.Code() != "acme-2" {
 		t.Errorf("the turn's code = %q, want acme-2", run.Code())
 	}
-	st.SetTurnScope("agent:alice:main", nil, "", nil)
+	st.SetTurnScope("agent:alice:main", nil, "", nil, nil)
 	if got := dispatchScope(t, st, tok, nil); got.billing != "" {
 		t.Errorf("session-billed turn's call carries %q", got.billing)
 	}
@@ -125,19 +131,56 @@ func TestDispatch_CarriesTurnBilling(t *testing.T) {
 
 // When its turn ends the token no longer carries the turn's code; a later
 // turn's code is never cleared by an earlier turn's end.
-func TestEndTurnBilling(t *testing.T) {
+func TestEndTurnScope_Billing(t *testing.T) {
 	st := newSessionTokenStore()
 	tok := st.Issue("alice", "agent:alice:main", "/ws")
 	first := tools.InheritedBillingOf(tools.WithBilling(context.Background(), "acme"))
 	second := tools.InheritedBillingOf(tools.WithBilling(context.Background(), "garden"))
-	st.SetTurnScope("agent:alice:main", nil, "", first)
-	st.SetTurnScope("agent:alice:main", nil, "", second)
-	st.EndTurnBilling("agent:alice:main", first)
+	st.SetTurnScope("agent:alice:main", nil, "", first, nil)
+	st.SetTurnScope("agent:alice:main", nil, "", second, nil)
+	st.EndTurnScope("agent:alice:main", first, nil)
 	if got := dispatchScope(t, st, tok, nil); got.billing != "garden" {
 		t.Fatalf("an earlier turn's end cleared the later turn's code: %q", got.billing)
 	}
-	st.EndTurnBilling("agent:alice:main", second)
+	st.EndTurnScope("agent:alice:main", second, nil)
 	if got := dispatchScope(t, st, tok, nil); got.billing != "" {
 		t.Errorf("a call after the turn ended is billed to %q", got.billing)
+	}
+}
+
+// A CLI agent's tool calls have the inherited origin of the turn holding the
+// token, on the context and in the scope; when its turn ends the token no
+// longer carries it, an earlier turn's end never clears a later turn's
+// origin, even the same one, and a turn with its agent's own origin carries
+// none.
+func TestDispatch_CarriesTurnOrigin(t *testing.T) {
+	st := newSessionTokenStore()
+	tok := st.Issue("alice", "agent:alice:main", "/ws")
+	bob, carol := "bob", "carol"
+	st.SetTurnScope("agent:alice:main", nil, "", nil, &bob)
+	if got := dispatchScope(t, st, tok, nil); got.origin != "bob" || got.scopeOrigin != "bob" {
+		t.Fatalf("call has origin %q (scope %q), want bob", got.origin, got.scopeOrigin)
+	}
+	st.EndTurnScope("agent:alice:main", nil, &carol)
+	if got := dispatchScope(t, st, tok, nil); got.origin != "bob" {
+		t.Errorf("another turn's end cleared the origin: %q", got.origin)
+	}
+	st.EndTurnScope("agent:alice:main", nil, &bob)
+	if got := dispatchScope(t, st, tok, nil); got.origin != "" || got.scopeOrigin != "" {
+		t.Errorf("a call after the turn ended has origin %q (scope %q)", got.origin, got.scopeOrigin)
+	}
+
+	// Two turns of the session with the same origin, Bob: the first's end
+	// leaves the second's.
+	first, second := "bob", "bob"
+	st.SetTurnScope("agent:alice:main", nil, "", nil, &first)
+	st.SetTurnScope("agent:alice:main", nil, "", nil, &second)
+	st.EndTurnScope("agent:alice:main", nil, &first)
+	if got := dispatchScope(t, st, tok, nil); got.origin != "bob" || got.scopeOrigin != "bob" {
+		t.Errorf("an earlier turn's end cleared the later turn's same origin: %q (scope %q)", got.origin, got.scopeOrigin)
+	}
+	st.EndTurnScope("agent:alice:main", nil, &second)
+	if got := dispatchScope(t, st, tok, nil); got.origin != "" {
+		t.Errorf("a call after both turns ended has origin %q", got.origin)
 	}
 }

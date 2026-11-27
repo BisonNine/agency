@@ -54,6 +54,15 @@ func TestToolHostScope(t *testing.T) {
 	if got, err := billed.Scope(callAt(0)); err != nil || got.Billing != "acme" {
 		t.Errorf("Scope with a billing code = %+v, %v; want acme", got, err)
 	}
+	// So is the origin.
+	originated := &toolHost{
+		cfg: scopeConfig(), agentID: "bob", workspace: ws,
+		origin: func(context.Context) string { return "alice" },
+	}
+	originated.cfg.Agents.List[1].Forum = true
+	if got, err := originated.Scope(callAt(0)); err != nil || got.OriginAgent != "alice" {
+		t.Errorf("Scope with an origin = %+v, %v; want alice", got, err)
+	}
 	if _, err := alice.Scope(callAt(3)); !errors.Is(err, forumpkg.ErrForumDepth) {
 		t.Errorf("Scope at the maximum depth = %v, want ErrForumDepth", err)
 	}

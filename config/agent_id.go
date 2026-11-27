@@ -26,9 +26,9 @@ const maxAgentIDLength = 64
 // have (validConfiguredAgentID).
 const maxConfiguredAgentIDLength = 32
 
-// reservedAgentID names fresh temporary agents in the accounting log, so no
+// ReservedAgentID names fresh temporary agents in the accounting log, so no
 // configured agent may have it (in any case).
-const reservedAgentID = "temp"
+const ReservedAgentID = "temp"
 
 // asciiSpace is the whitespace trimmed before deciding an id is empty. It is
 // ASCII only so the WebUI (agent-model.ts) trims exactly the same characters.
@@ -112,7 +112,7 @@ func validConfiguredAgentID(id string) bool {
 
 // reservedAgentIDIs reports whether id is the reserved "temp", ignoring case.
 func reservedAgentIDIs(id string) bool {
-	return asciiLower(id) == reservedAgentID
+	return asciiLower(id) == ReservedAgentID
 }
 
 // asciiLower lower-cases A-Z only. Unicode case mapping differs between Go

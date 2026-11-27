@@ -138,6 +138,9 @@ func (al *AgentLoop) registerAgentTools(
 			return al.setBilling(ctx, currentAgent, sessionKey, code)
 		},
 		CallerBilling: al.CallerBilling,
+		Origin: func(ctx context.Context) string {
+			return originFor(ctx, currentAgent)
+		},
 	}
 
 	// Progressive discovery is a single global switch (default off). When on,
@@ -231,6 +234,9 @@ func (al *AgentLoop) newSpawner(
 		TaskRunner:        &taskModelHost{al: al, clone: cloneMarker(currentAgent), id: currentAgent.Identity()},
 		Billing: func(ctx context.Context) string {
 			return al.billingFor(ctx, currentAgent, "")
+		},
+		Origin: func(ctx context.Context) string {
+			return originFor(ctx, currentAgent)
 		},
 	})
 	currentAgent.spawnMgr = spawnMgr
@@ -551,7 +557,7 @@ func (al *AgentLoop) runTaskSupervision() {
 	now := time.Now().Unix()
 	for _, m := range managers {
 		m.SuperviseOnce(now, func(rec *toolsagents.TaskRecord) toolkit.AsyncCallback {
-			return al.taskPointerCallback(rec.Channel, rec.ChatID, rec.OwnerAgentID, rec.SpawnDepth, rec.ReplyBilling)
+			return al.taskPointerCallback(rec.Channel, rec.ChatID, rec.OwnerAgentID, rec.SpawnDepth, rec.ReplyBilling, rec.ReplyOrigin)
 		})
 	}
 }
@@ -561,9 +567,9 @@ func (al *AgentLoop) runTaskSupervision() {
 // agent reads the referenced result file). Mirrors the inline async-tool callback
 // used for the initial in-turn spawn. spawnDepth is the spawning turn's depth,
 // carried on the re-injected message so the re-entered turn is not lower;
-// replyBilling, the spawning turn's inherited billing code ("" when it billed
-// to its session's), is the re-entered turn's.
-func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, spawnDepth int, replyBilling string) toolkit.AsyncCallback {
+// replyBilling and replyOrigin, the spawning turn's inherited billing code
+// and origin ("" when it had none), are the re-entered turn's.
+func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, spawnDepth int, replyBilling, replyOrigin string) toolkit.AsyncCallback {
 	return func(cbCtx context.Context, result *toolkit.Result) {
 		if result == nil {
 			return
@@ -605,6 +611,7 @@ func (al *AgentLoop) taskPointerCallback(channel, chatID, ownerAgentID string, s
 		}
 		msg.Metadata = bus.SetSpawnDepth(msg.Metadata, spawnDepth)
 		msg.Metadata = bus.SetBilling(msg.Metadata, replyBilling)
+		msg.Metadata = bus.SetOrigin(msg.Metadata, replyOrigin)
 		if err := al.bus.PublishInbound(pubCtx, msg); err != nil {
 			logger.WarnCF("agent", "Failed to publish async task result to agent", map[string]any{
 				"channel": channel,

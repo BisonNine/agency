@@ -157,6 +157,8 @@ func (sm *SubagentManager) newTaskRecord(name, mode, channel, chatID string, req
 		Parent:       origin.parent,
 		Billing:      origin.billing,
 		ReplyBilling: origin.replyBilling,
+		Origin:       origin.origin,
+		ReplyOrigin:  origin.replyOrigin,
 	}
 }
 

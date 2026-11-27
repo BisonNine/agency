@@ -118,6 +118,10 @@ type ToolDeps struct {
 	// registration (Maestro's runner, which a clone shares with its source).
 	// Nil outside the agent loop.
 	CallerBilling func(ctx context.Context) string
+	// Origin returns the origin of the work calling on ctx (accounting's
+	// origin agent): the one it inherited, else this agent's own. Nil
+	// outside the agent loop; use OriginOf.
+	Origin func(ctx context.Context) string
 }
 
 // BillingOf is d.Billing(ctx), or, without one, the inherited code on ctx,
@@ -130,6 +134,14 @@ func (d ToolDeps) BillingOf(ctx context.Context) string {
 		return code
 	}
 	return global.DefaultBilling
+}
+
+// OriginOf is d.Origin(ctx), or, without one, the inherited origin on ctx.
+func (d ToolDeps) OriginOf(ctx context.Context) string {
+	if d.Origin != nil {
+		return d.Origin(ctx)
+	}
+	return Origin(ctx)
 }
 
 // EffectiveStateDir is StateDir, or Workspace when StateDir is unset.

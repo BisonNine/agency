@@ -279,12 +279,17 @@ func (h *endpointHost) callContext(ctx context.Context, c mcphost.Caller) contex
 	// depth 0 whatever the turn's depth.
 	ctx = toolsagents.WithSpawnDepth(ctx, rec.depth)
 	// Likewise the turn's ask chain, the task it runs in and its inherited
-	// billing code (SetTurnScope), with the agent's view of the task
-	// registry.
+	// billing code and origin (SetTurnScope), with the agent's view of the
+	// task registry.
 	ctx = tools.WithAskChain(ctx, rec.askChain)
 	ctx = tools.WithInheritedBilling(ctx, rec.billing)
+	var origin string
+	if rec.origin != nil {
+		origin = *rec.origin
+	}
+	ctx = tools.WithOrigin(ctx, origin)
 	scope, _ := hook.ScopeOf(ctx)
-	scope.Task, scope.Depth = rec.taskID, rec.depth
+	scope.Task, scope.Depth, scope.Origin = rec.taskID, rec.depth, origin
 	ctx = hook.WithScope(ctx, scope)
 	if h.m.taskRegistrar != nil {
 		ctx = hook.WithTaskRegistrar(ctx, h.m.taskRegistrar(rec.agentID))
@@ -594,10 +599,11 @@ func publishMCPAsyncToLLM(ctx context.Context, msgBus *bus.MessageBus, rec sessi
 		ChatID:     chatID,
 		Content:    content,
 		SessionKey: targetSession,
-		// The re-entered turn keeps the call's turn's inherited code.
-		Metadata: bus.SetBilling(bus.SetSpawnDepth(map[string]string{
+		// The re-entered turn keeps the call's turn's inherited code and
+		// origin.
+		Metadata: bus.SetOrigin(bus.SetBilling(bus.SetSpawnDepth(map[string]string{
 			"preresolved_agent_id": targetAgent, bus.MetaOriginChannel: channel,
-		}, spawnDepth), inheritedCode(ctx)),
+		}, spawnDepth), inheritedCode(ctx)), tools.Origin(ctx)),
 	}); err != nil {
 		logger.WarnCF("mcpserver", "mcp.async.reinject_failed",
 			map[string]any{"tool": toolName, "agent": rec.agentID, "error": err.Error()})

@@ -89,6 +89,7 @@ func (globalForumProvider) RegisterTools(deps toolspec.Deps) []toolspec.ToolDefi
 		workspace: host.Workspace,
 		purpose:   host.TempPurpose,
 		billing:   host.BillingOf,
+		origin:    host.OriginOf,
 	})
 }
 
@@ -100,8 +101,10 @@ type toolHost struct {
 	agentID   string
 	workspace string
 	purpose   string
-	// billing is the billing code of the work making a call.
+	// billing is the billing code of the work making a call, origin its
+	// origin.
 	billing func(context.Context) string
+	origin  func(context.Context) string
 }
 
 var _ forumpkg.ToolHost = (*toolHost)(nil)
@@ -130,6 +133,9 @@ func (h *toolHost) Scope(call *toolspec.ToolCall) (forumpkg.Scope, error) {
 	scope := forumpkg.Scope{AgentID: h.agentID, BaseDirectory: base, Billing: global.DefaultBilling}
 	if h.billing != nil && call != nil && call.Ctx != nil {
 		scope.Billing = h.billing(call.Ctx)
+	}
+	if h.origin != nil && call != nil && call.Ctx != nil {
+		scope.OriginAgent = h.origin(call.Ctx)
 	}
 	return scope, nil
 }

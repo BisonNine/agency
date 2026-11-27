@@ -94,6 +94,14 @@ type TaskRecord struct {
 	// the task, carried by the task's background result into the turn it
 	// re-enters; empty when that turn billed to its session's own code.
 	ReplyBilling string `json:"reply_billing,omitempty"`
+	// Origin is the origin of the task's work, beside Billing: the id of the
+	// agent at the top of the chain of work that spawned it, never changed.
+	// Empty in a record written before origins, whose work then has its own
+	// agent's.
+	Origin string `json:"origin_agent,omitempty"`
+	// ReplyOrigin is the inherited origin of the turn that started the task,
+	// beside ReplyBilling; empty when that turn had none.
+	ReplyOrigin string `json:"reply_origin_agent,omitempty"`
 }
 
 // TaskResults is the worker's output payload, persisted to <uuid>-results.json.

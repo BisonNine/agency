@@ -65,8 +65,9 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	// code the message carries, else the code of the session it is routed
 	// to. A message with no resolvable agent (a system message, a route that
 	// failed) has no owner and is billed to the code it carries, else the
-	// default.
+	// default, with the origin it carries, if any.
 	id := global.NoOwnerIdentity(al.billingFor(ctx, nil, ""))
+	id.Origin = originOr(ctx, id.Origin)
 	if target != nil {
 		id = al.identityFor(ctx, target, routing.ResolveAgentSessionKey(target.ID, msg.SessionKey))
 	}

@@ -195,6 +195,11 @@ type Origin struct {
 	// host bills its participants' turns to it. Empty in a run launched
 	// before billing codes.
 	Billing string `json:"billing,omitempty"`
+	// OriginAgent is the origin of the work that launched the run: the id
+	// of the agent at the top of its chain of work, which may be above
+	// AgentID. The host gives its participants' turns this origin. Empty in
+	// a run launched before origins: each participant's own then.
+	OriginAgent string `json:"origin_agent,omitempty"`
 }
 
 // Chat is the chat a run was launched from, as the launching tool call

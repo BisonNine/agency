@@ -44,13 +44,13 @@ func TestSetupCronTool_JobsRun(t *testing.T) {
 	t.Cleanup(svc.Stop)
 
 	at := time.Now().Add(300 * time.Millisecond).UnixMilli()
-	_, err = svc.AddJob("ping", cron.CronSchedule{Kind: "at", AtMS: &at}, "cron says hi", "agent", "cli", "direct", "direct", "")
+	_, err = svc.AddJob("ping", cron.CronSchedule{Kind: "at", AtMS: &at}, "cron says hi", "agent", "cli", "direct", "direct", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	every := int64(300)
 	for _, owner := range []string{"alice", "nobody"} {
-		job, err := svc.AddJob("watch-"+owner, cron.CronSchedule{Kind: "every", EveryMS: &every}, "changed", "agent", "cli", "direct", "direct", "")
+		job, err := svc.AddJob("watch-"+owner, cron.CronSchedule{Kind: "every", EveryMS: &every}, "changed", "agent", "cli", "direct", "direct", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}

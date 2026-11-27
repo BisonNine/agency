@@ -104,14 +104,17 @@ func (sm *SubagentManager) launchTask(parent context.Context, rec *TaskRecord, c
 	return tr
 }
 
-// withTaskBilling puts the task's billing code on its context, as the code
-// its work inherits (a record written before billing codes runs under the
-// default). A change the task makes (its billing tool) is written to its
-// record, so a relaunch after a restart keeps it.
+// withTaskBilling puts the task's billing code and origin on its context, as
+// the code and origin its work inherits (a record written before billing
+// codes runs under the default, one written before origins has its own
+// agent's). A change the task makes to its code (its billing tool) is
+// written to its record, so a relaunch after a restart keeps it.
 func (sm *SubagentManager) withTaskBilling(ctx context.Context, tr *taskRun) context.Context {
 	tr.mu.Lock()
 	code := tools.CheckedBilling(tr.rec.Billing, "task "+tr.rec.UUID)
+	origin := tr.rec.Origin
 	tr.mu.Unlock()
+	ctx = tools.WithOrigin(ctx, origin)
 	ctx = tools.WithBilling(ctx, code)
 	tools.InheritedBillingOf(ctx).OnSet(func(code string) {
 		tr.mu.Lock()

@@ -72,6 +72,11 @@ func (al *AgentLoop) turnAgentSpec(inst *AgentInstance) sdkagent.Option {
 		s.TurnProject = func(ctx context.Context, scope hook.Scope) string {
 			return al.billingFor(ctx, inst, scope.Session)
 		}
+		// The turn's origin, asked as it is set up and by the compaction
+		// after it: the one the turn inherited, else the agent's own.
+		s.TurnOrigin = func(ctx context.Context, _ hook.Scope) string {
+			return originFor(ctx, inst)
+		}
 		if inst.Sessions != nil {
 			s.Sessions = inst.Sessions
 		}

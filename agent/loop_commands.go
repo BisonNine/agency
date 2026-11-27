@@ -120,9 +120,11 @@ func (al *AgentLoop) buildCommandsRuntime(
 		},
 		Uptime: func() time.Duration { return time.Since(al.startedAt) },
 		AskAgent: func(ctx context.Context, target, text string) string {
-			// The ask is billed to the code of the session it was typed in.
+			// The ask is billed to the code of the session it was typed in,
+			// from that session's origin.
 			if agent != nil && opts != nil {
 				ctx = tools.WithBilling(ctx, al.billingFor(ctx, agent, opts.SessionKey))
+				ctx = tools.WithOrigin(ctx, originFor(ctx, agent))
 			}
 			return al.commandAsk(ctx, msg, target, text)
 		},
@@ -283,7 +285,7 @@ func (al *AgentLoop) addHistoryHooks(rt *commands.Runtime, agent *AgentInstance,
 		sessionKey := opts.SessionKey
 		rt.CancelPending = func(all bool) commands.CancelOutcome {
 			running, skipped := al.takeCancelResult(sessionKey)
-			o := commands.CancelOutcome{Agent: agent.Identity().Name, Running: running, Skipped: skipped, All: all}
+			o := commands.CancelOutcome{Agent: cancelName(agent), Running: running, Skipped: skipped, All: all}
 			if all {
 				o.Cancelled = al.cancelBackground(agent)
 			} else {
@@ -489,4 +491,13 @@ func (al *AgentLoop) allowSelfClear(sessionKey string) bool {
 	}
 	al.lastSelfClear.Store(sessionKey, now)
 	return true
+}
+
+// cancelName names agent in a /cancel reply: its display name, or a clone's
+// label ("alice (clone 1a2b3c4d)").
+func cancelName(agent *AgentInstance) string {
+	if agent.Spec.IsClone() {
+		return agent.Label()
+	}
+	return agent.DisplayName()
 }

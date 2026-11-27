@@ -235,8 +235,10 @@ func (h *ClassifierHost) Call(ctx context.Context, agentID, tool string, args ma
 		return "", err
 	}
 	// The tool runs under the classifier's billing code, so model work it
-	// starts (a Maestro dispatch, a sub-agent) is billed there.
+	// starts (a Maestro dispatch, a sub-agent) is billed there; a classifier
+	// has nobody above it, so that work's origin is the agent it runs for.
 	billed := tools.WithBilling(ctx, tools.CheckedBilling(classifier.Billing(ctx), "classifier "+classifier.ClassifierID(ctx)))
+	billed = tools.WithOrigin(billed, config.NormalizeAgentID(agentID))
 	callCtx, cancel := al.clk().WithTimeout(billed, toolschedule.WatchProbeTimeout)
 	defer cancel()
 	out, err := reg.ExecuteUnattended(callCtx, tool, args)

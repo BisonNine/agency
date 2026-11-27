@@ -31,7 +31,7 @@ func (h *svcToolHost) Scope(call *toolspec.ToolCall) (Scope, error) {
 	if call.AgentID == "denied" {
 		return Scope{}, errors.New("agent denied may not use the forum tools")
 	}
-	return Scope{AgentID: call.AgentID, BaseDirectory: h.base, Billing: "acme"}, nil
+	return Scope{AgentID: call.AgentID, BaseDirectory: h.base, Billing: "acme", OriginAgent: "alice"}, nil
 }
 
 func (h *svcToolHost) ReadAllowed(_, abs string) error {
@@ -306,8 +306,9 @@ func TestSvcToolLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The run records the launching work's billing code.
-	if snap.Origin != (Origin{AgentID: "launcher", Channel: "test", ChatID: "chat-1", Billing: "acme"}) {
+	// The run records the launching work's billing code and its origin,
+	// which need not be the launcher, in its snapshot.
+	if snap.Origin != (Origin{AgentID: "launcher", Channel: "test", ChatID: "chat-1", Billing: "acme", OriginAgent: "alice"}) {
 		t.Errorf("origin = %+v", snap.Origin)
 	}
 	if msg := st.refused("launch", map[string]any{"id": id}, "running"); msg != "Forum "+st.e.ref(id)+" is running; pause or cancel it first." {

@@ -54,9 +54,13 @@ type compressModelCaller struct {
 	caller     llmCaller
 	sessionKey string
 	// id is who the calls are billed to: the agent whose conversation or
-	// memory is being summarized; billing names the code of a call.
-	id      accounting.Identity
-	billing func(ctx context.Context) string
+	// memory is being summarized; billing names the code of a call. A
+	// call's origin is the one inherited on its context, else id's own;
+	// with ownOrigin always id's own (memory consolidation, which has
+	// nobody above it).
+	id        accounting.Identity
+	billing   func(ctx context.Context) string
+	ownOrigin bool
 	// noSessionKey leaves session_key off the finish line, for a caller whose
 	// sessionKey names no conversation (memory consolidation).
 	noSessionKey bool
@@ -134,6 +138,9 @@ func (c *compressModelCaller) complete(ctx context.Context, system, user string,
 	})
 	id := c.id
 	id.Project = c.billing(ctx)
+	if !c.ownOrigin {
+		id.Origin = originOr(ctx, id.Origin)
+	}
 	reply, err := chain.Caller(id, finish, notify).Complete(ctx, models.CompleteRequest{
 		System: system, User: user, JSONObject: jsonObject, Exclude: exclude,
 	})

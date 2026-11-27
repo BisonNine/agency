@@ -138,6 +138,7 @@ func (al *AgentLoop) recoverSession(ctx context.Context, agentID, sessionKey str
 	}
 	msg.Metadata = bus.SetSpawnDepth(msg.Metadata, src.SpawnDepth)
 	msg.Metadata = bus.SetBilling(msg.Metadata, src.Billing)
+	msg.Metadata = bus.SetOrigin(msg.Metadata, src.Origin)
 	if err := al.bus.PublishInbound(ctx, msg); err != nil {
 		fields["error"] = err.Error()
 		logger.WarnCF("agent", "Failed to queue recovery message", fields)
@@ -210,6 +211,7 @@ func (al *AgentLoop) recordPendingTurnSource(ctx context.Context, agent *AgentIn
 		MessageID:     opts.MessageID,
 		ReplyRequired: opts.ReplyRequired,
 		SpawnDepth:    toolsagents.SpawnDepth(ctx),
+		Origin:        tools.Origin(ctx),
 	}
 	billing := tools.InheritedBillingOf(ctx)
 	if billing != nil {

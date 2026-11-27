@@ -179,6 +179,9 @@ func (h *ForumHost) Ask(ctx context.Context, agentID, message string, wait time.
 	// The participant's turn is billed to the code the forum was launched
 	// under; a run launched before billing codes to the default.
 	askCtx = tools.WithBilling(askCtx, tools.CheckedBilling(info.Origin.Billing, "forum "+info.ForumID))
+	// It has the origin of the work that launched the forum; a run launched
+	// before origins, the participant's own.
+	askCtx = tools.WithOrigin(askCtx, info.Origin.OriginAgent)
 	// The participant's turn ends when the forum stops waiting for it (the
 	// call timeout, the run deadline, a cancel), so its model call is not
 	// left running for a reply nobody reads.

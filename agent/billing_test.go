@@ -425,7 +425,7 @@ func TestBillingCarriedOnMessages(t *testing.T) {
 		t.Errorf("result of an inherited turn carries %q, want acme", in.Metadata[bus.MetaBilling])
 	}
 
-	al.taskPointerCallback("telegram", "c1", "main", 0, "acme")(context.Background(), &toolkit.Result{ForLLM: "done"})
+	al.taskPointerCallback("telegram", "c1", "main", 0, "acme", "")(context.Background(), &toolkit.Result{ForLLM: "done"})
 	if in, _ := consumeInbound(t, tl.msgBus); in.Metadata[bus.MetaBilling] != "acme" {
 		t.Errorf("relaunched task's result carries %q, want acme", in.Metadata[bus.MetaBilling])
 	}
@@ -533,7 +533,8 @@ func TestSummaryVisionAndMemoryBilling(t *testing.T) {
 	}
 }
 
-// A task-model call is billed to the code on its task's context.
+// A task-model call is billed to the code on its task's context, from the
+// origin on it.
 func TestTaskModelHost_BillsTheTaskCode(t *testing.T) {
 	recs := &accountingRecords{}
 	accounting.SetLogger(slog.New(recs))
@@ -548,8 +549,16 @@ func TestTaskModelHost_BillsTheTaskCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := recs.byKind("text")
-	if len(got) != 1 || got[0]["project"] != "acme" || got[0]["agent"] != "alice" {
+	if len(got) != 1 || got[0]["project"] != "acme" || got[0]["agent_id"] != "alice" || got[0]["origin_agent"] != "alice" {
 		t.Errorf("records %v, want one for alice billed to acme", got)
+	}
+	// The task's origin is on its context too.
+	if _, err := e.host.Run(tools.WithOrigin(context.Background(), "bob"), "alice", e.workspace,
+		toolsagents.TaskModelRequest{Kind: "text", Prompt: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := recs.byKind("text"); len(got) != 2 || got[1]["origin_agent"] != "bob" || got[1]["agent_id"] != "alice" {
+		t.Errorf("records %v, want the second for alice from bob", got)
 	}
 }
 

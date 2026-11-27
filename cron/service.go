@@ -118,6 +118,12 @@ type CronJob struct {
 	// fingerprint. Empty for a job created before billing codes, which runs
 	// under the default code.
 	Billing string `json:"billing,omitempty"`
+	// Origin is the origin of each run, beside Billing: the id of the agent
+	// at the top of the chain of work that created the job, which may be
+	// another agent than AgentID. Empty for a job with nobody above it (one
+	// added from the command line, or created before origins): each run's
+	// origin is then the agent it runs as.
+	Origin string `json:"origin,omitempty"`
 }
 
 // cronFingerprint computes a stable, content-addressed identifier over a job's
@@ -618,7 +624,7 @@ func (cs *CronService) saveStoreUnsafe() error {
 func (cs *CronService) AddJob(
 	name string,
 	schedule CronSchedule,
-	message, mode, channel, to, peerKind, billing string,
+	message, mode, channel, to, peerKind, billing, origin string,
 ) (*CronJob, error) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -658,6 +664,7 @@ func (cs *CronService) AddJob(
 		UpdatedAtMS:    now,
 		DeleteAfterRun: deleteAfterRun,
 		Billing:        billing,
+		Origin:         origin,
 	}
 	job.Fingerprint = cronFingerprint(job.Schedule, job.Payload)
 

@@ -345,6 +345,8 @@ func (h *taskModelHost) Run(ctx context.Context, agentID, workspace string, req 
 		id = h.al.identityOf(agentID, billing)
 	}
 	id.Project = billing
+	// The task's origin is on its context too (TaskRecord.Origin).
+	id.Origin = originOr(ctx, id.Origin)
 	cat := h.al.catalog
 	var chain *models.Chain
 	if req.Model != "" {

@@ -97,17 +97,18 @@ func assertNoReinject(t *testing.T, dest tools.ReplyChat) {
 	}
 }
 
-// A completion re-enters with the inherited billing code of the call's turn,
-// and with none for a turn billed to its session's code.
+// A completion re-enters with the inherited billing code and origin of the
+// call's turn, and with none for a turn billed to its session's code with
+// its agent's own origin.
 func TestPublishMCPAsyncToLLM_CarriesInheritedBilling(t *testing.T) {
 	rec := sessionRecord{agentID: "alice", sessionKey: "agent:alice:main"}
 	dest := tools.ReplyChat{Channel: "slack", ChatID: "C9"}
 	for _, tc := range []struct {
-		ctx  context.Context
-		want string
+		ctx          context.Context
+		want, origin string
 	}{
-		{tools.WithBilling(context.Background(), "acme"), "acme"},
-		{context.Background(), ""},
+		{tools.WithOrigin(tools.WithBilling(context.Background(), "acme"), "bob"), "acme", "bob"},
+		{context.Background(), "", ""},
 	} {
 		msgBus := bus.NewMessageBus()
 		publishMCPAsyncToLLM(tc.ctx, msgBus, rec, dest, "agent_spawn", &toolkit.Result{ForLLM: "done"}, 0)
@@ -116,6 +117,9 @@ func TestPublishMCPAsyncToLLM_CarriesInheritedBilling(t *testing.T) {
 		cancel()
 		if !ok || m.Metadata[bus.MetaBilling] != tc.want {
 			t.Errorf("re-injected billing = %q (%v), want %q", m.Metadata[bus.MetaBilling], ok, tc.want)
+		}
+		if m.Metadata[bus.MetaOrigin] != tc.origin {
+			t.Errorf("re-injected origin = %q, want %q", m.Metadata[bus.MetaOrigin], tc.origin)
 		}
 		msgBus.Close()
 	}

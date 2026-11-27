@@ -42,7 +42,7 @@ func newAddCommand(storePath func() string) *cobra.Command {
 			// A scheduled job always delivers its message inbound to channel/to,
 			// where the bound agent handles it (single behavior; "mode" retired).
 			// The operator's job is billed to the default code, named.
-			job, err := cs.AddJob(name, schedule, message, "agent", channel, to, peerKind, global.DefaultBilling)
+			job, err := cs.AddJob(name, schedule, message, "agent", channel, to, peerKind, global.DefaultBilling, "")
 			if err != nil {
 				return fmt.Errorf("error adding job: %w", err)
 			}

@@ -20,7 +20,6 @@ import (
 	"go.bison9.com/agency/cron"
 	"go.bison9.com/agency/internal/dotpath"
 	"go.bison9.com/agency/logger"
-	"go.bison9.com/agency/tools"
 )
 
 // extractField selects a dot-path from a decoded JSON value (dotpath.Get: an
@@ -139,9 +138,8 @@ func (t *CronTool) runWatch(ctx context.Context, job *cron.CronJob) watchOutcome
 	w := job.Payload.Watch
 	state := job.State
 
-	// The probe's tool is billed to the job's code (a tool that starts
-	// model work, such as a Maestro dispatch).
-	result, err := t.probe(tools.WithBilling(ctx, jobBilling(job)), job.AgentID, w)
+	// The probe's tool is billed to the job's code, from its origin.
+	result, err := t.probe(withJob(ctx, job), job.AgentID, w)
 	if err != nil {
 		if ctx.Err() != nil {
 			// The scheduler stopped while the probe ran: nothing is known and

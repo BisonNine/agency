@@ -297,7 +297,11 @@ network/LLM tools.
   (`tools.InheritedBillingOf(ctx).Set`) without touching the code it came
   from. The `billing` tool (`tools/billing`, the bare-named suite
   `config.BillingSuite`, which every configured agent has; `deny_tools`
-  removes it) reads and sets it through `ToolDeps.SetBilling`.
+  removes it) reads and sets it through `ToolDeps.SetBilling`. The origin
+  (`accounting.Identity.Origin`, the agent at the top of the chain of work)
+  travels the same way and never changes: `cd.OriginOf(call.Ctx)` reads it,
+  and work started for another run carries it with `tools.WithOrigin(ctx,
+  origin)`.
 - **Async tools** set `Async: true`, return `Result{Async: true}` immediately,
   and deliver the late result via `call.Notify(...)` — but check `call.Notify != nil`
   first and degrade gracefully when the host has no async path.

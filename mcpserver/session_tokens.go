@@ -52,6 +52,10 @@ type sessionRecord struct {
 	// to it, and a billing tool call with it changes it for that turn. nil
 	// when the turn bills to its session's code.
 	billing *tools.InheritedBilling
+	// origin is the inherited origin of the session's current turn
+	// (SetTurnScope), the turn's own value like billing: a call with this
+	// token has it. nil when the turn has its agent's own.
+	origin *string
 	// service marks a per-agent service token (RegisterService,
 	// SyncServiceTokens): it belongs to no turn, so a call with it has no
 	// reply chat whatever turns its session runs.
@@ -354,29 +358,36 @@ func (s *SessionTokenStore) SetDepth(sessionKey string, depth int) {
 }
 
 // SetTurnScope records the ask chain of the turn now running on sessionKey,
-// the task it runs in and its inherited billing code on its conversation
-// token, so MCP tool calls made with it (a CLI provider's) carry them as
-// in-process tool calls do: an agent waiting in the exchange cannot be
-// asked, a task the call starts is cancelled with the task it was started
-// in, and the call is billed to the turn's code (nil: the session's).
-// Called by the agent loop at the start of every turn. No-op if the session
-// has no token.
-func (s *SessionTokenStore) SetTurnScope(sessionKey string, askChain []string, taskID string, billing *tools.InheritedBilling) {
+// the task it runs in and its inherited billing code and origin on its
+// conversation token, so MCP tool calls made with it (a CLI provider's)
+// carry them as in-process tool calls do: an agent waiting in the exchange
+// cannot be asked, a task the call starts is cancelled with the task it was
+// started in, and the call is billed to the turn's code (nil: the
+// session's) from the turn's origin (nil: the agent's own). Called by the
+// agent loop at the start of every turn. No-op if the session has no token.
+func (s *SessionTokenStore) SetTurnScope(sessionKey string, askChain []string, taskID string, billing *tools.InheritedBilling, origin *string) {
 	chain := slices.Clone(askChain)
-	s.updateRecord(sessionKey, func(rec *sessionRecord) { rec.askChain, rec.taskID, rec.billing = chain, taskID, billing })
+	s.updateRecord(sessionKey, func(rec *sessionRecord) {
+		rec.askChain, rec.taskID, rec.billing, rec.origin = chain, taskID, billing, origin
+	})
 }
 
-// EndTurnBilling removes billing, the inherited billing code of a turn of
-// sessionKey that has ended, from its token, so a later call with the token
-// is not billed to it and cannot change it. A later turn's code, recorded
-// since, is left alone. No-op if the session has no token.
-func (s *SessionTokenStore) EndTurnBilling(sessionKey string, billing *tools.InheritedBilling) {
-	if billing == nil {
+// EndTurnScope removes billing and origin, the inherited billing code and
+// origin of a turn of sessionKey that has ended, from its token, so a later
+// call with the token is not billed to that code (and cannot change it) nor
+// given that origin. A later turn's code and origin, recorded since, are
+// left alone, even when they have the same value. No-op if the session has
+// no token.
+func (s *SessionTokenStore) EndTurnScope(sessionKey string, billing *tools.InheritedBilling, origin *string) {
+	if billing == nil && origin == nil {
 		return
 	}
 	s.updateRecord(sessionKey, func(rec *sessionRecord) {
-		if rec.billing == billing {
+		if billing != nil && rec.billing == billing {
 			rec.billing = nil
+		}
+		if origin != nil && rec.origin == origin {
+			rec.origin = nil
 		}
 	})
 }

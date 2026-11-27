@@ -50,5 +50,7 @@ func (al *AgentLoop) NewMemoryModelCaller(agent *AgentInstance) hook.Caller {
 	// Consolidation reads several sessions' messages, so it is billed to a
 	// code of its own, never to one of theirs.
 	caller.billing = func(context.Context) string { return global.MemoryBilling }
+	// It runs for the agent, with nobody above it: the agent is its origin.
+	caller.ownOrigin = true
 	return &memoryModelCaller{complete: caller.complete, modelName: effective}
 }

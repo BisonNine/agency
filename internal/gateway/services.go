@@ -922,6 +922,8 @@ func setupCronTool(
 		})
 		// A job is billed to the code in force where it was created.
 		cronTool.SetBilling(agentLoop.CallerBilling)
+		// Its runs have the origin of the work that created it.
+		cronTool.SetOrigin(agentLoop.CallerOrigin)
 	}
 
 	// Set onJob handler

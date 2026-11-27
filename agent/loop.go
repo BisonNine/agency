@@ -311,13 +311,15 @@ type SessionTokenIssuer interface {
 	SetDepth(sessionKey string, depth int)
 	// SetTurnScope records the ask chain of the turn starting on sessionKey
 	// (see tools.AskChain), the task it runs in (hook.TaskID) and its
-	// inherited billing code (tools.InheritedBillingOf, nil for none), so MCP
-	// tool calls made with the session's token carry them. No-op when the
-	// sessionKey is unknown.
-	SetTurnScope(sessionKey string, askChain []string, taskID string, billing *tools.InheritedBilling)
-	// EndTurnBilling removes a turn's inherited billing code from the
-	// session's token when the turn ends, unless a later turn's replaced it.
-	EndTurnBilling(sessionKey string, billing *tools.InheritedBilling)
+	// inherited billing code (tools.InheritedBillingOf, nil for none) and
+	// origin (tools.Origin, held in a value of the turn's own, nil for
+	// none), so MCP tool calls made with the session's token carry them.
+	// No-op when the sessionKey is unknown.
+	SetTurnScope(sessionKey string, askChain []string, taskID string, billing *tools.InheritedBilling, origin *string)
+	// EndTurnScope removes a turn's inherited billing code and origin (the
+	// values given to SetTurnScope) from the session's token when the turn
+	// ends, unless a later turn's replaced them.
+	EndTurnScope(sessionKey string, billing *tools.InheritedBilling, origin *string)
 	// BeginTurn records a turn of sessionKey whose final reply goes to chatID
 	// on channel until the returned end is called, so MCP tool calls made
 	// with the session's token (CLI providers) send their output for "the

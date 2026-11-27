@@ -8,6 +8,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"unicode/utf8"
 
 	"go.bison9.com/agent/accounting"
 
@@ -129,6 +130,34 @@ func Billing(ctx context.Context) (code string, ok bool) {
 		return "", false
 	}
 	return b.Code(), true
+}
+
+type originKey struct{}
+
+// WithOrigin returns ctx naming origin as the origin of the work that runs
+// on it: the id of the agent at the top of the chain of work (accounting's
+// Identity.Origin). It is set where work is handed on, from the origin of
+// the work handing it on (or the one kept in its record), and copied
+// unchanged below; nothing changes it within the work, the billing tool
+// included. An empty origin returns ctx naming none, so the work's origin is
+// its own agent's; so does one longer than accounting allows (a hand-edited
+// record), with a warning, so it never fails a model call.
+func WithOrigin(ctx context.Context, origin string) context.Context {
+	if utf8.RuneCountInString(origin) > accounting.MaxNameLength {
+		logger.WarnCF("billing", "Invalid origin agent ignored; the working agent is used",
+			map[string]any{"origin": origin})
+		origin = ""
+	}
+	return context.WithValue(ctx, originKey{}, origin)
+}
+
+// Origin returns the origin inherited on ctx, "" when there is none (the
+// work's origin is then its own agent's).
+func Origin(ctx context.Context) string {
+	if origin, ok := ctx.Value(originKey{}).(string); ok {
+		return origin
+	}
+	return ""
 }
 
 // CheckedBilling is a billing code read back from where it was kept (a task

@@ -142,14 +142,28 @@ func (a *AgentInstance) DisplayName() string {
 
 // Identity is who the agent's model and API calls are billed to, without a
 // billing code: every caller names one (AgentLoop.identityFor, or a code of
-// its own). A clone is billed to the agent it was cloned from, under its own
-// label, so its spend rolls up to the agent that caused it; every other agent
-// to itself.
+// its own). Agent is the agent's id: a configured agent's own, a clone's
+// "<source id>:<short id>" under its source's display name, a fresh
+// temporary agent's "temp:<short id>" under the name "temp". Origin is the
+// agent's own origin, for work with nobody above it (identityFor names an
+// inherited one): a configured agent itself, a clone its source, a fresh
+// temporary agent itself.
 func (a *AgentInstance) Identity() accounting.Identity {
-	if a.Spec.IsClone() {
-		return accounting.Identity{Agent: config.NormalizeAgentID(a.Spec.SourceID), Name: a.Label()}
+	switch {
+	case a.Spec.IsClone():
+		source := config.NormalizeAgentID(a.Spec.SourceID)
+		return accounting.Identity{
+			Origin: source,
+			Agent:  source + ":" + agentreg.ShortID(a.ID),
+			Name:   (&config.AgentConfig{ID: a.Spec.SourceID, Name: a.Name}).DisplayName(),
+		}
+	case a.Spec.Fresh:
+		id := config.ReservedAgentID + ":" + agentreg.ShortID(a.ID)
+		return accounting.Identity{Origin: id, Agent: id, Name: config.ReservedAgentID}
 	}
-	return (&config.AgentConfig{ID: a.ID, Name: a.Name}).Identity()
+	id := (&config.AgentConfig{ID: a.ID, Name: a.Name}).Identity()
+	id.Origin = id.Agent
+	return id
 }
 
 // sessionsDirName is the directory under an agent's state directory that

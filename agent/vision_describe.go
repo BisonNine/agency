@@ -73,6 +73,7 @@ func (c *providerVisionClient) Complete(ctx context.Context, messages []spawnllm
 	start := time.Now()
 	id := c.id
 	id.Project = c.billing(ctx)
+	id.Origin = originOr(ctx, id.Origin)
 	resp, err := provider.Chat(ctx, id, messages, nil, c.model, nil)
 	emitLLMFinishEvent(llmFinish{
 		caller:         c.caller,

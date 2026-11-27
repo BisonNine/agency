@@ -374,7 +374,7 @@ func TestPrepareInbound_VoicePassesNameAndType(t *testing.T) {
 
 // A voice note is billed to the code its message carries, else to the code
 // of the session it is routed to, else to the default; one no agent takes
-// has no owner.
+// has no owner, and the origin it carries.
 func TestPrepareInbound_VoiceBillingCode(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
@@ -425,5 +425,11 @@ func TestPrepareInbound_VoiceBillingCode(t *testing.T) {
 	system.Metadata[bus.MetaBilling] = "acme"
 	if id := voiceTo(system); id != global.NoOwnerIdentity("acme") {
 		t.Errorf("message for no agent carrying acme billed to %+v", id)
+	}
+	system.Metadata[bus.MetaOrigin] = "alice"
+	want := global.NoOwnerIdentity("acme")
+	want.Origin = "alice"
+	if id := voiceTo(system); id != want {
+		t.Errorf("message for no agent from alice billed to %+v, want %+v", id, want)
 	}
 }

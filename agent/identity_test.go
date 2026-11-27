@@ -49,17 +49,18 @@ func (r *identityRecorder) seen() []accounting.Identity {
 	return append([]accounting.Identity(nil), r.ids...)
 }
 
-// TestAgentInstance_Identity: a config agent is billed to itself under its
-// display name, a clone to its source under its own label, and a fresh
-// temporary agent to its own id under the name it was given. Identity names
-// no billing code: every caller sets the one its call is billed to.
+// TestAgentInstance_Identity: a config agent is its id under its display
+// name, a clone "<source id>:<short id>" under its source's display name, a
+// fresh temporary agent "temp:<short id>" under the name temp; each its own
+// origin (a clone's is its source). Identity names no billing code: every
+// caller sets the one its call is billed to.
 func TestAgentInstance_Identity(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
 
 	reg := newTestAgentLoop(t).al.GetRegistry()
 	main, _ := reg.Get("main")
-	if got, want := main.Identity(), (accounting.Identity{Agent: "main", Name: "Main"}); got != want {
+	if got, want := main.Identity(), (accounting.Identity{Origin: "main", Agent: "main", Name: "Main"}); got != want {
 		t.Errorf("config agent identity = %+v, want %+v", got, want)
 	}
 
@@ -68,9 +69,12 @@ func TestAgentInstance_Identity(t *testing.T) {
 		t.Fatalf("CreateClone: %v", err)
 	}
 	clone, _ := reg.Get(cloneID)
-	want := accounting.Identity{Agent: "main", Name: "main (clone " + agentreg.ShortID(cloneID) + ")"}
+	want := accounting.Identity{Origin: "main", Agent: "main:" + agentreg.ShortID(cloneID), Name: "Main"}
 	if got := clone.Identity(); got != want {
 		t.Errorf("clone identity = %+v, want %+v", got, want)
+	}
+	if got, want := clone.Label(), "main (clone "+agentreg.ShortID(cloneID)+")"; got != want {
+		t.Errorf("clone label = %q, want %q", got, want)
 	}
 
 	freshID, err := reg.CreateFresh(config.AgentConfig{Name: "Bob"}, agentreg.WithSystemPrompt("You are Bob."))
@@ -78,7 +82,8 @@ func TestAgentInstance_Identity(t *testing.T) {
 		t.Fatalf("CreateFresh: %v", err)
 	}
 	fresh, _ := reg.Get(freshID)
-	if got, want := fresh.Identity(), (accounting.Identity{Agent: freshID, Name: "Bob"}); got != want {
+	temp := "temp:" + agentreg.ShortID(freshID)
+	if got, want := fresh.Identity(), (accounting.Identity{Origin: temp, Agent: temp, Name: "temp"}); got != want {
 		t.Errorf("fresh agent identity = %+v, want %+v", got, want)
 	}
 }
@@ -119,8 +124,8 @@ func TestIdentityOf(t *testing.T) {
 }
 
 // TestTurn_BillsTheAgent: every model call of a turn carries the turn's agent
-// identity under the default billing code, named; a clone's turn is billed to
-// its source.
+// identity under the default billing code, named; a clone's turn with
+// nobody above it has its source as its origin.
 func TestTurn_BillsTheAgent(t *testing.T) {
 	restore := logger.RedirectForTest(&safeBufLoop{})
 	defer restore()
@@ -166,8 +171,8 @@ func TestTurn_BillsTheAgent(t *testing.T) {
 			}
 		}
 	}
-	if got := cloneRec.seen()[0].Agent; got != "main" {
-		t.Errorf("clone call billed to agent %q, want its source main", got)
+	if got := cloneRec.seen()[0]; got.Origin != "main" || got.Agent != "main:"+agentreg.ShortID(cloneID) {
+		t.Errorf("clone call has origin %q and agent %q, want main and the clone's id", got.Origin, got.Agent)
 	}
 }
 
@@ -242,14 +247,15 @@ func (a *accountingRecords) byKind(kind string) []map[string]any {
 
 // TestTaskModelHost_BillsTheSpawner: every kind of task-model call (chat,
 // image generation and edit, speech, transcription) is billed to the agent
-// whose spawner made it; a clone's to its source under the clone's label.
+// whose spawner made it, as the record's origin_agent, agent_id, agent_name
+// and project show: a clone of alice's from alice, its origin.
 func TestTaskModelHost_BillsTheSpawner(t *testing.T) {
 	recs := &accountingRecords{}
 	accounting.SetLogger(slog.New(recs))
 	t.Cleanup(func() { accounting.SetLogger(nil) })
 
 	e := newTaskHostEnv(t)
-	want := accounting.Identity{Agent: "alice", Name: "alice (clone 1a2b3c4d)", Project: "default"}
+	want := accounting.Identity{Origin: "alice", Agent: "alice:1a2b3c4d", Name: "Alice", Project: "default"}
 	e.host = &taskModelHost{al: e.al, clone: "1a2b3c4d", id: want}
 	e.write(t, "files/clip.ogg", []byte("OggS fake"))
 	e.write(t, "files/in.png", pngBytes)
@@ -270,8 +276,8 @@ func TestTaskModelHost_BillsTheSpawner(t *testing.T) {
 			t.Errorf("%s: %d accounting records, want %d", kind, len(got), n)
 		}
 		for _, r := range got {
-			if r["agent"] != want.Agent || r["agent_name"] != want.Name || r["project"] != want.Project {
-				t.Errorf("%s record billed to %v/%v/%v, want %+v", kind, r["agent"], r["agent_name"], r["project"], want)
+			if r["origin_agent"] != want.Origin || r["agent_id"] != want.Agent || r["agent_name"] != want.Name || r["project"] != want.Project {
+				t.Errorf("%s record billed to %v/%v/%v/%v, want %+v", kind, r["origin_agent"], r["agent_id"], r["agent_name"], r["project"], want)
 			}
 		}
 	}

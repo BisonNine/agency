@@ -359,7 +359,7 @@ func (al *AgentLoop) askWaitFor(ctx context.Context, target *AgentInstance, wait
 // publishAsk queues ask id for target as an inbound message on the ask
 // channel. It requires one reply, runs one sub-agent level deeper than the
 // asking turn, carries the agents already waiting in the exchange, and is
-// billed to the asking work's billing code.
+// billed to the asking work's billing code, from its origin.
 func (al *AgentLoop) publishAsk(ctx context.Context, id string, from sender, target *AgentInstance, message string, chain []string, depth int) error {
 	meta := map[string]string{
 		metadataKeyPreresolvedAgentID: target.ID,
@@ -371,6 +371,7 @@ func (al *AgentLoop) publishAsk(ctx context.Context, id string, from sender, tar
 	}
 	meta = bus.SetSpawnDepth(meta, depth+1)
 	meta = bus.SetBilling(meta, al.CallerBilling(ctx))
+	meta = bus.SetOrigin(meta, al.CallerOrigin(ctx))
 	msg := bus.InboundMessage{
 		Channel:   constants.AgentMessageChannel,
 		ChatID:    id,

@@ -21,7 +21,7 @@ func TestSaveStore_FilePermissions(t *testing.T) {
 
 	cs := NewCronService(storePath, nil)
 
-	_, err := cs.AddJob("test", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "hello", "agent", "cli", "direct", "channel", "")
+	_, err := cs.AddJob("test", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "hello", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
@@ -42,11 +42,11 @@ func TestListJobs_IncludeDisabled_ReturnsCopy(t *testing.T) {
 	storePath := filepath.Join(tmpDir, "cron", "jobs.json")
 	cs := NewCronService(storePath, nil)
 
-	_, err := cs.AddJob("job-one", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg1", "agent", "cli", "direct", "channel", "")
+	_, err := cs.AddJob("job-one", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg1", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
-	_, err = cs.AddJob("job-two", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg2", "agent", "cli", "direct", "channel", "")
+	_, err = cs.AddJob("job-two", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg2", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestListJobs_ConcurrentModification(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for range 10 {
-			if _, err := cs.AddJob("job", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg", "agent", "cli", "direct", "channel", ""); err != nil {
+			if _, err := cs.AddJob("job", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg", "agent", "cli", "direct", "channel", "", ""); err != nil {
 				t.Errorf("AddJob: %v", err)
 			}
 		}
@@ -101,7 +101,7 @@ func TestRemoveJob_SaveFailure_ReturnsError(t *testing.T) {
 	storePath := filepath.Join(tmpDir, "cron", "jobs.json")
 	cs := NewCronService(storePath, nil)
 
-	job, err := cs.AddJob("test-job", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg", "agent", "cli", "direct", "channel", "")
+	job, err := cs.AddJob("test-job", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestEnableJob_SaveFailure_ReturnsError(t *testing.T) {
 	storePath := filepath.Join(tmpDir, "cron", "jobs.json")
 	cs := NewCronService(storePath, nil)
 
-	job, err := cs.AddJob("test-job", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg", "agent", "cli", "direct", "channel", "")
+	job, err := cs.AddJob("test-job", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
@@ -157,11 +157,11 @@ func TestCheckJobs_LoadStoreFailure_PreservesJobs(t *testing.T) {
 	storePath := filepath.Join(tmpDir, "cron", "jobs.json")
 	cs := NewCronService(storePath, nil)
 
-	_, err := cs.AddJob("job-one", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg1", "agent", "cli", "direct", "channel", "")
+	_, err := cs.AddJob("job-one", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg1", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
-	_, err = cs.AddJob("job-two", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg2", "agent", "cli", "direct", "channel", "")
+	_, err = cs.AddJob("job-two", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg2", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob failed: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestExecuteJobByID_DeleteAfterRun(t *testing.T) {
 
 	// "at" schedule sets DeleteAfterRun=true automatically via AddJob.
 	futureMS := time.Now().Add(1 * time.Hour).UnixMilli()
-	job, err := cs.AddJob("delete-after", CronSchedule{Kind: "at", AtMS: &futureMS}, "msg", "agent", "cli", "direct", "channel", "")
+	job, err := cs.AddJob("delete-after", CronSchedule{Kind: "at", AtMS: &futureMS}, "msg", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob: %v", err)
 	}
@@ -845,7 +845,7 @@ func newTestServiceWithHandler(t *testing.T, handler JobHandler) *CronService {
 func addEnabledJob(t *testing.T, cs *CronService, kind string, everyMS *int64) *CronJob {
 	t.Helper()
 	schedule := CronSchedule{Kind: kind, EveryMS: everyMS}
-	job, err := cs.AddJob("test-job", schedule, "hello", "agent", "cli", "direct", "channel", "")
+	job, err := cs.AddJob("test-job", schedule, "hello", "agent", "cli", "direct", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob: %v", err)
 	}
@@ -945,7 +945,7 @@ func TestCronFingerprint_IgnoresNonDefinitionFields(t *testing.T) {
 func TestAddJob_PopulatesFingerprint(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "jobs.json")
 	cs := NewCronService(storePath, nil)
-	job, err := cs.AddJob("n", baseSchedule(), "self-check", "agent", "slack", "C123", "channel", "")
+	job, err := cs.AddJob("n", baseSchedule(), "self-check", "agent", "slack", "C123", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob: %v", err)
 	}
@@ -963,7 +963,7 @@ func TestAddJob_PopulatesFingerprint(t *testing.T) {
 func TestUpdateJob_RecomputesFingerprint(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "jobs.json")
 	cs := NewCronService(storePath, nil)
-	job, err := cs.AddJob("n", baseSchedule(), "self-check", "agent", "slack", "C123", "channel", "")
+	job, err := cs.AddJob("n", baseSchedule(), "self-check", "agent", "slack", "C123", "channel", "", "")
 	if err != nil {
 		t.Fatalf("AddJob: %v", err)
 	}
@@ -1096,5 +1096,20 @@ func TestStop_EndsRunningJobContext(t *testing.T) {
 	}
 	if jobs := cs.ListJobs(true); len(jobs) != 1 || jobs[0].State.LastStatus != "ok" {
 		t.Fatalf("the job's run was not recorded: %+v", jobs)
+	}
+}
+
+// AddJob writes the job's billing code and origin in its one write, so a
+// job is never stored without them.
+func TestAddJob_StoresBillingAndOrigin(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "cron", "jobs.json")
+	cs := NewCronService(storePath, nil)
+	if _, err := cs.AddJob("job", CronSchedule{Kind: "every", EveryMS: new(int64(60000))}, "msg", "agent", "cli", "direct", "channel", "garden", "alice"); err != nil {
+		t.Fatalf("AddJob failed: %v", err)
+	}
+	// A new service on the same store reads what that write stored.
+	jobs := NewCronService(storePath, nil).ListJobs(true)
+	if len(jobs) != 1 || jobs[0].Billing != "garden" || jobs[0].Origin != "alice" {
+		t.Fatalf("stored jobs = %+v, want one with billing garden and origin alice", jobs)
 	}
 }

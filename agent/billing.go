@@ -46,11 +46,57 @@ func (al *AgentLoop) billingFor(ctx context.Context, agent *AgentInstance, sessi
 }
 
 // identityFor is agent's accounting identity for work in sessionKey, billed
-// to billingFor's code.
+// to billingFor's code, from originFor's origin.
 func (al *AgentLoop) identityFor(ctx context.Context, agent *AgentInstance, sessionKey string) accounting.Identity {
 	id := agent.Identity()
 	id.Project = al.billingFor(ctx, agent, sessionKey)
+	id.Origin = originOr(ctx, id.Origin)
 	return id
+}
+
+// Origins. Every accounting record names its origin: the agent at the top
+// of the chain of work that caused the call. It rides beside the billing
+// code down exactly the same chain (tools.WithOrigin on a context,
+// bus.MetaOrigin on a message, beside the code wherever the code is kept),
+// is set once where the chain starts and is never changed below it; the
+// billing tool does not touch it. originFor is the one rule.
+
+// originFor is the origin of work for agent: the origin the work inherited
+// (on ctx), else the agent's own (Identity: a configured agent itself, a
+// clone its source, a fresh temporary agent itself).
+func originFor(ctx context.Context, agent *AgentInstance) string {
+	return originOr(ctx, agent.Identity().Origin)
+}
+
+// originOr is the origin inherited on ctx, else own.
+func originOr(ctx context.Context, own string) string {
+	if origin := tools.Origin(ctx); origin != "" {
+		return origin
+	}
+	return own
+}
+
+// CallerOrigin is the origin of the work calling on ctx, for a caller that
+// has only the context (scheduling a job, asking an agent, spawning): the
+// inherited origin, else the origin of the turn in the call's scope, else
+// the own origin of the agent in the scope, else "" (the work it starts then
+// has its own agent's).
+func (al *AgentLoop) CallerOrigin(ctx context.Context) string {
+	if origin := tools.Origin(ctx); origin != "" {
+		return origin
+	}
+	scope, _ := hook.ScopeOf(ctx)
+	if scope.Origin != "" {
+		return scope.Origin
+	}
+	if scope.AgentID != "" {
+		if reg := al.GetRegistry(); reg != nil {
+			if inst, ok := reg.Get(scope.AgentID); ok && inst != nil {
+				return inst.Identity().Origin
+			}
+		}
+	}
+	return ""
 }
 
 // CallerBilling is the billing code of the work calling on ctx, for a caller
@@ -174,6 +220,17 @@ func withInboundBilling(ctx context.Context, msg bus.InboundMessage) context.Con
 		return ctx
 	}
 	return tools.WithBilling(ctx, tools.CheckedBilling(code, "message on "+msg.Channel))
+}
+
+// withInboundOrigin puts the origin an inbound message carries
+// (bus.MetaOrigin) on ctx as the turn's inherited origin, as
+// withInboundBilling does the code.
+func withInboundOrigin(ctx context.Context, msg bus.InboundMessage) context.Context {
+	origin := inboundMetadata(msg, bus.MetaOrigin)
+	if origin == "" {
+		return ctx
+	}
+	return tools.WithOrigin(ctx, origin)
 }
 
 // inheritedBilling is the code of the turn on ctx when it was inherited,

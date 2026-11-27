@@ -53,7 +53,8 @@ func TestModelsBilledToNoOwnerDefault(t *testing.T) {
 	defer recs.mu.Unlock()
 	require.NotEmpty(t, recs.recs)
 	for _, r := range recs.recs {
-		require.Equal(t, global.NoOwnerAgent, r["agent"])
+		require.Equal(t, global.NoOwnerAgent, r["agent_id"])
+		require.Equal(t, global.NoOwnerAgent, r["origin_agent"])
 		require.Equal(t, global.DefaultBilling, r["project"])
 	}
 }

@@ -329,11 +329,11 @@ func TestLoopTools_TaskPointerCallback(t *testing.T) {
 	ctx := context.Background()
 
 	// Nothing to deliver.
-	tl.al.taskPointerCallback("telegram", "c1", "main", 0, "")(ctx, nil)
-	tl.al.taskPointerCallback("telegram", "c1", "main", 0, "")(ctx, &toolkit.Result{})
+	tl.al.taskPointerCallback("telegram", "c1", "main", 0, "", "")(ctx, nil)
+	tl.al.taskPointerCallback("telegram", "c1", "main", 0, "", "")(ctx, &toolkit.Result{})
 
 	// An asked turn's task drops its user output; the error text reaches the agent.
-	tl.al.taskPointerCallback(constants.AgentMessageChannel, "c1", "", 1, "")(ctx,
+	tl.al.taskPointerCallback(constants.AgentMessageChannel, "c1", "", 1, "", "")(ctx,
 		&toolkit.Result{ForUser: "dropped", Err: errors.New("task failed")})
 	if out := execEdgeNextOutbound(t, tl.msgBus); out.Content != "execcov-marker" {
 		t.Errorf("an asked task reached a chat: %q", out.Content)
@@ -348,7 +348,7 @@ func TestLoopTools_TaskPointerCallback(t *testing.T) {
 
 	// A closed bus: both publishes fail and are logged.
 	tl.msgBus.Close()
-	tl.al.taskPointerCallback("telegram", "c1", "main", 0, "")(ctx, &toolkit.Result{ForUser: "u", ForLLM: "m"})
+	tl.al.taskPointerCallback("telegram", "c1", "main", 0, "", "")(ctx, &toolkit.Result{ForUser: "u", ForLLM: "m"})
 	for _, want := range []string{"Failed to publish async task result to user", "Failed to publish async task result to agent"} {
 		if !strings.Contains(logs.String(), want) {
 			t.Errorf("log lacks %q", want)

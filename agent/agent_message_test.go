@@ -450,10 +450,10 @@ type scopeSTI struct {
 	scopes  map[string][]string
 }
 
-// EndTurnBilling is a no-op: these tests check the ask chain only.
-func (s *scopeSTI) EndTurnBilling(string, *tools.InheritedBilling) {}
+// EndTurnScope is a no-op: these tests check the ask chain only.
+func (s *scopeSTI) EndTurnScope(string, *tools.InheritedBilling, *string) {}
 
-func (s *scopeSTI) SetTurnScope(sessionKey string, chain []string, _ string, _ *tools.InheritedBilling) {
+func (s *scopeSTI) SetTurnScope(sessionKey string, chain []string, _ string, _ *tools.InheritedBilling, _ *string) {
 	s.scopeMu.Lock()
 	defer s.scopeMu.Unlock()
 	if s.scopes == nil {

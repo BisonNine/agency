@@ -101,6 +101,11 @@ const (
 	// background result this is, a replayed turn): its model calls are
 	// billed to it instead of the session's own code.
 	MetaBilling = "billing"
+	// MetaOrigin is the origin the turn inherits from the work that sent the
+	// message, beside MetaBilling: the id of the agent at the top of the
+	// chain of work, which its accounting records name (origin_agent).
+	// Without it the turn's origin is its own agent.
+	MetaOrigin = "origin_agent"
 )
 
 // SetSpawnDepth records depth under MetaSpawnDepth in meta (allocated when
@@ -126,6 +131,19 @@ func SetBilling(meta map[string]string, code string) map[string]string {
 		meta = map[string]string{}
 	}
 	meta[MetaBilling] = code
+	return meta
+}
+
+// SetOrigin records origin under MetaOrigin in meta (allocated when nil)
+// and returns it. An empty origin adds nothing.
+func SetOrigin(meta map[string]string, origin string) map[string]string {
+	if origin == "" {
+		return meta
+	}
+	if meta == nil {
+		meta = map[string]string{}
+	}
+	meta[MetaOrigin] = origin
 	return meta
 }
 

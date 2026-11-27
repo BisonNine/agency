@@ -43,6 +43,9 @@ type CronTool struct {
 	// with each job it creates. Nil: the inherited code on ctx, else the
 	// default.
 	billing func(ctx context.Context) string
+	// origin returns the origin of the work calling on ctx, stored with
+	// each job it creates. Nil: the inherited origin on ctx.
+	origin func(ctx context.Context) string
 
 	// Listen jobs: one goroutine per enabled job, kept in step with the store
 	// by a supervisor. See listen.go.
@@ -69,6 +72,27 @@ func (t *CronTool) SetAgentTools(fn func(agentID string) *tools.ToolRegistry) {
 // a context: a job is billed to the code in force where it was created.
 func (t *CronTool) SetBilling(fn func(ctx context.Context) string) {
 	t.billing = fn
+}
+
+// SetOrigin wires the resolver of the origin of the work calling on a
+// context: a job's runs have the origin of the work that created it.
+func (t *CronTool) SetOrigin(fn func(ctx context.Context) string) {
+	t.origin = fn
+}
+
+// callerOrigin is the origin of the work calling on ctx.
+func (t *CronTool) callerOrigin(ctx context.Context) string {
+	if t.origin != nil {
+		return t.origin(ctx)
+	}
+	return tools.Origin(ctx)
+}
+
+// withJob puts job's billing code and origin on ctx, for its probes: the
+// tool a probe calls is billed to the job's code (a tool that starts model
+// work, such as a Maestro dispatch), from the job's origin.
+func withJob(ctx context.Context, job *cron.CronJob) context.Context {
+	return tools.WithOrigin(tools.WithBilling(ctx, jobBilling(job)), job.Origin)
 }
 
 // jobBilling is the billing code job's runs and probes are billed to: its
@@ -212,7 +236,7 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]any) *toolkit.Re
 
 	switch action {
 	case "add":
-		return t.addJob(args, target, t.callerBilling(ctx))
+		return t.addJob(args, target, t.callerBilling(ctx), t.callerOrigin(ctx))
 	case "list":
 		return t.listJobs(target)
 	case "get":
@@ -266,7 +290,7 @@ func (t *CronTool) ownedJob(jobID, agentID string) *cron.CronJob {
 	return nil
 }
 
-func (t *CronTool) addJob(args map[string]any, agentID, billing string) *toolkit.Result {
+func (t *CronTool) addJob(args map[string]any, agentID, billing, origin string) *toolkit.Result {
 	// The destination is resolved at fire time from the target agent's default
 	// channel — never captured here and never chosen by the model. Require that
 	// the target agent has a usable default channel now, so the job is deliverable.
@@ -360,7 +384,7 @@ func (t *CronTool) addJob(args map[string]any, agentID, billing string) *toolkit
 	} else if watch != nil {
 		mode = "watch"
 	}
-	job, err := t.cronService.AddJob(messagePreview, schedule, message, mode, "", "", "", billing)
+	job, err := t.cronService.AddJob(messagePreview, schedule, message, mode, "", "", "", billing, origin)
 	if err != nil {
 		return toolkit.ErrorResult(fmt.Sprintf("Error adding job: %v", err))
 	}
@@ -582,7 +606,7 @@ func (t *CronTool) deliver(ctx context.Context, job *cron.CronJob, content strin
 		}
 	}
 
-	// Each run is billed to the job's code.
+	// Each run is billed to the job's code, from the job's origin.
 	billing := jobBilling(job)
 	msg := bus.InboundMessage{
 		Channel:  channel,
@@ -591,7 +615,7 @@ func (t *CronTool) deliver(ctx context.Context, job *cron.CronJob, content strin
 		ChatID:   chatID,
 		Content:  content,
 		Peer:     bus.Peer{Kind: peerKind, ID: chatID},
-		Metadata: bus.SetBilling(nil, billing),
+		Metadata: bus.SetOrigin(bus.SetBilling(nil, billing), job.Origin),
 	}
 	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer pubCancel()

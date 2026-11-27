@@ -43,7 +43,7 @@ work.
 | Model-only participant in Alice's forum | `alice` | `temp:5b6c7d8e` | temp |
 | Scheduled job run as Alice | `alice` | `alice` | Alice |
 | Job Alice scheduled to run as Bob | `alice` | `bob` | Bob |
-| Forum launched by an outside tool client, Bob taking part | `bob` | `bob` | Bob |
+| Forum launched by a tool client connected as Alice, Bob taking part | `alice` | `bob` | Bob |
 
 ### 2.4 Rules that follow
 
@@ -170,3 +170,14 @@ the origin too: `agent/vision_describe.go:122`, `agent/context_manager.go:253,30
   So this work adds no changelog entry and no migration. For that release's
   notes: `agent` → `agent_id` and `origin_agent` in the accounting log, agent
   ids limited to 32 characters, `temp` reserved.
+- 6.5 **Decided.** A forum is always launched by an agent (a tool client
+  connects as one), and that agent is the origin agent of its participants'
+  calls.
+- 6.6 **Decided.** The SDK keeps one agent id per turn: a clone's turn runs
+  in the SDK under its accounting id (`bob:1a2b3c4d`), so the SDK's own log
+  lines and task view name it that way. Accepted; no second id in the SDK.
+- 6.7 **Decided.** One vocabulary in the SDK, Maestro and Agency: origin
+  agent, working agent, billing code. The SDK's "project" is renamed
+  (`Identity.BillingCode`, `CheckBillingCode`, `TurnBillingCode`, record key
+  `billing_code`), with no old names kept. Order: SDK release, Maestro
+  release, then Agency.
