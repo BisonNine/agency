@@ -8,7 +8,7 @@ import react from "@vitejs/plugin-react"
 // that block as an unknown property.
 import { defineConfig } from "vitest/config"
 
-import { themeInitScript } from "./src/lib/theme"
+import { themeInitScript } from "./src/lib/theme.ts"
 
 // https://vite.dev/config/
 export default defineConfig({
