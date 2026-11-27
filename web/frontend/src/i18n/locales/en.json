@@ -461,7 +461,7 @@
         "port": "HTTPS port",
         "port_hint": "Port of the HTTPS listener (default 18443), different from the HTTP port.",
         "external_url": "Hostname / external URL",
-        "external_url_hint": "The address used to reach this server, e.g. https://agency.example.com; its host name is added to the self-signed certificate.",
+        "external_url_hint": "The full address used to reach this server, including the port, e.g. https://agency.example.com:18443; its host name is added to the self-signed certificate.",
         "extra_names": "Extra certificate names",
         "extra_names_hint": "Additional DNS names or IP addresses for the self-signed certificate, Enter after each.",
         "extra_names_placeholder": "agency.home.arpa"

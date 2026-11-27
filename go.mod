@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/a3tai/openclaw-go v1.20260325.0
-	github.com/adhocore/gronx v1.20.10
+	github.com/adhocore/gronx v1.20.11
 	github.com/bmatcuk/doublestar/v4 v4.10.7
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.4.2
@@ -26,9 +26,9 @@ require (
 	github.com/tenebris-tech/alerter v0.1.7
 	github.com/tenebris-tech/mlogger v0.0.5
 	github.com/tenebris-tech/secmsg v0.1.2
-	go.bison9.com/agent v0.2.2
+	go.bison9.com/agent v0.2.3
 	go.bison9.com/maestro v0.5.13
-	go.bison9.com/mcpfusion v0.4.14
+	go.bison9.com/mcpfusion v0.4.15
 	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.48.0
 	golang.org/x/sys v0.50.0
@@ -66,7 +66,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.1.0 // indirect
 	github.com/tenebris-tech/x2md v0.0.3 // indirect
-	github.com/tidwall/gjson v1.20.6 // indirect
+	github.com/tidwall/gjson v1.20.7 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.3.1 // indirect
 	github.com/tidwall/sjson v1.2.11 // indirect
@@ -86,7 +86,7 @@ require (
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	modernc.org/libc v1.82.13 // indirect
+	modernc.org/libc v1.82.14 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.13.0 // indirect
+	modernc.org/memory v1.13.1 // indirect
 )

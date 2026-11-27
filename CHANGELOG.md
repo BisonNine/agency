@@ -146,6 +146,11 @@
 
 ### Changed
 
+- **Network page: the Hostname / external URL hint now says to include the
+  port** (e.g. `https://agency.example.com:18443`). `gateway.external_url` is
+  used exactly as written, so without a port clients such as the
+  `agency-auth` setup code connect to 443.
+
 - **`sudo agency install` on Linux sets up the same install as the `apt`
   package.** A system install runs as the system account `agency` (created
   if missing, no password, home `/home/agency`) with its data in

@@ -60,7 +60,7 @@ native tools, suites, the Fusion tools the real engine registers, MCP grants,
 CLI command lines and environment. It fails when any of that changes until
 `testdata/effective.golden` is regenerated (`UPDATE_GOLDEN=1 go test
 ./tests/capabilities/`), which is the moment to write the BREAKING changelog
-entry. See "Capability changes" in `CLAUDE.md`.
+entry. See "Capability changes" in `CLAUDE.md` (full text in `docs/architecture.md`).
 
 **CLI provider smoke (opt-in).** With `AGENCY_TEST_CLI=1`, `test.sh` also runs
 `tests/test_cli_provider.sh` against the built binary: one turn through a real
